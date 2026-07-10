@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/motion/glow_pulse.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
@@ -588,15 +589,21 @@ class _ConversationHeaderCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              CircleAvatar(
-                backgroundImage:
-                    conversation.avatarUrl == null
-                        ? null
-                        : NetworkImage(conversation.avatarUrl!),
-                child:
-                    conversation.avatarUrl == null
-                        ? Text(_initialForName(conversation.name))
-                        : null,
+              GlowPulse(
+                active:
+                    conversation.availability ==
+                        ConversationAvailability.active &&
+                    isOnline,
+                child: CircleAvatar(
+                  backgroundImage:
+                      conversation.avatarUrl == null
+                          ? null
+                          : NetworkImage(conversation.avatarUrl!),
+                  child:
+                      conversation.avatarUrl == null
+                          ? Text(_initialForName(conversation.name))
+                          : null,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
