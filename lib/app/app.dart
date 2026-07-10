@@ -25,6 +25,7 @@ class _AppState extends ConsumerState<App> {
     });
     // Fire-and-forget preload so first send/receive has no cold-start latency.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       ref.read(soundServiceProvider).preload();
     });
   }

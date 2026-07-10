@@ -212,11 +212,12 @@ class SettingsScreen extends StatelessWidget {
           SliverToBoxAdapter(
             child: Padding(
               padding: Spacing.allMd,
-              child: CardInkWell(
-                margin: EdgeInsets.zero,
-                onTap: () {},
-                child: Consumer(
-                  builder: (context, ref, _) => SwitchListTile(
+              child: Consumer(
+                builder: (context, ref, _) => CardInkWell(
+                  margin: EdgeInsets.zero,
+                  onTap: () =>
+                      ref.read(messageSoundsEnabledProvider.notifier).toggle(),
+                  child: SwitchListTile(
                     key: const ValueKey('message_sounds_switch'),
                     title: const Text('Message sounds'),
                     subtitle: const Text(
