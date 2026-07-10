@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/config/chat_config.dart';
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
@@ -13,6 +14,7 @@ import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/domain/services/chat_feature_flags.dart';
 import 'package:attune/features/chat/utils/chat_error.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
+import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -346,6 +348,9 @@ class ChatController extends StateNotifier<ChatState> {
     _lastPartnerMessageId = id;
     if (isNew && _isViewActive) {
       ref.read(hapticsProvider).selection();
+      if (ref.read(messageSoundsEnabledProvider)) {
+        ref.read(soundServiceProvider).play(ChatSound.receive);
+      }
     }
   }
 

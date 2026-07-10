@@ -75,6 +75,7 @@ dependencies:
   flutter_svg: ^2.0.9
   flutter_animate: ^4.5.0
   vibration: ^1.8.4
+  audioplayers: ^6.1.0
   vector_graphics: ^1.1.10
   vector_graphics_compiler: ^1.1.10
   http: ^0.13.6
@@ -162,6 +163,7 @@ flutter:
   assets:
     - assets/images/
     - assets/config/
+    - assets/sounds/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
