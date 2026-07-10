@@ -2,6 +2,7 @@ import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/providers/locale_provider.dart';
 import 'package:attune/core/providers/routing_providers.dart';
 import 'package:attune/core/providers/theme_provider.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +22,10 @@ class _AppState extends ConsumerState<App> {
     Future.microtask(() {
       if (!mounted) return;
       ref.read(localeNotifierProvider.notifier).initialize();
+    });
+    // Fire-and-forget preload so first send/receive has no cold-start latency.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(soundServiceProvider).preload();
     });
   }
 
