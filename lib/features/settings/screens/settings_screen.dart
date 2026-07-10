@@ -213,7 +213,7 @@ class SettingsScreen extends StatelessWidget {
             child: Padding(
               padding: Spacing.allMd,
               child: CardInkWell(
-                margin: EdgeInsets.all(0),
+                margin: EdgeInsets.zero,
                 onTap: () {},
                 child: Consumer(
                   builder: (context, ref, _) => SwitchListTile(
