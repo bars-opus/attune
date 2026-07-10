@@ -5,6 +5,9 @@ import 'reduce_motion.dart';
 /// Slow breathing glow around a child while [active]. Universal "someone/
 /// something is live" indicator — used for a partner-present avatar, but usable
 /// anywhere. Calm by design (Spec §3.3): long period, small spread.
+///
+/// Currently renders a circular glow only (intended for avatars); a [shape]
+/// param can be added when a non-circular consumer appears.
 class GlowPulse extends StatefulWidget {
   const GlowPulse({
     super.key,
@@ -29,11 +32,6 @@ class _GlowPulseState extends State<GlowPulse>
     vsync: this,
     duration: const Duration(milliseconds: 1600),
   );
-
-  @override
-  void initState() {
-    super.initState();
-  }
 
   @override
   void didChangeDependencies() {

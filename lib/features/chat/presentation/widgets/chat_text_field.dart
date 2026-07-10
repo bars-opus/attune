@@ -50,6 +50,12 @@ class _ChatTextFieldState extends State<ChatTextField> {
     }
   }
 
+  void _handleSend() {
+    if (!(widget.enabled && _hasText)) return;
+    setState(() => _sendPulse++);
+    widget.onSend();
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -84,21 +90,12 @@ class _ChatTextFieldState extends State<ChatTextField> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                 ),
-                onSubmitted: (_) {
-                  if (_hasText && widget.enabled) {
-                    widget.onSend();
-                  }
-                },
+                onSubmitted: (_) => _handleSend(),
               ),
             ),
             const SizedBox(width: 8),
             IconButton.filled(
-              onPressed: widget.enabled && _hasText
-                  ? () {
-                      setState(() => _sendPulse++);
-                      widget.onSend();
-                    }
-                  : null,
+              onPressed: widget.enabled && _hasText ? _handleSend : null,
               tooltip: 'Send message',
               icon: ScalePop(
                 trigger: _sendPulse,

@@ -119,7 +119,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final text = _controller.text.trim();
     if (text.isEmpty) return;
     ref.read(hapticsProvider).light(); // instant tactile confirm (Spec §3.1)
-    await _sendDraftText(_controller.text);
+    await _sendDraftText(text);
   }
 
   Future<void> _sendDraftText(String text) async {
