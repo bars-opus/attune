@@ -287,6 +287,7 @@ User testUser(String id) => User(
 ProviderContainer buildChatContainer({
   required FakeChatRepository repository,
   required String userId,
+  List<Override> extraOverrides = const [],
 }) {
   final cache = ChatCacheService.forTesting(
     backend: stub.createBackend(),
@@ -296,6 +297,7 @@ ProviderContainer buildChatContainer({
       chatRepositoryProvider.overrideWithValue(repository),
       chatCacheServiceProvider.overrideWithValue(cache),
       currentUserProvider.overrideWithValue(testUser(userId)),
+      ...extraOverrides,
     ],
   );
   return container;

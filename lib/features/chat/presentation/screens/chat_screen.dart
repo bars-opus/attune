@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
@@ -114,6 +115,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _send() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    ref.read(hapticsProvider).light(); // instant tactile confirm (Spec §3.1)
     await _sendDraftText(_controller.text);
   }
 

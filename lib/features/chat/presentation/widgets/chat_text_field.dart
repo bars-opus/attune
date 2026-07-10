@@ -1,3 +1,4 @@
+import 'package:attune/core/ui/motion/scale_pop.dart';
 import 'package:flutter/material.dart';
 
 class ChatTextField extends StatefulWidget {
@@ -27,6 +28,8 @@ class ChatTextField extends StatefulWidget {
 }
 
 class _ChatTextFieldState extends State<ChatTextField> {
+  int _sendPulse = 0;
+
   bool get _hasText => widget.controller.text.trim().isNotEmpty;
 
   @override
@@ -90,9 +93,17 @@ class _ChatTextFieldState extends State<ChatTextField> {
             ),
             const SizedBox(width: 8),
             IconButton.filled(
-              onPressed: widget.enabled && _hasText ? widget.onSend : null,
+              onPressed: widget.enabled && _hasText
+                  ? () {
+                      setState(() => _sendPulse++);
+                      widget.onSend();
+                    }
+                  : null,
               tooltip: 'Send message',
-              icon: const Icon(Icons.send_rounded),
+              icon: ScalePop(
+                trigger: _sendPulse,
+                child: const Icon(Icons.send_rounded),
+              ),
             ),
           ],
         ),
