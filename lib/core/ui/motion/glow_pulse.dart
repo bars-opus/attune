@@ -66,6 +66,7 @@ class _GlowPulseState extends State<GlowPulse>
   Widget build(BuildContext context) {
     final color =
         widget.color ?? Theme.of(context).colorScheme.primary;
+    final reduceMotion = reduceMotionOf(context);
     return AnimatedBuilder(
       animation: _ctrl,
       builder: (context, child) {
@@ -74,7 +75,7 @@ class _GlowPulseState extends State<GlowPulse>
         return DecoratedBox(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            boxShadow: widget.active
+            boxShadow: widget.active && !reduceMotion
                 ? [
                     BoxShadow(
                       color: color.withValues(alpha: 0.45 * _ctrl.value),

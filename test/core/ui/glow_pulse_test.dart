@@ -31,4 +31,28 @@ void main() {
       home: GlowPulse(active: false, child: SizedBox(width: 40, height: 40)),
     ));
   });
+
+  testWidgets('active with reduce-motion renders empty boxShadow', (tester) async {
+    await tester.pumpWidget(MediaQuery(
+      data: const MediaQueryData(disableAnimations: true),
+      child: const MaterialApp(
+        home: GlowPulse(
+          active: true,
+          color: Color(0xFFEEAA55),
+          child: SizedBox(width: 40, height: 40),
+        ),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 200));
+    final box = tester.widget<DecoratedBox>(find.byType(DecoratedBox).first);
+    final deco = box.decoration as BoxDecoration;
+    expect(deco.boxShadow == null || deco.boxShadow!.isEmpty, isTrue);
+    // Stop the infinite animation so the test can settle.
+    await tester.pumpWidget(MediaQuery(
+      data: const MediaQueryData(disableAnimations: true),
+      child: const MaterialApp(
+        home: GlowPulse(active: false, child: SizedBox(width: 40, height: 40)),
+      ),
+    ));
+  });
 }
