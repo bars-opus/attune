@@ -22,6 +22,15 @@ warmth and responsiveness, not one-time spectacle.
 feedback, gentle physicality, and a sense that the other person is *present* —
 never childish, never a toy, never performing at the couple.
 
+### 1.0 Build it as a universal toolkit, not chat-only code
+
+The motion, feedback, and presence pieces are built as **app-wide reusable
+primitives** (`lib/core/ui/`) that any widget in any feature can use, not code
+buried inside chat. Chat is the first and richest consumer, but the same
+settle/shimmer/glow/scale-pop/haptics/sound components should make buttons,
+cards, and lists across the whole app feel alive. See §5 for the
+primitive-vs-composition split.
+
 ### 1.1 Non-negotiable tone floor
 
 Attune serves couples in real relationships, including hard moments, and sits in
@@ -173,44 +182,100 @@ rules (a partner never sees more than "active / composing", never content).
 
 ## 5. Architecture & boundaries
 
-Presentation-layer only, except the two flagged backend touches (typing signal;
-optional cadence source for #16). Structure follows Chat Spec §13.
+**Core principle: universal primitives, feature compositions.** The motion,
+feedback, and presence *primitives* are app-wide, reusable, and content-blind by
+construction — they live in a shared `lib/core/ui/` toolkit and know nothing
+about chat, so any widget anywhere in the app (buttons, cards, lists, other
+features) can drop them in. Chat is simply the **first consumer**. Chat-specific
+*compositions* (typing indicator, optimistic→sent confirm, rituals) stay in the
+chat feature but are **built from** the universal primitives.
 
-- `presentation/motion/` — shared spring token, reduce-motion helper, and small
-  reusable animated widgets (settle, tick-morph, glow, typing-dots).
-- `presentation/feedback/` — haptics helper + sound service (interface +
-  audio-package impl + a no-op impl for tests).
-- Widgets consume these; controllers/repositories are untouched except the
-  typing presence extension in the data layer.
-- **Testability:** haptics and sound go through injectable interfaces so widget
-  tests can assert "a send fires exactly one haptic + at most one sound" without
-  a real device. Motion widgets are driven by explicit `animate:`/event flags so
-  play-once behavior is unit-testable (mirrors the existing `AnimatedEntry`
-  test pattern).
+This split is not just tidiness: because a universal primitive literally does
+not know what a message is, it *cannot* react to message content — so the
+content-blind tone floor (§1.1) is enforced at the architecture level, not just
+by discipline.
 
-### 5.1 Failure / degradation behavior
+### 5.1 Universal toolkit — `lib/core/ui/` (knows nothing about chat)
 
-- Reduce-motion on → instant end-states, no springs.
+```
+lib/core/ui/
+  motion/
+    motion_tokens.dart     # shared spring spec + durations/curves (with app/theme)
+    reduce_motion.dart     # MediaQuery.disableAnimations helper / wrapper
+    settle_in.dart         # spring settle + fade entry (generalizes AnimatedEntry)
+    shimmer.dart           # one-shot / looping shimmer sweep
+    glow_pulse.dart        # slow breathing glow (any widget/avatar)
+    scale_pop.dart         # quick press/confirm scale-pop (any button/icon)
+    icon_crossfade.dart    # morph between two icons (generic; chat ticks use it)
+    stagger.dart           # staggered entry for a list of children
+    elastic_refresh.dart   # calm elastic pull-to-refresh
+  feedback/
+    haptics.dart           # thin injectable wrapper over HapticFeedback
+    sound_service.dart     # interface + audio-package impl + no-op (tests)
+  presence/
+    breathing_dots.dart    # generic "someone is doing something" 3-dot indicator
+```
+
+Every primitive: (1) takes plain inputs (a child, an event/flag, a color), (2)
+honors reduce-motion internally, (3) is play-once safe via keys/flags, (4) has
+no feature imports. Each is independently testable and usable outside chat.
+
+**Reuse note:** `settle_in.dart` supersedes the existing unused
+`lib/features/chat/presentation/widgets/animated_entry.dart` — generalize and
+move it to core, then delete the chat copy. `motion_tokens.dart` extends, and
+does not duplicate, the existing `AnimationDurations`/`AnimationCurves` in
+`lib/app/theme/design_tokens.dart`.
+
+### 5.2 Chat compositions — `lib/features/chat/presentation/` (uses the toolkit)
+
+- **Typing indicator** = `breathing_dots` + chat presence data.
+- **Optimistic→sent confirm** = `icon_crossfade`/`scale_pop` + message status.
+- **Send-and-settle** = `settle_in` + `scale_pop` + `haptics`, wired to the send
+  action.
+- **First-message-of-the-day / reconnect cascade** = `shimmer` / `stagger` +
+  chat date/unread logic.
+- Controllers and repositories are untouched except the typing presence
+  extension in the chat data layer.
+
+### 5.3 Testability
+
+- Haptics and sound are injectable interfaces (with no-op/fake impls) so widget
+  tests assert "one send → exactly one haptic + at most one sound" with no real
+  device.
+- Motion primitives are driven by explicit `animate:`/event flags so play-once
+  behavior is unit-testable (mirrors the existing `AnimatedEntry` test pattern).
+- Universal primitives get their **own** tests in `test/core/ui/`, independent of
+  chat, proving they work as standalone components.
+
+### 5.4 Failure / degradation behavior
+
+- Reduce-motion on → instant end-states, no springs (enforced inside each
+  primitive, so every consumer inherits it for free).
 - Silent mode / DND → no sound; visuals + haptics unaffected.
-- Audio init failure → silent no-op, never blocks chat.
+- Audio init failure → silent no-op, never blocks the host widget.
 - Typing signal unavailable/stale → indicator simply doesn't show; chat
   unaffected.
-- Any animation error is contained to its widget and never blocks send/receive.
+- Any animation error is contained to its widget and never blocks the host
+  feature's core action (send/receive, tap, navigation).
 
 ---
 
 ## 6. Testing
 
-- **Widget tests:** send fires exactly one haptic and at most one sound;
-  optimistic→canonical reconciliation does **not** double-fire sound/haptic;
-  incoming message animates once and not on rebuild; reduce-motion renders
-  end-state instantly; read-only/empty states fade in.
-- **Feedback interface tests:** sound/haptic services honor their toggles and
-  the silent/DND guard.
+- **Universal primitive tests (`test/core/ui/`):** each primitive works
+  standalone — settle/shimmer/glow/scale-pop/icon-crossfade/stagger animate once
+  and honor reduce-motion; breathing-dots renders/loops; elastic-refresh fires
+  its callback. No chat dependency.
+- **Feedback interface tests:** sound/haptic services honor their toggles and the
+  silent/DND guard; fakes assert call counts.
+- **Chat composition widget tests (`test/features/chat/`):** send fires exactly
+  one haptic and at most one sound; optimistic→canonical reconciliation does
+  **not** double-fire sound/haptic; incoming message animates once and not on
+  rebuild; reduce-motion renders end-state instantly; read-only/empty states fade
+  in. Extends the existing chat harness (FakeChatRepository + injectable feedback
+  fakes).
 - **Presence/typing tests:** typing signal debounces, expires, and never leaks
   content; glow follows presence.
-- Extends the existing `test/features/chat/` harness (FakeChatRepository +
-  injectable feedback fakes).
 
 ## 7. Rollout & gates
 
