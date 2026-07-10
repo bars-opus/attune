@@ -1,3 +1,4 @@
+import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -187,7 +188,9 @@ class _StatusChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: color),
+          IconCrossfade(
+            child: Icon(icon, key: ValueKey(message.status), size: 14, color: color),
+          ),
           const SizedBox(width: 4),
           Text(
             label,

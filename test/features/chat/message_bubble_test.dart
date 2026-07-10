@@ -1,3 +1,4 @@
+import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:flutter/material.dart';
@@ -100,5 +101,14 @@ void main() {
       findsOneWidget,
     );
     expect(semantics, isNotNull);
+  });
+
+  testWidgets('status icon is wrapped in an IconCrossfade for morphing',
+      (tester) async {
+    await _pump(
+      tester,
+      MessageBubble(message: _mine(status: MessageStatus.delivered)),
+    );
+    expect(find.byType(IconCrossfade), findsOneWidget);
   });
 }
