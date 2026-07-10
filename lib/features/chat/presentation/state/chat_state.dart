@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/config/chat_config.dart';
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
@@ -102,6 +103,19 @@ class ChatController extends StateNotifier<ChatState> {
   /// messages read before the user actually sees them.
   bool _isViewActive = false;
 
+  /// The id of the newest partner (non-local) message we've observed, used to
+  /// detect a genuinely new arrival for the receive haptic (Task 10). Seeded
+  /// once after the first [loadMessages] call in [_init] so initial history
+  /// never buzzes.
+  String? _lastPartnerMessageId;
+
+  /// Whether [_lastPartnerMessageId] has been seeded from the initial load
+  /// yet. Distinguishes "no partner messages in history" (baseline is
+  /// genuinely null, but still seeded) from "haven't loaded yet" — a
+  /// conversation's very first-ever partner message must still buzz even
+  /// though the seeded baseline was null.
+  bool _hasSeededPartnerBaseline = false;
+
   /// Serializes outbox flushing so overlapping triggers cannot double-send the
   /// same queued item. [_inFlightClientIds] tracks items currently being sent
   /// (including single-message sends) so a concurrent flush skips them.
@@ -130,6 +144,18 @@ class ChatController extends StateNotifier<ChatState> {
     // silently — no loading spinner and no "Syncing" banner flash. Only a
     // cold open (empty cache) shows the initial loading state.
     await loadMessages(silent: hasWarmCache);
+    // Seed the baseline after the first load so initial history (warm cache
+    // or cold fetch) never triggers the receive haptic; only messages that
+    // arrive after this point can be "new" (Task 10).
+    _lastPartnerMessageId = state.messages
+        .where((m) => !m.isMine && !m.id.startsWith('_local_'))
+        .fold<Message?>(
+          null,
+          (best, m) =>
+              best == null || m.createdAt.isAfter(best.createdAt) ? m : best,
+        )
+        ?.id;
+    _hasSeededPartnerBaseline = true;
     _subscribeToRealtime();
     await _markPartnerMessagesDelivered();
     // Read is only recorded once the screen reports the conversation is
@@ -239,6 +265,7 @@ class ChatController extends StateNotifier<ChatState> {
             .read(chatCacheServiceProvider)
             .writeMessages(user.id, relationshipId, state.messages),
       );
+      _maybeReceiveHaptic();
     } catch (error) {
       final mapped = ChatError.from(error);
       ChatLog.e(
@@ -295,8 +322,30 @@ class ChatController extends StateNotifier<ChatState> {
             .read(chatCacheServiceProvider)
             .writeMessages(user.id, relationshipId, state.messages),
       );
+      _maybeReceiveHaptic();
     } catch (_) {
       // Non-fatal; loadMessages() refresh follows.
+    }
+  }
+
+  /// Fires a soft haptic exactly once when a genuinely new partner message
+  /// has arrived while the view is active. Content-blind: keys off message
+  /// id and [Message.isMine] only, never message content (Task 10). Not fired
+  /// for the user's own messages, initial history, or while backgrounded.
+  void _maybeReceiveHaptic() {
+    final newestPartner = state.messages
+        .where((m) => !m.isMine && !m.id.startsWith('_local_'))
+        .fold<Message?>(
+          null,
+          (best, m) =>
+              best == null || m.createdAt.isAfter(best.createdAt) ? m : best,
+        );
+    final id = newestPartner?.id;
+    if (id == null) return;
+    final isNew = _hasSeededPartnerBaseline && id != _lastPartnerMessageId;
+    _lastPartnerMessageId = id;
+    if (isNew && _isViewActive) {
+      ref.read(hapticsProvider).selection();
     }
   }
 
