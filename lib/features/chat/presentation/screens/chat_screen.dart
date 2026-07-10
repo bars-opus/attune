@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/glow_pulse.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
@@ -18,6 +19,7 @@ import 'package:attune/features/conflict_translator/presentation/providers/trans
     as translator_providers;
 import 'package:attune/features/conflict_translator/presentation/screens/translator_sheet.dart';
 import 'package:attune/features/pulse/presentation/screens/pulse_screen.dart';
+import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/core/services/media/image_picker_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -119,6 +121,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final text = _controller.text.trim();
     if (text.isEmpty) return;
     ref.read(hapticsProvider).light(); // instant tactile confirm (Spec §3.1)
+    if (ref.read(messageSoundsEnabledProvider)) {
+      ref.read(soundServiceProvider).play(ChatSound.send);
+    }
     await _sendDraftText(text);
   }
 
