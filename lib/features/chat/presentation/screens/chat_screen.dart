@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
@@ -33,6 +34,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _imagePicker = ImagePickerService();
+  final DateTime _messageListCutoff = DateTime.now();
   bool _headerExpanded = false;
   bool _isForeground = true;
 
@@ -399,6 +401,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             child: _MessageList(
               state: state,
               scrollController: _scrollController,
+              firstBuildCutoff: _messageListCutoff,
             ),
           ),
           if (conversation.canSend)
@@ -806,10 +809,15 @@ class _DrawerCard extends StatelessWidget {
 }
 
 class _MessageList extends ConsumerWidget {
-  const _MessageList({required this.state, required this.scrollController});
+  const _MessageList({
+    required this.state,
+    required this.scrollController,
+    required this.firstBuildCutoff,
+  });
 
   final ChatState state;
   final ScrollController scrollController;
+  final DateTime firstBuildCutoff;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -866,24 +874,39 @@ class _MessageList extends ConsumerWidget {
           }
 
           final message = state.messages[index];
-          return MessageBubble(
-            message: message,
-            onRetry:
-                message.isFailed
-                    ? () => ref
-                        .read(
-                          chatControllerProvider(state.conversation).notifier,
-                        )
-                        .retryMessage(message)
-                    : null,
-            onRemove:
-                message.isFailed
-                    ? () => ref
-                        .read(
-                          chatControllerProvider(state.conversation).notifier,
-                        )
-                        .removeFailedMessage(message)
-                    : null,
+          return SettleIn(
+            key: ValueKey(message.clientMessageId),
+            // Only animate messages that arrived after this list first
+            // rendered, so cached history does not replay on open (Spec §2
+            // play-once).
+            animate: message.createdAt.isAfter(firstBuildCutoff),
+            beginOffset:
+                message.isMine
+                    ? const Offset(0, 0.12)
+                    : const Offset(0, 0.10),
+            child: MessageBubble(
+              message: message,
+              onRetry:
+                  message.isFailed
+                      ? () => ref
+                          .read(
+                            chatControllerProvider(
+                              state.conversation,
+                            ).notifier,
+                          )
+                          .retryMessage(message)
+                      : null,
+              onRemove:
+                  message.isFailed
+                      ? () => ref
+                          .read(
+                            chatControllerProvider(
+                              state.conversation,
+                            ).notifier,
+                          )
+                          .removeFailedMessage(message)
+                      : null,
+            ),
           );
         },
       ),
