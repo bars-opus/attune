@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ (dataExtractionRules). Excludes the local chat cache/outbox from
+  both cloud backup and device-to-device transfer. Payloads are already
+  AES-GCM encrypted (see ChatCacheCipher); this is defense-in-depth for the
+  local-device-residue concern in CHAT_SYSTEM_SPEC Sections 4.4 and 14.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="attune_chat_cache.sqlite" />
+        <exclude domain="file" path="attune_chat_cache.sqlite-wal" />
+        <exclude domain="file" path="attune_chat_cache.sqlite-shm" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="attune_chat_cache.sqlite" />
+        <exclude domain="file" path="attune_chat_cache.sqlite-wal" />
+        <exclude domain="file" path="attune_chat_cache.sqlite-shm" />
+    </device-transfer>
+</data-extraction-rules>

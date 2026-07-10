@@ -1,0 +1,16 @@
+// This file is generated and will be overwritten automatically.
+
+#import <Foundation/Foundation.h>
+@class MBXExpected<__covariant Value, __covariant Error>;
+@class MBXGeometry;
+
+@class MBXTileRegionError;
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Callback invoked to return a tile region's associated geometry
+ *
+ * @param result A geometry object. Otherwise, an TileRegionError describing an error.
+ */
+NS_SWIFT_NAME(TileRegionGeometryCallback)
+typedef void (^MBXTileRegionGeometryCallback)(MBXExpected<MBXGeometry *, MBXTileRegionError *> * _Nonnull result); // NOLINT(modernize-use-using)

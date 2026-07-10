@@ -1,0 +1,72 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  flutter-tests:
+    name: Flutter analyze + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.29.1
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze (fail on errors)
+        # The repo carries pre-existing info/warning lint; gate CI on errors only.
+        run: |
+          set -o pipefail
+          flutter analyze 2>&1 | tee analyze.txt || true
+          if grep -E "error •|error -" analyze.txt; then
+            echo "::error::Analyzer reported errors"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: flutter test
+
+  sql-contracts:
+    name: SQL contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # GitHub-hosted Ubuntu runners include Docker, which the Supabase CLI uses
+      # to provide the auth schema, auth.users, and auth.uid() the contracts
+      # depend on (a bare Postgres service would not have these).
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase (applies all migrations)
+        # Only Postgres + auth (gotrue) are needed for the contracts; exclude
+        # the rest to keep CI fast. `start` runs every migration in order.
+        run: |
+          supabase start \
+            -x realtime,storage-api,imgproxy,studio,edge-runtime,logflare,vector,supavisor,postgres-meta,mailpit \
+            --ignore-health-check
+
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Run SQL contract tests
+        env:
+          # The CLI's local Postgres is published on 54322.
+          DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: |
+          chmod +x scripts/run_sql_contracts.sh
+          # DB is already migrated by `start`; skip the reset.
+          scripts/run_sql_contracts.sh --no-reset
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop --no-backup || true

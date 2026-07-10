@@ -1,0 +1,16 @@
+// This file is generated and will be overwritten automatically.
+
+#import <Foundation/Foundation.h>
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Callback invoked once serialize or serializePretty request completes.
+ *
+ * @param result An result which contains all the metrics events as a string
+ * in a human readable JSON format or a format that can be pushed to endpoint
+ * manually.
+ *
+ * Note: This callback will be called on a worker thread.
+ */
+NS_SWIFT_NAME(MetricsServiceSerializeCallback)
+typedef void (^MBXMetricsServiceSerializeCallback)(id _Nonnull result); // NOLINT(modernize-use-using)

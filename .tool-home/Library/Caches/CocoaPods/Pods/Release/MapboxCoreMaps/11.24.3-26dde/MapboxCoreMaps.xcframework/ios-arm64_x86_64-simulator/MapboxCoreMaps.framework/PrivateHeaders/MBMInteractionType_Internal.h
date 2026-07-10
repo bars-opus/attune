@@ -1,0 +1,15 @@
+// This file is generated and will be overwritten automatically.
+
+#import <Foundation/Foundation.h>
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Types of available interacions.
+ */
+// NOLINTNEXTLINE(modernize-use-using)
+typedef NS_ENUM(NSInteger, MBMInteractionType)
+{
+    MBMInteractionTypeClick,
+    MBMInteractionTypeLongClick,
+    MBMInteractionTypeDrag
+} NS_SWIFT_NAME(InteractionType);

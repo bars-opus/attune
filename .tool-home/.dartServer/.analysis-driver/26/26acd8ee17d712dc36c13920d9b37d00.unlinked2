@@ -1,0 +1,645 @@
+€“buildlayoutcompositingBitspaint	compositeflushSemanticssendSemanticsUpdatetestdeviceinitInstancesinstance	_instancedefaultBinaryMessengercreateBinaryMessengermessagetextDirectionassertivenesswindowplatformDispatcherrestorationManager_restorationManagerreset0_enableFocusManagerLifecycleAwarenessIfSupportedcreateRestorationManagerdebugPrintOverridedisableShadowsoverrideHttpClientregisterTestTextInputdelayedensureInitializedinitLicensesdebugCheckZoneinTestmicrotaskCountdefaultTestTimeoutclockdebugSamplingClockpumprunAsync	setLocale
+setLocalesexitApplication-readTestInitialLifecycleStateFromNativeWindow_surfaceSizesetSurfaceSizeaddRenderView_insideAddRenderViewcreateViewConfigurationForidleglobalToLocallocalToGlobalpointerEventSource_pointerEventSource"shouldPropagateDevicePointerEventshandlePointerEventForSourcewithPointerEventSourcetestTextInput_testTextInputfocusedEditable_focusedEditable_resetFocusedEditabletakeException_oldExceptionHandler_oldStackTraceDemangler_pendingExceptionDetails_announcementHandler_announcementstakeAnnouncements_messageStyle_preTestMessage_postTestMessageshowAppDumpInErrorsrunTestasyncBarrier_parentZone_createTestCompletionHandlerreportExceptionNoticed_handleAnnouncementMessage_runTest_runTestBody_beforeTestCheckIntrinsicSizes_verifyInvariants_verifyAutoUpdateGoldensUnset_verifyReportTestExceptionUnset_verifyErrorWidgetBuilderUnset._verifyShouldPropagateDevicePointerEventsUnsetpostTest_currentFakeAsync_pendingAsyncTasks_clockensureFrameCallbacksRegisteredscheduleWarmUpFramescheduleAttachRootWidget_firstFrameDeferredCount_firstFrameSentsendFramesToEnginedeferFirstFrameallowFirstFrameresetFirstFrameSent_phase	drawFrameelapseBlocking	onlyPumpsfadePointers	fullyLive	benchmarkbenchmarkLive	skipFrame_inTest_pendingFrame_expectingFrame_expectingFrameToReassemble_viewNeedsPaint_runningAsyncTasksframePolicyscheduleFramescheduleForcedFramereassembleApplication
+_drawFramehandleBeginFramehandleDrawFrame_markViewsNeedPaint_label_labelStylelabelsetLabel%_renderViewToPointerIdToPointerRecord_handleRenderViewPaintdeviceEventDispatcherhandlePointerEventdispatchEventdevicePixelRatiologicalConstraintsphysicalConstraints
+_getMatrix_paintMatrixtoMatrixshouldUpdateMatrix_physicalSizetoPhysicalSizetoStringnow	stopwatchpointercolorpositiondecayEnginePhase_MockMessageHandlerTestBindingEventSource_kDefaultTestViewportSize!TestDefaultBinaryMessengerBinding!CapturedAccessibilityAnnouncementTestWidgetsFlutterBinding"AutomatedTestWidgetsFlutterBinding(LiveTestWidgetsFlutterBindingFramePolicy_HandleDrawFrameLiveTestWidgetsFlutterBindingTestViewConfiguration_TestSamplingClock_kPointerDecay_LiveTestPointerRecordfailTimeoutdartlibrary
+js_interopWidgetTester
+pumpWidgetpumpWidgetsBinding	drawFrame
+BuildOwner
+buildScopePipelineOwnerflushLayoutflushCompositingBits
+flushPaint
+RenderViewcompositeFrameflushSemanticsSemanticsOwnersendSemanticsUpdateTestDefaultBinaryMessengersetMockDecodedMessageHandlerFuturevoidObjectdispatchEventTestGesturestartGestureSizeServicesBindingBindingBaseoverrideinitInstances	_instancecheckInstancedefaultBinaryMessengerByteDataStandardMethodCodecencodeSuccessEnvelopeintcreateBinaryMessengeroutboundHandlersStringMessageHandlerSemanticsServiceannouncetakeAnnouncementsTextDirectionAssertivenesstimeDilationSchedulerBindingGestureBindingSemanticsBindingRendererBindingPaintingBinding
+debugPrintTestPlatformDispatcherplatformDispatcherPlatformDispatcherinstancedefaultRouteNameTestValuedebugDisableShadowsTestFlutterViewviewviewOfwindow
+Deprecated
+TestWindowTestRestorationManagerdisposeresetGestureBindingresetregisterCustomSemanticsActionresetForTests
+buildOwnerfocusManager.listenToApplicationLifecycleChangesIfSupportedprintToConsoleDebugPrintCallback	protectedbool
+HttpClientTestTextInputisRegistereddelayedDurationtestWidgetsensureInitializedvisibleForTestingMapenvironmentfromPlatformDispatchersetupHttpOverrides	onClearedClockSamplingClockTestFailureTestAsyncUtilsguardLocaledispatchLocalesChangedListAppExitResponseAppExitType
+cancelablecancelrequiredFlutterErrorinitialLifecycleStateTestValue)readInitialLifecycleStateFromNativeWindowphysicalSizehandleMetricsChangedaddRenderViewViewConfigurationhasConfigurationconfiguration
+renderViewFlutterViewflutterViewimplicitViewBoxConstraintstightlogicalConstraintsphysicalConstraintsdevicePixelRatiocreateViewConfigurationFor	CompleterTimerruncompletefutureOffsethandlePointerEventdeviceWidgetControllertaptest	timedDragPointerEventsourceVoidCallbackStateEditableTextEditableTextStateTextInputConnectionshowKeyboardrequestKeyboarddynamic	exceptionFlutterExceptionHandlerStackTraceDemanglerFlutterErrorDetails	TextStylecolorColorfontSizeWidgetCenterchildTextstyletextDirectionltr	FakeAsyncbenchmarkWidgetsverifyAllScopesClosedZonecurrentreportTestExceptionisCompletedadd_datatoStringvaluescheckMockMessageHandlerSystemChannelsaccessibilitynameonErrordemangleStackTracedumpErrorToConsoleforceReportdetails
+StackTracestackTracevmTraceChaintoTracecontextErrorDescriptionDiagnosticsNoderootElementtoDiagnosticsNodemessagetoStringDeeplevelDiagnosticLevelerrorreportExpectCallreportErrorstackFilterIterabledefaultStackFilterframesskipinformationCollectorDiagnosticsProperty
+linePrefixDiagnosticsTreeStyleflat
+isNotEmptyerrorPropertyZoneSpecificationhandleUncaughtErrorZoneDelegateforkspecification	runBinarywhenCompletedebugCheckIntrinsicSizesrunApp	Containerkey	UniqueKeyresetFirstFrameSentautoUpdateGoldenFiles	isBrowserTestExceptionReporterErrorWidgetBuilderErrorWidgetbuilder
+unregisterdebugAssertNoTransientCallbacks+debugAssertNoPendingPerformanceModeRequestsdebugAssertNoTimeDilation!debugAssertAllFoundationVarsUnsetdebugPrintOverridedebugAssertAllGesturesVarsUnsetdebugAssertAllPaintingVarsUnsetdebugDisableShadowsOverridedebugAssertAllRenderVarsUnset debugCheckIntrinsicSizesOverridedebugAssertAllWidgetVarsUnset debugAssertAllSchedulerVarsUnsetdebugAssertAllServicesVarsUnsetkeyEventManagerkeyMessageHandlerFocusManagerregisterGlobalHandlersRawKeyboardclearKeysPressedHardwareKeyboard
+clearStateinitMouseTrackerresetInternalStatemockFlutterAssetsdebugPrintSynchronouslyminutesmicrotaskCountdurationelapsenewPhasehasScheduledFrameflushMicrotaskshandleBeginFramemicrosecondsnowmicrosecondsSinceEpochhandleDrawFramevaluescheduleMicrotaskrootfcreateTimercreatePeriodicTimerperiodthen
+catchError	ErrorHintonDrawFrameonBeginFrameattachRootWidgetidlezerodebugBuildingDirtyElementsbuildrootPipelineOwnerlayoutcompositingBitspaintrenderViews	compositefinalizeTreeelapseBlockinggetClockDateTimeutclocalFakeAsync_runTestdescription	microtaskasyncBarrier_verifyInvariantsperiodicTimerCountnonPeriodicTimerCount	FakeTimerpendingTimerstimer
+isPeriodicdebugPrintStack
+stackTracecreationStackTracepostTestframePolicyfadePointers	onlyPumps	fullyLivebenchmarkLiveTestPointerpumpBenchmarkscheduleFramepumpAndSettlehandlePointerEventRecordfling	benchmarkflutter_driverdebugAddPaintCallbacknoneWidgetsFlutterBindingscheduleForcedFramereassembleApplication
+StateError	skipFrameviewIdwheremarkNeedsPaintTextPainter
+fontFamilyisEmpty	textAlign	TextAlignlefttextTextSpanExpandoPaintingContextdoublesizeshortestSidePathaddOvalRect
+fromCirclecenterradiusmoveTolineToCanvascanvasPaintstrokeWidthPaintingStylestrokerecordwithOpacitydecaydrawPathshiftpositionkeyspointertoListforEachremoveHitTestDispatcher"shouldPropagateDevicePointerEventspointerEventSourcetargetdown
+firstWherercopyWithwithPointerEventSourceHitTestResultPointerAddedEventPointerRemovedEventErrorSummaryfromView_surfaceSizeMatrix4toMatrixinvertMatrixUtilstransformPointBoxFitcontainwidthheightcomposeVector3
+QuaternionidentitycloneruntimeType_paintMatrix	Stopwatch	stopwatchHSVColorfromAHSVtoColorBindingBaseServicesBindingSchedulerBindingGestureBindingSemanticsBindingRendererBindingPaintingBindingWidgetsBinding!TestDefaultBinaryMessengerBindingTestWidgetsFlutterBindingViewConfigurationSamplingClockÿşD€„ïúÑ"iÖ˜;O=    9   
+dart:async  N   ^auiadart:ui  g   package:clock/clock.dart  Š   "package:fake_async/fake_async.dart  ·   package:flutter/foundation.dart  á   package:flutter/gestures.dart  ‚	   package:flutter/rendering.dart  ‚2   package:flutter/scheduler.dart  ‚[   package:flutter/services.dart  ‚ƒ   package:flutter/widgets.dart‚Î‚×fail ‚ª   package:matcher/expect.dart  ‚Ú   ƒƒ
+stack_traceƒ
+$package:stack_trace/stack_trace.dartƒRƒ^Timeout ƒ   ƒBƒEtest_packageƒE!package:test_api/scaffolding.dart  ƒa   'package:vector_math/vector_math_64.dart dart.library.js_interop_binding_web.dart ƒ”   ƒŞƒábindingƒá_binding_io.dart  ƒë   goldens.dart  „   platform.dart  „   restoration.dart  „5   stack_manipulation.dart  „W   test_async_utils.dart  „w   "test_default_binary_messenger.dart  „¤   test_exception_reporter.dart  „Ë   test_text_input.dart  „ê   window.dartÀ ³½ À\p‰ <€†€¤€¥€¿€Ã€å	.78Mef‰¶à‚‚1‚Z‚‚‚©‚Ùƒƒ`ƒ’ƒ“ƒê„„„4„V„v„£„Ê„é„ÿ… …@…f…j…¸…Ê…İ†(†1†2†„†††Õ‡‡‡‡e‡n‡o‡©‡÷ˆAˆNˆOˆˆ¶ˆÈˆÉ‰‰`‰w‰y‰z‰Ä‰ÈŠŠZŠ[Š¨ŠµŠ¹Šò‹‹J‹h‹±‹í‹õ‹öŒGŒŒ˜ŒšŒ›ŒÖŒ×=A‘Éğ:F_z”•åF}~ŠÅKŒÚàá‘‘-‘„‘‹‘‘‘‘’‘ğ‘ô’H’›’ñ’õ“““\“†“é“ê”&”>”?”}”¢”£”ï••••/•Z•q•r•­•±•ú–K–––å—#—'—i—¨—¬—ù˜F˜“˜Ù™)™@™D™^™b™®™øšFš–šššä›5›y›}›Í›æœ#œ,œFœ_œwœ‘œªœÃœÛ:@ŠÍëPˆ­×ÛÜŸŸ$ŸnŸ¥Ÿ«Ÿü F — è¡9¡‡¡˜¡¡®¡´¢¢¢j¢†¢Ö¢ñ£ £I££Æ£Ê£Ö£ö£÷¤¤6¤7¤C¤u¤­¤Î¤Ò¤Ó¥¥¥K¥x¥~¥È¦
+¦¦?¦_¦—¦²¦Í¦î§§§u§­§±§²§î¨¨¨ ¨=¨­¨±¨²¨¾¨ô©©©©^©d©°©èª0ªmªsª¹ªÿ«F«y«´«µ«ş¬¬O¬–¬æ­­­?­@­­µ­»®
+®U®œ®æ®ó¯¯¯k¯‘¯—¯â°/°H°N°˜°±°·±±M±›±²±¸²²²²n²½³³³(³R³S³w³}³Ì´´*´0´´Ğ´öµ!µ"µjµpµÀ¶¶W¶°¶ß¶à··\··…·Ê·û¸?¸€¸Â¸È¹¹a¹ ¹¦¹Şº,ºrºxº½ºı»D»J»•»ã¼0¼`¼f¼›¼Ò½½½R½V½W½c½|½Î¾¾k¾±¿	¿
+¿%¿;¿¿»¿ß¿åÀ @+À @/À @0À @<À @YÀ @qÀ @ÀÀ @èÀ @ìÀ @íÀ @ùÀ A$À A{À AÍÀ AŞÀ AâÀ AãÀ BÀ B)À B*À BcÀ B}À B~À BÀÀ BÆÀ CÀ CbÀ CÀ CèÀ DÀ DÀ D0À D6À D…À DÒÀ EÀ EÀ E[À EÀ E”À E•À E¡À EçÀ EèÀ F"À FAÀ FGÀ FÀ F²À F¸À GÀ G;À GAÀ GÀ GÏÀ H2À H3À HqÀ HwÀ HÆÀ IÀ I8À I>À IŒÀ I—À IÀ IåÀ JÀ J	À JVÀ J¦À JİÀ JãÀ K1À KÀ KÂÀ KêÀ L#À L$À LkÀ LŠÀ LÀ LßÀ LóÀ M7À MhÀ M~À MØÀ NÀ NÀ NÀ NÀ N\À N{À N­À NŞÀ NôÀ OÀ O#À O'À O(À O4À O–À O®À OÔÀ PÀ PDÀ PhÀ P¾À PÄÀ PÈÀ PÉÀ QÀ QcÀ QœÀ QÍÀ QÑÀ QÒÀ QèÀ QéÀ R3À RbÀ RhÀ R›À R¡À RäÀ S0À SXÀ SfÀ S–À SÏÀ SÙÀ SßÀ T/À TzÀ TÂÀ TçÀ UCÀ UoÀ U À U¶À UØÀ UèÀ UğÀ VÀ V)À V1À V5À V6À VBÀ VjÀ V‹À V•À V¶À VÆÀ VêÀ VğÀ VôÀ VõÀ WÀ WÀ W'À WoÀ WÀ W¶À WóÀ XÀ XÀ YÀ Y(À YˆÀ Y¯À YµÀ YêÀ Z5À ZƒÀ Z£À ZÌÀ [À [?À [HÀ [NÀ [‡À [‹À [ŒÀ [¸À [¾À \À \]À \²À \¸À ]	À ]YÀ ]¡À ]¹À ]äÀ ^À ^4À ^RÀ ^\À ^{À ^ƒÀ ^‡À ^ˆÀ ^×À ^üÀ _À _SÀ _À _­À _³À `À `AÀ `BÀ `À `ºÀ `ÀÀ aÀ aYÀ a_À a­À aíÀ aîÀ bÀ b#À bfÀ bµÀ bÌÀ bÒÀ cÀ cEÀ cKÀ cšÀ cèÀ d4À d|À dÀ dÕÀ e#À e$À enÀ eÀ e£À eïÀ f@À fRÀ fXÀ f}À f°À f±À fıÀ g4À g:À gˆÀ gÕÀ gâÀ gèÀ h8À h…À hÕÀ i$À iXÀ i^À i¬À iõÀ j/À j5À j‚À j³À kÀ kQÀ knÀ k’À k¬À kïÀ köÀ l;À l?À l@À lÀ l¬À l¹À mÀ mRÀ mtÀ m~À mŒÀ mœÀ mÈÀ mÎÀ mÒÀ mÓÀ nÀ nJÀ nÀ n¤À n¥À nöÀ nüÀ oLÀ oŠÀ o§À o­À oøÀ pÀ pÀ pVÀ pyÀ p~À pÈÀ qÀ qDÀ qkÀ qÀ qÂÀ qâÀ rÀ rÀ rÀ rÀ r.À rKÀ rOÀ rPÀ r›À r¡À rîÀ s7À s_À seÀ s­À sşÀ tGÀ t‘À tİÀ tãÀ u2À uKÀ ugÀ u{À u»À uàÀ uóÀ u÷À uøÀ v)À v]À vÀ vÀ v¼À wÀ wÀ weÀ wµÀ wóÀ wùÀ xOÀ xqÀ x†À xÆÀ xÚÀ y,À yhÀ y‚À y†À y‡À yåÀ yæÀ zÀ zsÀ zxÀ zyÀ zªÀ {À {
+À {À {PÀ {eÀ {‰À {ŠÀ {ÑÀ {åÀ {ëÀ |)À |/À |uÀ |‡À |À |ÜÀ }À }$À }nÀ }»À }äÀ }üÀ ~"À ~FÀ ~cÀ ~iÀ ~jÀ ~¸À ~ÈÀ ~ÎÀ À ^À vÀ ¢À ¦À §À ¼À ½À €À €.À €À €³À €ŞÀ À !À ŒÀ ÕÀ şÀ ‚À ‚*À ‚HÀ ‚PÀ ‚WÀ ‚[À ‚\À ‚¬À ‚ÔÀ ‚ÚÀ ƒ*À ƒzÀ ƒ»À ƒÈÀ „À „(À „ˆÀ „ŒÀ „À „ÔÀ „ğÀ …
+À …SÀ …\À …vÀ …£À …ÉÀ †À †MÀ †XÀ †aÀ †gÀ †kÀ †lÀ †…À †«À †ÍÀ †åÀ †ëÀ †ÿÀ ‡ À ‡8À ‡›À ‡ÄÀ ‡ĞÀ ‡ÙÀ ˆÀ ˆZÀ ˆŒÀ ˆ¶À ˆØÀ ˆåÀ ˆëÀ ˆìÀ ‰À ‰\À ‰™À ‰ÔÀ ŠÀ ŠÀ ŠƒÀ Š¦À ŠÄÀ ‹À ‹.À ‹MÀ ‹WÀ ‹œÀ ‹ÔÀ ‹éÀ ŒwÀ Œ¤À Œ¯À Œ¾À ŒŞÀ ŒñÀ @À lÀ tÀ {À ¶À À SÀ  À ëÀ À 1À 9À aÀ ‰À ‘À ¥À ¬À éÀ 6À IÀ ^À eÀ ¨À ÏÀ øÀ ‘QÀ ‘°À ’À ’\À ’qÀ ’ÜÀ ’ùÀ “À “:À “TÀ “°À “ßÀ “ìÀ ”À ”À ”À ”&À ”qÀ ”»À •
+À •UÀ •£À •îÀ –9À –pÀ –yÀ –ÃÀ —À —\À —«À —÷À ˜BÀ ˜À ˜×À ™À ™À ™mÀ ™¶À šÀ š9À šBÀ šŒÀ šÚÀ ›%À ›EÀ ›eÀ ›qÀ ›ÎÀ œ3À œ•À œøÀ TÀ uÀ ‘À ½À À +À 6À >À …À ĞÀ ğÀ ŸÀ Ÿ-À ŸEÀ Ÿ|À Ÿ©À ŸÜÀ  /À  <À  gÀ  À  ³À  ÁÀ  èÀ ¡"À ¡sÀ ¡À ¡¯À ¡áÀ ¡òÀ ¢ À ¢*À ¢[À ¢‡À ¢¤À ¢ßÀ ¢ğÀ ¢şÀ £À £À £À £BÀ £PÀ £zÀ ¤qÀ ¤zÀ ¤¯À ¤µÀ ¤¶À ¥À ¥#À ¥6À ¥SÀ ¥fÀ ¥€À ¥šÀ ¥¤À ¥ÓÀ ¥ÜÀ ¥ãÀ ¦À ¦_À ¦lÀ ¦µÀ ¦ÍÀ ¦áÀ ¦üÀ §À §4À §UÀ §YÀ §ZÀ §¾À §ÒÀ ¨!À ¨`À ¨aÀ ¨ÆÀ ¨ØÀ ©)À ©DÀ ©_À ©`À ©²À ªÀ ªXÀ ªºÀ ª»À ªÏÀ ªåÀ «YÀ «ZÀ «†À «ÒÀ ¬"À ¬^À ¬lÀ ¬ªÀ ¬ÕÀ ¬éÀ ­À ­1À ­9À ­RÀ ­¢À ­èÀ ®,À ®À ®«À ®±À ®²À ®ÆÀ ¯)À ¯-À ¯.À ¯ZÀ ¯[À ¯xÀ ¯„À ¯«À ¯ıÀ °À °À °À °LÀ °”À °À °¤À ±À ±À ±;À ±ˆÀ ±¸À ±ÁÀ ±ÈÀ ±ÔÀ ±ûÀ ²FÀ ²OÀ ²VÀ ²bÀ ²‰À ²ÔÀ ³	À ³À ³À ³%À ³JÀ ³–À ³àÀ ³éÀ ³ğÀ ³üÀ ´!À ´jÀ ´sÀ ´zÀ ´†À ´®À ´úÀ µÀ µ
+À µÀ µ=À µˆÀ µ‘À µ˜À µœÀ µÀ µÚÀ µêÀ ¶ À ¶BÀ ¶aÀ ¶ÅÀ ¶ìÀ ·À ·(À ·3À ·;À ·NÀ ·XÀ ·\À ·]À ·­À ·½À ·ñÀ ¸=À ¸À ¸ÜÀ ¸óÀ ¹"À ¹DÀ ¹cÀ ¹ÅÀ ¹ìÀ ºÀ º(À º3À º;À ºNÀ ºXÀ º\À º]À º©À º¹À ºíÀ »À ».À »À »·À »æÀ »óÀ »şÀ ¼À ¼À ¼#À ¼'À ¼(À ¼vÀ ¼†À ¼ÉÀ ¼ëÀ ½
+À ½/À ½‰À ½˜À ½¿À ½îÀ ½ûÀ ¾À ¾À ¾!À ¾+À ¾/À ¾0À ¾uÀ ¾‰À ¾À ¾ÎÀ ¿À ¿2À ¿JÀ ¿rÀ ¿sÀ ¿ÖÀ ¿ÿÀ ÀÀ À$À ÀlÀ À¹À ÀÜÀ ÀâÀ ÁÀ ÁÀ ÁfÀ Á¯À Á°À ÂÀ ÂOÀ Â]À Â–À ÂÃÀ ÂüÀ Ã(À ÃaÀ ÃƒÀ Ã¼À ÃíÀ ÃîÀ Ä/À ÄhÀ Ä›À ÄŸÀ Ä¡À Ä¢À ÄíÀ Å3À Å7À Å„À Å‘À Å•À ÅÓÀ ÆÀ ÆÀ ÆjÀ Æ‚À Æ†À ÆÌÀ ÇÀ ÇÀ ÇeÀ ÇqÀ ÇŠÀ Ç¥À Ç»À ÇÜÀ ÇàÀ ÇáÀ È2À È8À ÈÀ ÈÆÀ É	À ÉGÀ É©À ÉáÀ ÉâÀ ÊÀ ÊbÀ Ê”À ÊšÀ ÊÕÀ ËÀ ËRÀ ËgÀ Ë©À ËéÀ ÌÀ ÌÀ ÌSÀ ÌWÀ ÌXÀ ÌŸÀ ÌÆÀ ÌÇÀ ÌÓÀ ÌçÀ ÌûÀ ÍÀ ÍÀ ÍÀ Í%À Í&À Í2À ÍzÀ Í{À Í‡À ÍªÀ Í«À ÍüÀ ÎEÀ ÎŒÀ Î˜À Î÷À ÎøÀ ÏÀ Ï4À Ï5À ÏAÀ Ï€À ÏÀ ÏÀ ÏñÀ ĞÀ Ğ2À ĞPÀ ĞnÀ Ğ›À Ğ£À Ğ¼À ĞÛÀ Ñ	À ÑaÀ ÑÀ ÑªÀ Ñ²À ÑŞÀ ÒÀ Ò	À ÒÀ ÒÀ ÒÀ ÒTÀ ÒdÀ ÒŒÀ Ò¡À Ò©À ÒµÀ ÒæÀ Ó-À ÓvÀ Ó®À Ó·À ÓÁÀ ÓÂÀ ÓôÀ ÔÀ ÔxÀ Ô¢À Ô­À ÔÄÀ ÔÙÀ ÔøÀ ÕÀ Õ*À ÕGÀ ÕSÀ ÕˆÀ Õ“À Õ²À ÕÇÀ ÕæÀ ÕûÀ ÖÀ Ö>À ÖJÀ Ö…À ÖÀ Ö™À Ö À Ö¡À ÖÏÀ ×À ×1À ×=À ×˜À ×¼À ×İÀ ØÀ ØÀ ØNÀ Ø˜À ØÁÀ Ù"À Ù3À ÙBÀ ÙOÀ ÙpÀ Ù|À ÙŸÀ ÙÁÀ ÙàÀ ÚÀ ÚÀ ÚKÀ Ú“À ÚºÀ ÛÀ Û'À Û4À Û?À Û^À ÛfÀ ÛŒÀ Û´À Û×À ÛáÀ ÛıÀ ÜÀ Ü	À Ü
+À ÜÀ Ü@À ÜsÀ Ü§À ÜÜÀ ÜàÀ ÜáÀ ÜíÀ İÀ İiÀ İµÀ İÉÀ İåÀ ŞÀ Ş&À ŞPÀ ŞTÀ ŞUÀ ŞaÀ Ş–À ŞñÀ ßCÀ ßWÀ ßyÀ ß£À ß§À ß¨À ß´À ßÌÀ ßàÀ àÀ à<À àOÀ àSÀ àTÀ àxÀ à˜À à™À à¥À àøÀ àùÀ áÀ á À áKÀ ánÀ árÀ ásÀ áÀ ášÀ áÄÀ áçÀ â5À âqÀ âuÀ âvÀ â‚À â¡À â¾À âÂÀ âÃÀ âûÀ âüÀ ãHÀ ãTÀ ãiÀ ã}À ã‡À ã°À ãÜÀ äÀ ä.À äZÀ äÀ äÅÀ äñÀ å6À å\À åÀ åìÀ åüÀ æ1À æŒÀ æ¤À ç	À çÀ ç,À ç:À çFÀ çPÀ çXÀ çzÀ çŠÀ ç´À çºÀ ç¾À ç¿À çËÀ ç÷À èÀ èGÀ èhÀ èlÀ èmÀ è¹À èĞÀ èûÀ é,À é0À é1À é=À éUÀ é{À éŸÀ é¼À éÃÀ éØÀ éÿÀ êÀ êÀ êIÀ êÀ ê¶À êÜÀ ëÀ ë9À ëdÀ ë­À ëÃÀ ëËÀ ëÌÀ ëùÀ ìAÀ ìÀ ìİÀ í,À í{À íŸÀ í À íèÀ íÿÀ î	À î
+À îNÀ îqÀ îœÀ îÆÀ îëÀ îóÀ ïÀ ïÀ ïÀ ïÀ ï'À ï?À ïfÀ ïÀ ïªÀ ï®À ï¯À ï»À ïØÀ ï÷À ïøÀ ğÀ ğÀ ğ-À ğcÀ ğœÀ ğÁÀ ñ	À ñÀ ñNÀ ñ„À ñÀ ñÎÀ ñæÀ ñîÀ ò
+À òÀ òqÀ ò¿À òÃÀ òÄÀ òĞÀ òäÀ òúÀ ó!À ó=À óPÀ ónÀ órÀ ótÀ óuÀ óÃÀ óÏÀ óÓÀ óıÀ ô7À ô;À ô‰À ôÕÀ ôıÀ õIÀ õ—À õäÀ ö'À öcÀ ö³À ö½À öÁÀ ÷À ÷QÀ ÷À ÷”À ÷ À ÷÷À ø+À ø{À øÀ ø‰À øœÀ øÌÀ ùÀ ùÀ ùWÀ ùÀ ùÀ ùÀ ùéÀ ú3À úFÀ úLÀ ú”À ú¸À ú¾À ûÀ ûQÀ ûaÀ ûbÀ û±À ûÊÀ ûĞÀ ü!À üVÀ ü\À üÀ üäÀ ı5À ıdÀ ıqÀ ırÀ ı À ı¦À ıöÀ şFÀ şÀ şßÀ ÿ.À ÿ4À ÿ„À ÿÑÀ À eÀ œÀ ¢À ğÀ2À‚ÀÓÀôÀÀÀNÀ[ÀaÀ®ÀëÀñÀ;À†ÀÓÀÀPÀVÀ¦ÀÙÀêÀìÀíÀ#À$ÀeÀ­ÀéÀíÀ4ÀwÀ¤À¨ÀèÀ6ÀƒÀĞÀıÀÀNÀÀïÀ	;À	ˆÀ	ÓÀ
+#À
+oÀ
+ˆÀ
+ŒÀ
+ÌÀÀOÀ\À`À¦ÀåÀòÀ:ÀFÀ_ÀzÀÀ‘ÀÏÀÓÀÔÀ À&ÀmÀ´À÷À5À’ÀÅÀÆÀÿÀAÀsÀyÀ´À÷À1ÀFÀƒÀ¾ÀåÀëÀÀ"À#À/ÀMÀeÀfÀrÀ–À—À£À¾ÀîÀ@ÀOÀSÀTÀ`À¬À­ÀÏÀïÀÀ;À^À_À›À¡ÀğÀ*ÀuÀÂÀÀ	ÀVÀ\À’ÀËÀÀ	ÀÀAÀlÀpÀqÀ}À–ÀãÀ*À8À>ÀYÀ]À^ÀjÀ‰ÀÖÀÀ+À1ÀRÀVÀWÀcÀŒÀ´ÀŞÀâÀãÀÀÀ(ÀZÀŠÀáÀçÀÀ)ÀxÀËÀÀÀ®ÀÚÀçÀÀÀ À!À-ÀHÀxÀÎÀÔÀÀ'À-ÀVÀsÀœÀ·ÀĞÀõÀ.ÀJÀiÀ½ÀçÀíÀñÀòÀÀ:ÀbÀyÀ“ÀøÀ *À MÀ SÀ WÀ XÀ oÀ ËÀ ÌÀ íÀ!À!&À!'À!iÀ!vÀ!–À!¯À!ÄÀ!ÒÀ!ØÀ"À"qÀ"¯À"ÅÀ"àÀ"äÀ"åÀ#?À#rÀ#sÀ#ÒÀ#õÀ#öÀ$6À$qÀ$¶À$÷À%À% À%lÀ%•À%½À%æÀ&À&;À&UÀ&gÀ&‘À&½À&×À'%À'UÀ'ŸÀ'ªÀ'çÀ(À(À()À(DÀ(LÀ(iÀ(³À(ÇÀ(õÀ)À)'À)eÀ)qÀ)yÀ)À)€À)ÅÀ)ÉÀ)ÊÀ*À*À*_À*¤À*ãÀ+À+À+`À+ŒÀ+À+ÙÀ+ßÀ,(À,qÀ,®À,´À,ÿÀ-KÀ-wÀ-ƒÀ-³À-ÕÀ-ıÀ.À.TÀ.“À.´À.ÇÀ.ÓÀ.İÀ.ûÀ/,À/yÀ/™À/ÇÀ/æÀ0À0!À0PÀ0sÀ0ÒÀ16À1SÀ1qÀ1€À1¯À1»À1ÅÀ1îÀ2À2JÀ2uÀ2†À2À2½À3À3YÀ3”À3ÔÀ4À4%À4_À4 À4­À4ÏÀ4úÀ52À5?À5IÀ5OÀ5SÀ5TÀ5`À5©À5ËÀ5óÀ6&À6PÀ6µÀ6çÀ7À7-À77À7fÀ7‹À7ÑÀ7ÛÀ7áÀ7åÀ7æÀ7òÀ8VÀ8À8£À8ÁÀ8äÀ95À9^À9À9•À9ÀÀ9ŞÀ9ûÀ:À:8À:DÀ:SÀ:sÀ:ŒÀ:”À:½À:áÀ:éÀ:íÀ:îÀ:úÀ;:À;JÀ;kÀ;€À;ˆÀ;”À;ÅÀ<À<UÀ<À<–À< À<¡À<ÀÀ<ÊÀ<éÀ=À=&À=CÀ=_À=wÀ=¤À=æÀ=ñÀ=úÀ>À>À>?À>EÀ>IÀ>JÀ>VÀ>nÀ>”À>¸À>ÕÀ>ÜÀ>ñÀ?À? À?]À?aÀ?bÀ?nÀ?­À?âÀ@À@eÀ@¨À@¸ÀAÀAiÀAÃÀBÀBÀB7ÀB;ÀB<ÀBHÀB\ÀBrÀBÀB³ÀBÈÀBÌÀBÍÀBÙÀC!ÀCVÀC‰ÀC¶ÀCïÀDÀDÀDÀDMÀD°ÀD´ÀDµÀDÁÀDùÀEIÀEšÀE¿ÀFÀFTÀF‘ÀF¼ÀFÔÀG$ÀGmÀGÌÀGĞÀGÑÀGİÀHÀHeÀH¶ÀHÛÀI&ÀIgÀI¤ÀIûÀJIÀJ‘ÀJ•ÀJ—ÀJ˜ÀJèÀJıÀKÀKQÀK{ÀKÀKÑÀLÀLBÀL}ÀL¿ÀLÅÀMÀMFÀMLÀM€ÀMÀMÂÀNÀN@ÀNDÀN§ÀNùÀNıÀNşÀODÀOJÀOpÀOvÀOÆÀPÀPQÀPÀPÃÀPæÀQÀQ3ÀQdÀQœÀQíÀR2ÀR\ÀR]ÀRiÀRŠÀR‹ÀR—ÀRÂÀRÃÀRÏÀRûÀRüÀSUÀS¡ÀSêÀT5ÀTaÀTÀT±ÀTèÀTûÀUÀU#ÀUsÀUŸÀUÚÀUîÀUûÀV%ÀV9ÀVvÀV|ÀV¨ÀVÛÀWÀW/ÀW6ÀWIÀWMÀWNÀWlÀWmÀWyÀW§ÀW¨ÀW´ÀWôÀX+ÀXsÀXÀÀXÓÀXÙÀYÀYDÀY~ÀY‚ÀYƒÀYŸÀY ÀY¬ÀYæÀYçÀYóÀZ#ÀZ%ÀZ&ÀZZÀZ}ÀZ~ÀZŠÀZ¬ÀZ­ÀZ¹ÀZèÀZéÀZÿÀ[À[À[!À["À[AÀ[wÀ[ËÀ[ÜÀ[ñÀ\À\À\nÀ\p   €ˆ/// @docImport 'dart:io';
+///
+/// @docImport 'controller.dart';
+/// @docImport 'test_pointer.dart';
+/// @docImport 'widget_tester.dart';8   Mba f   ‰   ¶   à   ‚   ‚1   ‚Z   ‚‚   ‚©  ‚Î‚×‚Ùƒƒ
+ ƒƒFƒEƒRƒ^ƒ`   ƒ“ƒâƒá ƒê   „   „   „4   „V   „v   „£   „Ê   „é     ‘’ƒƒ“b“bÉ/// Accessibility announcement data passed to [SemanticsService.announce] captured in a test.
+///
+/// This class is intended to be used by the testing API to store the announcements
+/// in a structured form so that tests can verify announcement details. The fields
+/// of this class correspond to parameters of the [SemanticsService.announce] method.
+///
+/// See also:
+///
+///  * [WidgetTester.takeAnnouncements], which is the test API that uses this class. “ˆ`““¯“°“±“° “²“¸“·  “À“Æ“Å  “Ô“Ú“Ù   “ìP”5”59/// The accessibility message announced by the framework. ”A_”“”“;/// The direction in which the text of the [message] flows. ”¥m••I/// Determines the assertiveness level of the accessibility announcement.    •rÀ ¯.›õ›õ†s/// Base class for bindings used by widgets library tests.
+///
+/// The [ensureInitialized] method creates (if necessary) and returns an
+/// instance of the appropriate subclass. (If one is already created, it returns
+/// that one, even if it's not the one that it would normally create. This
+/// allows tests to force the use of [LiveTestWidgetsFlutterBinding] even in a
+/// normal unit test environment, e.g. to test that binding.)
+///
+/// When using these bindings, certain features are disabled. For
+/// example, [timeDilation] is reset to 1.0 on initialization.
+///
+/// In non-browser tests, the binding overrides `HttpClient` creation with a
+/// fake client that always returns a status code of 400. This is to prevent
+/// tests from making network calls, which could introduce flakiness. A test
+/// that actually needs to make a network call should provide its own
+/// `HttpClient` to the code making the call, so that it can appropriately mock
+/// or fake responses.
+///
+/// ### Coordinate spaces
+///
+/// [TestWidgetsFlutterBinding] might be run on devices of different screen
+/// sizes, while the testing widget is still told the same size to ensure
+/// consistent results. Consequently, code that deals with positions (such as
+/// pointer events or painting) must distinguish between two coordinate spaces:
+///
+///  * The _local coordinate space_ is the one used by the testing widget
+///    (typically an 800 by 600 window, but can be altered by [setSurfaceSize]).
+///  * The _global coordinate space_ is the one used by the device.
+///
+/// Positions can be transformed between coordinate spaces with [localToGlobal]
+/// and [globalToLocal]. 	ÑÏ Ïè €½/// Constructor for [TestWidgetsFlutterBinding].
+///
+/// This constructor overrides the [debugPrint] global hook to point to
+/// [debugPrintOverride], which can be overridden by subclasses. 
+ñL/1CDŞ…£î£îƒê/// Deprecated. Will be removed in a future version of Flutter.
+///
+/// This property has been deprecated to prepare for Flutter's upcoming
+/// support for multiple views and multiple windows.
+///
+/// This represents a combination of a [TestPlatformDispatcher] and a singular
+/// [TestFlutterView]. Platform-specific test values can be set through
+/// [WidgetTester.platformDispatcher] instead. When testing individual widgets
+/// or applications using [WidgetTester.pumpWidget], view-specific test values
+/// can be set through [WidgetTester.view]. If multiple views are defined, the
+/// appropriate view can be found using [WidgetTester.viewOf] if a sub-view
+/// is needed.
+///
+/// See also:
+///
+/// * [WidgetTester.platformDispatcher] for changing platform-specific values
+///   for testing.
+/// * [WidgetTester.view] and [WidgetTester.viewOf] for changing view-specific
+///   values for testing.
+/// * [BindingBase.window] for guidance dealing with this property outside of
+///   a testing context.	¢ó¢ô¢ş£È££M£‘£Ì£Í£ù;¤"¤" £ù£ú¤Õ+¤í¤í  ¶²+¶Ô¶Ô  À QÔÀ QÚÀ QÚ  À V÷!À VüÀ Vü À WÀ d×JÀ dîÀ dî À eÀ eÀ eÀ e&ˆÀ f„À f„H/// Whether pointer events from [TestBindingEventSource.device] will be
+/// propagated to the framework, or dropped.
+///
+/// Setting this can be useful to interact with the app in some other way
+/// besides through the [WidgetController], such as with `adb shell input tap`
+/// on Android.
+///
+/// See also [pointerEventSource].À f©À n!À n”À n”  À qF#À qYÀ qY  À uú-À vÀ v  À v+0À vDÀ vD  À v_-À vtÀ vt  À v‘)À v¦À v¦  À v¾^À væÀ væ À wÀ wÀ v÷À wÀ vøÀ y‰ZÀ y À y  À y°À y¹À yâÀ y¿À yºÀ yÁÀ yÆÀ yÑÀ yÇÀ yÜÀ yÔÀ yŞÀ yè€À yüÀ yü À zÀ zÀ zuÀ zÀ zÀ z!À z%À zpÀ z&À z?À z:À zAÀ z]À zPÀ z_À zlÀ zmÀ z{€À zÀ z À z¢À z¨À {À z³À z®À zµÀ z¹À {À zºÀ zÑÀ zÌÀ zÓÀ zïÀ zâÀ zñÀ zşÀ zÿÀ {zÀ {lÀ {lU/// Whether to include the output of debugDumpApp() when reporting
+/// test failures.À {‚À ©À ¯À ¯  À ¯0(À ¯:À ¯:  ¤9€˜¤`¤`   ¤9¤:© ‚“«’«’‚D/// The value to set [debugPrint] to while tests are running.
+///
+/// This can be used to redirect console output from the framework, or to
+/// change the behavior of [debugPrint]. For example,
+/// [AutomatedTestWidgetsFlutterBinding] uses it to make [debugPrint]
+/// synchronous, disabling its normal throttling behavior.
+///
+/// It is also used by some other parts of the test framework (e.g.
+/// [WidgetTester.printToConsole]) to ensure that messages from the
+/// test framework are displayed to the developer rather than logged
+/// by whatever code is overriding [debugPrint].   «·‡­&­&L/// The value to set [debugDisableShadows] to while tests are running.
+///
+/// This can be used to reduce the likelihood of golden file tests being
+/// flaky, because shadow rendering is not always deterministic. The
+/// [AutomatedTestWidgetsFlutterBinding] sets this to true, so that all tests
+/// always run with shadows disabled.  ­­­B×®ş®ş—/// Determines whether the Dart [HttpClient] class should be overridden to
+/// always return a failure response.
+///
+/// By default, this value is true, so that unit tests will not become flaky
+/// due to intermittent network errors. The value may be overridden by a
+/// binding intended for use in integration tests that do end to end
+/// application testing, including working with real network responses.  ®è®é¯„4³3³3ƒÓ/// Determines whether the binding automatically registers [testTextInput] as
+/// a fake keyboard implementation.
+///
+/// Unit tests make use of this to mock out text input communication for
+/// widgets. An integration test would set this to false, to test real IME
+/// or keyboard input.
+///
+/// [TestTextInput.isRegistered] reports whether the text input mock is
+/// registered or not.
+///
+/// Some of the properties and methods on [testTextInput] are only valid if
+/// [registerTestTextInput] returns true when a test starts. If those
+/// members are accessed when using a binding that sets this flag to false,
+/// they will throw.
+///
+/// If this property returns true when a test ends, the [testTextInput] is
+/// unregistered.
+///
+/// This property should not change the value it returns during the lifetime
+/// of the binding. Changing the value of this property risks very confusing
+/// behavior as the [TestTextInput] may be inconsistently registered or
+/// unregistered.  ³³µ$‹¶~¶~*/// The current [TestWidgetsFlutterBinding], if one has been created.
+///
+/// Provides access to the features exposed by this binding. The binding must
+/// be initialized before using this getter; this is typically done by calling
+/// [testWidgets] or [TestWidgetsFlutterBinding.ensureInitialized].   À AåCÀ B!À B!0/// Whether there is currently a test executing.   À B,PÀ BmÀ Bm6/// The number of outstanding microtasks in the queue.   À B€–À DÀ D]/// The default test timeout for tests when using this binding.
+///
+/// This controls the default for the `timeout` argument on [testWidgets]. It
+/// is 10 minutes for [AutomatedTestWidgetsFlutterBinding] (tests running
+/// using `flutter test`), and unlimited for tests using
+/// [LiveTestWidgetsFlutterBinding] (tests running using `flutter run`).   À DyÀ EÀ EX/// The current time.
+///
+/// In the automated test environment (`flutter test`), this is a fake clock
+/// that begins in January 2015 at the start of the test and advances each
+/// time [pump] is called with a non-zero duration.
+///
+/// In the live testing environment (`flutter run`), this object shows the
+/// actual current wall-clock time.   À E—OÀ E¶À E¶   À E—À E˜À ağ‚äÀ dªÀ dª‚‚/// The source of the current pointer event.
+///
+/// The [pointerEventSource] is set as the `source` parameter of
+/// [handlePointerEventForSource] and can be used in the immediate enclosing
+/// [dispatchEvent].
+///
+/// When [handlePointerEvent] is called directly, [pointerEventSource]
+/// is [TestBindingEventSource.device].
+///
+/// This means that pointer events triggered by the [WidgetController] (e.g.
+/// via [WidgetController.tap]) will result in actual interactions with the
+/// UI, but other pointer events such as those from physical taps will be
+/// dropped. See also [shouldPropagateDevicePointerEvents] if this is
+/// undesired.   À mÕ€©À n^À n^r/// A stub for the system's onscreen keyboard. Callers must set the
+/// [focusedEditable] before using this value.   À n§‚œÀ qÀ q½/// The [State] of the current [EditableText] client of the onscreen keyboard.
+///
+/// Setting this property to a new value causes the given [EditableTextState]
+/// to focus itself and request the keyboard to establish a
+/// [TextInputConnection].
+///
+/// Callers must pump an additional frame after setting this property to
+/// complete the focus change.
+///
+/// Instead of setting this directly, consider using
+/// [WidgetTester.showKeyboard].   À qm€À qqÀ qq  À qÀ q•À q”   &¥‚«¦¦€ü/// Called by the test framework at the beginning of a widget test to
+/// prepare the binding for the next test.
+///
+/// If [registerTestTextInput] returns true when this method is called,
+/// the [testTextInput] is configured to simulate the keyboard.   §´€ü§¹§¹    ¨´h¨×¨×   ¨´¨µ³UËµµ/// Delay for `duration` of time.
+///
+/// In the automated test environment ([AutomatedTestWidgetsFlutterBinding],
+/// typically used in `flutter test`), this advances the fake [clock] for the
+/// period.
+///
+/// In the live test environment ([LiveTestWidgetsFlutterBinding], typically
+/// used for `flutter run` and for [e2e](https://pub.dev/packages/e2e)), it is
+/// equivalent to [Future.delayed]. µµµ   ¶â†s¼¾¼¾…‚/// Creates and initializes the binding. This function is
+/// idempotent; calling it a second time will just return the
+/// previously-created instance.
+///
+/// This function will use [AutomatedTestWidgetsFlutterBinding] if
+/// the test was run using `flutter test`, and
+/// [LiveTestWidgetsFlutterBinding] otherwise (e.g. if it was run
+/// using `flutter run`). This is determined by looking at the
+/// environment variables for a variable called `FLUTTER_TEST`.
+///
+/// If `FLUTTER_TEST` is set with a value of 'true', then this test was
+/// invoked by `flutter test`. If `FLUTTER_TEST` is not set, or if it is set
+/// to 'false', then this test was invoked by `flutter run`.
+///
+/// Browser environments do not currently support the
+/// [LiveTestWidgetsFlutterBinding], so this function will always set up an
+/// [AutomatedTestWidgetsFlutterBinding] when run in a web browser.
+///
+/// The parameter `environment` is used to test the test framework
+/// itself by checking how it reacts to different environment
+/// variable values, and should not be used outside of this context.
+///
+/// If a [TestWidgetsFlutterBinding] subclass was explicitly initialized
+/// before calling [ensureInitialized], then that version of the binding is
+/// returned regardless of the logic described above. This allows tests to
+/// force a specific test binding to be used.
+///
+/// This is called automatically by [testWidgets]. ¼Ö3¼ÿ¼ş  ¼Ö¼×½Y‚Õ½j½j   ½Y½ZÀ @2€¹À @`À @`   À @2À @3À @ï€òÀ A À A   À AÀ AÀ A  À @ïÀ @ğÀ Eê‚GÀ GŞÀ GŞĞ/// Triggers a frame sequence (build/layout/paint/etc),
+/// then flushes microtasks.
+///
+/// If duration is set, then advances the clock by that much first.
+/// Doing this flushes microtasks.
+///
+/// The supplied EnginePhase is the final phase reached during the pump pass;
+/// if not supplied, the whole pass is executed.
+///
+/// See also [LiveTestWidgetsFlutterBindingFramePolicy], which affects how
+/// this method works when the test is run with `flutter run`. À GäÀ GïÀ Gî  À Gø6À HÀ H  À HÀ HÀ HÀ H5ƒíÀ K÷À K÷ƒ/// Runs a `callback` that performs real asynchronous work.
+///
+/// This is intended for callers who need to call asynchronous methods where
+/// the methods spawn isolates or OS threads and thus cannot be executed
+/// synchronously by calling [pump].
+///
+/// The `callback` must return a [Future] that completes to a value of type
+/// `T`.
+///
+/// If `callback` completes successfully, this will return the future
+/// returned by `callback`.
+///
+/// If `callback` completes with an error, the error will be caught by the
+/// Flutter framework and made available via [takeException], and this method
+/// will return a future that completes with `null`.
+///
+/// Re-entrant calls to this method are not allowed; callers of this method
+/// are required to wait for the returned future to complete before calling
+/// this method again. Attempts to do otherwise will result in a
+/// [TestFailure] error being thrown.À L À L À L À LÀ LÀ L   À L&íÀ MÀ M€Ä/// Artificially calls dispatchLocalesChanged on the Widget binding,
+/// then flushes microtasks.
+///
+/// Passes only one single Locale. Use [setLocales] to pass a full preferred
+/// locales list. À MÀ MÀ M  À M!À M)À M(   À NÀ NŠÀ NŠa/// Artificially calls dispatchLocalesChanged on the Widget binding,
+/// then flushes microtasks. À N•À N£À N¢   À O*À OQÀ OQ  À OaÀ OqÀ Op  À O{À O€À O  À O*À O+À OŠÀ PËÀ QjÀ Qj€•/// Re-attempts the initialization of the lifecycle state after providing
+/// test values in [TestPlatformDispatcher.initialLifecycleStateTestValue].   À Që„IÀ URÀ UR‚Û/// Artificially changes the logical size of [WidgetTester.view] to the
+/// specified size, then flushes microtasks.
+///
+/// Set to null to use the default surface size.
+///
+/// To avoid affecting other tests by leaking state, a test that
+/// uses this method should always reset the surface size to the default.
+/// For example, using `addTearDown`:
+/// ```dart
+///   await binding.setSurfaceSize(someSize);
+///   addTearDown(() => binding.setSurfaceSize(null));
+/// ```
+///
+/// This method only affects the size of the [WidgetTester.view]. It does not
+/// affect the size of any other views. Instead of this method, consider
+/// setting [TestFlutterView.physicalSize], which works for any view,
+/// including [WidgetTester.view]. À Ua
+À UhÀ Ug   À V8€»À VIÀ VI  À VWÀ VcÀ Vb  À V8À V9À W„mÀ W;À W;  À WVÀ WbÀ Wa  À WÀ WÀ [‚øÀ ]°À ]°‚/// Acts as if the application went idle.
+///
+/// Runs all remaining microtasks, including those scheduled as a result of
+/// running them, until there are no more microtasks scheduled. Then, runs any
+/// previously scheduled timers with zero time, and completes the returned future.
+///
+/// May result in an infinite loop or run out of memory if microtasks continue
+/// to recursively schedule new microtasks. Will not run any timers scheduled
+/// after this method was invoked, even if they are zero-time timers.   À ^Š¶À `
+À `
+h/// Convert the given point from the global coordinate space of the provided
+/// [RenderView] to its local one.
+///
+/// This method operates in logical pixels for both coordinate spaces. It does
+/// not apply the device pixel ratio (used to translate to/from physical
+/// pixels).
+///
+/// For definitions for coordinate spaces, see [TestWidgetsFlutterBinding]. À `À ` À `  À `&À `2À `1   À `D¨À a¶À a¶\/// Convert the given point from the local coordinate space to the global
+/// coordinate space of the [RenderView].
+///
+/// This method operates in logical pixels for both coordinate spaces. It does
+/// not apply the device pixel ratio to translate to physical pixels.
+///
+/// For definitions for coordinate spaces, see [TestWidgetsFlutterBinding]. À aÄÀ aÌÀ aË  À aÒÀ aŞÀ aİ   À f³…‹À kuÀ ku„/// Dispatch an event to the targets found by a hit test on its position,
+/// and remember its source as [pointerEventSource].
+///
+/// This method sets [pointerEventSource] to `source`, forwards the call to
+/// [handlePointerEvent], then resets [pointerEventSource] to the previous
+/// value.
+///
+/// If `source` is [TestBindingEventSource.device], then the `event` is based
+/// in the global coordinate space (for definitions for coordinate spaces,
+/// see [TestWidgetsFlutterBinding]) and the event is likely triggered by the
+/// user physically interacting with the screen during a live test on a real
+/// device (see [LiveTestWidgetsFlutterBinding]).
+///
+/// If `source` is [TestBindingEventSource.test], then the `event` is based
+/// in the local coordinate space and the event is likely triggered by
+/// programmatically simulated pointer events, such as:
+///
+///  * [WidgetController.tap] and alike methods, as well as directly using
+///    [TestGesture]. They are usually used in
+///    [AutomatedTestWidgetsFlutterBinding] but sometimes in live tests too.
+///  * [WidgetController.timedDrag] and alike methods. They are usually used
+///    in macrobenchmarks. À k–À k¤À k£  À k°=À kÈÀ kÇ  À kĞÀ kæÀ kçÀ lBÀ lÀÀ lÀg/// Sets [pointerEventSource] to `source`, runs `task`, then resets `source`
+/// to the previous value. À l×À lïÀ lî  À löÀ mÀ m  À l®À l¯À r?À rÀ r    À rRƒ¤À uUÀ uU‚Ş/// Returns the exception most recently caught by the Flutter framework.
+///
+/// Call this if you expect an exception during a test. If an exception is
+/// thrown and this is not called, then the exception is rethrown when
+/// the [testWidgets] call completes.
+///
+/// If two exceptions are thrown in a row without the first one being
+/// acknowledged with a call to this method, then when the second exception is
+/// thrown, they are both dumped to the console and then the second is
+/// rethrown from the exception handler. This will likely result in the
+/// framework entering a highly unstable state and everything collapsing.
+///
+/// It's safe to call this when there's no pending exception; it will return
+/// null in that case.   À w!‚dÀ x°À x°X/// {@template flutter.flutter_test.TakeAccessibilityAnnouncements}
+/// Returns a list of all the accessibility announcements made by the Flutter
+/// framework since the last time this function was called.
+///
+/// It's safe to call this when there hasn't been any announcements; it will return
+/// an empty list in that case.
+/// {@endtemplate}   À {Œ‚ÜÀ }óÀ }ó‚=/// Call the testBody inside a [FakeAsync] scope on which [pump] can
+/// advance time.
+///
+/// Returns a future which completes when the test has run.
+///
+/// Called by the [testWidgets] and [benchmarkWidgets] functions to
+/// run a test.
+///
+/// The `invariantTester` argument is called after the `testBody`'s [Future]
+/// completes. If it throws, then the test is marked as failed.
+///
+/// The `description` is used by the [LiveTestWidgetsFlutterBinding] to
+/// show a label on the screen during the test. The description comes from
+/// the value passed to [testWidgets]. À ~  À ~À ~  À ~&À ~4À ~3  À ~JÀ ~RÀ ~Q  À ~_À ~l9À eÀ e€é/// This is called during test execution before and after the body has been
+/// executed.
+///
+/// It's used by [AutomatedTestWidgetsFlutterBinding] to drain the microtasks
+/// before the final [pump] that happens during test cleanup.   À ¿‚›À ÌÀ Ì  À éÀ ñÀ ğ  À €À €À €   À ‚^‚-À ƒÏÀ ƒÏR/// Called when the framework catches an exception, even if that exception is
+/// being handled by [takeException].
+///
+/// This is called when there is no pending exception; if multiple exceptions
+/// are thrown and [takeException] isn't used, then subsequent exceptions are
+/// logged to the console regardless (and the test will fail). À ƒæÀ ƒûÀ ƒú  À ƒ½À ƒ¾À „ÛÀ „œÀ „œ  À „·À „ÀÀ „¿   À †n êÀ †{À †{  À †‰ À †¢À †¡  À †¯À †½À †¼  À †ÑÀ †ÙÀ †Ø   À §\‡ĞÀ §iÀ §i  À §v À §À §  À §˜À §¦À §¥   À ¯]†>À ¯bÀ ¯b    À µŸ¼À µ¤À µ¤  À µÂÀ µÈÀ µÇ   À ·_‚üÀ ·dÀ ·d  À ·„%À ·›À ·š   À º_ÇÀ ºdÀ ºd  À ºƒ"À º—À º–   À ¼*‚À ¼/À ¼/  À ¼^À ¼dÀ ¼c   À ¾2†lÀ ¾|À ¾|B/// Called by the [testWidgets] function after a test is executed.    À Ä¢®ÑÀ ÇÀ Ç‚u/// A variant of [TestWidgetsFlutterBinding] for executing tests typically
+/// the `flutter test` environment, unless it is an integration test.
+///
+/// When doing integration test, [LiveTestWidgetsFlutterBinding] is utilized
+/// instead.
+///
+/// This binding controls time, allowing tests to verify long
+/// animation sequences without having to execute them in real time.
+///
+/// This class assumes it is always run in debug mode (since tests are always
+/// run in debug mode).
+///
+/// See [TestWidgetsFlutterBinding] for a list of mixins that must be
+/// provided by the binding active while the test framework is
+/// running.  À É«4À ÉÖÀ ÉÖ  À ÌZÀ ÌeÀ Ìe  À Ì¡#À Ì²À Ì²  À ÍÀ ÍÀ Í  À Í­HÀ Î¯À Î¯€Ú/// The value of [defaultTestTimeout] can be set to `None` to enable debugging
+/// flutter tests where we would not want to timeout the test. This is
+/// expected to be used by test tooling which can detect debug mode.À ÎÀ ÎÀ ÎÄÀ ÎÊÀ ÎÖÀ Î×À ÎŞÀ ÎôÀ ÎßÀ ÎçÀ ÎóÀ ÎïÀ ÎèÀ ÎñÀ àV À àZÀ àZ À àuÀ àzÀ àÀ à À à‘À âÅ4À âÑÀ âÑ À âÚÀ âåÀ âæÀ ÇãÅÀ ÉwÀ ÉwY/// The current [AutomatedTestWidgetsFlutterBinding], if one has been created.
+///
+/// The binding must be initialized before using this getter. If you
+/// need the binding to be constructed before calling [testWidgets],
+/// you can ensure a binding has been constructed by calling the
+/// [TestWidgetsFlutterBinding.ensureInitialized] function.   À ÌÉIÀ ÌßÀ Ìß   À ÌÉÀ ÌÊÀ Í(QÀ ÍKÀ ÍK   À Í(À Í)À Í},À Í’À Í’   À Í}À Í~À Îú9À ÏÀ Ï   À ÎúÀ ÎûÀ Ï7HÀ ÏKÀ ÏK   À Ï7À Ï8À à›\À à°À à°   À à›À àœÀ ÇgxÀ ÇxÀ Çx   À ÇgÀ ÇhÀ Éä‚rÀ Ë“À Ë“t/// Returns an instance of the binding that implements
+/// [AutomatedTestWidgetsFlutterBinding]. If no binding has yet been
+/// initialized, the a new instance is created.
+///
+/// Generally, there is no need to call this method. Use
+/// [TestWidgetsFlutterBinding.ensureInitialized] instead, as it
+/// will select the correct test binding implementation
+/// automatically.   À Ïƒ‚‰À ÏœÀ Ïœ  À Ï¢À Ï­À Ï¬  À Ï¶6À ÏÃÀ ÏÂ  À ÏƒÀ Ï„À ÏÍÀ ÏØÀ ÏÙÀ Ò‰øÀ Ò'À Ò' À Ò0À Ò0À Ò0À Ò3À ÒIÀ ÒH  À ÒÀ ÒÀ Ü€ÓÀ ÜÀ Ü   À ÜÀ ÜÀ ÜãpÀ ÜôÀ Üô   À ÜãÀ ÜäÀ ŞWOÀ ŞhÀ Şh  À ŞÀ Ş‰À Şˆ  À ŞWÀ ŞXÀ ßª€¨À ßÃÀ ßÃ   À ßªÀ ß«À àûvÀ áÀ á   À àûÀ àüÀ áu€ÿÀ á†À á†   À áuÀ ávÀ âxIÀ â‰À â‰   À âxÀ âyÀ ãJ„sÀ ã[À ã[   À ãJÀ ãKÀ çÁ€ªÀ çÚÀ çÚ  À çâÀ çìÀ çë  À çÁÀ çÂÀ èo€ÀÀ è×À è×^/// Simulates the synchronous passage of time, resulting from blocking or
+/// expensive calls. À èæÀ èğÀ èï   À é3…æÀ éLÀ éL  À éY À érÀ éq  À éÀ éÀ éŒ  À é£À é«À éª  À é3À é4À é¸À ï€À ï.À ï.   À ïÀ ïÀ ï±ƒÀ ïÂÀ ïÂ   À ï±À ï²À òÆ€«À ò×À ò×   À òÆÀ òÇ À$À ErÀøÀø†Í/// A variant of [TestWidgetsFlutterBinding] for executing tests
+/// on a device, typically via `flutter run`, or via integration tests.
+/// This is intended to allow interactive test development.
+///
+/// This is not the way to run a remote-control test. To run a test on
+/// a device from a development computer, see the [flutter_driver]
+/// package and the `flutter drive` command.
+///
+/// When running tests using `flutter run`, consider adding the
+/// `--use-test-fonts` argument so that the fonts used match those used under
+/// `flutter test`. (This forces all text to use the "Ahem" font, which is a
+/// font that covers ASCII characters and gives them all the appearance of a
+/// square whose size equals the font size.)
+///
+/// This binding overrides the default [SchedulerBinding] behavior to ensure
+/// that tests work in the same way in this environment as they would under the
+/// [AutomatedTestWidgetsFlutterBinding]. To override this (and see intermediate
+/// frames that the test does not explicitly trigger), set [framePolicy] to
+/// [LiveTestWidgetsFlutterBindingFramePolicy.fullyLive]. (This is likely to
+/// make tests fail, though, especially if e.g. they test how many times a
+/// particular widget was built.) The default behavior is to show pumped frames
+/// and a few additional frames when pointers are triggered (to animate the
+/// pointer crosshairs).
+///
+/// This binding does not support the [EnginePhase] argument to
+/// [pump]. (There would be no point setting it to a value that
+/// doesn't trigger a paint, since then you could not see anything
+/// anyway.)
+///
+/// See [TestWidgetsFlutterBinding] for a list of mixins that must be
+/// provided by the binding active while the test framework is
+/// running.  À”/ÀºÀº  ÀOÀTÀT À^À¯ÀÀÀÀ  ÀÑÀÖÀÖ ÀèÀñ(ÀöÀö ÀÀÀ"À" À4À=ÀBÀB ÀWÀa‚¥À½À½‚/// The strategy for [pump]ing and requesting new frames.
+///
+/// The policy decides whether [pump] (with a duration) pumps a single frame
+/// (as would happen in a normal test environment using
+/// [AutomatedTestWidgetsFlutterBinding]), or pumps every frame that the
+/// system requests during an asynchronous pause (as would normally happen
+/// when running an application with [WidgetsFlutterBinding]).
+///
+/// {@macro flutter.flutter_test.LiveTestWidgetsFlutterBindingFramePolicy}
+///
+/// See [LiveTestWidgetsFlutterBindingFramePolicy].ÀÑÀùÀúÀå4ÀöÀö ÀÀÀÀ ZÀ gÀ g  À qXÀ ˆÀ ˆ 	À –À ŸÀ ÈÀ ªÀ  À ¬À ÂÀ ºÀ ÄÀ"ç€‰À#À# 
+À#EÀ#LÀ#mÀ#MÀ#PÀ#lÀ#QÀ#VÀ#nÀ#oÀ)Ì¾À+uÀ+u…/// An object to which real device events should be routed.
+///
+/// Normally, device events are silently dropped. However, if this property is
+/// set to a non-null value, then the events will be routed to its
+/// [HitTestDispatcher.dispatchEvent] method instead, unless
+/// [shouldPropagateDevicePointerEvents] is true.
+///
+/// Events dispatched by [TestGesture] are not affected by this. ÀÖ»À`À`T/// The current [LiveTestWidgetsFlutterBinding], if one has been created.
+///
+/// The binding must be initialized before using this getter. If you
+/// need the binding to be constructed before calling [testWidgets],
+/// you can ensure a binding has been constructed by calling the
+/// [TestWidgetsFlutterBinding.ensureInitialized] function.   À%'À:À:   À%À&Àh-À~À~   ÀhÀiÀ™€¹À­À­   À™ÀšÀVUÀ{À{   ÀVÀWÀ ÎWÀ!À!/// Label describing the test.  À ïÀ ğÀ<€–ÀMÀM   À<À=ÀÈ‚YÀmÀmo/// Returns an instance of the binding that implements
+/// [LiveTestWidgetsFlutterBinding]. If no binding has yet been
+/// initialized, the a new instance is created.
+///
+/// Generally, there is no need to call this method. Use
+/// [TestWidgetsFlutterBinding.ensureInitialized] instead, as it
+/// will select the correct test binding implementation
+/// automatically.   ÀdÀ$À$  À,À6À5  ÀÀÀs€éÀ„À„   ÀsÀtÀ`€õÀqÀq   À`ÀaÀY€ˆÀrÀr   ÀYÀZÀƒÀ/À/  À@ÀKÀJ  ÀÀÀ#‚ÍÀ4À4   À#À$ÀôbÀùÀù  ÀÀÀ   À!)ºÀ!}À!}?/// Set a description label that is drawn into the test output. À!†À!À!  À!kÀ!lÀ#u†SÀ#zÀ#z  À#‘À#¢À#¡  À#ªÀ#²À#±  À#¹À#ÅÀ#Ä   À+‰ÃÀ-ŠÀ-Š×/// Dispatch an event to the targets found by a hit test on its position.
+///
+/// If the [pointerEventSource] is [TestBindingEventSource.test], then
+/// the event is forwarded to [GestureBinding.dispatchEvent] as usual;
+/// additionally, down pointers are painted on the screen.
+///
+/// If the [pointerEventSource] is [TestBindingEventSource.device], then
+/// the event, after being transformed to the local coordinate system, is
+/// forwarded to [deviceEventDispatcher]. À-À-«À-ª  À-yÀ-zÀ5V‚À5gÀ5g  À5uÀ5ƒÀ5‚  À5‰À5™À5˜  À5VÀ5WÀ7èƒÀ8À8  À8À8À8  À86À8(À8'  À7èÀ7éÀ82À8=À8>À:ğƒXÀ;À; À;À;À;À;À;)À;(  À:ğÀ:ñÀ>LÀ>eÀ>e  À>r À>‹À>Š  À>˜À>¦À>¥  À>¼À>ÄÀ>Ã  À>LÀ>MÀ>ÑÀ?d‚ÖÀ?uÀ?u  À?ŒÀ?¡À?   À?dÀ?eÀB>€ÀBOÀBO   ÀB>ÀB?ÀBÏäÀBíÀBí  ÀCÀCÀC  ÀBÏÀBĞÀD·ƒÀDÊÀDÊ  ÀDØÀDàÀDß  ÀDæÀDòÀDñ  ÀD·ÀD¸ÀGÓ‚ÁÀGæÀGæ  ÀGôÀGüÀGû  ÀHÀHÀH  ÀGÓÀGÔ ÀJ˜ŒÀLHÀLH©/// A [ViewConfiguration] that pretends the display is of a particular size (in
+/// logical pixels).
+///
+/// The resulting ViewConfiguration maps the given size onto the actual display
+/// using the [BoxFit.contain] algorithm.
+///
+/// If the underlying [FlutterView] changes, a new [TestViewConfiguration] should
+/// be created. See [RendererBinding.handleMetricsChanged] and
+/// [RendererBinding.createViewConfigurationFor]. ÀL‚}ÀNN ÀNNÀNc €ö/// Deprecated. Will be removed in a future version of Flutter.
+///
+/// This property has been deprecated to prepare for Flutter's upcoming
+/// support for multiple views and multiple windows.
+///
+/// Use [TestViewConfiguration.fromView] instead.ÀNe%ÀNkÀNj  ÀNŒÀNÀNœ  ÀM‚ÀMƒÀMÀNBÀM“ÀMÆÀN
+ÀNqÀO ƒ[ÀPÅÀPÚÀPÛÀPãÀPÛ²/// Creates a [TestViewConfiguration] with the given size and view.
+///
+/// The [size] defaults to 800x600.
+///
+/// The settings of the given [FlutterView] are captured when the constructor
+/// is called, and subsequent changes are ignored. A new
+/// [TestViewConfiguration] should be created if the underlying [FlutterView]
+/// changes. See [RendererBinding.handleMetricsChanged] and
+/// [RendererBinding.createViewConfigurationFor].ÀPêÀQÀQ  ÀQ%ÀQÀQ  )ÀQÀQKÀQ:ÀQMÀQQÀQRÀQ~ÀQkÀQ€ÀQÀQÀQ”ÀQ™ÀQ•ÀQ·ÀQ£ÀQÔÀQ¹ÀQÇÀQÈÀQÍÀQÒÀQÎÀQÖÀQÚÀQÛÀRÀQôÀRÀRÀR/ÀRÀRÀRÀRÀR+ÀRGÀR9ÀRIÀRMÀRNÀR_)ÀRxÀRx ÀR_ÀR`ÀR3ÀR®ÀR® ÀRÀRÀRÅ4ÀRæÀRæ ÀRÅÀRÆÀWPÀW^ÀW^  ÀY…ÀYÀY   ÀRş„NÀSÀS  ÀS	ÀSÀS  ÀS#ÀS+ÀS*  ÀS<ÀSLÀSK   ÀWo7ÀWƒÀWƒ   ÀWoÀWpÀWª×ÀW»ÀW»  ÀWÎ"ÀWáÀWà  ÀWªÀW«ÀY¢CÀY³ÀY³  ÀYÂÀYÈÀYÇ  ÀY¢ÀY£ÀYé9ÀYüÀYü   ÀYéÀYê ÀZ&€ÚÀZ,ÀZ,  ÀZ\ ÀZ\ ÀZ\ÀZn  ÀZoÀZuÀZt   ÀZëÀZ÷ÀZ÷   ÀZ€+ÀZ•ÀZ•   ÀZ€ÀZÀZ¯8ÀZÅÀZÅ   ÀZ¯ÀZ° À["MÀ[(À[(  À[C€˜À[C À[CÀ[Y  À[ZÀ[`À[_  À[hÀ[nÀ[m  À[ƒÀ[}À[…À[À[À[–À[¾À[—À[­À[œÀ[«À[¢À[À[¤À[¯À[¶À[»À[¿À[ÀÀ[ÇÀ[ÈÀ[×À[ÑÀ[ÙÀ[ŞÀ[èÀ[è  À[óÀ[ÿÀ[ÿ  À\À\À\  À\	À\À\      … „x…Ï…Ï€É/// Phases that can be reached by [WidgetTester.pumpWidget] and
+/// [TestWidgetsFlutterBinding.pump].
+///
+/// See [WidgetsBinding.drawFrame] for a more detailed description of some of
+/// these phases.  …ßP†*†*H/// The build phase in the widgets library. See [BuildOwner.buildScope]. †4X††††O/// The layout phase in the rendering library. See [PipelineOwner.flushLayout]. †‘€‡‡m/// The compositing bits update phase in the rendering library. See
+/// [PipelineOwner.flushCompositingBits]. ‡U‡g‡gM/// The paint phase in the rendering library. See [PipelineOwner.flushPaint]. ‡q€ÛˆCˆC€Ë/// The compositing phase in the rendering library. See
+/// [RenderView.compositeFrame]. This is the phase in which data is sent to
+/// the GPU. If semantics are not enabled, then this is the last phase. ˆQuˆ¸ˆ¸b/// The semantics building phase in the rendering library. See
+/// [PipelineOwner.flushSemantics]. ˆË€ª‰b‰b€’/// The final phase in the rendering library, wherein semantics information is
+/// sent to the embedder. See [SemanticsOwner.sendSemanticsUpdate].    Š[‚>‹O‹O€î/// Parts of the system that can generate pointer events that reach the test
+/// binding.
+///
+/// This is used to identify how to handle events in the
+/// [LiveTestWidgetsFlutterBinding]. See
+/// [TestWidgetsFlutterBinding.dispatchEvent].  ‹j€‰‹ï‹ï€€/// The pointer event came from the test framework itself, e.g. from a
+/// [TestGesture] created by [WidgetTester.startGesture]. ‹ø€ŒŒ€“/// The pointer event came from the system, presumably as a result of the user
+/// interactive directly with the device while the test was running.    À óu‘vÀ ø¡À ø¡…&/// Available policies for how a [LiveTestWidgetsFlutterBinding] should paint
+/// frames.
+///
+/// These values are set on the binding's
+/// [LiveTestWidgetsFlutterBinding.framePolicy] property.
+///
+/// {@template flutter.flutter_test.LiveTestWidgetsFlutterBindingFramePolicy}
+/// The default is [LiveTestWidgetsFlutterBindingFramePolicy.fadePointers].
+/// Setting this to anything other than
+/// [LiveTestWidgetsFlutterBindingFramePolicy.onlyPumps] results in pumping
+/// extra frames, which might involve calling builders more, or calling paint
+/// callbacks more, etc, and might interfere with the test. If you know that
+/// your test won't be affected by this, you can set the policy to
+/// [LiveTestWidgetsFlutterBindingFramePolicy.fullyLive] or
+/// [LiveTestWidgetsFlutterBindingFramePolicy.benchmarkLive] in that particular
+/// file.
+///
+/// To set a value while still allowing the test file to work as a normal test,
+/// add the following code to your test file at the top of your
+/// `void main() { }` function, before calls to [testWidgets]:
+///
+/// ```dart
+/// TestWidgetsFlutterBinding binding = TestWidgetsFlutterBinding.ensureInitialized();
+/// if (binding is LiveTestWidgetsFlutterBinding) {
+///   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.onlyPumps;
+/// }
+/// ```
+/// {@endtemplate}  À øÎ€ÍÀ ù’À ù’€»/// Strictly show only frames that are explicitly pumped.
+///
+/// This most closely matches the [AutomatedTestWidgetsFlutterBinding]
+/// (the default binding for `flutter test`) behavior. À ù ¿À ûSÀ ûS /// Show pumped frames, and additionally schedule and run frames to fade
+/// out the pointer crosshairs and other debugging information shown by
+/// the binding.
+///
+/// This will schedule frames when pumped or when there has been some
+/// activity with [TestPointer]s.
+///
+/// This can result in additional frames being pumped beyond those that
+/// the test itself requests, which can cause differences in behavior. À ûd‚À ıfÀ ıfí/// Show every frame that the framework requests, even if the frames are not
+/// explicitly pumped.
+///
+/// The major difference between [fullyLive] and [benchmarkLive] is the latter
+/// ignores frame requests by [WidgetTester.pump].
+///
+/// This can help with orienting the developer when looking at
+/// heavily-animated situations, and will almost certainly result in
+/// additional frames being pumped beyond those that the test itself requests,
+/// which can cause differences in behavior. À ıt„‹ÀöÀö„[/// Ignore any request to schedule a frame.
+///
+/// This is intended to be used by benchmarks (hence the name) that drive the
+/// pipeline directly. It tells the binding to entirely ignore requests for a
+/// frame to be scheduled, while still allowing frames that are pumped
+/// directly to run (either by using [WidgetTester.pumpBenchmark] or invoking
+/// [PlatformDispatcher.onBeginFrame] and [PlatformDispatcher.onDrawFrame]).
+///
+/// This allows all frame requests from the engine to be serviced, and allows
+/// all frame requests that are artificially triggered to be serviced, but
+/// ignores [SchedulerBinding.scheduleFrame] requests from the framework.
+/// Therefore animation won't run for this mode because the framework
+/// generates an animation by requesting new frames.
+///
+/// The [SchedulerBinding.hasScheduledFrame] property will never be true in
+/// this mode. This can cause unexpected effects. For instance,
+/// [WidgetTester.pumpAndSettle] does not function in this mode, as it relies
+/// on the [SchedulerBinding.hasScheduledFrame] property to determine when the
+/// application has "settled". À‚äÀÛÀÛ‚º/// Ignore any request from pump but respect other requests to schedule a
+/// frame.
+///
+/// This is used for running the test on a device, where scheduling of new
+/// frames respects what the engine and the device needed.
+///
+/// Compared to [fullyLive] this policy ignores the frame requests from
+/// [WidgetTester.pump] so that frame scheduling mimics that of the real
+/// environment, and avoids waiting for an artificially pumped frame. (For
+/// example, when driving the test in methods like
+/// [WidgetTester.handlePointerEventRecord] or [WidgetTester.fling].)
+///
+/// This policy differs from [benchmark] in that it can be used for capturing
+/// animation frames requested by the framework.    Àí5ÀòÀò   ÀÀÀ  À	ÀÀ  À	ÀÀ          ‰z€ßŠ$Š$€¡/// Signature of callbacks used to intercept messages on a given channel.
+///
+/// See [TestDefaultBinaryMessenger.setMockDecodedMessageHandler] for more details.  ŠP     Œ×„¹öö/// Overrides the [ServicesBinding]'s binary messenger logic to use
+/// [TestDefaultBinaryMessenger].
+///
+/// Test bindings that are used by tests that mock message handlers for plugins
+/// should mix in this binding to enable the use of the
+/// [TestDefaultBinaryMessenger] APIs.  H3rr  —€®M/// The current [TestDefaultBinaryMessengerBinding], if one has been created.   €€†««   €<WMM   <=
+„11   
+ Œ›9Œ¦Œ¦ ŒÂŒÆŒÓŒÇŒÎÀ[À[À[ À[À[   €®  dart:io  €Ì  controller.dart  €î  test_pointer.dart    widget_tester.dart ‰ <€†€¤€¥€¿€Ã€å	.78Mef‰¶à‚‚1‚Z‚‚‚©‚Ùƒƒ`ƒ’ƒ“ƒê„„„4„V„v„£„Ê„é„ÿ… …@…f…j…¸…Ê…İ†(†1†2†„†††Õ‡‡‡‡e‡n‡o‡©‡÷ˆAˆNˆOˆˆ¶ˆÈˆÉ‰‰`‰w‰y‰z‰Ä‰ÈŠŠZŠ[Š¨ŠµŠ¹Šò‹‹J‹h‹±‹í‹õ‹öŒGŒŒ˜ŒšŒ›ŒÖŒ×=A‘Éğ:F_z”•åF}~ŠÅKŒÚàá‘‘-‘„‘‹‘‘‘‘’‘ğ‘ô’H’›’ñ’õ“““\“†“é“ê”&”>”?”}”¢”£”ï••••/•Z•q•r•­•±•ú–K–––å—#—'—i—¨—¬—ù˜F˜“˜Ù™)™@™D™^™b™®™øšFš–šššä›5›y›}›Í›æœ#œ,œFœ_œwœ‘œªœÃœÛ:@ŠÍëPˆ­×ÛÜŸŸ$ŸnŸ¥Ÿ«Ÿü F — è¡9¡‡¡˜¡¡®¡´¢¢¢j¢†¢Ö¢ñ£ £I££Æ£Ê£Ö£ö£÷¤¤6¤7¤C¤u¤­¤Î¤Ò¤Ó¥¥¥K¥x¥~¥È¦
+¦¦?¦_¦—¦²¦Í¦î§§§u§­§±§²§î¨¨¨ ¨=¨­¨±¨²¨¾¨ô©©©©^©d©°©èª0ªmªsª¹ªÿ«F«y«´«µ«ş¬¬O¬–¬æ­­­?­@­­µ­»®
+®U®œ®æ®ó¯¯¯k¯‘¯—¯â°/°H°N°˜°±°·±±M±›±²±¸²²²²n²½³³³(³R³S³w³}³Ì´´*´0´´Ğ´öµ!µ"µjµpµÀ¶¶W¶°¶ß¶à··\··…·Ê·û¸?¸€¸Â¸È¹¹a¹ ¹¦¹Şº,ºrºxº½ºı»D»J»•»ã¼0¼`¼f¼›¼Ò½½½R½V½W½c½|½Î¾¾k¾±¿	¿
+¿%¿;¿¿»¿ß¿åÀ @+À @/À @0À @<À @YÀ @qÀ @ÀÀ @èÀ @ìÀ @íÀ @ùÀ A$À A{À AÍÀ AŞÀ AâÀ AãÀ BÀ B)À B*À BcÀ B}À B~À BÀÀ BÆÀ CÀ CbÀ CÀ CèÀ DÀ DÀ D0À D6À D…À DÒÀ EÀ EÀ E[À EÀ E”À E•À E¡À EçÀ EèÀ F"À FAÀ FGÀ FÀ F²À F¸À GÀ G;À GAÀ GÀ GÏÀ H2À H3À HqÀ HwÀ HÆÀ IÀ I8À I>À IŒÀ I—À IÀ IåÀ JÀ J	À JVÀ J¦À JİÀ JãÀ K1À KÀ KÂÀ KêÀ L#À L$À LkÀ LŠÀ LÀ LßÀ LóÀ M7À MhÀ M~À MØÀ NÀ NÀ NÀ NÀ N\À N{À N­À NŞÀ NôÀ OÀ O#À O'À O(À O4À O–À O®À OÔÀ PÀ PDÀ PhÀ P¾À PÄÀ PÈÀ PÉÀ QÀ QcÀ QœÀ QÍÀ QÑÀ QÒÀ QèÀ QéÀ R3À RbÀ RhÀ R›À R¡À RäÀ S0À SXÀ SfÀ S–À SÏÀ SÙÀ SßÀ T/À TzÀ TÂÀ TçÀ UCÀ UoÀ U À U¶À UØÀ UèÀ UğÀ VÀ V)À V1À V5À V6À VBÀ VjÀ V‹À V•À V¶À VÆÀ VêÀ VğÀ VôÀ VõÀ WÀ WÀ W'À WoÀ WÀ W¶À WóÀ XÀ XÀ YÀ Y(À YˆÀ Y¯À YµÀ YêÀ Z5À ZƒÀ Z£À ZÌÀ [À [?À [HÀ [NÀ [‡À [‹À [ŒÀ [¸À [¾À \À \]À \²À \¸À ]	À ]YÀ ]¡À ]¹À ]äÀ ^À ^4À ^RÀ ^\À ^{À ^ƒÀ ^‡À ^ˆÀ ^×À ^üÀ _À _SÀ _À _­À _³À `À `AÀ `BÀ `À `ºÀ `ÀÀ aÀ aYÀ a_À a­À aíÀ aîÀ bÀ b#À bfÀ bµÀ bÌÀ bÒÀ cÀ cEÀ cKÀ cšÀ cèÀ d4À d|À dÀ dÕÀ e#À e$À enÀ eÀ e£À eïÀ f@À fRÀ fXÀ f}À f°À f±À fıÀ g4À g:À gˆÀ gÕÀ gâÀ gèÀ h8À h…À hÕÀ i$À iXÀ i^À i¬À iõÀ j/À j5À j‚À j³À kÀ kQÀ knÀ k’À k¬À kïÀ köÀ l;À l?À l@À lÀ l¬À l¹À mÀ mRÀ mtÀ m~À mŒÀ mœÀ mÈÀ mÎÀ mÒÀ mÓÀ nÀ nJÀ nÀ n¤À n¥À nöÀ nüÀ oLÀ oŠÀ o§À o­À oøÀ pÀ pÀ pVÀ pyÀ p~À pÈÀ qÀ qDÀ qkÀ qÀ qÂÀ qâÀ rÀ rÀ rÀ rÀ r.À rKÀ rOÀ rPÀ r›À r¡À rîÀ s7À s_À seÀ s­À sşÀ tGÀ t‘À tİÀ tãÀ u2À uKÀ ugÀ u{À u»À uàÀ uóÀ u÷À uøÀ v)À v]À vÀ vÀ v¼À wÀ wÀ weÀ wµÀ wóÀ wùÀ xOÀ xqÀ x†À xÆÀ xÚÀ y,À yhÀ y‚À y†À y‡À yåÀ yæÀ zÀ zsÀ zxÀ zyÀ zªÀ {À {
+À {À {PÀ {eÀ {‰À {ŠÀ {ÑÀ {åÀ {ëÀ |)À |/À |uÀ |‡À |À |ÜÀ }À }$À }nÀ }»À }äÀ }üÀ ~"À ~FÀ ~cÀ ~iÀ ~jÀ ~¸À ~ÈÀ ~ÎÀ À ^À vÀ ¢À ¦À §À ¼À ½À €À €.À €À €³À €ŞÀ À !À ŒÀ ÕÀ şÀ ‚À ‚*À ‚HÀ ‚PÀ ‚WÀ ‚[À ‚\À ‚¬À ‚ÔÀ ‚ÚÀ ƒ*À ƒzÀ ƒ»À ƒÈÀ „À „(À „ˆÀ „ŒÀ „À „ÔÀ „ğÀ …
+À …SÀ …\À …vÀ …£À …ÉÀ †À †MÀ †XÀ †aÀ †gÀ †kÀ †lÀ †…À †«À †ÍÀ †åÀ †ëÀ †ÿÀ ‡ À ‡8À ‡›À ‡ÄÀ ‡ĞÀ ‡ÙÀ ˆÀ ˆZÀ ˆŒÀ ˆ¶À ˆØÀ ˆåÀ ˆëÀ ˆìÀ ‰À ‰\À ‰™À ‰ÔÀ ŠÀ ŠÀ ŠƒÀ Š¦À ŠÄÀ ‹À ‹.À ‹MÀ ‹WÀ ‹œÀ ‹ÔÀ ‹éÀ ŒwÀ Œ¤À Œ¯À Œ¾À ŒŞÀ ŒñÀ @À lÀ tÀ {À ¶À À SÀ  À ëÀ À 1À 9À aÀ ‰À ‘À ¥À ¬À éÀ 6À IÀ ^À eÀ ¨À ÏÀ øÀ ‘QÀ ‘°À ’À ’\À ’qÀ ’ÜÀ ’ùÀ “À “:À “TÀ “°À “ßÀ “ìÀ ”À ”À ”À ”&À ”qÀ ”»À •
+À •UÀ •£À •îÀ –9À –pÀ –yÀ –ÃÀ —À —\À —«À —÷À ˜BÀ ˜À ˜×À ™À ™À ™mÀ ™¶À šÀ š9À šBÀ šŒÀ šÚÀ ›%À ›EÀ ›eÀ ›qÀ ›ÎÀ œ3À œ•À œøÀ TÀ uÀ ‘À ½À À +À 6À >À …À ĞÀ ğÀ ŸÀ Ÿ-À ŸEÀ Ÿ|À Ÿ©À ŸÜÀ  /À  <À  gÀ  À  ³À  ÁÀ  èÀ ¡"À ¡sÀ ¡À ¡¯À ¡áÀ ¡òÀ ¢ À ¢*À ¢[À ¢‡À ¢¤À ¢ßÀ ¢ğÀ ¢şÀ £À £À £À £BÀ £PÀ £zÀ ¤qÀ ¤zÀ ¤¯À ¤µÀ ¤¶À ¥À ¥#À ¥6À ¥SÀ ¥fÀ ¥€À ¥šÀ ¥¤À ¥ÓÀ ¥ÜÀ ¥ãÀ ¦À ¦_À ¦lÀ ¦µÀ ¦ÍÀ ¦áÀ ¦üÀ §À §4À §UÀ §YÀ §ZÀ §¾À §ÒÀ ¨!À ¨`À ¨aÀ ¨ÆÀ ¨ØÀ ©)À ©DÀ ©_À ©`À ©²À ªÀ ªXÀ ªºÀ ª»À ªÏÀ ªåÀ «YÀ «ZÀ «†À «ÒÀ ¬"À ¬^À ¬lÀ ¬ªÀ ¬ÕÀ ¬éÀ ­À ­1À ­9À ­RÀ ­¢À ­èÀ ®,À ®À ®«À ®±À ®²À ®ÆÀ ¯)À ¯-À ¯.À ¯ZÀ ¯[À ¯xÀ ¯„À ¯«À ¯ıÀ °À °À °À °LÀ °”À °À °¤À ±À ±À ±;À ±ˆÀ ±¸À ±ÁÀ ±ÈÀ ±ÔÀ ±ûÀ ²FÀ ²OÀ ²VÀ ²bÀ ²‰À ²ÔÀ ³	À ³À ³À ³%À ³JÀ ³–À ³àÀ ³éÀ ³ğÀ ³üÀ ´!À ´jÀ ´sÀ ´zÀ ´†À ´®À ´úÀ µÀ µ
+À µÀ µ=À µˆÀ µ‘À µ˜À µœÀ µÀ µÚÀ µêÀ ¶ À ¶BÀ ¶aÀ ¶ÅÀ ¶ìÀ ·À ·(À ·3À ·;À ·NÀ ·XÀ ·\À ·]À ·­À ·½À ·ñÀ ¸=À ¸À ¸ÜÀ ¸óÀ ¹"À ¹DÀ ¹cÀ ¹ÅÀ ¹ìÀ ºÀ º(À º3À º;À ºNÀ ºXÀ º\À º]À º©À º¹À ºíÀ »À ».À »À »·À »æÀ »óÀ »şÀ ¼À ¼À ¼#À ¼'À ¼(À ¼vÀ ¼†À ¼ÉÀ ¼ëÀ ½
+À ½/À ½‰À ½˜À ½¿À ½îÀ ½ûÀ ¾À ¾À ¾!À ¾+À ¾/À ¾0À ¾uÀ ¾‰À ¾À ¾ÎÀ ¿À ¿2À ¿JÀ ¿rÀ ¿sÀ ¿ÖÀ ¿ÿÀ ÀÀ À$À ÀlÀ À¹À ÀÜÀ ÀâÀ ÁÀ ÁÀ ÁfÀ Á¯À Á°À ÂÀ ÂOÀ Â]À Â–À ÂÃÀ ÂüÀ Ã(À ÃaÀ ÃƒÀ Ã¼À ÃíÀ ÃîÀ Ä/À ÄhÀ Ä›À ÄŸÀ Ä¡À Ä¢À ÄíÀ Å3À Å7À Å„À Å‘À Å•À ÅÓÀ ÆÀ ÆÀ ÆjÀ Æ‚À Æ†À ÆÌÀ ÇÀ ÇÀ ÇeÀ ÇqÀ ÇŠÀ Ç¥À Ç»À ÇÜÀ ÇàÀ ÇáÀ È2À È8À ÈÀ ÈÆÀ É	À ÉGÀ É©À ÉáÀ ÉâÀ ÊÀ ÊbÀ Ê”À ÊšÀ ÊÕÀ ËÀ ËRÀ ËgÀ Ë©À ËéÀ ÌÀ ÌÀ ÌSÀ ÌWÀ ÌXÀ ÌŸÀ ÌÆÀ ÌÇÀ ÌÓÀ ÌçÀ ÌûÀ ÍÀ ÍÀ ÍÀ Í%À Í&À Í2À ÍzÀ Í{À Í‡À ÍªÀ Í«À ÍüÀ ÎEÀ ÎŒÀ Î˜À Î÷À ÎøÀ ÏÀ Ï4À Ï5À ÏAÀ Ï€À ÏÀ ÏÀ ÏñÀ ĞÀ Ğ2À ĞPÀ ĞnÀ Ğ›À Ğ£À Ğ¼À ĞÛÀ Ñ	À ÑaÀ ÑÀ ÑªÀ Ñ²À ÑŞÀ ÒÀ Ò	À ÒÀ ÒÀ ÒÀ ÒTÀ ÒdÀ ÒŒÀ Ò¡À Ò©À ÒµÀ ÒæÀ Ó-À ÓvÀ Ó®À Ó·À ÓÁÀ ÓÂÀ ÓôÀ ÔÀ ÔxÀ Ô¢À Ô­À ÔÄÀ ÔÙÀ ÔøÀ ÕÀ Õ*À ÕGÀ ÕSÀ ÕˆÀ Õ“À Õ²À ÕÇÀ ÕæÀ ÕûÀ ÖÀ Ö>À ÖJÀ Ö…À ÖÀ Ö™À Ö À Ö¡À ÖÏÀ ×À ×1À ×=À ×˜À ×¼À ×İÀ ØÀ ØÀ ØNÀ Ø˜À ØÁÀ Ù"À Ù3À ÙBÀ ÙOÀ ÙpÀ Ù|À ÙŸÀ ÙÁÀ ÙàÀ ÚÀ ÚÀ ÚKÀ Ú“À ÚºÀ ÛÀ Û'À Û4À Û?À Û^À ÛfÀ ÛŒÀ Û´À Û×À ÛáÀ ÛıÀ ÜÀ Ü	À Ü
+À ÜÀ Ü@À ÜsÀ Ü§À ÜÜÀ ÜàÀ ÜáÀ ÜíÀ İÀ İiÀ İµÀ İÉÀ İåÀ ŞÀ Ş&À ŞPÀ ŞTÀ ŞUÀ ŞaÀ Ş–À ŞñÀ ßCÀ ßWÀ ßyÀ ß£À ß§À ß¨À ß´À ßÌÀ ßàÀ àÀ à<À àOÀ àSÀ àTÀ àxÀ à˜À à™À à¥À àøÀ àùÀ áÀ á À áKÀ ánÀ árÀ ásÀ áÀ ášÀ áÄÀ áçÀ â5À âqÀ âuÀ âvÀ â‚À â¡À â¾À âÂÀ âÃÀ âûÀ âüÀ ãHÀ ãTÀ ãiÀ ã}À ã‡À ã°À ãÜÀ äÀ ä.À äZÀ äÀ äÅÀ äñÀ å6À å\À åÀ åìÀ åüÀ æ1À æŒÀ æ¤À ç	À çÀ ç,À ç:À çFÀ çPÀ çXÀ çzÀ çŠÀ ç´À çºÀ ç¾À ç¿À çËÀ ç÷À èÀ èGÀ èhÀ èlÀ èmÀ è¹À èĞÀ èûÀ é,À é0À é1À é=À éUÀ é{À éŸÀ é¼À éÃÀ éØÀ éÿÀ êÀ êÀ êIÀ êÀ ê¶À êÜÀ ëÀ ë9À ëdÀ ë­À ëÃÀ ëËÀ ëÌÀ ëùÀ ìAÀ ìÀ ìİÀ í,À í{À íŸÀ í À íèÀ íÿÀ î	À î
+À îNÀ îqÀ îœÀ îÆÀ îëÀ îóÀ ïÀ ïÀ ïÀ ïÀ ï'À ï?À ïfÀ ïÀ ïªÀ ï®À ï¯À ï»À ïØÀ ï÷À ïøÀ ğÀ ğÀ ğ-À ğcÀ ğœÀ ğÁÀ ñ	À ñÀ ñNÀ ñ„À ñÀ ñÎÀ ñæÀ ñîÀ ò
+À òÀ òqÀ ò¿À òÃÀ òÄÀ òĞÀ òäÀ òúÀ ó!À ó=À óPÀ ónÀ órÀ ótÀ óuÀ óÃÀ óÏÀ óÓÀ óıÀ ô7À ô;À ô‰À ôÕÀ ôıÀ õIÀ õ—À õäÀ ö'À öcÀ ö³À ö½À öÁÀ ÷À ÷QÀ ÷À ÷”À ÷ À ÷÷À ø+À ø{À øÀ ø‰À øœÀ øÌÀ ùÀ ùÀ ùWÀ ùÀ ùÀ ùÀ ùéÀ ú3À úFÀ úLÀ ú”À ú¸À ú¾À ûÀ ûQÀ ûaÀ ûbÀ û±À ûÊÀ ûĞÀ ü!À üVÀ ü\À üÀ üäÀ ı5À ıdÀ ıqÀ ırÀ ı À ı¦À ıöÀ şFÀ şÀ şßÀ ÿ.À ÿ4À ÿ„À ÿÑÀ À eÀ œÀ ¢À ğÀ2À‚ÀÓÀôÀÀÀNÀ[ÀaÀ®ÀëÀñÀ;À†ÀÓÀÀPÀVÀ¦ÀÙÀêÀìÀíÀ#À$ÀeÀ­ÀéÀíÀ4ÀwÀ¤À¨ÀèÀ6ÀƒÀĞÀıÀÀNÀÀïÀ	;À	ˆÀ	ÓÀ
+#À
+oÀ
+ˆÀ
+ŒÀ
+ÌÀÀOÀ\À`À¦ÀåÀòÀ:ÀFÀ_ÀzÀÀ‘ÀÏÀÓÀÔÀ À&ÀmÀ´À÷À5À’ÀÅÀÆÀÿÀAÀsÀyÀ´À÷À1ÀFÀƒÀ¾ÀåÀëÀÀ"À#À/ÀMÀeÀfÀrÀ–À—À£À¾ÀîÀ@ÀOÀSÀTÀ`À¬À­ÀÏÀïÀÀ;À^À_À›À¡ÀğÀ*ÀuÀÂÀÀ	ÀVÀ\À’ÀËÀÀ	ÀÀAÀlÀpÀqÀ}À–ÀãÀ*À8À>ÀYÀ]À^ÀjÀ‰ÀÖÀÀ+À1ÀRÀVÀWÀcÀŒÀ´ÀŞÀâÀãÀÀÀ(ÀZÀŠÀáÀçÀÀ)ÀxÀËÀÀÀ®ÀÚÀçÀÀÀ À!À-ÀHÀxÀÎÀÔÀÀ'À-ÀVÀsÀœÀ·ÀĞÀõÀ.ÀJÀiÀ½ÀçÀíÀñÀòÀÀ:ÀbÀyÀ“ÀøÀ *À MÀ SÀ WÀ XÀ oÀ ËÀ ÌÀ íÀ!À!&À!'À!iÀ!vÀ!–À!¯À!ÄÀ!ÒÀ!ØÀ"À"qÀ"¯À"ÅÀ"àÀ"äÀ"åÀ#?À#rÀ#sÀ#ÒÀ#õÀ#öÀ$6À$qÀ$¶À$÷À%À% À%lÀ%•À%½À%æÀ&À&;À&UÀ&gÀ&‘À&½À&×À'%À'UÀ'ŸÀ'ªÀ'çÀ(À(À()À(DÀ(LÀ(iÀ(³À(ÇÀ(õÀ)À)'À)eÀ)qÀ)yÀ)À)€À)ÅÀ)ÉÀ)ÊÀ*À*À*_À*¤À*ãÀ+À+À+`À+ŒÀ+À+ÙÀ+ßÀ,(À,qÀ,®À,´À,ÿÀ-KÀ-wÀ-ƒÀ-³À-ÕÀ-ıÀ.À.TÀ.“À.´À.ÇÀ.ÓÀ.İÀ.ûÀ/,À/yÀ/™À/ÇÀ/æÀ0À0!À0PÀ0sÀ0ÒÀ16À1SÀ1qÀ1€À1¯À1»À1ÅÀ1îÀ2À2JÀ2uÀ2†À2À2½À3À3YÀ3”À3ÔÀ4À4%À4_À4 À4­À4ÏÀ4úÀ52À5?À5IÀ5OÀ5SÀ5TÀ5`À5©À5ËÀ5óÀ6&À6PÀ6µÀ6çÀ7À7-À77À7fÀ7‹À7ÑÀ7ÛÀ7áÀ7åÀ7æÀ7òÀ8VÀ8À8£À8ÁÀ8äÀ95À9^À9À9•À9ÀÀ9ŞÀ9ûÀ:À:8À:DÀ:SÀ:sÀ:ŒÀ:”À:½À:áÀ:éÀ:íÀ:îÀ:úÀ;:À;JÀ;kÀ;€À;ˆÀ;”À;ÅÀ<À<UÀ<À<–À< À<¡À<ÀÀ<ÊÀ<éÀ=À=&À=CÀ=_À=wÀ=¤À=æÀ=ñÀ=úÀ>À>À>?À>EÀ>IÀ>JÀ>VÀ>nÀ>”À>¸À>ÕÀ>ÜÀ>ñÀ?À? À?]À?aÀ?bÀ?nÀ?­À?âÀ@À@eÀ@¨À@¸ÀAÀAiÀAÃÀBÀBÀB7ÀB;ÀB<ÀBHÀB\ÀBrÀBÀB³ÀBÈÀBÌÀBÍÀBÙÀC!ÀCVÀC‰ÀC¶ÀCïÀDÀDÀDÀDMÀD°ÀD´ÀDµÀDÁÀDùÀEIÀEšÀE¿ÀFÀFTÀF‘ÀF¼ÀFÔÀG$ÀGmÀGÌÀGĞÀGÑÀGİÀHÀHeÀH¶ÀHÛÀI&ÀIgÀI¤ÀIûÀJIÀJ‘ÀJ•ÀJ—ÀJ˜ÀJèÀJıÀKÀKQÀK{ÀKÀKÑÀLÀLBÀL}ÀL¿ÀLÅÀMÀMFÀMLÀM€ÀMÀMÂÀNÀN@ÀNDÀN§ÀNùÀNıÀNşÀODÀOJÀOpÀOvÀOÆÀPÀPQÀPÀPÃÀPæÀQÀQ3ÀQdÀQœÀQíÀR2ÀR\ÀR]ÀRiÀRŠÀR‹ÀR—ÀRÂÀRÃÀRÏÀRûÀRüÀSUÀS¡ÀSêÀT5ÀTaÀTÀT±ÀTèÀTûÀUÀU#ÀUsÀUŸÀUÚÀUîÀUûÀV%ÀV9ÀVvÀV|ÀV¨ÀVÛÀWÀW/ÀW6ÀWIÀWMÀWNÀWlÀWmÀWyÀW§ÀW¨ÀW´ÀWôÀX+ÀXsÀXÀÀXÓÀXÙÀYÀYDÀY~ÀY‚ÀYƒÀYŸÀY ÀY¬ÀYæÀYçÀYóÀZ#ÀZ%ÀZ&ÀZZÀZ}ÀZ~ÀZŠÀZ¬ÀZ­ÀZ¹ÀZèÀZéÀZÿÀ[À[À[!À["À[AÀ[wÀ[ËÀ[ÜÀ[ñÀ\À\À\nÀ\p    EnginePhaseTestBindingEventSource_kDefaultTestViewportSize!TestDefaultBinaryMessengerBinding!CapturedAccessibilityAnnouncementTestWidgetsFlutterBinding"AutomatedTestWidgetsFlutterBinding(LiveTestWidgetsFlutterBindingFramePolicy_HandleDrawFrameLiveTestWidgetsFlutterBindingTestViewConfiguration_TestSamplingClock_kPointerDecay_LiveTestPointerRecord3flutter.flutter_test.TakeAccessibilityAnnouncements€îReturns a list of all the accessibility announcements made by the Flutter
+framework since the last time this function was called.
+
+It's safe to call this when there hasn't been any announcements; it will return
+an empty list in that case.=flutter.flutter_test.LiveTestWidgetsFlutterBindingFramePolicyƒ±The default is [LiveTestWidgetsFlutterBindingFramePolicy.fadePointers].
+Setting this to anything other than
+[LiveTestWidgetsFlutterBindingFramePolicy.onlyPumps] results in pumping
+extra frames, which might involve calling builders more, or calling paint
+callbacks more, etc, and might interfere with the test. If you know that
+your test won't be affected by this, you can set the policy to
+[LiveTestWidgetsFlutterBindingFramePolicy.fullyLive] or
+[LiveTestWidgetsFlutterBindingFramePolicy.benchmarkLive] in that particular
+file.
+
+To set a value while still allowing the test file to work as a normal test,
+add the following code to your test file at the top of your
+`void main() { }` function, before calls to [testWidgets]:
+
+```dart
+TestWidgetsFlutterBinding binding = TestWidgetsFlutterBinding.ensureInitialized();
+if (binding is LiveTestWidgetsFlutterBinding) {
+  binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.onlyPumps;
+}
+``` Á

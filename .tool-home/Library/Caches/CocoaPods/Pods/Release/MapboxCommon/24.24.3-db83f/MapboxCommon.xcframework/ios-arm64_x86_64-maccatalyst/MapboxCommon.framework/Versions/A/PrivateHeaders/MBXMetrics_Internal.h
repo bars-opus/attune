@@ -1,0 +1,35 @@
+// This file is generated and will be overwritten automatically.
+
+#import <Foundation/Foundation.h>
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * This record holds information of a metric.
+ */
+NS_SWIFT_NAME(Metrics)
+__attribute__((visibility ("default")))
+@interface MBXMetrics : NSObject
+
+// This class provides custom init which should be called
+- (nonnull instancetype)init NS_UNAVAILABLE;
+
+// This class provides custom init which should be called
++ (nonnull instancetype)new NS_UNAVAILABLE;
+
+- (nonnull instancetype)initWithName:(nonnull NSString *)name
+                               value:(nonnull id)value;
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * The metric name
+ */
+@property (nonatomic, readonly, nonnull, copy) NSString *name;
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * The metric value to be set.
+ */
+@property (nonatomic, readonly, nonnull, copy) id value;
+
+
+@end

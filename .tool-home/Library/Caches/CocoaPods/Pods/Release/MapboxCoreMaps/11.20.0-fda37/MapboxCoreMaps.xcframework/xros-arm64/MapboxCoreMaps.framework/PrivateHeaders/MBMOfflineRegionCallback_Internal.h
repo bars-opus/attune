@@ -1,0 +1,16 @@
+// This file is generated and will be overwritten automatically.
+
+#import <Foundation/Foundation.h>
+@class MBXExpected<__covariant Value, __covariant Error>;
+
+@class MBMOfflineRegion;
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Callback invoked when fetching existing regions.
+ *
+ * @param regions A list of existing offline regions. Otherwise, a string describing an error.
+ */
+NS_SWIFT_NAME(OfflineRegionCallback)
+__attribute__((deprecated))
+typedef void (^MBMOfflineRegionCallback)(MBXExpected<NSArray<MBMOfflineRegion *> *, NSString *> * _Nonnull regions); // NOLINT(modernize-use-using)

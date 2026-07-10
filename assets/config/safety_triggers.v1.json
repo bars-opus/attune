@@ -1,0 +1,71 @@
+{
+  "config_version": "1.0.0",
+  "locale": "en",
+  "normalization_version": 1,
+  "tiers": {
+    "explicit_threat": {
+      "tier": 1,
+      "minimum_occurrences": 1,
+      "rules": [
+        {
+          "id": "explicit_threat_001",
+          "pattern": "kill you",
+          "match": "token_phrase"
+        },
+        {
+          "id": "explicit_threat_002",
+          "pattern": "hurt you",
+          "match": "token_phrase"
+        },
+        {
+          "id": "explicit_threat_003",
+          "pattern": "harm you",
+          "match": "token_phrase"
+        }
+      ]
+    },
+    "isolation_control": {
+      "tier": 2,
+      "minimum_occurrences": 1,
+      "rules": [
+        {
+          "id": "isolation_001",
+          "pattern": "you don't need them",
+          "match": "token_phrase"
+        },
+        {
+          "id": "isolation_002",
+          "pattern": "you only need me",
+          "match": "token_phrase"
+        },
+        {
+          "id": "isolation_003",
+          "pattern": "no one will believe you",
+          "match": "token_phrase"
+        }
+      ]
+    },
+    "pattern_control": {
+      "tier": 3,
+      "minimum_occurrences": 3,
+      "window_days": 30,
+      "rules": [
+        {
+          "id": "pattern_control_001",
+          "pattern": "if you leave",
+          "match": "token_phrase"
+        },
+        {
+          "id": "pattern_control_002",
+          "pattern": "you'll regret it",
+          "match": "token_phrase"
+        },
+        {
+          "id": "pattern_control_003",
+          "pattern": "you can't survive without me",
+          "match": "token_phrase"
+        }
+      ]
+    }
+  }
+}

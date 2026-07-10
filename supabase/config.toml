@@ -1,0 +1,7 @@
+project_id = "mrgjtyacrzfylawyzabm"
+
+[functions.create-relationship-invite]
+verify_jwt = true
+
+[functions.accept-invite]
+verify_jwt = true

@@ -1,0 +1,12 @@
+// This file is generated and will be overwritten automatically.
+
+#import <Foundation/Foundation.h>
+
+@class MBXResourceLoadProgress;
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Called when notifying about the loading progress of a resource.
+ */
+NS_SWIFT_NAME(ResourceLoadProgressCallback)
+typedef void (^MBXResourceLoadProgressCallback)(MBXResourceLoadProgress * _Nonnull progress); // NOLINT(modernize-use-using)

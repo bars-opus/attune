@@ -1,0 +1,17 @@
+// This file is generated and will be overwritten automatically.
+
+#import <Foundation/Foundation.h>
+@class MBXExpected<__covariant Value, __covariant Error>;
+
+@class MBMOfflineRegion;
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Callback invoked when a sideloaded database has been merged into the main offline
+ * database.
+ *
+ * @param regions All regions in the main offline database. Otherwise, a string describing an error.
+ */
+NS_SWIFT_NAME(OfflineDatabaseMergeCallback)
+__attribute__((deprecated))
+typedef void (^MBMOfflineDatabaseMergeCallback)(MBXExpected<NSArray<MBMOfflineRegion *> *, NSString *> * _Nonnull regions); // NOLINT(modernize-use-using)

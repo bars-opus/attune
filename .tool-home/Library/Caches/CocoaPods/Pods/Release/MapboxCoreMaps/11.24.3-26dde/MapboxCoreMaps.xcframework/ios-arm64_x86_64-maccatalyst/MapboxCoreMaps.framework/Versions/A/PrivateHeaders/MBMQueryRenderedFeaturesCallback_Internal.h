@@ -1,0 +1,15 @@
+// This file is generated and will be overwritten automatically.
+
+#import <Foundation/Foundation.h>
+@class MBXExpected<__covariant Value, __covariant Error>;
+
+@class MBMQueriedRenderedFeature;
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Callback to get queried rendered features asynchronously.
+ *
+ * @param features An array of returned `features` in case of the successful operation, string representing error otherwise.
+ */
+NS_SWIFT_NAME(QueryRenderedFeaturesCallback)
+typedef void (^MBMQueryRenderedFeaturesCallback)(MBXExpected<NSArray<MBMQueriedRenderedFeature *> *, NSString *> * _Nonnull features); // NOLINT(modernize-use-using)

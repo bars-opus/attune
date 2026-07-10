@@ -1,0 +1,39 @@
+// This file is generated and will be overwritten automatically.
+
+#import <Foundation/Foundation.h>
+
+@class MBXExperimentalWssBackendResponseData;
+@class MBXHttpRequestError;
+typedef NS_ENUM(NSInteger, MBXExperimentalWssBackendWsOpCode);
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Observes request updates, including WS response, data and success or failure status.
+ */
+NS_SWIFT_NAME(RequestObserver)
+@protocol MBXExperimentalWssBackendRequestObserver
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Called once after the WS response has been received by the backend
+ */
+- (void)onResponseForId:(uint64_t)id_
+                   data:(nonnull MBXExperimentalWssBackendResponseData *)data;
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Called after the backend has written data to the data stream passed in onResponse.
+ */
+- (void)onDataForId:(uint64_t)id_
+             opCode:(MBXExperimentalWssBackendWsOpCode)opCode
+                fin:(BOOL)fin;
+/** Called once if the request completed successfully and all data has been written to the data stream. */
+- (void)onSucceededForId:(uint64_t)id_;
+/**
+ * Called once if the request couldn't be completed. This method may be called at any point in the request's
+ * lifetime prior to completion. I.e., it may be called after onResponse and after onData have been called.
+ */
+- (void)onFailedForId:(uint64_t)id_
+                error:(nonnull MBXHttpRequestError *)error
+                 code:(nullable NSNumber *)code;
+/** Special case for WebSockets */
+- (void)onSwitchingProtocolsForId:(uint64_t)id_;
+@end

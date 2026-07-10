@@ -1,0 +1,33 @@
+// This file is generated and will be overwritten automatically.
+
+#import <Foundation/Foundation.h>
+
+// NOLINTNEXTLINE(modernize-use-using)
+typedef NS_ENUM(NSInteger, MBXPersistentStorageErrorCode)
+{
+    /**
+     * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+     * Key already exists.
+     */
+    MBXPersistentStorageErrorCodeKeyAlreadyExists,
+    /**
+     * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+     * Key not found.
+     */
+    MBXPersistentStorageErrorCodeKeyNotFound,
+    /**
+     * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+     * Data is corrupted.
+     */
+    MBXPersistentStorageErrorCodeCorruptedData,
+    /**
+     * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+     * I/O error.
+     */
+    MBXPersistentStorageErrorCodeIOError,
+    /**
+     * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+     * Unknown error.
+     */
+    MBXPersistentStorageErrorCodeUnknown
+} NS_SWIFT_NAME(PersistentStorageErrorCode);

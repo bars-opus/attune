@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.barsOpus.florence",
+      "sha256_cert_fingerprints": ["F9:B3:74:D3:13:19:B0:56:5B:8D:9B:4A:DB:93:BF:FB:16:44:46:C8:6C:5F:17:D7:08:49:45:EE:AE:89:53:01"]
+    }
+  }
+]

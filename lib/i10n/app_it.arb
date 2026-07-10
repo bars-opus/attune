@@ -1,0 +1,917 @@
+{
+  "@@locale": "it",
+  
+  "appName": "Nano Embryo",
+  "appDescription": "La tua app innovativa",
+  
+  "commonContinue": "Continua",
+  "commonCancel": "Annulla",
+  "commonSave": "Salva",
+  "commonLogin": "Accedi",
+  "commonLogout": "Esci",
+  "commonDone": "Fatto",
+  "commonRetry": "Riprova",
+  "commonAccept": "Accetta",
+  "commonReject": "Rifiuta",
+  "introGetStarted": "Inizia",
+  
+  "actionsBlock": "Blocca utente",
+  "actionsReport": "Segnala utente",
+  "actionsSend": "Invia alla chat",
+  "actionsShare": "Condividi",
+  "actionsCopy": "Copia link",
+  
+  "appInfoVersion": "Versione",
+  "appInfoReleased": "Pubblicato",
+  "appInfoPackageName": "Nome del Pacchetto",
+  "appInfoDeveloper": "Nome dello Sviluppatore",
+  "appInfoSupportEmail": "Email di Supporto",
+  "appInfoTechnicalDetails": "Dettagli Tecnici",
+  "appInfoBundleID": "ID del Pacchetto",
+  "appInfoBuildVersion": "Versione di Compilazione",
+  "appInfoBuildNumber": "Numero di Compilazione",
+  "appInfoReleaseDate": "Data di Rilascio",
+  "appInfoAppSize": "Dimensione dell'App",
+  "appInfoOverview": "{appName} è un'applicazione mobile moderna costruita con sicurezza robusta e funzionalità, progettata per fornire un'esperienza utente eccezionale con un'architettura pulita e ottimizzazione delle prestazioni.",
+  "@appInfoOverview": {
+    "description": "Descrizione generale dell'applicazione con nome dinamico dell'app",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "LaMiaApp"
+      }
+    }
+  },
+
+  "introTitle": "Benvenuto su {appName}",
+  "@introTitle": {
+    "description": "Titolo schermata introduttiva con segnaposto nome app",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "LaMiaApp"
+      }
+    }
+  },
+  "introFeature1Title": "Vedi il Tuo Progresso",
+  "introFeature1Description": "Traccia le tue pietre miliari di sviluppo con analisi dettagliate e approfondimenti",
+  "introFeature2Title": "Esplora i Modelli",
+  "introFeature2Description": "Scopri componenti e schermate pre-costruiti per uno sviluppo rapido",
+  "introFeature3Title": "Inizia Rapidamente",
+  "introFeature3Description": "Avvia il tuo progetto con configurazione zero e best practice",
+  "introGetStarted": "Inizia",
+
+  "appleSignIn": "Accedi con Apple",
+  "googleSignIn": "Accedi con Google",
+  "appleRegister": "Registrati con Apple",
+  "googleRegister": "Registrati con Google",
+  "emailAndPassword": "Inserisci email e password",
+  
+  "signInTitle": "Accedi",
+  "createAccount": "Crea account",
+  "legalConsentPart1": "Si prega di leggere i ",
+  "legalConsentPart2": "termini e condizioni",
+  "legalConsentPart3": " e altri documenti legali che disciplinano il tuo utilizzo di {appName}.",
+  "@legalConsentPart3": {
+    "description": "Testo di consenso legale con nome dinamico dell'app",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "LaMiaApp"
+      }
+    }
+  },
+  
+  "emailTitle": "Email",
+  "passwordTitle": "Password",
+  "loginEmailLabel": "Indirizzo email",
+  "loginEmailHint": "Inserisci la tua email",
+  "loginPasswordLabel": "Password",
+  "loginPasswordHint": "Inserisci la tua password",
+  "loginForgotPasswordPart1": "Hai dimenticato la tua password? ",
+  "loginForgotPasswordPart2": "Tocca qui",
+  "loginForgotPasswordPart3": " per reimpostare la tua password?",
+
+  "commonConfirmPasswordLabel": "Conferma password",
+  "commonConfirmPasswordHint": "Conferma la tua password",
+  "commonPasswordsDoNotMatch": "Le password non coincidono",
+  "commonPasswordConfirmRequired": "Conferma la tua password",
+  "commonFieldIsValid": "{field} è valido",
+  "@commonFieldIsValid": {
+    "description": "Messaggio mostrato quando un campo passa la validazione",
+    "placeholders": {
+      "field": {
+        "type": "String",
+        "example": "Email"
+      }
+    }
+  },
+  "commonPleaseWait": "Attendi il completamento dell'operazione corrente",
+  "commonUnexpectedError": "Si è verificato un errore imprevisto. Per favore riprova.",
+  "commonSomethingWentWrong": "Qualcosa è andato storto. Per favore riprova.",
+  "commonEnterEmailAndRetry": "Inserisci il tuo indirizzo email e riprova",
+  "commonLearnMore": "Scopri di più",
+
+  "authSignUpVerificationSent": "Email di verifica inviata! Controlla la tua posta in arrivo.",
+  "authSignUpFailed": "Registrazione fallita: {error}",
+  "@authSignUpFailed": {
+    "description": "Messaggio di fallimento della registrazione con dettagli dell'errore",
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "L'email è già in uso"
+      }
+    }
+  },
+
+  "authForgotPasswordTitle": "Password dimenticata?",
+  "authForgotPasswordSubtitle": "Inserisci la tua email e ti invieremo un collegamento per ripristinare la tua password.",
+  "authSendResetLink": "Invia link di ripristino",
+  "authBackToSignIn": "Torna all'accesso",
+
+  "authUsernameScreenTitle": "Scegli il tuo nome utente",
+  "authUsernameScreenSubtitle": "Così è come ti vedono gli altri. Puoi cambiarlo in seguito.",
+  "authUsernameLabel": "Nome utente",
+  "authUsernameHint": "Inserisci un nome utente",
+  "authUsernameMinLength": "Il nome utente deve contenere almeno {min} caratteri",
+  "@authUsernameMinLength": {
+    "description": "Errore di validazione per la lunghezza minima del nome utente",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "authUsernameMaxLength": "Il nome utente deve contenere al massimo {max} caratteri",
+  "@authUsernameMaxLength": {
+    "description": "Errore di validazione per la lunghezza massima del nome utente",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "30"
+      }
+    }
+  },
+  "authUsernameFormatError": "Sono consentiti solo lettere, numeri e trattini bassi",
+  "authUsernameTaken": "Questo nome utente è già stato preso",
+  "authUsernameCheckError": "Impossibile controllare la disponibilità. Per favore riprova.",
+  "authUsernameSaveError": "Impossibile salvare il tuo nome utente. Per favore riprova.",
+  "authUsernameSavedSuccess": "Nome utente salvato con successo!",
+
+  "authUpdatePasswordTitle": "Crea una nuova password",
+  "authUpdatePasswordButton": "Aggiorna password",
+  "authUpdatePasswordSuccess": "Password aggiornata con successo. Per favore accedi di nuovo.",
+
+  "authPasswordResetSentTitle": "Controlla la tua email",
+  "authPasswordResetSentBody": "Abbiamo inviato un collegamento di ripristino password a",
+  "authPasswordResetSentNote": "Tocca il collegamento nell'email per impostare una nuova password. Il collegamento scade in 1 ora.",
+
+  "authGuestHello": "Ciao!",
+  "authGuestOverview": "Stai navigando {appName} come ospite. Accedi o crea un account per iniziare a gestire il tuo negozio – ci vogliono meno di 5 secondi. Abbiamo una varietà di strumenti per aiutare la crescita della tua attività, il tutto gratuitamente.",
+  "@authGuestOverview": {
+    "description": "Testo di benvenuto per gli utenti ospiti sulla schermata del profilo di accesso",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "NanoEmbryo"
+      }
+    }
+  },
+
+  "authIntroTitle": "Benvenuto in\n{appName}",
+  "@authIntroTitle": {
+    "description": "Titolo principale sulla schermata di introduzione con il nome dell'app",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "NanoEmbryo"
+      }
+    }
+  },
+  "authIntroSubtitle": "Benvenuto sulla piattaforma che abbiamo creato per te. Divertiti – il meglio ti aspetta.",
+  "authReadLegalities": "Leggi le informazioni legali",
+
+  "authPasswordRequired": "Per favore inserisci la tua password",
+  "authCreatingAccount": "Creazione dell'account in corso...",
+  "authAccountCreatedSuccess": "Account creato con successo!",
+  "authCheckEmailToConfirm": "Controlla la tua email per confermare il tuo account",
+  "authSigningInWithGoogle": "Accesso con Google...",
+  "authGoogleSignInFailed": "Accesso Google non riuscito: {error}",
+  "@authGoogleSignInFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "Utente annullato"
+      }
+    }
+  },
+  "authAuthenticatingWithApple": "Autenticazione con Apple...",
+  "authAppleSignInFailed": "Accesso Apple non riuscito: {error}",
+  "@authAppleSignInFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "Utente annullato"
+      }
+    }
+  },
+  "authSendingResetEmail": "Invio dell'email di ripristino...",
+  "authResetEmailSent": "Email di ripristino inviata. Controlla la tua posta in arrivo.",
+  "authPasswordResetFailed": "Ripristino password non riuscito: {error}",
+  "@authPasswordResetFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "Utente non trovato"
+      }
+    }
+  },
+
+  "authVerifyEmailTitle": "Controlla la tua email",
+  "authVerifyEmailSubtitle": "Abbiamo inviato un collegamento di conferma a",
+  "authVerifyEmailNote": "Tocca il collegamento nell'email per verificare il tuo account e continuare.",
+  "authConfirmationResent": "Email di conferma reinviata. Controlla la tua posta in arrivo.",
+  "authResendFailed": "Impossibile inviare l'email. Per favore riprova.",
+  "authResendEmailButton": "Reinvia email di conferma",
+  "authResendEmailCooldown": "Reinvia email ({seconds}s)",
+  "@authResendEmailCooldown": {
+    "description": "Etichetta del pulsante con secondi rimanenti per l'attesa di reinvio",
+    "placeholders": {
+      "seconds": {
+        "type": "int",
+        "example": "30"
+      }
+    }
+  },
+
+  "currencySelectorPlaceholder": "Seleziona valuta",
+  "currencySelectorNoSelected": "Nessuna valuta selezionata",
+  "currencySelectorTitle": "Seleziona valuta",
+  "currencySelectorSearchHint": "Cerca per valuta, codice o bandiera...",
+  "currencySelectorNoResults": "Nessuna valuta trovata",
+
+  "discoverScreenTitle": "Scopri",
+  "discoverSearchHint": "Cerca...",
+  "discoverAllShopsRegion": "Tutti i negozi nella tua regione",
+  "discoverAllFreelancers": "Tutti i freelance vicino a te",
+  "discoverMarketplaceTitle": "Mercato",
+  "discoverMarketplaceSubtitle": "Acquista prodotti di bellezza con consegna alla ricezione",
+  "discoverBrowseProducts": "Sfoglia prodotti",
+  "discoverMyOrders": "I miei ordini",
+  "discoverCartTooltip": "Carrello",
+
+  "homeScheduleTabLabel": "Calendario",
+  "homeDashboardTabLabel": "Pannello di controllo",
+  "homeMapTabLabel": "Mappa",
+
+  "validationRequired": "Questo campo è obbligatorio",
+  "validationEmailInvalid": "Inserisci un indirizzo email valido",
+  "validationPasswordLength": "La password deve contenere almeno {minLength} caratteri",
+  "validationPasswordUppercase": "La password deve includere almeno una lettera maiuscola",
+  
+  "loggingInIndicatorText": "Accesso in corso...",
+  "loginSuccessful": "Accesso riuscito!\nBentornato",
+  "errorLoginFailed": "Accesso fallito. Controlla le tue credenziali",
+  "errorNetwork": "Errore di rete. Controlla la tua connessione",
+  
+  "homeTitle": "Home",
+  "profileTitle": "Profilo",
+  "chatTitle": "Chat",
+
+  "editProfileNameFieldTitle": "Nome",
+  "editProfileNameFieldLabel": "Nome completo",
+  "editProfileUserFieldNameTitle": "Nome utente",
+  "editProfileUsernameFieldLabel": "@nomeutente",
+  "editProfileBioFieldTitle": "Biografia",
+  "editProfileBioFieldLabel": "Raccontaci di te",
+
+  "editProfileScreenTitle": "Modifica profilo",
+  "editProfileSettingTitle": "Impostazioni account",
+  "editProfileSettingSubtitle": "Gestisci il tuo account",
+  "editProfileScreenEditShopTitle": "Modifica Negozio",
+  "editProfileScreenEditShopSubtitle": "Modifica le informazioni del tuo negozio",
+ 
+  "languageScreenSubtitle": "Scegli la tua lingua preferita per l'interfaccia dell'app. Questo non influirà sulle impostazioni del tuo dispositivo.",
+  "languageScreeUseDeviceLang": "Usa la lingua del dispositivo.",
+  "languageScreeUseDeviceLangNote": "Questo verrà reimpostato per corrispondere alla lingua del sistema del tuo dispositivo.",
+  "languageScreenUseDeviceLang": "Usa la lingua del dispositivo",
+  "languageScreenUseDeviceLangNote": "Questo si reimposterà per corrispondere alla lingua di sistema del tuo dispositivo.",
+
+
+
+
+  
+  "settingsScreenTitle": "Impostazioni",
+  
+  "accountSectionTitle": "Account",
+  "accountSectionSubtitle": "",
+  
+  "profileItemTitle": "Profilo",
+  "profileItemSubtitle": "Gestisci i tuoi dati personali",
+  
+  "locationItemTitle": "Cambia Posizione",
+  "locationItemSubtitle": "Cambia la tua città attuale",
+  
+  "saveItemTitle": "Contenuti Salvati",
+  "saveItemSubtitle": "Contenuti che hai salvato",
+  
+  "notificationsItemTitle": "Notifiche",
+  "notificationsItemSubtitle": "Gestisci notifiche push e email",
+  
+  "blockedItemTitle": "Account Bloccati",
+  "blockedItemSubtitle": "Account che hai bloccato",
+  
+  "qrCodeItemTitle": "Condividi Codice QR",
+  "qrCodeItemSubtitle": "Condividi il tuo codice QR dell'account",
+  
+  "shareProfileItemTitle": "Condividi Profilo",
+  "shareProfileItemSubtitle": "Condividi il tuo profilo con gli amici",
+  
+  "appSettingsSectionTitle": "Impostazioni App",
+  "appSettingsSectionSubtitle": "Personalizza la tua esperienza",
+  
+  "themeItemTitle": "Tema",
+  "themeItemSubtitle": "Chiaro, Scuro o Sistema",
+  
+  "languageItemTitle": "Lingua",
+  "languageItemSubtitle": "Cambia la lingua dell'app",
+  
+  "biometricItemTitle": "Accesso Biometrico",
+  "biometricItemSubtitle": "Usa Face ID o Touch ID",
+  
+  "supportSectionTitle": "Supporto",
+  "supportSectionSubtitle": "",
+  
+  "guideItemTitle": "Guida Utente",
+  "guideItemSubtitle": "Documentazione e tutorial",
+  
+  "helpItemTitle": "Contatta Supporto",
+  "helpItemSubtitle": "Ottieni aiuto con l'app",
+  
+  "feedbackItemTitle": "Invia Feedback",
+  "feedbackItemSubtitle": "Condividi i tuoi pensieri",
+  
+  "rateItemTitle": "Valuta l'App",
+  "rateItemSubtitle": "Lascia una recensione",
+  
+  "appInfoItemTitle": "Informazioni su {appName}",
+  "@appInfoItemTitle": {
+    "description": "Titolo Informazioni sull'app con nome dinamico dell'app",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "LaMiaApp"
+      }
+    }
+  },
+  "appInfoItemSubtitle": "Informazioni tecniche",
+  
+  "legalSectionTitle": "Legale",
+  "legalSectionSubtitle": "",
+  
+  "termsItemTitle": "Termini, Privacy e Politiche",
+  "termsItemSubtitle": "Leggi i nostri termini",
+  
+  "licensesItemTitle": "Licenze Open Source",
+  "licensesItemSubtitle": "Librerie e licenze di terze parti",
+  
+  "accountActionsSectionTitle": "Azioni Account",
+  "accountActionsSectionSubtitle": "",
+  
+  "deactivateItemTitle": "Disattiva",
+  "deactivateItemSubtitle": "Disattiva il tuo account",
+  
+  "deleteItemTitle": "Elimina Account",
+  "deleteItemSubtitle": "Rimuovi permanentemente il tuo account",
+  
+  "logoutItemTitle": "Esci",
+  "logoutItemSubtitle": "Esci dal tuo account",
+
+
+  "loadingDefaultMessage": "Caricamento...",
+
+
+  
+  "emptyStateNoDataTitle": "Nessun {dataType} ancora",
+  "@emptyStateNoDataTitle": {
+    "description": "Titolo mostrato quando non sono disponibili dati di un tipo specifico",
+    "placeholders": {
+      "dataType": {
+        "type": "String",
+        "example": "utenti"
+      }
+    }
+  },
+  
+  "emptyStateNoDataSubtitle": "Quando {dataType} sarà disponibile, appariranno qui.",
+  "@emptyStateNoDataSubtitle": {
+    "description": "Sottotitolo che spiega quando appariranno i dati",
+    "placeholders": {
+      "dataType": {
+        "type": "String", 
+        "example": "utenti"
+      }
+    }
+  },
+  
+  "emptyStateNoResultsTitle": "Nessun risultato trovato",
+  "emptyStateNoResultsSubtitle": "Prova ad aggiustare la tua ricerca o filtri per trovare {dataType}.",
+  "@emptyStateNoResultsSubtitle": {
+    "description": "Suggerimento per trovare un tipo di dato specifico",
+    "placeholders": {
+      "dataType": {
+        "type": "String",
+        "example": "prodotti"
+      }
+    }
+  },
+  
+  "emptyStateNoInternetTitle": "Nessuna connessione internet",
+  "emptyStateNoInternetSubtitle": "Controlla la tua connessione e riprova.",
+  
+  "emptyStateNoFavoritesTitle": "Nessun preferito ancora",
+  "emptyStateNoFavoritesSubtitle": "Inizia ad aggiungere elementi alla tua lista dei preferiti.",
+  
+  "emptyStateNoMessagesTitle": "Nessun messaggio",
+  "emptyStateNoMessagesSubtitle": "Avvia una conversazione per vedere i messaggi qui.",
+  
+  "emptyStateRefresh": "Aggiorna",
+  "emptyStateClearFilters": "Cancella filtri",
+  "emptyStateRetry": "Riprova",
+  "emptyStateExplore": "Esplora",
+  "emptyStateStartChat": "Avvia chat",
+  
+
+  
+  "errorNetworkTitle": "Errore di connessione",
+  "errorNetworkSubtitle": "Impossibile connettersi al server. Controlla la tua connessione internet.",
+  
+  "errorServerTitle": "Errore del server",
+  "errorServerSubtitle": "Qualcosa è andato storto dalla nostra parte. Per favore, riprova più tardi.",
+  
+  "errorClientTitle": "Errore della richiesta",
+  "errorClientSubtitle": "C'è stato un problema con la tua richiesta. Per favore, controlla e riprova.",
+  
+  "errorParsingTitle": "Errore dati",
+  "errorParsingSubtitle": "Impossibile elaborare il/la {dataType}. Potrebbe essere un problema temporaneo.",
+  "@errorParsingSubtitle": {
+    "description": "Errore durante il fallimento dell'analisi di un tipo di dato specifico",
+    "placeholders": {
+      "dataType": {
+        "type": "String",
+        "example": "dati utente"
+      }
+    }
+  },
+  
+  "errorPermissionTitle": "Accesso negato",
+  "errorPermissionSubtitle": "Non hai il permesso di accedere a questo/questa {dataType}.",
+  "@errorPermissionSubtitle": {
+    "description": "Errore per negazione di permesso su contenuto specifico",
+    "placeholders": {
+      "dataType": {
+        "type": "String",
+        "example": "documento"
+      }
+    }
+  },
+  
+  "errorGenericTitle": "Qualcosa è andato storto",
+  "errorGenericSubtitle": "Si è verificato un errore imprevisto durante il caricamento di {dataType}. Per favore, riprova.",
+  "@errorGenericSubtitle": {
+    "description": "Messaggio di errore generico con contesto di tipo di dato",
+    "placeholders": {
+      "dataType": {
+        "type": "String",
+        "example": "profilo"
+      }
+    }
+  },
+  
+  "errorRetry": "Riprova",
+  "errorCheckSettings": "Controlla impostazioni",
+  "errorReport": "Segnala problema",
+  "errorGoBack": "Indietro",
+  "errorRefresh": "Aggiorna",
+  "errorRequestAccess": "Richiedi accesso",
+  "errorContactSupport": "Contatta supporto",
+  
+
+  
+  "dataTypeUsers": "utenti",
+  "dataTypeUser": "utente",
+  "dataTypeProducts": "prodotti",
+  "dataTypeProduct": "prodotto",
+  "dataTypeOrders": "ordini",
+  "dataTypeOrder": "ordine",
+  "dataTypeMessages": "messaggi",
+  "dataTypeMessage": "messaggio",
+  "dataTypeFavorites": "preferiti",
+  "dataTypeFavorite": "preferito",
+  "dataTypeData": "dati",
+  "dataTypeContent": "contenuto",
+  "dataTypeItems": "elementi",
+  "dataTypeItem": "elemento",
+
+
+
+  
+  "eulaTitle": "Contratto di Licenza per l'Utente Finale",
+  "eulaContent": "Questo Contratto di Licenza per l'Utente Finale (\"EULA\") è un accordo legale tra te e Bars Opus, Ltd. per {appName}.\n\nInstallando, accedendo o utilizzando {appName}, accetti di essere vincolato dai termini di questo EULA. {appName} è concesso in licenza, non venduto, per il tuo uso solo sotto i termini di questa licenza. Bars Opus, Ltd. si riserva tutti i diritti non espressamente concessi a te in questo EULA.\n\nNon puoi modificare, eseguire ingegneria inversa, decompilare o smontare {appName}. Questa licenza è valida fino alla risoluzione da parte tua o di Bars Opus, Ltd. I tuoi diritti ai sensi di questa licenza termineranno automaticamente senza preavviso se non rispetti qualsiasi termine.\n\nTutti i diritti di proprietà intellettuale su {appName} sono di proprietà di Bars Opus, Ltd. Questo EULA è regolato dalle leggi dell'Inghilterra e del Galles.\n\nPer domande su questo EULA, si prega di contattare: {supportEmail}.",
+  "eulaFooter": "Accettando, riconosci di aver letto e compreso questo Contratto di Licenza per l'Utente Finale.",
+  
+  "privacyPolicyTitle": "Informativa sulla Privacy",
+  "privacyPolicyContent": "Questa Informativa sulla Privacy spiega come Bars Opus, Ltd. (\"noi\", \"nostro\") raccoglie, utilizza e protegge le tue informazioni quando utilizzi {appName}.\n\nRaccogliamo le informazioni che fornisci direttamente, come quando crei un account, completi il tuo profilo o contatti il supporto. Raccogliamo automaticamente alcune informazioni sul tuo dispositivo e su come utilizzi {appName}. Utilizziamo cookie e tecnologie di tracciamento simili per tracciare l'attività e conservare determinate informazioni.\n\nUtilizziamo le informazioni che raccogliamo per fornire, mantenere e migliorare {appName}. Possiamo condividere le tue informazioni con fornitori di servizi di terze parti che svolgono servizi per nostro conto. Possiamo divulgare le tue informazioni se richiesto dalla legge o per proteggere i nostri diritti e la nostra sicurezza.\n\nHai il diritto di accedere, correggere o cancellare le tue informazioni personali. Implementiamo misure tecniche e organizzative appropriate per proteggere le tue informazioni. Possiamo aggiornare questa Informativa sulla Privacy di volta in volta. Ti informeremo di eventuali modifiche.",
+  "privacyPolicyFooter": "Informativa sulla Privacy di {appName} - Ultimo aggiornamento: {currentDate}",
+  
+  "termsTitle": "Termini di Servizio",
+  "termsContent": "Questi Termini di Servizio (\"Termini\") disciplinano il tuo accesso e utilizzo di {appName}. Accedendo o utilizzando {appName}, accetti di essere vincolato da questi Termini.\n\nDevi avere almeno 13 anni per utilizzare {appName}. Sei responsabile della protezione delle tue credenziali dell'account e di tutte le attività sotto il tuo account. Non puoi utilizzare {appName} per scopi illegali o non autorizzati.\n\nCi riserviamo il diritto di modificare, sospendere o interrompere {appName} in qualsiasi momento. Tutti i contenuti inclusi in {appName} sono di proprietà di Bars Opus, Ltd. o dei suoi licenzianti.\n\nPossiamo terminare o sospendere il tuo accesso a {appName} immediatamente se violi questi Termini. Questi Termini saranno regolati e interpretati in conformità con le leggi dell'Inghilterra e del Galles.\n\nPer qualsiasi domanda su questi Termini, contattaci a {supportEmail}.",
+  
+  "dataSharingTitle": "Accordo di Condivisione Dati",
+  "dataSharingContent": "Questo Accordo di Condivisione Dati descrive come le tue informazioni possono essere condivise quando utilizzi le funzionalità social di {appName}.\n\nQuando ti connetti con amici su {appName}, alcuni dati di attività possono essere visibili a loro. I dati di attività condivisi possono includere durata dell'allenamento, calorie bruciate, minuti di esercizio e badge di risultati. Le informazioni del tuo profilo (nome visualizzato e immagine del profilo) sono visibili agli amici con cui ti connetti.\n\nIl tuo indirizzo email e le informazioni di contatto rimangono private e non sono mai condivise con altri utenti. Controlli quali dati sono condivisi attraverso le impostazioni sulla privacy di {appName}. Puoi revocare le autorizzazioni di condivisione in qualsiasi momento nelle impostazioni dell'app.\n\nI dati condivisi con gli amici sono crittografati durante la trasmissione e lo storage. Conserviamo i dati condivisi solo per il tempo necessario per fornire la funzionalità di condivisione. Le integrazioni di terze parti possono avere le proprie pratiche di condivisione dei dati, che consigliamo di rivedere.",
+  "dataSharingFooter": "La condivisione dei dati in {appName} aiuta a creare una comunità di supporto rispettando le tue scelte sulla privacy.",
+  
+  "dashboardTitle": "Dashboard",
+  "dashboardSubtitle": "Gestisci le attività del tuo negozio in modo efficiente",
+  "dashboardSectionTitle": "Dashboard",
+  "dashboardSectionSubtitle": "Panoramica delle prestazioni e delle metriche chiave del tuo negozio",
+  "dashboardPayoutTitle": "Richiedi Pagamento",
+  "dashboardPayoutContent": "I proprietari di negozi possono richiedere pagamenti settimanali. Naviga alla sezione Guadagni, rivedi il tuo saldo e invia una richiesta di pagamento. I fondi vengono generalmente elaborati entro 3-5 giorni lavorativi.",
+  "dashboardAnalyticsTitle": "Dashboard Analitica",
+  "dashboardAnalyticsContent": "Traccia le prestazioni del tuo negozio con analisi in tempo reale. Monitora le tendenze delle vendite, l'impegno dei clienti e i livelli di inventario tramite grafici interattivi e report.",
+  "dashboardScreenshotTitle": "Panoramica Dashboard",
+  "dashboardScreenshotContent": "La dashboard principale fornisce una visione completa delle metriche chiave del tuo negozio, delle attività recenti e di un accesso rapido alle funzionalità essenziali.",
+  
+  "categoryFeatures": "Caratteristiche",
+  "categoryDashboard": "Dashboard",
+  
+  "faqDashboard1Question": "Quando posso richiedere un pagamento?",
+  "faqDashboard1Answer": "Puoi richiedere il tuo pagamento una volta alla settimana, ogni sabato. Il taglio settimanale è venerdì alle 23:59. I pagamenti vengono elaborati entro 3-5 giorni lavorativi.",
+  "faqDashboard2Question": "Dove posso richiedere il mio pagamento?",
+  "faqDashboard2Answer": "Naviga nella tua dashboard e fai clic sulla sezione 'Guadagni'. Da lì vedrai il tuo saldo attuale e un pulsante 'Richiedi Pagamento'. Segui le istruzioni per completare la tua richiesta.",
+  
+  "@eulaContent": {
+    "description": "Contenuto EULA con segnaposto nome app e email supporto",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "LaMiaApp"
+      },
+      "supportEmail": {
+        "type": "String",
+        "example": "supporto@esempio.com"
+      }
+    }
+  },
+  "@privacyPolicyContent": {
+    "description": "Contenuto informativa privacy con segnaposto nome app",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "LaMiaApp"
+      }
+    }
+  },
+  "@privacyPolicyFooter": {
+    "description": "Pie di informativa privacy con nome app e data corrente",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "LaMiaApp"
+      },
+      "currentDate": {
+        "type": "DateTime",
+        "format": "yMMMMd",
+        "example": "24 gennaio 2024"
+      }
+    }
+  },
+  "@termsContent": {
+    "description": "Contenuto termini di servizio con nome app e email supporto",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "LaMiaApp"
+      },
+      "supportEmail": {
+        "type": "String",
+        "example": "supporto@esempio.com"
+      }
+    }
+  },
+  "@dataSharingContent": {
+    "description": "Contenuto accordo condivisione dati con segnaposto nome app",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "LaMiaApp"
+      }
+    }
+  },
+  "@dataSharingFooter": {
+    "description": "Pie accordo condivisione dati con segnaposto nome app",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "LaMiaApp"
+      }
+    }
+  },
+  "@validationPasswordLength": {
+    "description": "Errore validazione password con parametro lunghezza minima",
+    "placeholders": {
+      "minLength": {
+        "type": "int",
+        "example": "8"
+      }
+    }
+  },
+
+  "profileScreenCantChatWithYourself": "Non puoi chattare con te stesso",
+  "profileScreenStartingConversation": "Avvio della conversazione...",
+  "profileScreenNoActiveSession": "Nessuna sessione attiva — accedi di nuovo.",
+  "profileScreenSignInToChatMessage": "Devi accedere per inviare un messaggio",
+  "profileScreenFollowFeatureComingSoon": "La funzione di follow arriva presto",
+  "profileScreenEnterBioPlaceholder": "Inserisci una biografia in modo che le persone ti conoscano",
+  "profileScreenNoBioYet": "Nessuna biografia ancora",
+  "profileScreenErrorLoadingProfileBody": "Impossibile caricare il profilo. Controlla la tua connessione Internet e riprova.",
+  "profileScreenLoadingNotifications": "Caricamento...",
+
+  "profileHeaderBookingsStatLabel": "Prenotazioni",
+  "profileHeaderOrdersStatLabel": "Ordini",
+  "profileHeaderEditProfileButton": "Modifica profilo",
+  "profileHeaderMessageButton": "Messaggio",
+
+  "editableProfileAvatarTakePhoto": "Scatta una foto",
+  "editableProfileAvatarChooseGallery": "Scegli dalla galleria",
+
+  "editProfileScreenAccountTypeLabel": "Tipo di account",
+  "editProfileScreenAccountTypeSubtitle": "Seleziona come desideri utilizzare questa app. Questo determina quali funzionalità sono disponibili per te.",
+  "editProfileScreenUpdatingAccountType": "Aggiornamento del tipo di account...",
+  "editProfileScreenPleaseLogIn": "Accedi per favore",
+  "editProfileScreenTitle": "Modifica profilo",
+  "editProfileScreenNameLabel": "Nome",
+  "editProfileScreenNameHint": "Inserisci il tuo nome",
+  "editProfileScreenUsernameLabel": "Nome utente",
+  "editProfileScreenUsernameHint": "Inserisci il nome utente",
+  "editProfileScreenBioLabel": "Biografia",
+  "editProfileScreenBioHint": "Raccontaci qualcosa su di te",
+  "editProfileScreenEditWorkProfileTitle": "Modifica profilo di lavoro",
+
+  "profileTabsAppointments": "Appuntamenti",
+  "profileTabsBuys": "Acquisti",
+  "profileTabsSaves": "Salvataggi",
+
+  "searchScreenSearchHint": "Cerca negozi, professionisti, prodotti...",
+  "searchScreenNoResultsFound": "Nessun risultato trovato",
+  "searchScreenNoResultsCategory": "Nessun {category} trovato",
+  "searchScreenSearchedFor": "Ricercato: \"{query}\"",
+  "searchScreenSomethingWentWrong": "Qualcosa è andato storto",
+
+  "searchAppBarSearchHint": "Cerca...",
+
+  "searchSuggestionsHint": "Cerca negozi, professionisti di servizi a domicilio o prodotti per capelli da acquistare",
+  "searchSuggestionsRecentSearches": "Ricerche recenti",
+  "searchSuggestionsClearAll": "Cancella tutto",
+
+  "searchEmptyStateNoResults": "Nessun risultato trovato",
+  "searchEmptyStateCouldNotFind": "Non abbiamo trovato nulla per \"{query}\"",
+  "searchEmptyStateTryThese": "Prova questi:",
+
+  "searchResultsShopsHeader": "Negozi",
+  "searchResultsSeeAll": "Vedi tutto",
+
+  "searchResultsTitle": "Risultati di {category}",
+  "searchResultsSearchingFor": "Ricerca di \"{query}\"",
+  "searchResultsTryDifferent": "Prova parole chiave diverse o rimuovi i filtri",
+  "searchResultsSomethingWentWrong": "Qualcosa è andato storto",
+
+  "nearYouShopsTitle": "Vicino a te\nentro {km}km",
+  "@nearYouShopsTitle": {
+    "description": "Title for nearby shops section showing distance radius",
+    "placeholders": {
+      "km": {
+        "type": "int",
+        "example": "5"
+      }
+    }
+  },
+  "nearYouShopsBody": "Negozi situati entro {km} km dalla tua posizione attuale, mostrati dal più vicino al più lontano. Semplicemente imposta la tua posizione una volta, e ti mostreremo cosa c'è vicino—sia che tu sia a casa, al lavoro o che stia esplorando un nuovo quartiere. Utile per prenotazioni last-minute o quando preferisci camminare.",
+  "@nearYouShopsBody": {
+    "description": "Description of nearby shops feature",
+    "placeholders": {
+      "km": {
+        "type": "int",
+        "example": "5"
+      }
+    }
+  },
+  "nearYouShopsEmptyNoFilter": "Nessun negozio trovato nelle vicinanze",
+  "nearYouShopsEmptyWithFilter": "Nessun negozio {luxury} trovato nelle vicinanze",
+  "@nearYouShopsEmptyWithFilter": {
+    "description": "Empty state message when no shops found for selected luxury level",
+    "placeholders": {
+      "luxury": {
+        "type": "String",
+        "example": "luxury"
+      }
+    }
+  },
+  "nearYouShopsEmptySubtitle": "I negozi a {location} verranno mostrati qui una volta che saranno disponibili",
+  "@nearYouShopsEmptySubtitle": {
+    "description": "Empty state subtitle with location placeholder",
+    "placeholders": {
+      "location": {
+        "type": "String",
+        "example": "Milano"
+      }
+    }
+  },
+
+  "premiumShopsScreenTitle": "Negozi Premium",
+  "premiumShopsEmpty": "Nessun negozio premium trovato",
+
+  "premiumShopsHorizontalTitle": "Negozi premium\nper look premium",
+  "premiumShopsHorizontalBody": "Saloni e spa di lusso selezionati che offrono esperienze lussuose. Questi negozi sono classificati come Lusso o Ultra-Lusso in base ai loro servizi, prezzi e recensioni dei clienti. Perfetto quando cerchi quel tocco extra di eleganza.",
+  "premiumShopsHorizontalEmptyNoFilter": "Nessun negozio premium disponibile",
+  "premiumShopsHorizontalEmptyWithFilter": "Nessun negozio premium {luxury} disponibile",
+  "@premiumShopsHorizontalEmptyWithFilter": {
+    "description": "Empty state for premium shops with luxury level filter",
+    "placeholders": {
+      "luxury": {
+        "type": "String",
+        "example": "luxury"
+      }
+    }
+  },
+  "premiumShopsHorizontalEmptySubtitle": "I negozi verranno mostrati qui una volta disponibili",
+
+  "topRatedShopsHorizontalTitle": "Meglio valutati",
+  "topRatedShopsHorizontalTitleWithLocation": "Meglio valutati \na {location}",
+  "@topRatedShopsHorizontalTitleWithLocation": {
+    "description": "Top rated shops title with location",
+    "placeholders": {
+      "location": {
+        "type": "String",
+        "example": "Milano"
+      }
+    }
+  },
+  "topRatedShopsHorizontalBody": "Negozi con le valutazioni più alte dei clienti (4,5+ stelle) e molte recensioni. Questi sono i preferiti della nostra comunità—costantemente elogiati per qualità, servizio e professionalità. Un ottimo punto di partenza se cerchi opzioni affidabili e approvate dalla folla.",
+  "topRatedShopsHorizontalEmptyNoFilter": "Nessun negozio meglio valutato disponibile",
+  "topRatedShopsHorizontalEmptyWithFilter": "Nessun negozio premium {luxury} disponibile",
+  "@topRatedShopsHorizontalEmptyWithFilter": {
+    "description": "Empty state for top rated shops with luxury level filter",
+    "placeholders": {
+      "luxury": {
+        "type": "String",
+        "example": "luxury"
+      }
+    }
+  },
+  "topRatedShopsHorizontalEmptySubtitle": "I negozi verranno mostrati qui una volta disponibili",
+
+  "topRatedShopsScreenTitle": "Negozi Meglio Valutati",
+  "topRatedShopsEmpty": "Nessun negozio meglio valutato trovato",
+
+  "nearYouFreelancersScreenTitle": "Freelancer vicino a te",
+  "nearYouFreelancersEmpty": "Nessun freelancer trovato nelle vicinanze",
+  "nearYouFreelancersEmptySubtitle": "Prova ad espandere la tua area di ricerca o cambia posizione",
+
+  "topRatedFreelancersScreenTitle": "Freelancer meglio valutati",
+  "topRatedFreelancersEmpty": "Nessun freelancer meglio valutato trovato",
+  "topRatedFreelancersEmptySubtitle": "Prova ad adattare la tua area di ricerca",
+
+  "topRatedFreelancersHorizontalTitle": "Meglio valutati \na {location}",
+  "@topRatedFreelancersHorizontalTitle": {
+    "description": "Top rated freelancers title with location",
+    "placeholders": {
+      "location": {
+        "type": "String",
+        "example": "Milano"
+      }
+    }
+  },
+  "topRatedFreelancersHorizontalBody": "Professionisti di alto livello selezionati che offrono esperienze lussuose. Questi freelancer sono classificati come meglio valutati in base alla qualità del loro lavoro, prezzi e recensioni dei clienti. Perfetto per quel tocco extra di eccellenza.",
+
+  "nearYouFreelancersHorizontalTitle": "Freelancer Vicino a Te a {location}",
+  "@nearYouFreelancersHorizontalTitle": {
+    "description": "Freelancers near you title with location",
+    "placeholders": {
+      "location": {
+        "type": "String",
+        "example": "Milano"
+      }
+    }
+  },
+  "nearYouFreelancersHorizontalBody": "Professionisti qualificati ubicati vicino a te. Questi freelancer sono disponibili per prenotazioni rapide e offrono servizio locale conveniente. Perfetto quando cerchi affidabilità e prossimità.",
+  "nearYouFreelancersHorizontalEmpty": "Nessun freelancer meglio valutato disponibile",
+  "nearYouFreelancersHorizontalEmptySubtitle": "I freelancer verranno mostrati qui una volta disponibili",
+
+  "shopNoLocationSetTitle": "Imposta la tua posizione per scoprire",
+  "shopNoLocationSetContent": "Imposta la tua posizione per scoprire negozi premium e ben valutati vicino a te.",
+
+  "providerTypeShops": "Negozi",
+  "providerTypeFreelancers": "Freelancer",
+  "providerTypeBuy": "Acquista",
+
+  "luxuryLevelChipsAll": "Tutti",
+
+  "searchRadiusSliderTitle": "Raggio di esplorazione",
+  "searchRadiusSliderSubtitle": "Visualizzazione risultati entro {km}km dalla tua posizione",
+  "@searchRadiusSliderSubtitle": {
+    "description": "Subtitle showing current search radius",
+    "placeholders": {
+      "km": {
+        "type": "int",
+        "example": "5"
+      }
+    }
+  },
+
+  "validationPasswordMaxLength": "La password non deve superare {max} caratteri",
+  "@validationPasswordMaxLength": {
+    "description": "Validation error for maximum password length",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "128"
+      }
+    }
+  },
+  "validationPasswordRepeatingChars": "La password contiene troppi caratteri ripetuti",
+  "validationPasswordSequential": "La password contiene caratteri sequenziali",
+  "validationPhoneDigits": "Il numero di telefono deve contenere {digits} cifre",
+  "@validationPhoneDigits": {
+    "description": "Validation error for specific phone number digit requirement",
+    "placeholders": {
+      "digits": {
+        "type": "int",
+        "example": "10"
+      }
+    }
+  },
+  "validationPhoneUK": "Numero di telefono britannico non valido",
+  "validationUrlScheme": "L'URL deve iniziare con {schemes}",
+  "@validationUrlScheme": {
+    "description": "Validation error for URL scheme requirement",
+    "placeholders": {
+      "schemes": {
+        "type": "String",
+        "example": "http or https"
+      }
+    }
+  },
+  "validationUrlDomain": "Nome di dominio non valido",
+  "validationUrlPublicAddress": "L'URL deve puntare a un indirizzo pubblico",
+  "validationNameMaxLength": "{field} non deve superare {max} caratteri",
+  "@validationNameMaxLength": {
+    "description": "Validation error for maximum name length",
+    "placeholders": {
+      "field": {
+        "type": "String",
+        "example": "Name"
+      },
+      "max": {
+        "type": "int",
+        "example": "50"
+      }
+    }
+  },
+  "validationNameConsecutiveChars": "{field} non può contenere trattini o spazi consecutivi",
+  "@validationNameConsecutiveChars": {
+    "description": "Validation error for consecutive special characters in name",
+    "placeholders": {
+      "field": {
+        "type": "String",
+        "example": "Name"
+      }
+    }
+  },
+  "validationCreditCardFormat": "Per favore inserisci un numero di carta di credito valido",
+  "validationCreditCardInvalid": "Numero di carta di credito non valido",
+  "validationDatePastNotAllowed": "La data non può essere nel passato",
+  "validationPostalCodeZip": "Per favore inserisci un codice postale valido (es. 12345 o 12345-6789)",
+  "validationPostalCodeCanadian": "Per favore inserisci un codice postale canadese valido (es. A1A 1A1)",
+  "validationPostalCodeGeneric": "Per favore inserisci un codice postale valido",
+  "validationSSNFormat": "Per favore inserisci un SSN valido (es. 123-45-6789)",
+  "validationSSNInvalid": "SSN non valido",
+  "validationEmailTooLong": "L'indirizzo email è troppo lungo (max. 254 caratteri)",
+  "validationEmailLocalPartTooLong": "La parte locale dell'indirizzo email è troppo lunga",
+
+  "categoriesAll": "Tutti",
+  "categoriesSalon": "Saloni",
+  "categoriesBarbershop": "Barberie",
+  "categoriesSpa": "Spa",
+  "categoriesNailSalon": "Saloni per Unghie",
+  "categoriesLashStudio": "Studi di Ciglia",
+  "categoriesWaxing": "Depilazione",
+  "categoriesMassage": "Massaggio",
+  "categoriesMakeup": "Trucco",
+  "categoriesSkincare": "Cura della Pelle",
+
+  "luxuryLevelModerate": "Moderato",
+  "luxuryLevelLuxury": "Lusso",
+  "luxuryLevelUltraLuxury": "Ultra Lusso"
+}

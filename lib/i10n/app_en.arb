@@ -1,0 +1,960 @@
+{
+  "@@locale": "en",
+  
+  "appName": "Nano Embryo",
+  "appDescription": "Your innovative app",
+  
+  "commonContinue": "Continue",
+  "commonCancel": "Cancel",
+  "commonSave": "Save",
+  "commonLogin": "Login",
+  "commonLogout": "Logout",
+  "commonDone": "Done",
+  "commonRetry": "Retry",
+  "commonAccept": "Accept",
+  "commonReject": "Reject",
+  "introGetStarted": "Get Started",
+  
+  "actionsBlock": "Block user",
+  "actionsReport": "Report user",
+  "actionsSend": "Send to chat",
+  "actionsShare": "Share",
+  "actionsCopy": "Copy link",
+  
+  "appInfoVersion": "Version",
+  "appInfoReleased": "Released",
+  "appInfoPackageName": "Package Name",
+  "appInfoDeveloper": "Developer Name",
+  "appInfoSupportEmail": "Support Email",
+  "appInfoTechnicalDetails": "Technical Details",
+  "appInfoBundleID": "Bundle ID",
+  "appInfoBuildVersion": "Build Version",
+  "appInfoBuildNumber": "Build Number",
+  "appInfoReleaseDate": "Release Date",
+  "appInfoAppSize": "App Size",
+  "appInfoOverview": "{appName} is a modern mobile application built with robust security and functionality, designed to provide an exceptional user experience with clean architecture and performance optimization.",
+  "@appInfoOverview": {
+    "description": "App overview description with dynamic app name",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "MyApp"
+      }
+    }
+  },
+
+  "introTitle": "Welcome to {appName}",
+  "@introTitle": {
+    "description": "Intro screen title with app name placeholder",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "MyApp"
+      }
+    }
+  },
+  "introFeature1Title": "See Your Progress",
+  "introFeature1Description": "Track your development milestones with detailed analytics and insights",
+  "introFeature2Title": "Explore Templates",
+  "introFeature2Description": "Discover pre-built components and screens for rapid development",
+  "introFeature3Title": "Get Started Quickly",
+  "introFeature3Description": "Jumpstart your project with zero-config setup and best practices",
+  "introGetStarted": "Get Started",
+  
+  "appleSignIn": "Sign in with Apple",
+  "googleSignIn": "Sign in with Google",
+  "appleRegister": "Continue with Apple",
+  "googleRegister": "Continue with Google",
+  "emailAndPassword": "Enter email and password",
+
+  "signInTitle": "Sign in",
+  "createAccount": "Create account",
+  "legalConsentPart1": "Kindly read the ",
+  "legalConsentPart2": "terms and conditions",
+  "legalConsentPart3": " and other legal documents that govern your use of {appName}.",
+  "@legalConsentPart3": {
+    "description": "Legal consent text with dynamic app name",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "MyApp"
+      }
+    }
+  },
+  
+  "emailTitle": "Email",
+  "passwordTitle": "Password",
+  "loginEmailLabel": "Email address",
+  "loginEmailHint": "Enter your email",
+  "loginPasswordLabel": "Password",
+  "loginPasswordHint": "Enter your password",
+  "loginForgotPasswordPart1": "Have you forgotten your password? ",
+  "loginForgotPasswordPart2": "Tap here",
+  "loginForgotPasswordPart3": " to reset your password?",
+
+  "commonConfirmPasswordLabel": "Confirm Password",
+  "commonConfirmPasswordHint": "Please confirm your password",
+  "commonPasswordsDoNotMatch": "Passwords do not match",
+  "commonPasswordConfirmRequired": "Please confirm your password",
+  "commonFieldIsValid": "{field} is valid",
+  "@commonFieldIsValid": {
+    "description": "Snackbar shown when a field passes validation",
+    "placeholders": {
+      "field": {
+        "type": "String",
+        "example": "Email"
+      }
+    }
+  },
+  "commonPleaseWait": "Please wait for the current operation to complete",
+  "commonUnexpectedError": "An unexpected error occurred. Please try again.",
+  "commonSomethingWentWrong": "Something went wrong. Please try again.",
+  "commonEnterEmailAndRetry": "Please enter your email address and try again",
+  "commonLearnMore": "Learn more",
+
+  "authSignUpVerificationSent": "Verification email sent! Please check your inbox.",
+  "authSignUpFailed": "Sign-up failed: {error}",
+  "@authSignUpFailed": {
+    "description": "Sign-up failure message with error details",
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "Email already in use"
+      }
+    }
+  },
+
+  "authForgotPasswordTitle": "Forgot your password?",
+  "authForgotPasswordSubtitle": "Enter your email and we'll send you a link to reset your password.",
+  "authSendResetLink": "Send reset link",
+  "authBackToSignIn": "Back to sign in",
+
+  "authUsernameScreenTitle": "Choose your username",
+  "authUsernameScreenSubtitle": "This is how others will see you. You can change it later.",
+  "authUsernameLabel": "Username",
+  "authUsernameHint": "Enter a username",
+  "authUsernameMinLength": "Username must be at least {min} characters",
+  "@authUsernameMinLength": {
+    "description": "Validation error for minimum username length",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "authUsernameMaxLength": "Username must be at most {max} characters",
+  "@authUsernameMaxLength": {
+    "description": "Validation error for maximum username length",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "30"
+      }
+    }
+  },
+  "authUsernameFormatError": "Only letters, numbers, and underscores are allowed",
+  "authUsernameTaken": "This username is already taken",
+  "authUsernameCheckError": "Unable to check username availability. Please try again.",
+  "authUsernameSaveError": "Could not save your username. Please try again.",
+  "authUsernameSavedSuccess": "Username saved successfully!",
+
+  "authUpdatePasswordTitle": "Create new password",
+  "authUpdatePasswordButton": "Update password",
+  "authUpdatePasswordSuccess": "Password updated successfully. Please sign in again.",
+
+  "authPasswordResetSentTitle": "Check your email",
+  "authPasswordResetSentBody": "We sent a password reset link to",
+  "authPasswordResetSentNote": "Tap the link in the email to set a new password. The link expires in 1 hour.",
+
+  "authGuestHello": "Hello!",
+  "authGuestOverview": "You are browsing {appName} as a guest. Log in or create an account to start managing your shop — it takes less than 5 seconds. We have a variety of tools to help grow your business, all free of charge.",
+  "@authGuestOverview": {
+    "description": "Welcome text for guest users on the login profile screen",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "NanoEmbryo"
+      }
+    }
+  },
+
+  "authIntroTitle": "Welcome to\n{appName}",
+  "@authIntroTitle": {
+    "description": "Main title on the intro screen with app name",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "NanoEmbryo"
+      }
+    }
+  },
+  "authIntroSubtitle": "Welcome to the platform we built for you. Enjoy and have fun — the best is waiting.",
+  "authReadLegalities": "Read legalities",
+
+  "authPasswordRequired": "Please enter your password",
+  "authCreatingAccount": "Creating account...",
+  "authAccountCreatedSuccess": "Account created successfully!",
+  "authCheckEmailToConfirm": "Please check your email to confirm your account",
+  "authSigningInWithGoogle": "Signing in with Google...",
+  "authGoogleSignInFailed": "Google sign-in failed: {error}",
+  "@authGoogleSignInFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "User cancelled"
+      }
+    }
+  },
+  "authAuthenticatingWithApple": "Authenticating with Apple...",
+  "authAppleSignInFailed": "Apple sign-in failed: {error}",
+  "@authAppleSignInFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "User cancelled"
+      }
+    }
+  },
+  "authSendingResetEmail": "Sending reset email...",
+  "authResetEmailSent": "Reset email sent. Check your inbox.",
+  "authPasswordResetFailed": "Password reset failed: {error}",
+  "@authPasswordResetFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "User not found"
+      }
+    }
+  },
+
+  "authVerifyEmailTitle": "Check your email",
+  "authVerifyEmailSubtitle": "We sent a confirmation link to",
+  "authVerifyEmailNote": "Tap the link in the email to verify your account and continue.",
+  "authConfirmationResent": "Confirmation email resent. Check your inbox.",
+  "authResendFailed": "Failed to resend email. Please try again.",
+  "authResendEmailButton": "Resend confirmation email",
+  "authResendEmailCooldown": "Resend email ({seconds}s)",
+  "@authResendEmailCooldown": {
+    "description": "Button label with seconds remaining for resend cooldown",
+    "placeholders": {
+      "seconds": {
+        "type": "int",
+        "example": "30"
+      }
+    }
+  },
+
+  "currencySelectorPlaceholder": "Select currency",
+  "currencySelectorNoSelected": "No currency selected",
+  "currencySelectorTitle": "Select Currency",
+  "currencySelectorSearchHint": "Search by currency, code, or flag...",
+  "currencySelectorNoResults": "No currencies found",
+
+  "discoverScreenTitle": "Discover",
+  "discoverSearchHint": "Search...",
+  "discoverAllShopsRegion": "All shops in your region",
+  "discoverAllFreelancers": "All freelancers near you",
+  "discoverMarketplaceTitle": "Marketplace",
+  "discoverMarketplaceSubtitle": "Shop beauty products with cash on delivery",
+  "discoverBrowseProducts": "Browse products",
+  "discoverMyOrders": "My orders",
+  "discoverCartTooltip": "Cart",
+
+  "homeScheduleTabLabel": "Schedule",
+  "homeDashboardTabLabel": "Dashboard",
+  "homeMapTabLabel": "Map",
+
+  "validationRequired": "This field is required",
+  "validationEmailInvalid": "Please enter a valid email address",
+  "validationPasswordLength": "Password must be at least {minLength} characters",
+  "validationPasswordUppercase": "Password must include at least one uppercase letter",
+  
+  "loggingInIndicatorText": "Logging in...",
+  "loginSuccessful": "Login successful!\nWelcome back",
+  "errorLoginFailed": "Login failed. Please check your credentials",
+  "errorNetwork": "Network error. Please check your connection",
+  
+  "homeTitle": "Home",
+  "profileTitle": "Profile",
+  "chatTitle": "Chat",
+
+
+  "editProfileNameFieldTitle": "Name",
+  "editProfileNameFieldLabel": "Full name",
+  "editProfileUserFieldNameTitle": "Username",
+  "editProfileUsernameFieldLabel": "@username",
+  "editProfileBioFieldTitle": "Bio",
+  "editProfileBioFieldLabel": "Tell us about yourself",
+
+  "editProfileScreenTitle": "Edit profile\n",
+  "editProfileSettingTitle": "Account Settings",
+  "editProfileSettingSubtitle": "Manage your account",
+  "editProfileScreenEditShopTitle": "Edit Shop",
+  "editProfileScreenEditShopSubtitle": "Change your shop information",
+
+  "languageScreenSubtitle": "Choose your preferred language for the app interface.\nThis will not affect your device settings.",
+  "languageScreeUseDeviceLang": "Use Device Language.",
+  "languageScreeUseDeviceLangNote": "This will reset to match your device system language.",
+
+  "settingsScreenTitle": "Settings",
+  
+  "accountSectionTitle": "Account",
+  "accountSectionSubtitle": "",
+  
+  "profileItemTitle": "Profile",
+  "profileItemSubtitle": "Manage your personal data",
+  
+  "locationItemTitle": "Change Location",
+  "locationItemSubtitle": "Change your current city",
+  
+  "saveItemTitle": "Saved Contents",
+  "saveItemSubtitle": "Contents you have saved",
+  
+  "notificationsItemTitle": "Notifications",
+  "notificationsItemSubtitle": "Manage push and email notifications",
+  
+  "blockedItemTitle": "Blocked Accounts",
+  "blockedItemSubtitle": "Accounts you have blocked",
+  
+  "qrCodeItemTitle": "Share QR Code",
+  "qrCodeItemSubtitle": "Share your account QR code",
+  
+  "shareProfileItemTitle": "Share Profile",
+  "shareProfileItemSubtitle": "Share your profile with friends",
+  
+  "appSettingsSectionTitle": "App Settings",
+  "appSettingsSectionSubtitle": "Customize your experience",
+  
+  "themeItemTitle": "Theme",
+  "themeItemSubtitle": "Light, Dark, or System",
+  
+  "languageItemTitle": "Language",
+  "languageItemSubtitle": "Change app language",
+  
+  "biometricItemTitle": "Biometric Login",
+  "biometricItemSubtitle": "Use Face ID or Touch ID",
+  
+  "supportSectionTitle": "Support",
+  "supportSectionSubtitle": "",
+  
+  "guideItemTitle": "User Guide",
+  "guideItemSubtitle": "Documentation and tutorials",
+  
+  "helpItemTitle": "Contact Support",
+  "helpItemSubtitle": "Get help with the app",
+  
+  "feedbackItemTitle": "Send Feedback",
+  "feedbackItemSubtitle": "Share your thoughts",
+  
+  "rateItemTitle": "Rate the App",
+  "rateItemSubtitle": "Leave a review",
+  
+  "appInfoItemTitle": "About {appName}",
+  "@appInfoItemTitle": {
+    "description": "About app title with dynamic app name",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "MyApp"
+      }
+    }
+  },
+  "appInfoItemSubtitle": "Technical information",
+  
+  "legalSectionTitle": "Legal",
+  "legalSectionSubtitle": "",
+  
+  "termsItemTitle": "Terms, Privacy & Policies",
+  "termsItemSubtitle": "Read our terms",
+  
+  "licensesItemTitle": "Open Source Licenses",
+  "licensesItemSubtitle": "Third-party libraries and licenses",
+  
+  "accountActionsSectionTitle": "Account Actions",
+  "accountActionsSectionSubtitle": "",
+  
+  "deactivateItemTitle": "Deactivate",
+  "deactivateItemSubtitle": "Deactivate out of your account",
+  
+  "deleteItemTitle": "Delete Account",
+  "deleteItemSubtitle": "Permanently remove your account",
+  
+  "logoutItemTitle": "Log Out",
+  "logoutItemSubtitle": "Sign out of your account",
+
+  "loadingDefaultMessage": "Loading...",
+
+  "emptyStateNoDataTitle": "No {dataType} yet",
+  "@emptyStateNoDataTitle": {
+    "description": "Title shown when no data of a specific type is available",
+    "placeholders": {
+      "dataType": {
+        "type": "String",
+        "example": "users"
+      }
+    }
+  },
+  
+  "emptyStateNoDataSubtitle": "When {dataType} becomes available, they will appear here.",
+  "@emptyStateNoDataSubtitle": {
+    "description": "Subtitle explaining when data will appear",
+    "placeholders": {
+      "dataType": {
+        "type": "String", 
+        "example": "users"
+      }
+    }
+  },
+  
+  "emptyStateNoResultsTitle": "No results found",
+  "emptyStateNoResultsSubtitle": "Try adjusting your search or filters to find {dataType}.",
+  "@emptyStateNoResultsSubtitle": {
+    "description": "Hint for finding specific data type",
+    "placeholders": {
+      "dataType": {
+        "type": "String",
+        "example": "products"
+      }
+    }
+  },
+  
+  "emptyStateNoInternetTitle": "No internet connection",
+  "emptyStateNoInternetSubtitle": "Check your connection and try again.",
+  
+  "emptyStateNoFavoritesTitle": "No favorites yet",
+  "emptyStateNoFavoritesSubtitle": "Start adding items to your favorites list.",
+  
+  "emptyStateNoMessagesTitle": "No messages",
+  "emptyStateNoMessagesSubtitle": "Start a conversation to see messages here.",
+  
+  "emptyStateRefresh": "Refresh",
+  "emptyStateClearFilters": "Clear filters",
+  "emptyStateRetry": "Try again",
+  "emptyStateExplore": "Explore",
+  "emptyStateStartChat": "Start chat",
+  
+  
+  "errorNetworkTitle": "Connection Error",
+  "errorNetworkSubtitle": "Unable to connect to the server. Check your internet connection.",
+  
+  "errorServerTitle": "Server Error",
+  "errorServerSubtitle": "Something went wrong on our end. Please try again later.",
+  
+  "errorClientTitle": "Request Error",
+  "errorClientSubtitle": "There was a problem with your request. Please check and try again.",
+  
+  "errorParsingTitle": "Data Error",
+  "errorParsingSubtitle": "Unable to process the {dataType}. This might be a temporary issue.",
+  "@errorParsingSubtitle": {
+    "description": "Error when failing to parse specific data type",
+    "placeholders": {
+      "dataType": {
+        "type": "String",
+        "example": "user data"
+      }
+    }
+  },
+  
+  "errorPermissionTitle": "Access Denied",
+  "errorPermissionSubtitle": "You don't have permission to access this {dataType}.",
+  "@errorPermissionSubtitle": {
+    "description": "Error for permission denial on specific content",
+    "placeholders": {
+      "dataType": {
+        "type": "String",
+        "example": "document"
+      }
+    }
+  },
+  
+  "errorGenericTitle": "Something went wrong",
+  "errorGenericSubtitle": "An unexpected error occurred while loading {dataType}. Please try again.",
+  "@errorGenericSubtitle": {
+    "description": "Generic error message with data type context",
+    "placeholders": {
+      "dataType": {
+        "type": "String",
+        "example": "profile"
+      }
+    }
+  },
+  
+  "errorRetry": "Try again",
+  "errorCheckSettings": "Check settings",
+  "errorReport": "Report issue",
+  "errorGoBack": "Go back",
+  "errorRefresh": "Refresh",
+  "errorRequestAccess": "Request access",
+  "errorContactSupport": "Contact support",
+  
+  
+  "dataTypeUsers": "users",
+  "dataTypeUser": "user",
+  "dataTypeProducts": "products",
+  "dataTypeProduct": "product",
+  "dataTypeOrders": "orders",
+  "dataTypeOrder": "order",
+  "dataTypeMessages": "messages",
+  "dataTypeMessage": "message",
+  "dataTypeFavorites": "favorites",
+  "dataTypeFavorite": "favorite",
+  "dataTypeData": "data",
+  "dataTypeContent": "content",
+  "dataTypeItems": "items",
+  "dataTypeItem": "item",
+
+
+
+
+
+
+
+  "eulaTitle": "End User License Agreement",
+  "eulaContent": "This End User License Agreement (\"EULA\") is a legal agreement between you and Bars Opus, Ltd. for {appName}.\n\nBy installing, accessing, or using {appName}, you agree to be bound by the terms of this EULA. {appName} is licensed, not sold, to you for use only under the terms of this license. Bars Opus, Ltd. reserves all rights not expressly granted to you in this EULA.\n\nYou may not modify, reverse engineer, decompile, or disassemble {appName}. This license is valid until terminated by you or Bars Opus, Ltd. Your rights under this license will terminate automatically without notice if you fail to comply with any term(s).\n\nAll intellectual property rights in and to {appName} are owned by Bars Opus, Ltd. This EULA is governed by the laws of England and Wales.\n\nFor questions about this EULA, please contact: {supportEmail}.",
+  "eulaFooter": "By agreeing, you acknowledge that you have read and understood this End User License Agreement.",
+  
+  "privacyPolicyTitle": "Privacy Policy",
+  "privacyPolicyContent": "This Privacy Policy explains how Bars Opus, Ltd. (\"we\", \"us\", \"our\") collects, uses, and protects your information when you use {appName}.\n\nWe collect information you provide directly, such as when you create an account, complete your profile, or contact support. We automatically collect certain information about your device and how you use {appName}. We use cookies and similar tracking technologies to track activity and hold certain information.\n\nWe use the information we collect to provide, maintain, and improve {appName}. We may share your information with third-party service providers who perform services on our behalf. We may disclose your information if required by law or to protect our rights and safety.\n\nYou have the right to access, correct, or delete your personal information. We implement appropriate technical and organizational measures to protect your information. We may update this Privacy Policy from time to time. We will notify you of any changes.",
+  "privacyPolicyFooter": "{appName} Privacy Policy - Last updated: {currentDate}",
+  
+  "termsTitle": "Terms of Service",
+  "termsContent": "These Terms of Service (\"Terms\") govern your access to and use of {appName}. By accessing or using {appName}, you agree to be bound by these Terms.\n\nYou must be at least 13 years old to use {appName}. You are responsible for safeguarding your account credentials and for all activities under your account. You may not use {appName} for any illegal or unauthorized purpose.\n\nWe reserve the right to modify, suspend, or discontinue {appName} at any time. All content included in {appName} is the property of Bars Opus, Ltd. or its licensors.\n\nWe may terminate or suspend your access to {appName} immediately if you violate these Terms. These Terms shall be governed by and construed in accordance with the laws of England and Wales.\n\nFor any questions about these Terms, please contact us at {supportEmail}.",
+  
+  "dataSharingTitle": "Data Sharing Agreement",
+  "dataSharingContent": "This Data Sharing Agreement outlines how your information may be shared when you use {appName} social features.\n\nWhen you connect with friends on {appName}, certain activity data may be visible to them. Shared activity data may include workout duration, calories burned, exercise minutes, and achievement badges. Your profile information (display name and profile picture) is visible to friends you connect with.\n\nYour email address and contact information remain private and are never shared with other users. You control what data is shared through your {appName} privacy settings. You can revoke sharing permissions at any time in the app settings.\n\nData shared with friends is encrypted during transmission and storage. We retain shared data only as long as necessary to provide the sharing functionality. Third-party integrations may have their own data sharing practices, which we recommend reviewing.",
+  "dataSharingFooter": "Data sharing in {appName} helps create a supportive community while respecting your privacy choices.",
+  
+  "dashboardTitle": "Dashboard",
+  "dashboardSubtitle": "Manage your shop activities efficiently",
+
+  "dashboardSectionTitle": "Dashboard",
+  "dashboardSectionSubtitle": "Overview of your shop's performance and key metrics",
+
+  "dashboardPayoutTitle": "Request Payout",
+  "dashboardPayoutContent": "Shop owners can request weekly payouts. Navigate to the Earnings section, review your balance, and submit a payout request. Funds typically process within 3-5 business days.",
+  
+  "dashboardAnalyticsTitle": "Analytics Dashboard",
+  "dashboardAnalyticsContent": "Track your shop's performance with real-time analytics. Monitor sales trends, customer engagement, and inventory levels through interactive charts and reports.",
+  
+  "dashboardScreenshotTitle": "Dashboard Overview",
+  "dashboardScreenshotContent": "The main dashboard provides a comprehensive view of your shop's key metrics, recent activities, and quick access to essential features.",
+  
+  "categoryFeatures": "Features",
+  "categoryDashboard": "Dashboard",
+  
+  "faqDashboard1Question": "When can I request a payout?",
+  "faqDashboard1Answer": "You can request your payout once a week, every Saturday. The weekly cutoff is Friday at 11:59 PM. Payouts are processed within 3-5 business days.",
+ 
+  "faqDashboard2Question": "Where do I request my payout?",
+  "faqDashboard2Answer": "Navigate to your dashboard and click on the 'Earnings' section. From there, you'll see your current balance and a 'Request Payout' button. Follow the prompts to complete your request.",
+  
+  "@eulaContent": {
+    "description": "EULA content with app name and support email placeholders",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "MyApp"
+      },
+      "supportEmail": {
+        "type": "String",
+        "example": "support@example.com"
+      }
+    }
+  },
+  "@privacyPolicyContent": {
+    "description": "Privacy policy content with app name placeholder",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "MyApp"
+      }
+    }
+  },
+  "@privacyPolicyFooter": {
+    "description": "Privacy policy footer with app name and current date",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "MyApp"
+      },
+      "currentDate": {
+        "type": "DateTime",
+        "format": "yMMMMd",
+        "example": "January 24, 2024"
+      }
+    }
+  },
+  "@termsContent": {
+    "description": "Terms of service content with app name and support email",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "MyApp"
+      },
+      "supportEmail": {
+        "type": "String",
+        "example": "support@example.com"
+      }
+    }
+  },
+  "@dataSharingContent": {
+    "description": "Data sharing content with app name placeholder",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "MyApp"
+      }
+    }
+  },
+  "@dataSharingFooter": {
+    "description": "Data sharing footer with app name placeholder",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "MyApp"
+      }
+    }
+  },
+  "@validationPasswordLength": {
+    "description": "Password validation error with minimum length parameter",
+    "placeholders": {
+      "minLength": {
+        "type": "int",
+        "example": "8"
+      }
+    }
+  },
+
+  "profileScreenCantChatWithYourself": "You can't chat with yourself",
+  "profileScreenStartingConversation": "Starting conversation...",
+  "profileScreenNoActiveSession": "No active session — please log in again.",
+  "profileScreenSignInToChatMessage": "You have to sign in to send a message",
+  "profileScreenFollowFeatureComingSoon": "Follow feature coming soon",
+  "profileScreenEnterBioPlaceholder": "Enter a bio so people can know you",
+  "profileScreenNoBioYet": "No bio yet",
+  "profileScreenErrorLoadingProfileBody": "Unable to load profile. Check your internet and try again.",
+  "profileScreenLoadingNotifications": "Loading...",
+
+  "profileHeaderBookingsStatLabel": "Bookings",
+  "profileHeaderOrdersStatLabel": "Orders",
+  "profileHeaderEditProfileButton": "Edit profile",
+  "profileHeaderMessageButton": "Message",
+
+  "editableProfileAvatarTakePhoto": "Take a photo",
+  "editableProfileAvatarChooseGallery": "Choose from gallery",
+
+  "editProfileScreenAccountTypeLabel": "Account Type",
+  "editProfileScreenAccountTypeSubtitle": "Select how you want to use this app. This determines what features are available to you.",
+  "editProfileScreenUpdatingAccountType": "Updating account type...",
+  "editProfileScreenPleaseLogIn": "Please log in",
+  "editProfileScreenTitle": "Edit profile",
+  "editProfileScreenNameLabel": "Name",
+  "editProfileScreenNameHint": "Enter your name",
+  "editProfileScreenUsernameLabel": "Username",
+  "editProfileScreenUsernameHint": "Enter username",
+  "editProfileScreenBioLabel": "Bio",
+  "editProfileScreenBioHint": "Tell something about yourself",
+  "editProfileScreenEditWorkProfileTitle": "Edit work profile",
+
+  "profileTabsAppointments": "Appointments",
+  "profileTabsBuys": "Buys",
+  "profileTabsSaves": "Saves",
+
+  "searchScreenSearchHint": "Search shops, professionals, products...",
+  "searchScreenNoResultsFound": "No results found",
+  "searchScreenNoResultsCategory": "No {category} found",
+  "@searchScreenNoResultsCategory": {
+    "description": "Empty state message for search with category placeholder",
+    "placeholders": {
+      "category": {
+        "type": "String",
+        "example": "shops"
+      }
+    }
+  },
+  "searchScreenSearchedFor": "Searched for: \"{query}\"",
+  "@searchScreenSearchedFor": {
+    "description": "Search query display in empty state",
+    "placeholders": {
+      "query": {
+        "type": "String",
+        "example": "hair salon"
+      }
+    }
+  },
+  "searchScreenSomethingWentWrong": "Something went wrong",
+
+  "searchAppBarSearchHint": "Search...",
+
+  "searchSuggestionsHint": "Search for shops, professionals for home service, or hair products to buy",
+  "searchSuggestionsRecentSearches": "Recent Searches",
+  "searchSuggestionsClearAll": "Clear All",
+
+  "searchEmptyStateNoResults": "No results found",
+  "searchEmptyStateCouldNotFind": "We couldn't find anything for \"{query}\"",
+  "@searchEmptyStateCouldNotFind": {
+    "description": "Empty state message when no search results found",
+    "placeholders": {
+      "query": {
+        "type": "String",
+        "example": "hair salon"
+      }
+    }
+  },
+  "searchEmptyStateTryThese": "Try these instead:",
+
+  "searchResultsShopsHeader": "Shops",
+  "searchResultsSeeAll": "See all",
+
+  "searchResultsTitle": "{category} Results",
+  "@searchResultsTitle": {
+    "description": "Category results screen title",
+    "placeholders": {
+      "category": {
+        "type": "String",
+        "example": "Shops"
+      }
+    }
+  },
+  "searchResultsSearchingFor": "Searching for \"{query}\"",
+  "@searchResultsSearchingFor": {
+    "description": "Subtitle showing search query in results screen",
+    "placeholders": {
+      "query": {
+        "type": "String",
+        "example": "hair salon"
+      }
+    }
+  },
+  "searchResultsTryDifferent": "Try different keywords or remove filters",
+  "searchResultsSomethingWentWrong": "Something went wrong",
+
+  "nearYouShopsTitle": "Near You\nwithin {km}km",
+  "@nearYouShopsTitle": {
+    "description": "Title for nearby shops section showing distance radius",
+    "placeholders": {
+      "km": {
+        "type": "int",
+        "example": "5"
+      }
+    }
+  },
+  "nearYouShopsBody": "Shops located within {km} km of your current location, shown from closest to farthest. Simply set your location once, and we'll show you what's nearby—whether you're at home, work, or exploring a new neighborhood. Handy for last‑minute bookings or when you prefer to walk.",
+  "@nearYouShopsBody": {
+    "description": "Description of nearby shops feature",
+    "placeholders": {
+      "km": {
+        "type": "int",
+        "example": "5"
+      }
+    }
+  },
+  "nearYouShopsEmptyNoFilter": "No shops found nearby",
+  "nearYouShopsEmptyWithFilter": "No {luxury} shops found nearby",
+  "@nearYouShopsEmptyWithFilter": {
+    "description": "Empty state message when no shops found for selected luxury level",
+    "placeholders": {
+      "luxury": {
+        "type": "String",
+        "example": "luxury"
+      }
+    }
+  },
+  "nearYouShopsEmptySubtitle": "Shops in {location} would be shown here once they become available",
+  "@nearYouShopsEmptySubtitle": {
+    "description": "Empty state subtitle with location placeholder",
+    "placeholders": {
+      "location": {
+        "type": "String",
+        "example": "New York"
+      }
+    }
+  },
+
+  "premiumShopsScreenTitle": "Premium Shops",
+  "premiumShopsEmpty": "No premium shops found",
+
+  "premiumShopsHorizontalTitle": "Premium shops\nfor premium looks",
+  "premiumShopsHorizontalBody": "Handpicked high‑end salons and spas offering luxury experiences. These shops are classified as Luxury or Ultra‑Luxury based on their services, pricing, and customer reviews. Perfect when you're looking for that extra touch of elegance.",
+  "premiumShopsHorizontalEmptyNoFilter": "No premium shops available",
+  "premiumShopsHorizontalEmptyWithFilter": "No {luxury} premium shops available",
+  "@premiumShopsHorizontalEmptyWithFilter": {
+    "description": "Empty state for premium shops with luxury level filter",
+    "placeholders": {
+      "luxury": {
+        "type": "String",
+        "example": "luxury"
+      }
+    }
+  },
+  "premiumShopsHorizontalEmptySubtitle": "Shops would be shown here once they become available",
+
+  "topRatedShopsHorizontalTitle": "Top Rated",
+  "topRatedShopsHorizontalTitleWithLocation": "Top Rated \nin {location}",
+  "@topRatedShopsHorizontalTitleWithLocation": {
+    "description": "Top rated shops title with location",
+    "placeholders": {
+      "location": {
+        "type": "String",
+        "example": "New York"
+      }
+    }
+  },
+  "topRatedShopsHorizontalBody": "Shops with the highest customer ratings (4.5+ stars) and a solid number of reviews. These are the favorites among our community—consistently praised for quality, service, and professionalism. A great place to start if you want reliable, crowd‑approved options.",
+  "topRatedShopsHorizontalEmptyNoFilter": "No top rated shops available",
+  "topRatedShopsHorizontalEmptyWithFilter": "No {luxury} premium shops available",
+  "@topRatedShopsHorizontalEmptyWithFilter": {
+    "description": "Empty state for top rated shops with luxury level filter",
+    "placeholders": {
+      "luxury": {
+        "type": "String",
+        "example": "luxury"
+      }
+    }
+  },
+  "topRatedShopsHorizontalEmptySubtitle": "Shops would be shown here once they become available",
+
+  "topRatedShopsScreenTitle": "Top Rated Shops",
+  "topRatedShopsEmpty": "No top rated shops found",
+
+  "nearYouFreelancersScreenTitle": "Freelancers near you",
+  "nearYouFreelancersEmpty": "No freelancers found nearby",
+  "nearYouFreelancersEmptySubtitle": "Try expanding your search area or change location",
+
+  "topRatedFreelancersScreenTitle": "Top rated freelancers",
+  "topRatedFreelancersEmpty": "No top rated freelancers found",
+  "topRatedFreelancersEmptySubtitle": "Try adjusting your search area",
+
+  "topRatedFreelancersHorizontalTitle": "Top Rated \nin {location}",
+  "@topRatedFreelancersHorizontalTitle": {
+    "description": "Top rated freelancers title with location",
+    "placeholders": {
+      "location": {
+        "type": "String",
+        "example": "New York"
+      }
+    }
+  },
+  "topRatedFreelancersHorizontalBody": "Handpicked high‑end professionals offering luxury experiences. These freelancers are classified as top rated based on their work quality, pricing, and customer reviews. Perfect when you're looking for that extra touch of excellence.",
+
+  "nearYouFreelancersHorizontalTitle": "Freelancers Near You in {location}",
+  "@nearYouFreelancersHorizontalTitle": {
+    "description": "Freelancers near you title with location",
+    "placeholders": {
+      "location": {
+        "type": "String",
+        "example": "New York"
+      }
+    }
+  },
+  "nearYouFreelancersHorizontalBody": "Skilled professionals located near you. These freelancers are available for quick bookings and offer convenient, local service. Perfect when you're looking for reliability and proximity.",
+  "nearYouFreelancersHorizontalEmpty": "No top rated freelancers available",
+  "nearYouFreelancersHorizontalEmptySubtitle": "Freelancers would be shown here once they become available",
+
+  "shopNoLocationSetTitle": "Set your location to discover",
+  "shopNoLocationSetContent": "Set your location to discover premium and top rated shops near you.",
+
+  "providerTypeShops": "Shops",
+  "providerTypeFreelancers": "Freelancers",
+  "providerTypeBuy": "Buy",
+
+  "luxuryLevelChipsAll": "All",
+
+  "searchRadiusSliderTitle": "Explore radius",
+  "searchRadiusSliderSubtitle": "Showing results within {km}km of your location",
+  "@searchRadiusSliderSubtitle": {
+    "description": "Subtitle showing current search radius",
+    "placeholders": {
+      "km": {
+        "type": "int",
+        "example": "5"
+      }
+    }
+  },
+
+  "validationPasswordMaxLength": "Password must be at most {max} characters",
+  "@validationPasswordMaxLength": {
+    "description": "Validation error for maximum password length",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "128"
+      }
+    }
+  },
+  "validationPasswordRepeatingChars": "Password contains too many repeating characters",
+  "validationPasswordSequential": "Password contains sequential characters",
+  "validationPhoneDigits": "Phone number must be {digits} digits",
+  "@validationPhoneDigits": {
+    "description": "Validation error for specific phone number digit requirement",
+    "placeholders": {
+      "digits": {
+        "type": "int",
+        "example": "10"
+      }
+    }
+  },
+  "validationPhoneUK": "Invalid UK phone number",
+  "validationUrlScheme": "URL must start with {schemes}",
+  "@validationUrlScheme": {
+    "description": "Validation error for URL scheme requirement",
+    "placeholders": {
+      "schemes": {
+        "type": "String",
+        "example": "http or https"
+      }
+    }
+  },
+  "validationUrlDomain": "Invalid domain name",
+  "validationUrlPublicAddress": "URL must point to a public address",
+  "validationNameMaxLength": "{field} must be at most {max} characters",
+  "@validationNameMaxLength": {
+    "description": "Validation error for maximum name length",
+    "placeholders": {
+      "field": {
+        "type": "String",
+        "example": "Name"
+      },
+      "max": {
+        "type": "int",
+        "example": "50"
+      }
+    }
+  },
+  "validationNameConsecutiveChars": "{field} cannot contain consecutive hyphens or spaces",
+  "@validationNameConsecutiveChars": {
+    "description": "Validation error for consecutive special characters in name",
+    "placeholders": {
+      "field": {
+        "type": "String",
+        "example": "Name"
+      }
+    }
+  },
+  "validationCreditCardFormat": "Please enter a valid credit card number",
+  "validationCreditCardInvalid": "Invalid credit card number",
+  "validationDatePastNotAllowed": "Date cannot be in the past",
+  "validationPostalCodeZip": "Please enter a valid ZIP code (e.g., 12345 or 12345-6789)",
+  "validationPostalCodeCanadian": "Please enter a valid Canadian postal code (e.g., A1A 1A1)",
+  "validationPostalCodeGeneric": "Please enter a valid postal code",
+  "validationSSNFormat": "Please enter a valid SSN (e.g., 123-45-6789)",
+  "validationSSNInvalid": "Invalid SSN",
+  "validationEmailTooLong": "Email is too long (max 254 characters)",
+  "validationEmailLocalPartTooLong": "Local part of email is too long",
+
+  "categoriesAll": "All",
+  "categoriesSalon": "Salons",
+  "categoriesBarbershop": "Barbershops",
+  "categoriesSpa": "Spas",
+  "categoriesNailSalon": "Nail Salons",
+  "categoriesLashStudio": "Lash Studios",
+  "categoriesWaxing": "Waxing",
+  "categoriesMassage": "Massage",
+  "categoriesMakeup": "Makeup",
+  "categoriesSkincare": "Skincare",
+
+  "luxuryLevelModerate": "Moderate",
+  "luxuryLevelLuxury": "Luxury",
+  "luxuryLevelUltraLuxury": "Ultra Luxury"
+}

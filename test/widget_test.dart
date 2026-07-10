@@ -1,0 +1,54 @@
+import 'package:attune/core/utils/screen_util_config.dart';
+import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
+import 'package:attune/home/home_screen.dart';
+import 'package:attune/i10n/generated/app_localizations.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+Future<void> pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  int maxPumps = 20,
+}) async {
+  for (var pump = 0; pump < maxPumps; pump += 1) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (finder.evaluate().isNotEmpty) return;
+  }
+}
+
+void main() {
+  testWidgets('renders the two-tab anonymous Attune home shell', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [currentUserIdProvider.overrideWithValue(null)],
+        child: ScreenUtilConfig.builder(
+          builder:
+              (_) => const MaterialApp(
+                localizationsDelegates: AppLocalizations.localizationsDelegates,
+                supportedLocales: AppLocalizations.supportedLocales,
+                home: HomeScreen(),
+              ),
+        ),
+      ),
+    );
+    await pumpUntilFound(tester, find.text('Chat'));
+
+    expect(find.text('Opinions'), findsWidgets);
+    expect(find.text('Chat'), findsWidgets);
+    expect(find.text('Following'), findsOneWidget);
+    expect(find.text('Discover'), findsOneWidget);
+    expect(find.text('Hello!'), findsNothing);
+
+    await tester.tap(find.text('Chat').last);
+    await pumpUntilFound(tester, find.text('Hello!'));
+
+    expect(find.text('Hello!'), findsOneWidget);
+    expect(find.text('Continue with phone number'), findsOneWidget);
+  });
+}

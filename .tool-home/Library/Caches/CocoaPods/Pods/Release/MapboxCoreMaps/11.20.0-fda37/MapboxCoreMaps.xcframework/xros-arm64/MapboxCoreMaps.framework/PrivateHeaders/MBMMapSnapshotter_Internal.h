@@ -1,0 +1,77 @@
+// This file is generated and will be overwritten automatically.
+
+#import <Foundation/Foundation.h>
+#import <CoreLocation/CoreLocation.h>
+#import <MapboxCoreMaps/MBMSnapshotCompleteCallback_Internal.h>
+#import <MapboxCoreMaps/MBMCameraManager_Internal.h>
+
+@class MBMMapSnapshotOptions;
+@class MBMSize;
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * MapSnapshotter exposes functionality to capture static map images.
+ */
+NS_SWIFT_NAME(MapSnapshotter)
+__attribute__((visibility ("default")))
+@interface MBMMapSnapshotter : MBMCameraManager
+
+// This class provides custom init which should be called
+- (nonnull instancetype)init NS_UNAVAILABLE;
+
+// This class provides custom init which should be called
++ (nonnull instancetype)new NS_UNAVAILABLE;
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Construct a new snapshotter.
+ *
+ * @param options The `map snapshot options` to configure the snapshotter.
+ */
+- (nonnull instancetype)initWithOptions:(nonnull MBMMapSnapshotOptions *)options;
+
+/**
+ * Sets the `size` of the snapshot
+ *
+ * @param size The new `size` of the snapshot in `platform pixels`.
+ */
+- (void)setSizeForSize:(nonnull MBMSize *)size;
+/**
+ * Gets the size of the snapshot
+ *
+ * @return Snapshot `size` in `platform pixels`.
+ */
+- (nonnull MBMSize *)getSize __attribute((ns_returns_retained));
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Start the rendering of a snapshot.
+ *
+ * Request that a new snapshot be rendered. If there is a pending snapshot request, it
+ * is cancelled automatically.
+ *
+ * @param callback The `snapshot complete callback` to call once the snapshot is complete or an error occurred.
+ */
+- (void)startForCallback:(nonnull MBMSnapshotCompleteCallback)callback;
+/**
+ * Cancel the current snapshot operation.
+ *
+ * Cancel the current snapshot operation, if any. The callback passed to the start method
+ * is called with error parameter set.
+ */
+- (void)cancel;
+/**
+ * Get elevation for the given coordinate.
+ * Note: Elevation is only available for the visible region on the screen.
+ *
+ * @param coordinate defined as longitude-latitude pair.
+ *
+ * @return Elevation (in meters) multiplied by current terrain exaggeration, or empty if elevation for the coordinate is not available.
+ */
+- (nullable NSNumber *)getElevationForCoordinate:(CLLocationCoordinate2D)coordinate __attribute((ns_returns_retained));
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Reduces memory use. Useful to call when the application gets paused or sent to background.
+ */
+- (void)reduceMemoryUse;
+
+@end

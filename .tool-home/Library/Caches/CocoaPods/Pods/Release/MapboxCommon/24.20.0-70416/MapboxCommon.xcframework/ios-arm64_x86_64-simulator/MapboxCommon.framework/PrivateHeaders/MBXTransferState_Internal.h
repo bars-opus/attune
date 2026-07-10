@@ -1,0 +1,20 @@
+// This file is generated and will be overwritten automatically.
+
+#import <Foundation/Foundation.h>
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Enum representing state of transfer session.
+ */
+// NOLINTNEXTLINE(modernize-use-using)
+typedef NS_ENUM(NSInteger, MBXTransferState)
+{
+    /** Transfer session initiated but not started yet. */
+    MBXTransferStatePending,
+    /** Transfer session is in progress. */
+    MBXTransferStateInProgress,
+    /** Transfer session failed. */
+    MBXTransferStateFailed,
+    /** Transfer session successfully finished. */
+    MBXTransferStateFinished
+} NS_SWIFT_NAME(TransferState);

@@ -1,0 +1,15 @@
+// This file is generated and will be overwritten automatically.
+
+#import <Foundation/Foundation.h>
+@class MBXExpected<__covariant Value, __covariant Error>;
+
+@class MBXMemoryMonitorStatus;
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * A callback to get the current memory status.
+ *
+ * @param result MemoryMonitorStatus or an error string otherwise.
+ */
+NS_SWIFT_NAME(MemoryMonitorStatusCallback)
+typedef void (^MBXMemoryMonitorStatusCallback)(MBXExpected<MBXMemoryMonitorStatus *, NSString *> * _Nonnull result); // NOLINT(modernize-use-using)

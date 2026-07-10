@@ -1,0 +1,44 @@
+// This file is generated and will be overwritten automatically.
+
+#import <Foundation/Foundation.h>
+
+typedef NS_ENUM(NSInteger, MBXResourceLoadErrorType);
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * Describes a resource load error.
+ */
+NS_SWIFT_NAME(ResourceLoadError)
+__attribute__((visibility ("default")))
+@interface MBXResourceLoadError : NSObject
+
+// This class provides custom init which should be called
+- (nonnull instancetype)init NS_UNAVAILABLE;
+
+// This class provides custom init which should be called
++ (nonnull instancetype)new NS_UNAVAILABLE;
+
+- (nonnull instancetype)initWithType:(MBXResourceLoadErrorType)type
+                             message:(nonnull NSString *)message
+                    transferredBytes:(uint64_t)transferredBytes;
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * The reason for the resource load error.
+ */
+@property (nonatomic, readonly) MBXResourceLoadErrorType type;
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * An error message.
+ */
+@property (nonatomic, readonly, nonnull, copy) NSString *message;
+
+/**
+ * WARNING: This API is not intended for public usage. It can be deleted or changed without any notice.
+ * The number of bytes that were transferred for this request.
+ */
+@property (nonatomic, readonly) uint64_t transferredBytes;
+
+
+@end

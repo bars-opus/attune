@@ -1,0 +1,9 @@
+{
+  "name": "paystack-webhook",
+  "version": "1.0.0",
+  "description": "Paystack webhook handler for NanoEmbryo",
+  "type": "module",
+  "main": "index.ts",
+  "dependencies": {},
+  "devDependencies": {}
+}

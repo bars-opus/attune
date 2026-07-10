@@ -1,0 +1,476 @@
+{
+  "communities": {
+    "0": [
+      "create_booking_index_africancountries",
+      "create_booking_index_africancurrencies",
+      "create_booking_index_authheader",
+      "create_booking_index_bookingrequest",
+      "create_booking_index_corsheaders",
+      "create_booking_index_paymentresult",
+      "create_booking_index_resolvedestinationaccountid",
+      "create_booking_index_supabase",
+      "create_booking_index_validaterequest",
+      "create_booking_index_validationresult",
+      "create_booking_index_windowstart",
+      "functions_create_booking_index_ts",
+      "functions_shared_sanitize_test_ts",
+      "functions_shared_sanitize_ts",
+      "functions_stripe_webhook_index_ts",
+      "shared_sanitize_isdebuglogging",
+      "shared_sanitize_redactforlog",
+      "shared_sanitize_sanitizeamount",
+      "shared_sanitize_sanitizeidentifier",
+      "shared_sanitize_sanitizetext",
+      "shared_sanitize_sanitizetextoptions",
+      "shared_sanitize_sensitive_keys",
+      "shared_sanitize_test_input",
+      "shared_sanitize_test_long",
+      "shared_sanitize_test_obj",
+      "shared_sanitize_test_out",
+      "stripe_webhook_index_event",
+      "stripe_webhook_index_handleaccountupdated",
+      "stripe_webhook_index_handlecheckoutsessioncompleted",
+      "stripe_webhook_index_handlecheckoutsessionexpired",
+      "stripe_webhook_index_handledeauthorized",
+      "stripe_webhook_index_provider",
+      "stripe_webhook_index_schedulebookingnotifications",
+      "stripe_webhook_index_supabase"
+    ],
+    "1": [
+      "functions_paystack_subaccount_index_ts",
+      "functions_shared_audit_ts",
+      "functions_shared_retry_test_ts",
+      "functions_shared_retry_ts",
+      "paystack_subaccount_index_authheader",
+      "paystack_subaccount_index_corsheaders",
+      "paystack_subaccount_index_createbankrecipient",
+      "paystack_subaccount_index_createmobilemoneyrecipient",
+      "paystack_subaccount_index_createsubaccount",
+      "paystack_subaccount_index_disconnectsubaccount",
+      "paystack_subaccount_index_fetchbanks",
+      "paystack_subaccount_index_getsubaccountstatus",
+      "paystack_subaccount_index_ismobilemoney",
+      "paystack_subaccount_index_mobile_money_codes",
+      "paystack_subaccount_index_recipienttypeforcurrency",
+      "paystack_subaccount_index_rlwindowstart",
+      "paystack_subaccount_index_supabase",
+      "paystack_subaccount_index_token",
+      "paystack_subaccount_index_usershopids",
+      "providers_paystack_provider_paystackprovider_initcheckout",
+      "shared_audit_audit",
+      "shared_audit_auditentry",
+      "shared_audit_auditoutcome",
+      "shared_audit_supabaselike",
+      "shared_retry_defaultisretryable",
+      "shared_retry_retry",
+      "shared_retry_retryfetch",
+      "shared_retry_retryoptions",
+      "shared_sanitize_sanitizecurrency"
+    ],
+    "2": [
+      "functions_shared_providers_paystack_provider_test_ts",
+      "functions_shared_providers_paystack_provider_ts",
+      "functions_shared_providers_port_ts",
+      "functions_shared_providers_stripe_provider_ts",
+      "providers_paystack_provider_paystackprovider",
+      "providers_paystack_provider_paystackprovider_constructor",
+      "providers_paystack_provider_paystackprovider_processpayout",
+      "providers_paystack_provider_paystackprovider_verifytransaction",
+      "providers_paystack_provider_paystackprovider_verifywebhooksignature",
+      "providers_paystack_provider_test_hmacsha512hex",
+      "providers_paystack_provider_test_provider",
+      "providers_paystack_provider_test_restore",
+      "providers_paystack_provider_test_stubfetch",
+      "providers_paystack_provider_timingsafeequalhex",
+      "providers_port_initcheckoutinput",
+      "providers_port_initcheckoutresult",
+      "providers_port_paymenterrorcategory",
+      "providers_port_paymentprovidererror",
+      "providers_port_paymentprovidererror_constructor",
+      "providers_port_paymentproviderport",
+      "providers_port_processpayoutinput",
+      "providers_port_processpayoutresult",
+      "providers_port_verifytransactioninput",
+      "providers_port_verifytransactionresult",
+      "providers_port_verifywebhooksignatureinput"
+    ],
+    "3": [
+      "functions_paystack_webhook_index_ts",
+      "functions_shared_providers_port_test_ts",
+      "functions_shared_providers_registry_ts",
+      "functions_verify_payment_index_ts",
+      "paystack_webhook_index_event",
+      "paystack_webhook_index_handlepaymentfailure",
+      "paystack_webhook_index_handlepaymentsuccess",
+      "paystack_webhook_index_handletransfersuccess",
+      "paystack_webhook_index_provider",
+      "paystack_webhook_index_schedulebookingnotifications",
+      "paystack_webhook_index_supabase",
+      "providers_port_paymentprovidername",
+      "providers_port_test_err",
+      "providers_port_test_paystack",
+      "providers_port_test_raw",
+      "providers_port_test_stripe",
+      "providers_registry_adapters",
+      "providers_registry_getprovider",
+      "providers_registry_isproviderenabled",
+      "verify_payment_index_authheader",
+      "verify_payment_index_corsheaders",
+      "verify_payment_index_json",
+      "verify_payment_index_schedulebookingnotifications",
+      "verify_payment_index_servicerows",
+      "verify_payment_index_supabase"
+    ],
+    "4": [
+      "functions_process_withdrawal_index_ts",
+      "process_withdrawal_index_authheader",
+      "process_withdrawal_index_backoff_schedule_seconds",
+      "process_withdrawal_index_completewithdrawal",
+      "process_withdrawal_index_deadletterwithdrawal",
+      "process_withdrawal_index_failwithdrawal",
+      "process_withdrawal_index_getwalletcurrency",
+      "process_withdrawal_index_internal_webhook_secret",
+      "process_withdrawal_index_nextattemptat",
+      "process_withdrawal_index_processwithdrawal",
+      "process_withdrawal_index_schedulewithdrawalretry",
+      "process_withdrawal_index_senddeadletternotification",
+      "process_withdrawal_index_sendnotification",
+      "process_withdrawal_index_supabase"
+    ],
+    "5": [
+      "functions_shared_providers_stripe_provider_test_ts",
+      "providers_stripe_provider_stripeprovider",
+      "providers_stripe_provider_stripeprovider_constructor",
+      "providers_stripe_provider_stripeprovider_initcheckout",
+      "providers_stripe_provider_stripeprovider_processpayout",
+      "providers_stripe_provider_stripeprovider_verifytransaction",
+      "providers_stripe_provider_stripeprovider_verifywebhooksignature",
+      "providers_stripe_provider_test_body",
+      "providers_stripe_provider_test_header",
+      "providers_stripe_provider_test_headers",
+      "providers_stripe_provider_test_provider",
+      "providers_stripe_provider_test_restore",
+      "providers_stripe_provider_test_stripe",
+      "providers_stripe_provider_test_stubfetch"
+    ],
+    "6": [
+      "functions_stripe_connect_index_ts",
+      "stripe_connect_index_action",
+      "stripe_connect_index_authheader",
+      "stripe_connect_index_corsheaders",
+      "stripe_connect_index_createoauthlink",
+      "stripe_connect_index_disconnectaccount",
+      "stripe_connect_index_getaccountstatus",
+      "stripe_connect_index_handleoauthcallback",
+      "stripe_connect_index_json",
+      "stripe_connect_index_stripe",
+      "stripe_connect_index_supabase",
+      "stripe_connect_index_token",
+      "stripe_connect_index_url",
+      "stripe_connect_index_withtimeout"
+    ],
+    "7": [
+      "functions_process_withdrawal_package_json",
+      "process_withdrawal_package_author",
+      "process_withdrawal_package_dependencies",
+      "process_withdrawal_package_dependencies_supabase_supabase_js",
+      "process_withdrawal_package_description",
+      "process_withdrawal_package_devdependencies",
+      "process_withdrawal_package_devdependencies_types_node",
+      "process_withdrawal_package_license",
+      "process_withdrawal_package_main",
+      "process_withdrawal_package_name",
+      "process_withdrawal_package_scripts",
+      "process_withdrawal_package_scripts_test",
+      "process_withdrawal_package_version"
+    ],
+    "8": [
+      "functions_stripe_webhook_package_json",
+      "stripe_webhook_package_author",
+      "stripe_webhook_package_dependencies",
+      "stripe_webhook_package_dependencies_stripe",
+      "stripe_webhook_package_dependencies_supabase_supabase_js",
+      "stripe_webhook_package_description",
+      "stripe_webhook_package_keywords",
+      "stripe_webhook_package_license",
+      "stripe_webhook_package_main",
+      "stripe_webhook_package_name",
+      "stripe_webhook_package_scripts",
+      "stripe_webhook_package_scripts_test",
+      "stripe_webhook_package_version"
+    ],
+    "9": [
+      "functions_sendbird_webhook_index_ts",
+      "sendbird_webhook_index_category",
+      "sendbird_webhook_index_channel",
+      "sendbird_webhook_index_corsheaders",
+      "sendbird_webhook_index_members",
+      "sendbird_webhook_index_notifdata",
+      "sendbird_webhook_index_payload",
+      "sendbird_webhook_index_pushjobs",
+      "sendbird_webhook_index_sendbird_webhook_token",
+      "sendbird_webhook_index_sender",
+      "sendbird_webhook_index_sendpush",
+      "sendbird_webhook_index_text",
+      "sendbird_webhook_index_verifysignature"
+    ],
+    "10": [
+      "functions_sendbird_auth_index_ts",
+      "sendbird_auth_index_authheader",
+      "sendbird_auth_index_corsheaders",
+      "sendbird_auth_index_ensuresendbirduser",
+      "sendbird_auth_index_issuesendbirdtoken",
+      "sendbird_auth_index_jwt",
+      "sendbird_auth_index_sendbirdheaders",
+      "sendbird_auth_index_supabase",
+      "sendbird_auth_index_supabaseadmin"
+    ],
+    "11": [
+      "functions_paystack_webhook_package_json",
+      "paystack_webhook_package_dependencies",
+      "paystack_webhook_package_description",
+      "paystack_webhook_package_devdependencies",
+      "paystack_webhook_package_main",
+      "paystack_webhook_package_name",
+      "paystack_webhook_package_type",
+      "paystack_webhook_package_version"
+    ],
+    "12": [
+      "functions_process_scheduled_notifications_index_ts",
+      "process_scheduled_notifications_index_backoffminutes",
+      "process_scheduled_notifications_index_ids",
+      "process_scheduled_notifications_index_ispushenabled",
+      "process_scheduled_notifications_index_nextattempt",
+      "process_scheduled_notifications_index_now",
+      "process_scheduled_notifications_index_sendpush",
+      "process_scheduled_notifications_index_supabase"
+    ],
+    "13": [
+      "create_sendbird_channel_index_authheader",
+      "create_sendbird_channel_index_corsheaders",
+      "create_sendbird_channel_index_jwt",
+      "create_sendbird_channel_index_sbheaders",
+      "create_sendbird_channel_index_supabase",
+      "create_sendbird_channel_index_upsertsendbirduser",
+      "functions_create_sendbird_channel_index_ts"
+    ],
+    "14": [
+      "functions_vscode_settings_json",
+      "functions_vscode_settings_json_vscode_settings_deno_enablepaths",
+      "functions_vscode_settings_json_vscode_settings_deno_lint",
+      "functions_vscode_settings_json_vscode_settings_deno_unstable",
+      "functions_vscode_settings_json_vscode_settings_typescript",
+      "functions_vscode_settings_json_vscode_settings_typescript_editor_defaultformatter"
+    ],
+    "15": [
+      "vscode_settings_json",
+      "vscode_settings_json_vscode_settings_deno_enablepaths",
+      "vscode_settings_json_vscode_settings_deno_lint",
+      "vscode_settings_json_vscode_settings_deno_unstable",
+      "vscode_settings_json_vscode_settings_typescript",
+      "vscode_settings_json_vscode_settings_typescript_editor_defaultformatter"
+    ],
+    "16": [
+      "functions_send_onesignal_push_index_ts",
+      "send_onesignal_push_index_authheader",
+      "send_onesignal_push_index_corsheaders",
+      "send_onesignal_push_index_payload",
+      "send_onesignal_push_index_verifyauth"
+    ],
+    "17": [
+      "functions_stripe_connect_package_json",
+      "stripe_connect_package_dependencies",
+      "stripe_connect_package_dependencies_stripe",
+      "stripe_connect_package_dependencies_supabase_supabase_js"
+    ],
+    "18": [
+      "functions_paystack_subaccount_package_json",
+      "paystack_subaccount_package_dependencies",
+      "paystack_subaccount_package_dependencies_axios",
+      "paystack_subaccount_package_dependencies_supabase_supabase_js"
+    ],
+    "19": [
+      "functions_process_scheduled_notifications_deno_json",
+      "process_scheduled_notifications_deno_imports",
+      "process_scheduled_notifications_deno_imports_supabase_functions_js"
+    ],
+    "20": [
+      "functions_vscode_extensions_json",
+      "functions_vscode_extensions_json_vscode_extensions_recommendations"
+    ],
+    "21": [
+      "vscode_extensions_json",
+      "vscode_extensions_json_vscode_extensions_recommendations"
+    ]
+  },
+  "cohesion": {
+    "0": 0.08377896613190731,
+    "1": 0.11083743842364532,
+    "2": 0.15333333333333332,
+    "3": 0.10333333333333333,
+    "4": 0.23076923076923078,
+    "5": 0.14285714285714285,
+    "6": 0.2087912087912088,
+    "7": 0.15384615384615385,
+    "8": 0.15384615384615385,
+    "9": 0.16666666666666666,
+    "10": 0.2222222222222222,
+    "11": 0.25,
+    "12": 0.25,
+    "13": 0.2857142857142857,
+    "14": 0.3333333333333333,
+    "15": 0.3333333333333333,
+    "16": 0.4,
+    "17": 0.5,
+    "18": 0.5,
+    "19": 0.6666666666666666,
+    "20": 1.0,
+    "21": 1.0
+  },
+  "gods": [
+    {
+      "id": "shared_retry_retryfetch",
+      "label": "retryFetch()",
+      "degree": 13
+    },
+    {
+      "id": "shared_sanitize_redactforlog",
+      "label": "redactForLog()",
+      "degree": 12
+    },
+    {
+      "id": "process_withdrawal_index_processwithdrawal",
+      "label": "processWithdrawal()",
+      "degree": 11
+    },
+    {
+      "id": "providers_port_paymentprovidererror",
+      "label": "PaymentProviderError",
+      "degree": 10
+    },
+    {
+      "id": "shared_sanitize_isdebuglogging",
+      "label": "isDebugLogging()",
+      "degree": 9
+    },
+    {
+      "id": "paystack_subaccount_index_createsubaccount",
+      "label": "createSubaccount()",
+      "degree": 8
+    },
+    {
+      "id": "providers_stripe_provider_stripeprovider",
+      "label": "StripeProvider",
+      "degree": 8
+    },
+    {
+      "id": "providers_paystack_provider_paystackprovider",
+      "label": "PaystackProvider",
+      "degree": 8
+    },
+    {
+      "id": "providers_registry_getprovider",
+      "label": "getProvider()",
+      "degree": 8
+    },
+    {
+      "id": "shared_audit_audit",
+      "label": "audit()",
+      "degree": 7
+    }
+  ],
+  "surprises": [
+    {
+      "source": "processWithdrawal()",
+      "target": "getProvider()",
+      "source_files": [
+        "functions/process-withdrawal/index.ts",
+        "functions/_shared/providers/registry.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "bridges separate communities"
+    },
+    {
+      "source": "processWithdrawal()",
+      "target": "audit()",
+      "source_files": [
+        "functions/process-withdrawal/index.ts",
+        "functions/_shared/audit.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "bridges separate communities"
+    },
+    {
+      "source": "createSubaccount()",
+      "target": "isDebugLogging()",
+      "source_files": [
+        "functions/paystack-subaccount/index.ts",
+        "functions/_shared/sanitize.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "bridges separate communities"
+    },
+    {
+      "source": "createSubaccount()",
+      "target": "redactForLog()",
+      "source_files": [
+        "functions/paystack-subaccount/index.ts",
+        "functions/_shared/sanitize.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "bridges separate communities"
+    },
+    {
+      "source": "disconnectSubaccount()",
+      "target": "audit()",
+      "source_files": [
+        "functions/paystack-subaccount/index.ts",
+        "functions/_shared/audit.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "peripheral node `disconnectSubaccount()` unexpectedly reaches hub `audit()`"
+    }
+  ],
+  "questions": [
+    {
+      "type": "bridge_node",
+      "question": "Why does `redactForLog()` connect `Community 0` to `Community 1`, `Community 3`, `Community 4`?",
+      "why": "High betweenness centrality (0.023) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `PaymentProviderError` connect `Community 2` to `Community 0`, `Community 3`, `Community 4`, `Community 5`?",
+      "why": "High betweenness centrality (0.022) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `StripeProvider` connect `Community 5` to `Community 2`, `Community 3`?",
+      "why": "High betweenness centrality (0.021) - this node is a cross-community bridge."
+    },
+    {
+      "type": "isolated_nodes",
+      "question": "What connects `name`, `version`, `description` to the rest of the system?",
+      "why": "129 weakly-connected nodes found - possible documentation gaps or missing edges."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `Community 0` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.08377896613190731 - nodes in this community are weakly interconnected."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `Community 1` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.11083743842364532 - nodes in this community are weakly interconnected."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `Community 3` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.10333333333333333 - nodes in this community are weakly interconnected."
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android <= 11 (fullBackupContent). Excludes the local chat cache/outbox from
+  Auto Backup. The payloads are already AES-GCM encrypted with a Keychain/
+  Keystore-held key (see ChatCacheCipher), so this is defense-in-depth for the
+  local-device-residue concern in CHAT_SYSTEM_SPEC Sections 4.4 and 14.
+-->
+<full-backup-content>
+    <exclude domain="file" path="attune_chat_cache.sqlite" />
+    <exclude domain="file" path="attune_chat_cache.sqlite-wal" />
+    <exclude domain="file" path="attune_chat_cache.sqlite-shm" />
+</full-backup-content>
