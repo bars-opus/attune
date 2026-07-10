@@ -1,4 +1,5 @@
 // lib/features/settings/screens/settings_screen.dart
+import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/features/settings/utility/settings_exports.dart';
 
 /// Main Settings screen displaying categorized user preferences and app configurations.
@@ -204,6 +205,33 @@ class SettingsScreen extends StatelessWidget {
               ]),
             );
           }).toList(),
+
+          // "Message sounds" toggle row, styled to match the section pattern
+          // above. Wrapped in a Consumer (not a full ConsumerWidget) to keep
+          // this screen's StatelessWidget signature unchanged.
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: Spacing.allMd,
+              child: CardInkWell(
+                margin: EdgeInsets.all(0),
+                onTap: () {},
+                child: Consumer(
+                  builder: (context, ref, _) => SwitchListTile(
+                    key: const ValueKey('message_sounds_switch'),
+                    title: const Text('Message sounds'),
+                    subtitle: const Text(
+                      'Play a sound when you send or receive a message',
+                    ),
+                    secondary: const Icon(Icons.volume_up_outlined),
+                    value: ref.watch(messageSoundsEnabledProvider),
+                    onChanged: (_) => ref
+                        .read(messageSoundsEnabledProvider.notifier)
+                        .toggle(),
+                  ),
+                ),
+              ),
+            ),
+          ),
 
           // App information footer (non-scrollable box adapter)
           SliverToBoxAdapter(
