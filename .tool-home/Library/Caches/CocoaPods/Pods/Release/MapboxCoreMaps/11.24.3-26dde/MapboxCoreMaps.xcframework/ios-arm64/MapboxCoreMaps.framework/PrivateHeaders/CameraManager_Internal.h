@@ -1,5 +1,0 @@
-// This file is generated and will be overwritten automatically.
-
-#import "MBMCameraBoundsOptions_Internal.h"
-#import "MBMCameraBounds_Internal.h"
-#import "MBMCameraManager_Internal.h"

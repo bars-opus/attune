@@ -1,7 +1,0 @@
-// This file is generated and will be overwritten automatically.
-
-#import <Foundation/Foundation.h>
-
-/** The callback to call when the sequence playback ends. */
-NS_SWIFT_NAME(PlaybackFinished)
-typedef void (^MBMPlaybackFinished)(); // NOLINT(modernize-use-using)
