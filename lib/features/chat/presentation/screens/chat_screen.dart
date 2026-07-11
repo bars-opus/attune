@@ -4,6 +4,7 @@ import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/glow_pulse.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
+import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/ui/presence/breathing_dots.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
@@ -928,39 +929,62 @@ class _MessageList extends ConsumerWidget {
           }
 
           final message = state.messages[index];
+          // A bubble is "first of its day" if its local date differs from the
+          // next-older message's local date (list is newest-first). Only
+          // genuinely-new first-of-day messages shimmer — cached history on
+          // open does not, since `isNew` reuses the same play-once cutoff as
+          // SettleIn below. Content-blind: only dates are compared.
+          final older =
+              index + 1 < state.messages.length
+                  ? state.messages[index + 1]
+                  : null;
+          bool sameLocalDay(DateTime a, DateTime b) =>
+              a.year == b.year && a.month == b.month && a.day == b.day;
+          final isFirstOfDay =
+              older == null || !sameLocalDay(message.createdAt, older.createdAt);
+          final isNew = message.createdAt.isAfter(firstBuildCutoff);
+
+          Widget bubble = MessageBubble(
+            message: message,
+            onRetry:
+                message.isFailed
+                    ? () => ref
+                        .read(
+                          chatControllerProvider(
+                            state.conversation,
+                          ).notifier,
+                        )
+                        .retryMessage(message)
+                    : null,
+            onRemove:
+                message.isFailed
+                    ? () => ref
+                        .read(
+                          chatControllerProvider(
+                            state.conversation,
+                          ).notifier,
+                        )
+                        .removeFailedMessage(message)
+                    : null,
+          );
+          if (isFirstOfDay && isNew) {
+            bubble = Shimmer(
+              period: const Duration(milliseconds: 1400),
+              child: bubble,
+            );
+          }
+
           return SettleIn(
             key: ValueKey(message.clientMessageId),
             // Only animate messages that arrived after this list first
             // rendered, so cached history does not replay on open (Spec §2
             // play-once).
-            animate: message.createdAt.isAfter(firstBuildCutoff),
+            animate: isNew,
             beginOffset:
                 message.isMine
                     ? const Offset(0, 0.12)
                     : const Offset(0, 0.10),
-            child: MessageBubble(
-              message: message,
-              onRetry:
-                  message.isFailed
-                      ? () => ref
-                          .read(
-                            chatControllerProvider(
-                              state.conversation,
-                            ).notifier,
-                          )
-                          .retryMessage(message)
-                      : null,
-              onRemove:
-                  message.isFailed
-                      ? () => ref
-                          .read(
-                            chatControllerProvider(
-                              state.conversation,
-                            ).notifier,
-                          )
-                          .removeFailedMessage(message)
-                      : null,
-            ),
+            child: bubble,
           );
         },
       ),
