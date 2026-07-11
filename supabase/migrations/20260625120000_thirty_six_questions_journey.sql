@@ -334,6 +334,10 @@ USING (
   )
 );
 
+-- DROP before CREATE OR REPLACE: a prior partial apply may have left an older
+-- version whose return type differs, and Postgres cannot change a function's
+-- return type via CREATE OR REPLACE (SQLSTATE 42P13).
+DROP FUNCTION IF EXISTS public.get_thirty_six_seen_map(uuid);
 CREATE OR REPLACE FUNCTION public.get_thirty_six_seen_map(p_relationship_id uuid)
 RETURNS TABLE(canonical_question_id uuid, seen_at timestamptz)
 LANGUAGE plpgsql
@@ -348,6 +352,7 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.mark_thirty_six_questions_seen(uuid, uuid[]);
 CREATE OR REPLACE FUNCTION public.mark_thirty_six_questions_seen(
   p_relationship_id uuid,
   p_canonical_question_ids uuid[]
@@ -365,6 +370,7 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.mark_thirty_six_round_complete(uuid);
 CREATE OR REPLACE FUNCTION public.mark_thirty_six_round_complete(p_round_id uuid)
 RETURNS boolean
 LANGUAGE plpgsql
@@ -420,6 +426,7 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.replace_thirty_six_question(uuid, uuid, text);
 CREATE OR REPLACE FUNCTION public.replace_thirty_six_question(
   p_session_id uuid,
   p_round_id uuid,
@@ -535,6 +542,7 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.complete_thirty_six_chapter(uuid);
 CREATE OR REPLACE FUNCTION public.complete_thirty_six_chapter(p_session_id uuid)
 RETURNS TABLE(journey_id uuid, chapter int, journey_completed boolean)
 LANGUAGE plpgsql
