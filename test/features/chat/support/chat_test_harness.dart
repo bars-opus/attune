@@ -9,6 +9,7 @@ import 'package:attune/features/chat/data/repositories/chat_repository.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
+import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -49,6 +50,9 @@ class FakeChatRepository implements ChatRepository {
   /// What [getConversation] returns on refresh. Defaults to an active
   /// conversation; set to a read-only/archived one to test those lifecycles.
   Conversation? conversationOverride;
+
+  /// Value returned by [fetchStreak].
+  int streakValue = 0;
 
   /// Pushes a realtime "something changed" signal to subscribers.
   void emitRealtime() => _events.add(null);
@@ -272,6 +276,8 @@ class FakeChatRepository implements ChatRepository {
   }) async {}
   @override
   Future<String?> createSignedMediaUrl(String mediaKey) async => null;
+  @override
+  Future<int> fetchStreak(String relationshipId) async => streakValue;
 }
 
 /// An in-memory cache backend for tests (no platform storage).
@@ -320,6 +326,13 @@ ProviderContainer buildChatContainer({
       chatRepositoryProvider.overrideWithValue(repository),
       chatCacheServiceProvider.overrideWithValue(cache),
       currentUserProvider.overrideWithValue(testUser(userId)),
+      // _MessageList reads chatExpressivenessProvider to modulate the
+      // first-of-day shimmer and reconnect cascade. Override it with a fake
+      // notifier (calm default, matching production's default) so tests
+      // don't need an async SharedPreferences.getInstance() just to render.
+      chatExpressivenessProvider.overrideWith(
+        (ref) => ChatFeelPreferenceNotifier.forTesting(),
+      ),
       ...extraOverrides,
     ],
   );

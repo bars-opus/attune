@@ -48,6 +48,10 @@ abstract class ChatRepository {
   Future<void> markConversationRead(String relationshipId);
   Future<bool> canAccessRelationship(String relationshipId);
 
+  /// Current conversation streak (consecutive local days both partners
+  /// messaged). 0 on error or when there is no streak.
+  Future<int> fetchStreak(String relationshipId);
+
   /// Reports the conversation the user is actively viewing so the backend can
   /// suppress a redundant push (Spec 9.2). Pass null to clear presence when the
   /// view is backgrounded or left. Best-effort; failures never block chat.

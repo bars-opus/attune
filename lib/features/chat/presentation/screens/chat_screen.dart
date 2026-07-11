@@ -4,6 +4,7 @@ import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/glow_pulse.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
+import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/ui/presence/breathing_dots.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
@@ -21,6 +22,7 @@ import 'package:attune/features/conflict_translator/presentation/providers/trans
     as translator_providers;
 import 'package:attune/features/conflict_translator/presentation/screens/translator_sheet.dart';
 import 'package:attune/features/pulse/presentation/screens/pulse_screen.dart';
+import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/core/services/media/image_picker_service.dart';
 import 'package:flutter/material.dart';
@@ -875,6 +877,12 @@ class _MessageList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Chat feel preference (Spec §1.1 tone floor, §3.7): expressive turns the
+    // shimmer sweep and reconnect cascade up slightly; calm (default) keeps
+    // both a whisper-subtle. Content-blind — only the enum is read here.
+    final expressive =
+        ref.watch(chatExpressivenessProvider) == ChatExpressiveness.expressive;
+
     if (state.isLoading && state.messages.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -928,39 +936,75 @@ class _MessageList extends ConsumerWidget {
           }
 
           final message = state.messages[index];
+          // A bubble is "first of its day" if its local date differs from the
+          // next-older message's local date (list is newest-first). Only
+          // genuinely-new first-of-day messages shimmer — cached history on
+          // open does not, since `isNew` reuses the same play-once cutoff as
+          // SettleIn below. Content-blind: only dates are compared.
+          final older =
+              index + 1 < state.messages.length
+                  ? state.messages[index + 1]
+                  : null;
+          bool sameLocalDay(DateTime a, DateTime b) =>
+              a.year == b.year && a.month == b.month && a.day == b.day;
+          final isFirstOfDay =
+              older == null || !sameLocalDay(message.createdAt, older.createdAt);
+          final isNew = message.createdAt.isAfter(firstBuildCutoff);
+
+          Widget bubble = MessageBubble(
+            message: message,
+            onRetry:
+                message.isFailed
+                    ? () => ref
+                        .read(
+                          chatControllerProvider(
+                            state.conversation,
+                          ).notifier,
+                        )
+                        .retryMessage(message)
+                    : null,
+            onRemove:
+                message.isFailed
+                    ? () => ref
+                        .read(
+                          chatControllerProvider(
+                            state.conversation,
+                          ).notifier,
+                        )
+                        .removeFailedMessage(message)
+                    : null,
+          );
+          if (isFirstOfDay && isNew) {
+            bubble = Shimmer(
+              period: Duration(milliseconds: expressive ? 1100 : 1600),
+              child: bubble,
+            );
+          }
+
+          // A batch of messages arriving together (e.g. after a reconnect via
+          // _catchUpFromCursor) should cascade in rather than pop
+          // simultaneously: offset each new bubble's settle duration by its
+          // position within the newest-first list. The index is clamped so a
+          // large batch never produces an absurdly long settle. Cached
+          // history (`isNew == false`) always uses the base duration.
+          const baseSettle = Duration(milliseconds: 280);
+          final stepMs = expressive ? 70 : 35;
+          final staggeredDuration = isNew
+              ? baseSettle + Duration(milliseconds: stepMs * index.clamp(0, 6))
+              : baseSettle;
+
           return SettleIn(
             key: ValueKey(message.clientMessageId),
             // Only animate messages that arrived after this list first
             // rendered, so cached history does not replay on open (Spec §2
             // play-once).
-            animate: message.createdAt.isAfter(firstBuildCutoff),
+            animate: isNew,
+            duration: staggeredDuration,
             beginOffset:
                 message.isMine
                     ? const Offset(0, 0.12)
                     : const Offset(0, 0.10),
-            child: MessageBubble(
-              message: message,
-              onRetry:
-                  message.isFailed
-                      ? () => ref
-                          .read(
-                            chatControllerProvider(
-                              state.conversation,
-                            ).notifier,
-                          )
-                          .retryMessage(message)
-                      : null,
-              onRemove:
-                  message.isFailed
-                      ? () => ref
-                          .read(
-                            chatControllerProvider(
-                              state.conversation,
-                            ).notifier,
-                          )
-                          .removeFailedMessage(message)
-                      : null,
-            ),
+            child: bubble,
           );
         },
       ),

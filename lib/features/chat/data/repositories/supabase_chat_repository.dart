@@ -457,6 +457,20 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
+  Future<int> fetchStreak(String relationshipId) async {
+    try {
+      final offset = DateTime.now().timeZoneOffset.inMinutes;
+      final res = await _supabase.rpc('chat_conversation_streak', params: {
+        'p_relationship_id': relationshipId,
+        'p_utc_offset_minutes': offset,
+      });
+      return (res as num?)?.toInt() ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  @override
   Future<bool> canAccessRelationship(String relationshipId) async {
     final row =
         await _supabase
