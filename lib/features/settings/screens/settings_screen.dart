@@ -1,4 +1,5 @@
 // lib/features/settings/screens/settings_screen.dart
+import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/features/settings/utility/settings_exports.dart';
 
@@ -206,6 +207,31 @@ class SettingsScreen extends StatelessWidget {
             );
           }).toList(),
 
+          // "Chat feel" section header, styled to match the dynamic section
+          // titles rendered above (same Padding/Text style).
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                Spacing.lg.w, // Left
+                0, // Top
+                Spacing.lg.w, // Right
+                0, // Bottom (no bottom padding)
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Chat feel',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface.withOpacity(0.8),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
           // "Message sounds" toggle row, styled to match the section pattern
           // above. Wrapped in a Consumer (not a full ConsumerWidget) to keep
           // this screen's StatelessWidget signature unchanged.
@@ -230,6 +256,46 @@ class SettingsScreen extends StatelessWidget {
                         .toggle(),
                   ),
                 ),
+              ),
+            ),
+          ),
+
+          // "Expressive moments" toggle row, sibling to the sounds row under
+          // the same "Chat feel" section header.
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: Spacing.allMd,
+              child: Consumer(
+                builder: (context, ref, _) {
+                  final expressive = ref.watch(chatExpressivenessProvider) ==
+                      ChatExpressiveness.expressive;
+                  return CardInkWell(
+                    margin: EdgeInsets.zero,
+                    onTap: () => ref
+                        .read(chatExpressivenessProvider.notifier)
+                        .setExpressiveness(
+                          expressive
+                              ? ChatExpressiveness.calm
+                              : ChatExpressiveness.expressive,
+                        ),
+                    child: SwitchListTile(
+                      key: const ValueKey('expressive_moments_switch'),
+                      title: const Text('Expressive moments'),
+                      subtitle: const Text(
+                        'Turn up celebratory animations. Off keeps things calm.',
+                      ),
+                      secondary: const Icon(Icons.auto_awesome_outlined),
+                      value: expressive,
+                      onChanged: (v) => ref
+                          .read(chatExpressivenessProvider.notifier)
+                          .setExpressiveness(
+                            v
+                                ? ChatExpressiveness.expressive
+                                : ChatExpressiveness.calm,
+                          ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
