@@ -43,6 +43,8 @@ class FakeChatRepository implements ChatRepository {
   String? duplicateClientMessageId;
 
   final _events = StreamController<void>.broadcast();
+  final _typingController = StreamController<TypingEvent>.broadcast();
+  final List<({bool typing})> sentTyping = [];
 
   /// What [getConversation] returns on refresh. Defaults to an active
   /// conversation; set to a read-only/archived one to test those lifecycles.
@@ -210,6 +212,20 @@ class FakeChatRepository implements ChatRepository {
   Stream<void> watchConversationEvents(String relationshipId) => _events.stream;
 
   @override
+  void sendTyping(String relationshipId, {required bool typing}) {
+    sentTyping.add((typing: typing));
+  }
+
+  @override
+  Stream<TypingEvent> watchTyping(String relationshipId) =>
+      _typingController.stream;
+
+  /// Test helper: simulate the partner's typing event arriving.
+  void emitPartnerTyping(String senderId, bool typing) {
+    _typingController.add(TypingEvent(senderId, typing));
+  }
+
+  @override
   Future<Conversation?> getConversation(String relationshipId) async {
     return conversationOverride ?? activeConversation(relationshipId);
   }
@@ -218,8 +234,15 @@ class FakeChatRepository implements ChatRepository {
   Future<bool> canAccessRelationship(String relationshipId) async => true;
 
   @override
+  Future<void> releaseChannel(String relationshipId) async {
+    // No-op: the fake is per-test and shares one stream across the test's
+    // lifetime; nothing to reclaim mid-session.
+  }
+
+  @override
   Future<void> dispose() async {
     await _events.close();
+    await _typingController.close();
   }
 
   // --- Unused-by-M1 surface: minimal implementations. ---

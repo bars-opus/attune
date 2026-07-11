@@ -4,6 +4,7 @@ import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/glow_pulse.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
+import 'package:attune/core/ui/presence/breathing_dots.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
@@ -12,6 +13,7 @@ import 'package:attune/features/chat/presentation/providers/chat_experience_prov
 import 'package:attune/features/chat/presentation/screens/chat_insights_screen.dart';
 import 'package:attune/features/chat/presentation/screens/chat_import_screen.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
+import 'package:attune/features/chat/presentation/state/typing_controller.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:attune/features/conflict_translator/data/models/translator_request.dart';
@@ -82,6 +84,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   void _onDraftChanged() {
     unawaited(_persistDraft());
+    ref
+        .read(
+          typingControllerProvider(
+            widget.conversation.relationshipId,
+          ).notifier,
+        )
+        .onComposingChanged(_controller.text.trim().isNotEmpty);
   }
 
   Future<void> _restoreDraft() async {
@@ -124,6 +133,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     if (ref.read(messageSoundsEnabledProvider)) {
       ref.read(soundServiceProvider).play(ChatSound.send);
     }
+    ref
+        .read(
+          typingControllerProvider(
+            widget.conversation.relationshipId,
+          ).notifier,
+        )
+        .onSent();
     await _sendDraftText(text);
   }
 
@@ -413,6 +429,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               scrollController: _scrollController,
               firstBuildCutoff: _messageListCutoff,
             ),
+          ),
+          Consumer(
+            builder: (context, ref, _) {
+              final typing = ref
+                  .watch(typingControllerProvider(conversation.relationshipId))
+                  .partnerTyping;
+              if (!typing) return const SizedBox.shrink();
+              return Padding(
+                key: const ValueKey('typing_indicator'),
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                child: Row(
+                  children: [
+                    Text(
+                      '${conversation.name} is typing',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(width: 8),
+                    const BreathingDots(size: 6),
+                  ],
+                ),
+              );
+            },
           ),
           if (conversation.canSend)
             ChatTextField(

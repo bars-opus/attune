@@ -979,6 +979,10 @@ class ChatController extends StateNotifier<ChatState> {
       unawaited(_repository.setPresence(null));
     }
     _realtimeSubscription?.cancel();
+    // Release the shared Realtime channel + streams for this relationship now
+    // that no subscription reads from it, so channels don't accumulate across
+    // a session (must run after the subscription cancel above).
+    unawaited(_repository.releaseChannel(relationshipId));
     _refreshDebounce?.cancel();
     _readDebounce?.cancel();
     _retryTimer?.cancel();

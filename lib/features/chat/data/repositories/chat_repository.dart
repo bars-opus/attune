@@ -53,7 +53,25 @@ abstract class ChatRepository {
   /// view is backgrounded or left. Best-effort; failures never block chat.
   Future<void> setPresence(String? relationshipId);
 
+  /// Broadcasts an ephemeral typing signal to the other member over Realtime
+  /// (no DB write). Best-effort; failures never block messaging.
+  void sendTyping(String relationshipId, {required bool typing});
+
+  /// Ephemeral typing events from the partner on this relationship's channel.
+  Stream<TypingEvent> watchTyping(String relationshipId);
+
+  /// Releases the shared Realtime channel + streams for a relationship when its
+  /// chat view is disposed, so channels don't accumulate across a session.
+  Future<void> releaseChannel(String relationshipId);
+
   Future<void> dispose();
+}
+
+/// An ephemeral typing signal from a relationship member. Never persisted.
+class TypingEvent {
+  const TypingEvent(this.senderId, this.typing);
+  final String senderId;
+  final bool typing;
 }
 
 class ChatMessageCursor {
