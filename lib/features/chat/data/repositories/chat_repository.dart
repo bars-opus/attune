@@ -60,6 +60,10 @@ abstract class ChatRepository {
   /// Ephemeral typing events from the partner on this relationship's channel.
   Stream<TypingEvent> watchTyping(String relationshipId);
 
+  /// Releases the shared Realtime channel + streams for a relationship when its
+  /// chat view is disposed, so channels don't accumulate across a session.
+  Future<void> releaseChannel(String relationshipId);
+
   Future<void> dispose();
 }
 

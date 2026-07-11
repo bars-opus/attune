@@ -469,6 +469,22 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
+  Future<void> releaseChannel(String relationshipId) async {
+    final channel = _channels.remove(relationshipId);
+    if (channel != null) {
+      await _supabase.removeChannel(channel);
+    }
+    final events = _eventControllers.remove(relationshipId);
+    if (events != null) {
+      await events.close();
+    }
+    final typing = _typingControllers.remove(relationshipId);
+    if (typing != null) {
+      await typing.close();
+    }
+  }
+
+  @override
   Future<void> dispose() async {
     for (final channel in _channels.values) {
       await _supabase.removeChannel(channel);

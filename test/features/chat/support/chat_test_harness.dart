@@ -234,6 +234,12 @@ class FakeChatRepository implements ChatRepository {
   Future<bool> canAccessRelationship(String relationshipId) async => true;
 
   @override
+  Future<void> releaseChannel(String relationshipId) async {
+    // No-op: the fake is per-test and shares one stream across the test's
+    // lifetime; nothing to reclaim mid-session.
+  }
+
+  @override
   Future<void> dispose() async {
     await _events.close();
     await _typingController.close();

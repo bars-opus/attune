@@ -12,6 +12,7 @@ void main() {
     final convo = activeConversation('rel-1');
     repo.conversationOverride = convo;
     final container = buildChatContainer(repository: repo, userId: 'user-a');
+    addTearDown(container.dispose);
 
     await tester.pumpWidget(UncontrolledProviderScope(
       container: container,

@@ -30,12 +30,19 @@ class TypingController extends StateNotifier<TypingState> {
   Timer? _throttleTimer; // gates outgoing typing:true
   Timer? _expiryTimer; // clears incoming partnerTyping
   bool _composing = false;
+  DateTime? _lastKeystroke; // last time onComposingChanged(true) was called
 
   static const _throttleInterval = Duration(seconds: 2);
   static const _expiryDuration = Duration(seconds: 5);
+  // If no keystroke arrives within this window while text remains in the
+  // composer (e.g. the user walked away), stop re-broadcasting typing:true
+  // and clear the indicator on the partner's side — mirrors WhatsApp's
+  // decay-on-inactivity behavior instead of decaying only on empty-text.
+  static const _inactivity = Duration(seconds: 5);
 
   void onComposingChanged(bool hasText) {
     if (hasText) {
+      _lastKeystroke = DateTime.now();
       if (!_composing) {
         _composing = true;
         _sendTyping(true);
@@ -62,12 +69,23 @@ class TypingController extends StateNotifier<TypingState> {
   void _startThrottle() {
     _throttleTimer?.cancel();
     _throttleTimer = Timer.periodic(_throttleInterval, (_) {
-      if (_composing) {
-        _sendTyping(true);
-      } else {
+      if (!_composing) {
         _throttleTimer?.cancel();
         _throttleTimer = null;
+        return;
       }
+      final lastKeystroke = _lastKeystroke;
+      if (lastKeystroke != null &&
+          DateTime.now().difference(lastKeystroke) >= _inactivity) {
+        // No keystrokes for a while despite text remaining in the composer —
+        // stop re-sending and clear the partner's indicator promptly.
+        _throttleTimer?.cancel();
+        _throttleTimer = null;
+        _composing = false;
+        _sendTyping(false);
+        return;
+      }
+      _sendTyping(true);
     });
   }
 
