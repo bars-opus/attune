@@ -65,6 +65,24 @@ CREATE TABLE IF NOT EXISTS public.dating_introductions (
   revealed_at timestamptz
 );
 
+-- Reconcile a pre-existing remote table: CREATE TABLE IF NOT EXISTS above skips
+-- an already-present table and does NOT add columns from a newer revision, so
+-- functions below (e.g. get_my_dating_introductions referencing high_summary)
+-- would fail with "column does not exist" (SQLSTATE 42703). Add each column
+-- idempotently as nullable so this succeeds whether the table is fresh or old
+-- and regardless of existing rows.
+ALTER TABLE public.dating_introductions
+  ADD COLUMN IF NOT EXISTS display_band text,
+  ADD COLUMN IF NOT EXISTS explanation_features jsonb NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS low_summary text,
+  ADD COLUMN IF NOT EXISTS high_summary text,
+  ADD COLUMN IF NOT EXISTS state text NOT NULL DEFAULT 'generated',
+  ADD COLUMN IF NOT EXISTS low_action text,
+  ADD COLUMN IF NOT EXISTS high_action text,
+  ADD COLUMN IF NOT EXISTS expires_at timestamptz NOT NULL DEFAULT (now() + interval '7 days'),
+  ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS revealed_at timestamptz;
+
 CREATE TABLE IF NOT EXISTS public.dating_interest_actions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   introduction_id uuid NOT NULL REFERENCES public.dating_introductions(id) ON DELETE CASCADE,
