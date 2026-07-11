@@ -19,6 +19,10 @@ class SupabaseChatRepository implements ChatRepository {
   final SupabaseClient _supabase;
   final Map<String, RealtimeChannel> _channels = {};
 
+  // Per-relationship invalidation + typing streams sharing one channel.
+  final Map<String, StreamController<void>> _eventControllers = {};
+  final Map<String, StreamController<TypingEvent>> _typingControllers = {};
+
   // Short-lived signed-URL cache keyed by object key. Signed URLs live for
   // [_signedUrlTtl]; we reuse them within a safety margin so a page of images
   // does not re-sign the same object on every fetch (Spec 8.2, rate limits in
@@ -329,49 +333,98 @@ class SupabaseChatRepository implements ChatRepository {
     }
   }
 
-  @override
-  Stream<void> watchConversationEvents(String relationshipId) {
-    final controller = StreamController<void>.broadcast();
-    final existing = _channels.remove(relationshipId);
-    if (existing != null) {
-      _supabase.removeChannel(existing);
-    }
+  /// Lazily creates and subscribes the single Realtime channel for
+  /// [relationshipId], wiring both the postgres_changes handlers (message /
+  /// relationship row invalidation) and the typing broadcast handler onto it.
+  /// The channel is shared by [watchConversationEvents] and [watchTyping] and
+  /// lives until [dispose()] — simpler than ref-counting two subscribers, and
+  /// safe because callers cancel their stream subscriptions without needing
+  /// the underlying channel torn down mid-session.
+  RealtimeChannel _channelFor(String relationshipId) {
+    final existing = _channels[relationshipId];
+    if (existing != null) return existing;
 
-    final channel =
-        _supabase
-            .channel('chat:$relationshipId')
-            .onPostgresChanges(
-              event: PostgresChangeEvent.all,
-              schema: 'public',
-              table: 'messages',
-              filter: PostgresChangeFilter(
-                type: PostgresChangeFilterType.eq,
-                column: 'relationship_id',
-                value: relationshipId,
-              ),
-              callback: (_) => controller.add(null),
-            )
-            .onPostgresChanges(
-              event: PostgresChangeEvent.update,
-              schema: 'public',
-              table: 'relationships',
-              filter: PostgresChangeFilter(
-                type: PostgresChangeFilterType.eq,
-                column: 'id',
-                value: relationshipId,
-              ),
-              callback: (_) => controller.add(null),
-            )
-            .subscribe();
+    final events = _eventControllers.putIfAbsent(
+      relationshipId,
+      () => StreamController<void>.broadcast(),
+    );
+    final typing = _typingControllers.putIfAbsent(
+      relationshipId,
+      () => StreamController<TypingEvent>.broadcast(),
+    );
+
+    final channel = _supabase
+        .channel('chat:$relationshipId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'messages',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'relationship_id',
+            value: relationshipId,
+          ),
+          callback: (_) => events.add(null),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'relationships',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: relationshipId,
+          ),
+          callback: (_) => events.add(null),
+        )
+        .onBroadcast(
+          event: 'typing',
+          callback: (payload) {
+            // Supabase broadcast nests the sent data under a `payload` key on
+            // the receiving side; be robust to both the nested and flat shape.
+            final data =
+                (payload['payload'] is Map)
+                    ? Map<String, dynamic>.from(payload['payload'] as Map)
+                    : payload;
+            final senderId = data['senderId'];
+            final isTyping = data['typing'];
+            if (senderId is String && isTyping is bool) {
+              typing.add(TypingEvent(senderId, isTyping));
+            }
+          },
+        )
+        .subscribe();
 
     _channels[relationshipId] = channel;
-    controller.onCancel = () {
-      final current = _channels.remove(relationshipId);
-      if (current != null) {
-        _supabase.removeChannel(current);
-      }
-    };
-    return controller.stream;
+    return channel;
+  }
+
+  @override
+  Stream<void> watchConversationEvents(String relationshipId) {
+    _channelFor(relationshipId);
+    return _eventControllers[relationshipId]!.stream;
+  }
+
+  @override
+  Stream<TypingEvent> watchTyping(String relationshipId) {
+    _channelFor(relationshipId);
+    return _typingControllers[relationshipId]!.stream;
+  }
+
+  @override
+  void sendTyping(String relationshipId, {required bool typing}) {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+    final channel = _channelFor(relationshipId);
+    // Fire-and-forget; a broadcast failure must never block messaging.
+    try {
+      channel.sendBroadcastMessage(
+        event: 'typing',
+        payload: {'senderId': user.id, 'typing': typing},
+      );
+    } catch (_) {
+      // ignore — typing is best-effort
+    }
   }
 
   @override
@@ -421,6 +474,14 @@ class SupabaseChatRepository implements ChatRepository {
       await _supabase.removeChannel(channel);
     }
     _channels.clear();
+    for (final c in _eventControllers.values) {
+      await c.close();
+    }
+    _eventControllers.clear();
+    for (final c in _typingControllers.values) {
+      await c.close();
+    }
+    _typingControllers.clear();
     _signedUrlCache.clear();
   }
 
