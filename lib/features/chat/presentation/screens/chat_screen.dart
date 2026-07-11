@@ -22,6 +22,7 @@ import 'package:attune/features/conflict_translator/presentation/providers/trans
     as translator_providers;
 import 'package:attune/features/conflict_translator/presentation/screens/translator_sheet.dart';
 import 'package:attune/features/pulse/presentation/screens/pulse_screen.dart';
+import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/core/services/media/image_picker_service.dart';
 import 'package:flutter/material.dart';
@@ -876,6 +877,12 @@ class _MessageList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Chat feel preference (Spec §1.1 tone floor, §3.7): expressive turns the
+    // shimmer sweep and reconnect cascade up slightly; calm (default) keeps
+    // both a whisper-subtle. Content-blind — only the enum is read here.
+    final expressive =
+        ref.watch(chatExpressivenessProvider) == ChatExpressiveness.expressive;
+
     if (state.isLoading && state.messages.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -969,7 +976,7 @@ class _MessageList extends ConsumerWidget {
           );
           if (isFirstOfDay && isNew) {
             bubble = Shimmer(
-              period: const Duration(milliseconds: 1400),
+              period: Duration(milliseconds: expressive ? 1100 : 1600),
               child: bubble,
             );
           }
@@ -981,8 +988,9 @@ class _MessageList extends ConsumerWidget {
           // large batch never produces an absurdly long settle. Cached
           // history (`isNew == false`) always uses the base duration.
           const baseSettle = Duration(milliseconds: 280);
+          final stepMs = expressive ? 70 : 35;
           final staggeredDuration = isNew
-              ? baseSettle + Duration(milliseconds: 40 * index.clamp(0, 6))
+              ? baseSettle + Duration(milliseconds: stepMs * index.clamp(0, 6))
               : baseSettle;
 
           return SettleIn(

@@ -9,9 +9,19 @@ enum ChatExpressiveness { calm, expressive }
 const _kKey = 'chat_expressiveness';
 
 class ChatFeelPreferenceNotifier extends StateNotifier<ChatExpressiveness> {
-  ChatFeelPreferenceNotifier(this._prefs) : super(_read(_prefs));
+  ChatFeelPreferenceNotifier(SharedPreferences prefs)
+      : _prefs = prefs,
+        super(_read(prefs));
 
-  final SharedPreferences _prefs;
+  /// Test-only constructor that skips the SharedPreferences-backed default,
+  /// for callers (e.g. chat widget test harnesses) that need to override
+  /// [chatExpressivenessProvider] synchronously without an async
+  /// `SharedPreferences.getInstance()`. Persistence is a no-op.
+  ChatFeelPreferenceNotifier.forTesting([
+    super.initial = ChatExpressiveness.calm,
+  ]) : _prefs = null;
+
+  final SharedPreferences? _prefs;
 
   static ChatExpressiveness _read(SharedPreferences prefs) {
     return prefs.getString(_kKey) == 'expressive'
@@ -21,7 +31,7 @@ class ChatFeelPreferenceNotifier extends StateNotifier<ChatExpressiveness> {
 
   Future<void> setExpressiveness(ChatExpressiveness value) async {
     state = value;
-    await _prefs.setString(_kKey, value.name);
+    await _prefs?.setString(_kKey, value.name);
   }
 }
 

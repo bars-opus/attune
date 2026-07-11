@@ -9,6 +9,7 @@ import 'package:attune/features/chat/data/repositories/chat_repository.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
+import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -325,6 +326,13 @@ ProviderContainer buildChatContainer({
       chatRepositoryProvider.overrideWithValue(repository),
       chatCacheServiceProvider.overrideWithValue(cache),
       currentUserProvider.overrideWithValue(testUser(userId)),
+      // _MessageList reads chatExpressivenessProvider to modulate the
+      // first-of-day shimmer and reconnect cascade. Override it with a fake
+      // notifier (calm default, matching production's default) so tests
+      // don't need an async SharedPreferences.getInstance() just to render.
+      chatExpressivenessProvider.overrideWith(
+        (ref) => ChatFeelPreferenceNotifier.forTesting(),
+      ),
       ...extraOverrides,
     ],
   );

@@ -282,7 +282,7 @@ class SettingsScreen extends StatelessWidget {
                       key: const ValueKey('expressive_moments_switch'),
                       title: const Text('Expressive moments'),
                       subtitle: const Text(
-                        'Turn up celebratory animations. Off keeps things calm.',
+                        'A little more life in chat animations. Off keeps things calm.',
                       ),
                       secondary: const Icon(Icons.auto_awesome_outlined),
                       value: expressive,
