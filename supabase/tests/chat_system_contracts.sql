@@ -547,4 +547,29 @@ BEGIN
 END
 $$;
 
+-- Conversation streak: both members on two consecutive days -> streak 2
+SELECT public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
+DO $$
+DECLARE v int;
+BEGIN
+  -- ensure both members have a message today and yesterday
+  INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content, created_at)
+  VALUES
+   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1', gen_random_uuid(), 'a today', now()),
+   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b2', gen_random_uuid(), 'b today', now()),
+   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1', gen_random_uuid(), 'a yest', now() - interval '1 day'),
+   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b2', gen_random_uuid(), 'b yest', now() - interval '1 day');
+  SELECT public.chat_conversation_streak('10000000-0000-0000-0000-000000000001', 0) INTO v;
+  IF v < 2 THEN RAISE EXCEPTION 'expected streak >= 2, got %', v; END IF;
+END $$;
+
+-- Outsider gets streak 0
+SELECT public.test_set_auth('00000000-0000-0000-0000-0000000000c3');
+DO $$
+DECLARE v int;
+BEGIN
+  SELECT public.chat_conversation_streak('10000000-0000-0000-0000-000000000001', 0) INTO v;
+  IF v <> 0 THEN RAISE EXCEPTION 'outsider expected streak 0, got %', v; END IF;
+END $$;
+
 ROLLBACK;
