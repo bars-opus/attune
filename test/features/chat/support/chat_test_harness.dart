@@ -50,6 +50,9 @@ class FakeChatRepository implements ChatRepository {
   /// conversation; set to a read-only/archived one to test those lifecycles.
   Conversation? conversationOverride;
 
+  /// Value returned by [fetchStreak].
+  int streakValue = 0;
+
   /// Pushes a realtime "something changed" signal to subscribers.
   void emitRealtime() => _events.add(null);
 
@@ -272,6 +275,8 @@ class FakeChatRepository implements ChatRepository {
   }) async {}
   @override
   Future<String?> createSignedMediaUrl(String mediaKey) async => null;
+  @override
+  Future<int> fetchStreak(String relationshipId) async => streakValue;
 }
 
 /// An in-memory cache backend for tests (no platform storage).
