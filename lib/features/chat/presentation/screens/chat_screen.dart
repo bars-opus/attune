@@ -974,12 +974,24 @@ class _MessageList extends ConsumerWidget {
             );
           }
 
+          // A batch of messages arriving together (e.g. after a reconnect via
+          // _catchUpFromCursor) should cascade in rather than pop
+          // simultaneously: offset each new bubble's settle duration by its
+          // position within the newest-first list. The index is clamped so a
+          // large batch never produces an absurdly long settle. Cached
+          // history (`isNew == false`) always uses the base duration.
+          const baseSettle = Duration(milliseconds: 280);
+          final staggeredDuration = isNew
+              ? baseSettle + Duration(milliseconds: 40 * index.clamp(0, 6))
+              : baseSettle;
+
           return SettleIn(
             key: ValueKey(message.clientMessageId),
             // Only animate messages that arrived after this list first
             // rendered, so cached history does not replay on open (Spec §2
             // play-once).
             animate: isNew,
+            duration: staggeredDuration,
             beginOffset:
                 message.isMine
                     ? const Offset(0, 0.12)
