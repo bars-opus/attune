@@ -102,13 +102,5 @@ class TypingController extends StateNotifier<TypingState> {
 }
 
 final typingControllerProvider = StateNotifierProvider.autoDispose
-    .family<TypingController, TypingState, String>((ref, relationshipId) {
-  // Bare `ref.read`/`container.read` calls (as tests and some callers do)
-  // don't register a listener, so a plain autoDispose provider would be
-  // torn down immediately after each read — losing the watchTyping
-  // subscription and any accumulated state before the next read observes
-  // it. Pin the instance alive for the container's lifetime, matching the
-  // pattern used by chatControllerProvider in this same file's sibling.
-  ref.keepAlive();
-  return TypingController(ref, relationshipId);
-});
+    .family<TypingController, TypingState, String>(
+        (ref, relationshipId) => TypingController(ref, relationshipId));

@@ -12,9 +12,11 @@ void main() {
     final repo = FakeChatRepository(currentUserId: userId);
     final container = buildChatContainer(repository: repo, userId: userId);
     addTearDown(container.dispose);
-    // Reading the provider constructs the controller and starts its
-    // watchTyping subscription.
-    container.read(typingControllerProvider(relId));
+    // Registering a listener constructs the controller, starts its
+    // watchTyping subscription, and keeps it alive for the test body —
+    // mirroring how the real composer widget watches this provider.
+    final sub = container.listen(typingControllerProvider(relId), (_, __) {});
+    addTearDown(sub.close);
 
     repo.emitPartnerTyping('partner', true);
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -30,7 +32,8 @@ void main() {
     final repo = FakeChatRepository(currentUserId: userId);
     final container = buildChatContainer(repository: repo, userId: userId);
     addTearDown(container.dispose);
-    container.read(typingControllerProvider(relId));
+    final sub = container.listen(typingControllerProvider(relId), (_, __) {});
+    addTearDown(sub.close);
 
     repo.emitPartnerTyping(userId, true); // our own id
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -42,7 +45,8 @@ void main() {
     final repo = FakeChatRepository(currentUserId: userId);
     final container = buildChatContainer(repository: repo, userId: userId);
     addTearDown(container.dispose);
-    container.read(typingControllerProvider(relId));
+    final sub = container.listen(typingControllerProvider(relId), (_, __) {});
+    addTearDown(sub.close);
 
     repo.emitPartnerTyping('partner', true);
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -57,6 +61,8 @@ void main() {
     final repo = FakeChatRepository(currentUserId: userId);
     final container = buildChatContainer(repository: repo, userId: userId);
     addTearDown(container.dispose);
+    final sub = container.listen(typingControllerProvider(relId), (_, __) {});
+    addTearDown(sub.close);
     final controller = container.read(typingControllerProvider(relId).notifier);
 
     controller.onComposingChanged(true);
@@ -71,6 +77,8 @@ void main() {
     final repo = FakeChatRepository(currentUserId: userId);
     final container = buildChatContainer(repository: repo, userId: userId);
     addTearDown(container.dispose);
+    final sub = container.listen(typingControllerProvider(relId), (_, __) {});
+    addTearDown(sub.close);
     final controller = container.read(typingControllerProvider(relId).notifier);
 
     controller.onComposingChanged(true);
