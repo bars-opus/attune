@@ -40,10 +40,8 @@ class DareRevealScreen extends ConsumerStatefulWidget {
 }
 
 class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
-  bool _isCompleted = false;
   bool _isSkipUsed = false;
   bool _isLoading = false;
-  String? _skipQuestionText;
 
   @override
   void initState() {
@@ -52,7 +50,6 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
   }
 
   Future<void> _checkSkipStatus() async {
-    final repository = ref.read(truthOrDareRepositoryProvider);
     final sessionId = widget.sessionId;
     final userId = ref.read(currentUserIdProvider);
     if (userId == null) return;
@@ -103,7 +100,6 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
 
       setState(() {
         _isSkipUsed = true;
-        _skipQuestionText = questionData['question_text'];
         _isLoading = false;
       });
 
@@ -245,7 +241,7 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
             Container(
               padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w, vertical: Spacing.xs.h),
               decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1),
+                color: Colors.orange.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
               ),
               child: Row(
@@ -276,7 +272,7 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
             Container(
               padding: EdgeInsets.all(Spacing.md.w),
               decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
               ),
               child: Column(
@@ -290,7 +286,7 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
                   Text(
                     'Your partner will see what your dare was.',
                     style: textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.6),
+                      color: colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                 ],
@@ -316,7 +312,7 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
                 child: Text(
                   'No skips remaining',
                   style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurface.withOpacity(0.5),
+                    color: colorScheme.onSurface.withValues(alpha: 0.5),
                     fontStyle: FontStyle.italic,
                   ),
                   textAlign: TextAlign.center,

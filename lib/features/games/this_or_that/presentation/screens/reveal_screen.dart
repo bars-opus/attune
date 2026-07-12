@@ -1,8 +1,8 @@
 // lib/features/games/this_or_that/presentation/screens/reveal_screen.dart
+import 'package:attune/core/ui/motion/glow_pulse.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/match_indicator.dart';
-
-
+import 'package:flutter/services.dart' show HapticFeedback;
 
 class RevealScreen extends StatefulWidget {
   final String questionText;
@@ -60,18 +60,12 @@ class _RevealScreenState extends State<RevealScreen>
     _leftSlideAnimation = Tween<Offset>(
       begin: const Offset(-0.5, 0),
       end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: Curves.easeOut,
-    ));
+    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
 
     _rightSlideAnimation = Tween<Offset>(
       begin: const Offset(0.5, 0),
       end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: Curves.easeOut,
-    ));
+    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
 
     _flashAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
@@ -81,6 +75,12 @@ class _RevealScreenState extends State<RevealScreen>
     );
 
     _slideController.forward();
+
+    // Celebratory tactile punch the moment a match is revealed — the game's
+    // warmest beat. Fired once on entry; a non-match stays silent.
+    if (widget.isMatch) {
+      HapticFeedback.mediumImpact();
+    }
   }
 
   @override
@@ -96,7 +96,9 @@ class _RevealScreenState extends State<RevealScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('This or That • Round ${widget.roundNumber}/${widget.totalRounds}'),
+        title: Text(
+          'This or That • Round ${widget.roundNumber}/${widget.totalRounds}',
+        ),
         centerTitle: true,
       ),
       body: Padding(
@@ -156,10 +158,14 @@ class _RevealScreenState extends State<RevealScreen>
               ],
             ),
             Gap(Spacing.lg.h),
-            // Match indicator
-            MatchIndicator(
-              isMatch: widget.isMatch,
-              animation: _flashAnimation,
+            // Match indicator — a match settles into a soft celebratory glow
+            // on top of its own flash; a non-match renders without the glow.
+            GlowPulse(
+              active: widget.isMatch,
+              child: MatchIndicator(
+                isMatch: widget.isMatch,
+                animation: _flashAnimation,
+              ),
             ),
             const Spacer(),
             // Navigation buttons
@@ -178,9 +184,10 @@ class _RevealScreenState extends State<RevealScreen>
                 if (widget.hasPrevious) Gap(Spacing.md.w),
                 Expanded(
                   child: AppButton(
-                    label: widget.roundNumber == widget.totalRounds
-                        ? 'Finish'
-                        : 'Next →',
+                    label:
+                        widget.roundNumber == widget.totalRounds
+                            ? 'Finish'
+                            : 'Next →',
                     onPressed: widget.onNext,
                     size: ButtonSize.medium,
                   ),
@@ -205,14 +212,16 @@ class _RevealScreenState extends State<RevealScreen>
     return Container(
       padding: EdgeInsets.all(Spacing.md.w),
       decoration: BoxDecoration(
-        color: isUser
-            ? colorScheme.primary.withOpacity(0.05)
-            : colorScheme.surfaceContainerHighest.withOpacity(0.3),
+        color:
+            isUser
+                ? colorScheme.primary.withOpacity(0.05)
+                : colorScheme.surfaceContainerHighest.withOpacity(0.3),
         borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
         border: Border.all(
-          color: isUser
-              ? colorScheme.primary.withOpacity(0.3)
-              : Colors.transparent,
+          color:
+              isUser
+                  ? colorScheme.primary.withOpacity(0.3)
+                  : Colors.transparent,
         ),
       ),
       child: Column(
@@ -220,7 +229,10 @@ class _RevealScreenState extends State<RevealScreen>
           Text(
             label,
             style: textTheme.bodySmall?.copyWith(
-              color: isUser ? colorScheme.primary : colorScheme.onSurface.withOpacity(0.6),
+              color:
+                  isUser
+                      ? colorScheme.primary
+                      : colorScheme.onSurface.withOpacity(0.6),
             ),
           ),
           Gap(Spacing.md.h),
@@ -229,9 +241,7 @@ class _RevealScreenState extends State<RevealScreen>
           Gap(Spacing.sm.h),
           Text(
             text,
-            style: textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             textAlign: TextAlign.center,
           ),
         ],

@@ -529,17 +529,13 @@ class ThisOrThatRepository {
   // Add to ThisOrThatRepository
 
   Future<void> reportCustomQuestion(String questionId, String reason) async {
-    await _supabase.from('forum_reports').insert({
-      'reported_by': _supabase.auth.currentUser?.id,
-      'custom_question_id': questionId,
-      'reason': reason,
-      'priority': reason == 'inappropriate' || reason == 'offensive',
-    });
-
-    // Increment report count on custom question
+    // Single server-side path: records a per-reporter report and hides the
+    // question only past the moderation threshold. Replaces the old client
+    // insert into a nonexistent forum_reports table + the removed
+    // increment_custom_question_report_count RPC (GAMES-1).
     await _supabase.rpc(
-      'increment_custom_question_report_count',
-      params: {'p_question_id': questionId},
+      'report_custom_question',
+      params: {'p_question_id': questionId, 'p_reason': reason},
     );
   }
 
@@ -644,9 +640,7 @@ class ThisOrThatRepository {
   }
 
   Future<void> toggleShareToCommunity(String questionId, bool share) async {
-    final payload = <String, dynamic>{
-      'shared_to_community': share,
-    };
+    final payload = <String, dynamic>{'shared_to_community': share};
     if (share) {
       payload['community_usage_count'] = 0;
     }
@@ -669,22 +663,5 @@ class ThisOrThatRepository {
     final userB = response['user_b'] as String;
 
     return userA == userId ? userB : userA;
-  }
-
-  int _getToneLevel(String tone) {
-    switch (tone) {
-      case 'connecting':
-        return 1;
-      case 'playful':
-        return 1;
-      case 'romantic':
-        return 2;
-      case 'spicy':
-        return 3;
-      case 'intimate':
-        return 4;
-      default:
-        return 1;
-    }
   }
 }

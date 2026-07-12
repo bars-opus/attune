@@ -1,6 +1,7 @@
 // lib/features/games/truth_or_dare/data/repositories/truth_or_dare_repository.dart
 
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:attune/features/games/data/models/game_session.dart';
 import 'package:attune/features/games/truth_or_dare/data/models/custom_truth_or_dare_question.dart';
@@ -288,7 +289,7 @@ class TruthOrDareRepository {
   Future<void> reportCustomQuestion(String questionId, String reason) async {
     await _supabase.rpc(
       'report_custom_question',
-      params: {'p_question_id': questionId},
+      params: {'p_question_id': questionId, 'p_reason': reason},
     );
 
     // If content matches safety triggers, handle via safety system
@@ -443,15 +444,14 @@ class TruthOrDareRepository {
   }
 
   Future<List<TruthOrDareRound>> getSessionRounds(String sessionId) async {
-    final response =
-        await _supabase
-            .from('game_session_rounds')
-            .select('''
+    final response = await _supabase
+        .from('game_session_rounds')
+        .select('''
               *,
               game_questions(question_text)
             ''')
-            .eq('session_id', sessionId)
-            .order('round_number', ascending: true);
+        .eq('session_id', sessionId)
+        .order('round_number', ascending: true);
 
     return response.map((json) {
       final nestedQuestion = json['game_questions'];
@@ -459,10 +459,7 @@ class TruthOrDareRepository {
       if (nestedQuestion is Map<String, dynamic>) {
         questionText = nestedQuestion['question_text'] as String?;
       }
-      return TruthOrDareRound.fromJson(
-        json,
-        questionText: questionText,
-      );
+      return TruthOrDareRound.fromJson(json, questionText: questionText);
     }).toList();
   }
 
@@ -480,7 +477,7 @@ class TruthOrDareRepository {
   // ============================================================
 
   String selectRandomType() {
-    return DateTime.now().millisecondsSinceEpoch % 2 == 0 ? 'truth' : 'dare';
+    return Random.secure().nextBool() ? 'truth' : 'dare';
   }
 
   // ============================================================
