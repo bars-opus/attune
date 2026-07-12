@@ -383,3 +383,133 @@ Accepted trade-off, document in the ops runbook: closure on `'account_restricted
 | DATING-H7 | **FIXED** | — |
 
 None of the new findings is a leak; all fail in the safe direction. H5a should be fixed in the next migration before any flag flip; H4a and H5b are pre-flag-flip hygiene.
+
+---
+
+## 6. Session-2 remediation (2026-07-12): remaining code-writable Criticals + Highs
+
+Continuation after the C3/H4/H5/H7 fixes above. All items below are static-verified
+against the migration set; the dev machine has no Docker/Postgres so the SQL
+contract test is CI-run, not locally executed.
+
+### DATING-C1 — **FIXED** (four-account contract test)
+
+`supabase/tests/dating_mode_contracts.sql` rewritten from a 3-account owner-RLS
+stub into a real four-account (A, B, C-outsider, D-blocked) RLS/RPC proof. The
+fixture seeds the full `dating_candidate_is_current` precondition graph (flag on,
+active enrollment, age verification, healing journey + passing readiness attempt,
+profile ready, preferences) inside `BEGIN/ROLLBACK`, so the happy-path RPCs
+actually execute. Assertions: (1) owner RLS + C sees no A/B intro; (2) C's
+`get_my_dating_introductions` = 0 rows; (3) actor forgery raises + writes no
+`dating_interest_actions`; (3b) **H2** enumeration proof — non-member vs
+nonexistent intro raise identical sqlstate+message; (4) **C3** double-blind — after
+A interested, B's viewer-scoped state = `'open'`; (5) **H5** mutual match created
+then closed on A exit; (6) **H4** block bypass — D blocks A → act raises, no match,
+pair hidden; (6b) **C2** authenticated cannot insert age verifications; (6c) **H1**
+authenticated cannot read `dating_*` flags but can read `chat_*`; (7) function-
+privilege + payload-shape guards; (8) **C4** former-partner exclusion.
+
+Test-fixture note: the original stub used `mode='solo'` and `profile_state='draft'`
+which would have failed the `users.mode` CHECK — it had never actually been
+executed. The rewrite uses valid values throughout.
+
+### DATING-C2 — **FIXED** (age-verification writer, service-role only)
+
+`20260712140000_dating_age_verification_writer.sql` adds `verify_dating_age(user,
+birth_date, method, verified_by, expires_at)` and `revoke_dating_age_verification(user)`,
+both `SECURITY DEFINER`, `REVOKE … FROM PUBLIC, anon, authenticated`, `GRANT …
+TO service_role`. Both refuse if `auth.role()='authenticated'` (defense in depth),
+and the writer enforces the adults-only floor + method length. This provides the
+one legitimate backend path a KYC/DOB flow calls; it does NOT fall back to the
+client checkbox. The gate stays closed until a backend job runs per user. Contract
+test asserts authenticated can execute neither function and service_role can.
+
+### DATING-C4 — **FIXED** (former-partner exclusion, enforced now)
+
+`20260712160000_dating_former_partner_exclusion.sql` implements the phone-HMAC
+exclusion the spec elevates to a first-class DV-stalking threat:
+- `dating_former_partner_exclusions(user_id, excluded_phone_hmac, relationship_id)`
+  — RLS on, no client grant; server-only.
+- `dating_phone_hmac(phone)` — `encode(hmac(phone, key, 'sha256'),'hex')`, key from
+  `current_setting('app.settings.dating_exclusion_key')` (same pattern chat uses).
+  Service-role only. Returns NULL (fail-safe) when phone/key absent.
+- `record_dating_former_partner_exclusion(relationship_id)` — service-role; called
+  at relationship-end (and backfillable), stores each party's phone-HMAC against
+  the other. Survives the abuser deleting + re-registering under a new UUID because
+  the same verified phone yields the same HMAC.
+- `dating_former_partner_excluded(a, b)` — predicate wired into **both**
+  `act_on_dating_introduction` (candidacy gate) and `get_my_dating_introductions`
+  (visibility), so even a manually-seeded intro between former partners is refused
+  and hidden today, before candidate generation exists.
+
+**Residual (documented per Spec 5.1):** covered only for relationships ended via
+the writer, and only when both parties have verified phones. A former partner who
+re-registers with a new, never-verified phone is not covered — block-on-sight
+remains available. This must be a hard blocker on the `dating_candidate_generation`
+flag: generation must call the same predicate, and the exclusion secret must be
+provisioned, before that flag flips.
+
+### DATING-H1 — **FIXED** (flag exposure + reflection write gate)
+
+`20260712150000_dating_flag_defense_in_depth.sql`:
+- Narrowed the `feature_flags` RLS policy to `USING (key NOT LIKE 'dating\_%')`, so
+  the dating rollout plan is no longer client-readable. **Chat is unaffected** —
+  `chat_*` keys stay readable and `chat_feature_flags.dart` keeps working (verified:
+  the grant lives in the chat migration and chat reads its own keys).
+- Client (`dating_feature_flags.dart`, `dating_providers.dart`) now derives
+  availability from `get_dating_eligibility()` (reason ≠ `'feature_unavailable'`),
+  not the raw table; fails safe to false.
+- `save_private_date_reflection` now flag-gates on `dating_mode_enabled` (and
+  `record_dating_date_reflection` delegates to it, so both content-write paths are
+  covered without duplicating logic). This also closes the code-writable half of
+  **DATING-H6** (the rest of H6 is human-gate, correctly deferred).
+
+### DATING-H2 — **FIXED** (verified opaque + proven)
+
+The live `act_on_dating_introduction` and the `resolve_dating_*_target` resolvers
+already collapse every existence/membership/block/candidacy refusal into one
+`introduction_unavailable`/`match_unavailable` (`22023`) — the distinguishable
+`introduction_not_found`/`pair_blocked` messages Fable cited were in the superseded
+v1.1 code. No live mutation RPC leaks a distinguishable shape. Added the
+enumeration-uniformity assertion (Section 3b of the contract test) to lock it in.
+
+### DATING-H3 — **PARTIALLY FIXED**
+
+- **(a) claim-after-checks:** already satisfied — `claim_dating_idempotency` runs
+  *after* auth + membership + validity + candidacy in every RPC. ✓
+- **(b) server-side key validation:** added length (8–200) + charset
+  (`[A-Za-z0-9_:.-]`) guard to `claim_dating_idempotency` (`20260712150000`).
+  Verified it accepts the client's `scope-timestamp-entropy` keys. ✓
+- **(c) client cache retention until widget dispose:** deferred — a UI-lifecycle
+  change with double-tap-behavior risk; the DB `UNIQUE(introduction_id,
+  actor_user_id)` already dedups interest, so the residual is duplicate
+  reports/blocks only. Documented residual, low severity.
+
+### M/L triage (no code change this session)
+
+- **M1** (raw-target report foot-gun), **M4** (match id in `source_key`) — revoked/
+  contained; ops-runbook notes.
+- **M2** (rate-limit prune), **M5** (appeal-path reader), **M6** (terms/opt-in
+  separation), **M3** (explanation-features fidelity), **M7** (unrevealed-intro cap
+  at generation) — enforced at generation time (unbuilt) or human/product gates.
+- **M8, L1, L4, L5** — UI polish / no-countdown lint / aspirational stubs / copy.
+- **L2** (`fromJson` null-crash) — already hardened in session 1 (`?? 'open'` etc.).
+- **L3** (resume re-runs age gate) — expected given C2; acceptable.
+
+### Session-2 verdict
+
+| Finding | Verdict |
+|---|---|
+| DATING-C1 | **FIXED** (four-account proof) |
+| DATING-C2 | **FIXED** (service-role writer) |
+| DATING-C4 | **FIXED** (enforced now; documented generation-flag blocker + residual) |
+| DATING-H1 | **FIXED** (RLS narrowed, chat safe; reflection gate; client via RPC) |
+| DATING-H2 | **FIXED** (already opaque; proven by test) |
+| DATING-H3 | **PARTIALLY FIXED** (a+b done; c deferred, low residual) |
+| DATING-H6 | **FIXED** (code half via H1; rest human-gate) |
+
+All code-writable Critical and High findings are now addressed. Remaining blockers
+to a Dating flag-flip are human/ops gates: run the SQL contract test green in CI,
+provision `app.settings.dating_exclusion_key`, stand up the age-verification KYC
+backend, wire candidate generation to `dating_former_partner_excluded`, and clear
+the Safety Plan §5 review items.

@@ -20,9 +20,9 @@ final currentDatingUserIdProvider = Provider<String?>((ref) {
 });
 
 final datingModeEnabledProvider = FutureProvider<bool>((ref) {
-  return DatingFeatureFlags.isEnabled(
+  // DATING-H1: derive availability from the server RPC, not the raw flags table.
+  return DatingFeatureFlags.isDatingModeAvailable(
     ref.watch(datingSupabaseClientProvider),
-    DatingFeatureFlags.datingModeEnabled,
   );
 });
 
