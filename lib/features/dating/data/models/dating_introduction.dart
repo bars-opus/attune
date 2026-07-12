@@ -38,9 +38,11 @@ class DatingIntroduction {
       cityRegionCode: json['city_region_code'] as String?,
       relationshipIntention: json['relationship_intention'] as String?,
       summary: json['summary'] as String?,
-      displayBand: json['display_band'],
+      displayBand: json['display_band'] as String? ?? 'limited_signal',
       explanationFeatures: json['explanation_features'] ?? {},
-      state: json['state'],
+      // Viewer-scoped status from the RPC: 'open' or 'awaiting_response'
+      // (never the pair-level state — double-blind, see DATING-C3).
+      state: json['state'] as String? ?? 'open',
       expiresAt: DateTime.parse(json['expires_at']),
       createdAt: DateTime.parse(json['created_at']),
       hasActed: json['has_acted'] ?? false,
