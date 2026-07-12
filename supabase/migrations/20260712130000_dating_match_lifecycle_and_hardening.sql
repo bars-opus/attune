@@ -30,11 +30,17 @@ BEGIN
   WHERE (user_low_id = p_user_id OR user_high_id = p_user_id)
     AND state IN ('generated', 'presented', 'interested');
 
-  -- Close existing active matches ONLY for reasons the contract requires:
-  -- exit (leaving Dating), account_restricted (suspension/moderation), and
-  -- profile_deleted. Pause, consent-withdrawal, profile edits, and scheduled
-  -- revalidation deliberately preserve matches (Spec :113, :612).
-  IF p_reason IN ('exit', 'account_restricted', 'profile_deleted') THEN
+  -- Close existing active matches ONLY for reasons that are genuinely an exit
+  -- from Dating: leaving (exit), terms/opt-in withdrawal (dating_consent_withdrawn
+  -- — this ALSO sets profile_state='exited', so it must close matches too, per
+  -- re-review DATING-H5a; note Spec §3.3/:113 "matches remain on withdrawal"
+  -- governs HISTORICAL-DATA consent only, not terms/opt-in), suspension
+  -- (account_restricted), and profile deletion. Pause, HISTORICAL-consent
+  -- withdrawal, profile edits, and scheduled revalidation deliberately PRESERVE
+  -- matches (Spec §14 :612 pause; :113 historical-consent).
+  IF p_reason IN (
+    'exit', 'dating_consent_withdrawn', 'account_restricted', 'profile_deleted'
+  ) THEN
     UPDATE public.dating_matches
     SET state = 'closed',
         closed_at = COALESCE(closed_at, now())
@@ -63,10 +69,16 @@ AS $$
   JOIN public.dating_profiles dp ON dp.user_id=CASE WHEN dm.user_low_id=auth.uid() THEN dm.user_high_id ELSE dm.user_low_id END
   WHERE auth.uid() IN (dm.user_low_id,dm.user_high_id)
     AND dm.state='active'
-    -- Live re-checks so a stale/closed counterpart never surfaces identity:
-    AND dp.profile_state='active' AND dp.moderation_state='approved'
-    AND public.dating_candidate_is_current(dm.user_low_id)
-    AND public.dating_candidate_is_current(dm.user_high_id)
+    -- Live re-checks so a stale/suspended counterpart never surfaces identity.
+    -- Use dating_account_in_good_standing (deleted/banned/restricted) rather than
+    -- the broader dating_candidate_is_current, so a PAUSED or bio-editing
+    -- counterpart's preserved match is not hidden (re-review DATING-H4a; the H5
+    -- fix already CLOSES matches on exit/suspend/delete, so we only need to hide
+    -- a not-yet-closed restricted account here):
+    AND dp.profile_state <> 'exited'
+    AND dp.moderation_state = 'approved'
+    AND public.dating_account_in_good_standing(dm.user_low_id)
+    AND public.dating_account_in_good_standing(dm.user_high_id)
     -- Block check by user pair (dating_matches has no pair_key column):
     -- excluded if either party blocked the other.
     AND NOT EXISTS(

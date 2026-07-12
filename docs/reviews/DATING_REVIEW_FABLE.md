@@ -323,3 +323,63 @@ Legend: **C-SAT** = satisfied by code; **C-GAP** = code-writable gap (finding id
 11. Low items (L1–L5) as polish.
 
 **Bottom line for the release meeting:** the runtime is safe-off and much of the scaffolding is sound (idempotency, pair-order constraints, reviewed-algorithm gating, generic push, honest chat deferral). But the two things the checklist most explicitly demands — the four-account security proof and an un-bypassable server-authoritative age gate — are respectively a stub and a gate with no writer, and the double-blind guarantee is broken at the data layer (DATING-C3). None of the flags may be flipped until at least DATING-C1, C2, C3, H2, H4, H5 close.
+
+---
+
+## 5. Fix re-review (2026-07-12)
+
+**Scope:** `supabase/migrations/20260712120000_dating_double_blind_fix.sql`, `supabase/migrations/20260712130000_dating_match_lifecycle_and_hardening.sql`, `lib/features/dating/data/models/dating_introduction.dart`, re-traced against the deployed originals (`20260705210000`, `20260703203000`, `20260703194500`) and `DATING_MODE_SPEC.md` §3.3/§14.
+
+### DATING-C3 — **FIXED**
+
+Traced for both viewers against the transition logic at `20260705210000:670-680`:
+
+- **B (high, has not acted) after A (low) expresses interest:** row is `low_action='interested', high_action=NULL, state='interested'`. The CASE at `20260712120000:47` reads `high_action` for B (viewer-own column selected by `di.user_low_id=auth.uid()` correctly) → `NULL` → **`'open'`**. `has_acted` is an `EXISTS` on `dating_interest_actions` filtered `actor_user_id=auth.uid()` → **`false` for B**. B's row is byte-identical to a never-touched introduction. No oracle.
+- **`'awaiting_response'` reachability:** only when the viewer's *own* action column equals `'interested'`. The interest-action insert and the `low_action`/`high_action` update are in the same transaction (`:666-680`), so a viewer who has not acted can never see it.
+- **`'passed'`/`'matched'` claim verified:** any `'passed'` action sets pair `state='passed'` unconditionally (`:672`/`:677`); mutual interest sets `'matched'`; cron sets `'expired'`. All leave `state IN ('generated','presented','interested')`, so the WHERE at `20260712120000:57` drops them — the two-branch CASE is complete for every reachable row. A `low='interested', high='passed'` row cannot remain in-list (`state='passed'` wins), and the reverse order is blocked by the state gate in `act_on_dating_introduction:652`.
+- **Other columns:** `summary`/`display_band`/`explanation_features`/`expires_at`/`created_at` are all written at generation time, never by an action; the summary CASE picks the counterpart-describing summary exactly as the original did. Nothing action-derived remains except the viewer-scoped CASE and viewer-scoped `has_acted`.
+- **No visibility widening:** the WHERE clause is character-for-character the original filter (membership, state, expiry, counterpart profile active/approved, candidacy both sides, pair block, both snapshots valid). REVOKE PUBLIC/anon + GRANT authenticated + `SET search_path=public` intact.
+- **Client:** `dating_introduction.dart:41-48` now null-guards `state` (→`'open'`), `display_band`, `explanation_features`, `has_acted` — closes the DATING-L2 crash for the narrowed contract. `expires_at`/`created_at` still hard-parse, but the RPC always returns them; acceptable.
+
+Pre-existing residual (unchanged by this fix, noted for the record): a counterpart's *pass* removes the row from the viewer's list. Disappearance is reason-opaque (identical to expiry/invalidation/block), which matches the spec's generic-removal posture — but the DATING-C1 contract test should still assert B's fetched row after A's interest is indistinguishable from an untouched intro.
+
+### DATING-H4 — **FIXED-WITH-CONCERN**
+
+- Block predicate is correct against the actual schema (`dating_blocks.blocker_user_id`/`blocked_user_id`, `20260703194500:107-114`) and covers **both** directions between exactly this match's `user_low_id`/`user_high_id`. Belt-and-braces on top of `block_dating_user` setting `state='blocked'` — good.
+- Membership filter (`auth.uid() IN (dm.user_low_id,dm.user_high_id)`) unchanged; `auth.uid() IS NULL` yields zero rows; REVOKE/GRANT/search_path correct. No non-member visibility.
+- Counterpart identity now requires `profile_state='active' AND moderation_state='approved'` — a suspended (profile→`'paused'`), exited, or deleted counterpart can no longer surface with name/region. The original H4 scenario is closed.
+
+**DATING-H4a (NEW, Low — availability/UX, fail-safe direction, no leak):** `dating_candidate_is_current(both)` at `20260712130000:68-69` over-filters. That predicate includes the global flag, healing gates, age gate, relationship guard, enrollment-active, and `dating_profile_ready`. Consequences with flags on: (a) either user editing their bio (`save_dating_profile_draft` → `profile_state='draft'`, `moderation_state='pending'`) **empties both users' match lists** until moderation approves *and* the editor re-activates; (b) a benign pause or relationship-guard auto-pause hides matches the spec says to *preserve* (Spec §14 "User pauses … preserve existing mutual matches"); (c) the list flapping with the counterpart's routine edits is a weak, reason-opaque activity signal on an already-known counterpart. This is the safe failure direction (hide, never leak), so it does not block — but before flag flip, consider narrowing the candidacy check to `dp.profile_state <> 'exited' AND public.dating_account_in_good_standing(dm.user_low_id) AND public.dating_account_in_good_standing(dm.user_high_id)` (suspension/exit/deletion are now *closed* by the H5 fix anyway, so the broad live re-check is doing little beyond hiding preserved matches).
+
+### DATING-H5 — **FIXED-WITH-CONCERN**
+
+- **Signature safety verified:** the original `invalidate_dating_for_user` is `(p_user_id uuid, p_reason text DEFAULT NULL)` (`20260703203000:321-324`) — identical to the fix's, so `CREATE OR REPLACE` replaces in place; **no overload split**, every existing caller executes the new body. Function was never granted to `authenticated` (only `REVOKE … FROM PUBLIC`, `:1067`), and `CREATE OR REPLACE` preserves that ACL.
+- **Reason strings verified against every caller:** `'exit'` (`exit_dating_mode:674`) ✓ closes; `'profile_deleted'` (`delete_dating_profile:1062`) ✓ closes; `'account_restricted'` (`enforce_dating_restriction_change`, `20260705210000:586`) ✓ closes. Preserve set — `'relationship_guard'`, `'historical_consent_withdrawn'`, `'profile_changed'`, `'profile_or_preference_changed'`, `'photo_moderation_changed'`, `'age_verification_invalid'`, `'scheduled_gate_revalidation'` — is spec-correct for pause (§14 "preserve existing mutual matches"), relationship entry (§14 "Auto-pause…", i.e., pause semantics — my original suggestion to close on relationship entry overstated; the fix follows the spec), and historical-consent withdrawal (§3.3 "Existing mutual matches remain unless a user ends or blocks them").
+- **State validity:** `'closed'` is in the `dating_matches` CHECK and `closed_at` exists (`20260703194500:101-104`); the UPDATE only touches `state='active'` rows and is idempotent on trigger re-fire. ✓
+
+**DATING-H5a (NEW, Medium):** `'dating_consent_withdrawn'` is missing from the closing set. Withdrawing `dating_terms`/`dating_opt_in` (`20260705210000:376-379`) sets `profile_state='exited'` **and** enrollment `state='exited'` — it *is* an exit, just reached via the consent screen — yet `invalidate_dating_for_user` is called with a preserve reason. The fix's comment cites "Spec :113 consent-withdrawal PRESERVES matches," but §3.3/:113 governs **historical-data** consent only, not terms/opt-in withdrawal. Failure scenario: user withdraws `dating_opt_in` to sever ties → match rows stay `'active'` (hidden by the H4 filters, so no immediate identity leak) → (1) the counterpart can still write date reflections against the match (`save_private_date_reflection` checks only `dm.state='active'` + membership, `20260705210000:872-875`); (2) if the user later re-enrolls and re-activates, the stale match **resurrects in both users' lists**. Fix: add `'dating_consent_withdrawn'` to the `IN` list at `20260712130000:37` (or pass `'exit'` from `record_dating_consent`).
+
+**DATING-H5b (NEW, Low):** no retroactive backfill. Matches belonging to users who exited / were restricted / deleted profiles *before* this migration stay `'active'` forever — the new closure only runs on future calls, and `exit_dating_mode` is idempotency-guarded so it won't be re-invoked. Currently vacuous in production (all flags false + no `'active'` algorithm config means `act_on_dating_introduction` always raised before creating any match), but add a one-time closure UPDATE (close `'active'` matches where either member's enrollment is `'exited'`/`'suspended'` or profile is missing/exited) in the next migration for hygiene before any flag flip.
+
+Accepted trade-off, document in the ops runbook: closure on `'account_restricted'` is **irreversible** — a temporary `moderation_hold`/`age_review` that is later lifted does not restore matches. Fail-safe, deliberate. Also note `'age_verification_invalid'` (the underage-discovery trigger path, `20260705210000:597-611`) preserves matches; closing there today relies on ops also inserting an `age_review` restriction — consider adding it to the closing set when the age-verification writer (DATING-C2) lands.
+
+### DATING-H7 — **FIXED**
+
+`DROP FUNCTION IF EXISTS public.save_dating_profile_draft(text, text, text, text, integer, integer)` (`20260712130000:89`) matches the legacy definition's exact signature (`20260703194500:359-366`: 4 text + 2 integer). The 7-arg validated form `(text,text,text,text,text,integer,integer)` is untouched by this migration, remains the only overload, and keeps its grant (`20260705210000:897`). No remaining 6-arg callers anywhere (client passes `p_idempotency_key`, `dating_repository.dart:85`). Overload-resolution bypass eliminated.
+
+### Cross-cutting checks
+
+- Both recreated getters: `SECURITY DEFINER`, `SET search_path = public`, `REVOKE … FROM PUBLIC, anon`, `GRANT EXECUTE … TO authenticated`. (They skip an explicit revoke-from-authenticated before the grant — net-equivalent.) ✓
+- Row visibility: membership predicates unchanged in both getters; no join or CASE moved a filter out of the WHERE; a non-member (or anon/NULL uid) sees zero rows. ✓
+- Migration ordering (`120000` → `130000`) has no interdependency; both are safe to run on a database that already has the originals applied.
+
+### Re-review verdict summary
+
+| Finding | Verdict | New issues |
+|---|---|---|
+| DATING-C3 | **FIXED** | — |
+| DATING-H4 | **FIXED-WITH-CONCERN** | DATING-H4a (Low): candidacy re-check over-filters; matches hidden/flapping on benign edit/pause vs spec §14 preserve |
+| DATING-H5 | **FIXED-WITH-CONCERN** | DATING-H5a (Medium): `dating_consent_withdrawn` exit path leaves matches `'active'` → reflection-writable + resurrect-on-re-enroll; DATING-H5b (Low): no backfill for pre-fix exited/suspended users |
+| DATING-H7 | **FIXED** | — |
+
+None of the new findings is a leak; all fail in the safe direction. H5a should be fixed in the next migration before any flag flip; H4a and H5b are pre-flag-flip hygiene.
