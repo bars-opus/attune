@@ -1,13 +1,13 @@
 // lib/features/games/truth_or_dare/presentation/screens/dare_reveal_screen.dart
 
 import 'dart:convert';
+import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_or_dare_session_router_screen.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_reveal_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-
 
 class DareRevealScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -46,6 +46,8 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
   @override
   void initState() {
     super.initState();
+    // The dare lands — a reveal sound as the card content appears.
+    ref.read(soundServiceProvider).play(AppSound.gameReveal);
     _checkSkipStatus();
   }
 
@@ -55,15 +57,18 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
     if (userId == null) return;
 
     // Get session to check skip status
-    final session = await ref.read(supabaseClientProvider)
-        .from('game_sessions')
-        .select('skips_used_a, skips_used_b')
-        .eq('id', sessionId)
-        .single();
+    final session =
+        await ref
+            .read(supabaseClientProvider)
+            .from('game_sessions')
+            .select('skips_used_a, skips_used_b')
+            .eq('id', sessionId)
+            .single();
 
-    final skipsUsed = widget.isPartnerA
-        ? (session['skips_used_a'] as int? ?? 0)
-        : (session['skips_used_b'] as int? ?? 0);
+    final skipsUsed =
+        widget.isPartnerA
+            ? (session['skips_used_a'] as int? ?? 0)
+            : (session['skips_used_b'] as int? ?? 0);
 
     if (mounted) {
       setState(() {
@@ -75,6 +80,7 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
   Future<void> _useSkip() async {
     if (_isSkipUsed || _isLoading) return;
 
+    ref.read(hapticsProvider).selection();
     setState(() => _isLoading = true);
 
     try {
@@ -87,7 +93,9 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
       );
 
       // Get a new Truth question (same tone)
-      final relationshipId = await ref.read(currentRelationshipIdProvider.future);
+      final relationshipId = await ref.read(
+        currentRelationshipIdProvider.future,
+      );
       if (relationshipId == null) throw Exception('No relationship found');
 
       final questionData = await repository.selectQuestionForRound(
@@ -104,16 +112,21 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
       });
 
       // Update the round with the new question
-      await ref.read(supabaseClientProvider).from('game_session_rounds').update({
-        'question_id': questionData['question_id'],
-        'chosen_type': 'truth',
-        'is_skip': true,
-        'skip_replaced_type': 'dare',
-        'is_custom': questionData['is_custom'],
-        'custom_question_data': questionData['custom_question_data'] != null
-            ? jsonEncode(questionData['custom_question_data'])
-            : null,
-      }).eq('id', widget.roundId);
+      await ref
+          .read(supabaseClientProvider)
+          .from('game_session_rounds')
+          .update({
+            'question_id': questionData['question_id'],
+            'chosen_type': 'truth',
+            'is_skip': true,
+            'skip_replaced_type': 'dare',
+            'is_custom': questionData['is_custom'],
+            'custom_question_data':
+                questionData['custom_question_data'] != null
+                    ? jsonEncode(questionData['custom_question_data'])
+                    : null,
+          })
+          .eq('id', widget.roundId);
 
       // Mark skip used in session
       // Note: The skip count is already incremented via useSkip()
@@ -123,28 +136,30 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => TruthRevealScreen(
-              sessionId: widget.sessionId,
-              roundId: widget.roundId,
-              roundNumber: widget.roundNumber,
-              totalRounds: widget.totalRounds,
-              tone: widget.tone,
-              isPartnerA: widget.isPartnerA,
-              partnerName: widget.partnerName,
-              questionText: questionData['question_text'],
-              isCustom: questionData['is_custom'],
-              customQuestionId: questionData['is_custom']
-                  ? questionData['question_id']
-                  : null,
-            ),
+            builder:
+                (_) => TruthRevealScreen(
+                  sessionId: widget.sessionId,
+                  roundId: widget.roundId,
+                  roundNumber: widget.roundNumber,
+                  totalRounds: widget.totalRounds,
+                  tone: widget.tone,
+                  isPartnerA: widget.isPartnerA,
+                  partnerName: widget.partnerName,
+                  questionText: questionData['question_text'],
+                  isCustom: questionData['is_custom'],
+                  customQuestionId:
+                      questionData['is_custom']
+                          ? questionData['question_id']
+                          : null,
+                ),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to skip: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to skip: $e')));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -157,46 +172,59 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
     try {
       // Mark dare as completed
       final field = widget.isPartnerA ? 'answer_a' : 'answer_b';
-      final submittedAtField = widget.isPartnerA ? 'answer_a_submitted_at' : 'answer_b_submitted_at';
+      final submittedAtField =
+          widget.isPartnerA ? 'answer_a_submitted_at' : 'answer_b_submitted_at';
 
-      await ref.read(supabaseClientProvider).from('game_session_rounds').update({
-        field: 'completed',
-        widget.isPartnerA ? 'answer_b' : 'answer_a': '__revealed__',
-        submittedAtField: DateTime.now().toIso8601String(),
-      }).eq('id', widget.roundId);
+      await ref
+          .read(supabaseClientProvider)
+          .from('game_session_rounds')
+          .update({
+            field: 'completed',
+            widget.isPartnerA ? 'answer_b' : 'answer_a': '__revealed__',
+            submittedAtField: DateTime.now().toIso8601String(),
+          })
+          .eq('id', widget.roundId);
 
       // Check if both answered (partner may have also answered something)
-      final round = await ref.read(supabaseClientProvider)
-          .from('game_session_rounds')
-          .select('answer_a, answer_b, both_answered')
-          .eq('id', widget.roundId)
-          .single();
+      final round =
+          await ref
+              .read(supabaseClientProvider)
+              .from('game_session_rounds')
+              .select('answer_a, answer_b, both_answered')
+              .eq('id', widget.roundId)
+              .single();
 
-      final bothAnswered = round['answer_a'] != null && round['answer_b'] != null;
+      final bothAnswered =
+          round['answer_a'] != null && round['answer_b'] != null;
 
       // If both answered, mark as complete
       if (bothAnswered && !(round['both_answered'] as bool)) {
-        await ref.read(supabaseClientProvider).rpc('mark_round_complete', params: {
-          'p_round_id': widget.roundId,
-        });
+        await ref
+            .read(supabaseClientProvider)
+            .rpc('mark_round_complete', params: {'p_round_id': widget.roundId});
       }
 
       // Mark question as seen (preset only)
       if (!widget.isCustom) {
-        final relationshipId = await ref.read(currentRelationshipIdProvider.future);
+        final relationshipId = await ref.read(
+          currentRelationshipIdProvider.future,
+        );
         if (relationshipId != null) {
-          final questionId = await ref.read(supabaseClientProvider)
+          final questionId = await ref
+              .read(supabaseClientProvider)
               .from('game_session_rounds')
               .select('question_id')
               .eq('id', widget.roundId)
               .single()
               .then((data) => data['question_id'] as String);
 
-          await ref.read(truthOrDareRepositoryProvider).markQuestionSeen(
-            relationshipId: relationshipId,
-            questionId: questionId,
-            isCustom: widget.isCustom,
-          );
+          await ref
+              .read(truthOrDareRepositoryProvider)
+              .markQuestionSeen(
+                relationshipId: relationshipId,
+                questionId: questionId,
+                isCustom: widget.isCustom,
+              );
         }
       }
 
@@ -205,17 +233,16 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
           context,
           MaterialPageRoute(
             builder:
-                (_) => TruthOrDareSessionRouterScreen(
-                  sessionId: widget.sessionId,
-                ),
+                (_) =>
+                    TruthOrDareSessionRouterScreen(sessionId: widget.sessionId),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to complete dare: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to complete dare: $e')));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -229,7 +256,9 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Truth or Dare • Round ${widget.roundNumber}/${widget.totalRounds}'),
+        title: Text(
+          'Truth or Dare • Round ${widget.roundNumber}/${widget.totalRounds}',
+        ),
         centerTitle: true,
       ),
       body: Padding(
@@ -239,7 +268,10 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
           children: [
             // Dare badge
             Container(
-              padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w, vertical: Spacing.xs.h),
+              padding: EdgeInsets.symmetric(
+                horizontal: Spacing.sm.w,
+                vertical: Spacing.xs.h,
+              ),
               decoration: BoxDecoration(
                 color: Colors.orange.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
@@ -272,7 +304,9 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
             Container(
               padding: EdgeInsets.all(Spacing.md.w),
               decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.3,
+                ),
                 borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
               ),
               child: Column(

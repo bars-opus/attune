@@ -4,31 +4,47 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// The chat UI sounds. Content-blind — these are event sounds, not tied to
-/// message content.
-enum ChatSound { send, receive }
+/// Universal one-shot UI sounds. Content-blind — these are event sounds, not
+/// tied to any message/answer content. Any feature can add a value here.
+enum AppSound {
+  // Chat
+  chatSend,
+  chatReceive,
+  // Games — shared beats across This or That / Truth or Dare / 36 Questions.
+  gameMatch, // both partners aligned — the celebratory beat
+  gameCardFlip, // Truth or Dare card flip
+  gameReveal, // a round result / answer reveal
+  gameTap, // option / choice selection
+  gameComplete, // session finished (end screen)
+}
 
-/// Injectable one-shot sound player. Universal (any feature can use it); chat
-/// is the first consumer. Playback failures are silent no-ops and never block
-/// the caller.
+/// Back-compat alias for the original chat-only names. Existing chat call sites
+/// use `ChatSound.send` / `ChatSound.receive`; keep them working unchanged.
+abstract final class ChatSound {
+  static const AppSound send = AppSound.chatSend;
+  static const AppSound receive = AppSound.chatReceive;
+}
+
+/// Injectable one-shot sound player. Universal (any feature can use it).
+/// Playback failures are silent no-ops and never block the caller.
 abstract class SoundService {
   /// Preloads the clips so the first play has no cold-start latency.
   Future<void> preload();
 
   /// Plays [sound] if audio is available. Never throws.
-  void play(ChatSound sound);
+  void play(AppSound sound);
 }
 
 /// Test double: records calls, plays nothing.
 class FakeSoundService implements SoundService {
-  final List<ChatSound> played = [];
+  final List<AppSound> played = [];
   int preloadCount = 0;
 
   @override
   Future<void> preload() async => preloadCount++;
 
   @override
-  void play(ChatSound sound) => played.add(sound);
+  void play(AppSound sound) => played.add(sound);
 }
 
 /// Real player. One preloaded AudioPlayer per sound. iOS uses the ambient audio
@@ -38,12 +54,22 @@ class AudioPlayerSoundService implements SoundService {
 
   // AssetSource paths are relative to the `assets/` prefix already declared in
   // pubspec, so they start at `sounds/…`.
+  //
+  // TODO(assets): the game_*.wav clips below are code seams — drop the designed
+  // audio files into assets/sounds/ and declare them in pubspec. Until they
+  // exist, per-asset load failures are caught individually (see preload), so a
+  // missing game clip is a silent no-op and never breaks chat sounds.
   static const _assets = {
-    ChatSound.send: 'sounds/chat_send.wav',
-    ChatSound.receive: 'sounds/chat_receive.wav',
+    AppSound.chatSend: 'sounds/chat_send.wav',
+    AppSound.chatReceive: 'sounds/chat_receive.wav',
+    AppSound.gameMatch: 'sounds/game_match.wav',
+    AppSound.gameCardFlip: 'sounds/game_card_flip.wav',
+    AppSound.gameReveal: 'sounds/game_reveal.wav',
+    AppSound.gameTap: 'sounds/game_tap.wav',
+    AppSound.gameComplete: 'sounds/game_complete.wav',
   };
 
-  final Map<ChatSound, AudioPlayer> _players = {};
+  final Map<AppSound, AudioPlayer> _players = {};
   bool _ready = false;
   bool _preloading = false;
 
@@ -63,12 +89,22 @@ class AudioPlayerSoundService implements SoundService {
         AudioContextConfig(respectSilence: true).build(),
       );
       for (final entry in _assets.entries) {
-        final player = AudioPlayer()
-          ..setReleaseMode(ReleaseMode.stop)
-          ..setPlayerMode(PlayerMode.lowLatency);
-        await player.setSource(AssetSource(entry.value));
-        _players[entry.key] = player;
+        // Per-asset guard: a missing clip (e.g. game_*.wav not yet added) loads
+        // nothing for that key and is skipped, without aborting the others.
+        try {
+          final player =
+              AudioPlayer()
+                ..setReleaseMode(ReleaseMode.stop)
+                ..setPlayerMode(PlayerMode.lowLatency);
+          await player.setSource(AssetSource(entry.value));
+          _players[entry.key] = player;
+        } catch (_) {
+          if (kDebugMode) {
+            debugPrint('[sound] ${entry.value} unavailable: silent no-op');
+          }
+        }
       }
+      // Ready if at least one clip loaded; play() no-ops any missing key.
       _ready = true;
     } catch (e) {
       // Audio unavailable (e.g. test host, missing assets) — stay a no-op.
@@ -80,7 +116,7 @@ class AudioPlayerSoundService implements SoundService {
   }
 
   @override
-  void play(ChatSound sound) {
+  void play(AppSound sound) {
     // Lazily preload if startup didn't (so the feature works even without an
     // explicit preload); the first play may be silent while it warms up, but
     // subsequent plays are ready. Never awaits, never throws into the caller.

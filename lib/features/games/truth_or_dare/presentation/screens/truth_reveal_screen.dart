@@ -1,5 +1,6 @@
 // lib/features/games/truth_or_dare/presentation/screens/truth_reveal_screen.dart
 
+import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -38,6 +39,13 @@ class TruthRevealScreen extends ConsumerStatefulWidget {
 class _TruthRevealScreenState extends ConsumerState<TruthRevealScreen> {
   final TextEditingController _answerController = TextEditingController();
   bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // The truth prompt lands — same reveal sound as the dare side.
+    ref.read(soundServiceProvider).play(AppSound.gameReveal);
+  }
 
   @override
   void dispose() {

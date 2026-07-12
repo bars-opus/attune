@@ -1,6 +1,7 @@
 // lib/features/games/this_or_that/presentation/screens/waiting_screen.dart
 
 import 'dart:async';
+import 'package:attune/core/ui/presence/breathing_dots.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -202,6 +203,10 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
                   ),
                   Gap(Spacing.md.h),
                   Text('Waiting for partner...', style: textTheme.titleMedium),
+                  Gap(Spacing.sm.h),
+                  // Continuous breathing presence — signals the wait is live
+                  // (the circle above only pulses once). Reduce-motion safe.
+                  BreathingDots(color: colorScheme.primary),
                   Gap(Spacing.sm.h),
                   Text(
                     'They will see your answer when they pick.',

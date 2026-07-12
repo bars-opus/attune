@@ -1,7 +1,12 @@
 // lib/features/games/this_or_that/presentation/screens/end_screen.dart
+import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
+import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class EndScreen extends StatelessWidget {
+class EndScreen extends ConsumerStatefulWidget {
   final int matchCount;
   final int totalRounds;
   final Map<String, dynamic> mostInterestingPick;
@@ -17,10 +22,29 @@ class EndScreen extends StatelessWidget {
     required this.onTryAnotherGame,
   });
 
+  @override
+  ConsumerState<EndScreen> createState() => _EndScreenState();
+}
+
+class _EndScreenState extends ConsumerState<EndScreen> {
   double get matchPercentage =>
-      totalRounds > 0 ? (matchCount / totalRounds) * 100 : 0;
+      widget.totalRounds > 0
+          ? (widget.matchCount / widget.totalRounds) * 100
+          : 0;
 
   bool get showMatchBar => matchPercentage >= 60;
+
+  @override
+  void initState() {
+    super.initState();
+    // Close the session on a warm note: a completion sound, plus a celebratory
+    // haptic when the couple matched strongly.
+    ref.read(soundServiceProvider).play(AppSound.gameComplete);
+    if (showMatchBar) {
+      ref.read(hapticsProvider).light();
+      HapticFeedback.lightImpact();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,13 +57,15 @@ class EndScreen extends StatelessWidget {
         padding: EdgeInsets.all(Spacing.lg.w),
         child: Column(
           children: [
-            // Match count
-            Text(
-              'You matched on $matchCount out of $totalRounds',
-              style: textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w600,
+            // Match count — settles in as the closing reveal.
+            SettleIn(
+              child: Text(
+                'You matched on ${widget.matchCount} out of ${widget.totalRounds}',
+                style: textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
               ),
-              textAlign: TextAlign.center,
             ),
             Gap(Spacing.md.h),
             // Progress bar (only if 60% or higher)
@@ -76,7 +102,7 @@ class EndScreen extends StatelessWidget {
             ],
             Gap(Spacing.xl.h),
             // Most interesting pick
-            if (mostInterestingPick.isNotEmpty) ...[
+            if (widget.mostInterestingPick.isNotEmpty) ...[
               const Divider(),
               Gap(Spacing.md.h),
               Text(
@@ -87,7 +113,7 @@ class EndScreen extends StatelessWidget {
               ),
               Gap(Spacing.sm.h),
               Text(
-                '"${mostInterestingPick['question_text']}"',
+                '"${widget.mostInterestingPick['question_text']}"',
                 style: textTheme.bodyLarge,
                 textAlign: TextAlign.center,
               ),
@@ -96,8 +122,8 @@ class EndScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   _buildChoicePill(
-                    text: mostInterestingPick['answer_a_text'] ?? '',
-                    emoji: mostInterestingPick['answer_a_emoji'] ?? '',
+                    text: widget.mostInterestingPick['answer_a_text'] ?? '',
+                    emoji: widget.mostInterestingPick['answer_a_emoji'] ?? '',
                     isUser: true,
                     context: context,
                   ),
@@ -105,8 +131,8 @@ class EndScreen extends StatelessWidget {
                   Text('vs'),
                   Gap(Spacing.md.w),
                   _buildChoicePill(
-                    text: mostInterestingPick['answer_b_text'] ?? '',
-                    emoji: mostInterestingPick['answer_b_emoji'] ?? '',
+                    text: widget.mostInterestingPick['answer_b_text'] ?? '',
+                    emoji: widget.mostInterestingPick['answer_b_emoji'] ?? '',
                     isUser: false,
                     context: context,
                   ),
@@ -121,7 +147,7 @@ class EndScreen extends StatelessWidget {
                 Expanded(
                   child: AppButton(
                     label: 'Play again',
-                    onPressed: onPlayAgain,
+                    onPressed: widget.onPlayAgain,
                     size: ButtonSize.medium,
                     customColor: colorScheme.surfaceContainerHighest,
                     textColor: colorScheme.onSurface,
@@ -131,7 +157,7 @@ class EndScreen extends StatelessWidget {
                 Expanded(
                   child: AppButton(
                     label: 'Try another game',
-                    onPressed: onTryAnotherGame,
+                    onPressed: widget.onTryAnotherGame,
                     size: ButtonSize.medium,
                   ),
                 ),

@@ -1,5 +1,8 @@
 // lib/features/games/this_or_that/presentation/screens/question_screen.dart
 
+import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
+import 'package:attune/core/ui/motion/scale_pop.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/this_or_that/data/models/game_round.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
@@ -153,7 +156,7 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
                     text: widget.optionA,
                     emoji: widget.emojiA,
                     isSelected: _selectedChoice == 'a',
-                    onTap: () => setState(() => _selectedChoice = 'a'),
+                    onTap: () => _selectChoice('a'),
                     textTheme: textTheme,
                   ),
                 ),
@@ -163,7 +166,7 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
                     text: widget.optionB,
                     emoji: widget.emojiB,
                     isSelected: _selectedChoice == 'b',
-                    onTap: () => setState(() => _selectedChoice = 'b'),
+                    onTap: () => _selectChoice('b'),
                     textTheme: textTheme,
                   ),
                 ),
@@ -197,6 +200,14 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
     );
   }
 
+  void _selectChoice(String choice) {
+    if (_selectedChoice == choice) return;
+    // Tactile + audible confirmation the instant a choice lands.
+    ref.read(hapticsProvider).selection();
+    ref.read(soundServiceProvider).play(AppSound.gameTap);
+    setState(() => _selectedChoice = choice);
+  }
+
   Widget _buildChoiceCard({
     required String text,
     required String? emoji,
@@ -206,34 +217,39 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.all(Spacing.lg.w),
-        decoration: BoxDecoration(
-          color:
-              isSelected
-                  ? colorScheme.primary.withOpacity(0.1)
-                  : colorScheme.surfaceContainerHighest.withOpacity(0.3),
-          borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
-          border: Border.all(
-            color: isSelected ? colorScheme.primary : Colors.transparent,
-            width: BorderWidthTokens.md,
-          ),
-        ),
-        child: Column(
-          children: [
-            if (emoji != null)
-              Text(emoji, style: const TextStyle(fontSize: 48)),
-            Gap(Spacing.md.h),
-            Text(
-              text,
-              style: textTheme.titleLarge?.copyWith(
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-              ),
-              textAlign: TextAlign.center,
+    // ScalePop gives the picked card a quick confirming "pop"; the trigger is
+    // the selection state so it fires only on (de)select, reduce-motion safe.
+    return ScalePop(
+      trigger: isSelected,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: EdgeInsets.all(Spacing.lg.w),
+          decoration: BoxDecoration(
+            color:
+                isSelected
+                    ? colorScheme.primary.withOpacity(0.1)
+                    : colorScheme.surfaceContainerHighest.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
+            border: Border.all(
+              color: isSelected ? colorScheme.primary : Colors.transparent,
+              width: BorderWidthTokens.md,
             ),
-          ],
+          ),
+          child: Column(
+            children: [
+              if (emoji != null)
+                Text(emoji, style: const TextStyle(fontSize: 48)),
+              Gap(Spacing.md.h),
+              Text(
+                text,
+                style: textTheme.titleLarge?.copyWith(
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
       ),
     );

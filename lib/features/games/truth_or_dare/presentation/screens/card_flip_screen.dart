@@ -1,12 +1,13 @@
 // lib/features/games/truth_or_dare/presentation/screens/card_flip_screen.dart
 
 import 'dart:math';
+import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/screens/dare_reveal_screen.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_reveal_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 
 class CardFlipScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -32,7 +33,8 @@ class CardFlipScreen extends ConsumerStatefulWidget {
   ConsumerState<CardFlipScreen> createState() => _CardFlipScreenState();
 }
 
-class _CardFlipScreenState extends ConsumerState<CardFlipScreen> with SingleTickerProviderStateMixin {
+class _CardFlipScreenState extends ConsumerState<CardFlipScreen>
+    with SingleTickerProviderStateMixin {
   late AnimationController _flipController;
   bool _isFlipped = false;
   bool _isLoading = false;
@@ -67,11 +69,13 @@ class _CardFlipScreenState extends ConsumerState<CardFlipScreen> with SingleTick
       _selectedType = type;
 
       // Select question for this type
-      final questionData = await ref.read(selectQuestionForRoundProvider((
-        tone: widget.tone,
-        questionType: type,
-        sessionId: widget.sessionId,
-      )).future);
+      final questionData = await ref.read(
+        selectQuestionForRoundProvider((
+          tone: widget.tone,
+          questionType: type,
+          sessionId: widget.sessionId,
+        )).future,
+      );
 
       final round = await ref.read(
         createTruthOrDareRoundProvider((
@@ -85,7 +89,10 @@ class _CardFlipScreenState extends ConsumerState<CardFlipScreen> with SingleTick
       _questionData = questionData;
       _roundId = round.id;
 
-      // Flip the card
+      // Flip the card — the signature Truth or Dare beat: a firm haptic + flip
+      // sound land exactly as the 3D rotation begins.
+      ref.read(hapticsProvider).selection();
+      ref.read(soundServiceProvider).play(AppSound.gameCardFlip);
       setState(() {
         _isFlipped = true;
         _isLoading = false;
@@ -94,9 +101,9 @@ class _CardFlipScreenState extends ConsumerState<CardFlipScreen> with SingleTick
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load question: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to load question: $e')));
       }
     }
   }
@@ -106,36 +113,38 @@ class _CardFlipScreenState extends ConsumerState<CardFlipScreen> with SingleTick
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => TruthRevealScreen(
-            sessionId: widget.sessionId,
-            roundId: _roundId!,
-            roundNumber: widget.roundNumber,
-            totalRounds: widget.totalRounds,
-            tone: widget.tone,
-            isPartnerA: widget.isPartnerA,
-            partnerName: widget.partnerName,
-            questionText: _questionData!['question_text'],
-            isCustom: _questionData!['is_custom'],
-            customQuestionId: _questionData!['question_id'],
-          ),
+          builder:
+              (_) => TruthRevealScreen(
+                sessionId: widget.sessionId,
+                roundId: _roundId!,
+                roundNumber: widget.roundNumber,
+                totalRounds: widget.totalRounds,
+                tone: widget.tone,
+                isPartnerA: widget.isPartnerA,
+                partnerName: widget.partnerName,
+                questionText: _questionData!['question_text'],
+                isCustom: _questionData!['is_custom'],
+                customQuestionId: _questionData!['question_id'],
+              ),
         ),
       );
     } else {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => DareRevealScreen(
-            sessionId: widget.sessionId,
-            roundId: _roundId!,
-            roundNumber: widget.roundNumber,
-            totalRounds: widget.totalRounds,
-            tone: widget.tone,
-            isPartnerA: widget.isPartnerA,
-            partnerName: widget.partnerName,
-            dareText: _questionData!['question_text'],
-            isCustom: _questionData!['is_custom'],
-            customQuestionId: _questionData!['question_id'],
-          ),
+          builder:
+              (_) => DareRevealScreen(
+                sessionId: widget.sessionId,
+                roundId: _roundId!,
+                roundNumber: widget.roundNumber,
+                totalRounds: widget.totalRounds,
+                tone: widget.tone,
+                isPartnerA: widget.isPartnerA,
+                partnerName: widget.partnerName,
+                dareText: _questionData!['question_text'],
+                isCustom: _questionData!['is_custom'],
+                customQuestionId: _questionData!['question_id'],
+              ),
         ),
       );
     }
@@ -148,7 +157,9 @@ class _CardFlipScreenState extends ConsumerState<CardFlipScreen> with SingleTick
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Truth or Dare • Round ${widget.roundNumber}/${widget.totalRounds}'),
+        title: Text(
+          'Truth or Dare • Round ${widget.roundNumber}/${widget.totalRounds}',
+        ),
         centerTitle: true,
       ),
       body: Padding(
@@ -173,12 +184,14 @@ class _CardFlipScreenState extends ConsumerState<CardFlipScreen> with SingleTick
 
                   return Transform(
                     alignment: Alignment.center,
-                    transform: Matrix4.identity()
-                      ..setEntry(3, 2, 0.001)
-                      ..rotateY(value * pi),
-                    child: isBack
-                        ? _buildCardBack(colorScheme, textTheme)
-                        : _buildCardFront(colorScheme, textTheme),
+                    transform:
+                        Matrix4.identity()
+                          ..setEntry(3, 2, 0.001)
+                          ..rotateY(value * pi),
+                    child:
+                        isBack
+                            ? _buildCardBack(colorScheme, textTheme)
+                            : _buildCardFront(colorScheme, textTheme),
                   );
                 },
               ),
@@ -195,7 +208,10 @@ class _CardFlipScreenState extends ConsumerState<CardFlipScreen> with SingleTick
             if (_isFlipped && _selectedType != null) ...[
               Gap(Spacing.lg.h),
               AppButton(
-                label: _selectedType == 'truth' ? 'Continue to Truth →' : 'Continue to Dare →',
+                label:
+                    _selectedType == 'truth'
+                        ? 'Continue to Truth →'
+                        : 'Continue to Dare →',
                 onPressed: _navigateToReveal,
                 size: ButtonSize.medium,
               ),
@@ -280,10 +296,7 @@ class _CardFlipScreenState extends ConsumerState<CardFlipScreen> with SingleTick
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              isTruth ? '🗣' : '🎯',
-              style: const TextStyle(fontSize: 48),
-            ),
+            Text(isTruth ? '🗣' : '🎯', style: const TextStyle(fontSize: 48)),
             Gap(Spacing.md.h),
             Text(
               isTruth ? 'TRUTH' : 'DARE',

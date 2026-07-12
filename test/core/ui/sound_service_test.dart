@@ -22,4 +22,25 @@ void main() {
     expect(() => s.play(ChatSound.send), returnsNormally);
     s.dispose();
   });
+
+  test('ChatSound back-compat aliases map onto AppSound values', () {
+    expect(ChatSound.send, AppSound.chatSend);
+    expect(ChatSound.receive, AppSound.chatReceive);
+  });
+
+  test('FakeSoundService records the universal game sounds', () {
+    final s = FakeSoundService();
+    s.play(AppSound.gameTap);
+    s.play(AppSound.gameCardFlip);
+    s.play(AppSound.gameMatch);
+    s.play(AppSound.gameReveal);
+    s.play(AppSound.gameComplete);
+    expect(s.played, [
+      AppSound.gameTap,
+      AppSound.gameCardFlip,
+      AppSound.gameMatch,
+      AppSound.gameReveal,
+      AppSound.gameComplete,
+    ]);
+  });
 }

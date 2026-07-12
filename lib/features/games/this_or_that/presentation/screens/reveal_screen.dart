@@ -1,10 +1,12 @@
 // lib/features/games/this_or_that/presentation/screens/reveal_screen.dart
+import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/glow_pulse.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/match_indicator.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class RevealScreen extends StatefulWidget {
+class RevealScreen extends ConsumerStatefulWidget {
   final String questionText;
   final String userChoice;
   final String userChoiceText;
@@ -39,19 +41,21 @@ class RevealScreen extends StatefulWidget {
   });
 
   @override
-  State<RevealScreen> createState() => _RevealScreenState();
+  ConsumerState<RevealScreen> createState() => _RevealScreenState();
 }
 
-class _RevealScreenState extends State<RevealScreen>
+class _RevealScreenState extends ConsumerState<RevealScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _slideController;
   late Animation<Offset> _leftSlideAnimation;
   late Animation<Offset> _rightSlideAnimation;
   late Animation<double> _flashAnimation;
+  SoundService? _sound;
 
   @override
   void initState() {
     super.initState();
+    _sound = ref.read(soundServiceProvider);
     _slideController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -76,10 +80,13 @@ class _RevealScreenState extends State<RevealScreen>
 
     _slideController.forward();
 
-    // Celebratory tactile punch the moment a match is revealed — the game's
-    // warmest beat. Fired once on entry; a non-match stays silent.
+    // Celebratory tactile + audible punch the moment a match is revealed — the
+    // game's warmest beat. A non-match still gets a soft reveal sound.
     if (widget.isMatch) {
       HapticFeedback.mediumImpact();
+      _sound?.play(AppSound.gameMatch);
+    } else {
+      _sound?.play(AppSound.gameReveal);
     }
   }
 
