@@ -1,3 +1,5 @@
+import 'package:attune/core/ui/motion/glow_pulse.dart';
+import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/dating/presentation/providers/dating_providers.dart';
 import 'package:attune/features/dating/presentation/screens/dating_guided_date_screen.dart';
@@ -72,7 +74,15 @@ class DatingMatchesScreen extends ConsumerWidget {
             padding: EdgeInsets.all(Spacing.md.w),
             itemCount: matches.length,
             itemBuilder: (context, index) {
-              return _buildMatchCard(context, matches[index], ref);
+              // A match is the feature's warmest moment — cards settle in with a
+              // short per-index cascade. Reduce-motion safe.
+              return SettleIn(
+                key: ValueKey('match_${matches[index]['id']}'),
+                duration:
+                    const Duration(milliseconds: 280) +
+                    Duration(milliseconds: 70 * index),
+                child: _buildMatchCard(context, matches[index], ref),
+              );
             },
           );
         },
@@ -91,138 +101,151 @@ class DatingMatchesScreen extends ConsumerWidget {
     final cityRegionCode = match['city_region_code'] as String?;
     final matchId = match['id'] as String;
 
-    return Container(
-      margin: EdgeInsets.only(bottom: Spacing.md.h),
-      padding: EdgeInsets.all(Spacing.md.w),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
-                child: Text(
-                  displayName.isEmpty ? 'A' : displayName.characters.first,
-                  style: TextStyle(
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.bold,
+    // Every card here is a mutual match — the celebratory state. A gentle glow
+    // settles to a soft resting highlight (not a persistent flash), marking it
+    // as special without urgency. Reduce-motion safe (GlowPulse settles static).
+    return GlowPulse(
+      active: true,
+      color: colorScheme.primary,
+      child: Container(
+        margin: EdgeInsets.only(bottom: Spacing.md.h),
+        padding: EdgeInsets.all(Spacing.md.w),
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
+          border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
+                  child: Text(
+                    displayName.isEmpty ? 'A' : displayName.characters.first,
+                    style: TextStyle(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-              ),
-              Gap(Spacing.md.w),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(displayName, style: textTheme.titleMedium),
-                    Text(
-                      [
-                        if (cityRegionCode != null && cityRegionCode.isNotEmpty)
-                          cityRegionCode,
-                        'Matched ${_formatDate(DateTime.parse(match['matched_at'] as String))}',
-                      ].join(' • '),
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                Gap(Spacing.md.w),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(displayName, style: textTheme.titleMedium),
+                      Text(
+                        [
+                          if (cityRegionCode != null &&
+                              cityRegionCode.isNotEmpty)
+                            cityRegionCode,
+                          'Matched ${_formatDate(DateTime.parse(match['matched_at'] as String))}',
+                        ].join(' • '),
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurface.withValues(alpha: 0.5),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-          Gap(Spacing.md.h),
-          Text(
-            'Dating chat safety review is still a production gate, so this build keeps the match actions focused on planning and safety rather than opening a full chat surface.',
-            style: textTheme.bodySmall,
-          ),
-          Gap(Spacing.md.h),
-          Row(
-            children: [
-              Expanded(
-                child: AppButton(
-                  label: 'First date guide',
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder:
-                            (_) => DatingGuidedDateScreen(
-                              matchId: match['id'] as String,
-                            ),
-                      ),
-                    );
-                  },
-                  size: ButtonSize.small,
-                  customColor: colorScheme.surfaceContainerHighest,
-                  textColor: colorScheme.onSurface,
-                ),
-              ),
-              Gap(Spacing.md.w),
-              Expanded(
-                child: AppButton(
-                  label: 'Safety resources',
-                  onPressed: () {
-                    Navigator.pushNamed(
-                      context,
-                      SafetyResourcesScreen.routeName,
-                    );
-                  },
-                  size: ButtonSize.small,
-                  customColor: colorScheme.surfaceContainerHighest,
-                  textColor: colorScheme.onSurface,
-                ),
-              ),
-            ],
-          ),
-          Gap(Spacing.md.h),
-          Row(
-            children: [
-              Expanded(
-                child: AppButton(
-                  label: 'Unmatch',
-                  onPressed: () {
-                    _showUnmatchConfirmation(
-                      context,
-                      ref,
-                      match['id'] as String,
-                    );
-                  },
-                  size: ButtonSize.small,
-                  customColor: colorScheme.surfaceContainerHighest,
-                  textColor: colorScheme.error,
-                ),
-              ),
-              Gap(Spacing.md.w),
-              Expanded(
-                child: AppButton(
-                  label: 'Block',
-                  onPressed: () {
-                    _showBlockConfirmation(context, ref, matchId, displayName);
-                  },
-                  size: ButtonSize.small,
-                  customColor: colorScheme.surfaceContainerHighest,
-                  textColor: colorScheme.error,
-                ),
-              ),
-            ],
-          ),
-          Gap(Spacing.sm.h),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () {
-                _showReportDialog(context, ref, matchId, displayName);
-              },
-              icon: const Icon(Icons.flag_outlined, size: 18),
-              label: const Text('Report'),
+              ],
             ),
-          ),
-        ],
+            Gap(Spacing.md.h),
+            Text(
+              'Dating chat safety review is still a production gate, so this build keeps the match actions focused on planning and safety rather than opening a full chat surface.',
+              style: textTheme.bodySmall,
+            ),
+            Gap(Spacing.md.h),
+            Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    label: 'First date guide',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder:
+                              (_) => DatingGuidedDateScreen(
+                                matchId: match['id'] as String,
+                              ),
+                        ),
+                      );
+                    },
+                    size: ButtonSize.small,
+                    customColor: colorScheme.surfaceContainerHighest,
+                    textColor: colorScheme.onSurface,
+                  ),
+                ),
+                Gap(Spacing.md.w),
+                Expanded(
+                  child: AppButton(
+                    label: 'Safety resources',
+                    onPressed: () {
+                      Navigator.pushNamed(
+                        context,
+                        SafetyResourcesScreen.routeName,
+                      );
+                    },
+                    size: ButtonSize.small,
+                    customColor: colorScheme.surfaceContainerHighest,
+                    textColor: colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+            Gap(Spacing.md.h),
+            Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    label: 'Unmatch',
+                    onPressed: () {
+                      _showUnmatchConfirmation(
+                        context,
+                        ref,
+                        match['id'] as String,
+                      );
+                    },
+                    size: ButtonSize.small,
+                    customColor: colorScheme.surfaceContainerHighest,
+                    textColor: colorScheme.error,
+                  ),
+                ),
+                Gap(Spacing.md.w),
+                Expanded(
+                  child: AppButton(
+                    label: 'Block',
+                    onPressed: () {
+                      _showBlockConfirmation(
+                        context,
+                        ref,
+                        matchId,
+                        displayName,
+                      );
+                    },
+                    size: ButtonSize.small,
+                    customColor: colorScheme.surfaceContainerHighest,
+                    textColor: colorScheme.error,
+                  ),
+                ),
+              ],
+            ),
+            Gap(Spacing.sm.h),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () {
+                  _showReportDialog(context, ref, matchId, displayName);
+                },
+                icon: const Icon(Icons.flag_outlined, size: 18),
+                label: const Text('Report'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

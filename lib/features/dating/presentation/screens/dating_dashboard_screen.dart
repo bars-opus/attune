@@ -1,3 +1,6 @@
+import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/motion/glow_pulse.dart';
+import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/dating/data/models/dating_introduction.dart';
 import 'package:attune/features/dating/presentation/providers/dating_providers.dart';
@@ -311,7 +314,16 @@ class DatingDashboardScreen extends ConsumerWidget {
           padding: EdgeInsets.all(Spacing.md.w),
           itemCount: introductions.length,
           itemBuilder: (context, index) {
-            return _buildIntroductionCard(context, ref, introductions[index]);
+            // Cards settle in with a short per-index stagger so the curated
+            // list arrives warmly rather than snapping in. Reduce-motion safe
+            // (SettleIn renders at rest). Never a countdown/urgency cue (M8).
+            return SettleIn(
+              key: ValueKey('intro_${introductions[index].id}'),
+              duration:
+                  const Duration(milliseconds: 260) +
+                  Duration(milliseconds: 60 * index),
+              child: _buildIntroductionCard(context, ref, introductions[index]),
+            );
           },
         );
       },
@@ -347,20 +359,27 @@ class DatingDashboardScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: Spacing.sm.w,
-              vertical: Spacing.xs.h,
-            ),
-            decoration: BoxDecoration(
-              color: introduction.bandColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
-            ),
-            child: Text(
-              'Alignment preview: ${introduction.bandLabel}',
-              style: textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: introduction.bandColor,
+          // The strongest band breathes a gentle glow so the signal isn't
+          // carried by color alone (accessibility, L1). Weaker bands stay
+          // static. This is a warmth cue, never urgency (M8).
+          GlowPulse(
+            active: introduction.displayBand == 'promising_shared_ground',
+            color: introduction.bandColor,
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: Spacing.sm.w,
+                vertical: Spacing.xs.h,
+              ),
+              decoration: BoxDecoration(
+                color: introduction.bandColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
+              ),
+              child: Text(
+                'Alignment preview: ${introduction.bandLabel}',
+                style: textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: introduction.bandColor,
+                ),
               ),
             ),
           ),
@@ -472,6 +491,15 @@ class DatingDashboardScreen extends ConsumerWidget {
     String introductionId,
     String action,
   ) async {
+    // Tactile confirmation the moment the tap lands: a warmer light impact for
+    // Interested, a lighter selection tick for a pass. Double-blind is
+    // preserved — this fires on the viewer's own action only.
+    final haptics = ref.read(hapticsProvider);
+    if (action == 'interested') {
+      haptics.light();
+    } else {
+      haptics.selection();
+    }
     try {
       await ref.read(
         actOnIntroductionProvider((
