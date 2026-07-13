@@ -50,8 +50,10 @@ class RelationshipInviteService {
   Future<RelationshipInvite> createInvite() async {
     final client = _safeClient;
     if (client == null) {
+      // Never name the backend in a user-facing message (auth engine spec
+      // §Failure Modes: no project refs / internal config in UI errors).
       throw const RelationshipInviteException(
-        'Supabase is not configured for this local run.',
+        'Invites are unavailable right now. Please try again later.',
       );
     }
 
@@ -76,8 +78,10 @@ class RelationshipInviteService {
   Future<InviteAcceptance> acceptInvite(String inviteCode) async {
     final client = _safeClient;
     if (client == null) {
+      // Never name the backend in a user-facing message (auth engine spec
+      // §Failure Modes: no project refs / internal config in UI errors).
       throw const RelationshipInviteException(
-        'Supabase is not configured for this local run.',
+        'Invites are unavailable right now. Please try again later.',
       );
     }
 

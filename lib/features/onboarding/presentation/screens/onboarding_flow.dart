@@ -34,7 +34,11 @@ class OnboardingFlow extends StatefulWidget {
 class _OnboardingFlowState extends State<OnboardingFlow> {
   final _nameController = TextEditingController();
   final _anchorControllers = List.generate(3, (_) => TextEditingController());
-  final _quizAnswers = List<int>.filled(attachmentQuestions.length, 3);
+  // Nullable: an unanswered question must be distinguishable from a genuinely
+  // neutral one. Pre-filling every item with the midpoint made 26 untouched
+  // questions look answered and let a user tap straight through, writing a
+  // fabricated all-neutral reflection to onboarding_profiles.
+  final _quizAnswers = List<int?>.filled(attachmentQuestions.length, null);
   final _submissionService = OnboardingSubmissionService();
   late final RelationshipInviteService _inviteService =
       widget._inviteService ?? RelationshipInviteService();
@@ -71,12 +75,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         mode == OnboardingMode.couples && !_acceptedPendingInvite
             ? OnboardingMode.couplesPending
             : mode;
+    // The quiz step gates Next on an answer, so by the time we finish every
+    // item is set. Drop any nulls rather than fabricate a midpoint.
+    final answers = _quizAnswers.whereType<int>().toList();
 
     try {
       await _submissionService.submit(
         mode: completedMode,
         displayName: displayName,
-        attachmentAnswers: _quizAnswers,
+        attachmentAnswers: answers,
         anchors: anchors,
       );
       // Landed remotely — drop any payload left over from an earlier attempt.
@@ -92,7 +99,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         PendingOnboardingSubmission(
           mode: completedMode,
           displayName: displayName,
-          attachmentAnswers: _quizAnswers,
+          attachmentAnswers: answers,
           anchors: anchors,
         ),
       );

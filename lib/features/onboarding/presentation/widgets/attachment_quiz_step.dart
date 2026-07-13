@@ -13,7 +13,7 @@ class AttachmentQuizStep extends StatelessWidget {
   });
 
   final int questionIndex;
-  final List<int> answers;
+  final List<int?> answers;
   final ValueChanged<int> onChanged;
   final VoidCallback? onBack;
   final VoidCallback onNext;
@@ -22,6 +22,8 @@ class AttachmentQuizStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final question = attachmentQuestions[questionIndex];
     final isLastQuestion = questionIndex == attachmentQuestions.length - 1;
+    final answer = answers[questionIndex];
+    final hasAnswered = answer != null;
 
     return OnboardingStepFrame(
       title: 'Relationship reflection quiz',
@@ -44,8 +46,14 @@ class AttachmentQuizStep extends StatelessWidget {
               ButtonSegment(value: 4, label: Text('4')),
               ButtonSegment(value: 5, label: Text('5')),
             ],
-            selected: {answers[questionIndex]},
-            onSelectionChanged: (values) => onChanged(values.first),
+            // Empty until the user actually picks: an untouched question must
+            // not look answered.
+            emptySelectionAllowed: true,
+            selected: hasAnswered ? {answer} : const <int>{},
+            onSelectionChanged: (values) {
+              if (values.isEmpty) return;
+              onChanged(values.first);
+            },
           ),
           Gap(Spacing.sm.h),
           Text(
@@ -70,7 +78,9 @@ class AttachmentQuizStep extends StatelessWidget {
               Expanded(
                 child: AppButton(
                   label: isLastQuestion ? 'Finish quiz' : 'Next',
-                  onPressed: onNext,
+                  // Gated: you cannot advance past a question you never
+                  // answered, so the reflection we store is real.
+                  onPressed: hasAnswered ? onNext : null,
                   size: ButtonSize.small,
                   height: OnboardingTokens.actionButtonHeight.h,
                 ),
