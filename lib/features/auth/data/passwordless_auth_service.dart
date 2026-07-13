@@ -40,10 +40,7 @@ class PasswordlessAuthService {
     }
 
     await client.auth
-        .signInWithOtp(
-          phone: phoneNumber.trim(),
-          channel: channel,
-        )
+        .signInWithOtp(phone: phoneNumber.trim(), channel: channel)
         .timeout(authTimeout);
     return const PasswordlessAuthResult(isConfigured: true);
   }
@@ -82,6 +79,14 @@ class PasswordlessAuthService {
     return client?.auth.currentUser;
   }
 
+  /// User-facing copy for an auth failure.
+  ///
+  /// Spec (AUTH_ONBOARDING_ENGINE §Failure Modes): "No UI error should expose
+  /// stack traces, project refs, internal table names, or raw provider
+  /// payloads." So every branch here returns generic, actionable copy that
+  /// names no vendor (Supabase/Twilio), no provider state (trial account,
+  /// provider limits), and no internal configuration. Operators diagnose from
+  /// the logs, not from the user's screen.
   String userSafeMessage(Object error) {
     if (error is TimeoutException) {
       return 'That took too long. Check your connection and try again.';
@@ -91,7 +96,7 @@ class PasswordlessAuthService {
       return switch (error.code) {
         'over_request_rate_limit' => 'Too many attempts. Try again later.',
         'otp_expired' => 'That code has expired. Request a new one.',
-        'otp_disabled' => 'This sign-in method is not enabled yet.',
+        'otp_disabled' => 'Phone sign-in is unavailable right now.',
         'validation_failed' => 'Check the phone number and try again.',
         _ => _messageForAuthException(error),
       };
@@ -100,32 +105,45 @@ class PasswordlessAuthService {
     return 'Could not verify right now. Please try again.';
   }
 
+  /// Logs the error CATEGORY only.
+  ///
+  /// `error.message` is deliberately NOT logged: Supabase/provider auth errors
+  /// echo the submitted phone number back in the message on several failure
+  /// paths, and phone is PII (spec §1.11 "never log raw phone numbers", §4.4
+  /// "log error categories/runtime types only, not PII"). Code + status are
+  /// enough to identify the failure class.
   void _logAuthException(AuthException error) {
     debugPrint(
       '[auth] passwordless error: '
       'code=${error.code}, '
-      'status=${error.statusCode}, '
-      'message=${error.message}',
+      'status=${error.statusCode}',
     );
   }
 
+  /// Maps provider-specific failures onto generic user copy.
+  ///
+  /// The message is inspected only to CLASSIFY the failure; none of it is
+  /// surfaced to the user, and the classified categories never name the vendor
+  /// or its account state.
   String _messageForAuthException(AuthException error) {
     final message = error.message.toLowerCase();
 
+    // Provider daily send cap (e.g. Twilio 63038) — a delivery outage from the
+    // user's point of view, not something they can act on beyond waiting.
     if (message.contains('63038') || message.contains('daily messages limit')) {
-      return 'Daily verification limit reached. Try again tomorrow or check provider limits.';
+      return 'We could not send a code right now. Please try again later.';
     }
 
+    // SMS/provider misconfiguration, or a provider trial account that can only
+    // reach allow-listed numbers (e.g. Twilio 21608). Both are OUR problem, not
+    // the user's — say so without naming the vendor or its account tier.
     if (message.contains('sms') ||
         message.contains('twilio') ||
-        message.contains('provider')) {
-      return 'Verification is not ready yet. Check the auth provider setup in Supabase.';
-    }
-
-    if (message.contains('unverified') ||
+        message.contains('provider') ||
+        message.contains('unverified') ||
         message.contains('21608') ||
         message.contains('trial')) {
-      return 'Your provider can only send codes to verified recipient numbers.';
+      return 'Phone sign-in is unavailable right now. Please try again later.';
     }
 
     if (message.contains('phone') || message.contains('number')) {

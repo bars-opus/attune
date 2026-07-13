@@ -5,6 +5,7 @@ import 'package:attune/features/auth/log_in/presentation/screens/login_profile.d
 import 'package:attune/features/auth/data/passwordless_auth_service.dart';
 import 'package:attune/features/chat/presentation/widgets/authenticated_chat_workspace.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
+import 'package:attune/features/onboarding/data/onboarding_sync_service.dart';
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
 import 'package:attune/features/opinions/presentation/screen/opinions_tab.dart';
 import 'package:attune/features/safety/presentation/widgets/triple_tap_detector.dart';
@@ -33,6 +34,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _authService = PasswordlessAuthService();
+  final _syncService = OnboardingSyncService();
 
   StreamSubscription<AuthState>? _authSubscription;
   late Future<OnboardingStore> _storeFuture;
@@ -71,7 +73,17 @@ class _HomeScreenState extends State<HomeScreen> {
         userId == null || userId.isEmpty
             ? OnboardingStore.anonymousScope
             : '${OnboardingStore.userScopePrefix}.$userId';
-    return OnboardingStore(prefs, scope: scope);
+    final store = OnboardingStore(prefs, scope: scope);
+
+    // Pay off any onboarding submission that never reached the server (the
+    // "we will sync when your connection is stable" promise). Fire-and-forget:
+    // the shell must render immediately, and a failed flush keeps the payload
+    // for the next launch.
+    if (userId != null && userId.isNotEmpty) {
+      unawaited(_syncService.flush(store));
+    }
+
+    return store;
   }
 
   @override

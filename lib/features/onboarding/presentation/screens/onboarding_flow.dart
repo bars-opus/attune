@@ -79,7 +79,23 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         attachmentAnswers: _quizAnswers,
         anchors: anchors,
       );
+      // Landed remotely — drop any payload left over from an earlier attempt.
+      await widget.store.clearPendingSubmission();
     } catch (_) {
+      // We still complete locally so a bad network can never trap the user in
+      // the flow — but the submission is PERSISTED and replayed on a later
+      // launch (OnboardingSyncService). Without that, this "we will sync"
+      // message was an empty promise: the user looked onboarded locally while
+      // their mode / quiz answers / anchors never reached the server, and the
+      // app never re-entered onboarding to try again.
+      await widget.store.savePendingSubmission(
+        PendingOnboardingSubmission(
+          mode: completedMode,
+          displayName: displayName,
+          attachmentAnswers: _quizAnswers,
+          anchors: anchors,
+        ),
+      );
       if (mounted) {
         context.showInfoSnackbar(
           'Saved locally. We will sync onboarding when your connection is stable.',

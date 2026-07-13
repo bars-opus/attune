@@ -1,5 +1,56 @@
+import 'dart:convert';
+
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// The payload of an onboarding submission that has not yet reached the server.
+///
+/// Onboarding completes locally even when the remote write fails (the user must
+/// not be trapped in the flow by a bad network), so the submission is persisted
+/// here and replayed on a later launch. Without this, "we will sync when your
+/// connection is stable" is an empty promise and the user's mode / quiz answers
+/// / anchors are silently lost server-side while they appear onboarded locally.
+class PendingOnboardingSubmission {
+  const PendingOnboardingSubmission({
+    required this.mode,
+    required this.displayName,
+    required this.attachmentAnswers,
+    required this.anchors,
+  });
+
+  final OnboardingMode mode;
+  final String displayName;
+  final List<int> attachmentAnswers;
+  final List<String> anchors;
+
+  Map<String, dynamic> toJson() => {
+    'mode': mode.name,
+    'display_name': displayName,
+    'attachment_answers': attachmentAnswers,
+    'anchors': anchors,
+  };
+
+  static PendingOnboardingSubmission? fromJson(Map<String, dynamic> json) {
+    final modeName = json['mode'] as String?;
+    if (modeName == null) return null;
+    OnboardingMode? mode;
+    for (final value in OnboardingMode.values) {
+      if (value.name == modeName) mode = value;
+    }
+    if (mode == null) return null;
+
+    return PendingOnboardingSubmission(
+      mode: mode,
+      displayName: json['display_name'] as String? ?? '',
+      attachmentAnswers:
+          (json['attachment_answers'] as List?)?.whereType<int>().toList() ??
+          const <int>[],
+      anchors:
+          (json['anchors'] as List?)?.whereType<String>().toList() ??
+          const <String>[],
+    );
+  }
+}
 
 class OnboardingStore {
   const OnboardingStore(this._prefs, {required String scope}) : _scope = scope;
@@ -14,9 +65,35 @@ class OnboardingStore {
   static const _completedKey = 'completed';
   static const _modeKey = 'mode';
   static const _displayNameKey = 'display_name';
+  static const _pendingSubmissionKey = 'pending_submission';
   static const pendingInviteCodeKey = 'attune.onboarding.pending_invite_code';
 
   bool get isComplete => _prefs.getBool(_key(_completedKey)) ?? false;
+
+  /// The submission still owed to the server, if the remote write failed.
+  PendingOnboardingSubmission? get pendingSubmission {
+    final raw = _prefs.getString(_key(_pendingSubmissionKey));
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return null;
+      return PendingOnboardingSubmission.fromJson(decoded);
+    } catch (_) {
+      // Corrupt payload is unrecoverable; drop it rather than trap the retry.
+      return null;
+    }
+  }
+
+  Future<void> savePendingSubmission(PendingOnboardingSubmission submission) {
+    return _prefs.setString(
+      _key(_pendingSubmissionKey),
+      jsonEncode(submission.toJson()),
+    );
+  }
+
+  Future<void> clearPendingSubmission() {
+    return _prefs.remove(_key(_pendingSubmissionKey));
+  }
 
   OnboardingMode? get mode {
     final value = _prefs.getString(_key(_modeKey));
@@ -52,6 +129,7 @@ class OnboardingStore {
     await _prefs.remove(_key(_completedKey));
     await _prefs.remove(_key(_modeKey));
     await _prefs.remove(_key(_displayNameKey));
+    await _prefs.remove(_key(_pendingSubmissionKey));
     await _prefs.remove(pendingInviteCodeKey);
   }
 

@@ -6,6 +6,7 @@ import 'package:attune/features/auth/log_in/presentation/state/phone_auth_provid
 import 'package:attune/features/auth/log_in/presentation/widgets/login_code_step.dart';
 import 'package:attune/features/auth/log_in/presentation/widgets/login_phone_step.dart';
 import 'package:attune/features/auth/utility/auth_exports.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -34,6 +35,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   bool _isSending = false;
   bool _isVerifying = false;
   bool _otpSent = false;
+  bool _hasLeftForOnboarding = false;
   OtpChannel _otpChannel = OtpChannel.sms;
 
   @override
@@ -145,8 +147,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   Future<void> _requestPhoneOtp() async {
     if (!_authService.isConfigured) {
+      // Release builds must not name the backend (spec §Failure Modes: no
+      // project refs / internal config in UI errors). In debug this is a local
+      // setup mistake, so keep the actionable hint for developers only.
       context.showErrorSnackbar(
-        'Supabase is not configured for this local run.',
+        kDebugMode
+            ? 'Backend not configured for this run. Pass --dart-define-from-file=.env.json'
+            : 'Phone sign-in is unavailable right now. Please try again later.',
       );
       return;
     }
@@ -196,7 +203,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     }
 
     if (token.length < 4) {
-      context.showErrorSnackbar('Enter the verification code we sent to your phone.');
+      context.showErrorSnackbar(
+        'Enter the verification code we sent to your phone.',
+      );
       _otpFocusNode.requestFocus();
       return;
     }
@@ -264,7 +273,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   void _goToOnboarding() {
-    if (!mounted) return;
+    if (!mounted || _hasLeftForOnboarding) return;
+
+    // Three separate paths can reach here for a single sign-in: the
+    // already-authenticated check in initState, the authStateChanges listener,
+    // and the _verifyPhoneOtp success handler (the listener and the handler
+    // both fire on one successful OTP). Navigating more than once would pop the
+    // sheet AND then a real page below it, so this is latched: first caller
+    // wins, the rest are no-ops.
+    _hasLeftForOnboarding = true;
 
     // LoginScreen is presented BOTH as a route (/login) and inside a modal
     // bottom sheet (from LoginProfile). `context.go` swaps the page stack

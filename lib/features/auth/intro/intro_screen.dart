@@ -14,7 +14,6 @@ import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 
@@ -115,10 +114,10 @@ class _IntroScreenState extends ConsumerState<IntroScreen> {
                     stroke: 2,
                     animateSize: true,
                     animateShape: true,
-                    firstColor: colorScheme.background,
-                    secondColor: colorScheme.background,
+                    firstColor: Colors.transparent,
+                    secondColor: Colors.transparent,
                   ),
-                  Gap(Spacing.md.h),
+
                   SizedBox(
                     width: 200.w,
                     child: AppButton(
@@ -161,20 +160,22 @@ class _IntroScreenState extends ConsumerState<IntroScreen> {
                     textAlign: TextAlign.center,
                   ),
                   Gap(Spacing.md.h),
+
                   // attune_logo_white
                   SizedBox(
-                    width: 80,
-                    height: 80,
+                    width: 50,
+                    height: 50,
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(
                         BorderRadiusTokens.md,
                       ),
                       child: Image.asset(
-                        'assets/images/attune_launcher_icon.png',
+                        'assets/images/attune_logo_white.png',
                         fit: BoxFit.cover,
                       ),
                     ),
                   ),
+
                   // Icon(
                   //   FontAwesomeIcons.heart,
                   //   color: colorScheme.primary,
