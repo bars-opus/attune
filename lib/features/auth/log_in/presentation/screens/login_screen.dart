@@ -265,6 +265,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   void _goToOnboarding() {
     if (!mounted) return;
+
+    // LoginScreen is presented BOTH as a route (/login) and inside a modal
+    // bottom sheet (from LoginProfile). `context.go` swaps the page stack
+    // underneath the modal without dismissing it, which would leave the user
+    // stranded behind the login sheet after a successful verification.
+    // showModalBottomSheet pushes a PopupRoute, so that — and only that — is
+    // what we dismiss here; when LoginScreen is the /login page the enclosing
+    // route is a GoRouter page, not a PopupRoute, and we route directly.
+    final route = ModalRoute.of(context);
+    if (route is PopupRoute) {
+      Navigator.of(context).pop();
+    }
+
     context.go(RouteNames.onboarding);
   }
 }

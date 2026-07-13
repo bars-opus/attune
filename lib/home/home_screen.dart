@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/auth/log_in/presentation/screens/login_profile.dart';
 import 'package:attune/features/auth/data/passwordless_auth_service.dart';
@@ -9,14 +11,73 @@ import 'package:attune/features/safety/presentation/widgets/triple_tap_detector.
 import 'package:attune/home/widgets/home_tab.dart';
 import 'package:attune/home/widgets/home_widget_responsive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-class HomeScreen extends StatelessWidget {
+/// The app shell: an anonymous-browsable two-tab home (Opinions + Chat).
+///
+/// Guests see the Opinions feed and a sign-in surface in the Chat tab. Once the
+/// user authenticates, this rebuilds and routes them into onboarding if it is
+/// not yet complete; after that the Chat tab becomes the real workspace.
+///
+/// Stateful (not Stateless) on purpose: the onboarding store must be loaded
+/// ONCE per auth identity, and the shell must REBUILD when auth flips. A
+/// stateless build that read `currentUser` inline both re-created its
+/// FutureBuilder future on every rebuild (re-flashing a spinner) and never
+/// rebuilt on sign-in/sign-out at all.
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final _authService = PasswordlessAuthService();
+
+  StreamSubscription<AuthState>? _authSubscription;
+  late Future<OnboardingStore> _storeFuture;
+  String? _scopeUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    _scopeUserId = _authService.currentUser?.id;
+    _storeFuture = _loadStore();
+
+    // Rebuild (and re-scope the onboarding store) when the user signs in or
+    // out, so the shell swaps between the guest and authenticated surfaces
+    // without needing a manual navigation.
+    _authSubscription = _authService.authStateChanges.listen((_) {
+      if (!mounted) return;
+      final userId = _authService.currentUser?.id;
+      if (userId == _scopeUserId) return;
+      setState(() {
+        _scopeUserId = userId;
+        _storeFuture = _loadStore();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<OnboardingStore> _loadStore() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = _scopeUserId;
+    final scope =
+        userId == null || userId.isEmpty
+            ? OnboardingStore.anonymousScope
+            : '${OnboardingStore.userScopePrefix}.$userId';
+    return OnboardingStore(prefs, scope: scope);
+  }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<OnboardingStore>(
-      future: _loadStore(),
+      future: _storeFuture,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Scaffold(
@@ -25,7 +86,7 @@ class HomeScreen extends StatelessWidget {
         }
 
         final store = snapshot.data!;
-        final isAuthenticated = PasswordlessAuthService().currentUser != null;
+        final isAuthenticated = _authService.currentUser != null;
 
         if (isAuthenticated && !store.isComplete) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -45,7 +106,6 @@ class HomeScreen extends StatelessWidget {
         final initialTabIndex = isOnboarded && isActiveCouples ? 1 : 0;
 
         final tabs = [
-          // Opinions tab - NOW using our full OpinionsTab with sub-tabs
           const HomeTab(
             id: 'opinions',
             label: 'Opinions',
@@ -53,29 +113,6 @@ class HomeScreen extends StatelessWidget {
             activeIcon: Icons.forum,
             screen: OpinionsTab(),
           ),
-
-          //         const HomeTab(
-          //   id: 'pulse',
-          //   label: 'Pulse',
-          //   icon: Icons.show_chart_outlined,
-          //   activeIcon: Icons.show_chart,
-          //   screen: PulseTab(),
-          // ),
-
-          // const HomeTab(
-          //     id: 'games',
-          //     label: 'Games',
-          //     icon: Icons.sports_esports_outlined,
-          //     activeIcon: Icons.sports_esports,
-          //     screen: GamesTab(),
-          //   ),
-          //   const HomeTab(
-          //     id: 'insights',
-          //     label: 'Insights',
-          //     icon: Icons.lightbulb_outline,
-          //     activeIcon: Icons.lightbulb,
-          //     screen: InsightsTab(),
-          //   ),
           HomeTab(
             id: 'chat',
             label: 'Chat',
@@ -104,15 +141,5 @@ class HomeScreen extends StatelessWidget {
         return TripleTapDetector(child: home);
       },
     );
-  }
-
-  Future<OnboardingStore> _loadStore() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = PasswordlessAuthService().currentUser?.id;
-    final scope =
-        userId == null || userId.isEmpty
-            ? OnboardingStore.anonymousScope
-            : '${OnboardingStore.userScopePrefix}.$userId';
-    return OnboardingStore(prefs, scope: scope);
   }
 }
