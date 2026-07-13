@@ -70,7 +70,7 @@ class _BlockedAccountsScreenState extends ConsumerState<BlockedAccountsScreen> {
         },
         child: blockedAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, stack) => Center(child: Text('Error: $error')),
+          error: (error, stack) => ErrorStateWidget.from(error),
           data: (blockedUsers) {
             if (blockedUsers.isEmpty) {
               return Center(

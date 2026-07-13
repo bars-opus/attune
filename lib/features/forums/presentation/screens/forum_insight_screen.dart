@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:gap/gap.dart';
+import 'package:attune/core/widgets/feedback/error_state.dart';
 
 
 
@@ -26,7 +27,7 @@ class ForumInsightScreen extends ConsumerWidget {
       ),
       body: topicAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(child: Text('Error: $error')),
+        error: (error, stack) => ErrorStateWidget.from(error),
         data: (topic) {
           // Handle null topic
           if (topic == null) {

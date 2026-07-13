@@ -113,7 +113,7 @@ class _ForumsExploreScreenState extends ConsumerState<ForumsExploreScreen> {
           ),
       error:
           (error, stack) =>
-              SliverToBoxAdapter(child: Center(child: Text('Error: $error'))),
+              SliverToBoxAdapter(child: ErrorStateWidget.from(error)),
       data: (forums) {
         if (forums.isEmpty) {
           return const SliverToBoxAdapter(
@@ -143,7 +143,7 @@ class _ForumsExploreScreenState extends ConsumerState<ForumsExploreScreen> {
           ),
       error:
           (error, stack) =>
-              SliverToBoxAdapter(child: Center(child: Text('Error: $error'))),
+              SliverToBoxAdapter(child: ErrorStateWidget.from(error)),
       data: (topics) {
         if (topics.isEmpty) {
           return const SliverToBoxAdapter(

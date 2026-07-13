@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:gap/gap.dart';
 import 'package:attune/home/widgets/semantic_container_widget.dart';
+import 'package:attune/core/widgets/feedback/error_state.dart';
 
 class ContributingForumsScreen extends ConsumerStatefulWidget {
   const ContributingForumsScreen({super.key});
@@ -63,7 +64,7 @@ class _ContributingForumsScreenState
       },
       child: contributingAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(child: Text('Error: $error')),
+        error: (error, stack) => ErrorStateWidget.from(error),
         data: (forums) {
           if (forums.isEmpty) {
             return Center(

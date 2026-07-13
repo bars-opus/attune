@@ -99,7 +99,7 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
                 : followingAsync.when(
                   loading:
                       () => const Center(child: CircularProgressIndicator()),
-                  error: (error, stack) => Center(child: Text('Error: $error')),
+                  error: (error, stack) => ErrorStateWidget.from(error),
                   data: (opinions) {
                     if (opinions.isEmpty) {
                       return Center(

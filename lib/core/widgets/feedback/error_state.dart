@@ -1,4 +1,9 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 enum ErrorStateType {
   networkError,
@@ -8,6 +13,44 @@ enum ErrorStateType {
   permissionError,
   genericError,
   custom,
+}
+
+/// Classifies an arbitrary thrown object into a safe, user-facing category.
+///
+/// Surfaces must never render a raw exception: a PostgrestException stringifies
+/// to internal table names and SQL detail, and an AuthException can echo the
+/// submitted phone number. (Same rule the auth engine spec states: "No UI error
+/// should expose stack traces, project refs, internal table names, or raw
+/// provider payloads.")
+ErrorStateType classifyErrorState(Object? error) {
+  if (error is TimeoutException || error is SocketException) {
+    return ErrorStateType.networkError;
+  }
+  if (error is AuthException) return ErrorStateType.permissionError;
+  if (error is FormatException) return ErrorStateType.parsingError;
+
+  if (error is PostgrestException) {
+    final code = error.code ?? '';
+    // 42501 insufficient_privilege / PGRST301 JWT issues -> permission.
+    if (code == '42501' || code.startsWith('PGRST3')) {
+      return ErrorStateType.permissionError;
+    }
+    // 22xxx/23xxx = bad data or constraint violation -> the request was wrong.
+    if (code.startsWith('22') || code.startsWith('23')) {
+      return ErrorStateType.clientError;
+    }
+    return ErrorStateType.serverError;
+  }
+
+  final text = error?.toString().toLowerCase() ?? '';
+  if (text.contains('socket') ||
+      text.contains('network') ||
+      text.contains('connection') ||
+      text.contains('timed out')) {
+    return ErrorStateType.networkError;
+  }
+
+  return ErrorStateType.genericError;
 }
 
 class ErrorStateWidget extends StatelessWidget {
@@ -31,6 +74,28 @@ class ErrorStateWidget extends StatelessWidget {
     this.showDetails = false,
     this.compact = true,
   });
+
+  /// Safe drop-in for `Text('Error: $error')`.
+  ///
+  /// Classifies [error] into a friendly category and renders the shared error
+  /// state with a retry. The raw exception text is attached ONLY in debug
+  /// builds, and even then it stays collapsed behind "Show details" — it is
+  /// never surfaced to a release user.
+  factory ErrorStateWidget.from(
+    Object? error, {
+    Key? key,
+    VoidCallback? onRetry,
+    bool compact = true,
+  }) {
+    return ErrorStateWidget(
+      key: key,
+      type: classifyErrorState(error),
+      errorDetails: kDebugMode ? error?.toString() : null,
+      showDetails: kDebugMode,
+      onPrimaryAction: onRetry,
+      compact: compact,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,34 +127,34 @@ class ErrorStateWidget extends StatelessWidget {
           Gap(Spacing.md.h),
 
           Padding(
-              padding: EdgeInsets.only(bottom: Spacing.sm.h),
-              child: Text(
-                effectiveTitle,
-                style:
-                    compact
-                        ? textTheme.titleMedium?.copyWith(
-                          color: colorScheme.onSurface,
-                          fontWeight: FontWeight.w600,
-                        )
-                        : textTheme.titleLarge?.copyWith(
-                          color: colorScheme.onSurface,
-                          fontWeight: FontWeight.w600,
-                        ),
-                textAlign: TextAlign.center,
-              ),
+            padding: EdgeInsets.only(bottom: Spacing.sm.h),
+            child: Text(
+              effectiveTitle,
+              style:
+                  compact
+                      ? textTheme.titleMedium?.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      )
+                      : textTheme.titleLarge?.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+              textAlign: TextAlign.center,
             ),
+          ),
 
           Padding(
-              padding: EdgeInsets.only(bottom: compact ? 0 : Spacing.xxl.h),
-              child: Text(
-                effectiveSubtitle,
-                style: textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  height: 1.5,
-                ),
-                textAlign: TextAlign.center,
+            padding: EdgeInsets.only(bottom: compact ? 0 : Spacing.xxl.h),
+            child: Text(
+              effectiveSubtitle,
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                height: 1.5,
               ),
+              textAlign: TextAlign.center,
             ),
+          ),
 
           if (errorDetails != null && errorDetails!.isNotEmpty && showDetails)
             _ErrorDetails(
@@ -166,7 +231,12 @@ class ErrorStateWidget extends StatelessWidget {
           loc?.errorRetry ?? 'Try again',
         );
       case ErrorStateType.custom:
-        return (Icons.error_outline_outlined, 'Error', 'An error occurred.', 'Retry');
+        return (
+          Icons.error_outline_outlined,
+          'Error',
+          'An error occurred.',
+          'Retry',
+        );
     }
   }
 }

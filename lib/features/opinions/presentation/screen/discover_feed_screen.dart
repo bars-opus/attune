@@ -1,18 +1,12 @@
 // lib/features/opinions/presentation/screens/discover_feed_screen.dart
 
-import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/core/widgets/buttons/app_button.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/comment_thread_screen.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:gap/gap.dart';
-import 'package:attune/home/widgets/semantic_container_widget.dart';
 import 'opinion_compose_screen.dart';
 
 class DiscoverFeedScreen extends ConsumerStatefulWidget {
@@ -97,42 +91,26 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
                 : opinionsAsync.when(
                   loading:
                       () => const Center(child: CircularProgressIndicator()),
-                  error: (error, stack) => Center(child: Text('Error: $error')),
+                  error: (error, stack) => ErrorStateWidget.from(error),
                   data: (opinions) {
                     if (opinions.isEmpty) {
                       return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.forum_outlined,
-                              size: 64,
-                              color: Colors.grey,
-                            ),
-                            Gap(Spacing.md.h),
-                            Text(
-                              'No opinions yet',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            Gap(Spacing.sm.h),
-                            Text('Be the first to share your thoughts'),
-                            Gap(Spacing.lg.h),
-                            AppButton(
-                              label: 'Write your first opinion',
-                              onPressed: () async {
-                                final needsRefresh = await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder:
-                                        (_) => const OpinionComposeScreen(),
-                                  ),
-                                );
-                                if (needsRefresh == true) {
-                                  ref.invalidate(discoverFeedProvider);
-                                }
-                              },
-                            ),
-                          ],
+                        child: EmptyStateWidget(
+                          title: 'No opinions yet',
+                          subtitle: 'Be the first to share your thoughts',
+                          onAction: () async {
+                            final needsRefresh = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const OpinionComposeScreen(),
+                              ),
+                            );
+                            if (needsRefresh == true) {
+                              ref.invalidate(discoverFeedProvider);
+                            }
+                          },
+
+                          actionLabel: 'Write your first opinion',
                         ),
                       );
                     }
