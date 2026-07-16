@@ -8,6 +8,7 @@ import 'package:attune/features/games/thirty_six_questions/presentation/provider
     as thirty_six;
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_invitation_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_journey_overview_screen.dart';
+import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_lobby_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_games_hub_screen.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_or_dare_game_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -85,6 +86,15 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
                   title: 'Truth or Dare',
                   description: 'Classic · All tones · ~15 min',
                   onTap: () => _startGame('truth_or_dare'),
+                ),
+                Gap(Spacing.md.h),
+                _buildGameCard(
+                  context,
+                  gameType: 'paint_ball',
+                  icon: '🎯',
+                  title: 'Paint Ball',
+                  description: 'Timing tap · 3 lives · ~5 min',
+                  onTap: () => _startGame('paint_ball'),
                 ),
                 Gap(Spacing.md.h),
                 _buildThirtySixQuestionsCard(context, ref),
@@ -621,6 +631,9 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
           MaterialPageRoute(builder: (_) => const TruthOrDareGameScreen()),
         );
         break;
+      case 'paint_ball':
+        _startPaintBall(context, ref);
+        break;
       case '36_questions':
         // Navigator.push(
         //   context,
@@ -630,5 +643,42 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
         // );
         break;
     }
+  }
+
+  void _startPaintBall(BuildContext context, WidgetRef ref) {
+    final relationshipId = ref.read(thirty_six.currentRelationshipIdProvider.future);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    relationshipId.then((relId) {
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      if (relId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No active relationship found.')),
+        );
+        return;
+      }
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PaintBallLobbyScreen(relationshipId: relId),
+        ),
+      );
+    }).catchError((error) {
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      // Never surface the raw exception to the user (project convention).
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open Paint Ball. Please try again.'),
+        ),
+      );
+    });
   }
 }
