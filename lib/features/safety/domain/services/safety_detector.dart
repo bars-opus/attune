@@ -1,4 +1,12 @@
 // lib/features/safety/domain/services/safety_detector.dart
+//
+// ⚠️ DO NOT wire this into the message send path or any live client flow.
+// SAFETY_SYSTEM_SPEC §2.2 is explicit: trigger detection is SERVER-ONLY (the
+// process-chat-safety-outbox worker). Client-side detection leaks trigger
+// behavior to the sender, drifts from the server config, can be bypassed, and
+// creates duplicate events. This class exists only as a reference/unit-tested
+// mirror of the normalization + tiering rules; it has no production caller and
+// must keep it that way. If you need detection at runtime, call the server.
 
 class SafetyDetector {
   static const int tier1 = 1;
