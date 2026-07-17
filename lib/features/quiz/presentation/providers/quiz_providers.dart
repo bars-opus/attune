@@ -7,6 +7,7 @@ import 'package:attune/features/quiz/domain/models/communication_style_result.da
 import 'package:attune/features/quiz/domain/models/conflict_style_result.dart';
 import 'package:attune/features/quiz/domain/models/love_language_result.dart';
 import 'package:attune/features/quiz/domain/models/shared_quiz_result.dart';
+import 'package:attune/features/quiz/domain/services/attachment_compatibility_service.dart';
 import 'package:attune/features/quiz/domain/services/attachment_scoring_service.dart';
 import 'package:attune/features/quiz/domain/services/quiz_notification_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -694,83 +695,14 @@ final refreshedAttachmentCompatibilityProvider =
     });
 
 // Claude API call for compatibility note
+// Deterministic, personalised compatibility note (no client AI call, no API key).
+// AttachmentCompatibilityService keys on the two attachment types and guarantees
+// the ATTACHMENT spec's banned-word / no-blame constraints by construction.
 Future<Map<String, String>> _generateCompatibilityNote(
   String typeA,
   String typeB,
 ) async {
-  final displayA = AttachmentScoringService.getDisplayNameFromType(typeA);
-  final displayB = AttachmentScoringService.getDisplayNameFromType(typeB);
-
-  const systemPrompt = '''
-ABSOLUTE CONSTRAINTS — these override all other instructions:
-
-1. Never attribute a negative behaviour to a named or implied partner.
-2. Never use these words: toxic, narcissist, codependent, disorder, broken.
-3. The watch_area describes the dynamic — never blames either person.
-4. Return ONLY valid JSON. No preamble. No markdown fences.
-''';
-
-  final userPrompt = '''
-Generate a short attachment compatibility note for two people.
-
-Person A attachment type: $displayA
-Person B attachment type: $displayB
-
-Return ONLY valid JSON:
-{
-  "pairing_name": string (3-5 words, poetic, warm — not clinical),
-  "pairing_description": string (max 30 words, specific to this combination),
-  "natural_strength": string (max 20 words),
-  "watch_area": string (max 20 words, about the dynamic not about either person individually)
-}
-
-Rules:
-- pairing_name must feel like a name for this dynamic not a clinical description
-- Never use: anxious, avoidant, fearful, disorder, broken
-- watch_area describes the dynamic — never blames either person
-''';
-
-  final response = await _callClaudeApi(systemPrompt, userPrompt);
-
-  return {
-    'pairing_name': response['pairing_name'] ?? 'A balanced dynamic',
-    'pairing_description':
-        response['pairing_description'] ??
-        'These two attachment styles complement each other in meaningful ways.',
-    'natural_strength':
-        response['natural_strength'] ??
-        'You bring different perspectives that can deepen understanding',
-    'watch_area':
-        response['watch_area'] ??
-        'Notice how you handle distance and closeness',
-  };
-}
-
-// NOTE (launch gap): compatibility notes are currently a single hardcoded
-// placeholder — every couple sees the same "anchor and the tide" result
-// regardless of their actual attachment types. This must be replaced before
-// launch. Do NOT call the Claude API from the client (that ships an API key and
-// violates the server-only AI architecture every other feature follows). Two
-// correct options:
-//   1. A deterministic pairing table keyed on (typeA, typeB) — ~28 unordered
-//      pairs over the 7 attachment types. Preferred: no API cost/latency/
-//      injection risk, and the ATTACHMENT spec's banned-word constraints are
-//      guaranteed by construction.
-//   2. A `generate-attachment-compatibility` edge function (service-role key in
-//      Deno.env), invoked like generate-verdict / translate-conflict.
-// Until then this returns safe, non-personalised placeholder copy (not a crash).
-Future<Map<String, dynamic>> _callClaudeApi(
-  String systemPrompt,
-  String userPrompt,
-) async {
-  return {
-    'pairing_name': 'A balanced dynamic',
-    'pairing_description':
-        'These two attachment styles bring different but workable rhythms to a relationship.',
-    'natural_strength':
-        'You bring different perspectives that can deepen understanding over time.',
-    'watch_area': 'Notice how each of you handles distance and closeness.',
-  };
+  return AttachmentCompatibilityService.noteFor(typeA, typeB).toMap();
 }
 
 // Save love language result
