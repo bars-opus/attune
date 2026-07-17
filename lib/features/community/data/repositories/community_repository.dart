@@ -282,34 +282,17 @@ class CommunityRepository {
     required String reportedBy,
     required String reason,
   }) async {
-    final tableName = table == 'this_or_that'
-        ? 'custom_this_or_that_questions'
-        : 'custom_truth_or_dare_questions';
-
-    final current = await _supabase
-        .from(tableName)
-        .select('report_count')
-        .eq('id', questionId)
-        .single();
-    final currentCount = current['report_count'] as int? ?? 0;
-
-    // Increment report count and hide if report_count >= 1
-    await _supabase
-        .from(tableName)
-        .update({
-          'report_count': currentCount + 1,
-          'hidden_for_review': true,
-        })
-        .eq('id', questionId);
-
-    // Log report
-    await _supabase.from('forum_reports').insert({
-      'reported_by': reportedBy,
-      'community_question_id': questionId,
-      'community_question_table': tableName,
-      'reason': reason,
-        'priority': reason == 'inappropriate' || reason == 'offensive',
-    });
+    // Route through the shared moderation RPC (games-hardening migration). It
+    // records ONE report per (question, reporter) and only hides the question
+    // once >= 2 DISTINCT reporters flag it — so a lone actor cannot censor a
+    // question. Doing the count/hide client-side (as before) both bypassed that
+    // threshold (hid on a single report) and raced on report_count. The old
+    // forum_reports insert also used non-existent community_question_* columns
+    // and would have thrown.
+    await _supabase.rpc(
+      'report_custom_question',
+      params: {'p_question_id': questionId, 'p_reason': reason},
+    );
   }
 
   String? _normalizeTypeFilter(String? value) {
