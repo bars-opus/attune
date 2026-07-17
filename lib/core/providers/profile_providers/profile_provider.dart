@@ -1,6 +1,5 @@
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/profile/models/profile.dart';
-import 'package:attune/features/profile/models/profile_role.dart';
 import 'package:attune/features/profile/repositories/supabase_profile_repository.dart';
 import 'package:attune/features/profile/repositories/profile_repository_interface.dart';
 import 'package:attune/features/profile/services/username_service.dart';
@@ -44,45 +43,3 @@ Future<String> currentUserDisplayName(CurrentUserDisplayNameRef ref) async {
   return profile?.displayName ?? profile?.username ?? 'Client';
 }
 
-/// Returns the user's highest-priority active role.
-/// Priority: shop > worker > client.
-/// Returns null when not logged in; never throws — errors fall back to client.
-final currentUserPrimaryRoleProvider = FutureProvider<AccountType?>((ref) async {
-  final userId = ref.watch(currentUserProvider)?.id;
-  if (userId == null) return null;
-  try {
-    final repo = ref.watch(profileRepositoryProvider);
-    final roles = await repo.fetchActiveUserRoles(userId);
-    if (roles.isEmpty) return AccountType.client;
-    const priority = [
-      AccountType.shop,
-      AccountType.worker,
-      AccountType.client,
-    ];
-    for (final p in priority) {
-      if (roles.any((r) => r.role == p)) return p;
-    }
-    return AccountType.client;
-  } catch (_) {
-    return AccountType.client;
-  }
-});
-
-/// True if the current user is a freelancer worker (is_freelancer = true in workers table).
-/// Returns false for shop owners, shop employees, clients, or if not in workers table.
-final currentUserIsFreelancerProvider = FutureProvider<bool>((ref) async {
-  final userId = ref.watch(currentUserProvider)?.id;
-  if (userId == null) return false;
-  try {
-    final client = ref.watch(supabaseClientProvider);
-    final response = await client
-        .from('workers')
-        .select('is_freelancer')
-        .eq('user_id', userId)
-        .eq('is_active', true)
-        .maybeSingle();
-    return response?['is_freelancer'] as bool? ?? false;
-  } catch (_) {
-    return false;
-  }
-});

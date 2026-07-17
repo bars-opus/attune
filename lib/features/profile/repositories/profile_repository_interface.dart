@@ -2,7 +2,6 @@
 
 
 import 'package:attune/features/profile/models/profile.dart';
-import 'package:attune/features/profile/models/profile_role.dart';
 
 /// This Dart class is an abstract ProfileRepository.
 abstract class ProfileRepository {
@@ -17,13 +16,6 @@ abstract class ProfileRepository {
   Future<Profile> updateAvatar(String userId, String publicUrl);
   Future<void> createProfile(String userId);
 
-    // ✅ Add role methods to interface
-  Future<List<UserRole>> fetchUserRoles(String userId);
-  Future<List<UserRole>> fetchActiveUserRoles(String userId);
-  Future<bool> hasRole(String userId, AccountType role);
-  Future<void> addRole(String userId, AccountType role, {Map<String, dynamic>? metadata});
-  Future<void> removeRole(String userId, AccountType role);
-  Future<void> updateRoleMetadata(String userId, AccountType role, Map<String, dynamic> metadata);
 
   // Utility
   Future<bool> isUsernameAvailable(String username); // ✅ Add this

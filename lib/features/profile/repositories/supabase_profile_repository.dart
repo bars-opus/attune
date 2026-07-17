@@ -1,5 +1,4 @@
 import 'package:attune/features/profile/models/profile.dart';
-import 'package:attune/features/profile/models/profile_role.dart';
 import 'package:attune/features/profile/repositories/profile_repository_interface.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -165,68 +164,4 @@ class SupabaseProfileRepository implements ProfileRepository {
     return Profile.fromJson(response);
   }
 
-  /// Fetch all roles for a user
-  Future<List<UserRole>> fetchUserRoles(String userId) async {
-    final response = await _client
-        .from('user_roles')
-        .select()
-        .eq('user_id', userId)
-        .order('created_at');
-
-    return response.map((json) => UserRole.fromJson(json)).toList();
-  }
-
-  /// Fetch active roles only
-  Future<List<UserRole>> fetchActiveUserRoles(String userId) async {
-    final response = await _client
-        .from('user_roles')
-        .select()
-        .eq('user_id', userId)
-        .eq('is_active', true)
-        .order('created_at');
-
-    return response.map((json) => UserRole.fromJson(json)).toList();
-  }
-
-  /// Check if user has a specific role
-  Future<bool> hasRole(String userId, AccountType role) async {
-    final response = await _client
-        .from('user_roles')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('role', role.value)
-        .eq('is_active', true)
-        .maybeSingle();
-
-    return response != null;
-  }
-
-  /// Add a role to a user
-  Future<void> addRole(String userId, AccountType role,
-      {Map<String, dynamic>? metadata}) async {
-    await _client.from('user_roles').insert({
-      'user_id': userId,
-      'role': role.value,
-      'metadata': metadata ?? {},
-    });
-  }
-
-  /// Remove a role from a user
-  Future<void> removeRole(String userId, AccountType role) async {
-    await _client
-        .from('user_roles')
-        .delete()
-        .eq('user_id', userId)
-        .eq('role', role.value);
-  }
-
-  /// Update role metadata (e.g., shop_id for shop workers)
-  Future<void> updateRoleMetadata(
-      String userId, AccountType role, Map<String, dynamic> metadata) async {
-    await _client
-        .from('user_roles')
-        .update({'metadata': metadata, 'updated_at': DateTime.now().toIso8601String()})
-        .eq('user_id', userId)
-        .eq('role', role.value);
-  }
 }

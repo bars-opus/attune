@@ -5,7 +5,6 @@ import 'package:attune/core/providers/profile_providers/profile_provider.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/text_field_loading_indicator.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
-import 'package:attune/features/profile/models/profile_role.dart';
 import 'package:attune/features/profile/widgets/editable_profile_avatar.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,18 +27,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   late String _originalBio;
   late String _originalAvatarUrl;
 
-  // Role selection state
-  AccountType? _selectedRole;
-  bool _isSavingRole = false;
-  List<UserRole> _currentRoles = [];
-
-  // Available roles for selection
-  final List<AccountType> _availableRoles = [
-    AccountType.client,
-    AccountType.shop,
-    AccountType.worker,
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -58,23 +45,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _nameController.addListener(_onNameChanged);
     _userNameController.addListener(_onUsernameChanged);
     _bioController.addListener(_onBioChanged);
-
-    // Load current roles
-    _loadCurrentRoles();
-  }
-
-  Future<void> _loadCurrentRoles() async {
-    final repo = ref.read(profileRepositoryProvider);
-    final roles = await repo.fetchActiveUserRoles(widget.currentUserId);
-    if (mounted) {
-      setState(() {
-        _currentRoles = roles;
-        // Set selected role to first active role
-        if (roles.isNotEmpty) {
-          _selectedRole = roles.first.role;
-        }
-      });
-    }
   }
 
   void _onNameChanged() {
@@ -102,134 +72,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
           .read(profileEditProvider(widget.currentUserId).notifier)
           .setBio(value);
     }
-  }
-
-  Future<void> _updateRole(AccountType role) async {
-    if (_selectedRole == role) return;
-
-    setState(() {
-      _isSavingRole = true;
-    });
-
-    try {
-      final repo = ref.read(profileRepositoryProvider);
-
-      // If user already has a primary role, remove it (or keep multiple)
-      // For now, we'll replace the primary role
-      if (_currentRoles.isNotEmpty) {
-        await repo.removeRole(widget.currentUserId, _currentRoles.first.role);
-      }
-
-      // Add new role
-      await repo.addRole(widget.currentUserId, role);
-
-      // Update local state
-      setState(() {
-        _selectedRole = role;
-        _currentRoles = [
-          UserRole(
-            id: '',
-            userId: widget.currentUserId,
-            role: role,
-            isActive: true,
-            metadata: {},
-            createdAt: DateTime.now(),
-            updatedAt: DateTime.now(),
-          ),
-        ];
-      });
-
-      // Refresh role providers so HomeScreen re-evaluates tabs immediately.
-      ref.invalidate(currentUserProfileProvider);
-      ref.invalidate(currentUserPrimaryRoleProvider);
-
-      if (mounted) {
-        context.showSuccessSnackbar(
-          'Account type updated to ${role.displayName}',
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        print(e.toString());
-        context.showErrorSnackbar('Error updating role: $e');
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSavingRole = false;
-        });
-      }
-    }
-  }
-
-  Widget _buildRoleSelector(AppLocalizations loc) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          loc.editProfileScreenAccountTypeLabel,
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: colorScheme.onSurface.withOpacity(0.8),
-          ),
-        ),
-        Gap(Spacing.md),
-        Text(
-          loc.editProfileScreenAccountTypeSubtitle,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurface.withOpacity(0.6),
-          ),
-        ),
-        Gap(Spacing.sm),
-        Wrap(
-          spacing: 8.w,
-          runSpacing: 8.h,
-          children:
-              _availableRoles.map((role) {
-                final isSelected = _selectedRole == role;
-                final isDisabled = _isSavingRole;
-
-                return AppFilterChip(
-                  label: role.displayName,
-                  selected: isSelected,
-                  onSelected:
-                      isDisabled
-                          ? (bool) {}
-                          : (selected) {
-                            if (selected) {
-                              _updateRole(role);
-                            }
-                          },
-                  selectedColor: colorScheme.primary,
-                  backgroundColor: colorScheme.background,
-                  labelColor:
-                      isSelected
-                          ? Colors.white
-                          : colorScheme.onSurface.withOpacity(0.6),
-                  borderWidth: 0.3,
-                  avatarIcon: role.icon,
-                );
-              }).toList(),
-        ),
-        if (_isSavingRole)
-          Padding(
-            padding: EdgeInsets.only(top: 8.h),
-            child: Row(
-              children: [
-                const CircularLoadingIndicator(),
-                Gap(Spacing.md.w),
-                Text(
-                  loc.editProfileScreenUpdatingAccountType,
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
   }
 
   @override
@@ -346,52 +188,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         editState.isSavingBio
                             ? const TextFieldLoadingIndicator()
                             : null,
-                  ),
-                  // ✅ Role Selection Section (Added here)
-                  Gap(Spacing.lg),
-
-                  _buildRoleSelector(loc),
-                  Gap(Spacing.md),
-                ],
-              ),
-            ),
-            Gap(Spacing.sm),
-            CardInkWell(
-              margin: EdgeInsets.only(bottom: 10.h),
-              onTap: () {},
-              child: Column(
-                children: [
-                  InfoRowWidget(
-                    subtitle: loc.editProfileScreenEditShopSubtitle,
-                    title: loc.editProfileScreenEditShopTitle,
-                    icon: Icons.storefront_rounded,
-                    avatarRadius: 25.h,
-                    onTap: () => context.push('/myShopsScreen'),
-                    showAvatar: false,
-                    showTrailingArrow: true,
-                    showDivider: false,
-                  ),
-                ],
-              ),
-            ),
-
-            CardInkWell(
-              margin: EdgeInsets.only(bottom: 10.h),
-              onTap: () {},
-              child: Column(
-                children: [
-                  InfoRowWidget(
-                    subtitle: loc.editProfileScreenEditShopSubtitle,
-                    title: loc.editProfileScreenEditWorkProfileTitle,
-                    icon: Icons.person,
-                    avatarRadius: 25.h,
-                    onTap:
-                        () => {
-                         
-                        },
-                    showAvatar: false,
-                    showTrailingArrow: true,
-                    showDivider: false,
                   ),
                 ],
               ),
