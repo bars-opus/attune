@@ -49,6 +49,11 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
   }
 
   void _onScroll() {
+    // Guests are shown a static local preview (below) and never a live feed —
+    // loadMore must not fire discoverFeedProvider's backend RPC for them. It is
+    // granted to `authenticated` only, so an anon call 42501s (this is what
+    // produced the "error while scrolling Discover" report for a guest).
+    if (ref.read(currentUserIdProvider) == null) return;
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
       ref.read(discoverFeedProvider.notifier).loadMore();
@@ -58,8 +63,14 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
   @override
   Widget build(BuildContext context) {
     final currentUserId = ref.watch(currentUserIdProvider);
-    final opinionsAsync = ref.watch(discoverFeedProvider);
     final isAuthenticated = currentUserId != null;
+    // Only watch the live feed provider (and so only trigger its backend RPC)
+    // once authenticated. Watching it unconditionally previously fired
+    // get_discover_opinions for guests every build, well before the
+    // isAuthenticated branch below ever chose to render its result — the RPC is
+    // granted to `authenticated` only, so that call always 42501s for a guest.
+    final opinionsAsync =
+        isAuthenticated ? ref.watch(discoverFeedProvider) : null;
 
     return Scaffold(
       floatingActionButton:
@@ -86,7 +97,7 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
           await ref.read(discoverFeedProvider.future);
         },
         child:
-            !isAuthenticated
+            !isAuthenticated || opinionsAsync == null
                 ? _buildAnonymousPreview(context)
                 : opinionsAsync.when(
                   loading:

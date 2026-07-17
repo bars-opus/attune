@@ -49,8 +49,12 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
   Widget build(BuildContext context) {
     super.build(context);
     final currentUserId = ref.watch(currentUserIdProvider);
-    final followingAsync = ref.watch(followingFeedProvider);
     final isAuthenticated = currentUserId != null;
+    // Only watch (and so only trigger) the live feed provider once
+    // authenticated — see discover_feed_screen.dart for why an unconditional
+    // watch 42501s for a guest (the RPC is granted to `authenticated` only).
+    final followingAsync =
+        isAuthenticated ? ref.watch(followingFeedProvider) : null;
 
     return Scaffold(
       floatingActionButton:
@@ -76,7 +80,7 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
           await ref.read(followingFeedProvider.notifier).refresh();
         },
         child:
-            !isAuthenticated
+            !isAuthenticated || followingAsync == null
                 ? ListView(
                   children: [
                     Padding(
