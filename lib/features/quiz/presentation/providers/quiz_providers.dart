@@ -746,18 +746,30 @@ Rules:
   };
 }
 
-// Placeholder for Claude API call - implement with your actual HTTP client
+// NOTE (launch gap): compatibility notes are currently a single hardcoded
+// placeholder — every couple sees the same "anchor and the tide" result
+// regardless of their actual attachment types. This must be replaced before
+// launch. Do NOT call the Claude API from the client (that ships an API key and
+// violates the server-only AI architecture every other feature follows). Two
+// correct options:
+//   1. A deterministic pairing table keyed on (typeA, typeB) — ~28 unordered
+//      pairs over the 7 attachment types. Preferred: no API cost/latency/
+//      injection risk, and the ATTACHMENT spec's banned-word constraints are
+//      guaranteed by construction.
+//   2. A `generate-attachment-compatibility` edge function (service-role key in
+//      Deno.env), invoked like generate-verdict / translate-conflict.
+// Until then this returns safe, non-personalised placeholder copy (not a crash).
 Future<Map<String, dynamic>> _callClaudeApi(
   String systemPrompt,
   String userPrompt,
 ) async {
-  // TODO: Implement actual Claude API call
   return {
-    'pairing_name': 'The anchor and the tide',
+    'pairing_name': 'A balanced dynamic',
     'pairing_description':
-        'One brings steady presence, the other brings depth of feeling — together you create emotional richness.',
-    'natural_strength': 'You balance stability with emotional awareness',
-    'watch_area': 'Notice how you react when one person needs space',
+        'These two attachment styles bring different but workable rhythms to a relationship.',
+    'natural_strength':
+        'You bring different perspectives that can deepen understanding over time.',
+    'watch_area': 'Notice how each of you handles distance and closeness.',
   };
 }
 
