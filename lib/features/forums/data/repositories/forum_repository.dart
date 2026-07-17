@@ -12,18 +12,10 @@ class ForumRepository {
   // Topic Submission
   // ============================================================
 
-  Future<void> submitTopic({
-    required String userId,
-    required String content,
-    required String relationshipStatus,
-  }) async {
-    await _supabase.from('forum_topics').insert({
-      'submitted_by': userId,
-      'content': content,
-      'relationship_status_at_submit': relationshipStatus,
-      'upvote_count': 1, // Submitter auto-upvotes
-      'seen_count': 1,    // Submitter has seen it
-    });
+  /// relationship_status is captured server-side; §7 limit (3/7d) + ban gate are
+  /// enforced in the RPC.
+  Future<void> submitTopic({required String content}) async {
+    await _supabase.rpc('create_forum_topic', params: {'p_content': content});
   }
 
   // ============================================================
@@ -174,29 +166,21 @@ class ForumRepository {
   // Forum Posts
   // ============================================================
 
+  /// relationship_status is captured server-side; §7 per-forum limit + cooldown +
+  /// ban gate are enforced in the RPC, which also bumps the topic's counters.
   Future<void> createForumPost({
     required String topicId,
-    required String userId,
     required String side,
     required String content,
-    required String relationshipStatus,
     String? replyToPostId,
     String? quotedText,
   }) async {
-    await _supabase.from('forum_posts').insert({
-      'topic_id': topicId,
-      'user_id': userId,
-      'side': side,
-      'content': content,
-      'relationship_status_at_post': relationshipStatus,
-      'reply_to_post_id': replyToPostId,
-      'quoted_text': quotedText,
-    });
-
-    // Update topic post counts
-    await _supabase.rpc('increment_topic_post_count', params: {
-      'topic_id': topicId,
-      'side': side,
+    await _supabase.rpc('create_forum_post', params: {
+      'p_topic_id': topicId,
+      'p_side': side,
+      'p_content': content,
+      'p_reply_to_post_id': replyToPostId,
+      'p_quoted_text': quotedText,
     });
   }
 
@@ -245,26 +229,19 @@ class ForumRepository {
 
   Future<void> reportTopic({
     required String topicId,
-    required String reportedBy,
-    required String reason,
+    String reason = 'Other',
   }) async {
-    await _supabase.from('forum_reports').insert({
-      'reported_by': reportedBy,
-      'topic_id': topicId,
-      'reason': reason,
-    });
+    await _supabase.rpc('report_forum_topic',
+        params: {'p_topic_id': topicId, 'p_reason': reason});
   }
 
+  /// Records the report AND auto-hides the post at the §8 threshold (10).
   Future<void> reportForumPost({
     required String postId,
-    required String reportedBy,
-    required String reason,
+    String reason = 'Other',
   }) async {
-    await _supabase.from('forum_reports').insert({
-      'reported_by': reportedBy,
-      'forum_post_id': postId,
-      'reason': reason,
-    });
+    await _supabase.rpc('report_forum_post',
+        params: {'p_forum_post_id': postId, 'p_reason': reason});
   }
 
   // ============================================================

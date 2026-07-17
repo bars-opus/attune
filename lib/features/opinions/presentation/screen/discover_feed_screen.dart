@@ -150,7 +150,7 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
                               MaterialPageRoute(
                                 builder:
                                     (_) => AnonymousProfileScreen(
-                                      userId: opinion.userId,
+                                      authorHandle: opinion.authorHandle,
                                     ),
                               ),
                             );
@@ -192,7 +192,8 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
             child: OpinionCard(
               opinion: OpinionModel(
                 id: opinion.content,
-                userId: '',
+                authorHandle: '',
+                isMine: false,
                 content: opinion.content,
                 relationshipStatus: _normalizePreviewStatus(opinion.status),
                 likeCount: 0,

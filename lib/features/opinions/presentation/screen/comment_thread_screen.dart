@@ -196,8 +196,8 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
   Widget _buildCommentCard(CommentModel comment, List<CommentModel> allComments, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final currentUserId = ref.read(currentUserIdProvider);
-    final isOwnComment = comment.userId == currentUserId;
+    // Server-computed; the real user_id never reaches the client (FORUM.md §3).
+    final isOwnComment = comment.isMine;
 
     final statusDisplay = _getStatusDisplay(comment.relationshipStatus);
     final timeAgo = _formatTimeAgo(comment.createdAt);

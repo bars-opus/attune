@@ -1,6 +1,5 @@
 // lib/features/forums/presentation/providers/forum_providers.dart
 
-import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/forums/data/models/forum_post_model.dart';
 import 'package:attune/features/forums/data/models/topic_model.dart';
 import 'package:attune/features/forums/data/repositories/forum_repository.dart';
@@ -36,13 +35,8 @@ final submitTopicProvider = FutureProvider.family<bool, String>((
 ) async {
   final repository = ref.read(forumRepositoryProvider);
   final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
-  final userStatus = await ref.read(currentUserStatusProvider.future);
   if (userId == null) throw Exception('Not authenticated');
-  await repository.submitTopic(
-    userId: userId,
-    content: content,
-    relationshipStatus: userStatus ?? 'single',
-  );
+  await repository.submitTopic(content: content);
   return true;
 });
 
@@ -157,33 +151,18 @@ final submitForumPostProvider = FutureProvider.family<
   })
 >((ref, params) async {
   final supabase = ref.read(supabaseClientProvider);
-  final userId = supabase.auth.currentUser?.id;
-  if (userId == null) throw Exception('Not authenticated');
-
-  // Get user's relationship status
-  final profileRes =
-      await supabase
-          .from('profiles')
-          .select('relationship_status')
-          .eq('id', userId)
-          .single();
-  final status = profileRes['relationship_status'] as String? ?? 'single';
-
-  await supabase.from('forum_posts').insert({
-    'topic_id': params.topicId,
-    'user_id': userId,
-    'content': params.content,
-    'side': params.side,
-    'relationship_status_at_post': status,
-    'reply_to_post_id': params.replyToPostId,
-    'quoted_text': params.quotedText,
-  });
-
-  // Update topic post counts
-  await supabase.rpc(
-    'increment_topic_post_count',
-    params: {'topic_id': params.topicId, 'side': params.side},
-  );
+  if (supabase.auth.currentUser?.id == null) {
+    throw Exception('Not authenticated');
+  }
+  // Goes through the rate-limited, ban-gated RPC (relationship_status captured
+  // server-side; topic counters bumped inside the RPC).
+  await ref.read(forumRepositoryProvider).createForumPost(
+        topicId: params.topicId,
+        side: params.side,
+        content: params.content,
+        replyToPostId: params.replyToPostId,
+        quotedText: params.quotedText,
+      );
 });
 
 // Like forum post
@@ -301,11 +280,7 @@ final reportForumProvider = FutureProvider.family<void, String>((
   final repository = ref.read(forumRepositoryProvider);
   final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
   if (userId == null) throw Exception('Not authenticated');
-  await repository.reportTopic(
-    topicId: topicId,
-    reportedBy: userId,
-    reason: 'Reported from forum screen',
-  );
+  await repository.reportTopic(topicId: topicId);
 });
 
 final reportForumPostProvider =
@@ -318,7 +293,6 @@ final reportForumPostProvider =
       if (userId == null) throw Exception('Not authenticated');
       await repository.reportForumPost(
         postId: params.postId,
-        reportedBy: userId,
         reason: params.reason,
       );
     });

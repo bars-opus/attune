@@ -150,7 +150,7 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
                               MaterialPageRoute(
                                 builder:
                                     (_) => AnonymousProfileScreen(
-                                      userId: opinion.userId,
+                                      authorHandle: opinion.authorHandle,
                                     ),
                               ),
                             );

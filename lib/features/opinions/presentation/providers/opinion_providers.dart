@@ -55,12 +55,7 @@ class DiscoverFeedNotifier extends AsyncNotifier<List<OpinionModel>> {
 
   Future<List<OpinionModel>> _loadPage(int page) async {
     final repository = ref.read(opinionRepositoryProvider);
-    final currentUserId = ref.read(currentUserIdProvider);
-    return await repository.getDiscoverFeed(
-      page: page,
-      pageSize: _pageSize,
-      currentUserId: currentUserId,
-    );
+    return await repository.getDiscoverFeed(page: page, pageSize: _pageSize);
   }
 
   Future<void> loadMore() async {
@@ -91,11 +86,13 @@ class FollowingFeedNotifier extends AsyncNotifier<List<OpinionModel>> {
     return await _loadFeed();
   }
 
+  static const int _pageSize = 20;
+
   Future<List<OpinionModel>> _loadFeed() async {
     final repository = ref.read(opinionRepositoryProvider);
     final currentUserId = ref.read(currentUserIdProvider);
     if (currentUserId == null) return [];
-    return await repository.getFollowingFeed(currentUserId);
+    return await repository.getFollowingFeed(page: 0, pageSize: _pageSize);
   }
 
   Future<void> refresh() async {
@@ -112,7 +109,7 @@ final postOpinionProvider = FutureProvider.family<bool, String>((
   final repository = ref.read(opinionRepositoryProvider);
   final userId = ref.read(currentUserIdProvider);
   if (userId == null) throw Exception('Not authenticated');
-  await repository.createOpinion(userId: userId, content: content);
+  await repository.createOpinion(content: content);
   return true;
 });
 
@@ -158,64 +155,47 @@ final removeReactionProvider = FutureProvider.family<void, String>((
   ref.invalidate(followingFeedProvider);
 });
 
-// Follow user
+// Follow author (by opaque handle)
 final followUserProvider = FutureProvider.family<void, String>((
   ref,
-  userIdToFollow,
+  authorHandle,
 ) async {
   final repository = ref.read(opinionRepositoryProvider);
-  final currentUserId = ref.read(currentUserIdProvider);
-  if (currentUserId == null) throw Exception('Not authenticated');
-  await repository.followUser(
-    followerId: currentUserId,
-    followingId: userIdToFollow,
-  );
+  await repository.followAuthor(authorHandle);
   ref.invalidate(followingFeedProvider);
-  ref.invalidate(followStatusProvider(userIdToFollow));
+  ref.invalidate(followStatusProvider(authorHandle));
 });
 
-// Unfollow user
+// Unfollow author (by opaque handle)
 final unfollowUserProvider = FutureProvider.family<void, String>((
   ref,
-  userIdToUnfollow,
+  authorHandle,
 ) async {
   final repository = ref.read(opinionRepositoryProvider);
-  final currentUserId = ref.read(currentUserIdProvider);
-  if (currentUserId == null) throw Exception('Not authenticated');
-  await repository.unfollowUser(
-    followerId: currentUserId,
-    followingId: userIdToUnfollow,
-  );
+  await repository.unfollowAuthor(authorHandle);
   ref.invalidate(followingFeedProvider);
-  ref.invalidate(followStatusProvider(userIdToUnfollow));
+  ref.invalidate(followStatusProvider(authorHandle));
 });
 
-// Follow status
+// Follow status (by opaque handle)
 final followStatusProvider = FutureProvider.family<bool, String>((
   ref,
-  userId,
+  authorHandle,
 ) async {
   final repository = ref.read(opinionRepositoryProvider);
-  final currentUserId = ref.read(currentUserIdProvider);
-  if (currentUserId == null) return false;
-  return await repository.isFollowing(
-    followerId: currentUserId,
-    followingId: userId,
-  );
+  return await repository.isFollowingAuthor(authorHandle);
 });
 
-// Report opinion
+// Report opinion (reason kept for the priority-review UX; the RPC records the
+// report and auto-hides at threshold — reason is currently client-side only).
 final reportOpinionProvider =
     FutureProvider.family<void, ({String opinionId, String reason})>((
       ref,
       params,
     ) async {
       final repository = ref.read(opinionRepositoryProvider);
-      final userId = ref.read(currentUserIdProvider);
-      if (userId == null) throw Exception('Not authenticated');
       await repository.reportOpinion(
         opinionId: params.opinionId,
-        reportedBy: userId,
         reason: params.reason,
       );
     });
@@ -244,7 +224,6 @@ final postCommentProvider = FutureProvider.family<
   if (userId == null) throw Exception('Not authenticated');
   await repository.createComment(
     opinionId: params.opinionId,
-    userId: userId,
     content: params.content,
     replyToCommentId: params.replyToCommentId,
     quotedText: params.quotedText,

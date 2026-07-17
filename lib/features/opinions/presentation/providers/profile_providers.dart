@@ -2,83 +2,49 @@
 
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
-import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-// User's profile status (relationship status)
-final userProfileStatusProvider = FutureProvider.family<String?, String>((
-  ref,
-  userId,
-) async {
+/// Anonymous author profile, keyed by the opaque author handle (never a real
+/// user_id — FORUM.md §3). All three providers below take a handle.
+
+class AuthorProfileSummary {
+  final String? relationshipStatus;
+  final int followerCount;
+  final bool isMine;
+  final bool isFollowing;
+
+  const AuthorProfileSummary({
+    this.relationshipStatus,
+    this.followerCount = 0,
+    this.isMine = false,
+    this.isFollowing = false,
+  });
+}
+
+// Author profile summary (status, follower count, own/following flags).
+final authorProfileProvider =
+    FutureProvider.family<AuthorProfileSummary, String>((ref, handle) async {
   final supabase = ref.read(supabaseClientProvider);
-  final response =
-      await supabase
-          .from('profiles')
-          .select('relationship_status')
-          .eq('id', userId)
-          .maybeSingle();
-  return response?['relationship_status'] as String?;
+  final rows = await supabase
+      .rpc('get_author_profile', params: {'p_author_handle': handle});
+  final list = rows as List;
+  if (list.isEmpty) return const AuthorProfileSummary();
+  final row = Map<String, dynamic>.from(list.first);
+  return AuthorProfileSummary(
+    relationshipStatus: row['relationship_status'] as String?,
+    followerCount: row['follower_count'] as int? ?? 0,
+    isMine: row['is_mine'] as bool? ?? false,
+    isFollowing: row['is_following'] as bool? ?? false,
+  );
 });
 
-// Follower count for a user
-final profileFollowerCountProvider = FutureProvider.family<int, String>((
-  ref,
-  userId,
-) async {
-  final supabase = ref.read(supabaseClientProvider);
-  final response =
-      await supabase
-          .from('opinion_follower_counts')
-          .select('follower_count')
-          .eq('user_id', userId)
-          .maybeSingle();
-  return response?['follower_count'] as int? ?? 0;
-});
-
-// User's opinions (for profile page)
+// An author's opinions for the profile page (by handle).
 final profileOpinionsProvider =
-    FutureProvider.family<List<OpinionModel>, String>((ref, userId) async {
-      final supabase = ref.read(supabaseClientProvider);
-      final currentUserId = ref.read(currentUserIdProvider);
-
-      // Get user's opinions
-      final opinionsRes = await supabase
-          .from('opinions')
-          .select('*')
-          .eq('user_id', userId)
-          .isFilter('removed_at', null)
-          .eq('hidden_pending_review', false)
-          .order('created_at', ascending: false);
-
-      final List<OpinionModel> opinions = [];
-      for (final json in opinionsRes) {
-        // Get user's reaction (if current user)
-        String? userReaction;
-        if (currentUserId != null) {
-          final reactionRes =
-              await supabase
-                  .from('opinion_reactions')
-                  .select('reaction_type')
-                  .eq('opinion_id', json['id'])
-                  .eq('user_id', currentUserId)
-                  .maybeSingle();
-          userReaction = reactionRes?['reaction_type'] as String?;
-        }
-
-        opinions.add(
-          OpinionModel(
-            id: json['id'],
-            userId: json['user_id'],
-            content: json['content'],
-            relationshipStatus: json['relationship_status_at_post'],
-            likeCount: json['like_count'] ?? 0,
-            dislikeCount: json['dislike_count'] ?? 0,
-            commentCount: json['comment_count'] ?? 0,
-            userReaction: userReaction,
-            createdAt: DateTime.parse(json['created_at']),
-          ),
-        );
-      }
-
-      return opinions;
-    });
+    FutureProvider.family<List<OpinionModel>, String>((ref, handle) async {
+  final supabase = ref.read(supabaseClientProvider);
+  final rows = await supabase
+      .rpc('get_author_opinions', params: {'p_author_handle': handle});
+  return (rows as List)
+      .map((r) => OpinionModel.fromFeedRow(Map<String, dynamic>.from(r)))
+      .toList();
+});

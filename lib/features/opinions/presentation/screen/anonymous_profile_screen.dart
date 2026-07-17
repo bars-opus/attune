@@ -14,9 +14,10 @@ import 'package:attune/core/widgets/feedback/error_state.dart';
 
 
 class AnonymousProfileScreen extends ConsumerStatefulWidget {
-  final String userId;
+  /// Opaque author handle (never a real user_id — FORUM.md §3).
+  final String authorHandle;
 
-  const AnonymousProfileScreen({super.key, required this.userId});
+  const AnonymousProfileScreen({super.key, required this.authorHandle});
 
   @override
   ConsumerState<AnonymousProfileScreen> createState() => _AnonymousProfileScreenState();
@@ -26,11 +27,9 @@ class _AnonymousProfileScreenState extends ConsumerState<AnonymousProfileScreen>
   @override
   void initState() {
     super.initState();
-    // Load user's opinions
     Future.microtask(() {
-      ref.read(profileOpinionsProvider(widget.userId).future);
-      ref.read(profileFollowerCountProvider(widget.userId).future);
-      ref.read(followStatusProvider(widget.userId).future);
+      ref.read(profileOpinionsProvider(widget.authorHandle).future);
+      ref.read(authorProfileProvider(widget.authorHandle).future);
     });
   }
 
@@ -38,13 +37,10 @@ class _AnonymousProfileScreenState extends ConsumerState<AnonymousProfileScreen>
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final currentUserId = ref.read(currentUserIdProvider);
-    final isOwnProfile = currentUserId == widget.userId;
 
-    final profileStatus = ref.watch(userProfileStatusProvider(widget.userId));
-    final followerCount = ref.watch(profileFollowerCountProvider(widget.userId));
-    final followStatus = ref.watch(followStatusProvider(widget.userId));
-    final opinionsAsync = ref.watch(profileOpinionsProvider(widget.userId));
+    final profileAsync = ref.watch(authorProfileProvider(widget.authorHandle));
+    final isOwnProfile = profileAsync.valueOrNull?.isMine ?? false;
+    final opinionsAsync = ref.watch(profileOpinionsProvider(widget.authorHandle));
 
     return Scaffold(
       appBar: AppBar(
@@ -67,67 +63,57 @@ class _AnonymousProfileScreenState extends ConsumerState<AnonymousProfileScreen>
                 ),
               ),
             ),
-            child: Column(
-              children: [
-                // No avatar, no name - just status and follower count
-                // Relationship status
-                profileStatus.when(
-                  loading: () => const CircularProgressIndicator(),
-                  error: (error, stack) => const SizedBox.shrink(),
-                  data: (status) {
-                    final statusDisplay = _getStatusDisplay(status);
-                    return Text(
+            child: profileAsync.when(
+              loading: () => const CircularProgressIndicator(),
+              error: (error, stack) => const SizedBox.shrink(),
+              data: (profile) {
+                final statusDisplay =
+                    _getStatusDisplay(profile.relationshipStatus);
+                final count = profile.followerCount;
+                return Column(
+                  children: [
+                    // No avatar, no name — just status and follower count.
+                    Text(
                       statusDisplay,
                       style: textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: colorScheme.primary,
                       ),
-                    );
-                  },
-                ),
-                Gap(Spacing.sm.h),
-                // Follower count (shown here, not on feed cards)
-                followerCount.when(
-                  loading: () => const SizedBox.shrink(),
-                  error: (error, stack) => const SizedBox.shrink(),
-                  data: (count) {
-                    return Text(
+                    ),
+                    Gap(Spacing.sm.h),
+                    Text(
                       '$count follower${count != 1 ? 's' : ''}',
                       style: textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onSurface.withOpacity(0.6),
                       ),
-                    );
-                  },
-                ),
-                Gap(Spacing.md.h),
-                // Follow button (only if not own profile)
-                if (!isOwnProfile)
-                  followStatus.when(
-                    loading: () => const SizedBox.shrink(),
-                    error: (error, stack) => const SizedBox.shrink(),
-                    data: (isFollowing) {
-                      return AppButton(
-                        label: isFollowing ? 'Unfollow' : 'Follow',
+                    ),
+                    Gap(Spacing.md.h),
+                    if (!profile.isMine)
+                      AppButton(
+                        label: profile.isFollowing ? 'Unfollow' : 'Follow',
                         onPressed: () async {
-                          if (isFollowing) {
-                            await ref.read(unfollowUserProvider(widget.userId).future);
+                          if (profile.isFollowing) {
+                            await ref.read(
+                                unfollowUserProvider(widget.authorHandle)
+                                    .future);
                           } else {
-                            await ref.read(followUserProvider(widget.userId).future);
+                            await ref.read(
+                                followUserProvider(widget.authorHandle).future);
                           }
-                          ref.invalidate(followStatusProvider(widget.userId));
-                          ref.invalidate(profileFollowerCountProvider(widget.userId));
+                          ref.invalidate(
+                              authorProfileProvider(widget.authorHandle));
                         },
                         size: ButtonSize.small,
-                        customColor: isFollowing
+                        customColor: profile.isFollowing
                             ? colorScheme.surfaceContainerHighest
                             : colorScheme.primary,
-                        textColor: isFollowing
+                        textColor: profile.isFollowing
                             ? colorScheme.onSurface
                             : colorScheme.onPrimary,
-                      );
-                    },
-                  ),
-              ],
+                      ),
+                  ],
+                );
+              },
             ),
           ),
           // Opinions list
