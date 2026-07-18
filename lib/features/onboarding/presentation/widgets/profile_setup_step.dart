@@ -15,7 +15,8 @@ class ProfileSetupStep extends StatelessWidget {
   Widget build(BuildContext context) {
     return OnboardingStepFrame(
       title: 'What should Attune call you?',
-      subtitle: 'Use the name you want to see in chat and insights.',
+      subtitle:
+          'Use the name you want to see in chat and insights. Opinions and forums stay anonymous',
       child: Column(
         children: [
           AppTextFormField(
@@ -25,7 +26,9 @@ class ProfileSetupStep extends StatelessWidget {
             textInputAction: TextInputAction.done,
             onFieldSubmitted: (_) => _submit(context),
           ),
-          const Spacer(),
+          // Fixed gap rather than Spacer: Spacer needs a bounded height, which
+          // conflicts with the card.s scroll fallback on short screens.
+          Gap(Spacing.xl.h),
           AppButton(
             label: 'Continue',
             onPressed: () => _submit(context),

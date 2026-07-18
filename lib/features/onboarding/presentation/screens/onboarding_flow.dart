@@ -8,6 +8,8 @@ import 'package:attune/features/onboarding/presentation/widgets/attachment_quiz_
 import 'package:attune/features/onboarding/presentation/widgets/couples_joined_step.dart';
 import 'package:attune/features/onboarding/presentation/widgets/couples_waiting_step.dart';
 import 'package:attune/features/onboarding/presentation/widgets/incoming_invite_step.dart';
+import 'package:attune/features/onboarding/presentation/widgets/onboarding_deck_card.dart';
+import 'package:attune/features/onboarding/presentation/widgets/onboarding_deck_scope.dart';
 import 'package:attune/features/onboarding/presentation/widgets/onboarding_mode_step.dart';
 import 'package:attune/features/onboarding/presentation/widgets/personal_ready_step.dart';
 import 'package:attune/features/onboarding/presentation/widgets/profile_setup_step.dart';
@@ -219,12 +221,27 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             : PersonalReadyStep(onFinish: _finish),
     };
 
+    // One card-identity per visible card: the quiz stays on a single outer
+    // _step across all 26 questions, so its sub-index is folded in here too —
+    // otherwise only the first quiz question would ever play the flip.
+    final cardKey = _step == quizStep ? quizStep * 1000 + _questionIndex : _step;
+
+    final accent = switch (mode) {
+      OnboardingMode.personal => OnboardingDeckAccent.single,
+      OnboardingMode.couples ||
+      OnboardingMode.couplesPending =>
+        OnboardingDeckAccent.couples,
+      null => OnboardingDeckAccent.neutral,
+    };
+
     return Scaffold(
       body: SafeArea(
-        child: AnimatedSwitcher(
-          duration: AnimationDurations.fast,
-          switchInCurve: AnimationCurves.standard,
-          switchOutCurve: AnimationCurves.standard,
+        child: OnboardingDeckScope(
+          cardKey: cardKey,
+          accent: accent,
+          // Only the attachment quiz gets the fanned card stack; name, mode
+          // choice, anchors, and terminal steps render as plain cards.
+          enableDeck: _step == quizStep,
           child: screen,
         ),
       ),

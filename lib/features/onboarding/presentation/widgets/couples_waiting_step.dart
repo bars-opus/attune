@@ -97,7 +97,9 @@ class _CouplesWaitingStepState extends State<CouplesWaitingStep> {
               title: 'Invite unavailable',
               subtitle: _errorMessage ?? 'Try creating the invite again.',
             ),
-          const Spacer(),
+          // Fixed gap rather than Spacer: Spacer needs a bounded height, which
+          // conflicts with the card.s scroll fallback on short screens.
+          Gap(Spacing.xl.h),
           if (_errorMessage != null) ...[
             AppButton(
               label: 'Try again',

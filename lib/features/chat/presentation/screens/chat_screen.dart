@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/glow_pulse.dart';
+import 'package:attune/core/ui/motion/motion_tokens.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/ui/presence/breathing_dots.dart';
@@ -43,6 +44,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   final _scrollController = ScrollController();
   final _imagePicker = ImagePickerService();
   final DateTime _messageListCutoff = DateTime.now();
+  // Once-per-message animation ledger: ListView.builder recycles item State
+  // when a bubble scrolls out of cacheExtent, so a time-based `isNew` alone
+  // would replay SettleIn/Shimmer every time a new message scrolls back into
+  // view. IDs recorded here animate exactly once per screen lifetime.
+  final Set<String> _animatedMessageIds = <String>{};
   bool _headerExpanded = false;
   bool _isForeground = true;
 
@@ -430,6 +436,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               state: state,
               scrollController: _scrollController,
               firstBuildCutoff: _messageListCutoff,
+              animatedMessageIds: _animatedMessageIds,
             ),
           ),
           Consumer(
@@ -869,11 +876,16 @@ class _MessageList extends ConsumerWidget {
     required this.state,
     required this.scrollController,
     required this.firstBuildCutoff,
+    required this.animatedMessageIds,
   });
 
   final ChatState state;
   final ScrollController scrollController;
   final DateTime firstBuildCutoff;
+
+  /// Owned by the screen State (survives list-item recycling); see its
+  /// declaration for why a time-based cutoff alone is not enough.
+  final Set<String> animatedMessageIds;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -950,6 +962,14 @@ class _MessageList extends ConsumerWidget {
           final isFirstOfDay =
               older == null || !sameLocalDay(message.createdAt, older.createdAt);
           final isNew = message.createdAt.isAfter(firstBuildCutoff);
+          // Play-once ledger: animate only the first time this message is ever
+          // built on this screen. Without it, list recycling replays entry
+          // animations whenever a new message scrolls back into view.
+          final shouldAnimate =
+              isNew && !animatedMessageIds.contains(message.clientMessageId);
+          if (shouldAnimate) {
+            animatedMessageIds.add(message.clientMessageId);
+          }
 
           Widget bubble = MessageBubble(
             message: message,
@@ -974,9 +994,9 @@ class _MessageList extends ConsumerWidget {
                         .removeFailedMessage(message)
                     : null,
           );
-          if (isFirstOfDay && isNew) {
+          if (isFirstOfDay && shouldAnimate) {
             bubble = Shimmer(
-              period: Duration(milliseconds: expressive ? 1100 : 1600),
+              period: expressive ? kShimmerSweepExpressive : kShimmerSweepCalm,
               child: bubble,
             );
           }
@@ -987,18 +1007,18 @@ class _MessageList extends ConsumerWidget {
           // position within the newest-first list. The index is clamped so a
           // large batch never produces an absurdly long settle. Cached
           // history (`isNew == false`) always uses the base duration.
-          const baseSettle = Duration(milliseconds: 280);
-          final stepMs = expressive ? 70 : 35;
-          final staggeredDuration = isNew
-              ? baseSettle + Duration(milliseconds: stepMs * index.clamp(0, 6))
-              : baseSettle;
+          final stepMs = expressive ? kCascadeStepExpressiveMs : kCascadeStepCalmMs;
+          final staggeredDuration = shouldAnimate
+              ? kSettleDuration +
+                  Duration(milliseconds: stepMs * index.clamp(0, 6))
+              : kSettleDuration;
 
           return SettleIn(
             key: ValueKey(message.clientMessageId),
-            // Only animate messages that arrived after this list first
-            // rendered, so cached history does not replay on open (Spec §2
-            // play-once).
-            animate: isNew,
+            // Only animate a message the first time it is built after arriving
+            // live (cached history never replays on open, and recycled items
+            // never replay on scroll-back — Spec §2 play-once).
+            animate: shouldAnimate,
             duration: staggeredDuration,
             beginOffset:
                 message.isMine

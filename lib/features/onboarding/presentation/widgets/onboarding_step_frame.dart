@@ -1,5 +1,11 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/onboarding/presentation/widgets/onboarding_deck_card.dart';
+import 'package:attune/features/onboarding/presentation/widgets/onboarding_deck_scope.dart';
 
+/// Shared shell for every onboarding step. Renders as one card in the
+/// continuous OnboardingDeckCard stack (see that file for the flip/peek
+/// mechanics) — step widgets are unaware of the deck and just supply their
+/// title/subtitle/content, same as before this became a card deck.
 class OnboardingStepFrame extends StatelessWidget {
   const OnboardingStepFrame({
     super.key,
@@ -14,33 +20,14 @@ class OnboardingStepFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Padding(
-      key: ValueKey(title),
-      padding: EdgeInsets.all(Spacing.lg.w),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          Gap(Spacing.smMd.h),
-          Text(
-            subtitle,
-            style: textTheme.bodyLarge?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              height: TextHeightTokens.compact,
-            ),
-          ),
-          Gap(Spacing.lg.h),
-          Expanded(child: child),
-        ],
-      ),
+    final scope = OnboardingDeckScope.of(context);
+    return OnboardingDeckCard(
+      title: title,
+      subtitle: subtitle,
+      stepIndex: scope.cardKey,
+      accent: scope.accent,
+      enableDeck: scope.enableDeck,
+      child: child,
     );
   }
 }

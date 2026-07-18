@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../motion/motion_tokens.dart';
 import '../motion/reduce_motion.dart';
 
 /// A row of dots that pulse in a staggered wave — a generic "someone is doing
@@ -11,7 +12,7 @@ class BreathingDots extends StatefulWidget {
     this.count = 3,
     this.size = 7,
     this.color,
-    this.period = const Duration(milliseconds: 1200),
+    this.period = kBreathingDotsPeriod,
   });
 
   final int count;

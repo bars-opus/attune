@@ -27,7 +27,9 @@ class CouplesJoinedStep extends StatelessWidget {
             subtitle:
                 'Your reflections and anchors can now support shared context.',
           ),
-          const Spacer(),
+          // Fixed gap rather than Spacer: Spacer needs a bounded height, which
+          // conflicts with the card.s scroll fallback on short screens.
+          Gap(Spacing.xl.h),
           AppButton(
             label: 'Enter Attune',
             onPressed: onFinish,

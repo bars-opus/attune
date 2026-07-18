@@ -1,5 +1,7 @@
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
 import 'package:attune/features/onboarding/presentation/widgets/attachment_quiz_step.dart';
+import 'package:attune/features/onboarding/presentation/widgets/onboarding_deck_card.dart';
+import 'package:attune/features/onboarding/presentation/widgets/onboarding_deck_scope.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,20 +21,32 @@ Future<({bool nextEnabled, List<int> changes})> _pumpStep(
       home: ScreenUtilInit(
         designSize: const Size(390, 844),
         builder:
-            (_, __) => AttachmentQuizStep(
-              questionIndex: questionIndex,
-              answers: answers,
-              onChanged: changes.add,
-              onBack: null,
-              onNext: () => advanced = true,
+            (_, __) => Scaffold(
+              body: OnboardingDeckScope(
+              cardKey: questionIndex,
+              accent: OnboardingDeckAccent.neutral,
+              enableDeck: true,
+                child: AttachmentQuizStep(
+                  questionIndex: questionIndex,
+                  answers: answers,
+                  onChanged: changes.add,
+                  onBack: null,
+                  onNext: () => advanced = true,
+                ),
+              ),
             ),
       ),
     ),
   );
   await tester.pumpAndSettle();
 
-  // Tap the forward button and see whether it did anything.
-  await tester.tap(find.text('Next'), warnIfMissed: false);
+  // The card content scrolls on short screens, so bring the button into view
+  // before tapping — otherwise the tap silently misses and the test reads as
+  // "did not advance" regardless of whether the button was actually enabled.
+  final nextFinder = find.text('Next');
+  await tester.ensureVisible(nextFinder);
+  await tester.pumpAndSettle();
+  await tester.tap(nextFinder, warnIfMissed: false);
   await tester.pumpAndSettle();
 
   return (nextEnabled: advanced, changes: changes);
@@ -68,12 +82,19 @@ void main() {
         home: ScreenUtilInit(
           designSize: const Size(390, 844),
           builder:
-              (_, __) => AttachmentQuizStep(
-                questionIndex: 0,
-                answers: answers,
-                onChanged: (_) {},
-                onBack: null,
-                onNext: () {},
+              (_, __) => Scaffold(
+                body: OnboardingDeckScope(
+                cardKey: 0,
+                accent: OnboardingDeckAccent.neutral,
+              enableDeck: true,
+                  child: AttachmentQuizStep(
+                    questionIndex: 0,
+                    answers: answers,
+                    onChanged: (_) {},
+                    onBack: null,
+                    onNext: () {},
+                  ),
+                ),
               ),
         ),
       ),

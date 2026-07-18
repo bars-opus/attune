@@ -23,6 +23,8 @@ class AttachmentQuizStep extends StatelessWidget {
     final question = attachmentQuestions[questionIndex];
     final isLastQuestion = questionIndex == attachmentQuestions.length - 1;
     final answer = answers[questionIndex];
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     final hasAnswered = answer != null;
 
     return OnboardingStepFrame(
@@ -30,13 +32,43 @@ class AttachmentQuizStep extends StatelessWidget {
       subtitle:
           'Question ${questionIndex + 1} of ${attachmentQuestions.length}',
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           LinearProgressIndicator(
             value: (questionIndex + 1) / attachmentQuestions.length,
           ),
           Gap(Spacing.lg.h),
-          Text(question.prompt, style: Theme.of(context).textTheme.titleLarge),
+
+          Container(
+            padding: EdgeInsets.all(Spacing.sm.w),
+            decoration: BoxDecoration(
+              color: colorScheme.onBackground,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '4',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: colorScheme.background,
+              ),
+            ),
+          ),
+          Gap(Spacing.lg.h),
+          Text(
+            question.prompt,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: colorScheme.onBackground,
+            ),
+          ),
+          Gap(Spacing.sm.h),
+          Text(
+            question.prompt,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: colorScheme.onBackground),
+          ),
           Gap(Spacing.lg.h),
           SegmentedButton<int>(
             segments: const [
@@ -62,31 +94,52 @@ class AttachmentQuizStep extends StatelessWidget {
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
-          const Spacer(),
-          Row(
-            children: [
-              Expanded(
-                child: AppButton(
-                  label: 'Back',
-                  onPressed: onBack,
-                  variant: ButtonVariant.outline,
-                  size: ButtonSize.small,
-                  height: OnboardingTokens.actionButtonHeight.h,
-                ),
-              ),
-              Gap(Spacing.smMd.w),
-              Expanded(
-                child: AppButton(
-                  label: isLastQuestion ? 'Finish quiz' : 'Next',
-                  // Gated: you cannot advance past a question you never
-                  // answered, so the reflection we store is real.
-                  onPressed: hasAnswered ? onNext : null,
-                  size: ButtonSize.small,
-                  height: OnboardingTokens.actionButtonHeight.h,
-                ),
-              ),
-            ],
+          // A fixed gap rather than a Spacer: Spacer demands a bounded height,
+          // which conflicts with the card's scroll fallback on short screens
+          // (it expands to infinity when the height is unbounded). A fixed gap
+          // gives the column a natural intrinsic height, so it lays out the
+          // same when there is room and scrolls when there isn't.
+          Gap(Spacing.xl.h),
+          AppButton(
+            label: isLastQuestion ? 'Finish quiz' : 'Next',
+            // Gated: you cannot advance past a question you never
+            // answered, so the reflection we store is real.
+            onPressed: hasAnswered ? onNext : null,
+            size: ButtonSize.small,
+            height: OnboardingTokens.actionButtonHeight.h,
           ),
+          Gap(Spacing.sm.h),
+          AppButton(
+            label: 'Back',
+            onPressed: onBack,
+            variant: ButtonVariant.outline,
+            size: ButtonSize.small,
+            height: OnboardingTokens.actionButtonHeight.h,
+          ),
+          // Row(
+          //   children: [
+          //     Expanded(
+          //   child: AppButton(
+          //     label: 'Back',
+          //     onPressed: onBack,
+          //     variant: ButtonVariant.outline,
+          //     size: ButtonSize.small,
+          //     height: OnboardingTokens.actionButtonHeight.h,
+          //   ),
+          // ),
+          //     Gap(Spacing.smMd.w),
+          //     Expanded(
+          //       child: AppButton(
+          //         label: isLastQuestion ? 'Finish quiz' : 'Next',
+          //         // Gated: you cannot advance past a question you never
+          //         // answered, so the reflection we store is real.
+          //         onPressed: hasAnswered ? onNext : null,
+          //         size: ButtonSize.small,
+          //         height: OnboardingTokens.actionButtonHeight.h,
+          //       ),
+          //     ),
+          //   ],
+          // ),
         ],
       ),
     );

@@ -13,14 +13,20 @@ class ForumScreen extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
         children: [
-          Text(
-            'Browse relationship conversations anonymously. Posting and replies will unlock after phone verification.',
-            style: textTheme.bodyLarge?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              height: 1.35,
-            ),
+          SemanticContainerWidget(
+            title: 'Read-only guest preview',
+            content:
+                'Browse relationship conversations anonymously. Posting and replies will unlock after phone verification',
+            icon: Icons.visibility_outlined,
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.primary.withValues(alpha: 0.1),
+            borderColor: Theme.of(context).colorScheme.primary,
+            iconColor: Theme.of(context).colorScheme.primary,
+            textTheme: textTheme,
           ),
-          const SizedBox(height: 24),
+
+          Gap(Spacing.xl),
           const ForumTopicCard(
             title: 'Attachment',
             subtitle: 'Anxious, avoidant, secure, and the patterns between.',

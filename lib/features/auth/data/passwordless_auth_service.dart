@@ -39,6 +39,14 @@ class PasswordlessAuthService {
       return const PasswordlessAuthResult(isConfigured: false);
     }
 
+    // TEMP debug: log the exact E.164 string sent to Supabase, so the value can
+    // be compared byte-for-byte against the dashboard test-number entry. A common
+    // Ghana pitfall is a leftover leading 0 (+2330501201544 vs +233501201544).
+    // Remove before release.
+    if (kDebugMode) {
+      debugPrint('[AUTH] signInWithOtp phone="${phoneNumber.trim()}"');
+    }
+
     await client.auth
         .signInWithOtp(phone: phoneNumber.trim(), channel: channel)
         .timeout(authTimeout);

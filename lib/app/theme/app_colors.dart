@@ -31,6 +31,8 @@ class LightColors {
   static const Color info = Color(0xFF2196F3);
   static const Color neutral = Color(0xFFF5F5F5);
 
+  // static const Color neutral = Color(0xFFE4F2E4);
+
   // ================= BACKGROUND COLOR PALETTE =================
   static const Color background = Color(0xFFF5F5F7); // Apple parchment canvas
   static const Color surface = Color(0xFFFFFFFF);

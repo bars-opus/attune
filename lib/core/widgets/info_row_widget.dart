@@ -1,5 +1,7 @@
 // lib/core/widgets/profile_info_row.dart
+
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/widgets/image_container.dart';
 import 'package:attune/core/widgets/profile_avatar.dart';
 
 /// A versatile row widget for displaying informational items with multiple interaction patterns.
@@ -147,6 +149,16 @@ class InfoRowWidget extends StatelessWidget {
   /// Change to `center` or `end` for different visual arrangements.
   final CrossAxisAlignment titleAlignment;
 
+  /// Vertical packing of the title/subtitle text block within the row's
+  /// height.
+  ///
+  /// Defaults to `MainAxisAlignment.start` (text packs to the top — correct
+  /// when a trailing [showDivider] should hug the row's bottom edge, as in
+  /// most settings/list rows). Set to `MainAxisAlignment.center` when the
+  /// leading avatar/image is much taller than the text (e.g. product grid
+  /// cards) and the text should sit vertically centered against it instead.
+  final MainAxisAlignment textMainAxisAlignment;
+
   /// Complete text style override for the title.
   ///
   /// When provided, completely replaces the default title typography.
@@ -171,6 +183,8 @@ class InfoRowWidget extends StatelessWidget {
   /// or when using alternative visual separation methods.
   final bool showDivider;
   final double titleFontSize;
+  final double subTitleFontSize;
+
   final Color? titleFontColor;
 
   // NEW: Add support for toggle items
@@ -190,11 +204,12 @@ class InfoRowWidget extends StatelessWidget {
   /// Required when [isToggleItem] is `true`. Represents the current state
   /// of the toggle (checked/unchecked, on/off).
   final bool? toggleValue;
-
+  final bool? isNotAvatarImage;
   final int? titleMaxLines;
   final int? subTitleMaxLines;
 
   final double? circularRadius;
+  final Widget? bottomWidget;
 
   /// Callback function triggered when the toggle switch changes state.
   ///
@@ -222,6 +237,7 @@ class InfoRowWidget extends StatelessWidget {
     this.disableTrailing = false,
     this.padding,
     this.titleAlignment = CrossAxisAlignment.start,
+    this.textMainAxisAlignment = MainAxisAlignment.start,
     this.titleStyle,
     this.subtitleStyle,
     this.iconSize,
@@ -234,7 +250,10 @@ class InfoRowWidget extends StatelessWidget {
     this.subTitleMaxLines,
     this.circularRadius,
     this.titleFontSize = 14,
+    this.subTitleFontSize = 12,
     this.titleFontColor,
+    this.isNotAvatarImage = false,
+    this.bottomWidget,
   }) : assert(
          // Either icon or imageUrl must be provided for visual identity
          icon != null || imageUrl != null,
@@ -275,6 +294,7 @@ class InfoRowWidget extends StatelessWidget {
           // Text content area with flexible alignment
           Expanded(
             child: Column(
+              mainAxisAlignment: textMainAxisAlignment,
               crossAxisAlignment: titleAlignment,
               children: [
                 // Small gap for visual separation
@@ -302,15 +322,16 @@ class InfoRowWidget extends StatelessWidget {
                     style:
                         subtitleStyle ??
                         textTheme.bodySmall?.copyWith(
+                          fontSize: subTitleFontSize.sp,
                           color: colorScheme.onBackground.withOpacity(
                             OpacityTokens.medium,
                           ),
-                          fontSize: 11.sp,
                         ),
                     maxLines: subTitleMaxLines ?? 3,
                     overflow: TextOverflow.ellipsis,
                   ),
-
+if(bottomWidget != null)
+                bottomWidget!,
                 // Optional divider below content
                 if (showDivider) AppDivider(),
               ],
@@ -377,14 +398,25 @@ class InfoRowWidget extends StatelessWidget {
     final icoColor = iconColor ?? colorScheme.primary;
     final bgColor = backgroundColor ?? colorScheme.primary.withOpacity(0.1);
     final size = iconSize ?? (showAvatar ? 20.h : 24.h);
+    final notAvatarImage = isNotAvatarImage ?? false;
 
     return imageUrl != null
-        ? ProfileAvatar(
-          avatarUrl: imageUrl ?? '',
-          currentUserId: '',
-          size: avatarRadius ?? 45.h,
-          enableHero: false,
-        )
+        ? notAvatarImage
+            ? SizedBox(
+              width: avatarRadius ?? 45.h,
+              height: avatarRadius ?? 45.h,
+              child: ImageContainer(
+                imageUrl: imageUrl ?? '',
+                isPreview: false,
+                borderRadius: BorderRadius.circular(10.r),
+              ),
+            )
+            : ProfileAvatar(
+              avatarUrl: imageUrl ?? '',
+              currentUserId: '',
+              size: avatarRadius ?? 45.h,
+              enableHero: false,
+            )
         : IconAvatar(
           icon: icon ?? Icons.person,
           iconColor: icoColor,

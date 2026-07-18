@@ -20,7 +20,7 @@ class ForumTopicCard extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: Spacing.sm),
+      padding: const EdgeInsets.only(bottom: Spacing.xs),
       child: SemanticContainerWidget(
         content: subtitle,
         icon: Icons.lock_outline,

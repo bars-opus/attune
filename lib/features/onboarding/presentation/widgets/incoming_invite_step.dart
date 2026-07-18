@@ -32,7 +32,9 @@ class IncomingInviteStep extends StatelessWidget {
             subtitle:
                 'Use your phone number to verify the account before the invite is accepted.',
           ),
-          const Spacer(),
+          // Fixed gap rather than Spacer: Spacer needs a bounded height, which
+          // conflicts with the card.s scroll fallback on short screens.
+          Gap(Spacing.xl.h),
           AppButton(
             label: 'Continue',
             onPressed: onNext,

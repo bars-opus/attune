@@ -26,7 +26,9 @@ class PersonalReadyStep extends StatelessWidget {
             title: 'Personal anchors saved',
             subtitle: 'These become your first reflection context.',
           ),
-          const Spacer(),
+          // Fixed gap rather than Spacer: Spacer needs a bounded height, which
+          // conflicts with the card.s scroll fallback on short screens.
+          Gap(Spacing.xl.h),
           AppButton(
             label: 'Enter Attune',
             onPressed: onFinish,

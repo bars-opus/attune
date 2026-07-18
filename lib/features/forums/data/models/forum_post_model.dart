@@ -1,11 +1,8 @@
 // lib/features/forums/data/models/forum_post_model.dart
 
-import 'package:flutter/foundation.dart';
-
 class ForumPostModel {
   final String id;
   final String topicId;
-  final String userId;
   final String side; // 'for' or 'against'
   final String content;
   final String? relationshipStatus;
@@ -18,7 +15,6 @@ class ForumPostModel {
   ForumPostModel({
     required this.id,
     required this.topicId,
-    required this.userId,
     required this.side,
     required this.content,
     this.relationshipStatus,
@@ -36,7 +32,6 @@ class ForumPostModel {
     return ForumPostModel(
       id: json['id'],
       topicId: json['topic_id'],
-      userId: json['user_id'],
       side: json['side'],
       content: json['content'],
       relationshipStatus: json['relationship_status_at_post'],
