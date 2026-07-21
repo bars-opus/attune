@@ -24,6 +24,7 @@ const ALLOWED_NVC = new Set([
   "demand",
 ]);
 const ALLOWED_BID_TYPES = new Set(["toward", "away", "against"]);
+const ALLOWED_SENTIMENTS = new Set(["positive", "neutral", "negative", "charged"]);
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -288,12 +289,18 @@ function validateLayerOne(
   const bidType = typeof parsed.bid_type === "string" && ALLOWED_BID_TYPES.has(parsed.bid_type)
     ? parsed.bid_type
     : null;
+  const sentiment = typeof parsed.sentiment === "string" && ALLOWED_SENTIMENTS.has(parsed.sentiment)
+    ? parsed.sentiment
+    : null;
 
   if (toneScore != null) {
     result.tone_score = toneScore;
   }
   result.nvc_violations = nvc;
   result.bid_type = bidType;
+  if (sentiment != null) {
+    result.sentiment = sentiment;
+  }
   return result;
 }
 
