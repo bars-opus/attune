@@ -1,6 +1,7 @@
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/presentation/screens/onboarding_flow.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -68,9 +69,11 @@ class _TestApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ScreenUtilInit(
-      designSize: const Size(375, 812),
-      builder: (_, __) => MaterialApp(home: child),
+    return ProviderScope(
+      child: ScreenUtilInit(
+        designSize: const Size(375, 812),
+        builder: (_, __) => MaterialApp(home: child),
+      ),
     );
   }
 }

@@ -11,6 +11,7 @@ class PersonalReadyStep extends StatelessWidget {
   Widget build(BuildContext context) {
     return OnboardingStepFrame(
       title: 'Personal mode is ready',
+      icon: Icons.self_improvement_outlined,
       subtitle:
           'No waiting screen and no partner invite. You can start reflecting immediately.',
       child: Column(

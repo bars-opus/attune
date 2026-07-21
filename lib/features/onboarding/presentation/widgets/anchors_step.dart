@@ -26,6 +26,7 @@ class AnchorsStep extends StatelessWidget {
           mode == OnboardingMode.couples
               ? 'Relationship anchors'
               : 'Personal anchors',
+      icon: Icons.anchor_outlined,
       subtitle: 'These answers give Attune its first real context.',
       child: Column(
         children: [

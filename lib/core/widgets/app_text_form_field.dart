@@ -244,6 +244,11 @@ class AppTextFormField extends StatefulWidget {
   /// Callback that receives debounced value
   final ValueChanged<String>? onDebouncedChanged;
 
+  /// Whether this field should request focus (and open the keyboard) as soon
+  /// as it is built. Use for the single input on a screen where typing is the
+  /// obvious next action (e.g. "what should we call you?").
+  final bool autofocus;
+
   /// Creates a comprehensive text form field with extensive customization.
   ///
   /// [label] is required. All other parameters have sensible defaults following
@@ -281,6 +286,7 @@ class AppTextFormField extends StatefulWidget {
     this.errorText,
     this.onDebouncedChanged,
     this.debounceDuration = const Duration(milliseconds: 500),
+    this.autofocus = false,
   });
 
   @override
@@ -394,6 +400,7 @@ class _AppTextFormFieldState extends State<AppTextFormField> {
             child: TextFormField(
               controller: _controller,
               focusNode: _effectiveFocusNode,
+              autofocus: widget.autofocus,
               keyboardType: widget.keyboardType,
               textInputAction: widget.textInputAction,
               obscureText: widget.obscureText,

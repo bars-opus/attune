@@ -11,6 +11,7 @@ class CouplesJoinedStep extends StatelessWidget {
   Widget build(BuildContext context) {
     return OnboardingStepFrame(
       title: 'You are connected',
+      icon: Icons.favorite_outlined,
       subtitle:
           'Your partner invite has been accepted. Finish onboarding and Attune will open the shared experience.',
       child: Column(

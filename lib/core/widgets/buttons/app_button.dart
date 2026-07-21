@@ -346,8 +346,7 @@ class AppButton extends StatelessWidget {
 
   Color _getTextColor(ColorScheme colorScheme) {
     if (customColor != null) {
-      final brightness = ThemeData.estimateBrightnessForColor(customColor!);
-      return brightness == Brightness.dark ? Colors.white : Colors.black;
+      return colorScheme.onBackground;
     }
 
     return switch (variant) {

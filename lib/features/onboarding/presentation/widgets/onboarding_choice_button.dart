@@ -26,7 +26,7 @@ class OnboardingChoiceButton extends StatelessWidget {
       leading: Icon(
         selected ? Icons.radio_button_checked : Icons.radio_button_off,
         color: colorScheme.primary,
-        size: IconSizes.md.r,
+        size: IconSizes.sm.r,
       ),
       borderRadius: BorderRadiusTokens.lgAll,
       onTap: onTap,

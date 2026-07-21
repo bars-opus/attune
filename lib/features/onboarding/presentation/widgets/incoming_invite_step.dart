@@ -16,6 +16,7 @@ class IncomingInviteStep extends StatelessWidget {
   Widget build(BuildContext context) {
     return OnboardingStepFrame(
       title: 'You have a partner invite',
+      icon: Icons.mail_outline,
       subtitle:
           'Attune will place you in relationship mode and connect both sides after you verify your account.',
       child: Column(

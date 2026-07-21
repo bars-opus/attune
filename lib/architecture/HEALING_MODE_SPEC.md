@@ -1,6 +1,6 @@
 # ATTUNE - HEALING MODE SPECIFICATION
 
-**Version:** 1.2  
+**Version:** 1.3  
 **Created:** July 2026  
 **Last reviewed:** July 2026  
 **Status:** Implementation-ready; clinical and legal production gates remain  
@@ -26,10 +26,13 @@ in the Master, Soul, Clinical, and Principles documents cannot be overridden her
 
 ### 1.1 Purpose
 
-Healing Mode is a private, self-paced post-breakup journey. It helps a user make
-meaning from an ended relationship, notice their own patterns, and decide whether
-they want to explore Dating Mode. It is not therapy, treatment, diagnosis, a
-clinical assessment, or a guarantee of readiness.
+Healing Mode is a private, self-paced journey. In its primary form it is a
+post-breakup journey: it helps a user make meaning from an ended relationship,
+notice their own patterns, and decide whether they want to explore Dating Mode.
+It also carries a readiness-only variant for users with no breakup to process
+(Section 2.1), which runs the same self-facing stages without the
+relationship-derived ones. It is not therapy, treatment, diagnosis, a clinical
+assessment, or a guarantee of readiness.
 
 ### 1.2 Permanent product rules
 
@@ -38,20 +41,23 @@ clinical assessment, or a guarantee of readiness.
    starting and continuing the journey are optional.
 3. A user who flags a recent breakup without an Attune relationship may start a
    solo-data journey. Relationship-derived stages degrade gracefully.
-4. The journey is private to its user. The former partner is never notified of
+4. A Personal Mode user with no breakup to process may start a readiness-only
+   journey (Section 2.1). It is never labelled healing, and relationship-derived
+   stages are skipped rather than degraded.
+5. The journey is private to its user. The former partner is never notified of
    starts, answers, progress, output, score, eligibility, or Dating Mode choices.
-5. Healing Mode never enables contact with the former partner. Ended chat remains
+6. Healing Mode never enables contact with the former partner. Ended chat remains
    read-only and follows the Master relationship-lifecycle rules.
-6. Safety Resources and quick exit remain available on every Healing Mode screen.
+7. Safety Resources and quick exit remain available on every Healing Mode screen.
    Safety System behavior always takes precedence.
-7. The product surfaces tentative patterns with evidence and agency. It does not
+8. The product surfaces tentative patterns with evidence and agency. It does not
    determine who was right, assign fault, infer an ex-partner's internal state, or
    tell the user whether to reconcile, leave, or date.
-8. A readiness result is a self-reflection indicator, not a mental-health or
+9. A readiness result is a self-reflection indicator, not a mental-health or
    relationship-health measure. It must not be called a clinical assessment.
-9. Dating Mode code remains out of scope until the Master permits Month 6 work.
-   Healing Mode may persist eligibility but must not implement matching or a pool.
-10. Dating eligibility never means automatic pool enrollment. A separate, explicit
+10. Dating Mode code remains out of scope until the Master permits Month 6 work.
+    Healing Mode may persist eligibility but must not implement matching or a pool.
+11. Dating eligibility never means automatic pool enrollment. A separate, explicit
     Dating Mode opt-in and separate past-data consent are mandatory.
 
 ### 1.3 Clinical language boundary
@@ -102,6 +108,30 @@ as psychological analysis in the interface.
 3. Couple-derived evidence is unavailable. The post-mortem becomes a reflection
    synthesis, and the UI labels its sources accurately.
 
+**No prior relationship (readiness-only journey)**
+
+1. A Personal Mode user with no ended Attune relationship and no breakup to
+   process may select **I am not coming out of a relationship**.
+2. The server creates a journey with `breakup_at = NULL` and
+   `breakup_at_source = 'no_prior_relationship'`.
+3. There is no breakup, so there is nothing to heal from and no breakup clock to
+   run. Stage 2 resolves deterministically to `insufficient_evidence` — it is
+   never presented as a failure, and the UI says: "There is no past Attune
+   relationship to reflect on, so this step is skipped." Stages 1, 3, and 4 run
+   unchanged; they are self-facing and do not depend on a former partner. Stage
+   5 uses the four-prompt readiness variant (Section 6.2), because three of the
+   seven standard prompts presuppose a relationship that ended.
+4. This path is **not** a healing journey and must never be labelled as one in
+   the interface. Copy refers to it as a readiness journey. Never imply the user
+   is recovering, broken, or processing loss.
+
+This path exists because the eight-week gate's clinical rationale is rebound
+risk after a specific loss. A never-partnered user, or one long past any prior
+relationship, carries no such risk, and forcing them to self-report a breakup
+they did not have would fabricate provenance — precisely what
+`DATING_MODE_SPEC.md` Section 3.1 forbids. Without this path such users had no
+route into Dating Mode at all.
+
 The client cannot write `users.mode`, trusted relationship dates, eligibility,
 scores, or unlock timestamps directly.
 
@@ -130,10 +160,14 @@ Any state -> deleted (account deletion or explicit journey deletion)
 
 1. **Reflection:** three optional private journal prompts.
 2. **Relationship reflection:** one evidence-grounded, non-blaming observation.
+   Skipped as `insufficient_evidence` on the `no_prior_relationship` path, which
+   has no past relationship to reflect on (Section 2.1).
 3. **Pattern awareness:** source-labelled personal quiz dimensions and eligible
    self-facing observations.
 4. **Personal pattern portrait:** a tentative synthesis focused on the user.
-5. **Readiness check-in:** eight self-report questions and a server-computed score.
+5. **Readiness check-in:** seven scored self-report prompts, a server-computed
+   time element, and a server-computed score (Section 6.2). The
+   `no_prior_relationship` path uses a four-prompt variant with no time element.
 
 Stages are sequential for first completion. Users may leave and resume at any
 time. A failed AI stage must never erase progress or trap the user; it offers
@@ -335,7 +369,9 @@ your answers today. It cannot determine whether you are healed or ready."
 
 Time since breakup is not a self-scored question. The server computes elapsed time
 from trusted `relationships.ended_at`; a solo journey uses its clearly labelled
-user-reported date.
+user-reported date. A `no_prior_relationship` journey has no breakup date, so
+this element is omitted entirely rather than shown as zero or unknown, and the
+readiness score is computed from the scored prompts alone.
 
 The seven scored prompts use a 1-5 scale:
 
@@ -351,18 +387,42 @@ Each scale point must have localized labels, not an unlabeled numeric row. A use
 may choose **Prefer not to answer**; an incomplete attempt cannot produce a score
 but may complete the reflection stage without Dating eligibility.
 
+**`no_prior_relationship` variant.** Prompts 1, 2, and 5 presuppose a
+relationship that ended and are unanswerable for a user who has not had one.
+This path therefore uses a four-prompt instrument — prompts 3, 4, 6, and 7,
+which are already forward-looking and self-facing — with prompt 4 reworded to
+drop the escape framing:
+
+> Interest in meeting someone new feels like a choice I am making for myself.
+
+Do not present the omitted prompts with a not-applicable option; an instrument
+padded with unanswerable items produces a score that looks comparable to a
+post-breakup score and is not. See 6.3 for the matching scoring change, and
+14.3 for the clinical sign-off this variant requires.
+
 ### 6.3 Deterministic scoring
 
 For v1.1, pending clinical sign-off:
 
 ```text
-score = round(100 * sum(answer - 1) / (7 * 4))
+score = round(100 * sum(answer - 1) / (n * 4))
 ```
 
-All seven answers have equal weight. Time is a separate hard gate and is never
-double-counted in the score. Compute and persist the score server-side with
-`scoring_version = healing_readiness_v1_1`. The client may compute a preview only;
-it cannot persist or unlock from that preview.
+`n` is the number of prompts in the instrument actually presented: 7 for the
+`relationship` and `user_reported` paths, 4 for `no_prior_relationship` (6.2).
+All answers have equal weight. Normalizing by `n` keeps the threshold on one
+0-100 scale across paths; it does not make the two instruments clinically
+equivalent, which is exactly what 14.3 must review before this ships.
+
+Persist which instrument produced a score. The `no_prior_relationship` variant
+uses `scoring_version = healing_readiness_v1_3_no_prior`; the seven-prompt
+instrument remains `healing_readiness_v1_1`. A score must never be compared
+across scoring versions, and eligibility must read the version alongside the
+value.
+
+Time is a separate hard gate and is never double-counted in the score. Compute
+and persist the score server-side. The client may compute a preview only; it
+cannot persist or unlock from that preview.
 
 ### 6.4 Result presentation
 
@@ -401,6 +461,14 @@ The backend may mark `eligible_for_dating_opt_in_at` only when all are true:
      journey time, a user could report a nine-week-old breakup on day one,
      speed-run the stages, and be dating-eligible in days. Device-clock
      defenses do not cover self-attested history; this floor does;
+   - `no_prior_relationship`: `now() >= journey_created_at + interval '4 weeks'`
+     — `breakup_at` is NULL, so the eight-week breakup clock does not apply and
+     must not be simulated. The four-week observed-journey floor is the entire
+     gate: it is the same anti-speed-run floor the `user_reported` path uses,
+     and it is measured from server-set `journey_created_at`, which the client
+     cannot forge. Do not substitute a longer interval to make this path "feel"
+     as gated as a breakup journey; there is no loss to recover from, and an
+     arbitrary delay would be an engagement mechanic, not a clinical gate;
 5. the user has no active or pending relationship;
 6. the account is not deleted, suspended, or otherwise ineligible.
 
@@ -433,8 +501,15 @@ CREATE TABLE healing_journeys (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   relationship_id uuid REFERENCES public.relationships(id) ON DELETE SET NULL,
-  breakup_at timestamptz NOT NULL,
-  breakup_at_source text NOT NULL CHECK (breakup_at_source IN ('relationship', 'user_reported')),
+  -- NULL only for the no_prior_relationship path (there is no breakup date).
+  breakup_at timestamptz,
+  breakup_at_source text NOT NULL CHECK (breakup_at_source IN ('relationship', 'user_reported', 'no_prior_relationship')),
+  -- Provenance and date must agree: a breakup journey always carries a date,
+  -- and a no-prior-relationship journey must never invent one.
+  CONSTRAINT healing_journeys_breakup_at_matches_source CHECK (
+    (breakup_at_source = 'no_prior_relationship' AND breakup_at IS NULL)
+    OR (breakup_at_source <> 'no_prior_relationship' AND breakup_at IS NOT NULL)
+  ),
   status text NOT NULL DEFAULT 'active'
     CHECK (status IN ('active', 'paused', 'completed', 'eligible_for_dating_opt_in', 'archived')),
   current_stage smallint NOT NULL DEFAULT 1 CHECK (current_stage BETWEEN 1 AND 5),
@@ -604,10 +679,12 @@ relationships, account switching, and notification/app-switcher disclosure.
 | Former partner deletes account | Do not expose or reconstruct their private data |
 | AI timeout/malformed/prohibited output | Persist failure code only; retry or continue without AI |
 | App closes during generation | Resume from server job state; no duplicate call |
-| Device clock manipulated | No effect on cooldown, eight-week gate, or eligibility |
+| Device clock manipulated | No effect on cooldown, the eight-week gate, the four-week observed-journey floor, or eligibility — all are server-computed |
 | Score exactly 70 | Not eligible; Master requires greater than 70 |
 | Eight-week boundary | Eligible at `breakup_at + 8 weeks`, not by calendar-week label |
 | Solo journey with an old reported breakup date | The Section 7 minimum-observed-journey floor applies: eligibility no earlier than `journey_created_at + 4 weeks`, regardless of the reported date |
+| `no_prior_relationship` journey | `breakup_at` is NULL; the eight-week clock is not evaluated and must not be synthesized. Eligibility is `journey_created_at + 4 weeks` plus the standard score and account gates |
+| User with a `no_prior_relationship` journey later reports a breakup | Do not mutate provenance on the existing journey. Archive it and start a new journey with the correct source, so the breakup clock runs from the reported date |
 | User deletes journey | Cascade Healing Mode data and revoke eligibility |
 | Safety trigger | Safety behavior takes precedence; former partner remains uninformed |
 
@@ -632,7 +709,9 @@ relationships, account switching, and notification/app-switcher disclosure.
 
 7. Build entry, stage navigation, autosave, Pattern Awareness, readiness scoring,
    retake cooldown, and eligibility state without AI.
-8. Add relationship lifecycle and solo-journey integrations.
+8. Add relationship lifecycle, solo-journey, and `no_prior_relationship`
+   integrations, including the four-prompt readiness variant and its scoring
+   version.
 
 ### Phase 4 - Generated reflections
 
@@ -695,7 +774,39 @@ Dating Mode and matching remain a separate future implementation.
 
 ## 14. Resolved decisions and production gates
 
-### 14.0 Resolved in v1.2
+### 14.0 Resolved in v1.3
+
+- Added the `no_prior_relationship` entry path (Section 2.1). Both prior paths
+  required a breakup — trusted or self-reported — which left never-partnered
+  users, and users long past any prior relationship, with no route into Dating
+  Mode except falsely claiming a recent breakup. That is fabricated provenance,
+  which `DATING_MODE_SPEC.md` Section 3.1 explicitly forbids, so the gap had to
+  close in the eligibility model rather than in client copy.
+- The path is a **readiness** journey, never labelled healing. Stage 2 resolves
+  to `insufficient_evidence` by construction; Stages 1, 3, 4, and 5 are already
+  self-facing and run unchanged.
+- Its gate is the four-week observed-journey floor alone. The eight-week clock
+  exists for post-loss rebound risk, which does not apply here, and simulating
+  it would be an engagement delay wearing a clinical justification.
+- `breakup_at` becomes nullable, paired with a CHECK constraint so provenance
+  and date cannot disagree.
+- Readiness instrument split (6.2, 6.3). Prompts 1, 2, and 5 presuppose an ended
+  relationship and are unanswerable for a never-partnered user, so this path
+  uses a four-prompt forward-looking subset with prompt 4 reworded. Scoring
+  normalizes by prompt count and records
+  `scoring_version = healing_readiness_v1_3_no_prior`; scores must never be
+  compared across versions. Padding the original instrument with
+  not-applicable answers was rejected — it yields a number that looks
+  comparable to a post-breakup score and is not.
+- Open for clinical sign-off (14.3): whether a four-prompt instrument, and a
+  threshold validated against a post-breakup population, are defensible for
+  users with no breakup. This is the highest-risk part of the change — the
+  eligibility plumbing is sound, but the instrument's transfer is a clinical
+  question, not an engineering one. Until that review lands, the threshold
+  stays greater than 70 and this path stays behind the same Dating launch gate
+  as every other.
+
+### 14.1 Resolved in v1.2
 
 - Solo-journey time gate tightened: `user_reported` breakup dates are
   self-attested, so eligibility additionally requires at least four weeks of
@@ -705,10 +816,10 @@ Dating Mode and matching remain a separate future implementation.
   the approved Dating eligibility path for users without an Attune
   relationship — the tightened clock is what makes that safe to state.
 - The four-week floor is a product security control, not a clinical claim;
-  clinical review of the readiness instrument (14.2) is unchanged and may
+  clinical review of the readiness instrument (14.3) is unchanged and may
   adjust the floor with recorded sign-off.
 
-### 14.1 Resolved in v1.1
+### 14.2 Resolved in v1.1
 
 - Five stages remain, but generated stages are skippable on failure/sparse evidence.
 - The Master threshold is interpreted literally as score **greater than 70**.
@@ -720,10 +831,16 @@ Dating Mode and matching remain a separate future implementation.
 - Healing output is self-facing; ex-partner data and safety data are excluded.
 - Dating eligibility is not enrollment and requires later explicit consents.
 
-### 14.2 Blocking production gates
+### 14.3 Blocking production gates
 
 - Licensed clinical advisor approval of the unvalidated readiness check-in,
   threshold, user-facing language, and prompt evaluation set.
+- Licensed clinical advisor approval of the `no_prior_relationship` readiness
+  variant specifically (6.2, 6.3): whether a four-prompt forward-looking subset
+  measures anything meaningful, whether the greater-than-70 threshold transfers
+  to a population with no breakup, and whether the four-week floor is the right
+  gate absent rebound risk. Approval of the seven-prompt instrument does not
+  imply approval of this variant.
 - Privacy/legal approval of reflection retention, model-provider processing, and
   use of ended-relationship derived data.
 - DV/safety review of manual resource access, quick exit, and the former-partner

@@ -1,6 +1,6 @@
 # ATTUNE - DATING MODE SPECIFICATION
 
-**Version:** 1.2  
+**Version:** 1.3  
 **Created:** July 2026  
 **Updated:** July 2026  
 **Status:** Implementation-ready after the production gates in Section 16  
@@ -52,7 +52,7 @@ The words `candidate`, `introduction`, and `mutual match` are preferred. `Compat
 | Area | Contract |
 |---|---|
 | Launch gate | Month 6+ and sufficient eligible local pool; target 2,000 active couples is a planning signal, not an authorization bypass |
-| Eligibility | Server-authoritative Healing v1.1 eligibility; score greater than 70, eight weeks elapsed, all stages complete, no active/pending relationship, account in good standing |
+| Eligibility | Server-authoritative Healing v1.3 eligibility; score greater than 70, all stages complete, path-specific time gate met (3.1), no active/pending relationship, account in good standing |
 | Enrollment | Separate explicit Dating Mode opt-in; eligibility alone never enrolls |
 | Historical data | Separate, optional, revocable consent for the current user's own eligible historical behavioral summaries |
 | Profile | User verifies identity-facing fields and preferences before activation; no silent public profile creation |
@@ -89,7 +89,17 @@ to prevent.
 
 The Dating backend reads eligibility from the trusted Healing transition defined in `HEALING_MODE_SPEC.md`. It must revalidate all gates transactionally when the user opts in and whenever their account or relationship state changes. A stale `eligible_for_dating_opt_in_at` timestamp is not sufficient by itself.
 
-The solo Healing journey (`breakup_at_source = 'user_reported'`, HEALING_MODE_SPEC v1.2) **is** the approved eligibility path for users without an Attune relationship history, subject to its tightened time gate: because a user-reported breakup date is self-attested, solo-journey eligibility additionally requires a minimum observed journey duration (see HEALING_MODE_SPEC Section 7). Do not fabricate a breakup date or bypass Healing in the client; the tightened clock exists precisely because the reported date cannot be trusted the way `relationships.ended_at` can.
+There are three approved eligibility paths, all of them server-authoritative and all of them ending in the same `eligible_for_dating_opt_in` state (HEALING_MODE_SPEC v1.3 Sections 2.1 and 7):
+
+| Path | `breakup_at_source` | Who it is for | Time gate |
+| --- | --- | --- | --- |
+| Ended Attune relationship | `relationship` | A relationship that ended on Attune | Eight weeks from trusted `ended_at` |
+| Solo journey | `user_reported` | A breakup that happened off Attune | Eight weeks from the reported date **and** four weeks of observed journey |
+| Readiness journey | `no_prior_relationship` | Never-partnered users, and users not processing any breakup | Four weeks of observed journey |
+
+The solo journey's tightened clock exists because a user-reported breakup date is self-attested and cannot be trusted the way `relationships.ended_at` can. The readiness journey carries no breakup clock at all, because there is no loss to recover from; its four-week observed-journey floor is the same anti-speed-run control, measured from server-set `journey_created_at`.
+
+Do not fabricate a breakup date, bypass the journey in the client, or route a never-partnered user through the solo path to make the numbers work. Before v1.3 that user had no eligible path, and the tempting workaround — self-reporting a breakup that did not happen — is exactly the fabricated provenance this section forbids.
 
 ### 3.2 Required decisions
 
@@ -702,6 +712,23 @@ that pack.
 ---
 
 ## 17. Resolved contradictions and deferred decisions
+
+### Resolved in v1.3
+
+- Third eligibility path added (3.1): `no_prior_relationship`, for
+  never-partnered users and users not processing any breakup. Both prior paths
+  required a breakup, so this user's only route into Dating Mode was to
+  self-report one that never happened — the fabricated provenance 3.1 forbids.
+  The gap was in the eligibility model, not in client copy, and is closed in
+  HEALING_MODE_SPEC v1.3.
+- Confirmed that the eight-week clock is specific to post-loss rebound risk and
+  is therefore not applied to the readiness path. The four-week
+  observed-journey floor is the whole gate there; lengthening it to look
+  equivalently strict would be an engagement delay, not a clinical control.
+- Deferred to clinical review: whether the readiness instrument, validated
+  against a post-breakup population, transfers to users with no breakup
+  (HEALING_MODE_SPEC 14.3). The path ships behind the same Month 6+ Dating
+  launch gate regardless.
 
 ### Resolved in v1.2
 

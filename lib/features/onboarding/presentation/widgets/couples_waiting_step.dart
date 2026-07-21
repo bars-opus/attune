@@ -61,6 +61,7 @@ class _CouplesWaitingStepState extends State<CouplesWaitingStep> {
 
     return OnboardingStepFrame(
       title: 'Invite your partner',
+      icon: Icons.person_add_alt_outlined,
       subtitle:
           'You can keep going while your partner completes their side of onboarding.',
       child: Column(

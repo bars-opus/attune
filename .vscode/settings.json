@@ -1,0 +1,26 @@
+{
+  "dart.analysisExcludedFolders": [
+    ".dart_tool",
+    ".tool-home",
+    "build",
+    "reference",
+    "ios/Pods",
+    "supabase/graphify-out"
+  ],
+  "files.watcherExclude": {
+    "**/.dart_tool/**": true,
+    "**/.tool-home/**": true,
+    "**/build/**": true,
+    "**/ios/Pods/**": true,
+    "**/reference/**": true,
+    "**/supabase/graphify-out/**": true
+  },
+  "search.exclude": {
+    "**/.dart_tool/**": true,
+    "**/.tool-home/**": true,
+    "**/build/**": true,
+    "**/ios/Pods/**": true,
+    "**/reference/**": true,
+    "**/supabase/graphify-out/**": true
+  }
+}

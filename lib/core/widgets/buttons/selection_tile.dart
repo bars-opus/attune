@@ -1,7 +1,6 @@
 // lib/core/widgets/selection/selection_tile.dart
 import 'package:attune/core/utils/exports/export_screens.dart';
 
-
 /// 🎯 Universal selection tile for lists (language, settings, etc.)
 ///
 /// A highly versatile tile component for selection-based interfaces where users
@@ -128,7 +127,7 @@ class SelectionTile extends StatelessWidget {
     // Extract theme components for consistent styling
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
+
     // Determine the color to use for selection indicators
     // Uses custom color if provided, otherwise falls back to theme primary
     final effectiveSelectedColor = selectedColor ?? colorScheme.primary;
@@ -172,8 +171,10 @@ class SelectionTile extends StatelessWidget {
                     // Primary title with selection-aware color
                     Text(
                       title,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        // fontWeight: FontWeight.w600,
+                        // fontSize: titleFontSize.sp,
+                        fontWeight: FontWeight.w500,
                         color:
                             isSelected
                                 ? colorScheme.onBackground
@@ -186,7 +187,7 @@ class SelectionTile extends StatelessWidget {
                       SizedBox(height: Spacing.xs.h),
                       Text(
                         subtitle!,
-                        style: theme.textTheme.bodyMedium?.copyWith(
+                        style: theme.textTheme.bodySmall?.copyWith(
                           // Subtitle uses primary color when selected for emphasis
                           color:
                               isSelected
@@ -202,9 +203,7 @@ class SelectionTile extends StatelessWidget {
               // Trailing indicator (loading or selection)
               if (isLoading)
                 // Circular progress indicator for async operations
-               CircularLoadingIndicator(
-                           
-                          )
+                CircularLoadingIndicator()
               else if (isSelected)
                 // Checkmark icon for confirmed selection
                 Icon(

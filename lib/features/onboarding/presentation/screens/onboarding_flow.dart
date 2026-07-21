@@ -3,6 +3,7 @@ import 'package:attune/features/auth/presentation/passwordless_auth_step.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_submission_service.dart';
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
+import 'package:attune/features/onboarding/presentation/data/attachment_quiz_docs.dart';
 import 'package:attune/features/onboarding/presentation/widgets/anchors_step.dart';
 import 'package:attune/features/onboarding/presentation/widgets/attachment_quiz_step.dart';
 import 'package:attune/features/onboarding/presentation/widgets/couples_joined_step.dart';
@@ -64,6 +65,38 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   void _next() {
     setState(() => _step++);
+  }
+
+  /// Advances into the quiz, but first explains what it is and why it
+  /// matters — otherwise 26 rating questions land with no context.
+  Future<void> _goToQuiz() async {
+    final colorScheme = Theme.of(context).colorScheme;
+    final docs = AttachmentQuizDocs(mode: _mode);
+    await BottomSheetUtils.showDocumentationBottomSheet(
+      context: context,
+      showButtons: false,
+      widget: Column(
+        children: [
+          Expanded(
+            child: DocumentationTabView(
+              documentation: docs.getSections(context),
+              faqs: docs.getFAQs(context),
+              showDocumentationFirst: true,
+            ),
+          ),
+          Gap(Spacing.md.h),
+          AppButton(
+             textColor: colorScheme.surface,
+            label: 'Continue to quiz',
+            onPressed: () => Navigator.of(context).pop(),
+            size: ButtonSize.small,
+            height: OnboardingTokens.actionButtonHeight.h,
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    _next();
   }
 
   Future<void> _finish() async {
@@ -179,14 +212,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               selectedMode: mode,
               onSelect: (value) {
                 setState(() => _mode = value);
-                _next();
+                _goToQuiz();
               },
             )
             : IncomingInviteStep(
               inviteCode: pendingInviteCode,
               onNext: () {
                 setState(() => _mode = OnboardingMode.couples);
-                _next();
+                _goToQuiz();
               },
             ),
       _ when _step == quizStep => AttachmentQuizStep(

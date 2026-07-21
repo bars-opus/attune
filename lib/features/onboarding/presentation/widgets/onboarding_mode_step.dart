@@ -17,6 +17,7 @@ class OnboardingModeStep extends StatelessWidget {
   Widget build(BuildContext context) {
     return OnboardingStepFrame(
       title: 'Are you single or in a relationship?',
+      icon: Icons.favorite,
       subtitle: 'This first choice routes your entire Attune experience.',
       child: Column(
         children: [
@@ -29,7 +30,8 @@ class OnboardingModeStep extends StatelessWidget {
           Gap(Spacing.smMd.h),
           OnboardingChoiceButton(
             title: 'In a relationship',
-            subtitle: 'Invite your partner and unlock shared insights.',
+            subtitle:
+                'Invite your partner and unlock shared insights to build a stronger bond.',
             selected: selectedMode == OnboardingMode.couples,
             onTap: () => onSelect(OnboardingMode.couples),
           ),
