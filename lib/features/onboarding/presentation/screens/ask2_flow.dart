@@ -57,9 +57,13 @@ class _Ask2FlowState extends State<Ask2Flow> {
       await _submissionService.submit(attachmentAnswers: answers, anchors: anchors);
       await _markAsk2StateCompleted();
     } catch (_) {
+      // TODO: Ask 2 has no persistence/retry layer yet (unlike Ask 1's
+      // OnboardingFlow with PendingOnboardingSubmission + OnboardingSyncService).
+      // If submission fails here, answers are genuinely lost. Future task should
+      // implement proper recovery mechanism.
       if (mounted) {
         context.showInfoSnackbar(
-          'Saved locally. We will try again the next time you open the app.',
+          'Something went wrong saving your answers. You can try again from the notification that brought you here.',
         );
       }
     }
