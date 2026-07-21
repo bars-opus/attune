@@ -48,6 +48,7 @@ class AnchorsStep extends StatelessWidget {
               },
             ),
           ),
+          Gap(Spacing.xl.h),
           AppButton(
             label: 'Continue',
             onPressed: () => _submit(context),
