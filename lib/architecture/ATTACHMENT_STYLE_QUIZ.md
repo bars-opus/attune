@@ -109,6 +109,21 @@ Historical results stored for growth tracking.
 
 ## 2. QUIZ STRUCTURE AND QUESTIONS
 
+> **Implementation note — two distinct attachment quizzes exist.** This spec
+> governs the **standalone** profiling quiz in `lib/features/quiz/` (25
+> questions, 7-point scale, A/V/R dimension tags, scored by
+> `AttachmentScoringService`). That implementation matches this spec.
+>
+> Separately, the **onboarding reflection quiz**
+> (`lib/features/onboarding/domain/onboarding_models.dart`) ships an interim
+> **26-question, 5-point yes/no set with no dimension tags**. Its answers are
+> stored raw in `onboarding_profiles.attachment_answers` and are never run
+> through the 7-point scorer, so the two do not conflict at runtime. Whether
+> onboarding should adopt this spec's canonical instrument (count, 7-point
+> scale, tags) is an **open launch decision blocked on clinical-advisor
+> sign-off** — see §10 and `ATTUNE_CLINICAL.md` §12. Until then the onboarding
+> set is deliberately kept lightweight.
+
 ### Format
 
 ```

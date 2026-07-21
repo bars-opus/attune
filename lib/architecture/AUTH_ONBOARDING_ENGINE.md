@@ -113,14 +113,42 @@ LoginProfile CTA
 
 ### Onboarding
 
+Onboarding forks by mode into two different shapes. `ATTUNE_MASTER_SPEC.md`
+§8.8 (decision 29, the two-ask couples design) is the governing source for
+this sequencing; this section mirrors it.
+
+**Single (Track A) — the quiz stays up front:**
+
 ```
 Profile setup
-  -> Single / In a relationship fork
+  -> Single / In a relationship fork  (choose Single)
   -> Attachment quiz
-  -> Personal or relationship anchors
-  -> Partner invite if relationship path
-  -> HomeScreen
+  -> Personal anchors
+  -> HomeScreen (Personal mode)
 ```
+
+**In a relationship (Track B) — two separately-timed asks:**
+
+```
+Ask 1 (at signup — profile + partner invite ONLY, zero AI/analysis/
+       insight/intelligence/patterns vocabulary anywhere in this flow):
+  Profile setup
+    -> Single / In a relationship fork  (choose In a relationship)
+    -> Partner invite / waiting screen  (invitee: accept + link)
+    -> HomeScreen; chat unlocks on mutual verified link
+
+Ask 2 (days later — triggered by real chat activity + a positive signal,
+       delivered as a soft, skippable notification; see the Ask-2 trigger
+       system, docs/superpowers/specs/2026-07-21-ask2-trigger-design.md):
+  Intelligence introduction
+    -> Attachment quiz
+    -> Relationship anchors
+    -> Compatibility preview (completion reward)
+```
+
+Couples do NOT take the attachment quiz or anchors during Ask 1 — those are
+deferred to Ask 2. Any copy shown to a couples user before chat unlocks must
+avoid intelligence vocabulary entirely (decision 29).
 
 Partner invite rules:
 

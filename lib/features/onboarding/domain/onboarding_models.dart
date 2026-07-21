@@ -42,6 +42,24 @@ class OnboardingQuestion {
 
 // Descriptions describe the SITUATION an item refers to — never what an answer
 // means about the person. See OnboardingQuestion.description.
+//
+// INSTRUMENT NOTE (interim — diverges from ATTACHMENT_STYLE_QUIZ.md on purpose):
+// This is the lightweight ONBOARDING reflection set — 26 plain-language
+// questions answered on a 5-point yes/no scale (see QuizLikertScale.points
+// default = 5). It is NOT the canonical clinical instrument: that is the
+// SEPARATE standalone quiz in lib/features/quiz/ (25 ECR-R-adapted questions,
+// A/V/R dimension tags + reverse-score markers, 7-point scale, scored by
+// AttachmentScoringService's 7-point `8 - raw` / `/6` math). The two do not
+// cross: onboarding answers here are stored raw in
+// onboarding_profiles.attachment_answers and are never fed into that 7-point
+// scorer, so the 5-point scale is safe and self-contained.
+//
+// The final onboarding instrument (25 vs 26 vs 36 items, 5- vs 7-point,
+// whether to carry dimension tags) is an OPEN launch decision blocked on
+// clinical-advisor sign-off — see ATTUNE_CLINICAL.md §12 and
+// ATTACHMENT_STYLE_QUIZ.md §10. Do not "align" this to the 7-point spec
+// instrument without that sign-off; doing so would also require wiring the
+// A/V/R scoring this set deliberately omits.
 const attachmentQuestions = <OnboardingQuestion>[
   OnboardingQuestion(
     'Do you find it easy to ask for reassurance when you need it?',
@@ -106,7 +124,7 @@ const attachmentQuestions = <OnboardingQuestion>[
   OnboardingQuestion(
     'Do you trust that repair is possible after disagreement?',
     description:
-        'You\'ve just had a bad fight. Do you assume you\'ll find your way back to each other — or does it feel like something might be permanently broken now?',
+        'You\'ve just had a bad fight. Do you assume you\'ll find your way back to each other — or does it feel like something might not recover?',
   ),
   OnboardingQuestion(
     'Do you often need proof that someone still cares?',
