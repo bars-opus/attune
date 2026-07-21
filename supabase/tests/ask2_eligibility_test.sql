@@ -26,14 +26,16 @@ INSERT INTO public.relationships (id, user_a, user_b, status, started_at) VALUES
    'b2222222-2222-2222-2222-222222222222',
    'active', now()::date);
 
-INSERT INTO public.messages (relationship_id, sender_id, content, sentiment, created_at)
+INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content, sentiment, created_at)
 SELECT 'c0000002-0000-0000-0000-000000000002',
        'a1111111-1111-1111-1111-111111111111',
+       gen_random_uuid(),
        'msg ' || n, 'positive', now()
 FROM generate_series(1, 5) AS n;
-INSERT INTO public.messages (relationship_id, sender_id, content, sentiment, created_at)
+INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content, sentiment, created_at)
 SELECT 'c0000002-0000-0000-0000-000000000002',
        'b2222222-2222-2222-2222-222222222222',
+       gen_random_uuid(),
        'msg ' || n, 'positive', now()
 FROM generate_series(1, 5) AS n;
 
@@ -52,14 +54,16 @@ INSERT INTO public.relationships (id, user_a, user_b, status, started_at) VALUES
    'b2222222-2222-2222-2222-222222222222',
    'active', now()::date);
 
-INSERT INTO public.messages (relationship_id, sender_id, content, sentiment, created_at)
+INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content, sentiment, created_at)
 SELECT 'c0000003-0000-0000-0000-000000000003',
        'a1111111-1111-1111-1111-111111111111',
+       gen_random_uuid(),
        'msg ' || n, 'neutral', now()
 FROM generate_series(1, 30) AS n;
-INSERT INTO public.messages (relationship_id, sender_id, content, sentiment, created_at)
+INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content, sentiment, created_at)
 SELECT 'c0000003-0000-0000-0000-000000000003',
        'b2222222-2222-2222-2222-222222222222',
+       gen_random_uuid(),
        'msg ' || n, 'neutral', now()
 FROM generate_series(1, 30) AS n;
 
@@ -78,16 +82,18 @@ INSERT INTO public.relationships (id, user_a, user_b, status, started_at) VALUES
    'b2222222-2222-2222-2222-222222222222',
    'active', (now() - interval '3 days')::date);
 
-INSERT INTO public.messages (relationship_id, sender_id, content, sentiment, created_at)
+INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content, sentiment, created_at)
 SELECT 'c0000004-0000-0000-0000-000000000004',
        'a1111111-1111-1111-1111-111111111111',
+       gen_random_uuid(),
        'msg ' || n,
        CASE WHEN n = 1 THEN 'positive' ELSE 'neutral' END,
        now() - ((n % 3) || ' days')::interval
 FROM generate_series(1, 30) AS n;
-INSERT INTO public.messages (relationship_id, sender_id, content, sentiment, created_at)
+INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content, sentiment, created_at)
 SELECT 'c0000004-0000-0000-0000-000000000004',
        'b2222222-2222-2222-2222-222222222222',
+       gen_random_uuid(),
        'msg ' || n, 'neutral',
        now() - ((n % 3) || ' days')::interval
 FROM generate_series(1, 30) AS n;
