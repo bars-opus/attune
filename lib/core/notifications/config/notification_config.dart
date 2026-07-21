@@ -110,6 +110,17 @@ NotificationConfig buildNanoEmbryoNotificationConfig() {
           GoRouter.of(context).go(RouteNames.safetyResources);
           return;
 
+        case 'ask2_invite':
+          final relationshipId = notification.data?['relationship_id'] as String?;
+          if (relationshipId != null && relationshipId.isNotEmpty) {
+            GoRouter.of(context).push(
+              '/ask2/${Uri.encodeComponent(relationshipId)}',
+            );
+          } else {
+            GoRouter.of(context).go(RouteNames.home);
+          }
+          return;
+
         default:
           GoRouter.of(context).go(RouteNames.home);
           return;

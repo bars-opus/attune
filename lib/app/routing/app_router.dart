@@ -2,6 +2,7 @@ import 'package:attune/app/app_info/app_info_screen.dart';
 import 'package:attune/app/documentations/legal_documentation/widgets/all_legal_documentations_screen.dart';
 import 'package:attune/app/licenses_screen.dart';
 import 'package:attune/app/routing/routing_notifier.dart';
+import 'package:attune/features/onboarding/presentation/screens/ask2_flow.dart';
 import 'package:attune/core/moderation/presentation/screens/blocked_accounts_screen.dart';
 import 'package:attune/features/auth/intro/intro_screen.dart';
 import 'package:attune/features/auth/log_in/presentation/screens/login_screen.dart';
@@ -101,6 +102,7 @@ class RouteNames {
   static const String productForm = '/productForm';
   static const String blockedAccountsScreen = '/blockedAccountsScreen';
   static const String datingMode = '/dating-mode';
+  static const String ask2Flow = '/ask2/:relationshipId';
 }
 
 GoRouter createAppRouter(RoutingNotifier routingNotifier) {
@@ -257,6 +259,13 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       return PaintBallKnockoutScreen(sessionId: sessionId);
     },
   ),
+      GoRoute(
+        path: RouteNames.ask2Flow,
+        builder: (context, state) {
+          final relationshipId = state.pathParameters['relationshipId']!;
+          return Ask2Flow(relationshipId: relationshipId);
+        },
+      ),
     ],
   );
 }

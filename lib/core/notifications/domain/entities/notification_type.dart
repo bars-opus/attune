@@ -60,6 +60,7 @@ class CommonNotificationTypes {
   static const alert = NotificationType(value: 'alert', priority: 8);
   static const promotion = NotificationType(value: 'promotion', priority: 3);
   static const system = NotificationType(value: 'system', priority: 10);
+  static const ask2Invite = NotificationType(value: 'ask2_invite', priority: 6);
 
   /// Booking app specific (example - not hardcoded in core)
   static NotificationType bookingReminder(Duration offset) => NotificationType(
