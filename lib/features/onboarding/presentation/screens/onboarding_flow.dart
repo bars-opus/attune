@@ -68,6 +68,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     setState(() => _step++);
   }
 
+  /// Couples mode skips straight from mode selection to the terminal
+  /// invite/waiting step — the quiz and anchors are Ask 2 now (reached later
+  /// via Ask2Flow), not inline here. _step must jump past BOTH the quiz and
+  /// anchors slots, not just increment once, since the switch below
+  /// dispatches on _step's exact integer value matching quizStep/anchorsStep.
+  void _skipToTerminalForCouples() {
+    final anchorsStep = widget.requireAuth ? 4 : 3;
+    setState(() => _step = anchorsStep + 1);
+  }
+
   /// A short "ready to move on?" nudge shown before the detailed docs sheet
   /// for a step — so the user opts into reading about what's next (26 quiz
   /// questions, three open anchors) rather than the docs just appearing.
@@ -310,14 +320,18 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               selectedMode: mode,
               onSelect: (value) {
                 setState(() => _mode = value);
-                _goToQuiz();
+                if (value == OnboardingMode.personal) {
+                  _goToQuiz();
+                } else {
+                  _skipToTerminalForCouples();
+                }
               },
             )
             : IncomingInviteStep(
               inviteCode: pendingInviteCode,
               onNext: () {
                 setState(() => _mode = OnboardingMode.couples);
-                _goToQuiz();
+                _skipToTerminalForCouples();
               },
             ),
       _ when _step == quizStep => AttachmentQuizStep(

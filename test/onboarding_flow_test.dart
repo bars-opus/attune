@@ -60,6 +60,40 @@ void main() {
     expect(find.text('ABC123'), findsOneWidget);
     expect(find.text('Are you single or in a relationship?'), findsNothing);
   });
+
+  testWidgets(
+    'couples mode skips the inline quiz and anchors after mode selection',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+
+      await tester.pumpWidget(
+        _TestApp(
+          child: OnboardingFlow(
+            store: OnboardingStore(prefs, scope: OnboardingStore.previewScope),
+            requireAuth: false,
+            onComplete: () {},
+          ),
+        ),
+      );
+
+      expect(find.text('What should Attune call you?'), findsOneWidget);
+      await tester.enterText(find.byType(TextFormField), 'Jordan');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Are you single or in a relationship?'), findsOneWidget);
+      await tester.tap(find.text('In a relationship'));
+      await tester.pumpAndSettle();
+
+      // The inline quiz and anchors must never appear for couples mode —
+      // mode selection should jump straight to the terminal waiting step.
+      expect(find.text('Relationship reflection quiz'), findsNothing);
+      expect(find.text('Anchor 1'), findsNothing);
+      expect(find.text('Are you single or in a relationship?'), findsNothing);
+      expect(find.text('Invite your partner'), findsOneWidget);
+    },
+  );
 }
 
 class _TestApp extends StatelessWidget {
