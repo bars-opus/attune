@@ -101,7 +101,7 @@ class AllLegalDocumentationsScreen extends StatelessWidget {
             avatarRadius: 25.h,
             onTap: () async {
               BottomSheetUtils.showDocumentationBottomSheet(
-                context: context,
+                context: context,maxHeight: 400.h,
                 widget: ConfirmationDialog(
                   type: ConfirmationType.warning,
                   title: 'Are you sure you want to continue',

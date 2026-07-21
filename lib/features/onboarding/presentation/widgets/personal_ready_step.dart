@@ -9,6 +9,7 @@ class PersonalReadyStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return OnboardingStepFrame(
       title: 'Personal mode is ready',
       icon: Icons.self_improvement_outlined,
@@ -33,6 +34,7 @@ class PersonalReadyStep extends StatelessWidget {
           AppButton(
             label: 'Enter Attune',
             onPressed: onFinish,
+            textColor: colorScheme.surface,
             size: ButtonSize.small,
             height: OnboardingTokens.actionButtonHeight.h,
           ),

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/onboarding/presentation/widgets/animated_stepped_progress_bar.dart';
@@ -60,35 +62,30 @@ class OnboardingDeckCard extends StatefulWidget {
 class _OnboardingDeckCardState extends State<OnboardingDeckCard>
     with SingleTickerProviderStateMixin {
   // --- stack geometry (tune to taste) ---
-  static const int _peekCount = 3; // cards showing behind the front one
+  static const int _maxPeekCount = 3; // cards showing behind the front one
   static const double _peekSliver =
       12.0; // vertical sliver each back card shows
   static const double _peekInset = 14.0; // horizontal shrink per card back
 
   // Stable identities for the two card ROLES that ride a SingleChildScrollView
   // (see _cardSurface). Every AnimatedBuilder frame rebuilds the Stack's
-  // children, and the branch that runs (entering / rest / forward / reverse)
-  // changes both the child COUNT and the geometry wrapper (Positioned.fill for
-  // a flying card vs Positioned(height:) for a resting one). Without keys,
+  // children, and the branch that runs (rest / forward / reverse) changes
+  // both the child COUNT and the geometry wrapper (Positioned.fill for a
+  // flying card vs Positioned(height:) for a resting one). Without keys,
   // Flutter reconciles the Stack's children by index+type, so on the frame a
-  // transition ends — entrance completing, or _outgoing being nulled — the
-  // flying card's Positioned.fill element at the tail gets matched into the
-  // resting card's Positioned(height:) at that same index. The shared
-  // SingleChildScrollView render object is then reused with the previous
-  // frame's constraints still in force and painted before it relays out, which
-  // is exactly the "RenderBox was not laid out" cascade. Distinct keys pin each
-  // role to its own element subtree, so a flying scroll view is never fused
-  // into a resting one mid-frame — it cleanly unmounts and the resting one
-  // mounts fresh instead.
+  // transition ends (_outgoing being nulled) the flying card's Positioned.fill
+  // element at the tail gets matched into the resting card's Positioned(height:)
+  // at that same index. The shared SingleChildScrollView render object is then
+  // reused with the previous frame's constraints still in force and painted
+  // before it relays out, which is exactly the "RenderBox was not laid out"
+  // cascade. Distinct keys pin each role to its own element subtree, so a
+  // flying scroll view is never fused into a resting one mid-frame — it
+  // cleanly unmounts and the resting one mounts fresh instead.
   static const ValueKey<String> _frontSlotKey = ValueKey('deck-front-slot');
   static const ValueKey<String> _flyingCardKey = ValueKey('deck-flying-card');
 
   // --- advance motion timing ---
   static const Duration _advanceDuration = Duration(milliseconds: 900);
-  // The entrance runs longer than a normal Next/Back advance — it's a
-  // one-time first impression carrying 4 elements (3 peeks + the front
-  // card), so it gets more room to read as slow and deliberate.
-  static const Duration _entranceDuration = Duration(milliseconds: 900);
 
   // Two curves, because falling and settling want opposite shapes:
   //
@@ -100,17 +97,8 @@ class _OnboardingDeckCardState extends State<OnboardingDeckCard>
   // _settleCurve — anything ARRIVING/RESTING (back cards shifting forward, the
   // incoming card): easeOut so it decelerates and comes to rest smoothly rather
   // than accelerating into its spot (which is what made easeIn feel jittery).
-  // The entrance reuses this exact curve (and the exact _staggered wave) via
-  // the `entering` branch below, which mirrors the REVERSE branch verbatim —
-  // same wave, same settle, no separately-tuned entrance motion.
   static const Curve _settleCurve = Curves.easeOutCubic;
   //
-  // _frontSettleCurve — the entrance's front card specifically: it lands
-  // last and is the biggest, most-watched element, so it gets a heavier
-  // decelerate than the peek cards' recede — noticeably slow and gentle at
-  // the very end instead of just "no overshoot."
-  static const Curve _frontSettleCurve = Curves.easeInOut;
-
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: _advanceDuration,
@@ -125,16 +113,14 @@ class _OnboardingDeckCardState extends State<OnboardingDeckCard>
   /// current front recedes down into the stack, rather than flying off the top.
   bool _reverse = false;
 
-  /// True only for the very first build of the quiz: the whole fanned stack
-  /// rises up from below the screen and settles into place — the same rising
-  /// motion the reverse (Back) transition uses for its incoming card, but
-  /// applied to every card in the stack at once, staggered back-to-front, so
-  /// the deck doesn't just pop into existence.
-  bool _entering = false;
-
   /// Cached from didChangeDependencies — reading MediaQuery in didUpdateWidget /
   /// dispose is unsafe (the element may be deactivating).
   bool _reduceMotion = false;
+
+  /// Peek count as it was BEFORE the transition in progress started, so a
+  /// forward/reverse animation can interpolate from the old depth of stack
+  /// to the new one (see [_peekCountFor]). Equal to the current count at rest.
+  int _peekCountBefore = _maxPeekCount;
 
   @override
   void initState() {
@@ -146,29 +132,12 @@ class _OnboardingDeckCardState extends State<OnboardingDeckCard>
     _controller.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         if (_outgoing != null) setState(() => _outgoing = null);
-        if (_entering) {
-          setState(() => _entering = false);
-          // Hand the controller back to the shorter per-advance timing.
-          _controller.duration = _advanceDuration;
-        }
       }
     });
-    if (widget.enableDeck) {
-      _entering = true;
-      // Deferred so reduceMotionOf(context) (read in didChangeDependencies,
-      // which runs before the first frame) has already been cached.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _reduceMotion) {
-          if (mounted) setState(() => _entering = false);
-          return;
-        }
-        // Entrance plays the identical wave shape the REVERSE branch uses,
-        // just with no receding front card and a longer duration so its
-        // one-time deal-in reads as slow and deliberate.
-        _controller.duration = _entranceDuration;
-        _controller.forward(from: 0);
-      });
-    }
+    // The one-time "deal in" entrance (stack rises from below and fans out
+    // on first paint) was removed — it read as busy/distracting. The deck
+    // now simply appears already settled. Next/Back transitions (the
+    // forward ripple-push and reverse rise) are untouched.
   }
 
   @override
@@ -185,8 +154,30 @@ class _OnboardingDeckCardState extends State<OnboardingDeckCard>
         !_reduceMotion) {
       _reverse = widget.stepIndex < oldWidget.stepIndex;
       _outgoing = oldWidget.child;
+      _peekCountBefore = _peekCountFor(oldWidget);
       _controller.forward(from: 0);
     }
+  }
+
+  /// How many cards peek behind the front one, reflecting questions actually
+  /// left — so the stack visibly thins out and the last question shows an
+  /// empty stack instead of a static prop count. Capped at [_maxPeekCount]
+  /// (never invented above the true remaining count) and at 0 (never
+  /// negative on the final question). Falls back to the max outside the quiz
+  /// (totalSegments == 0) since there's no question count to reflect.
+  ///
+  /// The remaining count is derived from [progressValue], NOT [stepIndex]:
+  /// stepIndex is an opaque card-identity token (OnboardingFlow folds the outer
+  /// step and the question index into one large value so each card flips), so
+  /// `totalSegments - stepIndex` is meaningless. progressValue is the honest
+  /// 1-based position — (questionIndex + 1) / totalSegments — so the current
+  /// 0-based question is `round(progressValue * totalSegments) - 1` and the
+  /// number of questions still ahead is the total minus the 1-based position.
+  int _peekCountFor(OnboardingDeckCard w) {
+    if (w.totalSegments <= 0 || w.progressValue <= 0) return _maxPeekCount;
+    final position = (w.progressValue * w.totalSegments).round();
+    final remaining = w.totalSegments - position;
+    return remaining.clamp(0, _maxPeekCount);
   }
 
   @override
@@ -243,7 +234,10 @@ class _OnboardingDeckCardState extends State<OnboardingDeckCard>
           // Spacing.xl on top pushed the quiz card past the bottom of shorter
           // screens (390x844 overflowed by ~179px). Non-deck steps need no gap
           // at all — the header already separates them.
-          if (widget.enableDeck) Gap((_peekSliver * _peekCount).h),
+          // Reserves headroom for the MAX peek stack regardless of how many
+          // cards are actually showing right now — the count shrinks as
+          // questions run out, but the layout must not jump each time it does.
+          if (widget.enableDeck) Gap((_peekSliver * _maxPeekCount).h),
           Expanded(
             child:
                 widget.enableDeck
@@ -274,54 +268,13 @@ class _OnboardingDeckCardState extends State<OnboardingDeckCard>
             final t = reduceMotion ? 1.0 : _controller.value;
 
             final transitioning = _controller.isAnimating && _outgoing != null;
-            final entering = _entering && _controller.isAnimating;
             final children = <Widget>[];
+            // Current (settled) count reflects the questions actually left.
+            final restCount = _peekCountFor(widget);
 
-            if (entering) {
-              // ENTRANCE: every card starts ENLARGED at the front slot (depth
-              // 0) and shrinks back into its resting stacked position as it
-              // arrives — deepest card recedes first, front card stays put
-              // (never recedes) so it lands last, on top. Reads as cards being
-              // dealt outward from a single point rather than growing in from
-              // nothing.
-              const int dealCount = _peekCount + 1; // peeks + the front card
-
-              for (int depth = _peekCount; depth >= 1; depth--) {
-                final order =
-                    _peekCount - depth; // depth 3 -> 0 (first) ... depth 1 -> 2
-                final local = _dealt(t, order, dealCount);
-                final recede = _settleCurve.transform(local);
-                children.add(
-                  _positionedPeek(
-                    colorScheme: colorScheme,
-                    frontHeight: frontHeight,
-                    // depth 0 (enlarged, front-sized) -> depth (resting spot).
-                    effectiveDepth: depth * recede,
-                    // Depth-based dimming is a RESTING look; animating it
-                    // alongside a big positional travel reads as a fade-in, so
-                    // keep peek cards fully opaque while they arrive.
-                    forceOpaque: true,
-                  ),
-                );
-              }
-
-              // Front card lands LAST, on top of the assembled stack. It rides
-              // the FULL timeline (not a _dealt slice like the peeks) so it
-              // stays visibly slow the whole way rather than rushing through
-              // a short final window — deepest arrives first, then each card
-              // in front of it, then finally the live question eases in.
-              children.add(
-                _flyingFront(
-                  colorScheme: colorScheme,
-                  accentColor: accentColor,
-                  progress: _frontSettleCurve.transform(t).clamp(0.0, 1.0),
-                  exiting: false, // rising up from below
-                  fallDistance: fallDistance,
-                ),
-              );
-            } else if (!transitioning) {
+            if (!transitioning) {
               // At rest: the full fanned stack, back to front.
-              for (int depth = _peekCount; depth >= 1; depth--) {
+              for (int depth = restCount; depth >= 1; depth--) {
                 children.add(
                   _positionedPeek(
                     colorScheme: colorScheme,
@@ -347,10 +300,18 @@ class _OnboardingDeckCardState extends State<OnboardingDeckCard>
               // wavePos 0 = deepest card (moves first), 1 = falling front card
               // (moves last). _staggered() shifts+renormalizes the global t so
               // each card runs its own slice with generous overlap.
-              const int frontWave = _peekCount + 1; // falling card is last
+              //
+              // Loop bound uses the LARGER of before/after so a peek that's
+              // disappearing (fewer questions left after this advance) still
+              // gets rendered receding into the fade rather than popping out
+              // instantly, and one that would newly appear (Back undoing a
+              // near-final question) has a slot to arrive into.
+              final beforeCount = _peekCountBefore;
+              final stackCount = math.max(beforeCount, restCount);
+              final frontWave = stackCount + 1; // falling card is last
 
-              // Back cards: depth _peekCount+1 .. 2 slide forward (depth->depth-1).
-              for (int depth = _peekCount + 1; depth >= 2; depth--) {
+              // Back cards: depth stackCount+1 .. 2 slide forward (depth->depth-1).
+              for (int depth = stackCount + 1; depth >= 2; depth--) {
                 // Deeper card => earlier in the wave (smaller wavePos).
                 final wavePos = (frontWave - depth) / frontWave;
                 final local = _staggered(t, wavePos);
@@ -396,11 +357,13 @@ class _OnboardingDeckCardState extends State<OnboardingDeckCard>
               //
               // wavePos 0 = the rising incoming card (moves first);
               // deeper cards get a larger wavePos (move later).
-              const int backWave = _peekCount + 1;
+              final beforeCount = _peekCountBefore;
+              final stackCount = math.max(beforeCount, restCount);
+              final backWave = stackCount + 1;
 
               // Deepest first for correct paint order, but each samples its own
               // staggered slice. depth d recedes one step: d -> d+1.
-              for (int depth = _peekCount; depth >= 1; depth--) {
+              for (int depth = stackCount; depth >= 1; depth--) {
                 final wavePos = (depth + 1) / backWave; // deeper => later
                 final fwd = _settleCurve.transform(_staggered(t, wavePos));
                 children.add(
@@ -468,24 +431,9 @@ class _OnboardingDeckCardState extends State<OnboardingDeckCard>
     return ((t - start) / windowWidth).clamp(0.0, 1.0);
   }
 
-  /// Sequential deal: maps the global animation time [t] to a per-element
-  /// local 0->1 for element [order] out of [count] (0 = dealt first, count-1
-  /// = dealt last). Unlike [_staggered]'s heavily-overlapping push (right
-  /// for a 2-element ripple where the back card visibly shoves the front one
-  /// off), a 4-element entrance needs each card's arrival to be legible on
-  /// its own — so windows overlap only slightly, enough to feel connected
-  /// (each card is still moving as the next one starts) without the whole
-  /// sequence collapsing into "front card alone, then the rest catch up."
-  double _dealt(double t, int order, int count) {
-    const overlap = 0.3; // fraction of a slot the next card starts early by
-    final slot = 1.0 / (count - (count - 1) * overlap);
-    final start = order * slot * (1.0 - overlap);
-    return ((t - start) / slot).clamp(0.0, 1.0);
-  }
-
   /// An empty decoration card positioned at a (fractional) depth. depth grows
   /// => smaller, higher, dimmer — unless [forceOpaque], used to keep cards
-  /// fully visible while they're still travelling into place (see entrance).
+  /// fully visible while they're still travelling into place.
   Widget _positionedPeek({
     required ColorScheme colorScheme,
     required double frontHeight,
@@ -510,9 +458,9 @@ class _OnboardingDeckCardState extends State<OnboardingDeckCard>
     required bool forceOpaque,
     Key? key,
   }) {
-    // Wide enough to cover the entrance's start depth (depth + 3 travel units)
-    // without clipping the beginning of its motion.
-    final d = effectiveDepth.clamp(0.0, (_peekCount + 4).toDouble());
+    // Wide enough to cover a card animating past the max peek depth (e.g. a
+    // peek fading out because fewer questions remain) without clipping it.
+    final d = effectiveDepth.clamp(0.0, (_maxPeekCount + 4).toDouble());
     final opacity = forceOpaque ? 1.0 : (1.0 - 0.22 * d).clamp(0.0, 1.0);
     return Positioned(
       key: key,
@@ -614,7 +562,7 @@ class _OnboardingDeckCardState extends State<OnboardingDeckCard>
     // overflow steps that rely on a Spacer.
     return CardInkWell(
       elevation: ElevationTokens.xl,
-
+    
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
         // Step content pins its action button to the bottom with a Spacer, which

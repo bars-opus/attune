@@ -12,10 +12,11 @@ INSERT INTO public.relationships (id, user_a, user_b, status, started_at) VALUES
    '22222222-2222-2222-2222-222222222222',
    'active', now()::date);
 
-INSERT INTO public.messages (relationship_id, sender_id, content, sentiment)
+INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content, sentiment)
 VALUES (
   '33333333-3333-3333-3333-333333333333',
   '11111111-1111-1111-1111-111111111111',
+  gen_random_uuid(),
   'hello',
   'positive'
 );
@@ -30,10 +31,11 @@ END $$;
 DO $$
 BEGIN
   BEGIN
-    INSERT INTO public.messages (relationship_id, sender_id, content, sentiment)
+    INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content, sentiment)
     VALUES (
       '33333333-3333-3333-3333-333333333333',
       '11111111-1111-1111-1111-111111111111',
+      gen_random_uuid(),
       'bad',
       'ecstatic'
     );

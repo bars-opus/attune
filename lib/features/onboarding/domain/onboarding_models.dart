@@ -34,7 +34,9 @@ class OnboardingQuestion {
   /// Describes the SITUATION only. It must never tell the user what an answer
   /// says about them, name an attachment style, or imply a "better" answer —
   /// scoring does that, and per ATTUNE_MASTER_SPEC the interpretive layer is
-  /// clinically gated (ATTUNE_CLINICAL.md Section 12).
+  /// clinically gated (ATTUNE_CLINICAL.md Section 3.3's "what the AI is never
+  /// allowed to conclude" list; Section 12 tracks the still-open instrument
+  /// choice, not this wording rule).
   final String? description;
 }
 
@@ -174,8 +176,49 @@ const personalAnchorPrompts = <String>[
   'What does a steady relationship feel like to you?',
 ];
 
+/// Three example answers per [personalAnchorPrompts] entry, same index order.
+/// Shown as a bulleted hint under the field so an empty box never has to
+/// carry the full weight of "what kind of answer goes here."
+const personalAnchorExamples = <List<String>>[
+  [
+    'I shut down instead of saying what\'s bothering me',
+    'I want to know why I pick partners who feel unavailable',
+    'I\'m not sure if I actually like being alone or just fear closeness',
+  ],
+  [
+    'Stop assuming they\'ll leave before giving them a reason to stay',
+    'Speak up earlier instead of waiting until I\'m already resentful',
+    'Let someone in slower, but more honestly',
+  ],
+  [
+    'Being able to disagree without either of us panicking',
+    'Knowing where I stand even on a quiet, uneventful day',
+    'Coming back to each other after a bad moment, not just avoiding it',
+  ],
+];
+
 const relationshipAnchorPrompts = <String>[
   'What\'s one thing you genuinely admire about your partner?',
   'What\'s one thing you\'re hoping this relationship gives you more of?',
   'What\'s one pattern from past relationships you\'re trying to do differently?',
+];
+
+/// Three example answers per [relationshipAnchorPrompts] entry, same index
+/// order. See [personalAnchorExamples] for why these exist.
+const relationshipAnchorExamples = <List<String>>[
+  [
+    'How they stay calm when I\'m spiraling',
+    'The way they remember small things I mentioned once',
+    'Their patience when I need time before I can talk about something',
+  ],
+  [
+    'More reassurance without having to ask for it',
+    'Feeling like a team when things get hard, not opponents',
+    'More easy, unplanned time together',
+  ],
+  [
+    'Bringing up problems earlier instead of letting them build up',
+    'Not going quiet when I\'m actually hurt',
+    'Trusting instead of needing constant proof',
+  ],
 ];

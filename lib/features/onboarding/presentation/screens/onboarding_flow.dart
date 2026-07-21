@@ -3,6 +3,7 @@ import 'package:attune/features/auth/presentation/passwordless_auth_step.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_submission_service.dart';
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
+import 'package:attune/features/onboarding/presentation/data/anchors_docs.dart';
 import 'package:attune/features/onboarding/presentation/data/attachment_quiz_docs.dart';
 import 'package:attune/features/onboarding/presentation/widgets/anchors_step.dart';
 import 'package:attune/features/onboarding/presentation/widgets/attachment_quiz_step.dart';
@@ -67,11 +68,57 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     setState(() => _step++);
   }
 
+  /// A short "ready to move on?" nudge shown before the detailed docs sheet
+  /// for a step — so the user opts into reading about what's next (26 quiz
+  /// questions, three open anchors) rather than the docs just appearing.
+  /// Returns false if the user backs out, in which case the caller must not
+  /// proceed to the docs sheet or advance the step.
+  Future<bool> _confirmMoveOn({
+    required String nextLabel,
+    required String message,
+    required String confirmText,
+    required IconData icon,
+  }) async {
+    // showDocumentationBottomSheet returns Future<void> — it never surfaces
+    // what the user tapped — so confirmation is captured via the dialog's
+    // own callbacks instead of a pop value.
+    var confirmed = false;
+    await BottomSheetUtils.showDocumentationBottomSheet(
+      context: context,
+      maxHeight: 400.h,
+      showButtons: false,
+      widget: ConfirmationDialog(
+        icon: icon,
+        type: ConfirmationType.info,
+        title: 'Up next: \n$nextLabel',
+        message: message,
+        confirmText: confirmText,
+        cancelText: 'Not yet',
+        onConfirm: () => confirmed = true,
+      ),
+    );
+    return confirmed;
+  }
+
   /// Advances into the quiz, but first explains what it is and why it
   /// matters — otherwise 26 rating questions land with no context.
   Future<void> _goToQuiz() async {
+    final proceed = await _confirmMoveOn(
+      nextLabel: 'Attachment quiz',
+      message:
+          'Up next is the attachment quiz — 26 short questions about how you relate to others. It takes about 3-5 minutes.',
+      confirmText: 'Understand the quiz',
+      icon: Icons.psychology_outlined,
+    );
+    if (!mounted || !proceed) return;
+
     final colorScheme = Theme.of(context).colorScheme;
     final docs = AttachmentQuizDocs(mode: _mode);
+    // Tapping outside the sheet dismisses it (isDismissible defaults true)
+    // without ever running the button's onPressed — the await below resolves
+    // either way, so advancing must be gated on an explicit tap, not on the
+    // sheet merely closing.
+    var startQuiz = false;
     await BottomSheetUtils.showDocumentationBottomSheet(
       context: context,
       showButtons: false,
@@ -86,16 +133,67 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           ),
           Gap(Spacing.md.h),
           AppButton(
-             textColor: colorScheme.surface,
-            label: 'Continue to quiz',
-            onPressed: () => Navigator.of(context).pop(),
+            textColor: colorScheme.surface,
+            label: 'Start quiz',
+            onPressed: () {
+              startQuiz = true;
+              Navigator.of(context).pop();
+            },
             size: ButtonSize.small,
             height: OnboardingTokens.actionButtonHeight.h,
           ),
         ],
       ),
     );
-    if (!mounted) return;
+    if (!mounted || !startQuiz) return;
+    _next();
+  }
+
+  /// Advances into the anchors step, but first explains what an anchor is —
+  /// otherwise three open-ended questions land right after the quiz with no
+  /// context for why the format suddenly changed.
+  Future<void> _goToAnchors() async {
+    final proceed = await _confirmMoveOn(
+      nextLabel: 'Anchors',
+      message:
+          'Up next are your anchors — three short questions you answer in your own words. It takes about 2-3 minutes.',
+      confirmText: 'Understand anchors',
+      icon: Icons.anchor_outlined,
+    );
+    if (!mounted || !proceed) return;
+
+    final colorScheme = Theme.of(context).colorScheme;
+    final docs = AnchorsDocs(mode: _mode);
+    // See _goToQuiz: dismissing via tap-outside must not advance — only an
+    // explicit tap on the button should.
+    var startAnchors = false;
+    await BottomSheetUtils.showDocumentationBottomSheet(
+      context: context,
+      showButtons: false,
+      widget: Column(
+        children: [
+          Expanded(
+            child: DocumentationTabView(
+              documentation: docs.getSections(context),
+              faqs: docs.getFAQs(context),
+              showDocumentationFirst: true,
+            ),
+          ),
+          Gap(Spacing.md.h),
+          AppButton(
+            textColor: colorScheme.surface,
+            label: 'Start anchors',
+            onPressed: () {
+              startAnchors = true;
+              Navigator.of(context).pop();
+            },
+            size: ButtonSize.small,
+            height: OnboardingTokens.actionButtonHeight.h,
+          ),
+        ],
+      ),
+    );
+    if (!mounted || !startAnchors) return;
     _next();
   }
 
@@ -232,7 +330,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             _questionIndex == 0 ? null : () => setState(() => _questionIndex--),
         onNext: () {
           if (_questionIndex == attachmentQuestions.length - 1) {
-            _next();
+            _goToAnchors();
           } else {
             setState(() => _questionIndex++);
           }
@@ -257,13 +355,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     // One card-identity per visible card: the quiz stays on a single outer
     // _step across all 26 questions, so its sub-index is folded in here too —
     // otherwise only the first quiz question would ever play the flip.
-    final cardKey = _step == quizStep ? quizStep * 1000 + _questionIndex : _step;
+    final cardKey =
+        _step == quizStep ? quizStep * 1000 + _questionIndex : _step;
 
     final accent = switch (mode) {
       OnboardingMode.personal => OnboardingDeckAccent.single,
       OnboardingMode.couples ||
-      OnboardingMode.couplesPending =>
-        OnboardingDeckAccent.couples,
+      OnboardingMode.couplesPending => OnboardingDeckAccent.couples,
       null => OnboardingDeckAccent.neutral,
     };
 

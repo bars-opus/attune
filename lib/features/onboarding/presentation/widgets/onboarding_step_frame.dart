@@ -13,12 +13,13 @@ class OnboardingStepFrame extends StatelessWidget {
     required this.subtitle,
     required this.child,
     this.icon = Icons.people,
-    this.progressValue = 0,    this.totalSegments = 0,
-
+    this.progressValue = 0,
+    this.totalSegments = 0,
   });
 
   final String title;
-  final String subtitle;  final int totalSegments;
+  final String subtitle;
+  final int totalSegments;
 
   final double progressValue;
   final Widget child;
@@ -35,7 +36,7 @@ class OnboardingStepFrame extends StatelessWidget {
       subtitle: subtitle,
       icon: icon,
       progressValue: progressValue,
-      totalSegments:totalSegments,
+      totalSegments: totalSegments,
       stepIndex: scope.cardKey,
       accent: scope.accent,
       enableDeck: scope.enableDeck,

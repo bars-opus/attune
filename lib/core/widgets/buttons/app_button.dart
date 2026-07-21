@@ -29,6 +29,7 @@ class AppButton extends StatelessWidget {
   final IconData? prefixIcon;
   final Color? prefixIconColor;
   final double? elevation;
+  final bool animateButton;
 
   const AppButton({
     super.key,
@@ -49,6 +50,7 @@ class AppButton extends StatelessWidget {
     this.outlineColor,
     this.textColor,
     this.center = true,
+    this.animateButton = true,
     this.prefixIcon,
     this.elevation,
     this.prefixIconColor,
@@ -61,15 +63,21 @@ class AppButton extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return AnimatedScaleFade(
-      duration: const Duration(milliseconds: 500),
-      curve: Curves.easeOutBack,
-      child: SizedBox(
-        width: width ?? double.infinity,
-        height: height ?? _getHeight(size),
-        child: _buildButton(context, colorScheme, textTheme),
-      ),
-    );
+    return animateButton
+        ? AnimatedScaleFade(
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeOutBack,
+          child: SizedBox(
+            width: width ?? double.infinity,
+            height: height ?? _getHeight(size),
+            child: _buildButton(context, colorScheme, textTheme),
+          ),
+        )
+        : SizedBox(
+          width: width ?? double.infinity,
+          height: height ?? _getHeight(size),
+          child: _buildButton(context, colorScheme, textTheme),
+        );
   }
 
   Widget _buildButton(
@@ -346,7 +354,12 @@ class AppButton extends StatelessWidget {
 
   Color _getTextColor(ColorScheme colorScheme) {
     if (customColor != null) {
-      return colorScheme.onBackground;
+      // Was colorScheme.onBackground — a fixed theme value with no relation
+      // to customColor, so text could end up low-contrast (or the wrong way
+      // round entirely) depending on theme/customColor combination. Match
+      // _getForegroundColor's full black/white contrast estimate instead —
+      // this is what the Text widget actually paints with.
+      return _getForegroundColor(colorScheme);
     }
 
     return switch (variant) {

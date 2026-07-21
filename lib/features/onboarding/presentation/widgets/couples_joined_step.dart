@@ -8,7 +8,7 @@ class CouplesJoinedStep extends StatelessWidget {
   final VoidCallback onFinish;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) { final colorScheme = Theme.of(context).colorScheme;
     return OnboardingStepFrame(
       title: 'You are connected',
       icon: Icons.favorite_outlined,
@@ -34,7 +34,7 @@ class CouplesJoinedStep extends StatelessWidget {
           AppButton(
             label: 'Enter Attune',
             onPressed: onFinish,
-            size: ButtonSize.small,
+            size: ButtonSize.small, textColor: colorScheme.surface,
             height: OnboardingTokens.actionButtonHeight.h,
           ),
         ],

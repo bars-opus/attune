@@ -80,7 +80,13 @@ class AppTheme {
       primary: LightColors.primary,
       secondary: LightColors.primaryLight,
       surface: LightColors.surface,
-      onPrimary: LightColors.textPrimary,
+      // primary (#4F9F3A) is a mid-tone green — textPrimary (near-black) on
+      // top of it is low-contrast. White reads correctly against it, the
+      // same way dark mode's near-black onPrimary reads correctly against
+      // its pale light-green primary.
+      onPrimary: LightColors.white,
+      // secondary is primaryLight (#B6FD9D, pale) — near-black still reads
+      // correctly there, unlike onPrimary.
       onSecondary: LightColors.textPrimary,
       onSurface: LightColors.textPrimary,
       error: LightColors.error,
@@ -118,7 +124,8 @@ class AppTheme {
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: LightColors.primary,
-        foregroundColor: LightColors.textPrimary,
+        // Matches colorScheme.onPrimary above — white on the mid-tone green.
+        foregroundColor: LightColors.white,
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
         shape: const StadiumBorder(),

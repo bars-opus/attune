@@ -191,8 +191,8 @@ class SelectionTile extends StatelessWidget {
                           // Subtitle uses primary color when selected for emphasis
                           color:
                               isSelected
-                                  ? colorScheme.primary
-                                  : colorScheme.onSurfaceVariant,
+                                  ? colorScheme.onBackground
+                                  : colorScheme.onSurface,
                         ),
                       ),
                     ],

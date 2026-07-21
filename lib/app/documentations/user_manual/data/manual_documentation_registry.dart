@@ -11,6 +11,7 @@ import 'package:attune/app/documentations/user_manual/data/getting_started_docs.
 import 'package:attune/app/documentations/user_manual/data/testing_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/ui_components_docs.dart';
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart';
+import 'package:attune/features/onboarding/presentation/data/anchors_docs.dart';
 import 'package:attune/features/onboarding/presentation/data/attachment_quiz_docs.dart';
 
 // lib/core/documentation/documentation_registry.dart
@@ -36,6 +37,7 @@ class DocumentationRegistry {
     registerModule(TestingDocs());
     registerModule(UIComponentsDocs());
     registerModule(AttachmentQuizDocs());
+    registerModule(AnchorsDocs());
 
     // Add more as needed
   }
