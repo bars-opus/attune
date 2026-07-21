@@ -30,24 +30,27 @@ class AnchorsStep extends StatelessWidget {
       subtitle: 'These answers give Attune its first real context.',
       child: Column(
         children: [
-          Expanded(
-            child: ListView.separated(
-              itemCount: prompts.length,
-              separatorBuilder: (_, __) => Gap(Spacing.md.h),
-              itemBuilder: (context, index) {
-                return AppTextFormField(
-                  controller: controllers[index],
-                  label: 'Anchor ${index + 1}',
-                  hintText: prompts[index],
-                  maxLines: 4,
-                  textInputAction:
-                      index == prompts.length - 1
-                          ? TextInputAction.done
-                          : TextInputAction.next,
-                );
-              },
-            ),
-          ),
+          // A plain (non-scrolling, shrink-wrapping) list: the card surface
+          // already wraps this whole child in a SingleChildScrollView, so the
+          // fields scroll with the rest of the content. A nested scrollable
+          // (ListView) or an Expanded here would demand a bounded height the
+          // scroll fallback never provides — that was the MISSING-constraints
+          // crash. Every sibling step follows this same fixed-Gap pattern.
+          ...List.generate(prompts.length, (index) {
+            return Padding(
+              padding: EdgeInsets.only(bottom: index == prompts.length - 1 ? 0 : Spacing.md.h),
+              child: AppTextFormField(
+                controller: controllers[index],
+                label: 'Anchor ${index + 1}',
+                hintText: prompts[index],
+                maxLines: 4,
+                textInputAction:
+                    index == prompts.length - 1
+                        ? TextInputAction.done
+                        : TextInputAction.next,
+              ),
+            );
+          }),
           Gap(Spacing.xl.h),
           AppButton(
             label: 'Continue',
