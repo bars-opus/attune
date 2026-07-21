@@ -23,10 +23,9 @@ class CouplesJoinedStep extends StatelessWidget {
             subtitle: 'This account is now attached to the relationship.',
           ),
           const OnboardingInfoTile(
-            icon: Icons.edit_note_outlined,
-            title: 'Your context is ready',
-            subtitle:
-                'Your reflections and anchors can now support shared context.',
+            icon: Icons.chat_bubble_outline,
+            title: 'Your shared space is open',
+            subtitle: 'Your private chat is ready for the two of you.',
           ),
           // Fixed gap rather than Spacer: Spacer needs a bounded height, which
           // conflicts with the card.s scroll fallback on short screens.

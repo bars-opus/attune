@@ -30,8 +30,10 @@ class OnboardingModeStep extends StatelessWidget {
           Gap(Spacing.smMd.h),
           OnboardingChoiceButton(
             title: 'In a relationship',
+            // Decision 29: nothing a couples user sees before chat unlocks may
+            // hint at analysis/insights — sell only the private shared space.
             subtitle:
-                'Invite your partner and unlock shared insights to build a stronger bond.',
+                'Invite your partner into a private space for just the two of you.',
             selected: selectedMode == OnboardingMode.couples,
             onTap: () => onSelect(OnboardingMode.couples),
           ),

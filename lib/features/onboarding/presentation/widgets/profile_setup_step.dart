@@ -19,7 +19,7 @@ class ProfileSetupStep extends StatelessWidget {
       title: 'What should Attune call you?',
       icon: Icons.badge_outlined,
       subtitle:
-          'Use the name you want to see in chat and insights. Opinions and forums stay anonymous',
+          'Use the name you want to see in chat. Opinions and forums stay anonymous.',
       child: Column(
         children: [
           AppTextFormField(

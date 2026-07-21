@@ -69,13 +69,14 @@ class _CouplesWaitingStepState extends State<CouplesWaitingStep> {
         children: [
           const OnboardingInfoTile(
             icon: Icons.check_circle_outline,
-            title: 'Reflection quiz complete',
-            subtitle: 'Your first relationship context is ready.',
+            title: 'Your profile is ready',
+            subtitle: 'You are all set on your side.',
           ),
           const OnboardingInfoTile(
-            icon: Icons.check_circle_outline,
-            title: 'Relationship anchors complete',
-            subtitle: 'Your first shared context is saved locally.',
+            icon: Icons.favorite_border,
+            title: 'Your space is being set up',
+            subtitle:
+                'Once your partner joins, your private chat opens for the two of you.',
           ),
           if (!widget.inviteService.isConfigured)
             const OnboardingInfoTile(
