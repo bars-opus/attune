@@ -145,7 +145,7 @@ async function sendAsk2Notification(
       notification_type: "ask2_invite",
       scheduled_for: new Date().toISOString(),
       status: "pending",
-      metadata: data,
+      metadata: { title, body, ...data },
     });
     if (scheduledError) throw scheduledError;
   }
