@@ -18,7 +18,6 @@ class DiscoverFeedScreen extends ConsumerStatefulWidget {
 }
 
 class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
-  final ScrollController _scrollController = ScrollController();
   static const _anonymousPreviewOpinions = <({String status, String content})>[
     (
       status: 'Taken',
@@ -37,28 +36,26 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
     ),
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    // Guests are shown a static local preview (below) and never a live feed —
-    // loadMore must not fire discoverFeedProvider's backend RPC for them. It is
-    // granted to `authenticated` only, so an anon call 42501s (this is what
-    // produced the "error while scrolling Discover" report for a guest).
-    if (ref.read(currentUserIdProvider) == null) return;
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+  // Guests are shown a static local preview (below) and never a live feed —
+  // loadMore must not fire discoverFeedProvider's backend RPC for them. It is
+  // granted to `authenticated` only, so an anon call 42501s (this is what
+  // produced the "error while scrolling Discover" report for a guest).
+  //
+  // This reads from the ScrollNotification bubbling through
+  // NotificationListener below (metrics.pixels/maxScrollExtent), not a
+  // dedicated ScrollController. These CustomScrollViews live inside
+  // OpinionsTab's NestedScrollView body, which supplies scroll position via
+  // PrimaryScrollController — giving them an explicit controller instead
+  // would make each one scroll in total isolation from that ambient
+  // controller, so the outer AppBar/tab-bar header would never see the
+  // feed's scroll and would stop collapsing/returning with it.
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (ref.read(currentUserIdProvider) != null &&
+        notification.metrics.pixels >=
+            notification.metrics.maxScrollExtent - 200) {
       ref.read(discoverFeedProvider.notifier).loadMore();
     }
+    return false;
   }
 
   @override
@@ -77,21 +74,24 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
       onNotification:
           (notification) =>
               NavVisibilityScrollHandler.handle(ref, notification),
-      child: RefreshIndicator(
-        onRefresh: () async {
-          if (!isAuthenticated) return;
-          ref.invalidate(discoverFeedProvider);
-          await ref.read(discoverFeedProvider.future);
-        },
-        child:
-            !isAuthenticated || opinionsAsync == null
-                ? _buildAnonymousPreviewSliver(context)
-                : opinionsAsync.when(
-                  loading:
-                      () => const Center(child: CircularProgressIndicator()),
-                  error: (error, stack) => ErrorStateWidget.from(error),
-                  data: (opinions) => _buildFeedSliver(context, opinions),
-                ),
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _handleScrollNotification,
+        child: RefreshIndicator(
+          onRefresh: () async {
+            if (!isAuthenticated) return;
+            ref.invalidate(discoverFeedProvider);
+            await ref.read(discoverFeedProvider.future);
+          },
+          child:
+              !isAuthenticated || opinionsAsync == null
+                  ? _buildAnonymousPreviewSliver(context)
+                  : opinionsAsync.when(
+                    loading:
+                        () => const Center(child: CircularProgressIndicator()),
+                    error: (error, stack) => ErrorStateWidget.from(error),
+                    data: (opinions) => _buildFeedSliver(context, opinions),
+                  ),
+        ),
       ),
     );
   }
@@ -106,7 +106,6 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
       // shorter than the viewport, and also lets RefreshIndicator's
       // pull-to-refresh work.
       return CustomScrollView(
-        controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverOverlapInjector(
@@ -140,7 +139,6 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
 
     final hasMore = ref.read(discoverFeedProvider.notifier).hasMore;
     return CustomScrollView(
-      controller: _scrollController,
       // Same reason as the empty-state CustomScrollView above: a short list
       // (1-2 opinions) has no overflow to scroll, so the default physics
       // never generates a scroll notification at all — ScrollAwareFab's
@@ -193,7 +191,6 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
     final textTheme = Theme.of(context).textTheme;
 
     return CustomScrollView(
-      controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverOverlapInjector(

@@ -22,29 +22,8 @@ class FollowingFeedScreen extends ConsumerStatefulWidget {
 
 class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
     with AutomaticKeepAliveClientMixin {
-  final ScrollController _scrollController = ScrollController();
-
   @override
   bool get wantKeepAlive => true;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
-      // Load more if pagination is needed (future enhancement)
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +60,6 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
 
   Widget _buildUnauthenticatedSliver(BuildContext context) {
     return CustomScrollView(
-      controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverOverlapInjector(
@@ -118,7 +96,6 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
       // still fires scroll notifications from a small drag even though the
       // content is shorter than the viewport.
       return CustomScrollView(
-        controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverOverlapInjector(
@@ -139,7 +116,6 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
     }
 
     return CustomScrollView(
-      controller: _scrollController,
       // See discover_feed_screen.dart's matching comment: a short list has no
       // overflow, so default physics never fires a scroll notification,
       // leaving ScrollAwareFab with nothing to trigger its reveal.
