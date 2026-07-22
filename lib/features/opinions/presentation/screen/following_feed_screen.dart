@@ -60,6 +60,10 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
       floatingActionButton:
           isAuthenticated
               ? FloatingActionButton(
+                // See discover_feed_screen.dart's matching comment: sibling
+                // tabs are kept alive together, so default-tagged FABs
+                // collide. Distinct tags disambiguate them.
+                heroTag: 'opinions-following-fab',
                 onPressed: () async {
                   final needsRefresh = await Navigator.push(
                     context,
@@ -107,25 +111,11 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
                   data: (opinions) {
                     if (opinions.isEmpty) {
                       return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.person_add_outlined,
-                              size: 64,
-                              color: Colors.grey,
-                            ),
-                            Gap(Spacing.lg.h),
-                            Text(
-                              'You are not following anyone yet',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            Gap(Spacing.sm.h),
-                            Text(
+                        child: EmptyStateWidget(
+                          icon: Icons.person_add_outlined,
+                          title: 'You are not following anyone yet',
+                          subtitle:
                               'Head to Discover to find voices you connect with',
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
                         ),
                       );
                     }

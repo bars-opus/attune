@@ -76,6 +76,12 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
       floatingActionButton:
           isAuthenticated
               ? FloatingActionButton(
+                // Discover and Following are sibling tabs kept alive
+                // simultaneously (AutomaticKeepAliveClientMixin), so their
+                // default-tagged FABs collide as soon as both are mounted —
+                // "multiple heroes share the same tag" the instant either
+                // pushes a route. Distinct tags disambiguate them.
+                heroTag: 'opinions-discover-fab',
                 onPressed: () async {
                   final needsRefresh = await Navigator.push(
                     context,
@@ -107,6 +113,7 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
                     if (opinions.isEmpty) {
                       return Center(
                         child: EmptyStateWidget(
+                          icon: Icons.rate_review_outlined,
                           title: 'No opinions yet',
                           subtitle: 'Be the first to share your thoughts',
                           onAction: () async {

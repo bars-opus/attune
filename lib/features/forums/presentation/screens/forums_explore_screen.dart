@@ -32,6 +32,10 @@ class _ForumsExploreScreenState extends ConsumerState<ForumsExploreScreen> {
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
+        // See discover_feed_screen.dart's matching comment — sibling tabs
+        // under the Opinions shell can be kept alive together, so every FAB
+        // in that tab group needs a distinct tag to avoid a Hero collision.
+        heroTag: 'forums-explore-fab',
         onPressed: () async {
           if (!isAuthenticated) {
             context.showInfoSnackbar(
