@@ -50,7 +50,17 @@ class DiscoverFeedNotifier extends AsyncNotifier<List<OpinionModel>> {
   Future<List<OpinionModel>> build() async {
     _currentPage = 0;
     _hasMore = true;
-    return await _loadPage(0);
+    final firstPage = await _loadPage(0);
+    // A short first page (fewer than pageSize) means there's nothing more to
+    // load — without this, hasMore stayed true forever whenever the whole
+    // feed fit on one page, so the ListView kept rendering a trailing
+    // "loading" spinner that could never resolve (loadMore() only updates
+    // _hasMore on a SECOND page fetch, which a short list never triggers:
+    // there's nothing to scroll to reach it).
+    if (firstPage.length < _pageSize) {
+      _hasMore = false;
+    }
+    return firstPage;
   }
 
   Future<List<OpinionModel>> _loadPage(int page) async {
