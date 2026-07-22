@@ -41,21 +41,27 @@ class _ContributingForumsScreenState
         onNotification:
             (notification) =>
                 NavVisibilityScrollHandler.handle(ref, notification),
-        child: ListView(
-          children: [
-            Padding(
-              padding: EdgeInsets.all(Spacing.lg.w),
-              child: SemanticContainerWidget(
-                title: 'Contributing is account-only',
-                content:
-                    'Guest browsing stays in Explore. Continue with phone number from Chat to vote, join debates, and track your contributing forums.',
-                icon: Icons.lock_outline,
-                backgroundColor: Theme.of(
-                  context,
-                ).colorScheme.primary.withValues(alpha: 0.1),
-                borderColor: Theme.of(context).colorScheme.primary,
-                iconColor: Theme.of(context).colorScheme.primary,
-                textTheme: textTheme,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverOverlapInjector(
+              handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(Spacing.lg.w),
+                child: SemanticContainerWidget(
+                  title: 'Contributing is account-only',
+                  content:
+                      'Guest browsing stays in Explore. Continue with phone number from Chat to vote, join debates, and track your contributing forums.',
+                  icon: Icons.lock_outline,
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.1),
+                  borderColor: Theme.of(context).colorScheme.primary,
+                  iconColor: Theme.of(context).colorScheme.primary,
+                  textTheme: textTheme,
+                ),
               ),
             ),
           ],
@@ -77,47 +83,70 @@ class _ContributingForumsScreenState
           error: (error, stack) => ErrorStateWidget.from(error),
           data: (forums) {
             if (forums.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.forum_outlined, size: 64, color: Colors.grey),
-                    Gap(Spacing.lg.h),
-                    Text(
-                      'No contributions yet',
-                      style: textTheme.titleMedium,
+              return CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverOverlapInjector(
+                    handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+                  ),
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.forum_outlined, size: 64, color: Colors.grey),
+                          Gap(Spacing.lg.h),
+                          Text(
+                            'No contributions yet',
+                            style: textTheme.titleMedium,
+                          ),
+                          Gap(Spacing.sm.h),
+                          Text(
+                            'Vote on a topic or join a debate\nto see it here',
+                            textAlign: TextAlign.center,
+                          ),
+                          Gap(Spacing.lg.h),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              // Switch to Explore tab
+                              // This would need a tab controller reference
+                            },
+                            icon: const Icon(Icons.explore),
+                            label: const Text('Explore forums'),
+                          ),
+                        ],
+                      ),
                     ),
-                    Gap(Spacing.sm.h),
-                    Text(
-                      'Vote on a topic or join a debate\nto see it here',
-                      textAlign: TextAlign.center,
-                    ),
-                    Gap(Spacing.lg.h),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        // Switch to Explore tab
-                        // This would need a tab controller reference
-                      },
-                      icon: const Icon(Icons.explore),
-                      label: const Text('Explore forums'),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               );
             }
 
-            return ListView.builder(
-              padding: EdgeInsets.all(Spacing.md.w),
-              itemCount: forums.length,
-              itemBuilder: (context, index) {
-                final forum = forums[index];
-                final userSide =
-                    forum.userVote != null
-                        ? (forum.userVote == 'up' ? 'FOR' : 'AGAINST')
-                        : (forum.userSide ?? 'Browsing');
+            return CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverOverlapInjector(
+                  handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+                ),
+                SliverPadding(
+                  padding: EdgeInsets.all(Spacing.md.w),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final forum = forums[index];
+                        final userSide =
+                            forum.userVote != null
+                                ? (forum.userVote == 'up' ? 'FOR' : 'AGAINST')
+                                : (forum.userSide ?? 'Browsing');
 
-                return ForumCard(forum: forum, userSide: userSide);
-              },
+                        return ForumCard(forum: forum, userSide: userSide);
+                      },
+                      childCount: forums.length,
+                    ),
+                  ),
+                ),
+              ],
             );
           },
         ),
