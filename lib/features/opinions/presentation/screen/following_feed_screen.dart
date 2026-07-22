@@ -128,17 +128,22 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
           delegate: SliverChildBuilderDelegate(
             (context, index) {
               final opinion = opinions[index];
+              void openOpinion() {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CommentThreadScreen(
+                      opinionId: opinion.id,
+                      opinion: opinion,
+                    ),
+                  ),
+                );
+              }
+
               return OpinionCard(
                 opinion: opinion,
-                onCommentTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder:
-                          (_) => CommentThreadScreen(opinionId: opinion.id),
-                    ),
-                  );
-                },
+                onOpinionTap: openOpinion,
+                onCommentTap: openOpinion,
                 onProfileTap: () {
                   Navigator.push(
                     context,

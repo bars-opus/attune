@@ -112,6 +112,14 @@ class InfoRowWidget extends StatelessWidget {
   /// When provided, wraps the row in an InkWell with Material Design ripple feedback.
   final VoidCallback? onTap;
 
+  /// Optional callback triggered when only the leading icon/avatar is tapped.
+  ///
+  /// When provided, the leading icon/avatar becomes its own tap target
+  /// (e.g. to open a profile) separate from [onTap] on the rest of the row.
+  /// When `null`, the avatar has no tap behavior of its own and taps
+  /// fall through to [onTap] as before.
+  final VoidCallback? onAvatarTap;
+
   /// Custom widget displayed at the trailing edge of the row.
   ///
   /// Overrides automatic trailing generation (arrows, toggles). Use for badges,
@@ -231,6 +239,7 @@ class InfoRowWidget extends StatelessWidget {
     this.backgroundColor,
     this.avatarRadius,
     this.onTap,
+    this.onAvatarTap,
     this.trailing,
     this.showTrailingArrow = false,
     this.showAvatar = true,
@@ -400,7 +409,7 @@ if(bottomWidget != null)
     final size = iconSize ?? (showAvatar ? 20.h : 24.h);
     final notAvatarImage = isNotAvatarImage ?? false;
 
-    return imageUrl != null
+    final avatar = imageUrl != null
         ? notAvatarImage
             ? SizedBox(
               width: avatarRadius ?? 45.h,
@@ -426,5 +435,15 @@ if(bottomWidget != null)
           avatarRadiusSize: avatarRadius,
           circularRadius: circularRadius ?? 100.r,
         );
+
+    if (onAvatarTap == null) return avatar;
+
+    // Own GestureDetector so the avatar's tap is captured before it can
+    // bubble to the row-level InkWell/onTap wrapping the whole row.
+    return GestureDetector(
+      onTap: onAvatarTap,
+      behavior: HitTestBehavior.opaque,
+      child: avatar,
+    );
   }
 }

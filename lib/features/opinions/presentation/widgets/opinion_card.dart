@@ -10,6 +10,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 class OpinionCard extends ConsumerWidget {
   final OpinionModel opinion;
   final bool showFollowButton;
+  final VoidCallback? onOpinionTap;
   final VoidCallback? onCommentTap;
   final VoidCallback? onProfileTap;
 
@@ -17,6 +18,7 @@ class OpinionCard extends ConsumerWidget {
     super.key,
     required this.opinion,
     this.showFollowButton = true,
+    this.onOpinionTap,
     this.onCommentTap,
     this.onProfileTap,
   });
@@ -37,7 +39,7 @@ class OpinionCard extends ConsumerWidget {
     final timeAgo = _formatTimeAgo(opinion.createdAt);
 
     return GestureDetector(
-      onTap: onProfileTap,
+      onTap: onOpinionTap,
       behavior: HitTestBehavior.opaque,
       child: InfoRowWidget(
         title: '',
@@ -47,7 +49,8 @@ class OpinionCard extends ConsumerWidget {
         backgroundColor: Colors.grey,
         avatarRadius: 20.h,
         iconSize: 18.h,
-        onTap: onProfileTap,
+        onTap: onOpinionTap,
+        onAvatarTap: onProfileTap,
         disableTrailing: true,
         showAvatar: true,
         showTrailingArrow: false,
@@ -77,6 +80,13 @@ class OpinionCard extends ConsumerWidget {
                 icon: Icons.edit,
                 label: '${opinion.commentCount}',
                 onTap: onCommentTap ?? () {},
+              ),
+              Gap(Spacing.md.w),
+              // Reshare: icon only for now, no count/backend yet — separate
+              // feature, tracked to be implemented later.
+              GestureDetector(
+                onTap: () {},
+                child: const Icon(Icons.repeat, size: 18),
               ),
               const Spacer(),
               Row(

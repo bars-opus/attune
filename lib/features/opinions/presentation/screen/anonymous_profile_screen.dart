@@ -143,17 +143,23 @@ class _AnonymousProfileScreenState extends ConsumerState<AnonymousProfileScreen>
                   itemCount: opinions.length,
                   itemBuilder: (context, index) {
                     final opinion = opinions[index];
+                    void openOpinion() {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CommentThreadScreen(
+                            opinionId: opinion.id,
+                            opinion: opinion,
+                          ),
+                        ),
+                      );
+                    }
+
                     return OpinionCard(
                       opinion: opinion,
                       showFollowButton: false, // No follow button on own profile
-                      onCommentTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => CommentThreadScreen(opinionId: opinion.id),
-                          ),
-                        );
-                      },
+                      onOpinionTap: openOpinion,
+                      onCommentTap: openOpinion,
                       onProfileTap: null, // Don't navigate to self
                     );
                   },

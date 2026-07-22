@@ -158,17 +158,22 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
               );
             }
             final opinion = opinions[index];
+            void openOpinion() {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CommentThreadScreen(
+                    opinionId: opinion.id,
+                    opinion: opinion,
+                  ),
+                ),
+              );
+            }
+
             return OpinionCard(
               opinion: opinion,
-              onCommentTap: () {
-                // Navigate to comment thread
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => CommentThreadScreen(opinionId: opinion.id),
-                  ),
-                );
-              },
+              onOpinionTap: openOpinion,
+              onCommentTap: openOpinion,
               onProfileTap: () {
                 Navigator.push(
                   context,

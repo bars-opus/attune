@@ -1,10 +1,11 @@
 // lib/features/opinions/presentation/screens/comment_thread_screen.dart
 
 import 'package:attune/app/theme/design_tokens.dart';
-import 'package:attune/core/widgets/app_text_form_field.dart';
-import 'package:attune/core/widgets/buttons/app_button.dart';
+import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/opinions/data/models/comment_model.dart';
+import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
+import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -14,8 +15,13 @@ import 'package:attune/core/widgets/feedback/error_state.dart';
 
 class CommentThreadScreen extends ConsumerStatefulWidget {
   final String opinionId;
+  final OpinionModel opinion;
 
-  const CommentThreadScreen({super.key, required this.opinionId});
+  const CommentThreadScreen({
+    super.key,
+    required this.opinionId,
+    required this.opinion,
+  });
 
   @override
   ConsumerState<CommentThreadScreen> createState() => _CommentThreadScreenState();
@@ -87,7 +93,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Comments', style: textTheme.titleLarge),
+        title: Text('Opinion', style: textTheme.titleLarge),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -95,37 +101,40 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
       ),
       body: Column(
         children: [
-          // Comment list
+          // Opinion + comment list, opinion pinned as the list's first item
+          // so it scrolls away with the comments rather than staying fixed.
           Expanded(
             child: commentsAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, stack) => ErrorStateWidget.from(error),
               data: (comments) {
-                if (comments.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.chat_outlined, size: 48, color: Colors.grey),
-                        Gap(Spacing.md.h),
-                        Text(
-                          'No comments yet',
-                          style: textTheme.titleMedium,
-                        ),
-                        Gap(Spacing.sm.h),
-                        Text('Be the first to comment'),
-                      ],
-                    ),
-                  );
-                }
-
-                return ListView.builder(
+                return ListView(
                   padding: EdgeInsets.all(Spacing.md.w),
-                  itemCount: comments.length,
-                  itemBuilder: (context, index) {
-                    final comment = comments[index];
-                    return _buildCommentCard(comment, comments, ref);
-                  },
+                  children: [
+                    OpinionCard(opinion: widget.opinion, showFollowButton: false),
+                    Gap(Spacing.md.h),
+                    const Divider(),
+                    Gap(Spacing.md.h),
+                    if (comments.isEmpty)
+                      Center(
+                        child: Column(
+                          children: [
+                            Gap(Spacing.lg.h),
+                            Icon(Icons.chat_outlined, size: 48, color: Colors.grey),
+                            Gap(Spacing.md.h),
+                            Text(
+                              'No comments yet',
+                              style: textTheme.titleMedium,
+                            ),
+                            Gap(Spacing.sm.h),
+                            Text('Be the first to comment'),
+                          ],
+                        ),
+                      )
+                    else
+                      for (final comment in comments)
+                        _buildCommentCard(comment, comments, ref),
+                  ],
                 );
               },
             ),
@@ -151,9 +160,8 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                 ],
               ),
             ),
-          // Comment input
+          // Comment input, styled like chat's message input.
           Container(
-            padding: EdgeInsets.all(Spacing.md.w),
             decoration: BoxDecoration(
               color: colorScheme.surface,
               border: Border(
@@ -163,29 +171,11 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                 ),
               ),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: AppTextFormField(
-                    controller: _commentController,
-                    focusNode: _commentFocusNode,
-                    hintText: 'Add a comment...',
-                    maxLines: 3,
-                    maxLength: 280,
-                    // buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
-                    enabled: !_isSubmitting, label: '',
-                  ),
-                ),
-                Gap(Spacing.sm.w),
-                AppButton(
-                  label: 'Post',
-                  onPressed: _commentController.text.trim().isNotEmpty && !_isSubmitting
-                      ? _postComment
-                      : null,
-                  size: ButtonSize.small,
-                  isLoading: _isSubmitting,
-                ),
-              ],
+            child: ChatTextField(
+              controller: _commentController,
+              onSend: _postComment,
+              enabled: !_isSubmitting,
+              hintText: 'Add a comment...',
             ),
           ),
         ],
