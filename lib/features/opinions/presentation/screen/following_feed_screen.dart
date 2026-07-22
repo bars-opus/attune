@@ -119,13 +119,32 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
                   error: (error, stack) => ErrorStateWidget.from(error),
                   data: (opinions) {
                     if (opinions.isEmpty) {
-                      return Center(
-                        child: EmptyStateWidget(
-                          icon: Icons.person_add_outlined,
-                          title: 'You are not following anyone yet',
-                          subtitle:
-                              'Head to Discover to find voices you connect with',
-                        ),
+                      // See discover_feed_screen.dart's matching comment: a
+                      // plain Center never scrolls, so ScrollAwareFab (hidden
+                      // until the user scrolls) stayed permanently hidden on
+                      // an empty feed. AlwaysScrollableScrollPhysics still
+                      // fires scroll notifications from a small drag even
+                      // though the content is shorter than the viewport.
+                      return LayoutBuilder(
+                        builder:
+                            (context, constraints) => ListView(
+                              controller: _scrollController,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                SizedBox(
+                                  height: constraints.maxHeight,
+                                  child: Center(
+                                    child: EmptyStateWidget(
+                                      icon: Icons.person_add_outlined,
+                                      title:
+                                          'You are not following anyone yet',
+                                      subtitle:
+                                          'Head to Discover to find voices you connect with',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                       );
                     }
 

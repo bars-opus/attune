@@ -119,25 +119,48 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
                   error: (error, stack) => ErrorStateWidget.from(error),
                   data: (opinions) {
                     if (opinions.isEmpty) {
-                      return Center(
-                        child: EmptyStateWidget(
-                          icon: Icons.rate_review_outlined,
-                          title: 'No opinions yet',
-                          subtitle: 'Be the first to share your thoughts',
-                          onAction: () async {
-                            final needsRefresh = await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const OpinionComposeScreen(),
-                              ),
-                            );
-                            if (needsRefresh == true) {
-                              ref.invalidate(discoverFeedProvider);
-                            }
-                          },
-
-                          actionLabel: 'Write your first opinion',
-                        ),
+                      // Plain Center has nothing to scroll, so no scroll
+                      // notification ever fires — the ScrollAwareFab (hidden
+                      // by default, shown only while scrolling) stayed
+                      // permanently hidden with an empty feed. A scrollable
+                      // with AlwaysScrollableScrollPhysics still generates
+                      // scroll notifications from a small drag even though
+                      // the single child is shorter than the viewport, and
+                      // also lets RefreshIndicator's pull-to-refresh work.
+                      return LayoutBuilder(
+                        builder:
+                            (context, constraints) => ListView(
+                              controller: _scrollController,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                SizedBox(
+                                  height: constraints.maxHeight,
+                                  child: Center(
+                                    child: EmptyStateWidget(
+                                      icon: Icons.rate_review_outlined,
+                                      title: 'No opinions yet',
+                                      subtitle:
+                                          'Be the first to share your thoughts',
+                                      onAction: () async {
+                                        final needsRefresh =
+                                            await Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (_) =>
+                                                        const OpinionComposeScreen(),
+                                              ),
+                                            );
+                                        if (needsRefresh == true) {
+                                          ref.invalidate(discoverFeedProvider);
+                                        }
+                                      },
+                                      actionLabel: 'Write your first opinion',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                       );
                     }
 
