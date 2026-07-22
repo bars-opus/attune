@@ -3,6 +3,8 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
 import 'package:attune/features/forums/presentation/widgets/forum_card.dart';
 import 'package:attune/features/forums/presentation/widgets/topic_voting_card.dart';
+import 'package:attune/home/providers/nav_visibility_provider.dart';
+import 'package:attune/home/widgets/scroll_aware_fab.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'submit_topic_screen.dart';
 
@@ -31,55 +33,65 @@ class _ForumsExploreScreenState extends ConsumerState<ForumsExploreScreen> {
         ref.watch(supabaseClientProvider).auth.currentUser?.id != null;
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton.extended(
-        // See discover_feed_screen.dart's matching comment — sibling tabs
-        // under the Opinions shell can be kept alive together, so every FAB
-        // in that tab group needs a distinct tag to avoid a Hero collision.
-        heroTag: 'forums-explore-fab',
-        onPressed: () async {
-          if (!isAuthenticated) {
-            context.showInfoSnackbar(
-              'Continue with phone number from Chat to submit a topic.',
+      floatingActionButton: ScrollAwareFab(
+        child: FloatingActionButton.extended(
+          // See discover_feed_screen.dart's matching comment — sibling tabs
+          // under the Opinions shell can be kept alive together, so every FAB
+          // in that tab group needs a distinct tag to avoid a Hero collision.
+          heroTag: 'forums-explore-fab',
+          onPressed: () async {
+            if (!isAuthenticated) {
+              context.showInfoSnackbar(
+                'Continue with phone number from Chat to submit a topic.',
+              );
+              return;
+            }
+            final needsRefresh = await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SubmitTopicScreen()),
             );
-            return;
-          }
-          final needsRefresh = await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const SubmitTopicScreen()),
-          );
-          if (needsRefresh == true) {
-            ref.invalidate(votingTopicsProvider);
-          }
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Submit a topic'),
+            if (needsRefresh == true) {
+              ref.invalidate(votingTopicsProvider);
+            }
+          },
+          icon: const Icon(Icons.add),
+          label: const Text('Submit a topic'),
+        ),
       ),
-      body: CustomScrollView(
-        slivers: [
-          // Active Forums section
-          SliverToBoxAdapter(
-            child: _buildSectionHeader('Active debates', Icons.forum_outlined),
-          ),
-          _buildActiveForumsList(),
-
-          // Topics waiting for votes section
-          SliverToBoxAdapter(
-            child: _buildSectionHeader(
-              'Topics waiting for votes',
-              Icons.how_to_vote_outlined,
+      body: NotificationListener<UserScrollNotification>(
+        onNotification:
+            (notification) =>
+                NavVisibilityScrollHandler.handle(ref, notification),
+        child: CustomScrollView(
+          slivers: [
+            // Active Forums section
+            SliverToBoxAdapter(
+              child: _buildSectionHeader(
+                'Active debates',
+                Icons.forum_outlined,
+              ),
             ),
-          ),
-          _buildVotingTopicsList(),
+            _buildActiveForumsList(),
 
-          // Quiet forums section
-          SliverToBoxAdapter(
-            child: _buildSectionHeader(
-              'Quiet forums',
-              Icons.hourglass_empty_outlined,
+            // Topics waiting for votes section
+            SliverToBoxAdapter(
+              child: _buildSectionHeader(
+                'Topics waiting for votes',
+                Icons.how_to_vote_outlined,
+              ),
             ),
-          ),
-          _buildQuietForumsList(),
-        ],
+            _buildVotingTopicsList(),
+
+            // Quiet forums section
+            SliverToBoxAdapter(
+              child: _buildSectionHeader(
+                'Quiet forums',
+                Icons.hourglass_empty_outlined,
+              ),
+            ),
+            _buildQuietForumsList(),
+          ],
+        ),
       ),
     );
   }

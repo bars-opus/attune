@@ -5,6 +5,8 @@ import 'package:attune/features/opinions/presentation/providers/opinion_provider
 import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/comment_thread_screen.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
+import 'package:attune/home/providers/nav_visibility_provider.dart';
+import 'package:attune/home/widgets/scroll_aware_fab.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -59,34 +61,41 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
     return Scaffold(
       floatingActionButton:
           isAuthenticated
-              ? FloatingActionButton(
-                // See discover_feed_screen.dart's matching comment: sibling
-                // tabs are kept alive together, so default-tagged FABs
-                // collide. Distinct tags disambiguate them.
-                heroTag: 'opinions-following-fab',
-                onPressed: () async {
-                  final needsRefresh = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const OpinionComposeScreen(),
-                    ),
-                  );
-                  if (needsRefresh == true) {
-                    ref.invalidate(followingFeedProvider);
-                  }
-                },
-                child: const Icon(Icons.add),
+              ? ScrollAwareFab(
+                child: FloatingActionButton(
+                  // See discover_feed_screen.dart's matching comment: sibling
+                  // tabs are kept alive together, so default-tagged FABs
+                  // collide. Distinct tags disambiguate them.
+                  heroTag: 'opinions-following-fab',
+                  onPressed: () async {
+                    final needsRefresh = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const OpinionComposeScreen(),
+                      ),
+                    );
+                    if (needsRefresh == true) {
+                      ref.invalidate(followingFeedProvider);
+                    }
+                  },
+                  child: const Icon(Icons.add),
+                ),
               )
               : null,
-      body: RefreshIndicator(
-        onRefresh: () async {
-          if (!isAuthenticated) return;
-          await ref.read(followingFeedProvider.notifier).refresh();
-        },
-        child:
-            !isAuthenticated || followingAsync == null
-                ? ListView(
-                  children: [
+      body: NotificationListener<UserScrollNotification>(
+        onNotification:
+            (notification) =>
+                NavVisibilityScrollHandler.handle(ref, notification),
+        child: RefreshIndicator(
+          onRefresh: () async {
+            if (!isAuthenticated) return;
+            await ref.read(followingFeedProvider.notifier).refresh();
+          },
+          child:
+              !isAuthenticated || followingAsync == null
+                  ? ListView(
+                    controller: _scrollController,
+                    children: [
                     Padding(
                       padding: EdgeInsets.all(Spacing.lg.h),
                       child: SemanticContainerWidget(
@@ -154,6 +163,7 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
                     );
                   },
                 ),
+        ),
       ),
     );
   }

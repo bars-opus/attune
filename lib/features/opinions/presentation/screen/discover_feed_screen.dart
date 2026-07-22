@@ -6,6 +6,8 @@ import 'package:attune/features/opinions/presentation/providers/opinion_provider
 import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/comment_thread_screen.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
+import 'package:attune/home/providers/nav_visibility_provider.dart';
+import 'package:attune/home/widgets/scroll_aware_fab.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'opinion_compose_screen.dart';
 
@@ -75,37 +77,43 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
     return Scaffold(
       floatingActionButton:
           isAuthenticated
-              ? FloatingActionButton(
-                // Discover and Following are sibling tabs kept alive
-                // simultaneously (AutomaticKeepAliveClientMixin), so their
-                // default-tagged FABs collide as soon as both are mounted —
-                // "multiple heroes share the same tag" the instant either
-                // pushes a route. Distinct tags disambiguate them.
-                heroTag: 'opinions-discover-fab',
-                onPressed: () async {
-                  final needsRefresh = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const OpinionComposeScreen(),
-                    ),
-                  );
-                  if (needsRefresh == true) {
-                    ref.invalidate(discoverFeedProvider);
-                  }
-                },
-                child: const Icon(Icons.add),
+              ? ScrollAwareFab(
+                child: FloatingActionButton(
+                  // Discover and Following are sibling tabs kept alive
+                  // simultaneously (AutomaticKeepAliveClientMixin), so their
+                  // default-tagged FABs collide as soon as both are mounted —
+                  // "multiple heroes share the same tag" the instant either
+                  // pushes a route. Distinct tags disambiguate them.
+                  heroTag: 'opinions-discover-fab',
+                  onPressed: () async {
+                    final needsRefresh = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const OpinionComposeScreen(),
+                      ),
+                    );
+                    if (needsRefresh == true) {
+                      ref.invalidate(discoverFeedProvider);
+                    }
+                  },
+                  child: const Icon(Icons.add),
+                ),
               )
               : null,
-      body: RefreshIndicator(
-        onRefresh: () async {
-          if (!isAuthenticated) return;
-          ref.invalidate(discoverFeedProvider);
-          await ref.read(discoverFeedProvider.future);
-        },
-        child:
-            !isAuthenticated || opinionsAsync == null
-                ? _buildAnonymousPreview(context)
-                : opinionsAsync.when(
+      body: NotificationListener<UserScrollNotification>(
+        onNotification:
+            (notification) =>
+                NavVisibilityScrollHandler.handle(ref, notification),
+        child: RefreshIndicator(
+          onRefresh: () async {
+            if (!isAuthenticated) return;
+            ref.invalidate(discoverFeedProvider);
+            await ref.read(discoverFeedProvider.future);
+          },
+          child:
+              !isAuthenticated || opinionsAsync == null
+                  ? _buildAnonymousPreview(context)
+                  : opinionsAsync.when(
                   loading:
                       () => const Center(child: CircularProgressIndicator()),
                   error: (error, stack) => ErrorStateWidget.from(error),
@@ -178,6 +186,7 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
                     );
                   },
                 ),
+        ),
       ),
     );
   }
