@@ -45,7 +45,8 @@ class _ThisOrThatCustomListScreenState
             labelColor: colorScheme.primary,
           ),
         ),
-        floatingActionButton: FloatingActionButton(
+        floatingActionButton: AppFab(
+          icon: Icons.add,
           onPressed: () async {
             final needsRefresh = await Navigator.push(
               context,
@@ -58,7 +59,6 @@ class _ThisOrThatCustomListScreenState
               ref.invalidate(partnerThisOrThatCustomQuestionsProvider);
             }
           },
-          child: const Icon(Icons.add),
         ),
         body: TabBarView(
           children: [

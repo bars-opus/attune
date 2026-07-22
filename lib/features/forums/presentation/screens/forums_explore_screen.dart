@@ -4,7 +4,6 @@ import 'package:attune/features/forums/presentation/providers/forum_providers.da
 import 'package:attune/features/forums/presentation/widgets/forum_card.dart';
 import 'package:attune/features/forums/presentation/widgets/topic_voting_card.dart';
 import 'package:attune/home/providers/nav_visibility_provider.dart';
-import 'package:attune/home/widgets/scroll_aware_fab.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'submit_topic_screen.dart';
 
@@ -33,30 +32,29 @@ class _ForumsExploreScreenState extends ConsumerState<ForumsExploreScreen> {
         ref.watch(supabaseClientProvider).auth.currentUser?.id != null;
 
     return Scaffold(
-      floatingActionButton: ScrollAwareFab(
-        child: FloatingActionButton.extended(
-          // See discover_feed_screen.dart's matching comment — sibling tabs
-          // under the Opinions shell can be kept alive together, so every FAB
-          // in that tab group needs a distinct tag to avoid a Hero collision.
-          heroTag: 'forums-explore-fab',
-          onPressed: () async {
-            if (!isAuthenticated) {
-              context.showInfoSnackbar(
-                'Continue with phone number from Chat to submit a topic.',
-              );
-              return;
-            }
-            final needsRefresh = await Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SubmitTopicScreen()),
+      floatingActionButton: AppFab(
+        scrollAware: true,
+        // See discover_feed_screen.dart's matching comment — sibling tabs
+        // under the Opinions shell can be kept alive together, so every FAB
+        // in that tab group needs a distinct tag to avoid a Hero collision.
+        heroTag: 'forums-explore-fab',
+        icon: Icons.add,
+        label: 'Submit a topic',
+        onPressed: () async {
+          if (!isAuthenticated) {
+            context.showInfoSnackbar(
+              'Continue with phone number from Chat to submit a topic.',
             );
-            if (needsRefresh == true) {
-              ref.invalidate(votingTopicsProvider);
-            }
-          },
-          icon: const Icon(Icons.add),
-          label: const Text('Submit a topic'),
-        ),
+            return;
+          }
+          final needsRefresh = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SubmitTopicScreen()),
+          );
+          if (needsRefresh == true) {
+            ref.invalidate(votingTopicsProvider);
+          }
+        },
       ),
       body: NotificationListener<UserScrollNotification>(
         onNotification:

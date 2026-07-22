@@ -48,7 +48,8 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
         }
 
         return Scaffold(
-          floatingActionButton: FloatingActionButton(
+          floatingActionButton: AppFab(
+            icon: Icons.add,
             onPressed: () {
               Navigator.push(
                 context,
@@ -59,7 +60,6 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                 }
               });
             },
-            child: const Icon(Icons.add),
           ),
 
           body: RefreshIndicator(

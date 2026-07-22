@@ -7,7 +7,6 @@ import 'package:attune/features/opinions/presentation/screen/anonymous_profile_s
 import 'package:attune/features/opinions/presentation/screen/comment_thread_screen.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
 import 'package:attune/home/providers/nav_visibility_provider.dart';
-import 'package:attune/home/widgets/scroll_aware_fab.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'opinion_compose_screen.dart';
 
@@ -77,27 +76,26 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
     return Scaffold(
       floatingActionButton:
           isAuthenticated
-              ? ScrollAwareFab(
-                child: FloatingActionButton(
-                  // Discover and Following are sibling tabs kept alive
-                  // simultaneously (AutomaticKeepAliveClientMixin), so their
-                  // default-tagged FABs collide as soon as both are mounted —
-                  // "multiple heroes share the same tag" the instant either
-                  // pushes a route. Distinct tags disambiguate them.
-                  heroTag: 'opinions-discover-fab',
-                  onPressed: () async {
-                    final needsRefresh = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const OpinionComposeScreen(),
-                      ),
-                    );
-                    if (needsRefresh == true) {
-                      ref.invalidate(discoverFeedProvider);
-                    }
-                  },
-                  child: const Icon(Icons.add),
-                ),
+              ? AppFab(
+                scrollAware: true,
+                // Discover and Following are sibling tabs kept alive
+                // simultaneously (AutomaticKeepAliveClientMixin), so their
+                // default-tagged FABs collide as soon as both are mounted —
+                // "multiple heroes share the same tag" the instant either
+                // pushes a route. Distinct tags disambiguate them.
+                heroTag: 'opinions-discover-fab',
+                icon: Icons.add,
+                onPressed: () async {
+                  final needsRefresh = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const OpinionComposeScreen(),
+                    ),
+                  );
+                  if (needsRefresh == true) {
+                    ref.invalidate(discoverFeedProvider);
+                  }
+                },
               )
               : null,
       body: NotificationListener<UserScrollNotification>(

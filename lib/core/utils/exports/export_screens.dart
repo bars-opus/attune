@@ -8,6 +8,7 @@ export 'package:attune/core/utils/screen_util_config.dart';
 export 'package:attune/features/auth/intro/intro_screen.dart';
 export 'package:attune/app/theme/design_tokens.dart';
 export 'package:attune/core/widgets/buttons/app_button.dart';
+export 'package:attune/core/widgets/buttons/app_fab.dart';
 export 'package:attune/app/documentations/legal_documentation/models/documentation_item.dart';
 export 'package:attune/app/documentations/legal_documentation/data/legal_documentation_data.dart';
 export 'package:attune/core/utils/bottom_sheet_utils.dart';

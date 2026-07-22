@@ -6,7 +6,6 @@ import 'package:attune/features/opinions/presentation/screen/anonymous_profile_s
 import 'package:attune/features/opinions/presentation/screen/comment_thread_screen.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
 import 'package:attune/home/providers/nav_visibility_provider.dart';
-import 'package:attune/home/widgets/scroll_aware_fab.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -61,25 +60,24 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
     return Scaffold(
       floatingActionButton:
           isAuthenticated
-              ? ScrollAwareFab(
-                child: FloatingActionButton(
-                  // See discover_feed_screen.dart's matching comment: sibling
-                  // tabs are kept alive together, so default-tagged FABs
-                  // collide. Distinct tags disambiguate them.
-                  heroTag: 'opinions-following-fab',
-                  onPressed: () async {
-                    final needsRefresh = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const OpinionComposeScreen(),
-                      ),
-                    );
-                    if (needsRefresh == true) {
-                      ref.invalidate(followingFeedProvider);
-                    }
-                  },
-                  child: const Icon(Icons.add),
-                ),
+              ? AppFab(
+                scrollAware: true,
+                // See discover_feed_screen.dart's matching comment: sibling
+                // tabs are kept alive together, so default-tagged FABs
+                // collide. Distinct tags disambiguate them.
+                heroTag: 'opinions-following-fab',
+                icon: Icons.add,
+                onPressed: () async {
+                  final needsRefresh = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const OpinionComposeScreen(),
+                    ),
+                  );
+                  if (needsRefresh == true) {
+                    ref.invalidate(followingFeedProvider);
+                  }
+                },
               )
               : null,
       body: NotificationListener<UserScrollNotification>(
@@ -96,97 +94,97 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
                   ? ListView(
                     controller: _scrollController,
                     children: [
-                    Padding(
-                      padding: EdgeInsets.all(Spacing.lg.h),
-                      child: SemanticContainerWidget(
-                        title: 'Following unlocks after verification',
-                        content:
-                            'Guest browsing is available in Discover. Continue with phone number from Chat to follow voices and build a personal feed.',
-                        icon: Icons.person_add_alt_1_outlined,
-                        backgroundColor: Theme.of(
-                          context,
-                        ).colorScheme.primary.withValues(alpha: 0.1),
-                        borderColor: Theme.of(context).colorScheme.primary,
-                        iconColor: Theme.of(context).colorScheme.primary,
-                        textTheme: Theme.of(context).textTheme,
+                      Padding(
+                        padding: EdgeInsets.all(Spacing.lg.h),
+                        child: SemanticContainerWidget(
+                          title: 'Following unlocks after verification',
+                          content:
+                              'Guest browsing is available in Discover. Continue with phone number from Chat to follow voices and build a personal feed.',
+                          icon: Icons.person_add_alt_1_outlined,
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primary.withValues(alpha: 0.1),
+                          borderColor: Theme.of(context).colorScheme.primary,
+                          iconColor: Theme.of(context).colorScheme.primary,
+                          textTheme: Theme.of(context).textTheme,
+                        ),
                       ),
-                    ),
-                  ],
-                )
-                : followingAsync.when(
-                  loading:
-                      () => const Center(child: CircularProgressIndicator()),
-                  error: (error, stack) => ErrorStateWidget.from(error),
-                  data: (opinions) {
-                    if (opinions.isEmpty) {
-                      // See discover_feed_screen.dart's matching comment: a
-                      // plain Center never scrolls, so ScrollAwareFab (hidden
-                      // until the user scrolls) stayed permanently hidden on
-                      // an empty feed. AlwaysScrollableScrollPhysics still
-                      // fires scroll notifications from a small drag even
-                      // though the content is shorter than the viewport.
-                      return LayoutBuilder(
-                        builder:
-                            (context, constraints) => ListView(
-                              controller: _scrollController,
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              children: [
-                                SizedBox(
-                                  height: constraints.maxHeight,
-                                  child: Center(
-                                    child: EmptyStateWidget(
-                                      icon: Icons.person_add_outlined,
-                                      title:
-                                          'You are not following anyone yet',
-                                      subtitle:
-                                          'Head to Discover to find voices you connect with',
+                    ],
+                  )
+                  : followingAsync.when(
+                    loading:
+                        () => const Center(child: CircularProgressIndicator()),
+                    error: (error, stack) => ErrorStateWidget.from(error),
+                    data: (opinions) {
+                      if (opinions.isEmpty) {
+                        // See discover_feed_screen.dart's matching comment: a
+                        // plain Center never scrolls, so ScrollAwareFab (hidden
+                        // until the user scrolls) stayed permanently hidden on
+                        // an empty feed. AlwaysScrollableScrollPhysics still
+                        // fires scroll notifications from a small drag even
+                        // though the content is shorter than the viewport.
+                        return LayoutBuilder(
+                          builder:
+                              (context, constraints) => ListView(
+                                controller: _scrollController,
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                children: [
+                                  SizedBox(
+                                    height: constraints.maxHeight,
+                                    child: Center(
+                                      child: EmptyStateWidget(
+                                        icon: Icons.person_add_outlined,
+                                        title:
+                                            'You are not following anyone yet',
+                                        subtitle:
+                                            'Head to Discover to find voices you connect with',
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                      );
-                    }
-
-                    return ListView.builder(
-                      controller: _scrollController,
-                      // See discover_feed_screen.dart's matching comment: a
-                      // short list has no overflow, so default physics never
-                      // fires a scroll notification, leaving ScrollAwareFab
-                      // with nothing to trigger its reveal.
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      itemCount: opinions.length,
-                      itemBuilder: (context, index) {
-                        final opinion = opinions[index];
-                        return OpinionCard(
-                          opinion: opinion,
-                          onCommentTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder:
-                                    (_) => CommentThreadScreen(
-                                      opinionId: opinion.id,
-                                    ),
+                                ],
                               ),
-                            );
-                          },
-                          onProfileTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder:
-                                    (_) => AnonymousProfileScreen(
-                                      authorHandle: opinion.authorHandle,
-                                    ),
-                              ),
-                            );
-                          },
                         );
-                      },
-                    );
-                  },
-                ),
+                      }
+
+                      return ListView.builder(
+                        controller: _scrollController,
+                        // See discover_feed_screen.dart's matching comment: a
+                        // short list has no overflow, so default physics never
+                        // fires a scroll notification, leaving ScrollAwareFab
+                        // with nothing to trigger its reveal.
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        itemCount: opinions.length,
+                        itemBuilder: (context, index) {
+                          final opinion = opinions[index];
+                          return OpinionCard(
+                            opinion: opinion,
+                            onCommentTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (_) => CommentThreadScreen(
+                                        opinionId: opinion.id,
+                                      ),
+                                ),
+                              );
+                            },
+                            onProfileTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (_) => AnonymousProfileScreen(
+                                        authorHandle: opinion.authorHandle,
+                                      ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
         ),
       ),
     );
