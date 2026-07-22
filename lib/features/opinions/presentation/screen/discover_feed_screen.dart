@@ -73,19 +73,53 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
     final opinionsAsync =
         isAuthenticated ? ref.watch(discoverFeedProvider) : null;
 
-    return Scaffold(
-      floatingActionButton:
-          isAuthenticated
-              ? AppFab(
-                scrollAware: true,
-                // Discover and Following are sibling tabs kept alive
-                // simultaneously (AutomaticKeepAliveClientMixin), so their
-                // default-tagged FABs collide as soon as both are mounted —
-                // "multiple heroes share the same tag" the instant either
-                // pushes a route. Distinct tags disambiguate them.
-                heroTag: 'opinions-discover-fab',
-                icon: Icons.add,
-                onPressed: () async {
+    return NotificationListener<UserScrollNotification>(
+      onNotification:
+          (notification) =>
+              NavVisibilityScrollHandler.handle(ref, notification),
+      child: RefreshIndicator(
+        onRefresh: () async {
+          if (!isAuthenticated) return;
+          ref.invalidate(discoverFeedProvider);
+          await ref.read(discoverFeedProvider.future);
+        },
+        child:
+            !isAuthenticated || opinionsAsync == null
+                ? _buildAnonymousPreviewSliver(context)
+                : opinionsAsync.when(
+                  loading:
+                      () => const Center(child: CircularProgressIndicator()),
+                  error: (error, stack) => ErrorStateWidget.from(error),
+                  data: (opinions) => _buildFeedSliver(context, opinions),
+                ),
+      ),
+    );
+  }
+
+  Widget _buildFeedSliver(BuildContext context, List<OpinionModel> opinions) {
+    if (opinions.isEmpty) {
+      // Plain Center has nothing to scroll, so no scroll notification ever
+      // fires — the ScrollAwareFab (hidden by default, shown only while
+      // scrolling) stayed permanently hidden with an empty feed. A
+      // scrollable with AlwaysScrollableScrollPhysics still generates scroll
+      // notifications from a small drag even though the single child is
+      // shorter than the viewport, and also lets RefreshIndicator's
+      // pull-to-refresh work.
+      return CustomScrollView(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverOverlapInjector(
+            handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+          ),
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: EmptyStateWidget(
+                icon: Icons.rate_review_outlined,
+                title: 'No opinions yet',
+                subtitle: 'Be the first to share your thoughts',
+                onAction: () async {
                   final needsRefresh = await Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -96,173 +130,121 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
                     ref.invalidate(discoverFeedProvider);
                   }
                 },
-              )
-              : null,
-      body: NotificationListener<UserScrollNotification>(
-        onNotification:
-            (notification) =>
-                NavVisibilityScrollHandler.handle(ref, notification),
-        child: RefreshIndicator(
-          onRefresh: () async {
-            if (!isAuthenticated) return;
-            ref.invalidate(discoverFeedProvider);
-            await ref.read(discoverFeedProvider.future);
-          },
-          child:
-              !isAuthenticated || opinionsAsync == null
-                  ? _buildAnonymousPreview(context)
-                  : opinionsAsync.when(
-                  loading:
-                      () => const Center(child: CircularProgressIndicator()),
-                  error: (error, stack) => ErrorStateWidget.from(error),
-                  data: (opinions) {
-                    if (opinions.isEmpty) {
-                      // Plain Center has nothing to scroll, so no scroll
-                      // notification ever fires — the ScrollAwareFab (hidden
-                      // by default, shown only while scrolling) stayed
-                      // permanently hidden with an empty feed. A scrollable
-                      // with AlwaysScrollableScrollPhysics still generates
-                      // scroll notifications from a small drag even though
-                      // the single child is shorter than the viewport, and
-                      // also lets RefreshIndicator's pull-to-refresh work.
-                      return LayoutBuilder(
-                        builder:
-                            (context, constraints) => ListView(
-                              controller: _scrollController,
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              children: [
-                                SizedBox(
-                                  height: constraints.maxHeight,
-                                  child: Center(
-                                    child: EmptyStateWidget(
-                                      icon: Icons.rate_review_outlined,
-                                      title: 'No opinions yet',
-                                      subtitle:
-                                          'Be the first to share your thoughts',
-                                      onAction: () async {
-                                        final needsRefresh =
-                                            await Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder:
-                                                    (_) =>
-                                                        const OpinionComposeScreen(),
-                                              ),
-                                            );
-                                        if (needsRefresh == true) {
-                                          ref.invalidate(discoverFeedProvider);
-                                        }
-                                      },
-                                      actionLabel: 'Write your first opinion',
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                      );
-                    }
+                actionLabel: 'Write your first opinion',
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
-                    return ListView.builder(
-                      controller: _scrollController,
-                      // Same reason as the empty-state ListView above: a
-                      // short list (1-2 opinions) has no overflow to scroll,
-                      // so the default physics never generates a scroll
-                      // notification at all — ScrollAwareFab's reveal
-                      // gesture had nothing to trigger it. Always-scrollable
-                      // physics fires notifications from a small drag
-                      // regardless of overflow.
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      itemCount:
-                          opinions.length +
-                          (ref.read(discoverFeedProvider.notifier).hasMore
-                              ? 1
-                              : 0),
-                      itemBuilder: (context, index) {
-                        if (index == opinions.length) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-                        final opinion = opinions[index];
-                        return OpinionCard(
-                          opinion: opinion,
-                          onCommentTap: () {
-                            // Navigate to comment thread
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder:
-                                    (_) => CommentThreadScreen(
-                                      opinionId: opinion.id,
-                                    ),
-                              ),
-                            );
-                          },
-                          onProfileTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder:
-                                    (_) => AnonymousProfileScreen(
-                                      authorHandle: opinion.authorHandle,
-                                    ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    );
-                  },
-                ),
+    final hasMore = ref.read(discoverFeedProvider.notifier).hasMore;
+    return CustomScrollView(
+      controller: _scrollController,
+      // Same reason as the empty-state CustomScrollView above: a short list
+      // (1-2 opinions) has no overflow to scroll, so the default physics
+      // never generates a scroll notification at all — ScrollAwareFab's
+      // reveal gesture had nothing to trigger it. Always-scrollable physics
+      // fires notifications from a small drag regardless of overflow.
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverOverlapInjector(
+          handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
         ),
-      ),
+        SliverList(
+          delegate: SliverChildBuilderDelegate((context, index) {
+            if (index == opinions.length) {
+              return const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final opinion = opinions[index];
+            return OpinionCard(
+              opinion: opinion,
+              onCommentTap: () {
+                // Navigate to comment thread
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CommentThreadScreen(opinionId: opinion.id),
+                  ),
+                );
+              },
+              onProfileTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder:
+                        (_) => AnonymousProfileScreen(
+                          authorHandle: opinion.authorHandle,
+                        ),
+                  ),
+                );
+              },
+            );
+          }, childCount: opinions.length + (hasMore ? 1 : 0)),
+        ),
+      ],
     );
   }
 
-  Widget _buildAnonymousPreview(BuildContext context) {
+  Widget _buildAnonymousPreviewSliver(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    return ListView(
+    return CustomScrollView(
       controller: _scrollController,
-      padding: EdgeInsets.only(bottom: Spacing.xl.h),
-      children: [
-        Padding(
-          padding: EdgeInsets.all(Spacing.lg.w),
-          child: SemanticContainerWidget(
-            title: 'Read-only guest preview',
-            content:
-                'You can browse opinions before creating an account. Continue with phone number from Chat to post, reply, follow, or react.',
-            icon: Icons.visibility_outlined,
-            backgroundColor: Theme.of(
-              context,
-            ).colorScheme.primary.withValues(alpha: 0.1),
-            borderColor: Theme.of(context).colorScheme.primary,
-            iconColor: Theme.of(context).colorScheme.primary,
-            textTheme: textTheme,
-          ),
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverOverlapInjector(
+          handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
         ),
-        ..._anonymousPreviewOpinions.map(
-          (opinion) => Padding(
-            padding: EdgeInsets.symmetric(horizontal: Spacing.lg.w),
-            child: OpinionCard(
-              opinion: OpinionModel(
-                id: opinion.content,
-                authorHandle: '',
-                isMine: false,
-                content: opinion.content,
-                relationshipStatus: _normalizePreviewStatus(opinion.status),
-                likeCount: 0,
-                dislikeCount: 0,
-                commentCount: 0,
-                createdAt: DateTime.now(),
-              ),
-              showFollowButton: false,
-              onCommentTap:
-                  () => context.showInfoSnackbar(
-                    'Continue with phone number from Chat to join the conversation.',
+        SliverPadding(
+          padding: EdgeInsets.only(bottom: Spacing.xl.h),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate((context, index) {
+              if (index == 0) {
+                return Padding(
+                  padding: EdgeInsets.all(Spacing.lg.w),
+                  child: SemanticContainerWidget(
+                    title: 'Read-only guest preview',
+                    content:
+                        'You can browse opinions before creating an account. Continue with phone number from Chat to post, reply, follow, or react.',
+                    icon: Icons.visibility_outlined,
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.1),
+                    borderColor: Theme.of(context).colorScheme.primary,
+                    iconColor: Theme.of(context).colorScheme.primary,
+                    textTheme: textTheme,
                   ),
-            ),
+                );
+              }
+              final opinion = _anonymousPreviewOpinions[index - 1];
+              return Padding(
+                padding: EdgeInsets.symmetric(horizontal: Spacing.lg.w),
+                child: OpinionCard(
+                  opinion: OpinionModel(
+                    id: opinion.content,
+                    authorHandle: '',
+                    isMine: false,
+                    content: opinion.content,
+                    relationshipStatus: _normalizePreviewStatus(
+                      opinion.status,
+                    ),
+                    likeCount: 0,
+                    dislikeCount: 0,
+                    commentCount: 0,
+                    createdAt: DateTime.now(),
+                  ),
+                  showFollowButton: false,
+                  onCommentTap:
+                      () => context.showInfoSnackbar(
+                        'Continue with phone number from Chat to join the conversation.',
+                      ),
+                ),
+              );
+            }, childCount: _anonymousPreviewOpinions.length + 1),
           ),
         ),
       ],
