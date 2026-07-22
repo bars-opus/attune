@@ -150,6 +150,11 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
 
                     return ListView.builder(
                       controller: _scrollController,
+                      // See discover_feed_screen.dart's matching comment: a
+                      // short list has no overflow, so default physics never
+                      // fires a scroll notification, leaving ScrollAwareFab
+                      // with nothing to trigger its reveal.
+                      physics: const AlwaysScrollableScrollPhysics(),
                       itemCount: opinions.length,
                       itemBuilder: (context, index) {
                         final opinion = opinions[index];

@@ -166,6 +166,14 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
 
                     return ListView.builder(
                       controller: _scrollController,
+                      // Same reason as the empty-state ListView above: a
+                      // short list (1-2 opinions) has no overflow to scroll,
+                      // so the default physics never generates a scroll
+                      // notification at all — ScrollAwareFab's reveal
+                      // gesture had nothing to trigger it. Always-scrollable
+                      // physics fires notifications from a small drag
+                      // regardless of overflow.
+                      physics: const AlwaysScrollableScrollPhysics(),
                       itemCount:
                           opinions.length +
                           (ref.read(discoverFeedProvider.notifier).hasMore
