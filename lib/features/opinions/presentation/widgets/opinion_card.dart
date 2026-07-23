@@ -233,7 +233,7 @@ class OpinionCard extends ConsumerWidget {
           Gap(Spacing.xs.w),
           Text(
             count > 0 ? '$count' : '',
-            style: textTheme.titleLarge?.copyWith(
+            style: textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w600,
               color: colorScheme.onSurface.withValues(alpha: 0.8),
             ),
@@ -260,7 +260,7 @@ class OpinionCard extends ConsumerWidget {
           Gap(Spacing.xs.w),
           Text(
             label,
-            style: textTheme.titleLarge?.copyWith(
+            style: textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w600,
               color: colorScheme.onSurface.withValues(alpha: 0.8),
             ),
