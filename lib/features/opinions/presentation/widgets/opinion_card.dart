@@ -1,6 +1,5 @@
 // lib/features/opinions/presentation/widgets/opinion_card.dart
 
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
@@ -23,6 +22,10 @@ class OpinionCard extends ConsumerWidget {
     this.onProfileTap,
   });
 
+  // Shared between the feed card and CommentThreadScreen's header so the
+  // opinion (not its actions row) Heroes between the two.
+  String get _heroTag => 'opinion-${opinion.id}';
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Server-computed: the real user_id never reaches the client (FORUM.md §3).
@@ -38,23 +41,36 @@ class OpinionCard extends ConsumerWidget {
     final textTheme = Theme.of(context).textTheme;
     final timeAgo = _formatTimeAgo(opinion.createdAt);
 
-    return GestureDetector(
-      onTap: onOpinionTap,
-      behavior: HitTestBehavior.opaque,
-      child: InfoRowWidget(
-        title: '',
-        subtitle: opinion.content,
-        icon: statusIcon,
-        iconColor: colorScheme.background,
-        backgroundColor: Colors.grey,
-        avatarRadius: 20.h,
-        iconSize: 18.h,
-        onTap: onOpinionTap,
-        onAvatarTap: onProfileTap,
-        disableTrailing: true,
-        showAvatar: true,
-        showTrailingArrow: false,
-        bottomWidget: Padding(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Hero'd between the feed card and CommentThreadScreen's header —
+        // the opinion itself transitions, not its actions row below.
+        Hero(
+          tag: _heroTag,
+          child: Material(
+            type: MaterialType.transparency,
+            child: GestureDetector(
+              onTap: onOpinionTap,
+              behavior: HitTestBehavior.opaque,
+              child: InfoRowWidget(
+                title: '',
+                subtitle: opinion.content,
+                icon: statusIcon,
+                iconColor: colorScheme.background,
+                backgroundColor: Colors.grey,
+                avatarRadius: 20.h,
+                iconSize: 18.h,
+                onTap: onOpinionTap,
+                onAvatarTap: onProfileTap,
+                disableTrailing: true,
+                showAvatar: true,
+                showTrailingArrow: false,
+              ),
+            ),
+          ),
+        ),
+        Padding(
           padding: const EdgeInsets.only(top: Spacing.md, bottom: Spacing.sm),
           child: Row(
             children: [
@@ -110,126 +126,10 @@ class OpinionCard extends ConsumerWidget {
               ),
               if (showFollowButton && !isOwnPost)
                 _buildFollowButton(context, ref),
-              // [⋯] Report / Copy text / Delete (own posts only) — FORUM.md §4.3.
-              // This is the moderation entry point the §8 report system depends on.
-              _buildOverflowMenu(context, ref, isOwnPost),
             ],
           ),
         ),
-      ),
-
-      //    Container(
-      //     padding: EdgeInsets.all(Spacing.md.w),
-      //     decoration: BoxDecoration(
-      //       border: Border(
-      //         bottom: BorderSide(
-      //           color: colorScheme.outline.withOpacity(0.1),
-      //           width: BorderWidthTokens.hairline,
-      //         ),
-      //       ),
-      //     ),
-      //     child: Column(
-      //       crossAxisAlignment: CrossAxisAlignment.start,
-      //       children: [
-      //         // Header: blank name + status + time
-      //         Row(
-      //           children: [
-      //             // Name is intentionally empty (nothing rendered)
-      //             if (statusDisplay.isNotEmpty)
-      //               Text(
-      //                 statusDisplay,
-      //                 style: textTheme.bodyMedium?.copyWith(
-      //                   fontWeight: FontWeight.w600,
-      //                   color: colorScheme.primary,
-      //                 ),
-      //               ),
-      //             if (statusDisplay.isNotEmpty) Gap(Spacing.xs.w),
-      // Text(
-      //   timeAgo,
-      //   style: textTheme.bodySmall?.copyWith(
-      //     color: colorScheme.onSurface.withOpacity(0.5),
-      //   ),
-      // ),
-      //             const Spacer(),
-      //             // Menu button (report, delete)
-      //             PopupMenuButton<String>(
-      //               icon: const Icon(Icons.more_horiz, size: 20),
-      //               onSelected: (value) async {
-      //                 if (value == 'report') {
-      //                   _showReportDialog(context, ref);
-      //                 } else if (value == 'delete' && isOwnPost) {
-      //                   await ref.read(deleteOpinionProvider(opinion.id).future);
-      //                 } else if (value == 'copy') {
-      //                   await Clipboard.setData(
-      //                     ClipboardData(text: opinion.content),
-      //                   );
-      //                   if (context.mounted) {
-      //                     context.showInfoSnackbar('Copied to clipboard');
-      //                   }
-      //                 }
-      //               },
-      //               itemBuilder:
-      //                   (context) => [
-      //                     if (!isOwnPost)
-      //                       const PopupMenuItem(
-      //                         value: 'report',
-      //                         child: Text('Report'),
-      //                       ),
-      //                     if (isOwnPost)
-      //                       const PopupMenuItem(
-      //                         value: 'delete',
-      //                         child: Text('Delete'),
-      //                       ),
-      //                     const PopupMenuItem(
-      //                       value: 'copy',
-      //                       child: Text('Copy text'),
-      //                     ),
-      //                   ],
-      //             ),
-      //           ],
-      //         ),
-      //         Gap(Spacing.sm.h),
-      //         // Content
-      //         Text(opinion.content, style: textTheme.bodyLarge),
-      //         Gap(Spacing.md.h),
-      //         // Action row
-      // Row(
-      //   children: [
-      //     // Like button
-      //     _buildReactionButton(
-      //       context: context,
-      //       icon: Icons.thumb_up_outlined,
-      //       activeIcon: Icons.thumb_up,
-      //       count: opinion.likeCount,
-      //       isActive: opinion.userReaction == 'like',
-      //       onTap: () => _toggleReaction(context, ref, 'like'),
-      //     ),
-      //     Gap(Spacing.md.w),
-      //     // Dislike button
-      //     _buildReactionButton(
-      //       context: context,
-      //       icon: Icons.thumb_down_outlined,
-      //       activeIcon: Icons.thumb_down,
-      //       count: opinion.dislikeCount,
-      //       isActive: opinion.userReaction == 'dislike',
-      //       onTap: () => _toggleReaction(context, ref, 'dislike'),
-      //     ),
-      //     Gap(Spacing.md.w),
-      //     // Comment button
-      //     _buildActionButton(
-      //       icon: Icons.comment_outlined,
-      //       label: '${opinion.commentCount}',
-      //       onTap: onCommentTap ?? () {},
-      //     ),
-      //     const Spacer(),
-      //     // Follow button (if not own post)
-      //     if (showFollowButton && !isOwnPost)
-      //       _buildFollowButton(context, ref),
-      //   ],
-      // ),
-      //       ],
-      //     ),
-      //   ),
+      ],
     );
   }
 
@@ -379,88 +279,5 @@ class OpinionCard extends ConsumerWidget {
       default:
         return colorScheme.error;
     }
-  }
-
-  Widget _buildOverflowMenu(
-    BuildContext context,
-    WidgetRef ref,
-    bool isOwnPost,
-  ) {
-    return PopupMenuButton<String>(
-      icon: Icon(
-        Icons.more_horiz,
-        size: 18.h,
-        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-      ),
-      onSelected: (value) async {
-        switch (value) {
-          case 'report':
-            _showReportDialog(context, ref);
-          case 'copy':
-            await Clipboard.setData(ClipboardData(text: opinion.content));
-            if (context.mounted) {
-              context.showInfoSnackbar('Copied to clipboard');
-            }
-          case 'delete':
-            if (isOwnPost) {
-              await ref.read(deleteOpinionProvider(opinion.id).future);
-            }
-        }
-      },
-      itemBuilder: (context) => [
-        // You cannot report your own post; you can delete it.
-        if (!isOwnPost)
-          const PopupMenuItem(value: 'report', child: Text('Report')),
-        const PopupMenuItem(value: 'copy', child: Text('Copy text')),
-        if (isOwnPost)
-          const PopupMenuItem(value: 'delete', child: Text('Delete')),
-      ],
-    );
-  }
-
-  void _showReportDialog(BuildContext context, WidgetRef ref) {
-    // Reason list is the FORUM.md §8 set (matches the comment-thread dialog).
-    const reasons = [
-      'Identifies a real person',
-      'Harmful or dangerous content',
-      'Explicit sexual content',
-      'Hate speech or discrimination',
-      'Spam',
-      'Other',
-    ];
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: EdgeInsets.all(Spacing.md.w),
-              child: Text(
-                'Report this opinion',
-                style: Theme.of(sheetContext).textTheme.titleMedium,
-              ),
-            ),
-            for (final reason in reasons)
-              ListTile(
-                title: Text(reason),
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-                  await ref.read(
-                    reportOpinionProvider(
-                      (opinionId: opinion.id, reason: reason),
-                    ).future,
-                  );
-                  if (context.mounted) {
-                    context.showInfoSnackbar(
-                      'Thank you. We will review this within 24 hours.',
-                    );
-                  }
-                },
-              ),
-          ],
-        ),
-      ),
-    );
   }
 }

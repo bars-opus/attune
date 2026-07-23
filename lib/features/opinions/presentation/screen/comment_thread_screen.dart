@@ -1,17 +1,13 @@
 // lib/features/opinions/presentation/screens/comment_thread_screen.dart
 
-import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/opinions/data/models/comment_model.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:gap/gap.dart';
-import 'package:attune/core/widgets/feedback/error_state.dart';
-
 
 class CommentThreadScreen extends ConsumerStatefulWidget {
   final String opinionId;
@@ -24,7 +20,8 @@ class CommentThreadScreen extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<CommentThreadScreen> createState() => _CommentThreadScreenState();
+  ConsumerState<CommentThreadScreen> createState() =>
+      _CommentThreadScreenState();
 }
 
 class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
@@ -63,14 +60,14 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      await ref.read(postCommentProvider(
-        (
+      await ref.read(
+        postCommentProvider((
           opinionId: widget.opinionId,
           content: content,
           replyToCommentId: _replyToCommentId,
           quotedText: _replyToQuotedText,
-        ),
-      ).future);
+        )).future,
+      );
 
       _commentController.clear();
       _clearReplyTarget();
@@ -78,26 +75,159 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     } catch (e) {
       setState(() => _isSubmitting = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to post comment: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to post comment: $e')));
       }
     }
   }
 
+  // Moved here from OpinionCard's overflow menu — this AppBar action is now
+  // the single moderation entry point (report/copy/delete) for the opinion.
+  void _showOpinionMenu(BuildContext context, WidgetRef ref) {
+    // Server-computed: the real user_id never reaches the client (FORUM.md §3).
+    final isOwnPost = widget.opinion.isMine;
+
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // You cannot report your own post; you can delete it.
+            if (!isOwnPost)
+              ListTile(
+                leading: const Icon(Icons.flag_outlined),
+                title: const Text('Report'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showReportOpinionDialog(context, ref);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.copy_outlined),
+              title: const Text('Copy text'),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                await Clipboard.setData(
+                  ClipboardData(text: widget.opinion.content),
+                );
+                if (context.mounted) {
+                  context.showInfoSnackbar('Copied to clipboard');
+                }
+              },
+            ),
+            if (isOwnPost)
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('Delete'),
+                onTap: () async {
+                  Navigator.pop(sheetContext);
+                  await ref.read(
+                    deleteOpinionProvider(widget.opinion.id).future,
+                  );
+                  if (context.mounted) Navigator.pop(context);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showReportOpinionDialog(BuildContext context, WidgetRef ref) {
+    // Reason list is the FORUM.md §8 set (matches the comment report dialog).
+    const reasons = [
+      'Identifies a real person',
+      'Harmful or dangerous content',
+      'Explicit sexual content',
+      'Hate speech or discrimination',
+      'Spam',
+      'Other',
+    ];
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: EdgeInsets.all(Spacing.md.w),
+              child: Text(
+                'Report this opinion',
+                style: Theme.of(sheetContext).textTheme.titleMedium,
+              ),
+            ),
+            for (final reason in reasons)
+              ListTile(
+                title: Text(reason),
+                onTap: () async {
+                  Navigator.pop(sheetContext);
+                  await ref.read(
+                    reportOpinionProvider((
+                      opinionId: widget.opinion.id,
+                      reason: reason,
+                    )).future,
+                  );
+                  if (context.mounted) {
+                    context.showInfoSnackbar(
+                      'Thank you. We will review this within 24 hours.',
+                    );
+                  }
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
     final commentsAsync = ref.watch(commentsProvider(widget.opinionId));
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Opinion', style: textTheme.titleLarge),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        automaticallyImplyLeading: true,
+        title: RichText(
+          text: TextSpan(
+            children: [
+              TextSpan(
+                text: 'Opinion',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface.withValues(alpha: 0.8),
+                ),
+              ),
+              TextSpan(
+                text: '\n23K Views',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface.withOpacity(.4),
+                ),
+              ),
+            ],
+          ),
+          textAlign: TextAlign.center,
         ),
+        // Text(
+        //   'Opinion',
+        //   style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600,
+
+        //   color: colorScheme.onBackground,
+
+        // ),
+
+        // ),
+        actions: [
+          AppIconButton(
+            icon: Icons.more_vert_rounded,
+            onPressed: () => _showOpinionMenu(context, ref),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -111,7 +241,10 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                 return ListView(
                   padding: EdgeInsets.all(Spacing.md.w),
                   children: [
-                    OpinionCard(opinion: widget.opinion, showFollowButton: false),
+                    OpinionCard(
+                      opinion: widget.opinion,
+                      showFollowButton: false,
+                    ),
                     Gap(Spacing.md.h),
                     const Divider(),
                     Gap(Spacing.md.h),
@@ -120,7 +253,11 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                         child: Column(
                           children: [
                             Gap(Spacing.lg.h),
-                            Icon(Icons.chat_outlined, size: 48, color: Colors.grey),
+                            Icon(
+                              Icons.chat_outlined,
+                              size: 48,
+                              color: Colors.grey,
+                            ),
                             Gap(Spacing.md.h),
                             Text(
                               'No comments yet',
@@ -142,7 +279,10 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
           // Reply indicator
           if (_replyToCommentId != null)
             Container(
-              padding: EdgeInsets.symmetric(horizontal: Spacing.md.w, vertical: Spacing.sm.h),
+              padding: EdgeInsets.symmetric(
+                horizontal: Spacing.md.w,
+                vertical: Spacing.sm.h,
+              ),
               color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
               child: Row(
                 children: [
@@ -183,7 +323,11 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     );
   }
 
-  Widget _buildCommentCard(CommentModel comment, List<CommentModel> allComments, WidgetRef ref) {
+  Widget _buildCommentCard(
+    CommentModel comment,
+    List<CommentModel> allComments,
+    WidgetRef ref,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     // Server-computed; the real user_id never reaches the client (FORUM.md §3).
@@ -228,15 +372,27 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                   if (value == 'report') {
                     _showReportDialog(context, ref, comment.id);
                   } else if (value == 'delete' && isOwnComment) {
-                    await ref.read(deleteCommentProvider((commentId: comment.id, opinionId: widget.opinionId)).future);
+                    await ref.read(
+                      deleteCommentProvider((
+                        commentId: comment.id,
+                        opinionId: widget.opinionId,
+                      )).future,
+                    );
                   }
                 },
-                itemBuilder: (context) => [
-                  if (!isOwnComment)
-                    const PopupMenuItem(value: 'report', child: Text('Report')),
-                  if (isOwnComment)
-                    const PopupMenuItem(value: 'delete', child: Text('Delete')),
-                ],
+                itemBuilder:
+                    (context) => [
+                      if (!isOwnComment)
+                        const PopupMenuItem(
+                          value: 'report',
+                          child: Text('Report'),
+                        ),
+                      if (isOwnComment)
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Delete'),
+                        ),
+                    ],
               ),
             ],
           ),
@@ -252,7 +408,11 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.format_quote, size: 14, color: colorScheme.onSurface.withOpacity(0.5)),
+                  Icon(
+                    Icons.format_quote,
+                    size: 14,
+                    color: colorScheme.onSurface.withOpacity(0.5),
+                  ),
                   Gap(Spacing.xs.w),
                   Expanded(
                     child: Text(
@@ -268,10 +428,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
             ),
           Gap(Spacing.xs.h),
           // Content
-          Text(
-            comment.content,
-            style: textTheme.bodyMedium,
-          ),
+          Text(comment.content, style: textTheme.bodyMedium),
           Gap(Spacing.sm.h),
           // Actions
           Row(
@@ -281,7 +438,8 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                 icon: Icons.thumb_up_outlined,
                 activeIcon: Icons.thumb_up,
                 count: comment.likeCount,
-                isActive: false, // Would need userReaction field on CommentModel
+                isActive:
+                    false, // Would need userReaction field on CommentModel
                 onTap: () {
                   // Implement like/unlike
                 },
@@ -289,10 +447,13 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
               Gap(Spacing.md.w),
               // Reply button
               GestureDetector(
-                onTap: () => _setReplyTarget(
-                  comment.id,
-                  comment.content.length > 60 ? '${comment.content.substring(0, 60)}...' : comment.content,
-                ),
+                onTap:
+                    () => _setReplyTarget(
+                      comment.id,
+                      comment.content.length > 60
+                          ? '${comment.content.substring(0, 60)}...'
+                          : comment.content,
+                    ),
                 child: Text(
                   'Reply',
                   style: textTheme.bodySmall?.copyWith(
@@ -318,49 +479,74 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
       onTap: onTap,
       child: Row(
         children: [
-          Icon(
-            isActive ? activeIcon : icon,
-            size: 14,
-          ),
+          Icon(isActive ? activeIcon : icon, size: 14),
           Gap(Spacing.xs.w),
-          if (count > 0)
-            Text(
-              '$count',
-              style: const TextStyle(fontSize: 11),
-            ),
+          if (count > 0) Text('$count', style: const TextStyle(fontSize: 11)),
         ],
       ),
     );
   }
 
-  void _showReportDialog(BuildContext context, WidgetRef ref, String commentId) {
+  void _showReportDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String commentId,
+  ) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Report this comment'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildReportOption(context, ref, commentId, 'Identifies a real person'),
-            _buildReportOption(context, ref, commentId, 'Harmful or dangerous content'),
-            _buildReportOption(context, ref, commentId, 'Explicit sexual content'),
-            _buildReportOption(context, ref, commentId, 'Hate speech or discrimination'),
-            _buildReportOption(context, ref, commentId, 'Spam'),
-            _buildReportOption(context, ref, commentId, 'Other'),
-          ],
-        ),
-      ),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Report this comment'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildReportOption(
+                  context,
+                  ref,
+                  commentId,
+                  'Identifies a real person',
+                ),
+                _buildReportOption(
+                  context,
+                  ref,
+                  commentId,
+                  'Harmful or dangerous content',
+                ),
+                _buildReportOption(
+                  context,
+                  ref,
+                  commentId,
+                  'Explicit sexual content',
+                ),
+                _buildReportOption(
+                  context,
+                  ref,
+                  commentId,
+                  'Hate speech or discrimination',
+                ),
+                _buildReportOption(context, ref, commentId, 'Spam'),
+                _buildReportOption(context, ref, commentId, 'Other'),
+              ],
+            ),
+          ),
     );
   }
 
-  Widget _buildReportOption(BuildContext context, WidgetRef ref, String commentId, String reason) {
+  Widget _buildReportOption(
+    BuildContext context,
+    WidgetRef ref,
+    String commentId,
+    String reason,
+  ) {
     return ListTile(
       title: Text(reason),
       onTap: () async {
         Navigator.pop(context);
         // Implement comment report provider
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Thank you. We will review this within 24 hours.')),
+          const SnackBar(
+            content: Text('Thank you. We will review this within 24 hours.'),
+          ),
         );
       },
     );
@@ -368,11 +554,16 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
 
   String _getStatusDisplay(String? status) {
     switch (status) {
-      case 'single': return 'Single';
-      case 'taken': return 'Taken';
-      case 'figuring_it_out': return 'Figuring it out';
-      case 'open': return 'Open';
-      default: return '';
+      case 'single':
+        return 'Single';
+      case 'taken':
+        return 'Taken';
+      case 'figuring_it_out':
+        return 'Figuring it out';
+      case 'open':
+        return 'Open';
+      default:
+        return '';
     }
   }
 
