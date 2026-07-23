@@ -4,9 +4,9 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/opinions/data/models/comment_model.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
+import 'package:attune/features/opinions/data/opinion_more_data.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class CommentThreadScreen extends ConsumerStatefulWidget {
@@ -82,103 +82,47 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     }
   }
 
-  // Moved here from OpinionCard's overflow menu — this AppBar action is now
-  // the single moderation entry point (report/copy/delete) for the opinion.
+  // AppBar action — the single moderation entry point (report/copy/delete)
+  // for the opinion, built from OpinionMoreData's SettingsConfig list so it
+  // renders with the same SettingsItem row ProfileMoreData uses elsewhere.
   void _showOpinionMenu(BuildContext context, WidgetRef ref) {
-    // Server-computed: the real user_id never reaches the client (FORUM.md §3).
-    final isOwnPost = widget.opinion.isMine;
-
     showModalBottomSheet<void>(
       context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // You cannot report your own post; you can delete it.
-            if (!isOwnPost)
-              ListTile(
-                leading: const Icon(Icons.flag_outlined),
-                title: const Text('Report'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _showReportOpinionDialog(context, ref);
-                },
-              ),
-            ListTile(
-              leading: const Icon(Icons.copy_outlined),
-              title: const Text('Copy text'),
-              onTap: () async {
-                Navigator.pop(sheetContext);
-                await Clipboard.setData(
-                  ClipboardData(text: widget.opinion.content),
-                );
-                if (context.mounted) {
-                  context.showInfoSnackbar('Copied to clipboard');
-                }
-              },
-            ),
-            if (isOwnPost)
-              ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: const Text('Delete'),
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-                  await ref.read(
-                    deleteOpinionProvider(widget.opinion.id).future,
-                  );
-                  if (context.mounted) Navigator.pop(context);
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
+      builder: (sheetContext) {
+        // Each action closes this sheet first (Navigator.pop(sheetContext))
+        // before running, so a follow-up UI action (report reasons, a
+        // snackbar, popping the detail screen after delete) doesn't stack
+        // on top of an already-dismissed sheet.
+        final sections = OpinionMoreData.getSections(
+          context: context,
+          ref: ref,
+          opinion: widget.opinion,
+          onReport: () {
+            Navigator.pop(sheetContext);
+            OpinionMoreData.showReportReasons(
+              context: context,
+              ref: ref,
+              opinionId: widget.opinion.id,
+            );
+          },
+          onDelete: () async {
+            Navigator.pop(sheetContext);
+            await ref.read(deleteOpinionProvider(widget.opinion.id).future);
+            if (context.mounted) Navigator.pop(context);
+          },
+        );
 
-  void _showReportOpinionDialog(BuildContext context, WidgetRef ref) {
-    // Reason list is the FORUM.md §8 set (matches the comment report dialog).
-    const reasons = [
-      'Identifies a real person',
-      'Harmful or dangerous content',
-      'Explicit sexual content',
-      'Hate speech or discrimination',
-      'Spam',
-      'Other',
-    ];
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: EdgeInsets.all(Spacing.md.w),
-              child: Text(
-                'Report this opinion',
-                style: Theme.of(sheetContext).textTheme.titleMedium,
-              ),
-            ),
-            for (final reason in reasons)
-              ListTile(
-                title: Text(reason),
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-                  await ref.read(
-                    reportOpinionProvider((
-                      opinionId: widget.opinion.id,
-                      reason: reason,
-                    )).future,
-                  );
-                  if (context.mounted) {
-                    context.showInfoSnackbar(
-                      'Thank you. We will review this within 24 hours.',
-                    );
-                  }
-                },
-              ),
-          ],
-        ),
-      ),
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final section in sections)
+                for (final item in section.items)
+                  SettingsItem(config: item, showDivider: false),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -250,22 +194,11 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                     Gap(Spacing.md.h),
                     if (comments.isEmpty)
                       Center(
-                        child: Column(
-                          children: [
-                            Gap(Spacing.lg.h),
-                            Icon(
-                              Icons.chat_outlined,
-                              size: 48,
-                              color: Colors.grey,
-                            ),
-                            Gap(Spacing.md.h),
-                            Text(
-                              'No comments yet',
-                              style: textTheme.titleMedium,
-                            ),
-                            Gap(Spacing.sm.h),
-                            Text('Be the first to comment'),
-                          ],
+                        child: EmptyStateWidget(
+                          icon: Icons.comment,
+                          title: 'No comments yet',
+                          subtitle:
+                              'What do you think? Feel free to drop your opnion',
                         ),
                       )
                     else
