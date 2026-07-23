@@ -2,6 +2,7 @@
 
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
+import 'package:attune/features/opinions/data/opinion_more_data.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -13,6 +14,16 @@ class OpinionCard extends ConsumerWidget {
   final VoidCallback? onCommentTap;
   final VoidCallback? onProfileTap;
 
+  /// Hide the comment-count action when this card is embedded in
+  /// CommentThreadScreen, which already has a comment textfield below —
+  /// tapping it there to re-open the (already open) thread is redundant.
+  final bool showCommentAction;
+
+  /// Hide the overflow (⋮) menu when this card is embedded in
+  /// CommentThreadScreen, which already has the same report/copy/delete
+  /// menu on its AppBar — avoids showing the action twice.
+  final bool showMoreButton;
+
   const OpinionCard({
     super.key,
     required this.opinion,
@@ -20,6 +31,8 @@ class OpinionCard extends ConsumerWidget {
     this.onOpinionTap,
     this.onCommentTap,
     this.onProfileTap,
+    this.showCommentAction = true,
+    this.showMoreButton = true,
   });
 
   // Shared between the feed card and CommentThreadScreen's header so the
@@ -91,12 +104,15 @@ class OpinionCard extends ConsumerWidget {
                 isActive: opinion.userReaction == 'dislike',
                 onTap: () => _toggleReaction(context, ref, 'dislike'),
               ),
-              Gap(Spacing.md.w),
-              _buildActionButton(
-                icon: Icons.edit,
-                label: '${opinion.commentCount}',
-                onTap: onCommentTap ?? () {},
-              ),
+              if (showCommentAction) ...[
+                Gap(Spacing.md.w),
+                _buildActionButton(
+                  context: context,
+                  icon: Icons.edit,
+                  label: '${opinion.commentCount}',
+                  onTap: onCommentTap ?? () {},
+                ),
+              ],
               Gap(Spacing.md.w),
               // Reshare: icon only for now, no count/backend yet — separate
               // feature, tracked to be implemented later.
@@ -126,10 +142,62 @@ class OpinionCard extends ConsumerWidget {
               ),
               if (showFollowButton && !isOwnPost)
                 _buildFollowButton(context, ref),
+              if (showMoreButton) _buildMoreButton(context, ref),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildMoreButton(BuildContext context, WidgetRef ref) {
+    return GestureDetector(
+      onTap: () => _showOpinionMenu(context, ref),
+      child: Icon(
+        Icons.more_horiz,
+        size: 18.h,
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+      ),
+    );
+  }
+
+  // Same report/copy/delete menu CommentThreadScreen shows on its AppBar —
+  // this card is only responsible for opening it when showMoreButton is
+  // true (feed contexts); the detail screen passes showMoreButton: false
+  // and owns its own trigger instead of duplicating the action.
+  void _showOpinionMenu(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) {
+        final sections = OpinionMoreData.getSections(
+          context: context,
+          ref: ref,
+          opinion: opinion,
+          onReport: () {
+            Navigator.pop(sheetContext);
+            OpinionMoreData.showReportReasons(
+              context: context,
+              ref: ref,
+              opinionId: opinion.id,
+            );
+          },
+          onDelete: () async {
+            Navigator.pop(sheetContext);
+            await ref.read(deleteOpinionProvider(opinion.id).future);
+          },
+        );
+
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final section in sections)
+                for (final item in section.items)
+                  SettingsItem(config: item, showDivider: false),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -150,6 +218,9 @@ class OpinionCard extends ConsumerWidget {
     required bool isActive,
     required VoidCallback onTap,
   }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
     return GestureDetector(
       onTap: onTap,
       child: Row(
@@ -160,7 +231,13 @@ class OpinionCard extends ConsumerWidget {
             color: isActive ? Theme.of(context).colorScheme.primary : null,
           ),
           Gap(Spacing.xs.w),
-          Text(count > 0 ? '$count' : '', style: const TextStyle(fontSize: 12)),
+          Text(
+            count > 0 ? '$count' : '',
+            style: textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface.withValues(alpha: 0.8),
+            ),
+          ),
         ],
       ),
     );
@@ -170,14 +247,24 @@ class OpinionCard extends ConsumerWidget {
     required IconData icon,
     required String label,
     required VoidCallback onTap,
+    required BuildContext context,
   }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
     return GestureDetector(
       onTap: onTap,
       child: Row(
         children: [
           Icon(icon, size: 18),
           Gap(Spacing.xs.w),
-          Text(label, style: const TextStyle(fontSize: 12)),
+          Text(
+            label,
+            style: textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface.withValues(alpha: 0.8),
+            ),
+          ),
         ],
       ),
     );

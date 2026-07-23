@@ -188,6 +188,11 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                     OpinionCard(
                       opinion: widget.opinion,
                       showFollowButton: false,
+                      // The comment textfield below replaces the need to
+                      // tap into a thread, and the AppBar already carries
+                      // the same report/copy/delete menu as showMoreButton.
+                      showCommentAction: false,
+                      showMoreButton: false,
                     ),
                     Gap(Spacing.md.h),
                     const Divider(),
