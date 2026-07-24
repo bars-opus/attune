@@ -1,6 +1,7 @@
 // lib/features/opinions/presentation/screens/opinions_tab.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/auth/presentation/widgets/logout_action.dart';
 import 'package:attune/features/forums/presentation/screens/forum_screen.dart';
 import 'package:attune/features/forums/presentation/screens/forums_section.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
@@ -156,11 +157,7 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
               snap: true,
               leading: AppIconButton(
                 icon: Icons.menu,
-                onPressed: () {
-                  if (kDebugMode) {
-                    context.push(RouteNames.onboarding, extra: true);
-                  }
-                },
+                onPressed: () => LogoutAction.confirmAndSignOut(context),
               ),
               title: SizedBox(
                 width: 30,
