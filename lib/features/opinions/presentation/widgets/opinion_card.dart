@@ -59,98 +59,106 @@ class OpinionCard extends ConsumerWidget {
       children: [
         // Hero'd between the feed card and CommentThreadScreen's header —
         // the opinion itself transitions, not its actions row below.
-        Hero(
-          tag: _heroTag,
-          child: Material(
-            type: MaterialType.transparency,
-            child: GestureDetector(
-              onTap: onOpinionTap,
-              behavior: HitTestBehavior.opaque,
-              child: InfoRowWidget(
-                title: '',
-                subtitle: opinion.content,
-                icon: statusIcon,
-                iconColor: colorScheme.background,
-                backgroundColor: Colors.grey,
-                avatarRadius: 20.h,
-                iconSize: 18.h,
+        Padding(
+          padding: const EdgeInsets.all(Spacing.md),
+          child: Hero(
+            tag: _heroTag,
+            child: Material(
+              type: MaterialType.transparency,
+              child: GestureDetector(
                 onTap: onOpinionTap,
-                onAvatarTap: onProfileTap,
-                disableTrailing: true,
-                showAvatar: true,
-                showTrailingArrow: false,
-                bottomWidget: Padding(
-                  padding: const EdgeInsets.only(
-                    top: Spacing.md,
-                    bottom: Spacing.sm,
-                  ),
-                  child: Row(
-                    children: [
-                      _buildReactionButton(
-                        context: context,
-                        icon: Icons.favorite_outline,
-                        activeIcon: Icons.favorite,
-                        count: opinion.likeCount,
-                        isActive: opinion.userReaction == 'like',
-                        onTap: () => _toggleReaction(context, ref, 'like'),
-                      ),
-                      Gap(Spacing.md.w),
-                      _buildReactionButton(
-                        context: context,
-                        icon: Icons.thumb_down_outlined,
-                        activeIcon: Icons.thumb_down,
-                        count: opinion.dislikeCount,
-                        isActive: opinion.userReaction == 'dislike',
-                        onTap: () => _toggleReaction(context, ref, 'dislike'),
-                      ),
-                      if (showCommentAction) ...[
-                        Gap(Spacing.md.w),
-                        _buildActionButton(
+                behavior: HitTestBehavior.opaque,
+                child: InfoRowWidget(
+                  title: '',
+                  subtitle: opinion.content,
+                  icon: statusIcon,
+                  iconColor: colorScheme.background,
+                  backgroundColor: Colors.grey,
+                  avatarRadius: 20.h,
+                  iconSize: 18.h,
+                  onTap: onOpinionTap,
+                  showDivider: false,
+                  onAvatarTap: onProfileTap,
+                  disableTrailing: true,
+                  showAvatar: true,
+                  showTrailingArrow: false,
+                  bottomWidget: Padding(
+                    padding: const EdgeInsets.only(
+                      top: Spacing.md,
+                      bottom: Spacing.sm,
+                    ),
+                    child: Row(
+                      children: [
+                        _buildReactionButton(
                           context: context,
-                          icon: Icons.edit,
-                          label: '${opinion.commentCount}',
-                          onTap: onCommentTap ?? () {},
+                          icon: Icons.favorite_outline,
+                          activeIcon: Icons.favorite,
+                          count: opinion.likeCount,
+                          isActive: opinion.userReaction == 'like',
+                          onTap: () => _toggleReaction(context, ref, 'like'),
                         ),
-                      ],
-                      Gap(Spacing.md.w),
-                      // Reshare: icon only for now, no count/backend yet — separate
-                      // feature, tracked to be implemented later.
-                      GestureDetector(
-                        onTap: () {},
-                        child: const Icon(Icons.repeat, size: 18),
-                      ),
-                      const Spacer(),
-                      Row(
-                        children: [
-                          Text(
-                            timeAgo,
-                            style: textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurface.withValues(
-                                alpha: 0.5,
-                              ),
-                            ),
-                          ),
-
-                          Gap(Spacing.sm.w),
-
-                          Text(
-                            statusDisplay,
-                            style: textTheme.bodySmall?.copyWith(
-                              color: statusIconColor,
-                            ),
+                        Gap(Spacing.md.w),
+                        _buildReactionButton(
+                          context: context,
+                          icon: Icons.thumb_down_outlined,
+                          activeIcon: Icons.thumb_down,
+                          count: opinion.dislikeCount,
+                          isActive: opinion.userReaction == 'dislike',
+                          onTap: () => _toggleReaction(context, ref, 'dislike'),
+                        ),
+                        Gap(Spacing.md.w),
+                        // Reshare: icon only for now, no count/backend yet — separate
+                        // feature, tracked to be implemented later.
+                        GestureDetector(
+                          onTap: () {},
+                          child: const Icon(Icons.repeat, size: 18),
+                        ),
+                        if (showCommentAction) ...[
+                          Gap(Spacing.md.w),
+                          _buildActionButton(
+                            context: context,
+                            icon: Icons.edit,
+                            label: opinion.commentCount > 0
+                                ? '${opinion.commentCount}'
+                                : '',
+                            onTap: onCommentTap ?? () {},
                           ),
                         ],
-                      ),
-                      if (showFollowButton && !isOwnPost)
-                        _buildFollowButton(context, ref),
-                      if (showMoreButton) _buildMoreButton(context, ref),
-                    ],
+
+                        const Spacer(),
+                        Row(
+                          children: [
+                            Text(
+                              timeAgo,
+                              style: textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurface.withValues(
+                                  alpha: 0.5,
+                                ),
+                              ),
+                            ),
+
+                            Gap(Spacing.sm.w),
+
+                            Text(
+                              statusDisplay,
+                              style: textTheme.bodySmall?.copyWith(
+                                color: statusIconColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (showFollowButton && !isOwnPost)
+                          _buildFollowButton(context, ref),
+                        if (showMoreButton) _buildMoreButton(context, ref),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
         ),
+        AppDivider(),
       ],
     );
   }
@@ -264,7 +272,7 @@ class OpinionCard extends ConsumerWidget {
           Icon(icon, size: 18),
           Gap(Spacing.xs.w),
           Text(
-            label,
+           label ,
             style: textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w600,
               color: colorScheme.onSurface.withValues(alpha: 0.8),
