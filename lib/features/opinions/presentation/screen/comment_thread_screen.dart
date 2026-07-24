@@ -318,31 +318,8 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
 
     final widgets = <Widget>[];
     for (final comment in topLevel) {
-      widgets.add(_buildCommentCard(comment, ref));
       final replies = repliesByParent[comment.id];
-      if (replies != null && replies.isNotEmpty) {
-        widgets.add(
-          _buildRepliesRow(
-            comment.id,
-            replies,
-            isExpanded: _expandedReplies.contains(comment.id),
-          ),
-        );
-        if (_expandedReplies.contains(comment.id)) {
-          widgets.add(
-            Padding(
-              padding: EdgeInsets.only(left: Spacing.lg.w),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (final reply in replies)
-                    _buildCommentCard(reply, ref, showReplyAction: false),
-                ],
-              ),
-            ),
-          );
-        }
-      }
+      widgets.add(_buildCommentCard(comment, ref, replies: replies));
     }
     return widgets;
   }
@@ -450,6 +427,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     CommentModel comment,
     WidgetRef ref, {
     bool showReplyAction = true,
+    List<CommentModel>? replies,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
@@ -547,38 +525,6 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Quoted text (if replying)
-          if (comment.quotedText != null)
-            Container(
-              margin: EdgeInsets.only(top: Spacing.xs.h, bottom: Spacing.xs.h),
-              padding: EdgeInsets.all(Spacing.xs.w),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.format_quote,
-                    size: 14,
-                    color: colorScheme.onSurface.withOpacity(0.5),
-                  ),
-                  Gap(Spacing.xs.w),
-                  Expanded(
-                    child: Text(
-                      comment.quotedText!,
-                      style: textTheme.bodySmall?.copyWith(
-                        fontStyle: FontStyle.italic,
-                        color: colorScheme.onSurface.withOpacity(0.7),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          Gap(Spacing.xs.h),
-
           // Content
           InfoRowWidget(
             title: '',
@@ -595,76 +541,106 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
             disableTrailing: true,
             showAvatar: true,
             showTrailingArrow: false,
-            bottomWidget: Row(
+            bottomWidget: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Like button (simplified - no dislike for comments in v1? Spec allows both)
-                _buildCommentReactionButton(
-                  icon: Icons.favorite_border_outlined,
-                  activeIcon: Icons.favorite,
-                  count: comment.likeCount,
-
-                  isActive:
-                      false, // Would need userReaction field on CommentModel
-                  onTap: () {
-                    // Implement like/unlike
-                  },
-                ),
-                if (showReplyAction) ...[
-                  Gap(Spacing.md.w),
-                  // Reply button
-                  GestureDetector(
-                    onTap:
-                        () => _setReplyTarget(
-                          comment.id,
-                          comment.content.length > 60
-                              ? '${comment.content.substring(0, 60)}...'
-                              : comment.content,
+                Row(
+                  children: [
+                    // Like button (simplified - no dislike for comments in v1? Spec allows both)
+                    _buildCommentReactionButton(
+                      icon: Icons.favorite_border_outlined,
+                      activeIcon: Icons.favorite,
+                      count: comment.likeCount,
+                      isActive:
+                          false, // Would need userReaction field on CommentModel
+                      onTap: () {
+                        // Implement like/unlike
+                      },
+                    ),
+                    if (showReplyAction) ...[
+                      Gap(Spacing.md.w),
+                      // Reply button
+                      GestureDetector(
+                        onTap:
+                            () => _setReplyTarget(
+                              comment.id,
+                              comment.content.length > 60
+                                  ? '${comment.content.substring(0, 60)}...'
+                                  : comment.content,
+                            ),
+                        child: Text(
+                          'Reply',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.primary,
+                          ),
                         ),
-                    child: Text(
-                      'Reply',
+                      ),
+                    ],
+                    const Spacer(),
+
+                    Text(
+                      timeAgo,
                       style: textTheme.bodySmall?.copyWith(
-                        color: colorScheme.primary,
+                        color: colorScheme.onBackground.withOpacity(0.5),
                       ),
                     ),
+                    Gap(Spacing.md.w),
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_horiz, size: 16),
+                      onSelected: (value) async {
+                        if (value == 'report') {
+                          _showReportDialog(context, ref, comment.id);
+                        } else if (value == 'delete' && isOwnComment) {
+                          await ref.read(
+                            deleteCommentProvider((
+                              commentId: comment.id,
+                              opinionId: widget.opinionId,
+                            )).future,
+                          );
+                        }
+                      },
+                      itemBuilder:
+                          (context) => [
+                            if (!isOwnComment)
+                              const PopupMenuItem(
+                                value: 'report',
+                                child: Text('Report'),
+                              ),
+                            if (isOwnComment)
+                              const PopupMenuItem(
+                                value: 'delete',
+                                child: Text('Delete'),
+                              ),
+                          ],
+                    ),
+                  ],
+                ),
+                // Replies: stacked avatars + expand toggle, inside this
+                // comment's own bottomWidget (ahead of InfoRowWidget's
+                // divider) so they read as belonging to this comment rather
+                // than looking like a separate section below the divider.
+                if (replies != null && replies.isNotEmpty) ...[
+                  _buildRepliesRow(
+                    comment.id,
+                    replies,
+                    isExpanded: _expandedReplies.contains(comment.id),
                   ),
+                  if (_expandedReplies.contains(comment.id))
+                    Padding(
+                      padding: EdgeInsets.only(left: Spacing.lg.w),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (final reply in replies)
+                            _buildCommentCard(
+                              reply,
+                              ref,
+                              showReplyAction: false,
+                            ),
+                        ],
+                      ),
+                    ),
                 ],
-                const Spacer(),
-
-                Text(
-                  timeAgo,
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onBackground.withOpacity(0.5),
-                  ),
-                ),
-                Gap(Spacing.md.w),
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_horiz, size: 16),
-                  onSelected: (value) async {
-                    if (value == 'report') {
-                      _showReportDialog(context, ref, comment.id);
-                    } else if (value == 'delete' && isOwnComment) {
-                      await ref.read(
-                        deleteCommentProvider((
-                          commentId: comment.id,
-                          opinionId: widget.opinionId,
-                        )).future,
-                      );
-                    }
-                  },
-                  itemBuilder:
-                      (context) => [
-                        if (!isOwnComment)
-                          const PopupMenuItem(
-                            value: 'report',
-                            child: Text('Report'),
-                          ),
-                        if (isOwnComment)
-                          const PopupMenuItem(
-                            value: 'delete',
-                            child: Text('Delete'),
-                          ),
-                      ],
-                ),
               ],
             ),
           ),
