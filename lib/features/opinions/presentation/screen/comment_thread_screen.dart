@@ -8,6 +8,7 @@ import 'package:attune/features/opinions/data/opinion_more_data.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class CommentThreadScreen extends ConsumerStatefulWidget {
   final String opinionId;
@@ -75,9 +76,8 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     } catch (e) {
       setState(() => _isSubmitting = false);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to post comment: $e')));
+        print(e);
+        context.showErrorSnackbar('Failed to post comment: $e');
       }
     }
   }
@@ -133,130 +133,134 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     final textTheme = theme.textTheme;
     final commentsAsync = ref.watch(commentsProvider(widget.opinionId));
 
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: true,
-        title: RichText(
-          text: TextSpan(
-            children: [
-              TextSpan(
-                text: 'Opinion',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface.withValues(alpha: 0.8),
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          automaticallyImplyLeading: true,
+          title: RichText(
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: 'Opinion',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface.withValues(alpha: 0.8),
+                  ),
                 ),
-              ),
-              TextSpan(
-                text: '\n23K Views',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface.withOpacity(.4),
+                TextSpan(
+                  text:
+                      '\n${_formatCommentCount(commentsAsync.valueOrNull?.length ?? widget.opinion.commentCount)} Comments',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface.withOpacity(.4),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
+            textAlign: TextAlign.center,
           ),
-          textAlign: TextAlign.center,
+          // Text(
+          //   'Opinion',
+          //   style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600,
+
+          //   color: colorScheme.onBackground,
+
+          // ),
+
+          // ),
+          actions: [
+            AppIconButton(
+              icon: Icons.more_vert_rounded,
+              onPressed: () => _showOpinionMenu(context, ref),
+            ),
+          ],
         ),
-        // Text(
-        //   'Opinion',
-        //   style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600,
+        body: Column(
+          children: [
+            // Opinion + comment list, opinion pinned as the list's first item
+            // so it scrolls away with the comments rather than staying fixed.
+            Expanded(
+              child: commentsAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, stack) => ErrorStateWidget.from(error),
+                data: (comments) {
+                  return ListView(
+                    padding: EdgeInsets.all(Spacing.md.w),
+                    children: [
+                      OpinionCard(
+                        opinion: widget.opinion,
+                        showFollowButton: false,
+                        // The comment textfield below replaces the need to
+                        // tap into a thread, and the AppBar already carries
+                        // the same report/copy/delete menu as showMoreButton.
+                        showCommentAction: false,
+                        showMoreButton: false,
+                      ),
 
-        //   color: colorScheme.onBackground,
-
-        // ),
-
-        // ),
-        actions: [
-          AppIconButton(
-            icon: Icons.more_vert_rounded,
-            onPressed: () => _showOpinionMenu(context, ref),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Opinion + comment list, opinion pinned as the list's first item
-          // so it scrolls away with the comments rather than staying fixed.
-          Expanded(
-            child: commentsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, stack) => ErrorStateWidget.from(error),
-              data: (comments) {
-                return ListView(
-                  padding: EdgeInsets.all(Spacing.md.w),
+                      Gap(Spacing.md.h),
+                      if (comments.isEmpty)
+                        Center(
+                          child: EmptyStateWidget(
+                            icon: Icons.comment,
+                            title: 'No comments yet',
+                            subtitle:
+                                'What do you think? Feel free to drop your opnion',
+                          ),
+                        )
+                      else
+                        for (final comment in comments)
+                          _buildCommentCard(comment, comments, ref),
+                    ],
+                  );
+                },
+              ),
+            ),
+            // Reply indicator
+            if (_replyToCommentId != null)
+              Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: Spacing.md.w,
+                  vertical: Spacing.sm.h,
+                ),
+                color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                child: Row(
                   children: [
-                    OpinionCard(
-                      opinion: widget.opinion,
-                      showFollowButton: false,
-                      // The comment textfield below replaces the need to
-                      // tap into a thread, and the AppBar already carries
-                      // the same report/copy/delete menu as showMoreButton.
-                      showCommentAction: false,
-                      showMoreButton: false,
+                    Expanded(
+                      child: Text(
+                        'Replying to: ${_replyToQuotedText?.substring(0, (_replyToQuotedText!.length > 40) ? 40 : _replyToQuotedText!.length)}...',
+                        style: textTheme.bodySmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    Gap(Spacing.md.h),
-                    const Divider(),
-                    Gap(Spacing.md.h),
-                    if (comments.isEmpty)
-                      Center(
-                        child: EmptyStateWidget(
-                          icon: Icons.comment,
-                          title: 'No comments yet',
-                          subtitle:
-                              'What do you think? Feel free to drop your opnion',
-                        ),
-                      )
-                    else
-                      for (final comment in comments)
-                        _buildCommentCard(comment, comments, ref),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 16),
+                      onPressed: _clearReplyTarget,
+                    ),
                   ],
-                );
-              },
-            ),
-          ),
-          // Reply indicator
-          if (_replyToCommentId != null)
-            Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: Spacing.md.w,
-                vertical: Spacing.sm.h,
-              ),
-              color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Replying to: ${_replyToQuotedText?.substring(0, (_replyToQuotedText!.length > 40) ? 40 : _replyToQuotedText!.length)}...',
-                      style: textTheme.bodySmall,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 16),
-                    onPressed: _clearReplyTarget,
-                  ),
-                ],
-              ),
-            ),
-          // Comment input, styled like chat's message input.
-          Container(
-            decoration: BoxDecoration(
-              color: colorScheme.surface,
-              border: Border(
-                top: BorderSide(
-                  color: colorScheme.outline.withOpacity(0.1),
-                  width: BorderWidthTokens.hairline,
                 ),
               ),
+            // Comment input, styled like chat's message input.
+            Container(
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                border: Border(
+                  top: BorderSide(
+                    color: colorScheme.outline.withOpacity(0.1),
+                    width: BorderWidthTokens.hairline,
+                  ),
+                ),
+              ),
+              child: ChatTextField(
+                controller: _commentController,
+                onSend: _postComment,
+                enabled: !_isSubmitting,
+                hintText: 'Add a comment...',
+              ),
             ),
-            child: ChatTextField(
-              controller: _commentController,
-              onSend: _postComment,
-              enabled: !_isSubmitting,
-              hintText: 'Add a comment...',
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -272,38 +276,103 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     final isOwnComment = comment.isMine;
 
     final statusDisplay = _getStatusDisplay(comment.relationshipStatus);
+    final statusIcon = _statusIconFor(statusDisplay);
+    final statusIconColor = _statusColorFor(
+      statusDisplay,
+      Theme.of(context).colorScheme,
+    );
     final timeAgo = _formatTimeAgo(comment.createdAt);
 
-    return Container(
-      margin: EdgeInsets.only(bottom: Spacing.md.h),
-      padding: EdgeInsets.all(Spacing.sm.w),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Quoted text (if replying)
+        if (comment.quotedText != null)
+          Container(
+            margin: EdgeInsets.only(top: Spacing.xs.h, bottom: Spacing.xs.h),
+            padding: EdgeInsets.all(Spacing.xs.w),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.format_quote,
+                  size: 14,
+                  color: colorScheme.onSurface.withOpacity(0.5),
+                ),
+                Gap(Spacing.xs.w),
+                Expanded(
+                  child: Text(
+                    comment.quotedText!,
+                    style: textTheme.bodySmall?.copyWith(
+                      fontStyle: FontStyle.italic,
+                      color: colorScheme.onSurface.withOpacity(0.7),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Gap(Spacing.xs.h),
+
+        // Content
+        InfoRowWidget(
+          title: '',
+          subtitle: comment.content,
+          icon: statusIcon,
+          iconColor: colorScheme.background,
+          backgroundColor: statusIconColor,
+          avatarRadius: 15.h,
+          subTitleMaxLines: 10,
+          iconSize: 12.h,
+          onTap: () {},
+          showDivider: true,
+          onAvatarTap: () {},
+          disableTrailing: true,
+          showAvatar: true,
+          showTrailingArrow: false,
+          bottomWidget: Row(
             children: [
-              if (statusDisplay.isNotEmpty)
-                Text(
-                  statusDisplay,
+              // Like button (simplified - no dislike for comments in v1? Spec allows both)
+              _buildCommentReactionButton(
+                icon: Icons.thumb_up_outlined,
+                activeIcon: Icons.thumb_up,
+                count: comment.likeCount,
+                isActive:
+                    false, // Would need userReaction field on CommentModel
+                onTap: () {
+                  // Implement like/unlike
+                },
+              ),
+              Gap(Spacing.md.w),
+              // Reply button
+              GestureDetector(
+                onTap:
+                    () => _setReplyTarget(
+                      comment.id,
+                      comment.content.length > 60
+                          ? '${comment.content.substring(0, 60)}...'
+                          : comment.content,
+                    ),
+                child: Text(
+                  'Reply',
                   style: textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w600,
                     color: colorScheme.primary,
                   ),
                 ),
-              if (statusDisplay.isNotEmpty) Gap(Spacing.xs.w),
+              ),
+              const Spacer(),
+
               Text(
                 timeAgo,
                 style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withOpacity(0.5),
+                  color: colorScheme.onBackground.withOpacity(0.5),
                 ),
               ),
-              const Spacer(),
-              // Menu
+              Gap(Spacing.md.w),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_horiz, size: 16),
                 onSelected: (value) async {
@@ -334,76 +403,43 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
               ),
             ],
           ),
-          // Quoted text (if replying)
-          if (comment.quotedText != null)
-            Container(
-              margin: EdgeInsets.only(top: Spacing.xs.h, bottom: Spacing.xs.h),
-              padding: EdgeInsets.all(Spacing.xs.w),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.format_quote,
-                    size: 14,
-                    color: colorScheme.onSurface.withOpacity(0.5),
-                  ),
-                  Gap(Spacing.xs.w),
-                  Expanded(
-                    child: Text(
-                      comment.quotedText!,
-                      style: textTheme.bodySmall?.copyWith(
-                        fontStyle: FontStyle.italic,
-                        color: colorScheme.onSurface.withOpacity(0.7),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          Gap(Spacing.xs.h),
-          // Content
-          Text(comment.content, style: textTheme.bodyMedium),
-          Gap(Spacing.sm.h),
-          // Actions
-          Row(
-            children: [
-              // Like button (simplified - no dislike for comments in v1? Spec allows both)
-              _buildCommentReactionButton(
-                icon: Icons.thumb_up_outlined,
-                activeIcon: Icons.thumb_up,
-                count: comment.likeCount,
-                isActive:
-                    false, // Would need userReaction field on CommentModel
-                onTap: () {
-                  // Implement like/unlike
-                },
-              ),
-              Gap(Spacing.md.w),
-              // Reply button
-              GestureDetector(
-                onTap:
-                    () => _setReplyTarget(
-                      comment.id,
-                      comment.content.length > 60
-                          ? '${comment.content.substring(0, 60)}...'
-                          : comment.content,
-                    ),
-                child: Text(
-                  'Reply',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+        ),
+      ],
     );
+  }
+
+  IconData _statusIconFor(String statusDisplay) {
+    if (statusDisplay.isEmpty) {
+      return FontAwesomeIcons.circleQuestion;
+    }
+
+    switch (statusDisplay[0].toUpperCase()) {
+      case 'S':
+        return FontAwesomeIcons.s;
+      case 'T':
+        return FontAwesomeIcons.t;
+      case 'F':
+        return FontAwesomeIcons.f;
+      case 'O':
+        return FontAwesomeIcons.o;
+      default:
+        return FontAwesomeIcons.circleQuestion;
+    }
+  }
+
+  Color _statusColorFor(String statusDisplay, ColorScheme colorScheme) {
+    switch (statusDisplay) {
+      case 'Single':
+        return colorScheme.info;
+      case 'Taken':
+        return colorScheme.error;
+      case 'Figuring it out':
+        return colorScheme.warning;
+      case 'Open':
+        return colorScheme.neutral;
+      default:
+        return colorScheme.error;
+    }
   }
 
   Widget _buildCommentReactionButton({
@@ -511,5 +547,15 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     if (diff.inHours > 0) return '${diff.inHours}h ago';
     if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
     return 'just now';
+  }
+
+  String _formatCommentCount(int count) {
+    if (count >= 1000000) {
+      return '${(count / 1000000).toStringAsFixed(count % 1000000 == 0 ? 0 : 1)}M';
+    }
+    if (count >= 1000) {
+      return '${(count / 1000).toStringAsFixed(count % 1000 == 0 ? 0 : 1)}K';
+    }
+    return '$count';
   }
 }
