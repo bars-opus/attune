@@ -1,5 +1,7 @@
 // lib/features/opinions/presentation/screens/comment_thread_screen.dart
 
+import 'dart:async';
+
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/opinions/data/models/comment_model.dart';
@@ -53,6 +55,29 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
       _replyToCommentId = null;
       _replyToQuotedText = null;
     });
+  }
+
+  // Bridges ConfirmationDialog's VoidCallback onto the Future<bool>
+  // DismissiblePane.confirmDismiss expects, so a full swipe past Delete
+  // still asks before removing the comment rather than firing instantly.
+  Future<bool> _confirmDeleteComment(BuildContext context) {
+    final completer = Completer<bool>();
+    BottomSheetUtils.showDocumentationBottomSheet(
+      maxHeight: 320.h,
+      context: context,
+      widget: ConfirmationDialog(
+        noIcon: true,
+        type: ConfirmationType.destructive,
+        title: 'Delete this comment?',
+        confirmText: 'Delete',
+        message: 'This cannot be undone.',
+        onConfirm: () => completer.complete(true),
+        onCancel: () => completer.complete(false),
+      ),
+    ).then((_) {
+      if (!completer.isCompleted) completer.complete(false);
+    });
+    return completer.future;
   }
 
   Future<void> _postComment() async {
@@ -309,10 +334,29 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
         ],
       ),
       // Swipe left-to-right reveals Report (others' comments) or Delete
-      // (own comments) — same actions already in the ⋮ menu below.
+      // (own comments) — same actions already in the ⋮ menu below. A full
+      // swipe past the button fires the action on release, same as iOS
+      // Mail — Delete asks for confirmation first since it has none
+      // anywhere else in this flow; Report just opens the same reason
+      // picker a tap does, so nothing destructive fires without a
+      // deliberate follow-up choice either way.
       endActionPane: ActionPane(
         motion: const DrawerMotion(),
         extentRatio: 0.25,
+        dismissible: DismissiblePane(
+          confirmDismiss: () async {
+            if (!isOwnComment) return false; // Report: no instant dismiss.
+            return _confirmDeleteComment(context);
+          },
+          onDismissed: () {
+            ref.read(
+              deleteCommentProvider((
+                commentId: comment.id,
+                opinionId: widget.opinionId,
+              )).future,
+            );
+          },
+        ),
         children: [
           if (!isOwnComment)
             SlidableAction(
@@ -325,12 +369,14 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
           if (isOwnComment)
             SlidableAction(
               onPressed: (_) async {
-                await ref.read(
-                  deleteCommentProvider((
-                    commentId: comment.id,
-                    opinionId: widget.opinionId,
-                  )).future,
-                );
+                if (await _confirmDeleteComment(context)) {
+                  await ref.read(
+                    deleteCommentProvider((
+                      commentId: comment.id,
+                      opinionId: widget.opinionId,
+                    )).future,
+                  );
+                }
               },
               backgroundColor: colorScheme.error,
               foregroundColor: colorScheme.onError,
