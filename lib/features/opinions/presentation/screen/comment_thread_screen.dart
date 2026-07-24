@@ -8,6 +8,7 @@ import 'package:attune/features/opinions/data/opinion_more_data.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class CommentThreadScreen extends ConsumerStatefulWidget {
@@ -283,128 +284,184 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     );
     final timeAgo = _formatTimeAgo(comment.createdAt);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Quoted text (if replying)
-        if (comment.quotedText != null)
-          Container(
-            margin: EdgeInsets.only(top: Spacing.xs.h, bottom: Spacing.xs.h),
-            padding: EdgeInsets.all(Spacing.xs.w),
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.format_quote,
-                  size: 14,
-                  color: colorScheme.onSurface.withOpacity(0.5),
+    return Slidable(
+      key: ValueKey(comment.id),
+      // Swipe right-to-left reveals Reply. Same _setReplyTarget the inline
+      // "Reply" text already uses — this is an additional way to trigger it,
+      // not a replacement.
+      startActionPane: ActionPane(
+        motion: const DrawerMotion(),
+        extentRatio: 0.25,
+        children: [
+          SlidableAction(
+            onPressed:
+                (_) => _setReplyTarget(
+                  comment.id,
+                  comment.content.length > 60
+                      ? '${comment.content.substring(0, 60)}...'
+                      : comment.content,
                 ),
-                Gap(Spacing.xs.w),
-                Expanded(
-                  child: Text(
-                    comment.quotedText!,
-                    style: textTheme.bodySmall?.copyWith(
-                      fontStyle: FontStyle.italic,
-                      color: colorScheme.onSurface.withOpacity(0.7),
+            backgroundColor: colorScheme.primary,
+            foregroundColor: colorScheme.onPrimary,
+            icon: Icons.reply,
+            label: 'Reply',
+          ),
+        ],
+      ),
+      // Swipe left-to-right reveals Report (others' comments) or Delete
+      // (own comments) — same actions already in the ⋮ menu below.
+      endActionPane: ActionPane(
+        motion: const DrawerMotion(),
+        extentRatio: 0.25,
+        children: [
+          if (!isOwnComment)
+            SlidableAction(
+              onPressed: (_) => _showReportDialog(context, ref, comment.id),
+              backgroundColor: colorScheme.error,
+              foregroundColor: colorScheme.onError,
+              icon: Icons.flag_outlined,
+              label: 'Report',
+            ),
+          if (isOwnComment)
+            SlidableAction(
+              onPressed: (_) async {
+                await ref.read(
+                  deleteCommentProvider((
+                    commentId: comment.id,
+                    opinionId: widget.opinionId,
+                  )).future,
+                );
+              },
+              backgroundColor: colorScheme.error,
+              foregroundColor: colorScheme.onError,
+              icon: Icons.delete_outline,
+              label: 'Delete',
+            ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Quoted text (if replying)
+          if (comment.quotedText != null)
+            Container(
+              margin: EdgeInsets.only(top: Spacing.xs.h, bottom: Spacing.xs.h),
+              padding: EdgeInsets.all(Spacing.xs.w),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.format_quote,
+                    size: 14,
+                    color: colorScheme.onSurface.withOpacity(0.5),
+                  ),
+                  Gap(Spacing.xs.w),
+                  Expanded(
+                    child: Text(
+                      comment.quotedText!,
+                      style: textTheme.bodySmall?.copyWith(
+                        fontStyle: FontStyle.italic,
+                        color: colorScheme.onSurface.withOpacity(0.7),
+                      ),
                     ),
                   ),
+                ],
+              ),
+            ),
+          Gap(Spacing.xs.h),
+
+          // Content
+          InfoRowWidget(
+            title: '',
+            subtitle: comment.content,
+            icon: statusIcon,
+            iconColor: colorScheme.background,
+            backgroundColor: statusIconColor,
+            avatarRadius: 15.h,
+            subTitleMaxLines: 10,
+            iconSize: 12.h,
+            onTap: () {},
+            showDivider: true,
+            onAvatarTap: () {},
+            disableTrailing: true,
+            showAvatar: true,
+            showTrailingArrow: false,
+            bottomWidget: Row(
+              children: [
+                // Like button (simplified - no dislike for comments in v1? Spec allows both)
+                _buildCommentReactionButton(
+                  icon: Icons.thumb_up_outlined,
+                  activeIcon: Icons.thumb_up,
+                  count: comment.likeCount,
+                  isActive:
+                      false, // Would need userReaction field on CommentModel
+                  onTap: () {
+                    // Implement like/unlike
+                  },
+                ),
+                Gap(Spacing.md.w),
+                // Reply button
+                GestureDetector(
+                  onTap:
+                      () => _setReplyTarget(
+                        comment.id,
+                        comment.content.length > 60
+                            ? '${comment.content.substring(0, 60)}...'
+                            : comment.content,
+                      ),
+                  child: Text(
+                    'Reply',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+
+                Text(
+                  timeAgo,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onBackground.withOpacity(0.5),
+                  ),
+                ),
+                Gap(Spacing.md.w),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_horiz, size: 16),
+                  onSelected: (value) async {
+                    if (value == 'report') {
+                      _showReportDialog(context, ref, comment.id);
+                    } else if (value == 'delete' && isOwnComment) {
+                      await ref.read(
+                        deleteCommentProvider((
+                          commentId: comment.id,
+                          opinionId: widget.opinionId,
+                        )).future,
+                      );
+                    }
+                  },
+                  itemBuilder:
+                      (context) => [
+                        if (!isOwnComment)
+                          const PopupMenuItem(
+                            value: 'report',
+                            child: Text('Report'),
+                          ),
+                        if (isOwnComment)
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Text('Delete'),
+                          ),
+                      ],
                 ),
               ],
             ),
           ),
-        Gap(Spacing.xs.h),
-
-        // Content
-        InfoRowWidget(
-          title: '',
-          subtitle: comment.content,
-          icon: statusIcon,
-          iconColor: colorScheme.background,
-          backgroundColor: statusIconColor,
-          avatarRadius: 15.h,
-          subTitleMaxLines: 10,
-          iconSize: 12.h,
-          onTap: () {},
-          showDivider: true,
-          onAvatarTap: () {},
-          disableTrailing: true,
-          showAvatar: true,
-          showTrailingArrow: false,
-          bottomWidget: Row(
-            children: [
-              // Like button (simplified - no dislike for comments in v1? Spec allows both)
-              _buildCommentReactionButton(
-                icon: Icons.thumb_up_outlined,
-                activeIcon: Icons.thumb_up,
-                count: comment.likeCount,
-                isActive:
-                    false, // Would need userReaction field on CommentModel
-                onTap: () {
-                  // Implement like/unlike
-                },
-              ),
-              Gap(Spacing.md.w),
-              // Reply button
-              GestureDetector(
-                onTap:
-                    () => _setReplyTarget(
-                      comment.id,
-                      comment.content.length > 60
-                          ? '${comment.content.substring(0, 60)}...'
-                          : comment.content,
-                    ),
-                child: Text(
-                  'Reply',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ),
-              const Spacer(),
-
-              Text(
-                timeAgo,
-                style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onBackground.withOpacity(0.5),
-                ),
-              ),
-              Gap(Spacing.md.w),
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_horiz, size: 16),
-                onSelected: (value) async {
-                  if (value == 'report') {
-                    _showReportDialog(context, ref, comment.id);
-                  } else if (value == 'delete' && isOwnComment) {
-                    await ref.read(
-                      deleteCommentProvider((
-                        commentId: comment.id,
-                        opinionId: widget.opinionId,
-                      )).future,
-                    );
-                  }
-                },
-                itemBuilder:
-                    (context) => [
-                      if (!isOwnComment)
-                        const PopupMenuItem(
-                          value: 'report',
-                          child: Text('Report'),
-                        ),
-                      if (isOwnComment)
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Delete'),
-                        ),
-                    ],
-              ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
