@@ -35,6 +35,17 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
   String? _replyToQuotedText;
   bool _isSubmitting = false;
 
+  // Parent comment ids whose replies are currently expanded inline.
+  final Set<String> _expandedReplies = {};
+
+  void _toggleRepliesExpanded(String parentCommentId) {
+    setState(() {
+      if (!_expandedReplies.add(parentCommentId)) {
+        _expandedReplies.remove(parentCommentId);
+      }
+    });
+  }
+
   @override
   void dispose() {
     _commentController.dispose();
@@ -236,8 +247,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                           ),
                         )
                       else
-                        for (final comment in comments)
-                          _buildCommentCard(comment, comments, ref),
+                        ..._buildCommentThread(comments, ref),
                     ],
                   );
                 },
@@ -291,11 +301,156 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     );
   }
 
+  // Groups the flat comment list into top-level comments with their replies
+  // nested underneath, instead of every reply rendering as its own
+  // top-level comment mixed into the thread.
+  List<Widget> _buildCommentThread(List<CommentModel> comments, WidgetRef ref) {
+    final repliesByParent = <String, List<CommentModel>>{};
+    final topLevel = <CommentModel>[];
+    for (final comment in comments) {
+      final parentId = comment.replyToCommentId;
+      if (parentId == null) {
+        topLevel.add(comment);
+      } else {
+        repliesByParent.putIfAbsent(parentId, () => []).add(comment);
+      }
+    }
+
+    final widgets = <Widget>[];
+    for (final comment in topLevel) {
+      widgets.add(_buildCommentCard(comment, ref));
+      final replies = repliesByParent[comment.id];
+      if (replies != null && replies.isNotEmpty) {
+        widgets.add(
+          _buildRepliesRow(
+            comment.id,
+            replies,
+            isExpanded: _expandedReplies.contains(comment.id),
+          ),
+        );
+        if (_expandedReplies.contains(comment.id)) {
+          widgets.add(
+            Padding(
+              padding: EdgeInsets.only(left: Spacing.lg.w),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final reply in replies)
+                    _buildCommentCard(reply, ref, showReplyAction: false),
+                ],
+              ),
+            ),
+          );
+        }
+      }
+    }
+    return widgets;
+  }
+
+  // Stacked circular status-icon avatars representing repliers, up to 5 —
+  // the 5th slot shows "5+" when there are more. Tap to expand/collapse the
+  // actual reply cards underneath.
+  Widget _buildRepliesRow(
+    String parentCommentId,
+    List<CommentModel> replies, {
+    required bool isExpanded,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    const maxAvatars = 5;
+    const avatarSize = 22.0;
+    const overlap = 14.0;
+    final shownCount =
+        replies.length > maxAvatars ? maxAvatars : replies.length;
+
+    return Padding(
+      padding: EdgeInsets.only(top: Spacing.xs.h, bottom: Spacing.sm.h),
+      child: GestureDetector(
+        onTap: () => _toggleRepliesExpanded(parentCommentId),
+        behavior: HitTestBehavior.opaque,
+        child: Row(
+          children: [
+            SizedBox(
+              height: avatarSize,
+              width: avatarSize + (shownCount - 1) * overlap,
+              child: Stack(
+                children: [
+                  for (var i = 0; i < shownCount; i++)
+                    Positioned(
+                      left: i * overlap,
+                      child: _buildReplyAvatar(
+                        replies[i],
+                        size: avatarSize,
+                        colorScheme: colorScheme,
+                        showOverflow:
+                            replies.length > maxAvatars && i == maxAvatars - 1,
+                        overflowCount: replies.length - (maxAvatars - 1),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Gap(Spacing.sm.w),
+            Text(
+              '${replies.length} ${replies.length == 1 ? 'reply' : 'replies'}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Gap(Spacing.xs.w),
+            Icon(
+              isExpanded ? Icons.expand_less : Icons.expand_more,
+              size: 16,
+              color: colorScheme.primary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReplyAvatar(
+    CommentModel reply, {
+    required double size,
+    required ColorScheme colorScheme,
+    required bool showOverflow,
+    required int overflowCount,
+  }) {
+    final statusDisplay = _getStatusDisplay(reply.relationshipStatus);
+    final statusColor = _statusColorFor(statusDisplay, colorScheme);
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: showOverflow ? colorScheme.surfaceContainerHighest : statusColor,
+        border: Border.all(color: colorScheme.surface, width: 1.5),
+      ),
+      alignment: Alignment.center,
+      child:
+          showOverflow
+              ? Text(
+                '$overflowCount+',
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  color: colorScheme.onSurface,
+                ),
+              )
+              : Icon(
+                _statusIconFor(statusDisplay),
+                size: size * 0.5,
+                color: colorScheme.background,
+              ),
+    );
+  }
+
   Widget _buildCommentCard(
     CommentModel comment,
-    List<CommentModel> allComments,
-    WidgetRef ref,
-  ) {
+    WidgetRef ref, {
+    bool showReplyAction = true,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     // Server-computed; the real user_id never reaches the client (FORUM.md §3).
@@ -313,26 +468,30 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
       key: ValueKey(comment.id),
       // Swipe right-to-left reveals Reply. Same _setReplyTarget the inline
       // "Reply" text already uses — this is an additional way to trigger it,
-      // not a replacement.
-      startActionPane: ActionPane(
-        motion: const DrawerMotion(),
-        extentRatio: 0.25,
-        children: [
-          SlidableAction(
-            onPressed:
-                (_) => _setReplyTarget(
-                  comment.id,
-                  comment.content.length > 60
-                      ? '${comment.content.substring(0, 60)}...'
-                      : comment.content,
-                ),
-            backgroundColor: colorScheme.primary,
-            foregroundColor: colorScheme.onPrimary,
-            icon: Icons.reply,
-            label: 'Reply',
-          ),
-        ],
-      ),
+      // not a replacement. Replies-to-replies aren't a thing here, so a
+      // reply card omits this pane entirely (showReplyAction: false).
+      startActionPane:
+          !showReplyAction
+              ? null
+              : ActionPane(
+                motion: const DrawerMotion(),
+                extentRatio: 0.25,
+                children: [
+                  SlidableAction(
+                    onPressed:
+                        (_) => _setReplyTarget(
+                          comment.id,
+                          comment.content.length > 60
+                              ? '${comment.content.substring(0, 60)}...'
+                              : comment.content,
+                        ),
+                    backgroundColor: colorScheme.primary,
+                    foregroundColor: colorScheme.onPrimary,
+                    icon: Icons.reply,
+                    label: 'Reply',
+                  ),
+                ],
+              ),
       // Swipe left-to-right reveals Report (others' comments) or Delete
       // (own comments) — same actions already in the ⋮ menu below. A full
       // swipe past the button fires the action on release, same as iOS
@@ -440,32 +599,35 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
               children: [
                 // Like button (simplified - no dislike for comments in v1? Spec allows both)
                 _buildCommentReactionButton(
-                  icon: Icons.thumb_up_outlined,
-                  activeIcon: Icons.thumb_up,
+                  icon: Icons.favorite_border_outlined,
+                  activeIcon: Icons.favorite,
                   count: comment.likeCount,
+
                   isActive:
                       false, // Would need userReaction field on CommentModel
                   onTap: () {
                     // Implement like/unlike
                   },
                 ),
-                Gap(Spacing.md.w),
-                // Reply button
-                GestureDetector(
-                  onTap:
-                      () => _setReplyTarget(
-                        comment.id,
-                        comment.content.length > 60
-                            ? '${comment.content.substring(0, 60)}...'
-                            : comment.content,
+                if (showReplyAction) ...[
+                  Gap(Spacing.md.w),
+                  // Reply button
+                  GestureDetector(
+                    onTap:
+                        () => _setReplyTarget(
+                          comment.id,
+                          comment.content.length > 60
+                              ? '${comment.content.substring(0, 60)}...'
+                              : comment.content,
+                        ),
+                    child: Text(
+                      'Reply',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.primary,
                       ),
-                  child: Text(
-                    'Reply',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colorScheme.primary,
                     ),
                   ),
-                ),
+                ],
                 const Spacer(),
 
                 Text(
@@ -548,6 +710,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
   Widget _buildCommentReactionButton({
     required IconData icon,
     required IconData activeIcon,
+
     required int count,
     required bool isActive,
     required VoidCallback onTap,
@@ -556,7 +719,11 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
       onTap: onTap,
       child: Row(
         children: [
-          Icon(isActive ? activeIcon : icon, size: 14),
+          Icon(
+            isActive ? activeIcon : icon,
+            size: 14,
+            color: isActive ? Colors.pink : Colors.grey,
+          ),
           Gap(Spacing.xs.w),
           if (count > 0) Text('$count', style: const TextStyle(fontSize: 11)),
         ],
