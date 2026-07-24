@@ -79,71 +79,76 @@ class OpinionCard extends ConsumerWidget {
                 disableTrailing: true,
                 showAvatar: true,
                 showTrailingArrow: false,
+                bottomWidget: Padding(
+                  padding: const EdgeInsets.only(
+                    top: Spacing.md,
+                    bottom: Spacing.sm,
+                  ),
+                  child: Row(
+                    children: [
+                      _buildReactionButton(
+                        context: context,
+                        icon: Icons.favorite_outline,
+                        activeIcon: Icons.favorite,
+                        count: opinion.likeCount,
+                        isActive: opinion.userReaction == 'like',
+                        onTap: () => _toggleReaction(context, ref, 'like'),
+                      ),
+                      Gap(Spacing.md.w),
+                      _buildReactionButton(
+                        context: context,
+                        icon: Icons.thumb_down_outlined,
+                        activeIcon: Icons.thumb_down,
+                        count: opinion.dislikeCount,
+                        isActive: opinion.userReaction == 'dislike',
+                        onTap: () => _toggleReaction(context, ref, 'dislike'),
+                      ),
+                      if (showCommentAction) ...[
+                        Gap(Spacing.md.w),
+                        _buildActionButton(
+                          context: context,
+                          icon: Icons.edit,
+                          label: '${opinion.commentCount}',
+                          onTap: onCommentTap ?? () {},
+                        ),
+                      ],
+                      Gap(Spacing.md.w),
+                      // Reshare: icon only for now, no count/backend yet — separate
+                      // feature, tracked to be implemented later.
+                      GestureDetector(
+                        onTap: () {},
+                        child: const Icon(Icons.repeat, size: 18),
+                      ),
+                      const Spacer(),
+                      Row(
+                        children: [
+                          Text(
+                            timeAgo,
+                            style: textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurface.withValues(
+                                alpha: 0.5,
+                              ),
+                            ),
+                          ),
+
+                          Gap(Spacing.sm.w),
+
+                          Text(
+                            statusDisplay,
+                            style: textTheme.bodySmall?.copyWith(
+                              color: statusIconColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (showFollowButton && !isOwnPost)
+                        _buildFollowButton(context, ref),
+                      if (showMoreButton) _buildMoreButton(context, ref),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(top: Spacing.md, bottom: Spacing.sm),
-          child: Row(
-            children: [
-              _buildReactionButton(
-                context: context,
-                icon: Icons.favorite_outline,
-                activeIcon: Icons.favorite,
-                count: opinion.likeCount,
-                isActive: opinion.userReaction == 'like',
-                onTap: () => _toggleReaction(context, ref, 'like'),
-              ),
-              Gap(Spacing.md.w),
-              _buildReactionButton(
-                context: context,
-                icon: Icons.thumb_down_outlined,
-                activeIcon: Icons.thumb_down,
-                count: opinion.dislikeCount,
-                isActive: opinion.userReaction == 'dislike',
-                onTap: () => _toggleReaction(context, ref, 'dislike'),
-              ),
-              if (showCommentAction) ...[
-                Gap(Spacing.md.w),
-                _buildActionButton(
-                  context: context,
-                  icon: Icons.edit,
-                  label: '${opinion.commentCount}',
-                  onTap: onCommentTap ?? () {},
-                ),
-              ],
-              Gap(Spacing.md.w),
-              // Reshare: icon only for now, no count/backend yet — separate
-              // feature, tracked to be implemented later.
-              GestureDetector(
-                onTap: () {},
-                child: const Icon(Icons.repeat, size: 18),
-              ),
-              const Spacer(),
-              Row(
-                children: [
-                  Text(
-                    timeAgo,
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withValues(alpha: 0.5),
-                    ),
-                  ),
-
-                  Gap(Spacing.sm.w),
-
-                  Text(
-                    statusDisplay,
-                    style: textTheme.bodySmall?.copyWith(
-                      color: statusIconColor,
-                    ),
-                  ),
-                ],
-              ),
-              if (showFollowButton && !isOwnPost)
-                _buildFollowButton(context, ref),
-              if (showMoreButton) _buildMoreButton(context, ref),
-            ],
           ),
         ),
       ],
@@ -305,6 +310,15 @@ class OpinionCard extends ConsumerWidget {
       context.showInfoSnackbar(
         'Continue with phone number from Chat to react to opinions.',
       );
+      return;
+    }
+    // FORUM.md: cannot like/dislike your own post — RLS
+    // (opinion_reactions_insert_own) rejects this server-side too, but
+    // without this gate the write silently failed with no feedback and
+    // likeCount never moved, which is what looked like "the count doesn't
+    // show" when reacting to your own opinion.
+    if (opinion.isMine) {
+      context.showInfoSnackbar('You cannot react to your own opinion.');
       return;
     }
     final current = opinion.userReaction;
