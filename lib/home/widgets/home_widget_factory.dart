@@ -12,7 +12,7 @@ class HomeWidgetFactory {
     return HomeWidget(
       tabs: tabs,
       initialTabIndex: initialTabIndex,
-      navigationBarHeight: 72,
+      navigationBarHeight: 65,
       iconSize: 20,
       activeIconSize: 22,
       labelFontSize: 9,

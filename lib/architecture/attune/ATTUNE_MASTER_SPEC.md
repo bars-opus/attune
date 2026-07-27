@@ -2274,7 +2274,7 @@ remain `forum_*` unless a dedicated data-model rename is planned.
 
 #### Core principles (locked in)
 - **Strictly anonymous** — no names, no photos, no profile links to your real account
-- **Strictly text** — no images, no videos, no links (reduces abuse vectors)
+- **Strictly text** — no images, no videos, no links (reduces abuse vectors). Polls are the one permitted structured attachment: their options are plain text and fixed at creation, so they narrow the abuse surface rather than widen it. See "Polls" below.
 - **Relationship status visible** — the only identity signal is a self-selected forum status label
 - **Your partner doesn't know it's you** — even if they're on the platform and in the same thread
 - **Browse before account** — anonymous users can read forum content before phone verification
@@ -2290,12 +2290,312 @@ Anonymous users can:
 - Tap calls-to-action to create an account or start onboarding.
 
 Anonymous users cannot:
-- Post, reply, flag, vote, save, follow, or personalize forum content.
+- Post, reply, flag, vote, save, follow, repost, or personalize forum content.
 - Access Chat, partner invites, relationship tools, Pulse, Insights, Games, or Profile.
 - See any relationship-specific or user-specific data.
 
 Phone verification is required before any write action. This keeps the forum
 open for exploration while preserving abuse response and moderation accountability.
+
+#### Polls
+A poll is an optional attachment on an opinion or a forum topic. It is the only
+structured content the text-only rule admits, because every part of it is plain
+text and fixed at creation — there is no upload, no link, and no free-text field
+a voter can fill.
+
+**Shape**
+- 2–4 options, each ≤ 60 characters of plain text.
+- Options are set at creation and immutable. No adding, editing, or reordering
+  after the post exists — vote counts attached to a changed option would
+  misrepresent what people voted for.
+- A poll never replaces the post body. The opinion or topic text stands on its
+  own; the poll is attached to it.
+- One poll per post, maximum.
+- Polls do not expire. They stay open for as long as the post is visible.
+
+**Voting**
+- Phone-verified users only. This follows the existing rule above: anonymous
+  users cannot vote.
+- One vote per user per poll, enforced by a `UNIQUE (poll_id, user_id)`
+  constraint — the same dedup shape `topic_votes` already uses.
+- A voter may change their vote. Changing moves the count; it never adds a
+  second one.
+- A voter may retract their vote entirely, returning to the pre-vote state.
+- Users can vote on their own polls. Unlike opinion reactions, a poll is a
+  question its author is also entitled to answer.
+- Results are hidden until you vote, then revealed. This prevents the current
+  standing from anchoring later voters. Retracting a vote re-hides results.
+- Vote counts are aggregate only. A per-option tally is exposed; who voted for
+  what is never queryable by any client.
+
+**Anonymity**
+Poll votes carry the same guarantee as everything else on this surface: the
+vote row stores `user_id` for dedup enforcement, and that column is never
+exposed to clients. Clients see per-option counts and their own vote, nothing
+more. RLS must enforce this — a policy allowing a user to read other rows in
+the votes table would deanonymise every voter on the platform.
+
+**Polls in forums are not topic voting.** They are separate mechanics that
+answer different questions, and both exist on the forum surface:
+- *Topic voting* (`topic_votes`) decides whether a topic becomes a live debate
+  room. It is up/down, it gates activation via the >50%-of-seen threshold, and
+  it expires with `voting_expires_at`.
+- *Polls* (`post_polls`) ask the topic's own question of its readers. They are
+  multi-option, they gate nothing, and they do not expire.
+A topic can carry both: people vote it into existence, and separately answer
+the poll inside it.
+
+**Moderation**
+A poll is part of its parent post. Reporting or removing the post takes the
+poll with it; there is no separate report action for a poll or an option. Poll
+option text passes through the same Layer 1 keyword filter as post bodies.
+
+#### Reposts
+A repost is a one-tap "share this as-is" action on an opinion — no added
+commentary, no new free-text surface to moderate. Scoped to opinions only, not
+forum topics (forum topics already have their own re-circulation mechanic —
+topic voting brings a topic into the active debate room in the first place).
+
+**Shape**
+- Reposting is not a copy. It's a reference: a lightweight join row pointing at
+  the original opinion, the same relationship `opinion_follows`/`opinion_saves`
+  already have to their target. Likes, comments, and report counts always
+  belong to the one original opinion — a repost never creates a second,
+  independently-countable copy of the content.
+- No self-repost. Reposting your own opinion is blocked, the same way reacting
+  to your own opinion already is.
+- No repost-of-a-repost. A repost always references the original opinion
+  directly — there is no chain to resolve. Attempting to repost something
+  that is itself a repost re-targets the original, not the repost.
+- A user can un-repost (remove their own repost) at any time. Un-reposting
+  never touches the original opinion.
+
+**Feed visibility**
+A repost surfaces in Discover/Following like a normal feed entry, timestamped
+at repost time (not the original post's `created_at`), so it re-circulates
+into an active timeline rather than only sitting on a personal list. It is
+attributed to the *reposter's* own opaque `author_handle` — never the original
+author's identity, and never a client-visible link between the two handles
+beyond "this opinion, reposted." The original author's own anonymity is
+unaffected: nothing about who they are changes because someone reposted them.
+
+**Notification**
+Reposting queues "someone reposted your opinion" to the original author,
+following the same anonymous pattern as the existing like/comment/reply
+notifications (§10): the recipient learns it happened, never who did it.
+
+**Participation gate**
+Reposting requires phone-verified auth, same as posting, replying, voting,
+saving, and following (see "Anonymous users cannot," above).
+
+**Moderation**
+Un-reposting is always available regardless of the original opinion's state. If
+the original opinion is removed, its reposts stop appearing in feeds (the feed
+query's existing `removed_at IS NULL` filter covers this with no additional
+logic) but the repost rows themselves are not deleted, so a moderation removal
+of the original does not need to separately clean up reposts.
+
+#### Quotes
+A quote is "repost, plus your own opinion" — unlike a plain repost, a quote is
+a real, independent opinion in its own right, not a lightweight reference row.
+It carries your own text, your own like/comment/report counts, and appears in
+feeds as your post — it just also embeds a reference to the opinion it quotes.
+
+**Shape**
+- A quote **is an opinion**. It goes through the same posting path as any
+  opinion: 280-char limit, Layer 1 keyword filter, the §7 posting rate limit
+  and cooldown, the ban gate. Quoting adds no new free-text surface to
+  moderate beyond what posting an opinion already requires — the quote text
+  is moderated exactly like a normal opinion's text, because it is one.
+- The reference to the quoted opinion is a pointer (the quoted opinion's id),
+  not a copy of its content. The quoted opinion's own text, author handle,
+  and counts are resolved live when the quote is rendered — a later edit is
+  not possible (opinions aren't editable at all, quoted or not) but this
+  keeps quote storage minimal and consistent with how reposts reference
+  their target.
+- **Self-quote is allowed.** Unlike repost — where resharing your own post
+  as-is has no purpose and is blocked — quoting your own opinion to add a
+  follow-up thought is a normal, distinct action. It is not blocked.
+- **No quote-of-a-quote.** A quote always references an *original* opinion,
+  never another quote. Quoting something that is itself a quote re-targets
+  the original opinion underneath, the same rule repost already applies to
+  reposts. This keeps the reference flat — one hop, always resolvable,
+  nothing to chain-walk for attribution, moderation, or counting.
+- Because a quote is a full opinion, it can itself be reposted, quoted (by
+  someone else — re-targeting the original per the rule above), replied to,
+  reacted to, saved, and reported, exactly like any other opinion.
+
+**Feed visibility**
+A quote appears in Discover/Following exactly as any new opinion does —
+ranked and timestamped by its own `created_at`, no special-casing needed
+because it *is* an opinion row. It is attributed to the quoter's own opaque
+`author_handle`. The embedded original renders beneath the quote's own text,
+attributed to the original's own (different) `author_handle` — a quote is the
+one place two different anonymous authors' content appears on the same card,
+and the two handles must never be conflated or shown as linked to each other
+beyond "this opinion quotes that one."
+
+**Removed original**
+If the quoted opinion is later removed (moderation) or deleted by its author,
+the quote itself is **not removed** — the quoter's own text and its
+engagement are untouched. The embedded original renders a placeholder ("This
+opinion is no longer available") instead of the vanished content. A quote's
+fate is never tied to a moderation decision made about someone else's post.
+
+**Notification**
+Quoting queues a notification to the *quoted* opinion's original author,
+following the same anonymous pattern as reposts and likes: the recipient
+learns their opinion was quoted, never by whom. (A self-quote does not
+notify — you already know.)
+
+**Participation gate**
+Quoting requires phone-verified auth, same as posting (see "Anonymous users
+cannot," above) — a quote is a post, so it is gated exactly like one.
+
+**Moderation**
+The quote's own text is reportable and removable exactly like any opinion,
+independent of the quoted opinion's state. Removing a quote never removes
+the opinion it quoted.
+
+#### Editing
+Opinions, comments, and forum posts (contributions) may be edited within
+**15 minutes of posting** — long enough to fix a typo or reword something
+right after posting, short enough that it cannot be used to bait engagement
+on one piece of text and then swap in another. One window, one rule, applied
+identically across all three content types rather than three separate
+numbers to justify.
+
+**Validation**
+An edit runs through the exact same checks a new post does: the 280-char
+limit and the Layer 1 keyword filter. Editing is not a way to bypass
+moderation — post something clean, edit in something the filter would have
+blocked at creation, and the edit is rejected the same way the original post
+would have been.
+
+**Visibility**
+An edited post shows a subtle "(edited)" marker. No edit history is shown —
+just the fact that a change happened, so a reader who already liked, replied
+to, or reported the pre-edit text is not misled into thinking what they see
+now is what they originally reacted to.
+
+**Moderation independence**
+The edit window is purely time-based. Existing reports, `report_count`, and
+`hidden_pending_review` state are untouched by an edit and do not gate
+whether editing is allowed — a post that already has reports against it can
+still be edited within its window, same as any other post. Editing never
+resets moderation state that was already accumulating.
+
+**Scope**
+- After 15 minutes, the content is permanently fixed — same as it is today,
+  just with a 15-minute grace period first.
+- Editing changes only the content and sets the "(edited)" marker. It does
+  not touch `created_at`, does not re-trigger notifications, and does not
+  change feed ranking or ordering.
+- A quote's embedded reference (`quoted_opinion_id`) and a repost's target
+  are structural, not content — editing the quoting/reposting post's own
+  text does not touch what it quotes or reposts, and editing the *original*
+  does not propagate into quotes/reposts of it (a quote resolves the
+  original's current live content at render time regardless, per "Quotes"
+  above — an edit to the original is simply what a later render sees).
+
+#### Muting and hiding
+A quieter alternative to Report for "I don't want to see this," with no
+moderation implication at all — Report exists for content that violates
+guidelines; mute and hide exist for content that is simply not for you.
+Using Report as a soft dismissal either trains people to over-report
+(diluting the signal moderation relies on) or leaves them with no lever for
+"not interested" short of reporting. Mute and hide close that gap.
+
+**Hide (per-post)**
+Dismisses one specific opinion from the caller's own feeds going forward.
+Purely a feed filter — does not affect the opinion's counts, does not notify
+its author, does not affect any other viewer. Reversible in principle (no UI
+requirement to expose "un-hide" at launch, but the underlying state supports
+it).
+
+**Mute (per-author)**
+Stops surfacing a given author's future posts in the caller's own feeds,
+identified by the same opaque `author_handle` reposts and quotes already use
+— never the real `user_id`. Muting is retroactive to the extent that it also
+hides that author's *existing* content from the caller's feeds, not just
+future posts, since leaving old posts visible from someone you just muted
+would defeat the point. Muting is one-directional and silent: the muted
+author is never told they were muted, the same way follows are silent
+already.
+
+**Scope**
+- Both are feed-level filters, evaluated per-viewer. They change nothing
+  about the underlying opinion, its counts, or its visibility to anyone
+  else.
+- Hiding one post from someone you have not muted, and muting someone whose
+  individual posts you have not separately hidden, are independent — hiding
+  does not imply muting and muting does not require having hidden anything
+  first.
+- Muting requires phone-verified auth, same gate as follow/save/repost —
+  an anonymous browsing user cannot mute or hide, matching every other
+  persisted per-viewer preference on this surface.
+
+#### Tags
+A fixed, app-defined vocabulary of topical chips a post can carry, separate
+from the four broad Forum categories (Attachment, Conflict, Date ideas,
+General — see "Forum categories" below). Categories are coarse sections; tags
+are narrower and more numerous, closer to how a chip appears on a social
+post than a section header. Both apply to opinions and forum topics alike.
+
+**Why fixed, not freeform**
+A user-invented tag is a fingerprint: someone who repeatedly tags posts with
+a distinctive self-made label becomes trackable across posts in a way free
+text alone is not — "show me everyone who used #myexdavid" is a far sharper
+deanonymization tool than a keyword search over post bodies, which is
+exactly the "recognisability edge case" already accepted elsewhere in this
+document, made worse by being structured and filterable. A fixed vocabulary,
+chosen by the app rather than the user, has none of this risk and needs no
+new moderation surface — every displayable string already exists before any
+user ever posts one.
+
+**Starter vocabulary (v1)**
+```
+relationship, dating, marriage, situationship, breakup,
+love, healing, trust, jealousy, communication,
+sex, attraction, love language,
+date, long distance, red flags, boundaries,
+vals day, anniversary,
+attachment, self-love
+```
+This list is app-controlled and may grow over time; it is not user-editable
+and never will be — adding a new tag is a deliberate decision the app makes,
+the same way `forum categories` are fixed rather than user-defined.
+
+**Shape**
+- Up to 3 tags per opinion or forum topic, chosen from the fixed vocabulary
+  at compose time. Optional — an untagged post is a normal post, it simply
+  never surfaces under any tag browse.
+- Tags are set at post creation. Like poll options, they are not
+  independently editable after posting — editing a post's own text (within
+  its 15-minute window) does not touch its tags, and there is no separate
+  "retag" action. (Not locked as rigidly as poll options — revisit if a
+  clear need for retagging emerges — but v1 ships without it, matching how
+  little else on this surface is mutable after posting.)
+
+**Tag browsing**
+Tapping a tag chip under any opinion or forum post opens a filtered feed:
+every opinion or forum topic carrying that tag, most recent first — the same
+anonymized shape every other feed on this surface already uses (opaque
+`author_handle`, never the real identity). Critically, tapping a tag never
+reveals or filters by *who posted it* — the browse surface is "everyone who
+used this tag," not "this author's other tagged posts." Combining a tag
+filter with an author filter would let someone narrow in on one person's
+posts by topic, which is the same deanonymization risk fixed tags were
+chosen specifically to avoid.
+- Tags are also searchable directly (type/browse the fixed vocabulary,
+  not a search-any-text field), landing on the same filtered-feed view a
+  chip tap would.
+
+**Participation gate**
+Browsing tag results follows the same rule as browsing anything else on this
+surface — available to anonymous users (see "Anonymous browsing rules"
+above). Attaching a tag when posting requires phone-verified auth, since
+tagging is part of posting, which already requires it.
 
 #### Opinion/forum status labels (self-selected, display-only — not account states)
 Users choose one label to display next to their anonymous posts:
@@ -2835,6 +3135,69 @@ All 25 major architectural decisions made in the review session. These are locke
 ### Update log
 
 ```
+[July 2026 — v2.27] — tags on opinions and forum topics
+- Added 8.11 "Tags": fixed, app-defined 20-tag starter vocabulary (not
+  user-editable, never freeform) attachable to opinions and forum topics,
+  up to 3 per post, optional
+- Chosen fixed rather than freeform specifically to avoid the
+  deanonymization risk a self-invented tag creates (a distinctive
+  user-made tag is a fingerprint; a shared curated tag is not)
+- Tag browse is anonymized like every other feed and deliberately cannot be
+  combined with an author filter — "everyone who used this tag," never
+  "this author's tagged posts," to avoid narrowing in on one person
+- Tags set at post creation, not independently editable after posting (no
+  retag action in v1)
+
+[July 2026 — v2.26] — editing, mute/hide on opinions
+- Added 8.11 "Editing": opinions, comments, and forum posts editable within
+  15 minutes of posting; runs the same 280-char/keyword-filter validation as
+  posting; shows an "(edited)" marker, no history; independent of report
+  state/hidden_pending_review, which an edit never resets
+- Added 8.11 "Muting and hiding": per-post hide and per-author mute, both
+  feed-only filters with no moderation implication, no effect on counts, no
+  notification to the affected author. Mute keyed on author_handle, silent
+  (never disclosed), retroactively hides the muted author's existing posts
+  too. Both require phone-verified auth
+- Explicit non-scope: comments do not get repost/quote/save (decided
+  against, keeping comment engagement as-is)
+
+[July 2026 — v2.25] — quotes on opinions
+- Added 8.11 "Quotes": repost + your own opinion. Unlike a repost, a quote is
+  a full, independent opinion (own text, own like/comment/report counts, own
+  feed placement) that embeds a reference to the opinion it quotes
+- Quote text goes through the same posting path as any opinion: 280-char
+  limit, keyword filter, §7 rate limit/cooldown, ban gate
+- Self-quote allowed (unlike self-repost, which stays blocked); no
+  quote-of-a-quote — always re-targets the original, one hop, no chains
+- If the quoted opinion is later removed, the quote itself stays up with its
+  own engagement intact; the embedded original shows a placeholder instead
+- Added "someone quoted your opinion" to the §10 notification set (no
+  self-notify); quoting requires phone-verified auth like posting
+
+[July 2026 — v2.24] — reposts on opinions
+- Added 8.11 "Reposts": one-tap share-as-is on opinions, scoped to opinions
+  only (not forum topics, which already have topic voting as their
+  re-circulation mechanic)
+- Reference row, not a content copy — likes/comments/reports always belong to
+  the one original opinion; no self-repost, no repost-of-a-repost
+- Surfaces in Discover/Following under the reposter's own author_handle,
+  timestamped at repost time; original author's anonymity unaffected
+- Added "someone reposted your opinion" to the §10 notification set, same
+  anonymous pattern as like/comment/reply
+- Added "repost" to the anonymous-user participation gate list
+
+[July 2026 — v2.23] — polls on opinions and forum topics
+- Amended 8.11 "Strictly text" principle to admit polls as the one permitted
+  structured attachment: fixed plain-text options, no upload/link/free-text,
+  so the abuse surface narrows rather than widens
+- Added 8.11 "Polls": 2–4 immutable options ≤60 chars, one poll per post,
+  no expiry, phone-verified voters only, one vote per user (changeable and
+  retractable), results hidden until you vote, aggregate counts only
+- Recorded that poll voting and forum topic voting are separate mechanics —
+  topic_votes gates a topic into existence, post_polls asks its readers a
+  question — and that a topic may carry both
+- Poll votes store user_id for dedup only; never exposed to clients
+
 [July 2026 — v2.22] — two-ask couples onboarding; SMS delivery requirements
 - Added decision 29 and rewrote 8.8 Track B: couples onboarding split into
   Ask 1 (private-space invite → mutual verified link → chat unlocks; zero

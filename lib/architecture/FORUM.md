@@ -60,6 +60,51 @@ navigation and push notifications confirmed as already configured.
 ```
 - Forum insight screen (Section 6)
   Shows: FOR vs AGAINST counts, forum start date, activity stats
+
+- Polls (Section 7.x + Section 9 schema)
+  Optional attachment on an opinion or a forum topic.
+  2-4 immutable plain-text options, one poll per post, no expiry.
+  Phone-verified voters only, one vote per user, changeable and
+  retractable. Results hidden until you vote. Aggregate counts only.
+  Distinct from topic_votes: topic voting gates a topic into
+  existence, a poll asks that topic's readers a question.
+
+- Reposts (Section 7.x + Section 9 schema + Section 10 #9)
+  One-tap share-as-is on an opinion, opinions only (not forum topics).
+  Reference row, not a content copy -- likes/comments/reports always
+  belong to the one original opinion. No self-repost, no
+  repost-of-a-repost. Surfaces in Discover/Following under the
+  reposter's own author_handle, timestamped at repost time. Original
+  author is notified anonymously, same as likes/comments/replies.
+
+- Quotes (Section 7.x + Section 9 schema + Section 10 #10)
+  Repost + your own opinion. Unlike a repost, a quote IS a full
+  opinion -- own text, own posting-path validation, own
+  like/comment/report counts, own feed placement -- that also embeds a
+  reference to the opinion it quotes. Self-quote allowed. No
+  quote-of-a-quote -- always re-targets the original. If the quoted
+  opinion is later removed, the quote stays up and the embedded
+  original shows a placeholder. Original author notified anonymously
+  (not on self-quote).
+
+- Editing (Section 7.x + Section 9 schema)
+  Opinions, comments, and forum posts editable within 15 minutes of
+  posting. Same content validation as posting (280-char + keyword
+  filter). Shows "(edited)", no history. Independent of report state --
+  an edit never resets report_count or hidden_pending_review.
+
+- Mute / hide (Section 7.x + Section 9 schema)
+  Per-post hide and per-author mute, both feed-only filters, no
+  moderation implication, no effect on counts, no notification to the
+  affected author. Mute keyed on author_handle (never user_id), silent,
+  retroactively hides the muted author's existing posts too.
+
+- Tags (Section 7.x + Section 9 schema)
+  Fixed, app-defined 20-tag starter vocabulary (not user-editable) on
+  opinions and forum topics, up to 3 per post, optional, set at
+  creation. Fixed rather than freeform specifically because a
+  user-invented tag is a fingerprint; browsing a tag is anonymized like
+  every other feed and cannot be combined with an author filter.
 ```
 
 ### Confirmed as already built (do not rebuild)
@@ -719,6 +764,216 @@ NOT ALLOWED:
 ✗ Anything that could identify a real person without consent
 ```
 
+### Polls (both features)
+
+A poll is an optional attachment on an opinion or a forum topic. It never
+replaces the post body — the post stands on its own and the poll hangs off it.
+
+```
+SHAPE:
+- 2-4 options per poll
+- Each option is plain text, 1-60 characters
+- Options are FIXED at creation — no adding, editing, reordering, or
+  deleting after the post exists
+- One poll per post, maximum
+- Polls do not expire; they stay open while the post is visible
+
+VOTING:
+- Phone-verified users only (anonymous users cannot vote — Section 3)
+- One vote per user per poll, enforced by UNIQUE (poll_id, user_id)
+- A voter CAN change their vote — this moves the count, never adds one
+- A voter CAN retract their vote, returning to the pre-vote state
+- A user CAN vote on their own poll (unlike opinion reactions, where
+  reacting to your own post is blocked) — a poll is a question its
+  author is also entitled to answer
+
+RESULTS:
+- Hidden until you vote, then revealed
+- Retracting your vote re-hides them
+- Aggregate per-option counts only — who voted for what is never
+  queryable by any client
+
+CONTENT RULES:
+- Option text passes the same keyword filter as post bodies
+- The content rules above apply to option text in full
+```
+
+**Polls are NOT topic voting.** Both exist on the forum surface and answer
+different questions:
+
+| | Topic voting (`topic_votes`) | Poll (`post_polls`) |
+|---|---|---|
+| Question | Should this topic become a live debate room? | What do readers think about this topic's question? |
+| Shape | Up / down | 2-4 options |
+| Effect | Gates activation (>50% of seen) | Gates nothing |
+| Expiry | `voting_expires_at` (14 days) | Never |
+
+A topic can carry both: people vote it into existence, and separately answer
+the poll inside it.
+
+### Reposts (opinions only)
+
+A repost is a one-tap "share this as-is" action on an opinion. Scoped to
+opinions only -- forum topics already have topic voting as their
+re-circulation mechanic, so reposts would duplicate that rather than add
+anything.
+
+```
+SHAPE:
+- No added commentary -- purely a share action, not a quote-post.
+  Nothing new to moderate: no free-text surface is created.
+- A repost is a reference (a join row pointing at the original opinion),
+  never a content copy. Likes, comments, and report counts always
+  belong to the ONE original opinion.
+- No self-repost -- blocked the same way self-reactions already are.
+- No repost-of-a-repost -- a repost always targets the original opinion
+  directly. There is no chain.
+- Un-repost is available any time and never touches the original.
+
+FEED VISIBILITY:
+- A repost surfaces in Discover/Following like a normal feed entry,
+  timestamped at REPOST time (not the original's created_at) -- this is
+  what makes it re-circulate rather than just sit on a personal list.
+- Attributed to the REPOSTER's own author_handle. The original author's
+  identity is never exposed by a repost, and the link between the two
+  handles is never client-queryable beyond "this opinion, reposted."
+
+PARTICIPATION:
+- Requires phone-verified auth, same gate as posting/replying/voting/
+  saving/following. Anonymous (unverified) users cannot repost.
+
+MODERATION:
+- If the original opinion is removed, its reposts stop appearing in
+  feeds (covered by the feed query's existing removed_at IS NULL
+  filter) but repost rows are not deleted -- a removal does not need a
+  separate repost cleanup pass.
+```
+
+### Quotes (opinions only)
+
+A quote is "repost, plus your own opinion." Unlike a repost it is not a
+lightweight reference -- it IS a full, independent opinion that also embeds a
+reference to the opinion it quotes.
+
+```
+SHAPE:
+- A quote goes through the SAME posting path as any opinion: 280-char
+  limit, Layer 1 keyword filter, the anti-spam limit/cooldown below,
+  the ban gate. It has its own like/comment/report counts and its own
+  feed placement. Quoting adds no new moderated surface -- the quote
+  text is an opinion's text, moderated exactly like one.
+- The reference to the quoted opinion is a pointer (its id), not a
+  copy of its content -- resolved live at render time.
+- Self-quote IS allowed (unlike self-repost, which is blocked) --
+  quoting your own opinion to add a follow-up thought is a distinct,
+  legitimate action, not a no-op share of yourself.
+- No quote-of-a-quote -- a quote always references an ORIGINAL
+  opinion. Quoting a quote re-targets the original underneath, same
+  rule as repost-of-a-repost. One hop, no chain.
+- Because a quote IS an opinion, it can itself be reposted, quoted,
+  replied to, reacted to, saved and reported like any opinion.
+
+FEED VISIBILITY:
+- Appears in Discover/Following like any new opinion -- own
+  created_at, no special-casing, because it is a normal opinion row.
+- Attributed to the QUOTER's own author_handle. The embedded original
+  is attributed to its own (different) author_handle -- the two
+  handles are never shown as linked to each other beyond "this
+  opinion quotes that one."
+
+REMOVED ORIGINAL:
+- If the quoted opinion is later removed or deleted, the quote is NOT
+  removed -- the quoter's own text and engagement stay untouched. The
+  embedded original renders "This opinion is no longer available"
+  instead of the vanished content.
+
+PARTICIPATION:
+- Requires phone-verified auth, same gate as posting -- a quote is a
+  post.
+
+MODERATION:
+- The quote's own text is reportable/removable exactly like any
+  opinion, independent of the quoted opinion's state.
+```
+
+### Editing (opinions, comments, forum posts)
+
+```
+- 15-minute window from created_at, identical across all three content
+  types -- one number, one rule.
+- Same validation as posting: 280-char limit, Layer 1 keyword filter.
+  Editing cannot bypass moderation that posting would have caught.
+- Shows "(edited)" to readers. No edit history exposed.
+- Purely time-based -- existing reports / report_count /
+  hidden_pending_review do not block editing and are not reset by it.
+- After the window closes, content is permanently fixed, same as today.
+- Editing never changes created_at, never re-triggers notifications,
+  never changes feed ranking/ordering.
+```
+
+### Mute / hide (opinions)
+
+```
+- HIDE is per-post: dismisses one specific opinion from the caller's
+  own feeds. No effect on counts, no notification to the author, no
+  effect on any other viewer.
+- MUTE is per-author, keyed on author_handle (never user_id) -- stops
+  surfacing that author's future posts, AND retroactively hides their
+  existing posts too (otherwise muting would do nothing about the
+  content that prompted it). Silent: the muted author is never told,
+  same as follows already being silent.
+- Both are feed-level filters only -- they change nothing about the
+  underlying opinion for anyone else.
+- Hiding a post from someone you have not muted, and muting someone
+  whose posts you have not separately hidden, are independent actions.
+- Requires phone-verified auth, same gate as follow/save/repost.
+```
+
+### Tags (opinions and forum topics)
+
+A fixed, app-defined chip vocabulary, separate from the four broad forum
+categories (Attachment, Conflict, Date ideas, General) -- categories are
+coarse sections, tags are narrower topical chips, closer to how a tag
+appears on a social post than a section header.
+
+```
+VOCABULARY (v1, app-controlled, not user-editable):
+  relationship, dating, marriage, situationship, breakup,
+  love, healing, trust, jealousy, communication,
+  sex, attraction, love language,
+  date, long distance, red flags, boundaries,
+  vals day, anniversary,
+  attachment, self-love
+
+WHY FIXED, NOT FREEFORM:
+- A user-invented tag is a fingerprint -- trackable across posts in a
+  way free text is not. A fixed, app-chosen vocabulary has none of this
+  risk and needs no moderation surface, since every string exists
+  before anyone posts one.
+
+SHAPE:
+- Up to 3 tags per opinion or forum topic, chosen at compose time from
+  the fixed list. Optional -- an untagged post is a normal post.
+- Set at creation, not independently editable after posting. No retag
+  action in v1.
+
+BROWSING:
+- Tapping a tag chip opens a filtered feed: every opinion/topic
+  carrying that tag, most recent first, same anonymized shape as every
+  other feed (author_handle only, never real identity).
+- Tags are also directly searchable/browsable from the fixed
+  vocabulary (not a freeform search box).
+- A tag filter can NEVER be combined with an author filter -- "everyone
+  who used this tag," never "this author's tagged posts." Combining
+  the two would let someone narrow in on one person by topic, exactly
+  what fixed tags exist to prevent.
+
+PARTICIPATION:
+- Browsing tag results follows the same anonymous-browsing rules as
+  everything else. Attaching a tag when posting requires phone-verified
+  auth, since tagging is part of posting.
+```
+
 ### Posting limits (anti-spam)
 
 ```
@@ -824,12 +1079,23 @@ CREATE TABLE opinions (
       'single', 'taken', 'figuring_it_out', 'open'
     )
   ),
+  -- NULL for a normal opinion. Set for a quote -- a quote IS an opinion
+  -- (own content, own counts, own posting-path validation), this column
+  -- is only the pointer to what it quotes. Self-referencing FK, always
+  -- points at an ORIGINAL opinion: quote-of-a-quote re-targets the
+  -- original at insert time, so this can never chain.
+  quoted_opinion_id uuid REFERENCES opinions,
   like_count int DEFAULT 0,
   dislike_count int DEFAULT 0,
   comment_count int DEFAULT 0,
+  repost_count int DEFAULT 0,
   report_count int DEFAULT 0,
   hidden_pending_review boolean DEFAULT false,
   removed_at timestamptz,
+  -- NULL until edited. Editing sets this to now() and never resets
+  -- report_count/hidden_pending_review -- the edit window is purely
+  -- time-based (created_at + 15 minutes), moderation state is untouched.
+  edited_at timestamptz,
   created_at timestamptz DEFAULT now()
 );
 
@@ -857,6 +1123,7 @@ CREATE TABLE opinion_comments (
   report_count int DEFAULT 0,
   hidden_pending_review boolean DEFAULT false,
   removed_at timestamptz,
+  edited_at timestamptz,
   created_at timestamptz DEFAULT now()
 );
 
@@ -867,6 +1134,79 @@ CREATE TABLE opinion_follows (
   following_id uuid REFERENCES auth.users NOT NULL,
   created_at timestamptz DEFAULT now(),
   UNIQUE (follower_id, following_id)
+);
+
+-- Saved opinions (bookmarks). Mirrors opinion_follows' shape.
+CREATE TABLE opinion_saves (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users NOT NULL,
+  opinion_id uuid REFERENCES opinions NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (user_id, opinion_id)
+);
+
+-- Reposts. A reference row, never a content copy -- likes/comments/reports
+-- always belong to the one original opinion. No self-repost (user_id !=
+-- opinions.user_id, enforced in the RPC). No repost-of-a-repost: opinion_id
+-- always points at an original opinion, there is no chain to resolve.
+CREATE TABLE opinion_reposts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users NOT NULL,
+  opinion_id uuid REFERENCES opinions NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (user_id, opinion_id)
+);
+
+-- Per-post hide. Feed-only filter, no effect on counts, no notification.
+CREATE TABLE opinion_hides (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users NOT NULL,
+  opinion_id uuid REFERENCES opinions NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (user_id, opinion_id)
+);
+
+-- Per-author mute, keyed on the opaque author_handle (never user_id, per
+-- FORUM.md §3) -- storing a real user_id here directly would defeat the
+-- anonymity model the moment a mute list was ever queried. Retroactively
+-- hides the muted author's existing posts too (see "Muting and hiding"
+-- above), enforced at feed-query time by resolving the handle back to a
+-- user_id server-side, same one-directional resolution follow already does.
+CREATE TABLE opinion_mutes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users NOT NULL,
+  muted_author_handle text NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (user_id, muted_author_handle)
+);
+
+-- Fixed, app-controlled tag vocabulary. NOT user-editable -- a user-invented
+-- tag would be a fingerprint (see "Tags" above), so every row here is seeded
+-- by a migration, never inserted by a client.
+CREATE TABLE tags (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug text NOT NULL UNIQUE,
+  created_at timestamptz DEFAULT now()
+);
+
+-- Two join tables rather than one polymorphic (post_type, post_id) table --
+-- keeps each FK a real REFERENCES constraint instead of an unenforced
+-- discriminator column, matching how post_polls uses two nullable FKs rather
+-- than a generic content-type system.
+CREATE TABLE opinion_tags (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  opinion_id uuid REFERENCES opinions NOT NULL,
+  tag_id uuid REFERENCES tags NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (opinion_id, tag_id)
+);
+
+CREATE TABLE forum_topic_tags (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  topic_id uuid REFERENCES forum_topics NOT NULL,
+  tag_id uuid REFERENCES tags NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (topic_id, tag_id)
 );
 
 -- Forum topics
@@ -925,6 +1265,7 @@ CREATE TABLE forum_posts (
   report_count int DEFAULT 0,
   hidden_pending_review boolean DEFAULT false,
   removed_at timestamptz,
+  edited_at timestamptz,
   created_at timestamptz DEFAULT now()
 );
 
@@ -1070,6 +1411,18 @@ OPINION NOTIFICATIONS:
    Body: first 60 chars of reply
    Triggered: on INSERT where reply_to_comment_id IS NOT NULL
    Send to: parent comment's user_id
+
+9. Someone reposts your opinion
+   Title: "New repost"
+   Body: "Someone reposted your opinion"
+   Triggered: on INSERT to opinion_reposts
+   Send to: opinion.user_id (not to reposter themselves)
+
+10. Someone quotes your opinion
+    Title: "New quote"
+    Body: "Someone quoted your opinion"
+    Triggered: on INSERT to opinions WHERE quoted_opinion_id IS NOT NULL
+    Send to: quoted_opinion.user_id (not on self-quote)
 
 FORUM NOTIFICATIONS:
 
@@ -1386,6 +1739,13 @@ CREATE TRIGGER on_auth_user_created
 
 -- ============================================================
 -- PART 1: Forum tables
+--
+-- NOTE: this block predates repost_count/quoted_opinion_id/edited_at (added
+-- to the canonical schema earlier in this document) and has not been kept in
+-- lockstep with it. Treat the first schema block in this document, and the
+-- actual applied supabase/migrations/*.sql files, as authoritative over this
+-- one for current columns -- this block is retained for its RLS/grant/index
+-- shape, not as a live column reference.
 -- ============================================================
 
 -- Opinions
@@ -1493,6 +1853,7 @@ CREATE TABLE IF NOT EXISTS forum_posts (
   report_count int DEFAULT 0,
   hidden_pending_review boolean DEFAULT false,
   removed_at timestamptz,
+  edited_at timestamptz,
   created_at timestamptz DEFAULT now()
 );
 
@@ -1515,6 +1876,44 @@ CREATE TABLE IF NOT EXISTS user_forum_sides (
 );
 
 -- Moderation reports
+-- Polls (attached to an opinion OR a forum topic, never both)
+-- Distinct from topic_votes: topic voting gates a topic into existence,
+-- a poll asks that post's readers a question and gates nothing.
+CREATE TABLE IF NOT EXISTS post_polls (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  opinion_id uuid REFERENCES opinions ON DELETE CASCADE,
+  topic_id uuid REFERENCES forum_topics ON DELETE CASCADE,
+  created_by uuid REFERENCES auth.users NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  -- exactly one parent
+  CHECK (num_nonnulls(opinion_id, topic_id) = 1),
+  -- one poll per post
+  UNIQUE (opinion_id),
+  UNIQUE (topic_id)
+);
+
+-- Poll options: plain text, fixed at creation, 2-4 per poll
+CREATE TABLE IF NOT EXISTS poll_options (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  poll_id uuid REFERENCES post_polls ON DELETE CASCADE NOT NULL,
+  option_position int NOT NULL CHECK (option_position BETWEEN 0 AND 3),
+  label text NOT NULL CHECK (char_length(label) BETWEEN 1 AND 60),
+  vote_count int DEFAULT 0,
+  UNIQUE (poll_id, option_position)
+);
+
+-- Poll votes. user_id exists for dedup enforcement ONLY and is never
+-- exposed to clients -- see the RLS policies in Part 3.
+CREATE TABLE IF NOT EXISTS poll_votes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  poll_id uuid REFERENCES post_polls ON DELETE CASCADE NOT NULL,
+  option_id uuid REFERENCES poll_options ON DELETE CASCADE NOT NULL,
+  user_id uuid REFERENCES auth.users NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  UNIQUE (poll_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS forum_reports (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   reported_by uuid REFERENCES auth.users NOT NULL,
@@ -1607,6 +2006,50 @@ CREATE POLICY "user_forum_sides_manage_own" ON user_forum_sides
 CREATE POLICY "forum_reports_insert_own" ON forum_reports
   FOR INSERT WITH CHECK (auth.uid() = reported_by);
 
+-- Polls: anyone signed in reads the poll and its options (option rows carry
+-- the aggregate vote_count, which is public by design).
+CREATE POLICY "post_polls_select_all" ON post_polls
+  FOR SELECT USING (true);
+
+CREATE POLICY "poll_options_select_all" ON poll_options
+  FOR SELECT USING (true);
+
+-- A poll is created with its parent post, by that post's author.
+CREATE POLICY "post_polls_insert_own" ON post_polls
+  FOR INSERT WITH CHECK (auth.uid() = created_by);
+
+-- Options are immutable after creation: insert only, no UPDATE/DELETE policy.
+-- Changing an option after votes land would misrepresent what people voted for.
+CREATE POLICY "poll_options_insert_own" ON poll_options
+  FOR INSERT WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM post_polls p
+      WHERE p.id = poll_id AND p.created_by = auth.uid()
+    )
+  );
+
+CREATE POLICY "poll_options_no_user_update" ON poll_options
+  FOR UPDATE USING (false);
+
+-- CRITICAL: a voter may read ONLY their own vote row. Without the USING
+-- clause scoped to auth.uid(), any client could read the whole table and
+-- deanonymise every voter on the platform. Aggregate results reach clients
+-- through poll_options.vote_count, never through this table.
+CREATE POLICY "poll_votes_select_own" ON poll_votes
+  FOR SELECT USING (auth.uid() = user_id);
+
+-- One vote per user is enforced by UNIQUE (poll_id, user_id); a voter may
+-- change their vote (UPDATE) or retract it entirely (DELETE).
+CREATE POLICY "poll_votes_insert_own" ON poll_votes
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "poll_votes_update_own" ON poll_votes
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "poll_votes_delete_own" ON poll_votes
+  FOR DELETE USING (auth.uid() = user_id);
+
 -- Delete own content
 CREATE POLICY "opinions_delete_own" ON opinions
   FOR DELETE USING (auth.uid() = user_id);
@@ -1643,4 +2086,8 @@ CREATE INDEX IF NOT EXISTS idx_topic_votes_topic ON topic_votes(topic_id);
 CREATE INDEX IF NOT EXISTS idx_topic_impressions_topic ON topic_impressions(topic_id);
 CREATE INDEX IF NOT EXISTS idx_forum_posts_topic_id ON forum_posts(topic_id);
 CREATE INDEX IF NOT EXISTS idx_forum_posts_created_at ON forum_posts(created_at ASC);
-CREATE INDEX IF NOT EXISTS idx_forum_post_likes_post_id ON forum_post_likes(forum_post_id); -->
+CREATE INDEX IF NOT EXISTS idx_forum_post_likes_post_id ON forum_post_likes(forum_post_id);
+CREATE INDEX IF NOT EXISTS idx_post_polls_opinion ON post_polls(opinion_id);
+CREATE INDEX IF NOT EXISTS idx_post_polls_topic ON post_polls(topic_id);
+CREATE INDEX IF NOT EXISTS idx_poll_options_poll ON poll_options(poll_id, option_position);
+CREATE INDEX IF NOT EXISTS idx_poll_votes_poll_user ON poll_votes(poll_id, user_id); -->

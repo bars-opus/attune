@@ -7,6 +7,7 @@ import 'package:attune/features/forums/presentation/screens/forums_explore_scree
 import 'package:attune/features/forums/presentation/screens/submit_topic_screen.dart';
 import 'package:attune/home/providers/nav_visibility_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/features/auth/presentation/widgets/logout_action.dart';
 
 class ForumsSection extends ConsumerStatefulWidget {
   const ForumsSection({super.key, required this.outerTabController});
@@ -51,6 +52,7 @@ class _ForumsSectionState extends ConsumerState<ForumsSection>
         ref.watch(supabaseClientProvider).auth.currentUser?.id != null;
 
     return Scaffold(
+      backgroundColor: colorScheme.neutral,
       floatingActionButton: AnimatedBuilder(
         animation: _innerTabController,
         builder: (context, _) {
@@ -83,46 +85,77 @@ class _ForumsSectionState extends ConsumerState<ForumsSection>
         },
       ),
       body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
-          SliverOverlapAbsorber(
-            handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
-            sliver: SliverAppBar(
-              floating: true,
-              pinned: false,
-              snap: true,
-              title: const Text('Forums'),
-              bottom: PreferredSize(
-                preferredSize: Size.fromHeight(48.h),
-                child: SimpleTabs(
-                  tabs: const [
-                    AppTabItem(
-                      label: 'Opinions',
-                      icon: Icons.rate_review_outlined,
+        headerSliverBuilder:
+            (context, innerBoxIsScrolled) => [
+              SliverOverlapAbsorber(
+                handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
+                  context,
+                ),
+                sliver: SliverAppBar(
+                  backgroundColor: colorScheme.neutral,
+                  floating: true,
+                  pinned: false,
+                  snap: true,
+                  leading: AppIconButton(
+                    icon: Icons.menu,
+                    onPressed: () => LogoutAction.confirmAndSignOut(context),
+                  ),
+                  title: SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        BorderRadiusTokens.md,
+                      ),
+                      child: Image.asset(
+                        color: colorScheme.primary,
+                        'assets/images/attune_logo_white.png',
+                        fit: BoxFit.cover,
+                      ),
                     ),
-                    AppTabItem(label: 'Forums', icon: Icons.forum_outlined),
+                  ),
+                  actions: [
+                    AppIconButton(
+                      icon: Icons.search,
+                      onPressed: () {
+                        // if (kDebugMode) {
+                        context.push(RouteNames.onboarding, extra: true);
+                        // }
+                      },
+                    ),
                   ],
-                  controller: widget.outerTabController,
-                  scrollable: false,
+                  bottom: PreferredSize(
+                    preferredSize: Size.fromHeight(48.h),
+                    child: SimpleTabs(
+                      tabs: const [
+                        AppTabItem(
+                          label: 'Opinions',
+                          icon: Icons.rate_review_outlined,
+                        ),
+                        AppTabItem(label: 'Forums', icon: Icons.forum_outlined),
+                      ],
+                      controller: widget.outerTabController,
+                      scrollable: false,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: SimpleTabs(
-              tabs: const [
-                AppTabItem(label: 'Contributing'),
-                AppTabItem(label: 'Explore'),
-              ],
-              controller: _innerTabController,
-              scrollable: false,
-              style: AppTabsStyle(
-                indicatorColor: colorScheme.primary,
-                activeColor: colorScheme.primary,
-                inactiveColor: colorScheme.onSurface.withOpacity(0.6),
+              SliverToBoxAdapter(
+                child: SimpleTabs(
+                  tabs: const [
+                    AppTabItem(label: 'Contributing'),
+                    AppTabItem(label: 'Explore'),
+                  ],
+                  controller: _innerTabController,
+                  scrollable: false,
+                  style: AppTabsStyle(
+                    indicatorColor: colorScheme.primary,
+                    activeColor: colorScheme.primary,
+                    inactiveColor: colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                ),
               ),
-            ),
-          ),
-        ],
+            ],
         body: TabBarView(
           controller: _innerTabController,
           children: const [ContributingForumsScreen(), ForumsExploreScreen()],

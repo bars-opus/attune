@@ -24,8 +24,22 @@ class OpinionMoreData {
     required OpinionModel opinion,
     required VoidCallback onReport,
     required VoidCallback? onDelete,
+    VoidCallback? onHide,
+    VoidCallback? onMute,
+    VoidCallback? onEdit,
   }) {
     final isOwnPost = opinion.isMine;
+
+    // Edit is offered only on your own post AND only while the 15-minute
+    // window is open (§8.11 "Editing"). This is a UX check, not the
+    // enforcement — edit_opinion re-checks ownership and the window
+    // server-side and raises not_editable regardless. Its job is to avoid
+    // showing an action that could only fail: the window can still lapse
+    // while the edit screen is open, and that case is handled there.
+    final canEdit =
+        isOwnPost &&
+        onEdit != null &&
+        DateTime.now().difference(opinion.createdAt) < kOpinionEditWindow;
 
     return [
       SettingsSection(
@@ -44,6 +58,57 @@ class OpinionMoreData {
               onTap: onReport,
               order: 1,
             ),
+          // Hide is the quiet alternative to Report (§8.11 "Muting and
+          // hiding"): "not for me" with no moderation implication. Offered on
+          // ANY opinion including your own — the opposite gate from Report —
+          // since dismissing something from your own feed carries no claim
+          // about the content at all. Rendered as a plain action, not
+          // destructive: nothing is deleted and no one else is affected.
+          if (onHide != null)
+            SettingsConfig(
+              id: 'hide',
+              title: 'Hide this opinion',
+              subtitle: 'You will not see this in your feeds',
+              icon: Icons.visibility_off_outlined,
+              type: SettingsItemType.action,
+              iconColor: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
+              onTap: onHide,
+              order: 2,
+            ),
+          // Mute, unlike Hide, IS gated on isOwnPost: muting yourself would
+          // empty your own posts out of your feeds to no purpose. Mirrors the
+          // !isOwnPost gate the Follow button already uses on the card.
+          if (!isOwnPost && onMute != null)
+            SettingsConfig(
+              id: 'mute',
+              title: 'Mute this person',
+              subtitle: 'Stop seeing their opinions',
+              icon: Icons.volume_off_outlined,
+              type: SettingsItemType.action,
+              iconColor: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
+              onTap: onMute,
+              order: 3,
+            ),
+          // Own-post, in-window only (see canEdit above). Sits with the other
+          // authoring actions rather than the moderation ones, and is a plain
+          // action — an edit changes your own text and destroys nothing.
+          if (canEdit)
+            SettingsConfig(
+              id: 'edit',
+              title: 'Edit',
+              subtitle: 'Within 15 minutes of posting',
+              icon: Icons.edit_outlined,
+              type: SettingsItemType.action,
+              iconColor: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
+              onTap: onEdit,
+              order: 4,
+            ),
           SettingsConfig(
             id: 'copy',
             title: 'Copy text',
@@ -57,7 +122,7 @@ class OpinionMoreData {
                 context.showInfoSnackbar('Copied to clipboard');
               }
             },
-            order: 2,
+            order: 4,
           ),
           if (isOwnPost)
             SettingsConfig(
@@ -68,7 +133,7 @@ class OpinionMoreData {
               type: SettingsItemType.destructive,
               iconColor: Colors.red,
               onTap: onDelete,
-              order: 3,
+              order: 5,
             ),
         ],
       ),

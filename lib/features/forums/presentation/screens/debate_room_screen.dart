@@ -1,7 +1,9 @@
 // lib/features/forums/presentation/screens/debate_room_screen.dart
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/polls/presentation/providers/poll_providers.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/app_text_form_field.dart';
+import 'package:attune/core/widgets/poll_card.dart';
 import 'package:attune/core/widgets/buttons/app_button.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
 import 'package:attune/features/forums/presentation/screens/forum_insight_screen.dart';
@@ -40,6 +42,7 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
   void initState() {
     super.initState();
     _loadPosts();
+    _recordVisit();
   }
 
   @override
@@ -54,6 +57,19 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
   void _loadPosts() {
     Future.microtask(() {
       ref.read(forumPostsProvider(widget.topicId));
+    });
+  }
+
+  /// Marks this topic as visited so §10 #5's "N new posts since your last
+  /// visit" counts from now. Silent-fail: the watermark is a notification
+  /// nicety, never a reason to break opening a debate.
+  void _recordVisit() {
+    Future.microtask(() async {
+      try {
+        await ref.read(recordTopicVisitProvider(widget.topicId).future);
+      } catch (e) {
+        debugPrint('Failed to record topic visit: $e');
+      }
     });
   }
 
@@ -199,6 +215,14 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
                 Icon(Icons.thumb_down, size: 16, color: colorScheme.error),
               ],
             ),
+          ),
+          // The topic's poll, if it has one (§8.11). Separate from the FOR /
+          // AGAINST split above and from the vote that activated this topic —
+          // this asks readers a question and gates nothing. Renders nothing
+          // when the topic has no poll.
+          Padding(
+            padding: EdgeInsets.only(top: Spacing.sm.h),
+            child: PollCard(target: PollTarget.topic(widget.topicId)),
           ),
           // Two-column debate layout
           Expanded(

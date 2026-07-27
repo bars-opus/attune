@@ -38,10 +38,7 @@ class _ForumsExploreScreenState extends ConsumerState<ForumsExploreScreen> {
           ),
           // Active Forums section
           SliverToBoxAdapter(
-            child: _buildSectionHeader(
-              'Active debates',
-              Icons.forum_outlined,
-            ),
+            child: _buildSectionHeader('Active debates', Icons.forum_outlined),
           ),
           _buildActiveForumsList(),
 
@@ -68,22 +65,26 @@ class _ForumsExploreScreenState extends ConsumerState<ForumsExploreScreen> {
   }
 
   Widget _buildSectionHeader(String title, IconData icon) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         Spacing.lg.w,
         Spacing.lg.h,
         Spacing.lg.w,
-        Spacing.sm.h,
+        Spacing.xs.h,
       ),
       child: Row(
         children: [
-          Icon(icon, size: 20),
+          AppIconButton(icon: icon),
+          // Icon(icon, size: 20),
           Gap(Spacing.sm.w),
           Text(
             title,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              // fontWeight: FontWeight.w600,
+              color: colorScheme.onBackground,
+            ),
           ),
         ],
       ),
@@ -104,9 +105,15 @@ class _ForumsExploreScreenState extends ConsumerState<ForumsExploreScreen> {
       data: (forums) {
         if (forums.isEmpty) {
           return const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Center(child: Text('No active debates yet')),
+            child: CardInkWell(
+              margin: const EdgeInsets.symmetric(horizontal: Spacing.md),
+              child: Center(
+                child: EmptyStateWidget(
+                  icon: Icons.forum_outlined,
+                  title: 'No active debates yet',
+                  subtitle: 'Debates would appear here',
+                ),
+              ),
             ),
           );
         }
@@ -134,9 +141,15 @@ class _ForumsExploreScreenState extends ConsumerState<ForumsExploreScreen> {
       data: (topics) {
         if (topics.isEmpty) {
           return const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Center(child: Text('No topics waiting for votes yet')),
+            child: CardInkWell(
+              margin: const EdgeInsets.symmetric(horizontal: Spacing.md),
+              child: Center(
+                child: EmptyStateWidget(
+                  icon: Icons.how_to_vote_outlined,
+                  title: 'No topics waiting for votes yet',
+                  subtitle: 'Debates would appear here',
+                ),
+              ),
             ),
           );
         }

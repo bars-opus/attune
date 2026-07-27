@@ -61,7 +61,7 @@ class EmptyStateWidget extends StatelessWidget {
           ] else if (config.$1 != null) ...[
             Icon(
               icon ?? config.$1,
-              size: compact ? 50.r : 70.r,
+              size: compact ? 30.r : 50.r,
               color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
             ),
             Gap(compact ? Spacing.md.h : Spacing.lg.h),
@@ -74,11 +74,11 @@ class EmptyStateWidget extends StatelessWidget {
                 effectiveTitle,
                 style:
                     compact
-                        ? textTheme.titleMedium?.copyWith(
+                        ? textTheme.titleSmall?.copyWith(
                           color: colorScheme.onSurface,
                           fontWeight: FontWeight.w600,
                         )
-                        : textTheme.titleLarge?.copyWith(
+                        : textTheme.titleMedium?.copyWith(
                           color: colorScheme.onSurface,
                           fontWeight: FontWeight.w600,
                         ),
@@ -93,7 +93,7 @@ class EmptyStateWidget extends StatelessWidget {
               ),
               child: Text(
                 subtitle ?? config.$3!,
-                style: textTheme.bodyMedium?.copyWith(
+                style: textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                   height: 1.5,
                 ),

@@ -67,7 +67,7 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
 
     // Responsive sizing
     final navBarHeight =
-        widget.navigationBarHeight ?? (isWideScreen ? 72.h : 64.h);
+        widget.navigationBarHeight ?? (isWideScreen ? 64.h : 50.h);
     final iconSize = widget.iconSize ?? (isWideScreen ? 26.h : 22.h);
     final activeIconSize =
         widget.activeIconSize ?? (isWideScreen ? 28.h : 24.h);
@@ -76,19 +76,20 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
       top: false,
       child: Padding(
         padding: EdgeInsets.fromLTRB(
-          Spacing.lg.w,
+          Spacing.xxl.w + Spacing.xxl,
           Spacing.sm.h,
-          Spacing.lg.w,
+          Spacing.xxl.w + Spacing.xxl,
           0,
         ),
         child: Container(
-          height: navBarHeight,
+          height:navBarHeight,
+
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: widget.navigationBarColor ?? colorScheme.surface,
-            borderRadius: BorderRadius.circular(
-              BorderRadiusTokens.floatingNav.r,
-            ),
+            color:
+                widget.navigationBarColor ??
+                colorScheme.surface.withOpacity(.5),
+            borderRadius: BorderRadius.circular(100.r),
             border: Border.all(
               color: colorScheme.outline.withValues(alpha: 0.1),
               width: BorderWidthTokens.hairline,
@@ -102,31 +103,37 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
             ],
           ),
           child: Row(
-            children: List.generate(widget.tabs.length, (index) {
-              final tab = widget.tabs[index];
-              final isActive = index == _currentIndex;
-
-              return _buildTabItem(
-                context,
-                tab: tab,
-                isActive: isActive,
-                iconSize: iconSize,
-                activeIconSize: activeIconSize,
-                colorScheme: colorScheme,
-                textTheme: textTheme,
-                onTap: () {
-                  setState(() {
-                    _visitedIndices.add(index);
-                    _currentIndex = index;
-                  });
-                  // Tabs stay mounted (Offstage, not real navigation) so a
-                  // scroll-hidden nav from the PREVIOUS tab would otherwise
-                  // stay hidden after switching, since navVisibilityProvider
-                  // is shared across every tab's scroll listener.
-                  ref.read(navVisibilityProvider.notifier).state = true;
-                },
-              );
-            }),
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (int index = 0; index < widget.tabs.length; index++) ...[
+                if (index > 0)
+                  // Only meaningful with a fixed (non-Expanded) item width —
+                  // see the 2-tab branch in _buildTabItem. With 3+ tabs items
+                  // still stretch via Expanded, so this gap collapses to
+                  // nothing between them (harmless).
+                  Gap(Spacing.xxl.w),
+                _buildTabItem(
+                  context,
+                  tab: widget.tabs[index],
+                  isActive: index == _currentIndex,
+                  iconSize: iconSize,
+                  activeIconSize: activeIconSize,
+                  colorScheme: colorScheme,
+                  textTheme: textTheme,
+                  onTap: () {
+                    setState(() {
+                      _visitedIndices.add(index);
+                      _currentIndex = index;
+                    });
+                    // Tabs stay mounted (Offstage, not real navigation) so a
+                    // scroll-hidden nav from the PREVIOUS tab would otherwise
+                    // stay hidden after switching, since navVisibilityProvider
+                    // is shared across every tab's scroll listener.
+                    ref.read(navVisibilityProvider.notifier).state = true;
+                  },
+                ),
+              ],
+            ],
           ),
         ),
       ),
@@ -211,50 +218,58 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
     final labelFontSize = widget.labelFontSize ?? (isWideScreen ? 8.5 : 9.0);
     final badgeFontSize = widget.badgeFontSize ?? 9.0;
 
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          padding: EdgeInsets.symmetric(vertical: 2.h),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Icon with optional unread badge
-              Badge(
-                isLabelVisible: tab.badgeCount > 0,
-                label: Text(
-                  tab.badgeCount > 99 ? '99+' : tab.badgeCount.toString(),
-                  style: TextStyle(fontSize: badgeFontSize),
-                  textScaler: TextScaler.noScaling,
-                ),
-                child: Icon(
-                  isActive ? (tab.activeIcon ?? tab.icon) : tab.icon,
-                  size: isActive ? activeIconSize : iconSize,
-                  color: iconColor,
-                ),
+    final content = GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 2.h),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Icon with optional unread badge
+            Badge(
+              isLabelVisible: tab.badgeCount > 0,
+              label: Text(
+                tab.badgeCount > 99 ? '99+' : tab.badgeCount.toString(),
+                style: TextStyle(fontSize: badgeFontSize),
+                textScaler: TextScaler.noScaling,
               ),
+              child: Icon(
+                isActive ? (tab.activeIcon ?? tab.icon) : tab.icon,
+                size: isActive ? activeIconSize : iconSize,
+                color: iconColor,
+              ),
+            ),
 
-              // Label
-              if (widget.showLabels) ...[
-                Gap(2.h),
-                Text(
-                  tab.label,
-                  style: textTheme.labelSmall?.copyWith(
-                    color: labelColor,
-                    fontSize: labelFontSize,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                  textScaler: TextScaler.noScaling,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+            // Label
+            if (widget.showLabels) ...[
+              Gap(2.h),
+              Text(
+                tab.label,
+                style: textTheme.labelSmall?.copyWith(
+                  color: labelColor,
+                  fontSize: labelFontSize,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                 ),
-              ],
+                textScaler: TextScaler.noScaling,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );
+
+    // With exactly 2 tabs, size each item to its own content and let the
+    // parent Row's mainAxisAlignment.center + the Gap between them do the
+    // centering/spacing — Expanded would stretch both items to fill the
+    // whole bar width, leaving no room for the Row to center anything.
+    // 3+ tabs keep the normal Expanded fill-the-bar behavior.
+    if (widget.tabs.length == 2) {
+      return content;
+    }
+    return Expanded(child: content);
   }
 }

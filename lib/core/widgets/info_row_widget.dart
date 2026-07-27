@@ -212,6 +212,7 @@ class InfoRowWidget extends StatelessWidget {
   /// Required when [isToggleItem] is `true`. Represents the current state
   /// of the toggle (checked/unchecked, on/off).
   final bool? toggleValue;
+  final bool? pinAvatar;
   final bool? isNotAvatarImage;
   final int? titleMaxLines;
   final int? subTitleMaxLines;
@@ -262,6 +263,7 @@ class InfoRowWidget extends StatelessWidget {
     this.subTitleFontSize = 12,
     this.titleFontColor,
     this.isNotAvatarImage = false,
+    this.pinAvatar = false,
     this.bottomWidget,
   }) : assert(
          // Either icon or imageUrl must be provided for visual identity
@@ -284,6 +286,8 @@ class InfoRowWidget extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
+    final pinRowAvatar = pinAvatar ?? false;
+
     // ✅ NEW: Build trailing for toggle items if not provided
     // Prioritizes custom trailing, then toggle switch, then other auto-generated content
     final effectiveTrailing =
@@ -293,57 +297,66 @@ class InfoRowWidget extends StatelessWidget {
     final rowContent = Padding(
       padding: padding ?? EdgeInsets.zero,
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment:
+            pinRowAvatar ? CrossAxisAlignment.start : CrossAxisAlignment.center,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // Leading icon/avatar with consistent spacing
           _buildIconOrAvatar(context, colorScheme),
           if (iconSize != 0) Gap(Spacing.md.w),
 
-          // Text content area with flexible alignment
+          // Text content area with flexible alignment.
+          //
+          // Deliberately NOT a SingleChildScrollView, even a
+          // NeverScrollableScrollPhysics one: that registers a Scrollable
+          // per row, so a screen of these (Settings is 8) ends up with many
+          // scrollables and anything resolving "the" scrollable — including
+          // tester.scrollUntilVisible — breaks. ClipRect contains overflow
+          // without pretending to be scrollable.
           Expanded(
-            child: Column(
-              mainAxisAlignment: textMainAxisAlignment,
-              crossAxisAlignment: titleAlignment,
-              children: [
-                // Small gap for visual separation
-                Gap(Spacing.xs.h),
-                // Primary title with line limiting
-                if (title.isNotEmpty)
-                  Text(
-                    title,
-                    style:
-                        titleStyle ??
-                        textTheme.bodyMedium?.copyWith(
-                          color: titleFontColor ?? colorScheme.onBackground,
-                          fontSize: titleFontSize.sp,
-                          fontWeight: FontWeight.w500,
-                        ),
-                    maxLines: titleMaxLines ?? 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                // Small gap between title and subtitle
-                if (subtitle.isNotEmpty) Gap(Spacing.xs.h),
-                // Optional subtitle (only if non-empty)
-                if (subtitle.isNotEmpty)
-                  Text(
-                    subtitle,
-                    style:
-                        subtitleStyle ??
-                        textTheme.bodySmall?.copyWith(
-                          fontSize: subTitleFontSize.sp,
-                          color: colorScheme.onBackground.withOpacity(
-                            OpacityTokens.medium,
+            child: ClipRect(
+              child: Column(
+                mainAxisAlignment: textMainAxisAlignment,
+                crossAxisAlignment: titleAlignment,
+                children: [
+                  // Small gap for visual separation
+                  Gap(Spacing.xs.h),
+                  // Primary title with line limiting
+                  if (title.isNotEmpty)
+                    Text(
+                      title,
+                      style:
+                          titleStyle ??
+                          textTheme.bodyMedium?.copyWith(
+                            color: titleFontColor ?? colorScheme.onBackground,
+                            fontSize: titleFontSize.sp,
+                            fontWeight: FontWeight.w500,
                           ),
-                        ),
-                    maxLines: subTitleMaxLines ?? 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-if(bottomWidget != null)
-                bottomWidget!,
-                // Optional divider below content
-                if (showDivider) AppDivider(),
-              ],
+                      maxLines: titleMaxLines ?? 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  // Small gap between title and subtitle
+                  if (subtitle.isNotEmpty) Gap(Spacing.xs.h),
+                  // Optional subtitle (only if non-empty)
+                  if (subtitle.isNotEmpty)
+                    Text(
+                      subtitle,
+                      style:
+                          subtitleStyle ??
+                          textTheme.bodySmall?.copyWith(
+                            fontSize: subTitleFontSize.sp,
+                            color: colorScheme.onBackground.withOpacity(
+                              OpacityTokens.medium,
+                            ),
+                          ),
+                      maxLines: subTitleMaxLines ?? 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  if (bottomWidget != null) bottomWidget!,
+                  // Optional divider below content
+                  if (showDivider) AppDivider(),
+                ],
+              ),
             ),
           ),
 
@@ -409,32 +422,33 @@ if(bottomWidget != null)
     final size = iconSize ?? (showAvatar ? 20.h : 24.h);
     final notAvatarImage = isNotAvatarImage ?? false;
 
-    final avatar = imageUrl != null
-        ? notAvatarImage
-            ? SizedBox(
-              width: avatarRadius ?? 45.h,
-              height: avatarRadius ?? 45.h,
-              child: ImageContainer(
-                imageUrl: imageUrl ?? '',
-                isPreview: false,
-                borderRadius: BorderRadius.circular(10.r),
-              ),
-            )
-            : ProfileAvatar(
-              avatarUrl: imageUrl ?? '',
-              currentUserId: '',
-              size: avatarRadius ?? 45.h,
-              enableHero: false,
-            )
-        : IconAvatar(
-          icon: icon ?? Icons.person,
-          iconColor: icoColor,
-          size: size,
-          showAvatar: showAvatar,
-          backgroundColor: bgColor,
-          avatarRadiusSize: avatarRadius,
-          circularRadius: circularRadius ?? 100.r,
-        );
+    final avatar =
+        imageUrl != null
+            ? notAvatarImage
+                ? SizedBox(
+                  width: avatarRadius ?? 45.h,
+                  height: avatarRadius ?? 45.h,
+                  child: ImageContainer(
+                    imageUrl: imageUrl ?? '',
+                    isPreview: false,
+                    borderRadius: BorderRadius.circular(10.r),
+                  ),
+                )
+                : ProfileAvatar(
+                  avatarUrl: imageUrl ?? '',
+                  currentUserId: '',
+                  size: avatarRadius ?? 45.h,
+                  enableHero: false,
+                )
+            : IconAvatar(
+              icon: icon ?? Icons.person,
+              iconColor: icoColor,
+              size: size,
+              showAvatar: showAvatar,
+              backgroundColor: bgColor,
+              avatarRadiusSize: avatarRadius,
+              circularRadius: circularRadius ?? 100.r,
+            );
 
     if (onAvatarTap == null) return avatar;
 

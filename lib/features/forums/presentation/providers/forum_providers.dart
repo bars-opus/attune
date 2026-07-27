@@ -1,8 +1,12 @@
 // lib/features/forums/presentation/providers/forum_providers.dart
 
+import 'dart:async';
+
+import 'package:attune/features/forums/data/cache/forum_feed_cache.dart';
 import 'package:attune/features/forums/data/models/forum_post_model.dart';
 import 'package:attune/features/forums/data/models/topic_model.dart';
 import 'package:attune/features/forums/data/repositories/forum_repository.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -28,7 +32,12 @@ final currentUserStatusProvider = FutureProvider<String?>((ref) async {
   return response['relationship_status'] as String?;
 });
 
-// Submit a new topic
+// Submit a new topic.
+//
+// Takes no tagSlugs for the same reason as postOpinionProvider: a family's
+// argument needs value equality and a List<String> has none, so tags would
+// re-run the submission on every rebuild. Tagged submissions go through
+// submitTopicWithPoll below.
 final submitTopicProvider = FutureProvider.family<bool, String>((
   ref,
   content,
@@ -40,24 +49,165 @@ final submitTopicProvider = FutureProvider.family<bool, String>((
   return true;
 });
 
-// Voting topics (in voting pool, not expired)
-final votingTopicsProvider = FutureProvider<List<TopicModel>>((ref) async {
+/// Submits a topic with an optional poll attached (§8.11).
+///
+/// A plain function rather than a `family` provider: the argument would have to
+/// include the option list, and a `List<String>` has no value equality, so every
+/// rebuild would create a fresh provider and re-run the submission.
+///
+/// [tagSlugs] is independent of [pollOptions]: a topic can carry a poll and up
+/// to 3 tags, either, or neither (FORUM.md §7 "Tags").
+Future<bool> submitTopicWithPoll(
+  WidgetRef ref, {
+  required String content,
+  List<String>? pollOptions,
+  List<String>? tagSlugs,
+}) async {
   final repository = ref.read(forumRepositoryProvider);
-  final currentUserId = ref.read(supabaseClientProvider).auth.currentUser?.id;
-  return await repository.getVotingTopics(currentUserId);
-});
+  final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
+  if (userId == null) throw Exception('Not authenticated');
+  await repository.submitTopic(
+    content: content,
+    pollOptions: pollOptions,
+    tagSlugs: tagSlugs,
+  );
+  return true;
+}
+
+/// Cache-then-refresh for the forum topic lists: paint the last-known list
+/// immediately on a cold start so a relaunch isn't an empty screen while the
+/// fetch runs, then swap in fresh data when it lands.
+///
+/// The cache is a cold-start affordance only. `_servedCache` is static so it
+/// survives the notifier being recreated by invalidate() — after a vote or
+/// an impression, serving cache first would briefly re-show the pre-change
+/// list, which is exactly what those callers just changed.
+abstract class _CachedTopicsNotifier extends AsyncNotifier<List<TopicModel>> {
+  ForumFeed get feed;
+
+  Future<List<TopicModel>> fetch();
+
+  /// Per-subclass, so one list's invalidation doesn't disable another's
+  /// cold-start cache. Subclasses back this with their own static field.
+  bool get servedCache;
+  set servedCache(bool value);
+
+  @override
+  Future<List<TopicModel>> build() async {
+    final cache = ref.read(forumFeedCacheProvider);
+    // Topic rows carry viewer-specific userVote/userSide, so they're only
+    // ever read or written against a signed-in user's own key.
+    final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
+
+    if (!servedCache && userId != null) {
+      servedCache = true;
+      final cached = cache.readFeed(feed, userId);
+      if (cached.isNotEmpty) {
+        _refreshInBackground(cache, userId);
+        return cached;
+      }
+    }
+
+    final topics = await fetch();
+    if (userId != null) {
+      unawaited(cache.writeFeed(feed, userId, topics));
+    }
+    return topics;
+  }
+
+  /// Fetches behind an already-painted cached list. Never surfaces an
+  /// AsyncLoading (that would flash the cache away) and swallows failure —
+  /// the user keeps reading the cached list until a later refresh succeeds.
+  Future<void> _refreshInBackground(ForumFeedCache cache, String userId) async {
+    try {
+      final topics = await fetch();
+      state = AsyncData(topics);
+      unawaited(cache.writeFeed(feed, userId, topics));
+    } catch (error) {
+      debugPrint(
+        '[forums] ${feed.key} background refresh failed: ${error.runtimeType}',
+      );
+    }
+  }
+}
+
+// Voting topics (in voting pool, not expired)
+final votingTopicsProvider =
+    AsyncNotifierProvider<VotingTopicsNotifier, List<TopicModel>>(
+      VotingTopicsNotifier.new,
+    );
+
+class VotingTopicsNotifier extends _CachedTopicsNotifier {
+  static bool _servedCache = false;
+
+  @override
+  ForumFeed get feed => ForumFeed.voting;
+
+  @override
+  bool get servedCache => _servedCache;
+
+  @override
+  set servedCache(bool value) => _servedCache = value;
+
+  @override
+  Future<List<TopicModel>> fetch() async {
+    final repository = ref.read(forumRepositoryProvider);
+    final currentUserId = ref.read(supabaseClientProvider).auth.currentUser?.id;
+    // Tags aren't columns on the topic rows — one batched lookup merges them
+    // onto the parsed list (FORUM.md §7 "Tags").
+    return repository.withTags(await repository.getVotingTopics(currentUserId));
+  }
+}
 
 // Active forums (status = 'active')
-final activeForumsProvider = FutureProvider<List<TopicModel>>((ref) async {
-  final repository = ref.read(forumRepositoryProvider);
-  return await repository.getActiveForums();
-});
+final activeForumsProvider =
+    AsyncNotifierProvider<ActiveForumsNotifier, List<TopicModel>>(
+      ActiveForumsNotifier.new,
+    );
+
+class ActiveForumsNotifier extends _CachedTopicsNotifier {
+  static bool _servedCache = false;
+
+  @override
+  ForumFeed get feed => ForumFeed.active;
+
+  @override
+  bool get servedCache => _servedCache;
+
+  @override
+  set servedCache(bool value) => _servedCache = value;
+
+  @override
+  Future<List<TopicModel>> fetch() async {
+    final repository = ref.read(forumRepositoryProvider);
+    return repository.withTags(await repository.getActiveForums());
+  }
+}
 
 // Quiet forums (status = 'quiet')
-final quietForumsProvider = FutureProvider<List<TopicModel>>((ref) async {
-  final repository = ref.read(forumRepositoryProvider);
-  return await repository.getQuietForums();
-});
+final quietForumsProvider =
+    AsyncNotifierProvider<QuietForumsNotifier, List<TopicModel>>(
+      QuietForumsNotifier.new,
+    );
+
+class QuietForumsNotifier extends _CachedTopicsNotifier {
+  static bool _servedCache = false;
+
+  @override
+  ForumFeed get feed => ForumFeed.quiet;
+
+  @override
+  bool get servedCache => _servedCache;
+
+  @override
+  set servedCache(bool value) => _servedCache = value;
+
+  @override
+  Future<List<TopicModel>> fetch() async {
+    final repository = ref.read(forumRepositoryProvider);
+    return repository.withTags(await repository.getQuietForums());
+  }
+}
 
 // Cast vote on a topic
 final castTopicVoteProvider =
@@ -86,6 +236,19 @@ final recordTopicImpressionProvider = FutureProvider.family<void, String>((
   if (userId == null) return;
   await repository.recordImpression(topicId: topicId, userId: userId);
   ref.invalidate(votingTopicsProvider);
+});
+
+// Record that the user opened a topic (read watermark for §10 #5 activity
+// notifications). Distinct from the impression provider above, which fires for
+// mere browsing.
+final recordTopicVisitProvider = FutureProvider.family<void, String>((
+  ref,
+  topicId,
+) async {
+  final repository = ref.read(forumRepositoryProvider);
+  final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
+  if (userId == null) return;
+  await repository.recordTopicVisit(topicId: topicId);
 });
 
 // Add to lib/features/forums/presentation/providers/forum_providers.dart
@@ -156,7 +319,9 @@ final submitForumPostProvider = FutureProvider.family<
   }
   // Goes through the rate-limited, ban-gated RPC (relationship_status captured
   // server-side; topic counters bumped inside the RPC).
-  await ref.read(forumRepositoryProvider).createForumPost(
+  await ref
+      .read(forumRepositoryProvider)
+      .createForumPost(
         topicId: params.topicId,
         side: params.side,
         content: params.content,
@@ -164,6 +329,35 @@ final submitForumPostProvider = FutureProvider.family<
         quotedText: params.quotedText,
       );
 });
+
+/// Edits a forum post within its 15-minute window (FORUM.md §7 "Editing"),
+/// then refetches the topic's posts so the new text and its "(edited)" marker
+/// appear.
+///
+/// A plain function rather than a `family` provider, matching editOpinion /
+/// editComment in opinion_providers.dart: it takes several arguments and
+/// re-running it on a rebuild would re-submit the edit.
+///
+/// Invalidation rather than an in-place patch, because forumPostsProvider is a
+/// plain FutureProvider.family with no notifier to patch — the same shape, and
+/// the same reasoning, as editComment. It is what likeForumPostProvider's
+/// callers already do (see ForumPostCard._toggleLike).
+///
+/// NOT WIRED TO ANY UI YET: the `public_forum_posts` view this reads back
+/// through returns neither `edited_at` nor an ownership flag, so there is no
+/// way to render the marker or gate an Edit affordance client-side. This is
+/// ready for the moment that view is amended.
+Future<void> editForumPost(
+  WidgetRef ref, {
+  required String postId,
+  required String topicId,
+  required String content,
+}) async {
+  await ref
+      .read(forumRepositoryProvider)
+      .editForumPost(postId: postId, content: content);
+  ref.invalidate(forumPostsProvider(topicId));
+}
 
 // Like forum post
 final likeForumPostProvider = FutureProvider.family<void, String>((
@@ -180,7 +374,7 @@ final likeForumPostProvider = FutureProvider.family<void, String>((
   });
   await supabase.rpc(
     'increment_forum_post_like_count',
-    params: {'post_id': postId},
+    params: {'p_post_id': postId},
   );
 });
 
@@ -200,67 +394,84 @@ final unlikeForumPostProvider = FutureProvider.family<void, String>((
       .eq('user_id', userId);
   await supabase.rpc(
     'decrement_forum_post_like_count',
-    params: {'post_id': postId},
+    params: {'p_post_id': postId},
   );
 });
 
 // Forums the user has contributed to (voted or posted in)
-final contributingForumsProvider = FutureProvider<List<TopicModel>>((
-  ref,
-) async {
-  final supabase = ref.read(supabaseClientProvider);
-  final userId = supabase.auth.currentUser?.id;
-  if (userId == null) return [];
-
-  // Get topics where user has voted OR posted
-  final votedTopicsRes = await supabase
-      .from('topic_votes')
-      .select('topic_id, vote_type')
-      .eq('user_id', userId);
-
-  final postedTopicsRes = await supabase
-      .from('forum_posts')
-      .select('topic_id, side')
-      .eq('user_id', userId);
-
-  final topicIds = <String>{};
-  final userVotes = <String, String>{};
-  final userSides = <String, String>{};
-
-  for (final vote in votedTopicsRes) {
-    final topicId = vote['topic_id'] as String;
-    topicIds.add(topicId);
-    userVotes[topicId] = vote['vote_type'] == 'up' ? 'up' : 'down';
-    userSides[topicId] = vote['vote_type'] == 'up' ? 'FOR' : 'AGAINST';
-  }
-
-  for (final post in postedTopicsRes) {
-    final topicId = post['topic_id'] as String;
-    topicIds.add(topicId);
-    if (!userSides.containsKey(topicId)) {
-      final side = post['side'] as String;
-      userSides[topicId] = side.toUpperCase();
-    }
-  }
-
-  if (topicIds.isEmpty) return [];
-
-  // Fetch topic details
-  final topicsRes = await supabase
-      .from('public_forum_topics')
-      .select('*')
-      .inFilter('id', topicIds.toList())
-      .order('last_post_at', ascending: false);
-
-  return topicsRes.map((json) {
-    final topicId = json['id'] as String;
-    return TopicModel.fromJson(
-      json,
-      userVote: userVotes[topicId],
-      userSide: userSides[topicId],
+final contributingForumsProvider =
+    AsyncNotifierProvider<ContributingForumsNotifier, List<TopicModel>>(
+      ContributingForumsNotifier.new,
     );
-  }).toList();
-});
+
+class ContributingForumsNotifier extends _CachedTopicsNotifier {
+  static bool _servedCache = false;
+
+  @override
+  ForumFeed get feed => ForumFeed.contributing;
+
+  @override
+  bool get servedCache => _servedCache;
+
+  @override
+  set servedCache(bool value) => _servedCache = value;
+
+  @override
+  Future<List<TopicModel>> fetch() async {
+    final supabase = ref.read(supabaseClientProvider);
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) return [];
+
+    // Get topics where user has voted OR posted
+    final votedTopicsRes = await supabase
+        .from('topic_votes')
+        .select('topic_id, vote_type')
+        .eq('user_id', userId);
+
+    final postedTopicsRes = await supabase
+        .from('forum_posts')
+        .select('topic_id, side')
+        .eq('user_id', userId);
+
+    final topicIds = <String>{};
+    final userVotes = <String, String>{};
+    final userSides = <String, String>{};
+
+    for (final vote in votedTopicsRes) {
+      final topicId = vote['topic_id'] as String;
+      topicIds.add(topicId);
+      userVotes[topicId] = vote['vote_type'] == 'up' ? 'up' : 'down';
+      userSides[topicId] = vote['vote_type'] == 'up' ? 'FOR' : 'AGAINST';
+    }
+
+    for (final post in postedTopicsRes) {
+      final topicId = post['topic_id'] as String;
+      topicIds.add(topicId);
+      if (!userSides.containsKey(topicId)) {
+        final side = post['side'] as String;
+        userSides[topicId] = side.toUpperCase();
+      }
+    }
+
+    if (topicIds.isEmpty) return [];
+
+    // Fetch topic details
+    final topicsRes = await supabase
+        .from('public_forum_topics')
+        .select('*')
+        .inFilter('id', topicIds.toList())
+        .order('last_post_at', ascending: false);
+
+    return topicsRes.map((json) {
+      final topicId = json['id'] as String;
+      return TopicModel.fromJson(
+        json,
+        userVote: userVotes[topicId],
+        userSide: userSides[topicId],
+      );
+    }).toList();
+  }
+}
 
 // Add this to the existing providers
 final topicDetailsProvider = FutureProvider.family<TopicModel?, String>((
@@ -296,3 +507,71 @@ final reportForumPostProvider =
         reason: params.reason,
       );
     });
+
+// ============================================================
+// Tags (FORUM.md §7 "Tags")
+// ============================================================
+
+/// Forum topics carrying one tag, paginated, newest first.
+///
+/// Keyed ONLY by the tag slug, for the same reason as the opinion side: a tag
+/// filter may never be combined with an author filter, so no author-scoped
+/// variant of this provider exists and none may be added. The RPC takes no
+/// author parameter either.
+///
+/// Parsed with no userVote/userSide — the browse RPC returns the plain topic
+/// columns, with no per-viewer vote state to attach.
+final forumTopicsByTagProvider = AsyncNotifierProvider.family<
+  ForumTopicsByTagNotifier,
+  List<TopicModel>,
+  String
+>(ForumTopicsByTagNotifier.new);
+
+class ForumTopicsByTagNotifier
+    extends FamilyAsyncNotifier<List<TopicModel>, String> {
+  int _currentPage = 0;
+  bool _hasMore = true;
+  static const int _pageSize = 20;
+
+  @override
+  Future<List<TopicModel>> build(String arg) async {
+    _currentPage = 0;
+    _hasMore = true;
+    final firstPage = await _loadPage(0);
+    if (firstPage.length < _pageSize) _hasMore = false;
+    return firstPage;
+  }
+
+  Future<List<TopicModel>> _loadPage(int page) async {
+    final repository = ref.read(forumRepositoryProvider);
+    return repository.withTags(
+      await repository.getForumTopicsByTag(
+        arg,
+        page: page,
+        pageSize: _pageSize,
+      ),
+    );
+  }
+
+  Future<void> loadMore() async {
+    if (!_hasMore) return;
+    if (state is AsyncLoading) return;
+    final currentList = state.value ?? [];
+    _currentPage++;
+    final nextPage = await _loadPage(_currentPage);
+    if (nextPage.length < _pageSize) _hasMore = false;
+    state = AsyncData([...currentList, ...nextPage]);
+  }
+
+  Future<void> refresh() async {
+    _currentPage = 0;
+    _hasMore = true;
+    final fresh = await AsyncValue.guard(() => _loadPage(0));
+    if (fresh.valueOrNull != null && fresh.value!.length < _pageSize) {
+      _hasMore = false;
+    }
+    state = fresh;
+  }
+
+  bool get hasMore => _hasMore;
+}

@@ -78,7 +78,21 @@ async function finish(
 }
 
 function privacySafeData(metadata: Record<string, unknown>) {
-  const allowed = ["type", "relationship_id", "journey_id", "session_id", "chapter"];
+  const allowed = [
+    "type",
+    "relationship_id",
+    "journey_id",
+    "session_id",
+    "chapter",
+    // Forum/Opinions deep links (FORUM.md §10). These are content ids, never
+    // actor ids — the anonymous forum's notifications deliberately carry no
+    // information about WHO liked/commented/replied.
+    "opinion_id",
+    "comment_id",
+    "forum_post_id",
+    // Forum activity/quiet notifications (§10 #5/#6) deep-link to the topic.
+    "topic_id",
+  ];
   return Object.fromEntries(
     allowed.filter((key) => metadata[key] != null).map((key) => [key, metadata[key]]),
   );

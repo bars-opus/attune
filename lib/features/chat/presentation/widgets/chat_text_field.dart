@@ -1,4 +1,5 @@
 import 'package:attune/core/ui/motion/scale_pop.dart';
+import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:flutter/material.dart';
 
 class ChatTextField extends StatefulWidget {
@@ -12,6 +13,7 @@ class ChatTextField extends StatefulWidget {
     this.showTranslator = false,
     this.enabled = true,
     this.hintText = 'Type a message...',
+    this.focusNode,
   });
 
   final TextEditingController controller;
@@ -22,6 +24,11 @@ class ChatTextField extends StatefulWidget {
   final bool showTranslator;
   final bool enabled;
   final String hintText;
+
+  /// Optional external focus node — e.g. so a caller can programmatically
+  /// focus the field (tapping "Reply" on a comment) without owning its
+  /// own separately-created, never-attached FocusNode.
+  final FocusNode? focusNode;
 
   @override
   State<ChatTextField> createState() => _ChatTextFieldState();
@@ -60,50 +67,69 @@ class _ChatTextFieldState extends State<ChatTextField> {
   Widget build(BuildContext context) {
     return SafeArea(
       top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            if (widget.showAttachImage)
-              IconButton(
-                onPressed: widget.enabled ? widget.onAttachImage : null,
-                icon: const Icon(Icons.photo_outlined),
-                tooltip: 'Add image',
-              ),
-            if (widget.showTranslator && _hasText)
-              IconButton(
-                onPressed: widget.enabled ? widget.onOpenTranslator : null,
-                icon: const Icon(Icons.help_outline_rounded),
-                tooltip: 'Help me say this',
-              ),
-            Expanded(
-              child: TextField(
-                controller: widget.controller,
-                enabled: widget.enabled,
-                minLines: 1,
-                maxLines: 5,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: InputDecoration(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (widget.showAttachImage)
+            IconButton(
+              onPressed: widget.enabled ? widget.onAttachImage : null,
+              icon: const Icon(Icons.photo_outlined),
+              tooltip: 'Add image',
+            ),
+          if (widget.showTranslator && _hasText)
+            IconButton(
+              onPressed: widget.enabled ? widget.onOpenTranslator : null,
+              icon: const Icon(Icons.help_outline_rounded),
+              tooltip: 'Help me say this',
+            ),
+          Expanded(
+            // No entrance animation here: this composer is persistent, and it
+            // rebuilds on every keystroke (_hasText drives the translator and
+            // send affordances). A ShakeTransition re-ran its 900ms slide on
+            // each rebuild, shifting the field — and the send button's hit
+            // target — sideways while the user typed.
+            child: CardInkWell(
+                // Plain token rather than `20.r`: the .r extension reads
+                // ScreenUtil.screenWidth, which throws in widget tests that
+                // render this field without initialising ScreenUtil.
+                borderRadius: BorderRadius.circular(BorderRadiusTokens.xl),
+                padding: const EdgeInsets.all(0),
+                margin: const EdgeInsets.all(0),
+                elevation: ElevationTokens.sm,
+
+                // AppTextFormField's fill paints square corners when
+                // showBorder is false (InputBorder.none doesn't clip the
+                // fill) — clip explicitly so the visible shape stays rounded
+                // to match the shadow's outline.
+                child: AppTextFormField(
+                  controller: widget.controller,
+                  focusNode: widget.focusNode,
                   hintText: widget.hintText,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
+                  minLines: 1,
+                  maxLines: 5,
+                  showBorder: true,
+                  // prefixIcon: const Icon(Icons.search, size: 20),
+                  onFieldSubmitted: (_) => _handleSend(),
+                  label: '',
                 ),
-                onSubmitted: (_) => _handleSend(),
               ),
+          ),
+          const SizedBox(width: 8),
+          // Not wrapped in an entrance animation: AnimatedScaleFade starts at
+          // scale 0 and takes 800ms to reach full size, and it restarts on
+          // every rebuild of this composer (each keystroke). That left the
+          // send button scaled down — and effectively untappable — for most of
+          // a second after the user finished typing. ScalePop below still
+          // gives the button its press feedback.
+          IconButton.filled(
+            onPressed: widget.enabled && _hasText ? _handleSend : null,
+            tooltip: 'Send message',
+            icon: ScalePop(
+              trigger: _sendPulse,
+              child: const Icon(Icons.send_rounded),
             ),
-            const SizedBox(width: 8),
-            IconButton.filled(
-              onPressed: widget.enabled && _hasText ? _handleSend : null,
-              tooltip: 'Send message',
-              icon: ScalePop(
-                trigger: _sendPulse,
-                child: const Icon(Icons.send_rounded),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

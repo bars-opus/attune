@@ -3,7 +3,9 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/forums/data/models/topic_model.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
 import 'package:attune/features/forums/presentation/screens/debate_room_screen.dart';
+import 'package:attune/core/widgets/tag_chip_row.dart';
 import 'package:attune/features/forums/presentation/screens/side_selection_screen.dart';
+import 'package:attune/features/opinions/presentation/screen/tag_browse_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class ForumCard extends ConsumerWidget {
@@ -98,6 +100,19 @@ class ForumCard extends ConsumerWidget {
                 style: textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
+              ),
+              // Directly under the topic text and above the stats row, same
+              // placement as on an opinion card. Collapses to nothing when the
+              // topic is untagged (most are), so no gap is reserved.
+              TagChipRow(
+                tags: forum.tags,
+                onTagTap:
+                    (slug) => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TagBrowseScreen(tagSlug: slug),
+                      ),
+                    ),
               ),
               Gap(Spacing.sm.h),
               // Stats row

@@ -56,7 +56,17 @@ class _ForumPostCardState extends ConsumerState<ForumPostCard> {
     final canReply = widget.userSide != 'browse';
 
     final statusDisplay = _getStatusDisplay(widget.post.relationshipStatus);
-    final timeAgo = _formatTimeAgo(widget.post.createdAt);
+    // Same "(edited)" treatment as OpinionCard and the comment cards
+    // (FORUM.md §7 "Editing"): rides on the timestamp, muted, no history.
+    //
+    // Renders only once the `public_forum_posts` view projects `edited_at` —
+    // it does not today, so this is currently always false. See the note on
+    // ForumPostModel.editedAt; no Edit affordance is offered on this card yet
+    // for the same reason, plus the view exposing no ownership flag to gate
+    // one with.
+    final timeAgo =
+        _formatTimeAgo(widget.post.createdAt) +
+        (widget.post.editedAt != null ? ' · edited' : '');
 
     // FOR side: left-aligned, left column
     // AGAINST side: right-aligned, right column

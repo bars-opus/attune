@@ -1,6 +1,7 @@
 // lib/features/opinions/presentation/screens/following_feed_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/widgets/shop_listview_loading_shimmer.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
@@ -49,10 +50,10 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
             !isAuthenticated || followingAsync == null
                 ? _buildUnauthenticatedSliver(context)
                 : followingAsync.when(
-                  loading:
-                      () => const Center(child: CircularProgressIndicator()),
+                  loading: () => const ListviewLoadingShimmer(),
                   error: (error, stack) => ErrorStateWidget.from(error),
-                  data: (opinions) => _buildFeedSliver(context, opinions),
+                  data: (opinions) => 
+                   _buildFeedSliver(context, opinions),
                 ),
       ),
     );
@@ -125,40 +126,38 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
           handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
         ),
         SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final opinion = opinions[index];
-              void openOpinion() {
+          delegate: SliverChildBuilderDelegate((context, index) {
+            final opinion = opinions[index];
+            void openOpinion() {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder:
+                      (_) => CommentThreadScreen(
+                        opinionId: opinion.id,
+                        opinion: opinion,
+                      ),
+                ),
+              );
+            }
+
+            return OpinionCard(
+              opinion: opinion,
+              onOpinionTap: openOpinion,
+              onCommentTap: openOpinion,
+              onProfileTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => CommentThreadScreen(
-                      opinionId: opinion.id,
-                      opinion: opinion,
-                    ),
+                    builder:
+                        (_) => AnonymousProfileScreen(
+                          authorHandle: opinion.authorHandle,
+                        ),
                   ),
                 );
-              }
-
-              return OpinionCard(
-                opinion: opinion,
-                onOpinionTap: openOpinion,
-                onCommentTap: openOpinion,
-                onProfileTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder:
-                          (_) => AnonymousProfileScreen(
-                            authorHandle: opinion.authorHandle,
-                          ),
-                    ),
-                  );
-                },
-              );
-            },
-            childCount: opinions.length,
-          ),
+              },
+            );
+          }, childCount: opinions.length),
         ),
       ],
     );

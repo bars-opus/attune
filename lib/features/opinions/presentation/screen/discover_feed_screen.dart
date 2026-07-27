@@ -1,6 +1,7 @@
 // lib/features/opinions/presentation/screens/discover_feed_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/widgets/shop_listview_loading_shimmer.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
@@ -86,8 +87,7 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
               !isAuthenticated || opinionsAsync == null
                   ? _buildAnonymousPreviewSliver(context)
                   : opinionsAsync.when(
-                    loading:
-                        () => const Center(child: CircularProgressIndicator()),
+                    loading: () => const ListviewLoadingShimmer(),
                     error: (error, stack) => ErrorStateWidget.from(error),
                     data: (opinions) => _buildFeedSliver(context, opinions),
                   ),
@@ -162,10 +162,11 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => CommentThreadScreen(
-                    opinionId: opinion.id,
-                    opinion: opinion,
-                  ),
+                  builder:
+                      (_) => CommentThreadScreen(
+                        opinionId: opinion.id,
+                        opinion: opinion,
+                      ),
                 ),
               );
             }
@@ -231,9 +232,7 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
                     authorHandle: '',
                     isMine: false,
                     content: opinion.content,
-                    relationshipStatus: _normalizePreviewStatus(
-                      opinion.status,
-                    ),
+                    relationshipStatus: _normalizePreviewStatus(opinion.status),
                     likeCount: 0,
                     dislikeCount: 0,
                     commentCount: 0,

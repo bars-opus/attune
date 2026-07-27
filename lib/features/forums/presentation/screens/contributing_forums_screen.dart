@@ -1,6 +1,7 @@
 // lib/features/forums/presentation/screens/contributing_forums_screen.dart
 
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/widgets/feedback/empty_state.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
 import 'package:attune/features/forums/presentation/widgets/forum_card.dart';
 import 'package:attune/home/providers/nav_visibility_provider.dart';
@@ -87,35 +88,18 @@ class _ContributingForumsScreenState
                 physics: const AlwaysScrollableScrollPhysics(),
                 slivers: [
                   SliverOverlapInjector(
-                    handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+                    handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
+                      context,
+                    ),
                   ),
                   SliverFillRemaining(
                     hasScrollBody: false,
                     child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.forum_outlined, size: 64, color: Colors.grey),
-                          Gap(Spacing.lg.h),
-                          Text(
-                            'No contributions yet',
-                            style: textTheme.titleMedium,
-                          ),
-                          Gap(Spacing.sm.h),
-                          Text(
+                      child: EmptyStateWidget(
+                        icon: Icons.forum_outlined,
+                        title: 'No contributions yet',
+                        subtitle:
                             'Vote on a topic or join a debate\nto see it here',
-                            textAlign: TextAlign.center,
-                          ),
-                          Gap(Spacing.lg.h),
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              // Switch to Explore tab
-                              // This would need a tab controller reference
-                            },
-                            icon: const Icon(Icons.explore),
-                            label: const Text('Explore forums'),
-                          ),
-                        ],
                       ),
                     ),
                   ),
@@ -127,23 +111,22 @@ class _ContributingForumsScreenState
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
                 SliverOverlapInjector(
-                  handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+                  handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
+                    context,
+                  ),
                 ),
                 SliverPadding(
                   padding: EdgeInsets.all(Spacing.md.w),
                   sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final forum = forums[index];
-                        final userSide =
-                            forum.userVote != null
-                                ? (forum.userVote == 'up' ? 'FOR' : 'AGAINST')
-                                : (forum.userSide ?? 'Browsing');
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final forum = forums[index];
+                      final userSide =
+                          forum.userVote != null
+                              ? (forum.userVote == 'up' ? 'FOR' : 'AGAINST')
+                              : (forum.userSide ?? 'Browsing');
 
-                        return ForumCard(forum: forum, userSide: userSide);
-                      },
-                      childCount: forums.length,
-                    ),
+                      return ForumCard(forum: forum, userSide: userSide);
+                    }, childCount: forums.length),
                   ),
                 ),
               ],

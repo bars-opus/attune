@@ -2,12 +2,16 @@
 
 import 'dart:async';
 
+import 'package:attune/core/polls/presentation/providers/poll_providers.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/widgets/poll_card.dart';
+import 'package:attune/core/widgets/shop_listview_loading_shimmer.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/opinions/data/models/comment_model.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/data/opinion_more_data.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
+import 'package:attune/features/opinions/presentation/screen/edit_opinion_screen.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -35,21 +39,127 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
   String? _replyToQuotedText;
   bool _isSubmitting = false;
 
-  // Parent comment ids whose replies are currently expanded inline.
-  final Set<String> _expandedReplies = {};
+  // Inline edit state (§8.11 "Editing"). Only ONE comment can be in edit mode
+  // at a time — a second Edit replaces the first — so a single id plus a
+  // single controller is the whole model here. Editing happens in place
+  // rather than on a pushed screen: a comment is at most 280 characters and
+  // its meaning depends on the thread around it, so replacing the text with a
+  // field keeps the parent comment and sibling replies visible while typing.
+  String? _editingCommentId;
+  final TextEditingController _editController = TextEditingController();
+  final FocusNode _editFocusNode = FocusNode();
+  bool _isSavingEdit = false;
 
-  void _toggleRepliesExpanded(String parentCommentId) {
+  void _startEditingComment(CommentModel comment) {
     setState(() {
-      if (!_expandedReplies.add(parentCommentId)) {
-        _expandedReplies.remove(parentCommentId);
-      }
+      _editingCommentId = comment.id;
+      _editController.text = comment.content;
     });
+    _editFocusNode.requestFocus();
+  }
+
+  void _cancelEditingComment() {
+    setState(() {
+      _editingCommentId = null;
+      _editController.clear();
+    });
+  }
+
+  /// Saves an inline comment edit. The 15-minute window is enforced by the
+  /// RPC, so a window that lapses while the field is open surfaces here as a
+  /// snackbar rather than being silently swallowed.
+  Future<void> _saveCommentEdit(CommentModel comment) async {
+    final content = _editController.text.trim();
+    if (content.isEmpty || _isSavingEdit) return;
+    // Nothing changed — close the field rather than stamping an "(edited)"
+    // marker on a comment nobody actually edited.
+    if (content == comment.content.trim()) {
+      _cancelEditingComment();
+      return;
+    }
+
+    setState(() => _isSavingEdit = true);
+    try {
+      await editComment(
+        ref,
+        commentId: comment.id,
+        content: content,
+        opinionId: widget.opinionId,
+      );
+      if (mounted) _cancelEditingComment();
+    } catch (error) {
+      if (mounted) {
+        final text = error.toString();
+        context.showInfoSnackbar(
+          text.contains('not_editable')
+              ? 'That comment can no longer be edited — the 15-minute '
+                  'window has closed.'
+              : text.contains('invalid_content')
+              ? 'A comment must be between 1 and 280 characters.'
+              : 'Could not save that edit.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingEdit = false);
+    }
+  }
+
+  /// Whether this comment can still be edited: yours, and inside the window.
+  /// UX only — edit_opinion_comment re-checks both server-side.
+  bool _canEditComment(CommentModel comment) {
+    return comment.isMine &&
+        DateTime.now().difference(comment.createdAt) < kOpinionEditWindow;
+  }
+
+  // Shared with a reply's own InfoRowWidget.avatarRadius, so a reply's
+  // leading avatar stays the same size once expanded as it was stacked in
+  // the collapsed row above it.
+  static const _replyAvatarSize = 22.0;
+
+  // How many of a parent comment's replies are currently visible, keyed by
+  // parent comment id. Absent (or 0) means collapsed. Revealed in batches
+  // of 5 via "See more" rather than all at once.
+  static const _replyBatchSize = 5;
+  final Map<String, int> _visibleReplyCounts = {};
+
+  // Ids seen on a prior build, so a freshly-posted comment can be told
+  // apart from ones that were already in the list — only ids that show up
+  // for the first time after the initial load get the slide-in entrance.
+  // Null until the first successful load, so existing comments never
+  // animate on first open.
+  Set<String>? _knownCommentIds;
+
+  Set<String> _newCommentIds(List<CommentModel> comments) {
+    final ids = comments.map((c) => c.id).toSet();
+    final previouslyKnown = _knownCommentIds;
+    _knownCommentIds = ids;
+    if (previouslyKnown == null) return const {};
+    return ids.difference(previouslyKnown);
+  }
+
+  void _revealFirstReplyBatch(String parentCommentId) {
+    setState(() => _visibleReplyCounts[parentCommentId] = _replyBatchSize);
+  }
+
+  void _revealMoreReplies(String parentCommentId, int totalReplies) {
+    setState(() {
+      final current = _visibleReplyCounts[parentCommentId] ?? 0;
+      final next = current + _replyBatchSize;
+      _visibleReplyCounts[parentCommentId] =
+          next > totalReplies ? totalReplies : next;
+    });
+  }
+
+  void _collapseReplies(String parentCommentId) {
+    setState(() => _visibleReplyCounts.remove(parentCommentId));
   }
 
   @override
   void dispose() {
     _commentController.dispose();
     _commentFocusNode.dispose();
+    _editController.dispose();
+    _editFocusNode.dispose();
     super.dispose();
   }
 
@@ -98,13 +208,12 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      await ref.read(
-        postCommentProvider((
-          opinionId: widget.opinionId,
-          content: content,
-          replyToCommentId: _replyToCommentId,
-          quotedText: _replyToQuotedText,
-        )).future,
+      await postComment(
+        ref,
+        opinionId: widget.opinionId,
+        content: content,
+        replyToCommentId: _replyToCommentId,
+        quotedText: _replyToQuotedText,
       );
 
       _commentController.clear();
@@ -146,6 +255,21 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
             Navigator.pop(sheetContext);
             await ref.read(deleteOpinionProvider(widget.opinion.id).future);
             if (context.mounted) Navigator.pop(context);
+          },
+          // This screen renders the opinion from the immutable `widget.opinion`
+          // it was constructed with, not from a provider, so it cannot show
+          // the new text in place. Popping back to the feed — whose copy
+          // editOpinion has already patched — is what makes the edit visible,
+          // and matches what Delete above already does.
+          onEdit: () async {
+            Navigator.pop(sheetContext);
+            final edited = await Navigator.push<bool>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => EditOpinionScreen(opinion: widget.opinion),
+              ),
+            );
+            if (edited == true && context.mounted) Navigator.pop(context);
           },
         );
 
@@ -214,85 +338,161 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
             ),
           ],
         ),
-        body: Column(
+        body: Stack(
           children: [
             // Opinion + comment list, opinion pinned as the list's first item
             // so it scrolls away with the comments rather than staying fixed.
-            Expanded(
-              child: commentsAsync.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, stack) => ErrorStateWidget.from(error),
-                data: (comments) {
-                  return ListView(
-                    padding: EdgeInsets.all(Spacing.md.w),
-                    children: [
-                      OpinionCard(
-                        opinion: widget.opinion,
-                        showFollowButton: false,
-                        // The comment textfield below replaces the need to
-                        // tap into a thread, and the AppBar already carries
-                        // the same report/copy/delete menu as showMoreButton.
-                        showCommentAction: false,
-                        showMoreButton: false,
-                      ),
-
-                      Gap(Spacing.md.h),
-                      if (comments.isEmpty)
-                        Center(
+            // Bottom padding reserves room so the last comment doesn't sit
+            // behind the floating input.
+            //
+            // The opinion card renders from widget.opinion (already
+            // available synchronously, not itself async) unconditionally —
+            // only the comments section below it swaps for a loading/error
+            // state, so a refetch doesn't blank out the already-loaded
+            // opinion or the floating input underneath.
+            // Pull-to-refresh is the one deliberate way another user's new
+            // comments, edits, or likes reach this screen — everything YOUR
+            // OWN actions do (post/edit/delete/like) already patches the list
+            // locally and instantly, so a refetch here is never a side effect
+            // of something the viewer themselves just did.
+            RefreshIndicator(
+              onRefresh:
+                  () =>
+                      ref
+                          .read(commentsProvider(widget.opinionId).notifier)
+                          .refresh(),
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                  Spacing.md.w,
+                  Spacing.md.h,
+                  Spacing.md.w,
+                  Spacing.xxl.h + Spacing.xl.h,
+                ),
+                children: [
+                  OpinionCard(
+                    opinion: widget.opinion,
+                    showFollowButton: false,
+                    // The comment textfield below replaces the need to
+                    // tap into a thread, and the AppBar already carries
+                    // the same report/copy/delete menu as showMoreButton.
+                    showCommentAction: false,
+                    showMoreButton: false,
+                  ),
+                  // The opinion's poll, if it has one (§8.11). Renders nothing
+                  // when there is no poll, which is the common case.
+                  PollCard(target: PollTarget.opinion(widget.opinion.id)),
+                  Gap(Spacing.md.h),
+                  commentsAsync.when(
+                    loading:
+                        () => const ListviewLoadingShimmer(isComment: true),
+                    error: (error, stack) => ErrorStateWidget.from(error),
+                    data: (comments) {
+                      if (comments.isEmpty) {
+                        return Center(
                           child: EmptyStateWidget(
                             icon: Icons.comment,
                             title: 'No comments yet',
                             subtitle:
                                 'What do you think? Feel free to drop your opnion',
                           ),
-                        )
-                      else
-                        ..._buildCommentThread(comments, ref),
-                    ],
-                  );
-                },
+                        );
+                      }
+                      return Column(
+                        children: _buildCommentThread(comments, ref),
+                      );
+                    },
+                  ),
+                ],
               ),
             ),
-            // Reply indicator
-            if (_replyToCommentId != null)
-              Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: Spacing.md.w,
-                  vertical: Spacing.sm.h,
-                ),
-                color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Replying to: ${_replyToQuotedText?.substring(0, (_replyToQuotedText!.length > 40) ? 40 : _replyToQuotedText!.length)}...',
-                        style: textTheme.bodySmall,
-                        overflow: TextOverflow.ellipsis,
+            // Floating input, overlaid on the list rather than stacked in
+            // flow below it — comments keep scrolling visibly behind/through
+            // it instead of being blocked by an opaque full-width bar.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    Spacing.md.w,
+                    0,
+                    Spacing.md.w,
+                    Spacing.sm.h,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Reply indicator
+                      if (_replyToCommentId != null)
+                        AnimatedScaleFade(
+                          duration: const Duration(milliseconds: 600),
+                          curve: Curves.easeOutBack,
+
+                          child: CardInkWell(
+                            padding: const EdgeInsets.only(left: Spacing.md),
+                            margin: const EdgeInsets.all(0),
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: Spacing.md),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: ShakeTransition(
+                                      duration: const Duration(
+                                        milliseconds: 800,
+                                      ),
+                                      curve: Curves.easeOutBack,
+                                      child: RichText(
+                                        text: TextSpan(
+                                          children: [
+                                            TextSpan(
+                                              text: 'Replying to',
+                                              style: textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: colorScheme.primary,
+                                                  ),
+                                            ),
+                                            TextSpan(
+                                              text:
+                                                  '\n${_replyToQuotedText?.substring(0, (_replyToQuotedText!.length > 40) ? 40 : _replyToQuotedText!.length)}...',
+                                              style: textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: colorScheme.onSurface
+                                                        .withValues(alpha: 0.8),
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                        textAlign: TextAlign.start,
+                                      ),
+                                    ),
+                                  ),
+                                  ShakeTransition(
+                                    offset: -140,
+                                    curve: Curves.easeOutBack,
+                                    child: IconButton(
+                                      icon: const Icon(Icons.close, size: 16),
+                                      onPressed: _clearReplyTarget,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      // Comment input, floating pill over the list instead
+                      // of a full-width opaque bar.
+                      ChatTextField(
+                        controller: _commentController,
+                        focusNode: _commentFocusNode,
+                        onSend: _postComment,
+                        enabled: !_isSubmitting,
+                        hintText: 'Add a comment...',
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 16),
-                      onPressed: _clearReplyTarget,
-                    ),
-                  ],
-                ),
-              ),
-            // Comment input, styled like chat's message input.
-            Container(
-              decoration: BoxDecoration(
-                color: colorScheme.surface,
-                border: Border(
-                  top: BorderSide(
-                    color: colorScheme.outline.withOpacity(0.1),
-                    width: BorderWidthTokens.hairline,
+                    ],
                   ),
                 ),
-              ),
-              child: ChatTextField(
-                controller: _commentController,
-                onSend: _postComment,
-                enabled: !_isSubmitting,
-                hintText: 'Add a comment...',
               ),
             ),
           ],
@@ -305,6 +505,14 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
   // nested underneath, instead of every reply rendering as its own
   // top-level comment mixed into the thread.
   List<Widget> _buildCommentThread(List<CommentModel> comments, WidgetRef ref) {
+    final newIds = _newCommentIds(comments);
+
+    // commentsProvider returns oldest-first (needed so each reply group
+    // reads top-to-bottom in the order it was actually written). Top-level
+    // comments get reversed to newest-first here, client-side, so a
+    // freshly-posted comment lands at the top of the list — immediately
+    // visible without scrolling — while replies inside a thread keep
+    // reading chronologically.
     final repliesByParent = <String, List<CommentModel>>{};
     final topLevel = <CommentModel>[];
     for (final comment in comments) {
@@ -315,18 +523,29 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
         repliesByParent.putIfAbsent(parentId, () => []).add(comment);
       }
     }
+    final orderedTopLevel = topLevel.reversed;
 
     final widgets = <Widget>[];
-    for (final comment in topLevel) {
+    for (final comment in orderedTopLevel) {
       final replies = repliesByParent[comment.id];
-      widgets.add(_buildCommentCard(comment, ref, replies: replies));
+      widgets.add(
+        _buildCommentCard(
+          comment,
+          ref,
+          replies: replies,
+          isNew: newIds.contains(comment.id),
+          newIds: newIds,
+        ),
+      );
     }
     return widgets;
   }
 
-  // Stacked circular status-icon avatars representing repliers, up to 5 —
-  // the 5th slot shows "5+" when there are more. Tap to expand/collapse the
-  // actual reply cards underneath.
+  // Heading for the replies section — reply count + expand toggle. Always
+  // visible, collapsed or expanded; tapping it toggles between the two
+  // (expand reveals the first batch; collapse fully hides all revealed
+  // batches). The stacked repliers preview only shows while collapsed —
+  // once the actual replies are visible below, the preview is redundant.
   Widget _buildRepliesRow(
     String parentCommentId,
     List<CommentModel> replies, {
@@ -334,7 +553,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     const maxAvatars = 5;
-    const avatarSize = 22.0;
+    const avatarSize = _replyAvatarSize;
     const overlap = 14.0;
     final shownCount =
         replies.length > maxAvatars ? maxAvatars : replies.length;
@@ -342,36 +561,52 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     return Padding(
       padding: EdgeInsets.only(top: Spacing.xs.h, bottom: Spacing.sm.h),
       child: GestureDetector(
-        onTap: () => _toggleRepliesExpanded(parentCommentId),
+        onTap:
+            () =>
+                isExpanded
+                    ? _collapseReplies(parentCommentId)
+                    : _revealFirstReplyBatch(parentCommentId),
         behavior: HitTestBehavior.opaque,
         child: Row(
           children: [
-            SizedBox(
-              height: avatarSize,
-              width: avatarSize + (shownCount - 1) * overlap,
-              child: Stack(
-                children: [
-                  for (var i = 0; i < shownCount; i++)
-                    Positioned(
-                      left: i * overlap,
-                      child: _buildReplyAvatar(
-                        replies[i],
-                        size: avatarSize,
-                        colorScheme: colorScheme,
-                        showOverflow:
-                            replies.length > maxAvatars && i == maxAvatars - 1,
-                        overflowCount: replies.length - (maxAvatars - 1),
-                      ),
-                    ),
-                ],
+            if (!isExpanded) ...[
+              AnimatedScaleFade(
+                duration: const Duration(milliseconds: 800),
+                curve: Curves.easeOutBack,
+
+                child: SizedBox(
+                  height: avatarSize,
+                  width: avatarSize + (shownCount - 1) * overlap,
+                  child: Stack(
+                    children: [
+                      for (var i = 0; i < shownCount; i++)
+                        Positioned(
+                          left: i * overlap,
+                          child: _buildReplyAvatar(
+                            replies[i],
+                            size: avatarSize,
+                            colorScheme: colorScheme,
+                            showOverflow:
+                                replies.length > maxAvatars &&
+                                i == maxAvatars - 1,
+                            overflowCount: replies.length - (maxAvatars - 1),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-            Gap(Spacing.sm.w),
-            Text(
-              '${replies.length} ${replies.length == 1 ? 'reply' : 'replies'}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.primary,
-                fontWeight: FontWeight.w600,
+              Gap(Spacing.sm.w),
+            ],
+            ShakeTransition(
+              offset: -140,
+              curve: Curves.easeOutBack,
+              child: Text(
+                '${replies.length} ${replies.length == 1 ? 'reply' : 'replies'}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             Gap(Spacing.xs.w),
@@ -379,6 +614,103 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
               isExpanded ? Icons.expand_less : Icons.expand_more,
               size: 16,
               color: colorScheme.primary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Row shown under each revealed batch of replies: "See more" (only while
+  // more remain) plus a close icon at the far end that always fully
+  // re-collapses back to the stacked-avatar row, even on the last batch.
+  Widget _buildRepliesBatchFooter(
+    String parentCommentId,
+    int visibleCount,
+    int totalReplies,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final hasMore = visibleCount < totalReplies;
+
+    return Padding(
+      padding: EdgeInsets.only(top: Spacing.xs.h, bottom: Spacing.sm.h),
+      child: Row(
+        children: [
+          if (hasMore)
+            GestureDetector(
+              onTap: () => _revealMoreReplies(parentCommentId, totalReplies),
+              behavior: HitTestBehavior.opaque,
+              child: Text(
+                'See more',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          const Spacer(),
+          GestureDetector(
+            onTap: () => _collapseReplies(parentCommentId),
+            behavior: HitTestBehavior.opaque,
+            child: Icon(
+              Icons.close,
+              size: 16,
+              color: colorScheme.onSurface.withValues(alpha: 0.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // The currently-visible batch of reply cards plus the batch footer
+  // (See more / close) underneath.
+  Widget _buildExpandedReplies(
+    String parentCommentId,
+    List<CommentModel> replies,
+    WidgetRef ref, {
+    Set<String> newIds = const {},
+  }) {
+    final visibleCount = (_visibleReplyCounts[parentCommentId] ?? 0).clamp(
+      0,
+      replies.length,
+    );
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: EdgeInsets.only(left: Spacing.md.w),
+      child: Container(
+        // Reddit-style thread line connecting this reply group back to its
+        // parent comment. A left border on the Column paints along however
+        // tall the content naturally ends up, unlike a stretched sibling
+        // Container, which needs a bounded height up front and isn't
+        // available here (bottomWidget sizes to its own content).
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(color: colorScheme.outlineVariant, width: .1),
+          ),
+        ),
+        padding: EdgeInsets.only(left: Spacing.sm.w),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var i = 0; i < visibleCount; i++)
+              _buildCommentCard(
+                replies[i],
+                ref,
+                showReplyAction: false,
+                // No divider on any visible reply — the batch footer
+                // below (See more / close) is the visual break for
+                // this group, and the parent's own divider (after this
+                // whole bottomWidget) separates the group from the
+                // next top-level comment.
+                showDivider: false,
+                isNew: newIds.contains(replies[i].id),
+              ),
+            _buildRepliesBatchFooter(
+              parentCommentId,
+              visibleCount,
+              replies.length,
             ),
           ],
         ),
@@ -423,16 +755,88 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     );
   }
 
+  /// The in-place editor shown in a comment's own row while it is being
+  /// edited: a field pre-filled with the current text, plus Cancel/Save.
+  ///
+  /// Deliberately plain — no character counter competing with the thread's
+  /// existing chrome. The 280-char limit is enforced by maxLength here and by
+  /// the RPC's `invalid_content` check regardless.
+  Widget _buildInlineCommentEditor(CommentModel comment) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Padding(
+      padding: EdgeInsets.only(top: Spacing.xs.h, bottom: Spacing.sm.h),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          TextField(
+            controller: _editController,
+            focusNode: _editFocusNode,
+            enabled: !_isSavingEdit,
+            maxLines: 5,
+            minLines: 1,
+            maxLength: 280,
+            autofocus: true,
+            style: theme.textTheme.bodyMedium,
+            decoration: InputDecoration(
+              isDense: true,
+              counterText: '',
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: Spacing.sm.w,
+                vertical: Spacing.sm.h,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
+              ),
+            ),
+          ),
+          Gap(Spacing.xs.h),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(
+                onPressed: _isSavingEdit ? null : _cancelEditingComment,
+                child: Text(
+                  'Cancel',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed:
+                    _isSavingEdit ? null : () => _saveCommentEdit(comment),
+                child: Text(
+                  _isSavingEdit ? 'Saving…' : 'Save',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCommentCard(
     CommentModel comment,
     WidgetRef ref, {
     bool showReplyAction = true,
+    bool showDivider = true,
     List<CommentModel>? replies,
+    bool isNew = false,
+    Set<String> newIds = const {},
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     // Server-computed; the real user_id never reaches the client (FORUM.md §3).
     final isOwnComment = comment.isMine;
+    final canEditComment = _canEditComment(comment);
+    final isEditing = _editingCommentId == comment.id;
 
     final statusDisplay = _getStatusDisplay(comment.relationshipStatus);
     final statusIcon = _statusIconFor(statusDisplay);
@@ -440,34 +844,53 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
       statusDisplay,
       Theme.of(context).colorScheme,
     );
-    final timeAgo = _formatTimeAgo(comment.createdAt);
+    // Same treatment as OpinionCard: the marker rides on the timestamp, and
+    // the timestamp itself stays createdAt — an edit never moves it.
+    final timeAgo =
+        _formatTimeAgo(comment.createdAt) +
+        (comment.editedAt != null ? ' · edited' : '');
 
-    return Slidable(
+    final card = Slidable(
       key: ValueKey(comment.id),
-      // Swipe right-to-left reveals Reply. Same _setReplyTarget the inline
-      // "Reply" text already uses — this is an additional way to trigger it,
-      // not a replacement. Replies-to-replies aren't a thing here, so a
-      // reply card omits this pane entirely (showReplyAction: false).
+      // Swipe right-to-left reveals Reply, and Edit on your own in-window
+      // comments. Same _setReplyTarget the inline "Reply" text already uses —
+      // this is an additional way to trigger it, not a replacement.
+      // Replies-to-replies aren't a thing here, so a reply card omits Reply
+      // (showReplyAction: false) but can still be edited, which is why the
+      // pane itself is gated on either action applying rather than on Reply
+      // alone. Edit sits here rather than in the end pane because that pane's
+      // DismissiblePane treats a full swipe as "delete this" — adding a
+      // second, non-destructive action to it would make the same gesture
+      // ambiguous.
       startActionPane:
-          !showReplyAction
+          (!showReplyAction && !canEditComment)
               ? null
               : ActionPane(
                 motion: const DrawerMotion(),
-                extentRatio: 0.25,
+                extentRatio: canEditComment && showReplyAction ? 0.5 : 0.25,
                 children: [
-                  SlidableAction(
-                    onPressed:
-                        (_) => _setReplyTarget(
-                          comment.id,
-                          comment.content.length > 60
-                              ? '${comment.content.substring(0, 60)}...'
-                              : comment.content,
-                        ),
-                    backgroundColor: colorScheme.primary,
-                    foregroundColor: colorScheme.onPrimary,
-                    icon: Icons.reply,
-                    label: 'Reply',
-                  ),
+                  if (showReplyAction)
+                    SlidableAction(
+                      onPressed:
+                          (_) => _setReplyTarget(
+                            comment.id,
+                            comment.content.length > 60
+                                ? '${comment.content.substring(0, 60)}...'
+                                : comment.content,
+                          ),
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: colorScheme.onPrimary,
+                      icon: Icons.reply,
+                      label: 'Reply',
+                    ),
+                  if (canEditComment)
+                    SlidableAction(
+                      onPressed: (_) => _startEditingComment(comment),
+                      backgroundColor: colorScheme.surfaceContainerHighest,
+                      foregroundColor: colorScheme.onSurface,
+                      icon: Icons.edit_outlined,
+                      label: 'Edit',
+                    ),
                 ],
               ),
       // Swipe left-to-right reveals Report (others' comments) or Delete
@@ -486,11 +909,10 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
             return _confirmDeleteComment(context);
           },
           onDismissed: () {
-            ref.read(
-              deleteCommentProvider((
-                commentId: comment.id,
-                opinionId: widget.opinionId,
-              )).future,
+            deleteComment(
+              ref,
+              commentId: comment.id,
+              opinionId: widget.opinionId,
             );
           },
         ),
@@ -507,11 +929,10 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
             SlidableAction(
               onPressed: (_) async {
                 if (await _confirmDeleteComment(context)) {
-                  await ref.read(
-                    deleteCommentProvider((
-                      commentId: comment.id,
-                      opinionId: widget.opinionId,
-                    )).future,
+                  await deleteComment(
+                    ref,
+                    commentId: comment.id,
+                    opinionId: widget.opinionId,
                   );
                 }
               },
@@ -528,15 +949,22 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
           // Content
           InfoRowWidget(
             title: '',
-            subtitle: comment.content,
+            // Blanked while this comment is being edited — the editable field
+            // in bottomWidget below takes its place, so the text appears
+            // once, not twice.
+            subtitle: isEditing ? '' : comment.content,
             icon: statusIcon,
             iconColor: colorScheme.background,
             backgroundColor: statusIconColor,
-            avatarRadius: 15.h,
+            // Replies keep the same avatar size they had stacked in the
+            // collapsed row above, instead of jumping to the larger
+            // top-level comment size once expanded.
+            avatarRadius: showReplyAction ? 15.h : _replyAvatarSize,
             subTitleMaxLines: 10,
-            iconSize: 12.h,
+            iconSize: showReplyAction ? 12.h : _replyAvatarSize * 0.5,
+            pinAvatar: true,
             onTap: () {},
-            showDivider: true,
+            showDivider: showDivider,
             onAvatarTap: () {},
             disableTrailing: true,
             showAvatar: true,
@@ -544,17 +972,32 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
             bottomWidget: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Inline editor, in place of this comment's text. Kept in the
+                // thread rather than on a pushed screen so the parent comment
+                // and sibling replies stay visible while revising.
+                if (isEditing) _buildInlineCommentEditor(comment),
                 Row(
                   children: [
-                    // Like button (simplified - no dislike for comments in v1? Spec allows both)
                     _buildCommentReactionButton(
                       icon: Icons.favorite_border_outlined,
                       activeIcon: Icons.favorite,
                       count: comment.likeCount,
-                      isActive:
-                          false, // Would need userReaction field on CommentModel
-                      onTap: () {
-                        // Implement like/unlike
+                      isActive: comment.likedByMe,
+                      onTap: () async {
+                        try {
+                          await toggleCommentLiked(
+                            ref,
+                            opinionId: widget.opinionId,
+                            commentId: comment.id,
+                            isCurrentlyLiked: comment.likedByMe,
+                          );
+                        } catch (e) {
+                          if (mounted) {
+                            context.showErrorSnackbar(
+                              'Could not update your like.',
+                            );
+                          }
+                        }
                       },
                     ),
                     if (showReplyAction) ...[
@@ -590,12 +1033,13 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                       onSelected: (value) async {
                         if (value == 'report') {
                           _showReportDialog(context, ref, comment.id);
+                        } else if (value == 'edit' && canEditComment) {
+                          _startEditingComment(comment);
                         } else if (value == 'delete' && isOwnComment) {
-                          await ref.read(
-                            deleteCommentProvider((
-                              commentId: comment.id,
-                              opinionId: widget.opinionId,
-                            )).future,
+                          await deleteComment(
+                            ref,
+                            commentId: comment.id,
+                            opinionId: widget.opinionId,
                           );
                         }
                       },
@@ -605,6 +1049,15 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                               const PopupMenuItem(
                                 value: 'report',
                                 child: Text('Report'),
+                              ),
+                            // Own comment, still inside the 15-minute window.
+                            // Duplicates the Edit swipe action deliberately —
+                            // the swipe is discoverable only if you try it,
+                            // same reason Delete appears in both places.
+                            if (canEditComment)
+                              const PopupMenuItem(
+                                value: 'edit',
+                                child: Text('Edit'),
                               ),
                             if (isOwnComment)
                               const PopupMenuItem(
@@ -619,26 +1072,22 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                 // comment's own bottomWidget (ahead of InfoRowWidget's
                 // divider) so they read as belonging to this comment rather
                 // than looking like a separate section below the divider.
+                // The heading row stays visible whether collapsed or
+                // expanded — it's what tells you you're looking at replies
+                // to this comment, not a standalone comment. Revealed in
+                // batches of 5 via "See more" rather than all at once.
                 if (replies != null && replies.isNotEmpty) ...[
                   _buildRepliesRow(
                     comment.id,
                     replies,
-                    isExpanded: _expandedReplies.contains(comment.id),
+                    isExpanded: (_visibleReplyCounts[comment.id] ?? 0) > 0,
                   ),
-                  if (_expandedReplies.contains(comment.id))
-                    Padding(
-                      padding: EdgeInsets.only(left: Spacing.lg.w),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          for (final reply in replies)
-                            _buildCommentCard(
-                              reply,
-                              ref,
-                              showReplyAction: false,
-                            ),
-                        ],
-                      ),
+                  if ((_visibleReplyCounts[comment.id] ?? 0) > 0)
+                    _buildExpandedReplies(
+                      comment.id,
+                      replies,
+                      ref,
+                      newIds: newIds,
                     ),
                 ],
               ],
@@ -647,6 +1096,14 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
         ],
       ),
     );
+
+    // Only the comment that just arrived slides in — everything already on
+    // screen renders as normal, unanimated. Comments drop in from above
+    // (negative Y), unlike chat/forum content which rises from below —
+    // matches how this list already reads top-to-bottom, newest at top.
+    return isNew
+        ? SlideFadeIn(beginOffset: const Offset(0, -0.15), child: card)
+        : card;
   }
 
   IconData _statusIconFor(String statusDisplay) {

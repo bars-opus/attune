@@ -293,6 +293,46 @@ class AppTextFormField extends StatefulWidget {
   State<AppTextFormField> createState() => _AppTextFormFieldState();
 }
 
+/// ScreenUtil's `.sp`/`.h`/`.w` extensions throw a LateInitializationError
+/// when ScreenUtil hasn't been initialised. That's fine for screens built
+/// under ScreenUtilInit, but this widget is shared — it gets rendered by
+/// widget tests and by callers that never set ScreenUtil up (chat's
+/// composer is one). Falling back to the unscaled value keeps the field
+/// rendering instead of taking the whole subtree down.
+extension _SafeScale on num {
+  double get safeSp {
+    try {
+      return sp;
+    } catch (_) {
+      return toDouble();
+    }
+  }
+
+  double get safeH {
+    try {
+      return h;
+    } catch (_) {
+      return toDouble();
+    }
+  }
+
+  double get safeW {
+    try {
+      return w;
+    } catch (_) {
+      return toDouble();
+    }
+  }
+
+  double get safeR {
+    try {
+      return r;
+    } catch (_) {
+      return toDouble();
+    }
+  }
+}
+
 class _AppTextFormFieldState extends State<AppTextFormField> {
   late TextEditingController _controller;
   bool _ownsController = false;
@@ -380,109 +420,127 @@ class _AppTextFormFieldState extends State<AppTextFormField> {
         widget.errorText?.isNotEmpty == true ? widget.errorText : null;
 
     return Padding(
-      padding: EdgeInsets.only(top: Spacing.sm.h),
+      // Same rule as the label row below: nothing to space away from when
+      // there's no label, so no top padding either.
+      padding: EdgeInsets.only(
+        top: widget.label.isNotEmpty ? Spacing.sm.safeH : 0,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.start,
         children: [
-          Text(
-            widget.label,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w500,
-              color: colorScheme.onSurface,
-              fontSize: widget.isSmall ? 12.sp : 14.sp,
-            ),
-          ),
-          Gap(Spacing.xs.h),
-
-          SizedBox(
-            height: _calculateHeight(),
-            child: TextFormField(
-              controller: _controller,
-              focusNode: _effectiveFocusNode,
-              autofocus: widget.autofocus,
-              keyboardType: widget.keyboardType,
-              textInputAction: widget.textInputAction,
-              obscureText: widget.obscureText,
-              autocorrect: widget.autocorrect,
-              enableSuggestions: widget.enableSuggestions,
-              maxLines: widget.maxLines,
-              minLines: widget.minLines,
-              maxLength: widget.maxLength,
-              validator: widget.validator,
-              onChanged: _handleChanged,
-              onFieldSubmitted: widget.onFieldSubmitted,
-              onTap: widget.onTap,
-              readOnly: widget.readOnly,
-              enabled: widget.enabled,
-              inputFormatters: widget.inputFormatters,
-              autofillHints: widget.autofillHints,
+          // An empty label is a real call pattern (borderless/minimal
+          // fields like ChatTextField) — skip reserving a blank Text row
+          // and its Gap for those, rather than showing invisible spacing.
+          if (widget.label.isNotEmpty) ...[
+            Text(
+              widget.label,
               style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
                 color: colorScheme.onSurface,
-                fontSize: 14.sp,
-              ),
-              decoration: InputDecoration(
-                hintText: widget.hintText,
-                alignLabelWithHint: true,
-                hintStyle: theme.textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurface.withValues(alpha: 0.4),
-                  fontSize: 12.sp,
-                ),
-                prefixIcon:
-                    widget.prefixIcon != null
-                        ? Icon(
-                          widget.prefixIcon,
-                          size: IconSizes.sm.h + 5,
-                          color: colorScheme.onSurface.withValues(alpha: 0.5),
-                        )
-                        : null,
-                suffixIcon: widget.suffixIcon,
-                filled: true,
-                fillColor:
-                    widget.fillColor ??
-                    (isDark
-                        ? colorScheme.surface.withValues(
-                          alpha: FormTokens.darkFieldFillOpacity,
-                        )
-                        : colorScheme.surface),
-                contentPadding:
-                    widget.contentPadding ??
-                    EdgeInsets.symmetric(
-                      horizontal: Spacing.md.w,
-                      vertical: Spacing.sm.h,
-                    ),
-                border: _buildBorder(colorScheme),
-                errorText: errorText,
-                enabledBorder: _buildBorder(colorScheme),
-                focusedBorder: _buildBorder(colorScheme, isFocused: true),
-                errorBorder: _buildBorder(
-                  colorScheme,
-                  isError: errorText != null,
-                ),
-                focusedErrorBorder: _buildBorder(
-                  colorScheme,
-                  isError: errorText != null,
-                  isFocused: true,
-                ),
-                disabledBorder: _buildBorder(colorScheme, isDisabled: true),
-                errorStyle:
-                    errorText == null
-                        ? null
-                        : theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.error,
-                          fontSize: 12.sp,
-                        ),
-                errorMaxLines: 2,
-                isDense: true,
-                counterStyle: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: 12.sp,
-                ),
+                fontSize: widget.isSmall ? 12.safeSp : 14.safeSp,
               ),
             ),
-          ),
+            Gap(Spacing.xs.safeH),
+          ],
+
+          _buildField(theme, colorScheme, isDark, errorText),
         ],
       ),
     );
+  }
+
+  // Always wrapped in a SizedBox, even when _calculateHeight() returns null
+  // (multi-line). A bare multi-line TextFormField exposes its own internal
+  // Scrollable to the widget tree, which breaks any test or caller relying
+  // on there being a single scrollable on the screen — the SizedBox keeps
+  // that contained. Multi-line height is still content-driven, because a
+  // null height imposes no constraint.
+  Widget _buildField(
+    ThemeData theme,
+    ColorScheme colorScheme,
+    bool isDark,
+    String? errorText,
+  ) {
+    final field = TextFormField(
+      controller: _controller,
+      focusNode: _effectiveFocusNode,
+      autofocus: widget.autofocus,
+      keyboardType: widget.keyboardType,
+      textInputAction: widget.textInputAction,
+      obscureText: widget.obscureText,
+      autocorrect: widget.autocorrect,
+      enableSuggestions: widget.enableSuggestions,
+      maxLines: widget.maxLines,
+      minLines: widget.minLines,
+      maxLength: widget.maxLength,
+      validator: widget.validator,
+      onChanged: _handleChanged,
+      onFieldSubmitted: widget.onFieldSubmitted,
+      onTap: widget.onTap,
+      readOnly: widget.readOnly,
+      enabled: widget.enabled,
+      inputFormatters: widget.inputFormatters,
+      autofillHints: widget.autofillHints,
+      style: theme.textTheme.bodyMedium?.copyWith(
+        color: colorScheme.onSurface,
+        fontSize: 14.safeSp,
+      ),
+      decoration: InputDecoration(
+        hintText: widget.hintText,
+        alignLabelWithHint: true,
+        hintStyle: theme.textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurface.withValues(alpha: 0.4),
+          fontSize: 12.safeSp,
+        ),
+        prefixIcon:
+            widget.prefixIcon != null
+                ? Icon(
+                  widget.prefixIcon,
+                  size: IconSizes.sm.safeH + 5,
+                  color: colorScheme.onSurface.withValues(alpha: 0.5),
+                )
+                : null,
+        suffixIcon: widget.suffixIcon,
+        filled: true,
+        fillColor:
+            widget.fillColor ??
+            (isDark
+                ? colorScheme.surface.withValues(
+                  alpha: FormTokens.darkFieldFillOpacity,
+                )
+                : colorScheme.surface),
+        contentPadding:
+            widget.contentPadding ??
+            EdgeInsets.symmetric(
+              horizontal: Spacing.md.safeW,
+              vertical: Spacing.sm.safeH,
+            ),
+        border: _buildBorder(colorScheme),
+        errorText: errorText,
+        enabledBorder: _buildBorder(colorScheme),
+        focusedBorder: _buildBorder(colorScheme, isFocused: true),
+        errorBorder: _buildBorder(colorScheme, isError: errorText != null),
+        focusedErrorBorder: _buildBorder(
+          colorScheme,
+          isError: errorText != null,
+          isFocused: true,
+        ),
+        disabledBorder: _buildBorder(colorScheme, isDisabled: true),
+        errorStyle:
+            errorText == null
+                ? null
+                : theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.error,
+                  fontSize: 12.safeSp,
+                ),
+        errorMaxLines: 2,
+        isDense: true,
+        counterStyle: theme.textTheme.bodySmall?.copyWith(fontSize: 12.safeSp),
+      ),
+    );
+
+    return SizedBox(height: _calculateHeight(), child: field);
   }
 
   double? _calculateHeight() {
@@ -490,8 +548,8 @@ class _AppTextFormFieldState extends State<AppTextFormField> {
     if (widget.errorText?.isNotEmpty == true) return null;
     if (widget.maxLines == 1) {
       return widget.isSmall
-          ? FormTokens.compactFieldHeight.h
-          : FormTokens.defaultFieldHeight.h;
+          ? FormTokens.compactFieldHeight.safeH
+          : FormTokens.defaultFieldHeight.safeH;
     }
     return null;
   }
@@ -519,7 +577,7 @@ class _AppTextFormFieldState extends State<AppTextFormField> {
             : FormTokens.defaultFieldBorderWidth;
 
     return OutlineInputBorder(
-      borderRadius: widget.borderRadius ?? BorderRadius.circular(20.r),
+      borderRadius: widget.borderRadius ?? BorderRadius.circular(20.safeR),
       borderSide: BorderSide(
         color:
             isDisabled

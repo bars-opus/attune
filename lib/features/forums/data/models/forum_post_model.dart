@@ -10,6 +10,17 @@ class ForumPostModel {
   final String? quotedText;
   final int likeCount;
   final bool userLiked;
+
+  /// Non-null once the author has edited this post inside its 15-minute window
+  /// (FORUM.md §7 "Editing"). Drives the "(edited)" marker; no history shown.
+  ///
+  /// NOTE: as of this change the `public_forum_posts` VIEW that
+  /// forumPostsProvider selects from does NOT project `edited_at` (nor any
+  /// ownership column), so this parses as null in practice and the marker
+  /// never renders. Parsing it here anyway means the SQL follow-up that adds
+  /// the column to that view needs no further Dart change.
+  final DateTime? editedAt;
+
   final DateTime createdAt;
 
   ForumPostModel({
@@ -22,6 +33,7 @@ class ForumPostModel {
     this.quotedText,
     required this.likeCount,
     required this.userLiked,
+    this.editedAt,
     required this.createdAt,
   });
 
@@ -39,6 +51,10 @@ class ForumPostModel {
       quotedText: json['quoted_text'],
       likeCount: json['like_count'] ?? 0,
       userLiked: userLiked,
+      editedAt:
+          json['edited_at'] != null
+              ? DateTime.parse(json['edited_at'] as String)
+              : null,
       createdAt: DateTime.parse(json['created_at']),
     );
   }

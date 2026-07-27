@@ -2,6 +2,8 @@
 
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
+import 'package:attune/core/widgets/poll_composer.dart';
+import 'package:attune/core/widgets/tag_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -17,6 +19,15 @@ class _SubmitTopicScreenState extends ConsumerState<SubmitTopicScreen> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   bool _isSubmitting = false;
+
+  /// Non-null only when the composer holds a valid 2-4 option poll (§8.11).
+  /// This is the topic's poll, which is separate from the up/down vote that
+  /// decides whether the topic becomes a live debate room.
+  List<String>? _pollOptions;
+
+  /// Up to 3 slugs from the fixed vocabulary. Independent of [_pollOptions] —
+  /// a topic can carry a poll and tags, either, or neither.
+  List<String> _tagSlugs = const [];
 
   @override
   void dispose() {
@@ -41,7 +52,12 @@ class _SubmitTopicScreenState extends ConsumerState<SubmitTopicScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      final success = await ref.read(submitTopicProvider(content).future);
+      final success = await submitTopicWithPoll(
+        ref,
+        content: content,
+        pollOptions: _pollOptions,
+        tagSlugs: _tagSlugs,
+      );
       if (success && mounted) {
         Navigator.pop(context, true);
       }
@@ -74,63 +90,91 @@ class _SubmitTopicScreenState extends ConsumerState<SubmitTopicScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Write a debatable topic as a question or statement',
-              style: textTheme.bodyMedium,
+            // Only the form scrolls; Submit stays pinned at the bottom. The
+            // tag picker wraps up to 20 chips, which would otherwise overflow
+            // this fixed Column on a short screen or with the keyboard up.
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Write a debatable topic as a question or statement',
+                      style: textTheme.bodyMedium,
+                    ),
+                    Gap(Spacing.md.h),
+                    AppTextFormField(
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      hintText: 'e.g., Is jealousy ever healthy?',
+                      maxLines: 4,
+                      maxLength: 120,
+                      enabled: !_isSubmitting,
+                      label: '',
+                    ),
+                    Gap(Spacing.sm.h),
+                    Text(
+                      _getRemainingCharacters(),
+                      style: textTheme.bodySmall?.copyWith(
+                        color:
+                            _controller.text.length > 120
+                                ? colorScheme.error
+                                : colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                    ),
+                    Gap(Spacing.lg.h),
+                    Container(
+                      padding: EdgeInsets.all(Spacing.md.w),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withOpacity(
+                          0.3,
+                        ),
+                        borderRadius: BorderRadius.circular(
+                          BorderRadiusTokens.md.r,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Good topics invite two sides.',
+                            style: textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Gap(Spacing.xs.h),
+                          Text(
+                            '• "Long distance never works"',
+                            style: textTheme.bodySmall,
+                          ),
+                          Text(
+                            '• "Should you tell your partner everything?"',
+                            style: textTheme.bodySmall,
+                          ),
+                          Text(
+                            '• "Is it okay to keep some things private?"',
+                            style: textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Gap(Spacing.md.h),
+                    // Optional poll (§8.11). Distinct from the topic's activation vote:
+                    // this asks readers a question, it does not gate the topic going live.
+                    PollComposer(
+                      onChanged:
+                          (options) => setState(() => _pollOptions = options),
+                    ),
+                    Gap(Spacing.md.h),
+                    // Optional tags (FORUM.md §7) — a fixed vocabulary, max 3.
+                    TagPicker(
+                      onChanged: (slugs) => setState(() => _tagSlugs = slugs),
+                    ),
+                  ],
+                ),
+              ),
             ),
             Gap(Spacing.md.h),
-            AppTextFormField(
-              controller: _controller,
-              focusNode: _focusNode,
-              hintText: 'e.g., Is jealousy ever healthy?',
-              maxLines: 4,
-              maxLength: 120,
-              enabled: !_isSubmitting,
-              label: '',
-            ),
-            Gap(Spacing.sm.h),
-            Text(
-              _getRemainingCharacters(),
-              style: textTheme.bodySmall?.copyWith(
-                color:
-                    _controller.text.length > 120
-                        ? colorScheme.error
-                        : colorScheme.onSurface.withOpacity(0.6),
-              ),
-            ),
-            Gap(Spacing.lg.h),
-            Container(
-              padding: EdgeInsets.all(Spacing.md.w),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Good topics invite two sides.',
-                    style: textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Gap(Spacing.xs.h),
-                  Text(
-                    '• "Long distance never works"',
-                    style: textTheme.bodySmall,
-                  ),
-                  Text(
-                    '• "Should you tell your partner everything?"',
-                    style: textTheme.bodySmall,
-                  ),
-                  Text(
-                    '• "Is it okay to keep some things private?"',
-                    style: textTheme.bodySmall,
-                  ),
-                ],
-              ),
-            ),
-            const Spacer(),
             AppButton(
               label: 'Submit',
               onPressed: _isSubmitEnabled() ? _submitTopic : null,
