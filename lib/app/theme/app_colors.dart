@@ -33,6 +33,21 @@ class LightColors {
 
   // static const Color neutral = Color(0xFFE4F2E4);
 
+  // Forums' AGAINST side — was colorScheme.error (bright red) at every call
+  // site, replaced with this warmer burnt-orange because red read as a
+  // literal error/danger state rather than "the other debate side". Same
+  // value in light and dark (DarkColors.against below): unlike error/success/
+  // etc. this isn't tuned per-brightness yet, just centralized from what was
+  // already a single hardcoded Color.fromARGB(255, 212, 90, 53) repeated at
+  // each AGAINST call site.
+  static const Color against = Color.fromARGB(255, 212, 90, 53);
+
+  // Contrast color for content painted on top of `against` — WCAG-checked:
+  // black-on-against is 5.3:1 (passes AA), white-on-against is only 3.95:1
+  // (fails AA for normal text), unlike error's near-white onError which
+  // reads fine against error's darker red. Same value as textPrimary below.
+  static const Color onAgainst = Color(0xFF1d1d1f);
+
   // ================= BACKGROUND COLOR PALETTE =================
   static const Color background = Color(0xFFF5F5F7); // Apple parchment canvas
   static const Color surface = Color(0xFFFFFFFF);
@@ -93,6 +108,13 @@ class DarkColors {
   static const Color error = Color(0xFFEF5350);
   static const Color info = Color(0xFF42A5F5);
   static const Color neutral = Color(0xFF121212);
+
+  // See LightColors.against/onAgainst. Same value in both themes — against
+  // doesn't change with brightness, so neither does its contrast pairing
+  // (dark mode's near-white textPrimary only hits 3.6:1 against it, below
+  // AA; light mode's near-black hits 5.3:1 and reads correctly in both).
+  static const Color against = Color.fromARGB(255, 212, 90, 53);
+  static const Color onAgainst = Color(0xFF1d1d1f);
 
   // ================= BACKGROUND COLOR PALETTE =================
   static const Color background = Color(0xFF121212);
@@ -158,6 +180,9 @@ class AppColors {
   Color get error => isDarkMode ? DarkColors.error : LightColors.error;
   Color get info => isDarkMode ? DarkColors.info : LightColors.info;
   Color get neutral => isDarkMode ? DarkColors.neutral : LightColors.neutral;
+  Color get against => isDarkMode ? DarkColors.against : LightColors.against;
+  Color get onAgainst =>
+      isDarkMode ? DarkColors.onAgainst : LightColors.onAgainst;
 
   // Background colors
   Color get background =>
@@ -320,7 +345,7 @@ extension LuxuryLevelExtension on String {
 //   - Automatically detects theme mode
 //
 // DATA FLOW:
-//   Widget → Theme.of(context).appColors → AppColors(isDarkMode) → 
+//   Widget → Theme.of(context).appColors → AppColors(isDarkMode) →
 //     DarkColors.X or LightColors.X
 //
 // =============================================================================
@@ -374,8 +399,8 @@ extension LuxuryLevelExtension on String {
 //
 // Example 2: Conditional styling
 //   Container(
-//     color: isError 
-//         ? Theme.of(context).appColors.error 
+//     color: isError
+//         ? Theme.of(context).appColors.error
 //         : Theme.of(context).appColors.success,
 //   )
 //

@@ -1,6 +1,7 @@
 // lib/core/widgets/poll_card.dart
 
-import 'package:attune/core/ui/motion/motion_tokens.dart';
+import 'dart:async';
+
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/polls/data/models/poll_model.dart';
 import 'package:attune/core/polls/presentation/providers/poll_providers.dart';
@@ -11,8 +12,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// Before voting, options are tappable buttons and no counts are shown — the
 /// server withholds them, so there is nothing here to accidentally reveal.
 /// After voting, each option becomes a result bar with its share, and the
-/// viewer's own choice is marked. Tapping a different option moves the vote;
-/// tapping the current one retracts it and re-hides the results.
+/// viewer's own choice is marked. Tapping a different option asks for
+/// confirmation first (a bottom sheet) since it overwrites an existing
+/// choice; tapping the current one retracts it directly — that tap is
+/// already the explicit "undo" gesture — and re-hides the results.
 class PollCard extends ConsumerWidget {
   final PollTarget target;
 
@@ -61,10 +64,22 @@ class _PollBodyState extends ConsumerState<_PollBody> {
 
   Future<void> _onOptionTap(PollOptionModel option) async {
     if (_busy) return;
+
+    final isCurrentChoice = widget.poll.myOptionId == option.id;
+    // Changing an already-cast vote overwrites it, unlike the first vote (no
+    // prior choice to lose) or a retraction (tapping your own choice is
+    // already the explicit "undo" gesture) — only the "swap to a different
+    // option" path can accidentally discard a choice with a stray tap, so
+    // only that path is gated.
+    final isChangingVote = widget.poll.myOptionId != null && !isCurrentChoice;
+    if (isChangingVote) {
+      final confirmed = await _confirmChangeVote(option);
+      if (!confirmed || !mounted) return;
+    }
+
     setState(() => _busy = true);
 
     final notifier = ref.read(pollProvider(widget.target).notifier);
-    final isCurrentChoice = widget.poll.myOptionId == option.id;
 
     try {
       // Tapping your current choice retracts it (§8.11 allows retraction);
@@ -76,12 +91,39 @@ class _PollBodyState extends ConsumerState<_PollBody> {
       }
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_voteErrorMessage(error))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_voteErrorMessage(error))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  // Same Completer-bridged BottomSheetUtils + ConfirmationDialog pattern as
+  // CommentThreadScreen's delete confirmation: ConfirmationDialog's
+  // onConfirm/onCancel are plain callbacks, not a Future, so a Completer
+  // adapts them into the awaitable bool this method needs. Also completes
+  // `false` if the sheet is dismissed by tapping outside/dragging down
+  // rather than tapping either button, so an accidental dismiss is treated
+  // as "don't change my vote," not as silent confirmation.
+  Future<bool> _confirmChangeVote(PollOptionModel option) {
+    final completer = Completer<bool>();
+    BottomSheetUtils.showDocumentationBottomSheet(
+      maxHeight: 320.h,
+      context: context,
+      widget: ConfirmationDialog(
+        noIcon: true,
+        type: ConfirmationType.warning,
+        title: 'Change your vote?',
+        message: 'Switch your vote to "${option.label}"?',
+        confirmText: 'Change vote',
+        onConfirm: () => completer.complete(true),
+        onCancel: () => completer.complete(false),
+      ),
+    ).then((_) {
+      if (!completer.isCompleted) completer.complete(false);
+    });
+    return completer.future;
   }
 
   /// Maps the RPC's stable error codes to something a person can act on.
@@ -105,6 +147,7 @@ class _PollBodyState extends ConsumerState<_PollBody> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Gap(Spacing.md),
         ...poll.options.map(
           (option) => Padding(
             padding: const EdgeInsets.only(bottom: Spacing.sm),
@@ -129,6 +172,7 @@ class _PollBodyState extends ConsumerState<_PollBody> {
             ),
           ),
         ),
+        Gap(Spacing.sm),
       ],
     );
   }
@@ -159,14 +203,11 @@ class _PollOptionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
 
     final borderColor =
         isMyChoice ? colorScheme.primary : colorScheme.outlineVariant;
     final fillColor =
-        isMyChoice
-            ? colorScheme.primary.withValues(alpha: 0.18)
-            : colorScheme.surfaceContainerHighest;
+        isMyChoice ? colorScheme.primary : colorScheme.surfaceContainerHighest;
 
     return Semantics(
       button: true,
@@ -183,70 +224,120 @@ class _PollOptionTile extends StatelessWidget {
         borderRadius: BorderRadiusTokens.mdAll,
         child: Container(
           decoration: BoxDecoration(
+            color: colorScheme.primary.withOpacity(.1),
             borderRadius: BorderRadiusTokens.mdAll,
-            border: Border.all(
-              color: borderColor,
-              width: isMyChoice ? 1.5 : 1.0,
-            ),
+            border: Border.all(color: borderColor, width: isMyChoice ? 1 : 0.2),
           ),
           clipBehavior: Clip.antiAlias,
           child: Stack(
             children: [
-              // The result bar. Width animates from 0 on reveal, so the standing
-              // reads as a result rather than appearing pre-drawn.
+              // The base content: text/icon colored for the UNCOVERED part of
+              // the tile (colorScheme.onSurface). Always laid out full-width
+              // so the Stack's size comes from this, and the row's own
+              // Padding/spacing is the single source of truth for layout.
+              _buildContent(context, onFill: false),
+              // The result bar, clipped to exactly its own animated width —
+              // widthFactor tweens from 0 on first reveal (and from its
+              // previous width on any later vote/retract that changes
+              // `share`), so the bar always reads as growing into place
+              // rather than appearing pre-drawn or snapping between states.
               if (revealed && share != null)
                 Positioned.fill(
-                  child: FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: share!.clamp(0.0, 1.0),
-                    child: AnimatedContainer(
-                      duration: kSettleDuration,
-                      curve: Curves.easeOutCubic,
-                      color: fillColor,
-                    ),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0.0, end: share!.clamp(0.0, 1.0)),
+                    duration: const Duration(milliseconds: 2000),
+                    curve: Curves.easeOutBack,
+                    builder: (context, widthFactor, child) {
+                      // Curves.easeOutBack overshoots past its target and
+                      // dips slightly negative before settling — fine for a
+                      // scale/offset animation, but FractionallySizedBox
+                      // asserts widthFactor >= 0.0, so the raw curved value
+                      // has to be clamped before it drives any layout below.
+                      final clampedWidth = widthFactor.clamp(0.0, 1.0);
+                      return ClipRect(
+                        clipper: _LeftFractionClipper(clampedWidth),
+                        // StackFit.expand: Stack's default fit is `loose`,
+                        // which gives non-positioned children (ColoredBox,
+                        // _buildContent below) unconstrained sizing — a
+                        // ColoredBox with no child then collapses to zero
+                        // size and paints nothing, which is why the primary
+                        // fill wasn't visible. `expand` forces both children
+                        // to the ClipRect's own full bounds instead.
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // Fills only the clipped region — ClipRect above
+                            // already bounds it to the bar's own width, so
+                            // this can stay a plain full-size ColoredBox.
+                            ColoredBox(color: fillColor),
+                            // The SAME content, but colored for the COVERED
+                            // part of the tile — colorScheme.onPrimary reads
+                            // correctly against a primary-colored fill in
+                            // both themes (white in light mode, near-black
+                            // in dark mode; see LightColors/DarkColors.white
+                            // in app_theme.dart). Only rendered when this
+                            // option is the selected one, since only the
+                            // selected option's bar is primary-colored —
+                            // the neutral surfaceContainerHighest fill on
+                            // other options never needs inverted text.
+                            if (isMyChoice)
+                              _buildContent(context, onFill: true),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Spacing.smMd,
-                  vertical: Spacing.smMd,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        option.label,
-                        style: textTheme.bodyMedium?.copyWith(
-                          fontWeight:
-                              isMyChoice ? FontWeight.w600 : FontWeight.w400,
-                          color: colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
-                    if (revealed) ...[
-                      if (isMyChoice)
-                        Padding(
-                          padding: const EdgeInsets.only(right: Spacing.xs),
-                          child: Icon(
-                            Icons.check_circle,
-                            size: 16,
-                            color: colorScheme.primary,
-                          ),
-                        ),
-                      Text(
-                        _percentLabel(share),
-                        style: textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.onSurface,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// The label/checkmark/percent row, in one of two color sets depending on
+  /// whether it's being drawn for the covered (over the primary-colored
+  /// fill, [onFill] true) or uncovered (over the tile's base background,
+  /// [onFill] false) portion of the tile. Two full-width copies are
+  /// stacked and clipped by [_LeftFractionClipper] rather than trying to
+  /// split a single Text's color mid-string, since the split point moves
+  /// continuously as the bar animates.
+  Widget _buildContent(BuildContext context, {required bool onFill}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final contentColor = onFill ? colorScheme.onPrimary : colorScheme.onSurface;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Spacing.smMd,
+        vertical: Spacing.sm,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              option.label,
+              style: textTheme.bodySmall?.copyWith(
+                fontWeight: isMyChoice ? FontWeight.w600 : FontWeight.w400,
+                color: contentColor,
+              ),
+            ),
+          ),
+          if (revealed) ...[
+            if (isMyChoice)
+              Padding(
+                padding: const EdgeInsets.only(right: Spacing.xs),
+                child: Icon(Icons.check_circle, size: 16, color: contentColor),
+              ),
+            Text(
+              _percentLabel(share),
+              style: textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: contentColor,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -255,4 +346,24 @@ class _PollOptionTile extends StatelessWidget {
     if (share == null) return '—';
     return '${(share * 100).round()}%';
   }
+}
+
+/// Clips to the left [fraction] of the child's own bounds — used to bound
+/// the covered-text overlay to exactly the animated bar width, the same
+/// width FractionallySizedBox(widthFactor: fraction) would occupy, but as a
+/// clip rather than a resize so the two stacked content copies underneath
+/// stay pixel-aligned with each other (a resized child would re-lay-out its
+/// text at a different width and could wrap differently).
+class _LeftFractionClipper extends CustomClipper<Rect> {
+  final double fraction;
+
+  const _LeftFractionClipper(this.fraction);
+
+  @override
+  Rect getClip(Size size) =>
+      Rect.fromLTWH(0, 0, size.width * fraction, size.height);
+
+  @override
+  bool shouldReclip(_LeftFractionClipper oldClipper) =>
+      oldClipper.fraction != fraction;
 }

@@ -1099,6 +1099,18 @@ abstract class AppLocalizations {
   /// **'Accounts you have blocked'**
   String get blockedItemSubtitle;
 
+  /// No description provided for @mutedItemTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Muted Accounts'**
+  String get mutedItemTitle;
+
+  /// No description provided for @mutedItemSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Anonymous forum accounts you've muted'**
+  String get mutedItemSubtitle;
+
   /// No description provided for @qrCodeItemTitle.
   ///
   /// In en, this message translates to:

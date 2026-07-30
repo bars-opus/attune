@@ -8,15 +8,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// The people this viewer has muted, newest mute first (§8.11 "Muting and
 /// hiding") — the one place a mute can be undone.
 ///
-/// Deliberately much plainer than SavedOpinionsScreen/RepostedOpinionsScreen:
-/// those render OpinionCards and paginate, whereas a mute list is a short list
-/// of opaque handles with nothing to expand into. There is no profile to link
-/// to and no post to preview — anonymity means the handle IS the whole
+/// Deliberately much plainer than an opinion list: a mute list is a short
+/// list of opaque handles with nothing to expand into. There is no profile to
+/// link to and no post to preview — anonymity means the handle IS the whole
 /// identity available here (FORUM.md §3) — so each row is just the handle,
 /// when it was muted, and an Unmute action.
 ///
-/// A standalone pushed route with its own Scaffold + AppBar, so like
-/// SavedOpinionsScreen it has NO SliverOverlapInjector: there is no enclosing
+/// A standalone pushed route with its own Scaffold + AppBar, so it
+/// deliberately has NO SliverOverlapInjector: there is no enclosing
 /// SliverOverlapAbsorber outside OpinionsTab's NestedScrollView to find.
 class MutedAuthorsScreen extends ConsumerWidget {
   const MutedAuthorsScreen({super.key});

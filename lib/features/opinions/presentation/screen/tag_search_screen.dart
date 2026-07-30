@@ -1,6 +1,8 @@
 // lib/features/opinions/presentation/screen/tag_search_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/widgets/bottom_sheet_header.dart';
+import 'package:attune/core/widgets/search_text_field.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/screen/tag_browse_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -34,78 +36,85 @@ class _TagSearchScreenState extends ConsumerState<TagSearchScreen> {
   Widget build(BuildContext context) {
     final tagsAsync = ref.watch(allTagsProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tags', style: TextStyle(fontSize: 18)),
-        leading: AppIconButton(
-          icon: Icons.arrow_back,
-          onPressed: () => Navigator.pop(context),
+    return GestureDetector(
+      onTap: () {
+        FocusScope.of(context).unfocus();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          centerTitle: false,
+          backgroundColor: Colors.transparent,
+          title: BottomSheetHeader(title: 'Tags'),
         ),
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: EdgeInsets.all(Spacing.md.w),
-            child: TextField(
+        body: Column(
+          children: [
+            Gap(Spacing.md),
+            SearchFormField(
               controller: _controller,
+              // focusNode: _searchFocusNode,
+              autofocus: false,
+
+              hintText: 'Find opinions and forums using a tag',
+              showClearButton: true,
               onChanged: (value) => setState(() => _query = value),
-              decoration: InputDecoration(
-                hintText: 'Find a tag',
-                prefixIcon: const Icon(Icons.search, size: 20),
-                isDense: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadiusTokens.mdAll,
-                ),
+            ),
+            Gap(Spacing.lg),
+            Expanded(
+              child: tagsAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, stack) => ErrorStateWidget.from(error),
+                data: (tags) {
+                  final query = _query.trim().toLowerCase();
+                  final filtered =
+                      query.isEmpty
+                          ? tags
+                          : [
+                            for (final slug in tags)
+                              if (slug.toLowerCase().contains(query)) slug,
+                          ];
+
+                  if (filtered.isEmpty) {
+                    return const Center(
+                      child: EmptyStateWidget(
+                        icon: Icons.sell_outlined,
+                        title: 'No matching tag',
+                        subtitle:
+                            'Tags are a fixed list, so only these topics exist.',
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) {
+                      final slug = filtered[index];
+                      return InfoRowWidget(
+                        subtitle: '',
+                        iconColor: Colors.grey,
+                        title: slug,
+                        icon: Icons.tag,
+                        avatarRadius: 25.h,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => TagBrowseScreen(tagSlug: slug),
+                            ),
+                          );
+                        },
+                        disableTrailing: true,
+                        showAvatar: false,
+                        showTrailingArrow: false,
+                      );
+                     
+                    },
+                  );
+                },
               ),
             ),
-          ),
-          Expanded(
-            child: tagsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, stack) => ErrorStateWidget.from(error),
-              data: (tags) {
-                final query = _query.trim().toLowerCase();
-                final filtered =
-                    query.isEmpty
-                        ? tags
-                        : [
-                          for (final slug in tags)
-                            if (slug.toLowerCase().contains(query)) slug,
-                        ];
-
-                if (filtered.isEmpty) {
-                  return const Center(
-                    child: EmptyStateWidget(
-                      icon: Icons.sell_outlined,
-                      title: 'No matching tag',
-                      subtitle:
-                          'Tags are a fixed list, so only these topics exist.',
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  itemCount: filtered.length,
-                  itemBuilder: (context, index) {
-                    final slug = filtered[index];
-                    return ListTile(
-                      leading: const Icon(Icons.sell_outlined, size: 20),
-                      title: Text('#$slug'),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => TagBrowseScreen(tagSlug: slug),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -321,6 +321,9 @@
   
   "blockedItemTitle": "Blockierte Konten",
   "blockedItemSubtitle": "Konten, die Sie blockiert haben",
+
+  "mutedItemTitle": "Stummgeschaltete Konten",
+  "mutedItemSubtitle": "Anonyme Forenkonten, die Sie stummgeschaltet haben",
   
   "qrCodeItemTitle": "QR-Code teilen",
   "qrCodeItemSubtitle": "Teilen Sie Ihren Konto-QR-Code",

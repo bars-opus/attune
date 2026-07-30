@@ -1,6 +1,8 @@
 // lib/features/forums/presentation/screens/forums_explore_screen.dart
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
+import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart'
+    show allTagsProvider;
 import 'package:attune/features/forums/presentation/widgets/forum_card.dart';
 import 'package:attune/features/forums/presentation/widgets/topic_voting_card.dart';
 import 'package:attune/home/providers/nav_visibility_provider.dart';
@@ -36,6 +38,7 @@ class _ForumsExploreScreenState extends ConsumerState<ForumsExploreScreen> {
           SliverOverlapInjector(
             handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
           ),
+          _buildTagChipSliver(),
           // Active Forums section
           SliverToBoxAdapter(
             child: _buildSectionHeader('Active debates', Icons.forum_outlined),
@@ -60,6 +63,70 @@ class _ForumsExploreScreenState extends ConsumerState<ForumsExploreScreen> {
           ),
           _buildQuietForumsList(),
         ],
+      ),
+    );
+  }
+
+  /// "All" (first, always present) plus one chip per tag in the fixed
+  /// vocabulary, multi-select, OR-matched — one shared row filters all three
+  /// sections (Active/Voting/Quiet) identically, since Explore has no single
+  /// feed to attach a filter to. See forumsExploreTagFilterProvider.
+  Widget _buildTagChipSliver() {
+    final tagsAsync = ref.watch(allTagsProvider);
+    final selected = ref.watch(forumsExploreTagFilterProvider);
+    return SliverToBoxAdapter(
+      child: tagsAsync.when(
+        loading: () => const SizedBox.shrink(),
+        error: (_, __) => const SizedBox.shrink(),
+        data: (tags) {
+          if (tags.isEmpty) return const SizedBox.shrink();
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              Spacing.md.w,
+              Spacing.lg.w,
+              Spacing.md.h,
+              0,
+            ),
+            child: SizedBox(
+              height: 36.h,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: tags.length + 1,
+                separatorBuilder: (_, __) => SizedBox(width: Spacing.xs.w),
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    final isAllSelected = selected.isEmpty;
+                    return AppFilterChip(
+                      label: 'All',
+                      selected: isAllSelected,
+                      onSelected: (_) {
+                        ref
+                            .read(forumsExploreTagFilterProvider.notifier)
+                            .state = const [];
+                      },
+                    );
+                  }
+                  final tag = tags[index - 1];
+                  final isSelected = selected.contains(tag);
+                  return AppFilterChip(
+                    label: tag,
+                    selected: isSelected,
+                    onSelected: (nowSelected) {
+                      final next = [...selected];
+                      if (nowSelected) {
+                        next.add(tag);
+                      } else {
+                        next.remove(tag);
+                      }
+                      ref.read(forumsExploreTagFilterProvider.notifier).state =
+                          next;
+                    },
+                  );
+                },
+              ),
+            ),
+          );
+        },
       ),
     );
   }

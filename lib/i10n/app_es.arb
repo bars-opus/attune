@@ -320,6 +320,9 @@
   
   "blockedItemTitle": "Cuentas Bloqueadas",
   "blockedItemSubtitle": "Cuentas que has bloqueado",
+
+  "mutedItemTitle": "Cuentas Silenciadas",
+  "mutedItemSubtitle": "Cuentas anónimas del foro que has silenciado",
   
   "qrCodeItemTitle": "Compartir Código QR",
   "qrCodeItemSubtitle": "Comparte tu código QR de cuenta",

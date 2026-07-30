@@ -316,7 +316,10 @@
   
   "blockedItemTitle": "Blocked Accounts",
   "blockedItemSubtitle": "Accounts you have blocked",
-  
+
+  "mutedItemTitle": "Muted Accounts",
+  "mutedItemSubtitle": "Anonymous forum accounts you've muted",
+
   "qrCodeItemTitle": "Share QR Code",
   "qrCodeItemSubtitle": "Share your account QR code",
   

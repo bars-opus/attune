@@ -13,16 +13,33 @@ class ProfileAvatar extends StatelessWidget {
   final bool enableHero;
 
   final double size;
+
+  /// Renders a status glyph instead of the generic person placeholder when
+  /// [avatarUrl] is empty — e.g. relationship-status icons, the same pattern
+  /// OpinionCard uses via IconAvatar/InfoRowWidget. Ignored once [avatarUrl]
+  /// is non-empty; a real photo always takes precedence over a status icon.
+  final IconData? icon;
+
+  /// Color of [icon]. Defaults to [colorScheme.background] (white in light
+  /// mode, black in dark mode) so it reads against a colored [backgroundColor]
+  /// the same way the status icon does on OpinionCard.
+  final Color? iconColor;
+
+  /// Fill color behind [icon]. Defaults to [colorScheme.primary]. Pass a
+  /// status color (e.g. from the same status→color mapping OpinionCard uses)
+  /// to make the avatar adapt to relationship status.
+  final Color? backgroundColor;
+
   ProfileAvatar({
     Key? key,
     required this.avatarUrl,
     required this.currentUserId,
     required this.size,
     this.enableHero = true,
+    this.icon,
+    this.iconColor,
+    this.backgroundColor,
   }) : super(key: key);
-  // Widget _buildAvatarPlaceholder(ColorScheme colorScheme, double size) {
-  //   return
-  // }
 
   @override
   Widget build(BuildContext context) {
@@ -50,21 +67,42 @@ class ProfileAvatar extends StatelessWidget {
                       ? CachedNetworkImage(
                         imageUrl: avatarUrl,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) => ProfileAvatarPlaceholder(size: size),
-                        errorWidget: (_, __, ___) => ProfileAvatarPlaceholder(size: size),
+                        placeholder: (_, __) => _buildPlaceholder(colorScheme),
+                        errorWidget:
+                            (_, __, ___) => _buildPlaceholder(colorScheme),
                       )
                       : Image.file(
                         File(avatarUrl),
                         fit: BoxFit.cover,
                         errorBuilder:
                             (context, error, stackTrace) =>
-                                ProfileAvatarPlaceholder(size: size),
+                                _buildPlaceholder(colorScheme),
                       ))
-                  : ProfileAvatarPlaceholder(size: size),
+                  : _buildPlaceholder(colorScheme),
         ),
       );
     }
 
     return enableHero ? Hero(tag: currentUserId, child: _header()) : _header();
+  }
+
+  // Icon size is always relative to the avatar's own container (size * 0.5),
+  // matching ProfileAvatarPlaceholder's ratio — so a status icon scales with
+  // wherever this avatar is placed instead of needing its own size param.
+  Widget _buildPlaceholder(ColorScheme colorScheme) {
+    if (icon == null) return ProfileAvatarPlaceholder(size: size);
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: backgroundColor ?? colorScheme.primary,
+      ),
+      child: Center(
+        child: Icon(
+          icon,
+          size: size * 0.5,
+          color: iconColor ?? colorScheme.background,
+        ),
+      ),
+    );
   }
 }

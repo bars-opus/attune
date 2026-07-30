@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// Edits an existing opinion inside its 15-minute window
 /// (ATTUNE_MASTER_SPEC.md §8.11 "Editing").
 ///
-/// Mirrors [QuoteComposeScreen] / OpinionComposeScreen — same 280-char field,
+/// Mirrors [QuoteComposeScreen] / OpinionComposeScreen — same field,
 /// same remaining-characters counter, same `Navigator.pop(context, true)`
 /// success contract — because an edit runs the same validation a new post
 /// does, and should feel like writing one. The differences are all in what is
@@ -49,8 +49,12 @@ class _EditOpinionScreenState extends ConsumerState<EditOpinionScreen> {
     super.dispose();
   }
 
+  /// Matches OpinionComposeScreen's ceiling — an edit runs the same
+  /// validation a new post does (§8.11 "Editing").
+  static const int maxContentLength = 5000;
+
   String _getRemainingCharacters() {
-    final remaining = 280 - _controller.text.length;
+    final remaining = maxContentLength - _controller.text.length;
     return '$remaining characters remaining';
   }
 
@@ -108,12 +112,15 @@ class _EditOpinionScreenState extends ConsumerState<EditOpinionScreen> {
             ),
           ),
           actions: [
-            AppButton(
-              label: 'Save',
-              onPressed: _isSaveEnabled() ? _save : null,
-              size: ButtonSize.medium,
-              width: double.infinity,
-              isLoading: _isSubmitting,
+            Padding(
+              padding: EdgeInsets.only(right: Spacing.md.w),
+              child: AppButton(
+                label: 'Save',
+                onPressed: _isSaveEnabled() ? _save : null,
+                size: ButtonSize.medium,
+                width: 90.w,
+                isLoading: _isSubmitting,
+              ),
             ),
           ],
         ),
@@ -127,7 +134,8 @@ class _EditOpinionScreenState extends ConsumerState<EditOpinionScreen> {
                 focusNode: _focusNode,
                 hintText: 'Say what you mean…',
                 maxLines: 6,
-                maxLength: 280,
+                minLines: 3,
+                maxLength: maxContentLength,
                 onChanged: (_) => setState(() {}),
                 enabled: !_isSubmitting,
                 label: '',
@@ -137,7 +145,7 @@ class _EditOpinionScreenState extends ConsumerState<EditOpinionScreen> {
                 _getRemainingCharacters(),
                 style: textTheme.bodySmall?.copyWith(
                   color:
-                      _controller.text.length > 280
+                      _controller.text.length > maxContentLength
                           ? colorScheme.error
                           : colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
@@ -173,7 +181,7 @@ String _editErrorMessage(Object error) {
     return 'That post can no longer be edited — the 15-minute window has closed.';
   }
   if (text.contains('invalid_content')) {
-    return 'Your opinion must be between 1 and 280 characters.';
+    return 'Your opinion must be between 1 and 5000 characters.';
   }
   return 'Could not save that edit.';
 }

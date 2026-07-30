@@ -1,16 +1,29 @@
 // lib/features/opinions/presentation/screens/opinion_compose_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/utils/relationship_status_display.dart';
 import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/core/widgets/poll_composer.dart';
 import 'package:attune/core/widgets/tag_picker.dart';
+import 'package:attune/core/widgets/bottom_sheet_header.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 
 class OpinionComposeScreen extends ConsumerStatefulWidget {
-  const OpinionComposeScreen({super.key});
+  /// Called after a successful post. Pushed screens instead pop with `true`
+  /// for the caller to detect (see the old Navigator.push call sites this
+  /// replaced), but this screen is now shown via
+  /// BottomSheetUtils.showDocumentationBottomSheet, whose modal sheet has no
+  /// meaningful "pop with a value" — showModalBottomSheet's result is
+  /// discarded by that helper. A callback lets the sheet's caller react
+  /// (invalidate feeds, scroll to top) the same way onboarding_flow.dart's
+  /// _confirmMoveOn captures a tap via callback instead of a pop value.
+  final VoidCallback? onPosted;
+
+  const OpinionComposeScreen({super.key, this.onPosted});
 
   @override
   ConsumerState<OpinionComposeScreen> createState() =>
@@ -36,13 +49,18 @@ class _OpinionComposeScreenState extends ConsumerState<OpinionComposeScreen> {
     super.dispose();
   }
 
-  String _getRemainingCharacters() {
-    final remaining = 280 - _controller.text.length;
-    return '$remaining characters remaining';
-  }
+  /// Matches the RPC's 5000-char ceiling (§8.11) — long enough for a real
+  /// relationship story, not a tweet-length cap.
+  static const int maxContentLength = 5000;
+
+  /// A tap or a couple of stray characters isn't a real opinion — this
+  /// gates the Post button's visibility (not just its enabled state) so an
+  /// empty/near-empty draft doesn't offer a button that would just 22023
+  /// from the RPC's own blank-content check.
+  static const int minContentLength = 10;
 
   bool _isPostEnabled() {
-    return _controller.text.trim().isNotEmpty && !_isSubmitting;
+    return _controller.text.trim().length >= minContentLength && !_isSubmitting;
   }
 
   Future<void> _postOpinion() async {
@@ -65,7 +83,10 @@ class _OpinionComposeScreenState extends ConsumerState<OpinionComposeScreen> {
         tagSlugs: _tagSlugs,
       );
       if (success && mounted) {
-        Navigator.pop(context, true); // Return true to signal refresh needed
+        widget.onPosted?.call();
+        // Still pop for the (now unused by in-app callers, but harmless)
+        // case of this screen being reached via a plain Navigator.push.
+        Navigator.maybePop(context, true);
       }
     } catch (e) {
       if (mounted) {
@@ -86,105 +107,123 @@ class _OpinionComposeScreenState extends ConsumerState<OpinionComposeScreen> {
     final status =
         ref.watch(userRelationshipStatusProvider).valueOrNull ?? 'single';
 
-    final statusDisplay = _getStatusDisplay(status);
+    final statusDisplay = statusDisplayFor(status);
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          automaticallyImplyLeading: true,
-          title: Text(
-            'New opinion',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurface.withValues(alpha: 0.8),
-            ),
-          ),
-          actions: [
-            AppButton(
-              label: 'Post',
-              onPressed: _isPostEnabled() ? _postOpinion : null,
-              size: ButtonSize.medium,
-              width: double.infinity,
-              isLoading: _isSubmitting,
-            ),
-          ],
-        ),
         // Scrollable rather than a fixed Column: the tag picker wraps up to 20
         // chips over several rows, which on a short screen (or with the
         // keyboard up) would overflow the viewport the plain Column assumed.
-        body: SingleChildScrollView(
-          padding: EdgeInsets.all(Spacing.lg.w),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Status display (blank name, just status)
-              Text(
-                statusDisplay,
-                style: textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.primary,
-                  fontWeight: FontWeight.w500,
+        body: ListView(
+          children: [
+            Gap(Spacing.md.h),
+
+            Row(
+              children: [
+                Expanded(
+                  child: InfoRowWidget(
+                    title: statusDisplay,
+                    subtitle: '',
+                    iconColor: colorScheme.onBackground,
+                    icon: Icons.close,
+                    showAvatar: false,
+                    showTrailingArrow: true,
+                    showDivider: false,
+                    disableTrailing: true,
+                    onTap: () {
+                      Navigator.pop(context);
+                    },
+                  ),
                 ),
-              ),
-              Gap(Spacing.md.h),
-              // Text input
-              AppTextFormField(
-                controller: _controller,
-                focusNode: _focusNode,
-                hintText: "What's on your mind?",
-                maxLines: 8,
-                maxLength: 280,
-                // buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null, // Custom counter
-                onChanged: (_) => setState(() {}),
-                enabled: !_isSubmitting,
-                label: '',
-              ),
-              Gap(Spacing.sm.h),
-              // Character counter
-              Text(
-                _getRemainingCharacters(),
-                style: textTheme.bodySmall?.copyWith(
-                  color:
-                      _controller.text.length > 280
-                          ? colorScheme.error
-                          : colorScheme.onSurface.withOpacity(0.6),
+
+                if (_controller.text.trim().length >= minContentLength)
+                  ShakeTransition(
+                    duration: const Duration(milliseconds: 800),
+                    curve: Curves.easeOutBack,
+                    child: AppButton(
+                      elevation: 0,
+                      animateButton: false,
+                      label: 'Post',
+                      isLoading: _isSubmitting,
+                      onPressed: _isPostEnabled() ? _postOpinion : null,
+                      textColor: colorScheme.surface,
+                      size: ButtonSize.large,
+                      width: 100,
+                      padding: Spacing.horizontalMd,
+                      height: 30.h,
+                      borderRadius: BorderRadius.circular(100.r),
+                    ),
+                  ),
+              ],
+            ),
+            Gap(Spacing.lg.h),
+            // Status display (blank name, just status)
+
+            // Text input
+            AppTextFormField(
+              controller: _controller,
+              focusNode: _focusNode,
+              hintText: "What's on your mind?",
+              maxLines: 12,
+              minLines: 5,
+              maxLength: maxContentLength,
+              autofocus: true,
+              // buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null, // Custom counter
+              onChanged: (_) => setState(() {}),
+              enabled: !_isSubmitting,
+              label: '',
+            ),
+
+            // Optional tags (§8.11) and poll — both compact icon buttons
+            // that open their own configuration sheet on tap, rather than
+            // full-width rows, so the two sit side by side here instead of
+            // each claiming the whole line.
+            Row(
+              children: [
+                TagPickerRow(
+                  currentSlugs: _tagSlugs,
+                  onChanged: (slugs) => setState(() => _tagSlugs = slugs),
                 ),
-              ),
-              Gap(Spacing.md.h),
-              // Optional poll (§8.11) — starts collapsed behind "Add poll".
-              PollComposer(
-                onChanged: (options) => setState(() => _pollOptions = options),
-              ),
-              Gap(Spacing.md.h),
-              // Optional tags (§8.11) — a fixed vocabulary, max 3.
-              TagPicker(
-                onChanged: (slugs) => setState(() => _tagSlugs = slugs),
-              ),
-              // Was a Spacer, which needs bounded height and cannot live
-              // inside a scroll view — a plain trailing gap does the same job
-              // here, since Post lives on the AppBar rather than at the
-              // bottom of this column.
-              Gap(Spacing.xl.h),
-            ],
-          ),
+                PollComposerRow(
+                  currentOptions: _pollOptions,
+                  onChanged:
+                      (options) => setState(() => _pollOptions = options),
+                ),
+              ],
+            ),
+
+            // Was a Spacer, which needs bounded height and cannot live
+            // inside a scroll view — a plain trailing gap does the same job
+            // here, since Post lives on the AppBar rather than at the
+            // bottom of this column.
+            Gap(Spacing.md.h),
+
+            SemanticContainerWidget(
+              content:
+                  'Opinions provide a space for you to discuss and express idealogies or concerns in a relationship',
+              icon: Icons.info_outline,
+              title: '',
+              backgroundColor: Colors.grey.withOpacity(0.1),
+              borderColor: Colors.grey,
+              iconColor: Colors.grey,
+              textTheme: textTheme,
+            ),
+            Gap(Spacing.md.h),
+            SemanticContainerWidget(
+              content:
+                  'Only users who have created accounts can contribute, anonymouse users cannot contrinue',
+              icon: Icons.warning_amber,
+              title: '',
+              backgroundColor: Colors.grey.withOpacity(0.1),
+              borderColor: Colors.grey,
+              iconColor: Colors.grey,
+              textTheme: textTheme,
+            ),
+            Gap(Spacing.xl.h),
+          ],
         ),
       ),
     );
-  }
-
-  String _getStatusDisplay(String status) {
-    switch (status) {
-      case 'single':
-        return 'Single';
-      case 'taken':
-        return 'Taken';
-      case 'figuring_it_out':
-        return 'Figuring it out';
-      case 'open':
-        return 'Open';
-      default:
-        return '';
-    }
   }
 }

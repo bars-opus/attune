@@ -1,6 +1,7 @@
 // lib/features/forums/presentation/widgets/topic_voting_card.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/utils/relationship_status_display.dart';
 import 'package:attune/features/forums/data/models/topic_model.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
 import 'package:flutter/material.dart';
@@ -98,7 +99,13 @@ class _TopicVotingCardState extends ConsumerState<TopicVotingCard> {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    final statusDisplay = _getStatusDisplay(widget.topic.submitterStatus);
+    final rawStatusDisplay = statusDisplayFor(widget.topic.submitterStatus);
+    // 'Someone' here, not '' like statusDisplayFor's own default: this
+    // string is read directly as "Submitted by: $statusDisplay" below, so an
+    // empty status needs a real word, unlike the icon/color call sites where
+    // '' selects the unknown-status glyph.
+    final statusDisplay =
+        rawStatusDisplay.isEmpty ? 'Someone' : rawStatusDisplay;
     final percentage = _activationPercentage;
     final needsMore = !_isAboveThreshold;
 
@@ -294,18 +301,4 @@ class _TopicVotingCardState extends ConsumerState<TopicVotingCard> {
     );
   }
 
-  String _getStatusDisplay(String? status) {
-    switch (status) {
-      case 'single':
-        return 'Single';
-      case 'taken':
-        return 'Taken';
-      case 'figuring_it_out':
-        return 'Figuring it out';
-      case 'open':
-        return 'Open';
-      default:
-        return 'Someone';
-    }
-  }
 }

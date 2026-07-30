@@ -74,6 +74,14 @@ Future<bool> submitTopicWithPoll(
   return true;
 }
 
+/// One shared chip row above Forums Explore's three sections (Active/Voting/
+/// Quiet) filters all three identically — Explore has no single "feed" to
+/// attach a filter to, so this is the one piece of state all three
+/// providers below read. Empty means "All" — unfiltered.
+final forumsExploreTagFilterProvider = StateProvider<List<String>>(
+  (ref) => const [],
+);
+
 /// Cache-then-refresh for the forum topic lists: paint the last-known list
 /// immediately on a cold start so a relaunch isn't an empty screen while the
 /// fetch runs, then swap in fresh data when it lands.
@@ -81,11 +89,13 @@ Future<bool> submitTopicWithPoll(
 /// The cache is a cold-start affordance only. `_servedCache` is static so it
 /// survives the notifier being recreated by invalidate() — after a vote or
 /// an impression, serving cache first would briefly re-show the pre-change
-/// list, which is exactly what those callers just changed.
+/// list, which is exactly what those callers just changed. It's also only
+/// used for the unfiltered list: a tag-filtered read always fetches fresh
+/// (see [build]), matching Discover's same rule on the opinions side.
 abstract class _CachedTopicsNotifier extends AsyncNotifier<List<TopicModel>> {
   ForumFeed get feed;
 
-  Future<List<TopicModel>> fetch();
+  Future<List<TopicModel>> fetch(List<String> tagSlugs);
 
   /// Per-subclass, so one list's invalidation doesn't disable another's
   /// cold-start cache. Subclasses back this with their own static field.
@@ -94,33 +104,42 @@ abstract class _CachedTopicsNotifier extends AsyncNotifier<List<TopicModel>> {
 
   @override
   Future<List<TopicModel>> build() async {
-    final cache = ref.read(forumFeedCacheProvider);
-    // Topic rows carry viewer-specific userVote/userSide, so they're only
-    // ever read or written against a signed-in user's own key.
+    final tagSlugs = ref.watch(forumsExploreTagFilterProvider);
     final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
 
-    if (!servedCache && userId != null) {
-      servedCache = true;
-      final cached = cache.readFeed(feed, userId);
-      if (cached.isNotEmpty) {
-        _refreshInBackground(cache, userId);
-        return cached;
+    if (tagSlugs.isEmpty) {
+      final cache = ref.read(forumFeedCacheProvider);
+      // Topic rows carry viewer-specific userVote/userSide, so they're only
+      // ever read or written against a signed-in user's own key.
+      if (!servedCache && userId != null) {
+        servedCache = true;
+        final cached = cache.readFeed(feed, userId);
+        if (cached.isNotEmpty) {
+          _refreshInBackground(cache, userId, tagSlugs);
+          return cached;
+        }
       }
+
+      final topics = await fetch(tagSlugs);
+      if (userId != null) {
+        unawaited(cache.writeFeed(feed, userId, topics));
+      }
+      return topics;
     }
 
-    final topics = await fetch();
-    if (userId != null) {
-      unawaited(cache.writeFeed(feed, userId, topics));
-    }
-    return topics;
+    return fetch(tagSlugs);
   }
 
   /// Fetches behind an already-painted cached list. Never surfaces an
   /// AsyncLoading (that would flash the cache away) and swallows failure —
   /// the user keeps reading the cached list until a later refresh succeeds.
-  Future<void> _refreshInBackground(ForumFeedCache cache, String userId) async {
+  Future<void> _refreshInBackground(
+    ForumFeedCache cache,
+    String userId,
+    List<String> tagSlugs,
+  ) async {
     try {
-      final topics = await fetch();
+      final topics = await fetch(tagSlugs);
       state = AsyncData(topics);
       unawaited(cache.writeFeed(feed, userId, topics));
     } catch (error) {
@@ -150,12 +169,14 @@ class VotingTopicsNotifier extends _CachedTopicsNotifier {
   set servedCache(bool value) => _servedCache = value;
 
   @override
-  Future<List<TopicModel>> fetch() async {
+  Future<List<TopicModel>> fetch(List<String> tagSlugs) async {
     final repository = ref.read(forumRepositoryProvider);
     final currentUserId = ref.read(supabaseClientProvider).auth.currentUser?.id;
     // Tags aren't columns on the topic rows — one batched lookup merges them
     // onto the parsed list (FORUM.md §7 "Tags").
-    return repository.withTags(await repository.getVotingTopics(currentUserId));
+    return repository.withTags(
+      await repository.getVotingTopics(currentUserId, tagSlugs: tagSlugs),
+    );
   }
 }
 
@@ -178,9 +199,11 @@ class ActiveForumsNotifier extends _CachedTopicsNotifier {
   set servedCache(bool value) => _servedCache = value;
 
   @override
-  Future<List<TopicModel>> fetch() async {
+  Future<List<TopicModel>> fetch(List<String> tagSlugs) async {
     final repository = ref.read(forumRepositoryProvider);
-    return repository.withTags(await repository.getActiveForums());
+    return repository.withTags(
+      await repository.getActiveForums(tagSlugs: tagSlugs),
+    );
   }
 }
 
@@ -203,9 +226,11 @@ class QuietForumsNotifier extends _CachedTopicsNotifier {
   set servedCache(bool value) => _servedCache = value;
 
   @override
-  Future<List<TopicModel>> fetch() async {
+  Future<List<TopicModel>> fetch(List<String> tagSlugs) async {
     final repository = ref.read(forumRepositoryProvider);
-    return repository.withTags(await repository.getQuietForums());
+    return repository.withTags(
+      await repository.getQuietForums(tagSlugs: tagSlugs),
+    );
   }
 }
 
@@ -341,12 +366,13 @@ final submitForumPostProvider = FutureProvider.family<
 /// Invalidation rather than an in-place patch, because forumPostsProvider is a
 /// plain FutureProvider.family with no notifier to patch — the same shape, and
 /// the same reasoning, as editComment. It is what likeForumPostProvider's
-/// callers already do (see ForumPostCard._toggleLike).
+/// callers already do (see ForumPostBubble._toggleLike).
 ///
-/// NOT WIRED TO ANY UI YET: the `public_forum_posts` view this reads back
-/// through returns neither `edited_at` nor an ownership flag, so there is no
-/// way to render the marker or gate an Edit affordance client-side. This is
-/// ready for the moment that view is amended.
+/// NOT WIRED TO ANY UI YET, but no longer blocked: the `public_forum_posts`
+/// view now projects both `edited_at` and `is_mine`
+/// (20260730140000_forum_post_edit_view_columns.sql), so the "(edited)" marker
+/// renders on ForumPostBubble and an Edit affordance can be gated on
+/// `post.isMine` whenever one is added.
 Future<void> editForumPost(
   WidgetRef ref, {
   required String postId,
@@ -356,6 +382,23 @@ Future<void> editForumPost(
   await ref
       .read(forumRepositoryProvider)
       .editForumPost(postId: postId, content: content);
+  ref.invalidate(forumPostsProvider(topicId));
+}
+
+/// Deletes YOUR OWN forum post and refetches the topic's posts — same
+/// invalidation reasoning as [editForumPost] (forumPostsProvider has no
+/// notifier to patch locally). [side] is the deleted post's own FOR/AGAINST
+/// side, needed so decrement_topic_post_count knows which of
+/// for_posts/against_posts to decrement alongside total_posts.
+Future<void> deleteForumPost(
+  WidgetRef ref, {
+  required String postId,
+  required String topicId,
+  required String side,
+}) async {
+  await ref
+      .read(forumRepositoryProvider)
+      .deleteForumPost(postId: postId, topicId: topicId, side: side);
   ref.invalidate(forumPostsProvider(topicId));
 }
 
@@ -416,8 +459,10 @@ class ContributingForumsNotifier extends _CachedTopicsNotifier {
   @override
   set servedCache(bool value) => _servedCache = value;
 
+  // Contributing has no tag-filter UI (out of scope — only Discover and
+  // Explore got the filter chip row), so tagSlugs is always empty here.
   @override
-  Future<List<TopicModel>> fetch() async {
+  Future<List<TopicModel>> fetch(List<String> tagSlugs) async {
     final supabase = ref.read(supabaseClientProvider);
     final userId = supabase.auth.currentUser?.id;
     if (userId == null) return [];

@@ -283,6 +283,7 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
                                 // Navigate to game
                               },
                               size: ButtonSize.small,
+                              width: 90.w,
                             ),
                           ],
                         ),
@@ -343,6 +344,7 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
               label: 'Play →',
               onPressed: onTap,
               size: ButtonSize.small,
+              width: 90.w,
             ),
           ],
         ),
@@ -522,12 +524,14 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
                       );
                     },
                     size: ButtonSize.small,
+                    width: 90.w,
                   );
                 }
                 return AppButton(
                   label: 'Start →',
                   onPressed: () => _startNewJourney(context, ref),
                   size: ButtonSize.small,
+                  width: 90.w,
                 );
               },
               loading: () => const SizedBox.shrink(),
@@ -536,6 +540,7 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
                     label: 'Start →',
                     onPressed: () => _startNewJourney(context, ref),
                     size: ButtonSize.small,
+                    width: 90.w,
                   ),
             ),
           ],

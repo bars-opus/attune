@@ -4,6 +4,7 @@ import 'package:attune/app/licenses_screen.dart';
 import 'package:attune/app/routing/routing_notifier.dart';
 import 'package:attune/features/onboarding/presentation/screens/ask2_flow.dart';
 import 'package:attune/core/moderation/presentation/screens/blocked_accounts_screen.dart';
+import 'package:attune/features/opinions/presentation/screen/muted_authors_screen.dart';
 import 'package:attune/features/auth/intro/intro_screen.dart';
 import 'package:attune/features/auth/log_in/presentation/screens/login_screen.dart';
 import 'package:attune/features/dating/presentation/screens/dating_dashboard_screen.dart';
@@ -101,6 +102,7 @@ class RouteNames {
   static const String shopProducts = '/shopProducts';
   static const String productForm = '/productForm';
   static const String blockedAccountsScreen = '/blockedAccountsScreen';
+  static const String mutedAuthorsScreen = '/mutedAuthorsScreen';
   static const String datingMode = '/dating-mode';
   static const String ask2Flow = '/ask2/:relationshipId';
 }
@@ -232,6 +234,11 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.blockedAccountsScreen,
         name: 'blockedAccountsScreen',
         builder: (context, state) => const BlockedAccountsScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.mutedAuthorsScreen,
+        name: 'mutedAuthorsScreen',
+        builder: (context, state) => const MutedAuthorsScreen(),
       ),
       GoRoute(
         path: RouteNames.datingMode,

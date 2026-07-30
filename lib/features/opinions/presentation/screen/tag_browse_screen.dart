@@ -28,9 +28,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// link to an author's anonymous profile (as every feed does), but the reverse
 /// direction — starting from an author and filtering to a tag — does not exist.
 ///
-/// A standalone pushed route with its own Scaffold, like SavedOpinionsScreen,
-/// so it deliberately has NO SliverOverlapInjector (there is no enclosing
-/// absorber here, and using one would throw at runtime).
+/// A standalone pushed route with its own Scaffold, so it deliberately has NO
+/// SliverOverlapInjector (there is no enclosing absorber here, and using one
+/// would throw at runtime).
 class TagBrowseScreen extends ConsumerStatefulWidget {
   final String tagSlug;
 
@@ -40,22 +40,7 @@ class TagBrowseScreen extends ConsumerStatefulWidget {
   ConsumerState<TagBrowseScreen> createState() => _TagBrowseScreenState();
 }
 
-class _TagBrowseScreenState extends ConsumerState<TagBrowseScreen>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
+class _TagBrowseScreenState extends ConsumerState<TagBrowseScreen> {
   bool _handleOpinionScroll(ScrollNotification notification) {
     if (notification.metrics.pixels >=
         notification.metrics.maxScrollExtent - 200) {
@@ -74,57 +59,76 @@ class _TagBrowseScreenState extends ConsumerState<TagBrowseScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Access theme for consistent styling
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final opinionsAsync = ref.watch(opinionsByTagProvider(widget.tagSlug));
     final topicsAsync = ref.watch(forumTopicsByTagProvider(widget.tagSlug));
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('#${widget.tagSlug}', style: const TextStyle(fontSize: 18)),
-        leading: AppIconButton(
-          icon: Icons.arrow_back,
-          onPressed: () => Navigator.pop(context),
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [Tab(text: 'Opinions'), Tab(text: 'Forums')],
+    // Not useNestedScrollMode: this Scaffold has no enclosing NestedScrollView
+    // for a collapsing header to absorb into (see the class doc on why this
+    // screen deliberately has no SliverOverlapInjector), so the plain
+    // SimpleTabs-then-TabBarView layout is the correct fit here, not the
+    // NestedScrollView-flavored one Discover/Explore use.
+    final tabs = [
+      AppTabItem(
+        label: 'Opinions',
+        icon: Icons.rate_review_outlined,
+        content: NotificationListener<ScrollNotification>(
+          onNotification: _handleOpinionScroll,
+          child: RefreshIndicator(
+            onRefresh:
+                () =>
+                    ref
+                        .read(opinionsByTagProvider(widget.tagSlug).notifier)
+                        .refresh(),
+            child: opinionsAsync.when(
+              loading: () => const ListviewLoadingShimmer(),
+              error: (error, stack) => ErrorStateWidget.from(error),
+              data: _buildOpinionList,
+            ),
+          ),
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          NotificationListener<ScrollNotification>(
-            onNotification: _handleOpinionScroll,
-            child: RefreshIndicator(
-              onRefresh:
-                  () =>
-                      ref
-                          .read(opinionsByTagProvider(widget.tagSlug).notifier)
-                          .refresh(),
-              child: opinionsAsync.when(
-                loading: () => const ListviewLoadingShimmer(),
-                error: (error, stack) => ErrorStateWidget.from(error),
-                data: _buildOpinionList,
-              ),
+      AppTabItem(
+        label: 'Forums',
+        icon: Icons.forum_outlined,
+        content: NotificationListener<ScrollNotification>(
+          onNotification: _handleTopicScroll,
+          child: RefreshIndicator(
+            onRefresh:
+                () =>
+                    ref
+                        .read(forumTopicsByTagProvider(widget.tagSlug).notifier)
+                        .refresh(),
+            child: topicsAsync.when(
+              loading: () => const ListviewLoadingShimmer(),
+              error: (error, stack) => ErrorStateWidget.from(error),
+              data: _buildTopicList,
             ),
           ),
-          NotificationListener<ScrollNotification>(
-            onNotification: _handleTopicScroll,
-            child: RefreshIndicator(
-              onRefresh:
-                  () =>
-                      ref
-                          .read(
-                            forumTopicsByTagProvider(widget.tagSlug).notifier,
-                          )
-                          .refresh(),
-              child: topicsAsync.when(
-                loading: () => const ListviewLoadingShimmer(),
-                error: (error, stack) => ErrorStateWidget.from(error),
-                data: _buildTopicList,
-              ),
-            ),
+        ),
+      ),
+    ];
+
+    return Scaffold(
+      backgroundColor: colorScheme.neutral,
+      appBar: AppBar(
+        automaticallyImplyLeading: true,
+        backgroundColor: Colors.transparent,
+        title: Text(
+          '#${widget.tagSlug}',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface.withOpacity(0.8),
           ),
-        ],
+        ),
+      ),
+      body: TabsWithContent(
+        tabs: tabs,
+        initialIndex: 0,
+        scrollable: false,
+        showContent: true,
       ),
     );
   }
@@ -132,7 +136,7 @@ class _TagBrowseScreenState extends ConsumerState<TagBrowseScreen>
   Widget _buildOpinionList(List<OpinionModel> opinions) {
     if (opinions.isEmpty) {
       return _emptyState(
-        icon: Icons.sell_outlined,
+        icon: Icons.rate_review_outlined,
         title: 'No opinions tagged #${widget.tagSlug}',
         subtitle: 'Tag an opinion with this when you post to start it off.',
       );

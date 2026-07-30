@@ -45,6 +45,7 @@ class _SideSelectionScreenState extends ConsumerState<SideSelectionScreen> {
                   topicId: widget.topic.id,
                   topicTitle: widget.topic.content,
                   userSide: _selectedSide!,
+                  initialTopic: widget.topic,
                 ),
           ),
         );
@@ -107,7 +108,7 @@ class _SideSelectionScreenState extends ConsumerState<SideSelectionScreen> {
                   'AGAINST',
                   widget.topic.againstPosts,
                   againstPercentage,
-                  colorScheme.error,
+                  colorScheme.against,
                 ),
               ],
             ),
@@ -138,7 +139,7 @@ class _SideSelectionScreenState extends ConsumerState<SideSelectionScreen> {
                     side: 'against',
                     label: 'I\'m AGAINST',
                     description: 'I disagree with this statement',
-                    color: colorScheme.error,
+                    color: colorScheme.against,
                     isSelected: _selectedSide == 'against',
                   ),
                 ),
@@ -157,6 +158,7 @@ class _SideSelectionScreenState extends ConsumerState<SideSelectionScreen> {
                             topicId: widget.topic.id,
                             topicTitle: widget.topic.content,
                             userSide: 'browse',
+                            initialTopic: widget.topic,
                           ),
                     ),
                   );

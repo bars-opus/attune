@@ -228,6 +228,14 @@ class AppTextFormField extends StatefulWidget {
   /// Use `BorderRadius.circular()` for custom rounding, or set to 0 for square fields.
   final BorderRadius? borderRadius;
 
+  /// Overrides the focused-state border color, which otherwise defaults to
+  /// colorScheme.primary. Null (the default) keeps that default. Lets a
+  /// caller with its own notion of "which color represents this field right
+  /// now" (e.g. DebateRoomScreen's composer, tinted by FOR/AGAINST) carry
+  /// that into the border too, instead of it staying primary regardless.
+  /// Ignored when [showBorder] is false or the field isn't focused.
+  final Color? focusedBorderColor;
+
   /// Explicit height override for the field container.
   ///
   /// When not provided, height is calculated responsively:
@@ -281,6 +289,7 @@ class AppTextFormField extends StatefulWidget {
     this.fillColor,
     this.showBorder = true,
     this.borderRadius,
+    this.focusedBorderColor,
     this.height,
     this.isSmall = false,
     this.errorText,
@@ -566,7 +575,7 @@ class _AppTextFormFieldState extends State<AppTextFormField> {
         isError
             ? colorScheme.error
             : isFocused
-            ? colorScheme.primary
+            ? (widget.focusedBorderColor ?? colorScheme.primary)
             : colorScheme.outline.withValues(
               alpha: FormTokens.fieldBorderOpacity,
             );

@@ -321,6 +321,9 @@
   
   "blockedItemTitle": "Comptes bloqués",
   "blockedItemSubtitle": "Comptes que vous avez bloqués",
+
+  "mutedItemTitle": "Comptes en sourdine",
+  "mutedItemSubtitle": "Comptes anonymes du forum que vous avez mis en sourdine",
   
   "qrCodeItemTitle": "Partager le code QR",
   "qrCodeItemSubtitle": "Partagez votre code QR de compte",

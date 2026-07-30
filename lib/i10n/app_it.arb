@@ -321,6 +321,9 @@
   
   "blockedItemTitle": "Account Bloccati",
   "blockedItemSubtitle": "Account che hai bloccato",
+
+  "mutedItemTitle": "Account Silenziati",
+  "mutedItemSubtitle": "Account anonimi del forum che hai silenziato",
   
   "qrCodeItemTitle": "Condividi Codice QR",
   "qrCodeItemSubtitle": "Condividi il tuo codice QR dell'account",

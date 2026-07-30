@@ -147,22 +147,29 @@ class ForumRepository {
   // Topic Retrieval
   // ============================================================
 
-  Future<List<TopicModel>> getVotingTopics(String? currentUserId) async {
-    // First, activate any topics that have reached threshold
-    await _activateTopics();
-
-    // Then expire old topics
-    await _expireTopics();
-
-    // Fetch voting topics
-    final response = await _supabase
-        .from('public_forum_topics')
-        .select('*')
-        .eq('status', 'voting')
-        .order('created_at', ascending: true);
+  /// [tagSlugs] null or empty means "All" — unfiltered, OR-matched otherwise
+  /// (§8.11 "Tags"), same shape as OpinionRepository.getDiscoverFeed.
+  ///
+  /// Goes through get_voting_topics_filtered rather than a direct
+  /// `.from('public_forum_topics')` query: forum_topic_tags has no client
+  /// grant at all, so a tag filter is only reachable server-side. One
+  /// behavioral difference from before this RPC existed: the RPC does not
+  /// run activate_pending_topics()/expire_old_topics() as a side effect —
+  /// those are lifecycle sweeps already covered by an hourly cron, not a
+  /// guarantee this read path depended on.
+  Future<List<TopicModel>> getVotingTopics(
+    String? currentUserId, {
+    List<String>? tagSlugs,
+  }) async {
+    final response = await _supabase.rpc(
+      'get_voting_topics_filtered',
+      params: {
+        'p_tag_slugs': (tagSlugs == null || tagSlugs.isEmpty) ? null : tagSlugs,
+      },
+    );
 
     final topics = <TopicModel>[];
-    for (final json in response) {
+    for (final json in (response as List)) {
       String? userVote;
       if (currentUserId != null) {
         final voteRes =
@@ -175,30 +182,36 @@ class ForumRepository {
         userVote = voteRes?['vote_type'] as String?;
       }
 
-      topics.add(TopicModel.fromJson(json, userVote: userVote));
+      topics.add(TopicModel.fromJson(Map<String, dynamic>.from(json), userVote: userVote));
     }
 
     return topics;
   }
 
-  Future<List<TopicModel>> getActiveForums() async {
-    final response = await _supabase
-        .from('public_forum_topics')
-        .select('*')
-        .eq('status', 'active')
-        .order('last_post_at', ascending: false);
-
-    return response.map((json) => TopicModel.fromJson(json)).toList();
+  /// See [getVotingTopics] for the tag-filter and RPC-vs-direct-query notes.
+  Future<List<TopicModel>> getActiveForums({List<String>? tagSlugs}) async {
+    final response = await _supabase.rpc(
+      'get_active_forums_filtered',
+      params: {
+        'p_tag_slugs': (tagSlugs == null || tagSlugs.isEmpty) ? null : tagSlugs,
+      },
+    );
+    return (response as List)
+        .map((json) => TopicModel.fromJson(Map<String, dynamic>.from(json)))
+        .toList();
   }
 
-  Future<List<TopicModel>> getQuietForums() async {
-    final response = await _supabase
-        .from('public_forum_topics')
-        .select('*')
-        .eq('status', 'quiet')
-        .order('last_post_at', ascending: false);
-
-    return response.map((json) => TopicModel.fromJson(json)).toList();
+  /// See [getVotingTopics] for the tag-filter and RPC-vs-direct-query notes.
+  Future<List<TopicModel>> getQuietForums({List<String>? tagSlugs}) async {
+    final response = await _supabase.rpc(
+      'get_quiet_forums_filtered',
+      params: {
+        'p_tag_slugs': (tagSlugs == null || tagSlugs.isEmpty) ? null : tagSlugs,
+      },
+    );
+    return (response as List)
+        .map((json) => TopicModel.fromJson(Map<String, dynamic>.from(json)))
+        .toList();
   }
 
   Future<TopicModel?> getTopicDetails(
@@ -352,7 +365,7 @@ class ForumRepository {
   /// Rewrites a forum post's text within its 15-minute window (FORUM.md §7
   /// "Editing"). Rejects with `not_editable` (42501) when the caller is not
   /// the owner, the post is removed, or the window has closed; and with
-  /// `invalid_content` (22023) when blank or over 280 characters.
+  /// `invalid_content` (22023) when blank or over 5000 characters.
   ///
   /// Note the parameter is `p_forum_post_id`, not `p_post_id` — the edit RPC
   /// spells it out where the like/unlike counter RPCs above use the short
@@ -364,6 +377,30 @@ class ForumRepository {
     await _supabase.rpc(
       'edit_forum_post',
       params: {'p_forum_post_id': postId, 'p_content': content},
+    );
+  }
+
+  /// Soft-deletes YOUR OWN post (removed_at, same as deleteComment) and
+  /// decrements the parent topic's counters — total_posts always, plus
+  /// exactly one of for_posts/against_posts by the post's own side, via
+  /// decrement_topic_post_count (20260810120000). forum_posts_owner_update's
+  /// RLS policy is what actually authorizes the client-side update; a
+  /// non-owner's update silently touches zero rows rather than erroring, so
+  /// there is no separate ownership check here — same trust boundary
+  /// deleteComment already relies on for opinion_comments_owner_update.
+  Future<void> deleteForumPost({
+    required String postId,
+    required String topicId,
+    required String side,
+  }) async {
+    await _supabase
+        .from('forum_posts')
+        .update({'removed_at': DateTime.now().toIso8601String()})
+        .eq('id', postId);
+
+    await _supabase.rpc(
+      'decrement_topic_post_count',
+      params: {'p_topic_id': topicId, 'p_side': side},
     );
   }
 
@@ -437,15 +474,4 @@ class ForumRepository {
     );
   }
 
-  // ============================================================
-  // Private Helper Methods
-  // ============================================================
-
-  Future<void> _activateTopics() async {
-    await _supabase.rpc('activate_pending_topics');
-  }
-
-  Future<void> _expireTopics() async {
-    await _supabase.rpc('expire_old_topics');
-  }
 }

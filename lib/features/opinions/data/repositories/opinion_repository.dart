@@ -18,13 +18,24 @@ class OpinionRepository {
   // Opinions — feeds (server-side ordered, anonymized, single query)
   // ============================================================
 
+  /// [tagSlugs] null or empty means "All" — unfiltered, the same result as
+  /// before this parameter existed. Non-empty means OR-match: an opinion
+  /// needs at least one of the given tags to appear. Ranking
+  /// (engagement×recency) is unchanged either way — a tag filter narrows
+  /// which rows appear, it does not switch Discover to a different,
+  /// chronological ordering.
   Future<List<OpinionModel>> getDiscoverFeed({
     required int page,
     required int pageSize,
+    List<String>? tagSlugs,
   }) async {
     final rows = await _supabase.rpc(
       'get_discover_opinions',
-      params: {'p_limit': pageSize, 'p_offset': page * pageSize},
+      params: {
+        'p_limit': pageSize,
+        'p_offset': page * pageSize,
+        'p_tag_slugs': (tagSlugs == null || tagSlugs.isEmpty) ? null : tagSlugs,
+      },
     );
     return (rows as List)
         .map((r) => OpinionModel.fromFeedRow(Map<String, dynamic>.from(r)))
@@ -88,7 +99,7 @@ class OpinionRepository {
   /// Throws PostgrestException on rejection, which the caller surfaces:
   ///   - `not_editable` (42501) — not the owner, already removed, or the
   ///     window has closed. Deliberately one message for all three server-side.
-  ///   - `invalid_content` (22023) — blank or over 280 characters.
+  ///   - `invalid_content` (22023) — blank or over 5000 characters.
   Future<void> editOpinion({
     required String opinionId,
     required String content,
@@ -340,7 +351,7 @@ class OpinionRepository {
 
   /// Posts a quote of [quotedOpinionId] and returns the NEW opinion's id.
   ///
-  /// The RPC delegates the base insert to create_opinion, so the 280-char
+  /// The RPC delegates the base insert to create_opinion, so the 5000-char
   /// limit, keyword filter, §7 rate limit/cooldown and ban gate all apply
   /// exactly as they do to a normal opinion — a quote is a post.
   ///

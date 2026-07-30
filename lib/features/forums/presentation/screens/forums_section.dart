@@ -1,10 +1,10 @@
 // lib/features/forums/presentation/screens/forums_section.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/widgets/create_content_chooser.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
 import 'package:attune/features/forums/presentation/screens/contributing_forums_screen.dart';
 import 'package:attune/features/forums/presentation/screens/forums_explore_screen.dart';
-import 'package:attune/features/forums/presentation/screens/submit_topic_screen.dart';
 import 'package:attune/home/providers/nav_visibility_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/auth/presentation/widgets/logout_action.dart';
@@ -66,20 +66,18 @@ class _ForumsSectionState extends ConsumerState<ForumsSection>
             heroTag: 'forums-explore-fab',
             icon: Icons.add,
             label: 'Submit a topic',
-            onPressed: () async {
+            onPressed: () {
               if (!isAuthenticated) {
                 context.showInfoSnackbar(
                   'Continue with phone number from Chat to submit a topic.',
                 );
                 return;
               }
-              final needsRefresh = await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SubmitTopicScreen()),
+              CreateContentChooser.show(
+                context: context,
+                backgroundColor: colorScheme.neutral,
+                onTopicSubmitted: () => ref.invalidate(votingTopicsProvider),
               );
-              if (needsRefresh == true) {
-                ref.invalidate(votingTopicsProvider);
-              }
             },
           );
         },

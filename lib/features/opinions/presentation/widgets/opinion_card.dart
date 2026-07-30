@@ -1,6 +1,8 @@
 // lib/features/opinions/presentation/widgets/opinion_card.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/utils/relationship_status_display.dart';
+import 'package:attune/core/utils/relative_time.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/data/opinion_more_data.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
@@ -10,6 +12,9 @@ import 'package:attune/features/opinions/presentation/screen/quote_compose_scree
 import 'package:attune/features/opinions/presentation/screen/tag_browse_screen.dart';
 import 'package:attune/features/opinions/presentation/widgets/quoted_opinion_preview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/core/widgets/poll_card.dart';
+import 'package:attune/core/polls/presentation/providers/poll_providers.dart';
+
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class OpinionCard extends ConsumerWidget {
@@ -49,9 +54,9 @@ class OpinionCard extends ConsumerWidget {
     // Server-computed: the real user_id never reaches the client (FORUM.md §3).
     final isOwnPost = opinion.isMine;
 
-    final statusDisplay = _getStatusDisplay(opinion.relationshipStatus);
-    final statusIcon = _statusIconFor(statusDisplay);
-    final statusIconColor = _statusColorFor(
+    final statusDisplay = statusDisplayFor(opinion.relationshipStatus);
+    final statusIcon = statusIconFor(statusDisplay);
+    final statusIconColor = statusColorFor(
       statusDisplay,
       Theme.of(context).colorScheme,
     );
@@ -63,7 +68,7 @@ class OpinionCard extends ConsumerWidget {
     // muted Text keeps it subtle instead of competing with the actions row.
     // The timestamp itself stays createdAt — an edit never changes it.
     final timeAgo =
-        _formatTimeAgo(opinion.createdAt) +
+        formatTimeAgo(opinion.createdAt) +
         (opinion.editedAt != null ? ' · edited' : '');
 
     return Column(
@@ -88,7 +93,7 @@ class OpinionCard extends ConsumerWidget {
                   iconColor: colorScheme.background,
                   backgroundColor: statusIconColor,
                   avatarRadius: 20.h,
-                  subTitleMaxLines: showCommentAction ? 3 : 1000,
+                  subTitleMaxLines: showCommentAction ? 10 : 1000,
                   iconSize: 18.h,
                   onTap: onOpinionTap,
                   showDivider: false,
@@ -98,7 +103,9 @@ class OpinionCard extends ConsumerWidget {
                   showTrailingArrow: false,
                   bottomWidget: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.start,
                     children: [
+                      PollCard(target: PollTarget.opinion(opinion.id)),
                       // This opinion is a quote: embed the original beneath
                       // its own text (§8.11 "Feed visibility"). Resolved
                       // lazily per card — the feed RPC returns only the id.
@@ -174,6 +181,8 @@ class OpinionCard extends ConsumerWidget {
                                 onTap: () => _toggleRepost(context, ref),
                               ),
                             ],
+                            Gap(Spacing.md.w),
+                            _buildSaveButton(context, ref),
                             // Quote. Unlike repost above, this is NOT hidden on
                             // your own post: quoting yourself to add a follow-up
                             // thought is an explicitly allowed, distinct action
@@ -193,9 +202,6 @@ class OpinionCard extends ConsumerWidget {
                                 onTap: onCommentTap ?? () {},
                               ),
                             ],
-
-                            Gap(Spacing.md.w),
-                            _buildSaveButton(context, ref),
 
                             const Spacer(),
 
@@ -342,15 +348,6 @@ class OpinionCard extends ConsumerWidget {
       if (!context.mounted) return;
       context.showInfoSnackbar('Could not mute that person.');
     }
-  }
-
-  String _formatTimeAgo(DateTime date) {
-    final diff = DateTime.now().difference(date);
-    if (diff.inDays > 7) return '${(diff.inDays / 7).floor()}w ago';
-    if (diff.inDays > 0) return '${diff.inDays}d ago';
-    if (diff.inHours > 0) return '${diff.inHours}h ago';
-    if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
-    return 'just now';
   }
 
   Widget _buildReactionButton({
@@ -602,55 +599,6 @@ class OpinionCard extends ConsumerWidget {
       ref.read(
         addReactionProvider((opinionId: opinion.id, type: newReaction)).future,
       );
-    }
-  }
-
-  String _getStatusDisplay(String? status) {
-    switch (status) {
-      case 'single':
-        return 'Single';
-      case 'taken':
-        return 'Taken';
-      case 'figuring_it_out':
-        return 'Figuring it out';
-      case 'open':
-        return 'Open';
-      default:
-        return '';
-    }
-  }
-
-  IconData _statusIconFor(String statusDisplay) {
-    if (statusDisplay.isEmpty) {
-      return FontAwesomeIcons.circleQuestion;
-    }
-
-    switch (statusDisplay[0].toUpperCase()) {
-      case 'S':
-        return FontAwesomeIcons.s;
-      case 'T':
-        return FontAwesomeIcons.t;
-      case 'F':
-        return FontAwesomeIcons.f;
-      case 'O':
-        return FontAwesomeIcons.o;
-      default:
-        return FontAwesomeIcons.circleQuestion;
-    }
-  }
-
-  Color _statusColorFor(String statusDisplay, ColorScheme colorScheme) {
-    switch (statusDisplay) {
-      case 'Single':
-        return colorScheme.info;
-      case 'Taken':
-        return colorScheme.error;
-      case 'Figuring it out':
-        return colorScheme.warning;
-      case 'Open':
-        return colorScheme.neutral;
-      default:
-        return colorScheme.error;
     }
   }
 }

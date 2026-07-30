@@ -1,4 +1,6 @@
 // lib/core/widgets/home_widget.dart
+import 'dart:ui';
+
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/utils/exports/export_packages.dart';
 import 'package:attune/home/providers/nav_visibility_provider.dart';
@@ -81,59 +83,77 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
           Spacing.xxl.w + Spacing.xxl,
           0,
         ),
-        child: Container(
-          height:navBarHeight,
-
-          clipBehavior: Clip.antiAlias,
+        child: DecoratedBox(
+          // The shadow lives on its own DecoratedBox, OUTSIDE the ClipRRect
+          // below — a shadow needs to paint beyond the pill's own edge, but
+          // ClipRRect hard-clips everything inside it to exactly the pill's
+          // bounds, so a shadow on the inner Container was being clipped
+          // away entirely and never actually showing.
           decoration: BoxDecoration(
-            color:
-                widget.navigationBarColor ??
-                colorScheme.surface.withOpacity(.5),
             borderRadius: BorderRadius.circular(100.r),
-            border: Border.all(
-              color: colorScheme.outline.withValues(alpha: 0.1),
-              width: BorderWidthTokens.hairline,
-            ),
             boxShadow: [
               BoxShadow(
-                color: colorScheme.shadow.withValues(alpha: 0.08),
+                color: colorScheme.shadow.withValues(alpha: 0.12),
                 blurRadius: ElevationTokens.lg.r,
                 offset: Offset(0, ElevationTokens.xs.h),
               ),
             ],
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (int index = 0; index < widget.tabs.length; index++) ...[
-                if (index > 0)
-                  // Only meaningful with a fixed (non-Expanded) item width —
-                  // see the 2-tab branch in _buildTabItem. With 3+ tabs items
-                  // still stretch via Expanded, so this gap collapses to
-                  // nothing between them (harmless).
-                  Gap(Spacing.xxl.w),
-                _buildTabItem(
-                  context,
-                  tab: widget.tabs[index],
-                  isActive: index == _currentIndex,
-                  iconSize: iconSize,
-                  activeIconSize: activeIconSize,
-                  colorScheme: colorScheme,
-                  textTheme: textTheme,
-                  onTap: () {
-                    setState(() {
-                      _visitedIndices.add(index);
-                      _currentIndex = index;
-                    });
-                    // Tabs stay mounted (Offstage, not real navigation) so a
-                    // scroll-hidden nav from the PREVIOUS tab would otherwise
-                    // stay hidden after switching, since navVisibilityProvider
-                    // is shared across every tab's scroll listener.
-                    ref.read(navVisibilityProvider.notifier).state = true;
-                  },
+          child: ClipRRect(
+            // Clipping has to wrap the BackdropFilter (not just live on the
+            // Container below): BackdropFilter blurs everything within its
+            // nearest clip's bounds, so without this the blur would spill
+            // into a rectangle instead of following the pill shape.
+            borderRadius: BorderRadius.circular(100.r),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                height: navBarHeight,
+                decoration: BoxDecoration(
+                  color:
+                      widget.navigationBarColor ??
+                      colorScheme.surface.withOpacity(.5),
+                  borderRadius: BorderRadius.circular(100.r),
+                  border: Border.all(
+                    color: colorScheme.outline.withValues(alpha: 0.1),
+                    width: BorderWidthTokens.hairline,
+                  ),
                 ),
-              ],
-            ],
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (int index = 0; index < widget.tabs.length; index++) ...[
+                      if (index > 0)
+                        // Only meaningful with a fixed (non-Expanded) item width —
+                        // see the 2-tab branch in _buildTabItem. With 3+ tabs items
+                        // still stretch via Expanded, so this gap collapses to
+                        // nothing between them (harmless).
+                        Gap(Spacing.xxl.w),
+                      _buildTabItem(
+                        context,
+                        tab: widget.tabs[index],
+                        isActive: index == _currentIndex,
+                        iconSize: iconSize,
+                        activeIconSize: activeIconSize,
+                        colorScheme: colorScheme,
+                        textTheme: textTheme,
+                        onTap: () {
+                          setState(() {
+                            _visitedIndices.add(index);
+                            _currentIndex = index;
+                          });
+                          // Tabs stay mounted (Offstage, not real navigation) so a
+                          // scroll-hidden nav from the PREVIOUS tab would otherwise
+                          // stay hidden after switching, since navVisibilityProvider
+                          // is shared across every tab's scroll listener.
+                          ref.read(navVisibilityProvider.notifier).state = true;
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),

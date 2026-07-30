@@ -11,6 +11,13 @@ class TopicModel {
   final int totalPosts;
   final int forPosts;
   final int againstPosts;
+
+  /// Distinct people who picked each side (user_forum_sides), NOT a count of
+  /// posts — forPosts/againstPosts count posts, and one person can post many
+  /// times, so those two pairs diverge as soon as anyone posts more than
+  /// once. ForumCardSubDetails' "For"/"Against" numbers use this pair.
+  final int forPeople;
+  final int againstPeople;
   final DateTime? lastPostAt;
   final DateTime? activatedAt;
   final DateTime votingExpiresAt;
@@ -38,6 +45,8 @@ class TopicModel {
     required this.totalPosts,
     required this.forPosts,
     required this.againstPosts,
+    this.forPeople = 0,
+    this.againstPeople = 0,
     this.lastPostAt,
     this.activatedAt,
     required this.votingExpiresAt,
@@ -64,6 +73,8 @@ class TopicModel {
       totalPosts: totalPosts,
       forPosts: forPosts,
       againstPosts: againstPosts,
+      forPeople: forPeople,
+      againstPeople: againstPeople,
       lastPostAt: lastPostAt,
       activatedAt: activatedAt,
       votingExpiresAt: votingExpiresAt,
@@ -90,6 +101,8 @@ class TopicModel {
       totalPosts: json['total_posts'] ?? 0,
       forPosts: json['for_posts'] ?? 0,
       againstPosts: json['against_posts'] ?? 0,
+      forPeople: json['for_people'] ?? 0,
+      againstPeople: json['against_people'] ?? 0,
       lastPostAt:
           json['last_post_at'] != null
               ? DateTime.parse(json['last_post_at'])
@@ -128,6 +141,8 @@ class TopicModel {
       'total_posts': totalPosts,
       'for_posts': forPosts,
       'against_posts': againstPosts,
+      'for_people': forPeople,
+      'against_people': againstPeople,
       'last_post_at': lastPostAt?.toIso8601String(),
       'activated_at': activatedAt?.toIso8601String(),
       'voting_expires_at': votingExpiresAt.toIso8601String(),

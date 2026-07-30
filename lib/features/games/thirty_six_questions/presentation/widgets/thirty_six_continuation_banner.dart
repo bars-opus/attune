@@ -75,6 +75,7 @@ class ThirtySixContinuationBanner extends ConsumerWidget {
                 label: 'Invite →',
                 onPressed: () => _sendInvite(context, ref),
                 size: ButtonSize.small,
+                width: 100.w,
               ),
             ],
           ),

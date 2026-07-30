@@ -1,28 +1,47 @@
 // lib/features/forums/presentation/screens/debate_room_screen.dart
+import 'dart:async';
+
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/polls/presentation/providers/poll_providers.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/core/widgets/app_text_form_field.dart';
+import 'package:attune/core/widgets/bottom_sheet_header.dart';
 import 'package:attune/core/widgets/poll_card.dart';
-import 'package:attune/core/widgets/buttons/app_button.dart';
+import 'package:attune/core/widgets/shop_listview_loading_shimmer.dart';
+import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
+import 'package:attune/features/forums/data/models/forum_post_model.dart';
+import 'package:attune/features/forums/data/models/topic_model.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
 import 'package:attune/features/forums/presentation/screens/forum_insight_screen.dart';
-import 'package:attune/features/forums/presentation/widgets/forum_post_card.dart';
+import 'package:attune/features/forums/presentation/widgets/forum_card.dart';
+import 'package:attune/features/forums/presentation/widgets/forum_post_bubble.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:gap/gap.dart';
 
 class DebateRoomScreen extends ConsumerStatefulWidget {
   final String topicId;
   final String topicTitle;
   final String userSide; // 'for', 'against', or 'browse'
 
+  /// The TopicModel the caller already had in hand — every navigation site
+  /// (ForumCard's onTap, SideSelectionScreen) is tapping/acting on a card
+  /// that already rendered this exact topic, counts included. Without this,
+  /// the pinned ForumCard here re-fetches via topicDetailsProvider and
+  /// renders nothing until that completes, which reads as "the whole screen
+  /// is loading" even though the caller already had everything needed to
+  /// paint it instantly — the same reasoning CommentThreadScreen's
+  /// `required this.opinion` constructor param uses for its pinned
+  /// OpinionCard. topicDetailsProvider still fetches in the background for
+  /// freshness (its counts can have moved since the caller's list last
+  /// loaded); this is only what paints on the very first frame.
+  final TopicModel? initialTopic;
+
   const DebateRoomScreen({
     super.key,
     required this.topicId,
     required this.topicTitle,
     required this.userSide,
+    this.initialTopic,
   });
 
   @override
@@ -30,13 +49,33 @@ class DebateRoomScreen extends ConsumerStatefulWidget {
 }
 
 class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
-  final ScrollController _forScrollController = ScrollController();
-  final ScrollController _againstScrollController = ScrollController();
+  /// One controller for the one merged feed. The debate room used to run two
+  /// independent columns (FOR left, AGAINST right) with a controller each;
+  /// it is now a single chronological thread, so a single controller is all
+  /// there is to drive.
+  final ScrollController _scrollController = ScrollController();
   final TextEditingController _postController = TextEditingController();
   final FocusNode _postFocusNode = FocusNode();
   String? _replyToPostId;
   String? _replyToQuotedText;
   bool _isSubmitting = false;
+
+  /// One GlobalKey per rendered post, keyed by post id — lets "jump to
+  /// replied message" (WhatsApp-style) find where a specific post landed in
+  /// the list and scroll it into view via Scrollable.ensureVisible, which
+  /// works correctly regardless of each bubble's actual height (unlike a
+  /// computed ScrollController offset, which would assume uniform item
+  /// heights this feed doesn't have). Built fresh each build from the
+  /// current posts list rather than accumulated forever, so it never holds
+  /// keys for posts that scrolled out of a since-refetched list.
+  final Map<String, GlobalKey> _postKeys = {};
+
+  /// The post currently flashed as the jump-to target — cleared automatically
+  /// after the highlight animation's duration via a timer reset on every tap,
+  /// so tapping a second quote before the first flash fades restarts the
+  /// flash on the new target instead of leaving two stale highlights.
+  String? _highlightedPostId;
+  Timer? _highlightTimer;
 
   @override
   void initState() {
@@ -47,11 +86,38 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
 
   @override
   void dispose() {
-    _forScrollController.dispose();
-    _againstScrollController.dispose();
+    _scrollController.dispose();
     _postController.dispose();
     _postFocusNode.dispose();
+    _highlightTimer?.cancel();
     super.dispose();
+  }
+
+  /// Scrolls the parent post identified by [parentPostId] into view and
+  /// flashes it — WhatsApp/iMessage-style "jump to replied message". No-op
+  /// if the parent isn't currently rendered (its GlobalKey was never
+  /// registered this build): forumPostsProvider fetches every post for the
+  /// topic unfiltered, so in practice every reply's parent is always in the
+  /// same list, but a stale tap during a refetch could momentarily race
+  /// this, and silently doing nothing is better than crashing on a null
+  /// context.
+  void _jumpToPost(String parentPostId) {
+    final key = _postKeys[parentPostId];
+    final targetContext = key?.currentContext;
+    if (targetContext == null) return;
+
+    Scrollable.ensureVisible(
+      targetContext,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+      alignment: 0.5,
+    );
+
+    _highlightTimer?.cancel();
+    setState(() => _highlightedPostId = parentPostId);
+    _highlightTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (mounted) setState(() => _highlightedPostId = null);
+    });
   }
 
   void _loadPosts() {
@@ -112,6 +178,14 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
       _postController.clear();
       _clearReplyTarget();
       ref.invalidate(forumPostsProvider(widget.topicId));
+      // Wait for the refetch so the new post is actually in the list before
+      // scrolling — scrolling immediately after invalidate would animate
+      // toward a maxScrollExtent that doesn't include the post yet. Like
+      // WhatsApp/iMessage: sending a message while scrolled up in history
+      // jumps you back to the bottom to see what you just sent, rather than
+      // leaving you stranded wherever you were reading.
+      await ref.read(forumPostsProvider(widget.topicId).future);
+      _scrollToBottom();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -123,340 +197,430 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
     }
   }
 
+  /// Scrolls to the newest post — after sending, or after tapping Reply
+  /// while scrolled up in history (so typing doesn't happen "blind" far
+  /// from where the reply target and the eventual new post will land).
+  /// Deferred a frame: the list needs to have laid out the new/target
+  /// content before jumping to maxScrollExtent, otherwise it animates to
+  /// a stale (too-short) extent.
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final postsAsync = ref.watch(forumPostsProvider(widget.topicId));
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.topicTitle.length > 40
-              ? '${widget.topicTitle.substring(0, 40)}...'
-              : widget.topicTitle,
-          style: textTheme.titleSmall,
-        ),
-        actions: [
-          // Insight button
-          IconButton(
-            icon: const Icon(Icons.info_outline),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ForumInsightScreen(topicId: widget.topicId),
-                ),
-              );
-            },
-          ),
-          // Menu button
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'report') {
-                _showReportDialog();
-              }
-            },
-            itemBuilder:
-                (context) => [
-                  const PopupMenuItem(
-                    value: 'report',
-                    child: Text('Report forum'),
-                  ),
-                ],
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Stats header
-          Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: Spacing.md.w,
-              vertical: Spacing.sm.h,
-            ),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: colorScheme.outline.withOpacity(0.1)),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+    final topicAsync = ref.watch(topicDetailsProvider(widget.topicId));
+    // Prefers the fresh fetch, falls back to what the caller already had in
+    // hand (see widget.initialTopic's doc) — so the pinned card paints on
+    // the very first frame instead of blanking out while
+    // topicDetailsProvider's own network fetch is in flight.
+    final topic = topicAsync.valueOrNull ?? widget.initialTopic;
+
+    // The viewer's own side, tinting everything in the composer area that
+    // used to be a fixed colorScheme.primary regardless of side (reply
+    // indicator label, composer border, send button) — matches the
+    // mine-bubble fill in ForumPostBubble. Meaningless in browse mode (no
+    // side picked), where none of these render anyway.
+    final userSideColor =
+        widget.userSide == 'for' ? colorScheme.primary : colorScheme.against;
+
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          automaticallyImplyLeading: true,
+          // Same two-line title CommentThreadScreen uses: bold topic label on
+          // top, contributor count underneath — computed from the same posts
+          // list the feed below renders, so it never drifts from what's
+          // actually showing.
+          title: RichText(
+            text: TextSpan(
               children: [
-                Icon(Icons.thumb_up, size: 16, color: colorScheme.primary),
-                Gap(Spacing.xs.w),
-                Text(
-                  'FOR',
-                  style: textTheme.labelSmall?.copyWith(
-                    color: colorScheme.primary,
+                TextSpan(
+                  text: 'Forum',
+                  style: textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface.withValues(alpha: 0.8),
                   ),
                 ),
-                Gap(Spacing.sm.w),
-                postsAsync.when(
-                  data: (posts) {
-                    final forCount = posts.where((p) => p.side == 'for').length;
-                    final againstCount =
-                        posts.where((p) => p.side == 'against').length;
-                    return Text(
-                      '$forCount  ·  $againstCount',
-                      style: textTheme.labelSmall,
-                    );
-                  },
-                  loading: () => const Text('...'),
-                  error: (_, __) => const Text('0 · 0'),
-                ),
-                Gap(Spacing.sm.w),
-                Text(
-                  'AGAINST',
-                  style: textTheme.labelSmall?.copyWith(
-                    color: colorScheme.error,
+                TextSpan(
+                  text: '\n${_formatContributionCount(postsAsync.valueOrNull)}',
+                  style: textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface.withOpacity(.4),
                   ),
                 ),
-                Icon(Icons.thumb_down, size: 16, color: colorScheme.error),
               ],
             ),
+            textAlign: TextAlign.center,
           ),
-          // The topic's poll, if it has one (§8.11). Separate from the FOR /
-          // AGAINST split above and from the vote that activated this topic —
-          // this asks readers a question and gates nothing. Renders nothing
-          // when the topic has no poll.
-          Padding(
-            padding: EdgeInsets.only(top: Spacing.sm.h),
-            child: PollCard(target: PollTarget.topic(widget.topicId)),
-          ),
-          // Two-column debate layout
-          Expanded(
-            child: postsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, stack) => ErrorStateWidget.from(error),
-              data: (allPosts) {
-                final forPosts =
-                    allPosts.where((p) => p.side == 'for').toList();
-                final againstPosts =
-                    allPosts.where((p) => p.side == 'against').toList();
-
-                return Row(
-                  children: [
-                    // FOR column (left)
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          border: Border(
-                            right: BorderSide(
-                              color: colorScheme.outline.withOpacity(0.1),
+          actions: [
+            AppIconButton(
+              icon: Icons.more_vert_rounded,
+              onPressed: () => _showForumMenu(context),
+            ),
+          ],
+        ),
+        // Stack, not Column: the reply indicator + composer float over the
+        // feed as a Positioned overlay (matching CommentThreadScreen) rather
+        // than sitting in a separate flat section of the body — that's what
+        // keeps them background-free instead of reading as a solid bar.
+        body: Stack(
+          children: [
+            Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: true,
+              child: CustomScrollView(
+                controller: _scrollController,
+                slivers: [
+                  // Topic card (+ poll) — see `topic` above for the
+                  // fresh-fetch-with-fallback reasoning. Only truly renders
+                  // nothing when NEITHER is available (initialTopic wasn't
+                  // passed AND the fetch hasn't resolved yet), which no
+                  // longer happens from any in-app navigation site as of
+                  // this change — every one of them already had the topic
+                  // and now passes it.
+                  SliverToBoxAdapter(
+                    child:
+                        topic == null
+                            ? const SizedBox.shrink()
+                            : Column(
+                              children: [
+                                GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (_) => ForumInsightScreen(
+                                              topicId: widget.topicId,
+                                            ),
+                                      ),
+                                    );
+                                  },
+                                  child: ForumCard(
+                                    forum: topic,
+                                    userSide: widget.userSide.toUpperCase(),
+                                    disableNavigation: true,
+                                  ),
+                                ),
+                                // The topic's poll, if it has one (§8.11).
+                                // Separate from the FOR / AGAINST split and
+                                // from the vote that activated this topic —
+                                // this asks readers a question and gates
+                                // nothing. Renders nothing when the topic has
+                                // no poll.
+                                Padding(
+                                  padding: EdgeInsets.only(top: Spacing.sm.h),
+                                  child: PollCard(
+                                    target: PollTarget.topic(widget.topicId),
+                                  ),
+                                ),
+                              ],
+                            ),
+                  ),
+                  // One chronological group-chat feed: FOR and AGAINST posts
+                  // merged in the order they were written, aligned by
+                  // authorship (yours right, everyone else's left) with the
+                  // side carried as a badge on each bubble. Only this
+                  // section shows a loading indicator (the same
+                  // ListviewLoadingShimmer(isComment: true) shimmer
+                  // CommentThreadScreen uses) while postsAsync loads —
+                  // matches CommentThreadScreen's shape exactly: pinned card
+                  // always visible, only the message-list section gated on
+                  // its own async state.
+                  postsAsync.when(
+                    loading:
+                        () => const SliverToBoxAdapter(
+                          child: ListviewLoadingShimmer(isComment: true),
+                        ),
+                    error:
+                        (error, stack) => SliverToBoxAdapter(
+                          child: ErrorStateWidget.from(error),
+                        ),
+                    data: (posts) {
+                      final repliesByParent = _repliesByParent(posts);
+                      // forumPostsProvider already orders by created_at
+                      // ascending, so the list is chronological as fetched —
+                      // no re-sort here.
+                      if (posts.isEmpty) {
+                        return SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.all(Spacing.lg.w),
+                            child: Text(
+                              widget.userSide == 'browse'
+                                  ? 'No posts yet.'
+                                  : 'No posts yet. Start the debate.',
+                              style: textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurface.withOpacity(0.6),
+                              ),
+                              textAlign: TextAlign.center,
                             ),
                           ),
+                        );
+                      }
+                      return SliverPadding(
+                        // Bottom padding reserves room so the last post
+                        // doesn't sit behind the floating reply
+                        // indicator/composer overlaid on top.
+                        padding: EdgeInsets.fromLTRB(
+                          0,
+                          Spacing.sm.h,
+                          0,
+                          Spacing.xxl.h + Spacing.xl.h,
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Column header
-                            Container(
-                              padding: EdgeInsets.all(Spacing.sm.w),
-                              color: colorScheme.primary.withOpacity(0.05),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate((
+                            context,
+                            index,
+                          ) {
+                            final post = posts[index];
+                            final replies = repliesByParent[post.id];
+                            // Registered fresh each build (see
+                            // _postKeys' doc) rather than
+                            // only-if-absent, so a key never survives
+                            // past the post it was created for.
+                            final postKey = _postKeys[post.id] = GlobalKey();
+                            return KeyedSubtree(
+                              key: postKey,
+                              child: ForumPostBubble(
+                                key: ValueKey(post.id),
+                                post: post,
+                                userSide: widget.userSide,
+                                onReply:
+                                    () =>
+                                        _setReplyTarget(post.id, post.content),
+                                replies: replies,
+                                onShowReplies:
+                                    replies == null
+                                        ? null
+                                        : () =>
+                                            _showRepliesSheet(post.id, replies),
+                                onJumpToParent:
+                                    post.replyToPostId == null
+                                        ? null
+                                        : () =>
+                                            _jumpToPost(post.replyToPostId!),
+                                isHighlighted: _highlightedPostId == post.id,
+                              ),
+                            );
+                          }, childCount: posts.length),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            // Floating reply indicator + composer, overlaid on the list
+            // rather than stacked in flow below it — matches
+            // CommentThreadScreen's floating input exactly (no background
+            // section behind it, posts keep scrolling visibly behind it).
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    Spacing.md.w,
+                    0,
+                    Spacing.md.w,
+                    0,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Reply indicator
+                      if (_replyToPostId != null)
+                        AnimatedScaleFade(
+                          duration: const Duration(milliseconds: 600),
+                          curve: Curves.easeOutBack,
+
+                          child: CardInkWell(
+                            padding: const EdgeInsets.only(left: Spacing.md),
+                            margin: const EdgeInsets.all(0),
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: Spacing.md),
                               child: Row(
                                 children: [
-                                  Icon(
-                                    Icons.thumb_up,
-                                    size: 16,
-                                    color: colorScheme.primary,
-                                  ),
-                                  Gap(Spacing.xs.w),
-                                  Text(
-                                    'FOR',
-                                    style: textTheme.labelLarge?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      color: colorScheme.primary,
+                                  Expanded(
+                                    child: ShakeTransition(
+                                      duration: const Duration(
+                                        milliseconds: 800,
+                                      ),
+                                      curve: Curves.easeOutBack,
+                                      child: RichText(
+                                        text: TextSpan(
+                                          children: [
+                                            TextSpan(
+                                              text: 'Replying to',
+                                              style: textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: userSideColor,
+                                                  ),
+                                            ),
+                                            TextSpan(
+                                              text:
+                                                  '\n${_replyToQuotedText?.substring(0, (_replyToQuotedText!.length > 40) ? 40 : _replyToQuotedText!.length)}...',
+                                              style: textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: colorScheme.onSurface
+                                                        .withValues(alpha: 0.8),
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                        textAlign: TextAlign.start,
+                                      ),
                                     ),
                                   ),
-                                  const Spacer(),
-                                  Text(
-                                    '${forPosts.length} posts',
-                                    style: textTheme.bodySmall,
+                                  ShakeTransition(
+                                    offset: -140,
+                                    curve: Curves.easeOutBack,
+                                    child: IconButton(
+                                      icon: const Icon(Icons.close, size: 16),
+                                      onPressed: _clearReplyTarget,
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
-                            // FOR posts list
-                            Expanded(
-                              child: ListView.builder(
-                                controller: _forScrollController,
-                                padding: EdgeInsets.all(Spacing.sm.w),
-                                itemCount: forPosts.length,
-                                itemBuilder: (context, index) {
-                                  final post = forPosts[index];
-                                  return ForumPostCard(
-                                    post: post,
-                                    userSide: widget.userSide,
-                                    onReply:
-                                        () => _setReplyTarget(
-                                          post.id,
-                                          post.content,
-                                        ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
-                    // AGAINST column (right)
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          // Column header
-                          Container(
-                            padding: EdgeInsets.all(Spacing.sm.w),
-                            color: colorScheme.error.withOpacity(0.05),
-                            child: Row(
-                              children: [
-                                const Spacer(),
-                                Text(
-                                  '${againstPosts.length} posts',
-                                  style: textTheme.bodySmall,
-                                ),
-                                Gap(Spacing.xs.w),
-                                Text(
-                                  'AGAINST',
-                                  style: textTheme.labelLarge?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: colorScheme.error,
-                                  ),
-                                ),
-                                Gap(Spacing.xs.w),
-                                Icon(
-                                  Icons.thumb_down,
-                                  size: 16,
-                                  color: colorScheme.error,
-                                ),
-                              ],
-                            ),
-                          ),
-                          // AGAINST posts list
-                          Expanded(
-                            child: ListView.builder(
-                              controller: _againstScrollController,
-                              padding: EdgeInsets.all(Spacing.sm.w),
-                              itemCount: againstPosts.length,
-                              itemBuilder: (context, index) {
-                                final post = againstPosts[index];
-                                return ForumPostCard(
-                                  post: post,
-                                  userSide: widget.userSide,
-                                  onReply:
-                                      () => _setReplyTarget(
-                                        post.id,
-                                        post.content,
-                                      ),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-          // Reply indicator
-          if (_replyToPostId != null)
-            Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: Spacing.md.w,
-                vertical: Spacing.sm.h,
-              ),
-              color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Replying to: "$_replyToQuotedText"',
-                      style: textTheme.bodySmall,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                      // Composer (only if user is not in browse mode) — same
+                      // floating pill + send icon as CommentThreadScreen's
+                      // ChatTextField, not a full-width bar with a separate
+                      // FOR/AGAINST chip and Post button. Side is already
+                      // visible on every bubble via its badge, so the
+                      // composer doesn't need to repeat it — but the send
+                      // button IS tinted by side, matching the mine-bubble
+                      // fill (ForumPostBubble.bubbleColor) so the composer
+                      // reads as "you, about to add to YOUR side" rather
+                      // than a fixed primary regardless of side.
+                      if (widget.userSide != 'browse')
+                        ChatTextField(
+                          controller: _postController,
+                          focusNode: _postFocusNode,
+                          onSend: _submitPost,
+                          enabled: !_isSubmitting,
+                          hintText:
+                              widget.userSide == 'for'
+                                  ? 'Add to the FOR argument...'
+                                  : 'Add to the AGAINST argument...',
+                          sendButtonColor: userSideColor,
+                          onSendButtonColor: colorScheme.background,
+                        ),
+                    ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 16),
-                    onPressed: _clearReplyTarget,
-                  ),
-                ],
-              ),
-            ),
-          // Composer (only if user is not in browse mode)
-          if (widget.userSide != 'browse')
-            Container(
-              padding: EdgeInsets.all(Spacing.md.w),
-              decoration: BoxDecoration(
-                color: colorScheme.surface,
-                border: Border(
-                  top: BorderSide(color: colorScheme.outline.withOpacity(0.1)),
                 ),
               ),
-              child: Row(
-                children: [
-                  // Side indicator
-                  Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: Spacing.sm.w,
-                      vertical: Spacing.xs.h,
-                    ),
-                    decoration: BoxDecoration(
-                      color:
-                          widget.userSide == 'for'
-                              ? colorScheme.primary.withOpacity(0.1)
-                              : colorScheme.error.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(
-                        BorderRadiusTokens.sm.r,
-                      ),
-                    ),
-                    child: Text(
-                      widget.userSide == 'for' ? 'FOR' : 'AGAINST',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color:
-                            widget.userSide == 'for'
-                                ? colorScheme.primary
-                                : colorScheme.error,
-                      ),
-                    ),
-                  ),
-                  Gap(Spacing.sm.w),
-                  // Post input
-                  Expanded(
-                    child: AppTextFormField(
-                      controller: _postController,
-                      focusNode: _postFocusNode,
-                      hintText:
-                          widget.userSide == 'for'
-                              ? 'Add to the FOR argument...'
-                              : 'Add to the AGAINST argument...',
-                      maxLines: 3,
-                      maxLength: 280,
-                      enabled: !_isSubmitting,
-                      label: '',
-                    ),
-                  ),
-                  Gap(Spacing.sm.w),
-                  // Post button
-                  AppButton(
-                    label: 'Post',
-                    onPressed:
-                        _postController.text.trim().isNotEmpty && !_isSubmitting
-                            ? _submitPost
-                            : null,
-                    size: ButtonSize.small,
-                    isLoading: _isSubmitting,
-                  ),
-                ],
-              ),
             ),
-        ],
+          ],
+        ),
       ),
+    );
+  }
+
+  // Unlike CommentThreadScreen's contributor estimate, this is an exact
+  // count of the posts themselves (§8.11-style "N comments" phrasing) —
+  // no distinct-authors math needed here, just how many contributions the
+  // topic has, matching what the feed below actually shows.
+  String _formatContributionCount(List<ForumPostModel>? posts) {
+    if (posts == null) return '...';
+    final count = posts.length;
+    return count == 1 ? '1 contribution' : '$count contributions';
+  }
+
+  // Groups the flat, chronological posts list by `replyToPostId`, purely to
+  // know each post's reply COUNT for its stacked-avatar row — unlike
+  // CommentThreadScreen, the main feed itself stays fully flat (every post,
+  // replies included, shows inline in chronological order, exactly like a
+  // real group chat thread); grouping is only used to drive the "N replies"
+  // indicator and the bottom sheet it opens.
+  Map<String, List<ForumPostModel>> _repliesByParent(
+    List<ForumPostModel> posts,
+  ) {
+    final byParent = <String, List<ForumPostModel>>{};
+    for (final post in posts) {
+      final parentId = post.replyToPostId;
+      if (parentId != null) {
+        byParent.putIfAbsent(parentId, () => []).add(post);
+      }
+    }
+    return byParent;
+  }
+
+  // Opens all replies to one post as chat bubbles in a bottom sheet, rather
+  // than CommentThreadScreen's in-place batched expansion — the user's
+  // explicit call: forum replies look like contributions in the same chat
+  // bubble style, and a bubble list reads better filling an Expanded sheet
+  // than growing the main thread in place.
+  void _showRepliesSheet(String parentPostId, List<ForumPostModel> replies) {
+    BottomSheetUtils.showDocumentationBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.neutral,
+      widget: _RepliesSheet(
+        replies: replies,
+        userSide: widget.userSide,
+        onReply: (postId, content) {
+          Navigator.pop(context);
+          _setReplyTarget(postId, content);
+        },
+      ),
+    );
+  }
+
+  // AppBar action — the single entry point (insight/report) for this topic,
+  // matching CommentThreadScreen's one AppIconButton(more_vert_rounded)
+  // opening everything secondary behind it rather than spreading actions
+  // across multiple always-visible icons.
+  void _showForumMenu(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder:
+          (sheetContext) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: const Text('Forum insight'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder:
+                            (_) => ForumInsightScreen(topicId: widget.topicId),
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.flag_outlined),
+                  title: const Text('Report forum'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _showReportDialog();
+                  },
+                ),
+              ],
+            ),
+          ),
     );
   }
 
@@ -484,6 +648,61 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
               ),
             ],
           ),
+    );
+  }
+}
+
+/// All replies to one post, shown as chat bubbles in a bottom sheet —
+/// distinct from CommentThreadScreen's in-place batched expansion. Fits
+/// this feature's own request: replies read as contributions in the same
+/// bubble style as the main thread, and a bubble list fills an Expanded
+/// sheet more naturally than growing in place under the parent post.
+class _RepliesSheet extends StatelessWidget {
+  final List<ForumPostModel> replies;
+  final String userSide;
+
+  /// (postId, content preview) — mirrors DebateRoomScreen._setReplyTarget's
+  /// signature exactly, since this just forwards into it after closing the
+  /// sheet.
+  final void Function(String postId, String content) onReply;
+
+  const _RepliesSheet({
+    required this.replies,
+    required this.userSide,
+    required this.onReply,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        BottomSheetHeader(
+          title: replies.length == 1 ? '1 reply' : '${replies.length} replies',
+        ),
+        Gap(Spacing.sm.h),
+        // Expanded so the bubble list scrolls within a bounded height
+        // instead of trying to size itself to unbounded content — the
+        // sheet's own DraggableScrollableSheet supplies that bound.
+        Expanded(
+          child: Scrollbar(
+            thumbVisibility: true,
+            child: ListView.builder(
+              itemCount: replies.length,
+              itemBuilder: (context, index) {
+                final reply = replies[index];
+                return ForumPostBubble(
+                  key: ValueKey(reply.id),
+                  post: reply,
+                  userSide: userSide,
+                  onReply: () => onReply(reply.id, reply.content),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -5,7 +5,10 @@ import 'package:attune/core/utils/exports/export_packages.dart';
 class AppFilterChip extends StatelessWidget {
   final String label;
   final bool selected;
-  final ValueChanged<bool> onSelected;
+  /// Nullable like ChoiceChip's own onSelected: passing null (e.g. a
+  /// TagPicker chip once the selection cap is reached) disables the chip —
+  /// greyed out, not tappable — rather than requiring the parent to no-op.
+  final ValueChanged<bool>? onSelected;
   final Color? selectedColor;
   final Color? backgroundColor;
 
@@ -66,7 +69,15 @@ class AppFilterChip extends StatelessWidget {
       ),
       selected: selected,
       showCheckmark: avatarIcon == null,
+      checkmarkColor: selectedLabelColor ?? colorScheme.onPrimary,
       onSelected: onSelected,
+      // ChoiceChip reserves Material's ~48dp minimum tap-target height by
+      // default regardless of `padding` above — shrinkWrap removes that
+      // floor so wrapped rows of chips (TagPickerRow) sit as close as the
+      // padding/runSpacing actually specify, instead of extra invisible
+      // vertical space between rows.
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
       padding:
           padding ??
           EdgeInsets.symmetric(
@@ -79,7 +90,7 @@ class AppFilterChip extends StatelessWidget {
       shape: RoundedRectangleBorder(
         side: BorderSide(
           color: selected ? colorScheme.primary : colorScheme.onSurface,
-          width: borderWidth?.w ?? 1.0,
+          width: borderWidth?.w ?? .1,
         ),
         borderRadius:
             borderRadius ?? BorderRadius.circular(BorderRadiusTokens.full.r),

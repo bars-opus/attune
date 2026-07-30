@@ -333,6 +333,22 @@ extension ColorSchemeExtension on ColorScheme {
 
   Color get neutral =>
       brightness == Brightness.light ? LightColors.neutral : DarkColors.neutral;
+
+  /// Forums' AGAINST side — use anywhere a FOR/AGAINST pair is rendered,
+  /// paired with colorScheme.primary for FOR (ForumPostBubble, ForumCardSubDetails,
+  /// SideSelectionScreen, DebateRoomScreen's composer). Not colorScheme.error:
+  /// this is a debate side, not a validation/danger state, even though it
+  /// happened to reuse error's red before this was centralized.
+  Color get against =>
+      brightness == Brightness.light ? LightColors.against : DarkColors.against;
+
+  /// Contrast color for content painted on top of [against] — pair the same
+  /// way onPrimary pairs with primary. Not colorScheme.onError: WCAG-checked
+  /// separately since against isn't error's color (see LightColors.onAgainst).
+  Color get onAgainst =>
+      brightness == Brightness.light
+          ? LightColors.onAgainst
+          : DarkColors.onAgainst;
 }
 
 // =============================================================================

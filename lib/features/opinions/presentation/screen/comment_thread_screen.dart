@@ -2,9 +2,10 @@
 
 import 'dart:async';
 
-import 'package:attune/core/polls/presentation/providers/poll_providers.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/core/widgets/poll_card.dart';
+import 'package:attune/core/utils/relationship_status_display.dart';
+import 'package:attune/core/utils/relative_time.dart';
+import 'package:attune/core/widgets/reply_avatar_stack.dart';
 import 'package:attune/core/widgets/shop_listview_loading_shimmer.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/opinions/data/models/comment_model.dart';
@@ -15,7 +16,6 @@ import 'package:attune/features/opinions/presentation/screen/edit_opinion_screen
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class CommentThreadScreen extends ConsumerStatefulWidget {
   final String opinionId;
@@ -42,7 +42,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
   // Inline edit state (§8.11 "Editing"). Only ONE comment can be in edit mode
   // at a time — a second Edit replaces the first — so a single id plus a
   // single controller is the whole model here. Editing happens in place
-  // rather than on a pushed screen: a comment is at most 280 characters and
+  // rather than on a pushed screen: a comment is at most 5000 characters and
   // its meaning depends on the thread around it, so replacing the text with a
   // field keeps the parent comment and sibling replies visible while typing.
   String? _editingCommentId;
@@ -95,7 +95,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
               ? 'That comment can no longer be edited — the 15-minute '
                   'window has closed.'
               : text.contains('invalid_content')
-              ? 'A comment must be between 1 and 280 characters.'
+              ? 'A comment must be between 1 and 5000 characters.'
               : 'Could not save that edit.',
         );
       }
@@ -361,48 +361,51 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                       ref
                           .read(commentsProvider(widget.opinionId).notifier)
                           .refresh(),
-              child: ListView(
-                padding: EdgeInsets.fromLTRB(
-                  Spacing.md.w,
-                  Spacing.md.h,
-                  Spacing.md.w,
-                  Spacing.xxl.h + Spacing.xl.h,
-                ),
-                children: [
-                  OpinionCard(
-                    opinion: widget.opinion,
-                    showFollowButton: false,
-                    // The comment textfield below replaces the need to
-                    // tap into a thread, and the AppBar already carries
-                    // the same report/copy/delete menu as showMoreButton.
-                    showCommentAction: false,
-                    showMoreButton: false,
+              child: Scrollbar(
+                thumbVisibility: true,
+                child: ListView(
+                  padding: EdgeInsets.fromLTRB(
+                    Spacing.md.w,
+                    Spacing.md.h,
+                    Spacing.md.w,
+                    Spacing.xxl.h + Spacing.xl.h,
                   ),
-                  // The opinion's poll, if it has one (§8.11). Renders nothing
-                  // when there is no poll, which is the common case.
-                  PollCard(target: PollTarget.opinion(widget.opinion.id)),
-                  Gap(Spacing.md.h),
-                  commentsAsync.when(
-                    loading:
-                        () => const ListviewLoadingShimmer(isComment: true),
-                    error: (error, stack) => ErrorStateWidget.from(error),
-                    data: (comments) {
-                      if (comments.isEmpty) {
-                        return Center(
-                          child: EmptyStateWidget(
-                            icon: Icons.comment,
-                            title: 'No comments yet',
-                            subtitle:
-                                'What do you think? Feel free to drop your opnion',
-                          ),
+                  children: [
+                    OpinionCard(
+                      opinion: widget.opinion,
+                      showFollowButton: false,
+                      // The comment textfield below replaces the need to
+                      // tap into a thread, and the AppBar already carries
+                      // the same report/copy/delete menu as showMoreButton.
+                      showCommentAction: false,
+                      showMoreButton: false,
+                    ),
+
+                    // The opinion's poll, if it has one (§8.11). Renders nothing
+                    // when there is no poll, which is the common case.
+                    Gap(Spacing.md.h),
+                    commentsAsync.when(
+                      loading:
+                          () => const ListviewLoadingShimmer(isComment: true),
+                      error: (error, stack) => ErrorStateWidget.from(error),
+                      data: (comments) {
+                        if (comments.isEmpty) {
+                          return Center(
+                            child: EmptyStateWidget(
+                              icon: Icons.comment,
+                              title: 'No comments yet',
+                              subtitle:
+                                  'What do you think? Feel free to drop your opnion',
+                            ),
+                          );
+                        }
+                        return Column(
+                          children: _buildCommentThread(comments, ref),
                         );
-                      }
-                      return Column(
-                        children: _buildCommentThread(comments, ref),
-                      );
-                    },
-                  ),
-                ],
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
             // Floating input, overlaid on the list rather than stacked in
@@ -419,7 +422,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                     Spacing.md.w,
                     0,
                     Spacing.md.w,
-                    Spacing.sm.h,
+                    0,
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -541,86 +544,6 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     return widgets;
   }
 
-  // Heading for the replies section — reply count + expand toggle. Always
-  // visible, collapsed or expanded; tapping it toggles between the two
-  // (expand reveals the first batch; collapse fully hides all revealed
-  // batches). The stacked repliers preview only shows while collapsed —
-  // once the actual replies are visible below, the preview is redundant.
-  Widget _buildRepliesRow(
-    String parentCommentId,
-    List<CommentModel> replies, {
-    required bool isExpanded,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    const maxAvatars = 5;
-    const avatarSize = _replyAvatarSize;
-    const overlap = 14.0;
-    final shownCount =
-        replies.length > maxAvatars ? maxAvatars : replies.length;
-
-    return Padding(
-      padding: EdgeInsets.only(top: Spacing.xs.h, bottom: Spacing.sm.h),
-      child: GestureDetector(
-        onTap:
-            () =>
-                isExpanded
-                    ? _collapseReplies(parentCommentId)
-                    : _revealFirstReplyBatch(parentCommentId),
-        behavior: HitTestBehavior.opaque,
-        child: Row(
-          children: [
-            if (!isExpanded) ...[
-              AnimatedScaleFade(
-                duration: const Duration(milliseconds: 800),
-                curve: Curves.easeOutBack,
-
-                child: SizedBox(
-                  height: avatarSize,
-                  width: avatarSize + (shownCount - 1) * overlap,
-                  child: Stack(
-                    children: [
-                      for (var i = 0; i < shownCount; i++)
-                        Positioned(
-                          left: i * overlap,
-                          child: _buildReplyAvatar(
-                            replies[i],
-                            size: avatarSize,
-                            colorScheme: colorScheme,
-                            showOverflow:
-                                replies.length > maxAvatars &&
-                                i == maxAvatars - 1,
-                            overflowCount: replies.length - (maxAvatars - 1),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              Gap(Spacing.sm.w),
-            ],
-            ShakeTransition(
-              offset: -140,
-              curve: Curves.easeOutBack,
-              child: Text(
-                '${replies.length} ${replies.length == 1 ? 'reply' : 'replies'}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            Gap(Spacing.xs.w),
-            Icon(
-              isExpanded ? Icons.expand_less : Icons.expand_more,
-              size: 16,
-              color: colorScheme.primary,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   // Row shown under each revealed batch of replies: "See more" (only while
   // more remain) plus a close icon at the far end that always fully
   // re-collapses back to the stacked-avatar row, even on the last batch.
@@ -718,49 +641,12 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     );
   }
 
-  Widget _buildReplyAvatar(
-    CommentModel reply, {
-    required double size,
-    required ColorScheme colorScheme,
-    required bool showOverflow,
-    required int overflowCount,
-  }) {
-    final statusDisplay = _getStatusDisplay(reply.relationshipStatus);
-    final statusColor = _statusColorFor(statusDisplay, colorScheme);
-
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: showOverflow ? colorScheme.surfaceContainerHighest : statusColor,
-        border: Border.all(color: colorScheme.surface, width: 1.5),
-      ),
-      alignment: Alignment.center,
-      child:
-          showOverflow
-              ? Text(
-                '$overflowCount+',
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  color: colorScheme.onSurface,
-                ),
-              )
-              : Icon(
-                _statusIconFor(statusDisplay),
-                size: size * 0.5,
-                color: colorScheme.background,
-              ),
-    );
-  }
-
   /// The in-place editor shown in a comment's own row while it is being
   /// edited: a field pre-filled with the current text, plus Cancel/Save.
   ///
   /// Deliberately plain — no character counter competing with the thread's
-  /// existing chrome. The 280-char limit is enforced by maxLength here and by
-  /// the RPC's `invalid_content` check regardless.
+  /// existing chrome. The 5000-char limit is enforced by maxLength here and
+  /// by the RPC's `invalid_content` check regardless.
   Widget _buildInlineCommentEditor(CommentModel comment) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -776,7 +662,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
             enabled: !_isSavingEdit,
             maxLines: 5,
             minLines: 1,
-            maxLength: 280,
+            maxLength: 5000,
             autofocus: true,
             style: theme.textTheme.bodyMedium,
             decoration: InputDecoration(
@@ -838,36 +724,72 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     final canEditComment = _canEditComment(comment);
     final isEditing = _editingCommentId == comment.id;
 
-    final statusDisplay = _getStatusDisplay(comment.relationshipStatus);
-    final statusIcon = _statusIconFor(statusDisplay);
-    final statusIconColor = _statusColorFor(
+    final statusDisplay = statusDisplayFor(comment.relationshipStatus);
+    final statusIcon = statusIconFor(statusDisplay);
+    final statusIconColor = statusColorFor(
       statusDisplay,
       Theme.of(context).colorScheme,
     );
     // Same treatment as OpinionCard: the marker rides on the timestamp, and
     // the timestamp itself stays createdAt — an edit never moves it.
     final timeAgo =
-        _formatTimeAgo(comment.createdAt) +
+        formatTimeAgo(comment.createdAt) +
         (comment.editedAt != null ? ' · edited' : '');
 
     final card = Slidable(
       key: ValueKey(comment.id),
       // Swipe right-to-left reveals Reply, and Edit on your own in-window
-      // comments. Same _setReplyTarget the inline "Reply" text already uses —
-      // this is an additional way to trigger it, not a replacement.
-      // Replies-to-replies aren't a thing here, so a reply card omits Reply
-      // (showReplyAction: false) but can still be edited, which is why the
-      // pane itself is gated on either action applying rather than on Reply
-      // alone. Edit sits here rather than in the end pane because that pane's
-      // DismissiblePane treats a full swipe as "delete this" — adding a
-      // second, non-destructive action to it would make the same gesture
-      // ambiguous.
+      // comments. Tapping either fires it, same as before — but a FULL swipe
+      // past the threshold now also fires Reply directly (DismissiblePane),
+      // instead of requiring a tap once revealed. This is the interchange
+      // with the end pane below: Reply is non-destructive, so it's safe to
+      // fire on release the way Delete used to; Edit stays tap-only (no
+      // dismiss semantics of its own — DismissiblePane fires once per pane,
+      // not per action, so a full swipe always resolves to Reply here
+      // regardless of Edit's presence). Replies-to-replies aren't a thing
+      // here, so a reply card omits Reply (showReplyAction: false); when
+      // that leaves only Edit, confirmDismiss below refuses the full-swipe
+      // dismiss entirely and it just snaps back to revealed, exactly like a
+      // pane with no dismissible ever did.
       startActionPane:
           (!showReplyAction && !canEditComment)
               ? null
               : ActionPane(
                 motion: const DrawerMotion(),
                 extentRatio: canEditComment && showReplyAction ? 0.5 : 0.25,
+                dismissible:
+                    !showReplyAction
+                        ? null
+                        : DismissiblePane(
+                          // Reply doesn't remove the comment from the list,
+                          // so this must NEVER actually dismiss — a
+                          // DismissiblePane that returns true resizes the
+                          // widget to zero and expects it gone from the
+                          // tree, and throws "A dismissed Slidable widget is
+                          // still part of the tree" on the next build when
+                          // it isn't. Firing Reply from confirmDismiss and
+                          // then vetoing (returning false) gets the "full
+                          // swipe past threshold" gesture detection
+                          // DismissiblePane uniquely provides, without ever
+                          // entering its resize/removal flow.
+                          confirmDismiss: () async {
+                            _setReplyTarget(
+                              comment.id,
+                              comment.content.length > 60
+                                  ? '${comment.content.substring(0, 60)}...'
+                                  : comment.content,
+                            );
+                            return false;
+                          },
+                          onDismissed: () {},
+                          // closeOnCancel defaults to false — a vetoed
+                          // dismiss otherwise leaves the pane wherever the
+                          // drag ended (fully revealed) instead of snapping
+                          // shut. Explicit true so tapping Reply via a full
+                          // swipe closes the pane afterward, same as tapping
+                          // the Reply button itself does.
+                          closeOnCancel: true,
+                        ),
                 children: [
                   if (showReplyAction)
                     SlidableAction(
@@ -894,28 +816,14 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                 ],
               ),
       // Swipe left-to-right reveals Report (others' comments) or Delete
-      // (own comments) — same actions already in the ⋮ menu below. A full
-      // swipe past the button fires the action on release, same as iOS
-      // Mail — Delete asks for confirmation first since it has none
-      // anywhere else in this flow; Report just opens the same reason
-      // picker a tap does, so nothing destructive fires without a
-      // deliberate follow-up choice either way.
+      // (own comments) — same actions already in the ⋮ menu below. Tap-only
+      // now, no DismissiblePane: a full swipe just reveals the pane instead
+      // of auto-firing, since Delete is destructive and shouldn't fire on
+      // release the way Reply now does. Delete still confirms first either
+      // way (_confirmDeleteComment), same as before this swap.
       endActionPane: ActionPane(
         motion: const DrawerMotion(),
         extentRatio: 0.25,
-        dismissible: DismissiblePane(
-          confirmDismiss: () async {
-            if (!isOwnComment) return false; // Report: no instant dismiss.
-            return _confirmDeleteComment(context);
-          },
-          onDismissed: () {
-            deleteComment(
-              ref,
-              commentId: comment.id,
-              opinionId: widget.opinionId,
-            );
-          },
-        ),
         children: [
           if (!isOwnComment)
             SlidableAction(
@@ -1077,10 +985,24 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                 // to this comment, not a standalone comment. Revealed in
                 // batches of 5 via "See more" rather than all at once.
                 if (replies != null && replies.isNotEmpty) ...[
-                  _buildRepliesRow(
-                    comment.id,
-                    replies,
-                    isExpanded: (_visibleReplyCounts[comment.id] ?? 0) > 0,
+                  Padding(
+                    padding: EdgeInsets.only(
+                      top: Spacing.xs.h,
+                      bottom: Spacing.sm.h,
+                    ),
+                    child: RepliesRow(
+                      replyStatuses: [
+                        for (final reply in replies) reply.relationshipStatus,
+                      ],
+                      replyCount: replies.length,
+                      avatarSize: _replyAvatarSize,
+                      isExpanded: (_visibleReplyCounts[comment.id] ?? 0) > 0,
+                      onTap:
+                          () =>
+                              (_visibleReplyCounts[comment.id] ?? 0) > 0
+                                  ? _collapseReplies(comment.id)
+                                  : _revealFirstReplyBatch(comment.id),
+                    ),
                   ),
                   if ((_visibleReplyCounts[comment.id] ?? 0) > 0)
                     _buildExpandedReplies(
@@ -1104,40 +1026,6 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     return isNew
         ? SlideFadeIn(beginOffset: const Offset(0, -0.15), child: card)
         : card;
-  }
-
-  IconData _statusIconFor(String statusDisplay) {
-    if (statusDisplay.isEmpty) {
-      return FontAwesomeIcons.circleQuestion;
-    }
-
-    switch (statusDisplay[0].toUpperCase()) {
-      case 'S':
-        return FontAwesomeIcons.s;
-      case 'T':
-        return FontAwesomeIcons.t;
-      case 'F':
-        return FontAwesomeIcons.f;
-      case 'O':
-        return FontAwesomeIcons.o;
-      default:
-        return FontAwesomeIcons.circleQuestion;
-    }
-  }
-
-  Color _statusColorFor(String statusDisplay, ColorScheme colorScheme) {
-    switch (statusDisplay) {
-      case 'Single':
-        return colorScheme.info;
-      case 'Taken':
-        return colorScheme.error;
-      case 'Figuring it out':
-        return colorScheme.warning;
-      case 'Open':
-        return colorScheme.neutral;
-      default:
-        return colorScheme.error;
-    }
   }
 
   Widget _buildCommentReactionButton({
@@ -1227,29 +1115,6 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
         );
       },
     );
-  }
-
-  String _getStatusDisplay(String? status) {
-    switch (status) {
-      case 'single':
-        return 'Single';
-      case 'taken':
-        return 'Taken';
-      case 'figuring_it_out':
-        return 'Figuring it out';
-      case 'open':
-        return 'Open';
-      default:
-        return '';
-    }
-  }
-
-  String _formatTimeAgo(DateTime date) {
-    final diff = DateTime.now().difference(date);
-    if (diff.inDays > 0) return '${diff.inDays}d ago';
-    if (diff.inHours > 0) return '${diff.inHours}h ago';
-    if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
-    return 'just now';
   }
 
   String _formatCommentCount(int count) {

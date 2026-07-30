@@ -52,6 +52,13 @@ class DiscoverFeedNotifier extends AsyncNotifier<List<OpinionModel>> {
   bool _hasMore = true;
   static const int _pageSize = 20;
 
+  /// Empty means "All" — unfiltered. Selecting one or more chips narrows the
+  /// feed (OR-match) without changing its engagement×recency ranking. Only
+  /// the unfiltered "All" feed is cached for instant paint on relaunch (see
+  /// [build]) — a tag-filtered view is a transient scoped look, not
+  /// something that needs cold-start treatment, so it always fetches fresh.
+  List<String> _selectedTagSlugs = const [];
+
   /// Static, so it survives the notifier being recreated by invalidate().
   /// The cache is a cold-start affordance only: after a post/react/delete
   /// invalidates this provider, serving cache first would briefly re-show
@@ -125,7 +132,11 @@ class DiscoverFeedNotifier extends AsyncNotifier<List<OpinionModel>> {
     // than at each caller covers the first load, the background refresh and
     // loadMore alike, since all three go through this one helper.
     return await repository.withTags(
-      await repository.getDiscoverFeed(page: page, pageSize: _pageSize),
+      await repository.getDiscoverFeed(
+        page: page,
+        pageSize: _pageSize,
+        tagSlugs: _selectedTagSlugs,
+      ),
     );
   }
 
@@ -140,6 +151,39 @@ class DiscoverFeedNotifier extends AsyncNotifier<List<OpinionModel>> {
       _hasMore = false;
     }
     state = AsyncData([...currentList, ...nextPage]);
+  }
+
+  List<String> get selectedTagSlugs => _selectedTagSlugs;
+
+  /// Applies a new chip selection and refetches page 0 under it. Empty
+  /// [tagSlugs] means "All". A no-op re-selection of the same set is skipped
+  /// so tapping an already-selected chip set doesn't refire the network.
+  Future<void> setTagFilter(List<String> tagSlugs) async {
+    if (listEquals(_selectedTagSlugs, tagSlugs)) return;
+    _selectedTagSlugs = tagSlugs;
+    _currentPage = 0;
+    _hasMore = true;
+    state = const AsyncLoading<List<OpinionModel>>().copyWithPrevious(state);
+    try {
+      final firstPage = await _loadPage(0);
+      if (firstPage.length < _pageSize) {
+        _hasMore = false;
+      }
+      state = AsyncData(firstPage);
+      // Only the unfiltered feed is the cached one — writing a filtered
+      // result under the same cache key would show a scoped view on the
+      // next cold start instead of the real "All" feed.
+      final userId = ref.read(currentUserIdProvider);
+      if (userId != null && tagSlugs.isEmpty) {
+        final cache = ref.read(opinionFeedCacheProvider);
+        unawaited(cache.writeFeed(OpinionFeed.discover, userId, firstPage));
+      }
+    } catch (error, stack) {
+      state = AsyncError<List<OpinionModel>>(
+        error,
+        stack,
+      ).copyWithPrevious(state);
+    }
   }
 
   /// Flips one row's isSaved in place for the optimistic bookmark toggle.

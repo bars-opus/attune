@@ -1,6 +1,7 @@
 // lib/features/opinions/presentation/screen/quote_compose_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/utils/relationship_status_display.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/widgets/quoted_opinion_preview.dart';
@@ -9,7 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// Composes a quote: your own opinion, with the opinion you are quoting
 /// embedded beneath it (ATTUNE_MASTER_SPEC.md §8.11 "Quotes").
 ///
-/// Mirrors [OpinionComposeScreen] — same 280-char field, counter, Post action
+/// Mirrors [OpinionComposeScreen] — same field, counter, Post action
 /// and `Navigator.pop(context, true)` success contract — because a quote goes
 /// through the same posting path as any opinion and should feel like one. The
 /// only differences are the embedded preview and the absence of a poll
@@ -39,13 +40,17 @@ class _QuoteComposeScreenState extends ConsumerState<QuoteComposeScreen> {
     super.dispose();
   }
 
+  /// Matches OpinionComposeScreen's limits — a quote is a post (§8.11).
+  static const int maxContentLength = 5000;
+  static const int minContentLength = 10;
+
   String _getRemainingCharacters() {
-    final remaining = 280 - _controller.text.length;
+    final remaining = maxContentLength - _controller.text.length;
     return '$remaining characters remaining';
   }
 
   bool _isPostEnabled() {
-    return _controller.text.trim().isNotEmpty && !_isSubmitting;
+    return _controller.text.trim().length >= minContentLength && !_isSubmitting;
   }
 
   Future<void> _postQuote() async {
@@ -106,13 +111,17 @@ class _QuoteComposeScreenState extends ConsumerState<QuoteComposeScreen> {
             ),
           ),
           actions: [
-            AppButton(
-              label: 'Post',
-              onPressed: _isPostEnabled() ? _postQuote : null,
-              size: ButtonSize.medium,
-              width: double.infinity,
-              isLoading: _isSubmitting,
-            ),
+            if (_controller.text.trim().length >= minContentLength)
+              Padding(
+                padding: EdgeInsets.only(right: Spacing.md.w),
+                child: AppButton(
+                  label: 'Post',
+                  onPressed: _isPostEnabled() ? _postQuote : null,
+                  size: ButtonSize.medium,
+                  width: 90.w,
+                  isLoading: _isSubmitting,
+                ),
+              ),
           ],
         ),
         body: SingleChildScrollView(
@@ -123,7 +132,7 @@ class _QuoteComposeScreenState extends ConsumerState<QuoteComposeScreen> {
               // Your own status — the quote is attributed to you, not to the
               // author you are quoting.
               Text(
-                _getStatusDisplay(status),
+                statusDisplayFor(status),
                 style: textTheme.bodyMedium?.copyWith(
                   color: colorScheme.primary,
                   fontWeight: FontWeight.w500,
@@ -135,7 +144,8 @@ class _QuoteComposeScreenState extends ConsumerState<QuoteComposeScreen> {
                 focusNode: _focusNode,
                 hintText: 'Add your take…',
                 maxLines: 6,
-                maxLength: 280,
+                minLines: 3,
+                maxLength: maxContentLength,
                 onChanged: (_) => setState(() {}),
                 enabled: !_isSubmitting,
                 label: '',
@@ -145,7 +155,7 @@ class _QuoteComposeScreenState extends ConsumerState<QuoteComposeScreen> {
                 _getRemainingCharacters(),
                 style: textTheme.bodySmall?.copyWith(
                   color:
-                      _controller.text.length > 280
+                      _controller.text.length > maxContentLength
                           ? colorScheme.error
                           : colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
@@ -162,18 +172,4 @@ class _QuoteComposeScreenState extends ConsumerState<QuoteComposeScreen> {
     );
   }
 
-  String _getStatusDisplay(String status) {
-    switch (status) {
-      case 'single':
-        return 'Single';
-      case 'taken':
-        return 'Taken';
-      case 'figuring_it_out':
-        return 'Figuring it out';
-      case 'open':
-        return 'Open';
-      default:
-        return '';
-    }
-  }
 }

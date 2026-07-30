@@ -14,6 +14,8 @@ class ChatTextField extends StatefulWidget {
     this.enabled = true,
     this.hintText = 'Type a message...',
     this.focusNode,
+    this.sendButtonColor,
+    this.onSendButtonColor,
   });
 
   final TextEditingController controller;
@@ -24,6 +26,22 @@ class ChatTextField extends StatefulWidget {
   final bool showTranslator;
   final bool enabled;
   final String hintText;
+
+  /// Overrides the send button's fill AND the text field's focused border
+  /// color, which otherwise both default to colorScheme.primary. Null (the
+  /// default) keeps those defaults — 1:1 chat has no notion of "side" to
+  /// tint by. DebateRoomScreen passes its FOR/AGAINST color here so the
+  /// whole composer matches the side it's about to post to, the same way
+  /// ForumPostBubble's own bubbles are tinted by side rather than always
+  /// primary. Ignored when null.
+  final Color? sendButtonColor;
+
+  /// The icon's contrast color against [sendButtonColor] — e.g.
+  /// colorScheme.onPrimary / colorScheme.onError, the same token pairing
+  /// ForumPostBubble uses for its own bubble content. Only meaningful
+  /// alongside [sendButtonColor]; ignored when that's null (the theme
+  /// default IconButtonTheme already supplies the right onPrimary pairing).
+  final Color? onSendButtonColor;
 
   /// Optional external focus node — e.g. so a caller can programmatically
   /// focus the field (tapping "Reply" on a comment) without owning its
@@ -89,30 +107,31 @@ class _ChatTextFieldState extends State<ChatTextField> {
             // each rebuild, shifting the field — and the send button's hit
             // target — sideways while the user typed.
             child: CardInkWell(
-                // Plain token rather than `20.r`: the .r extension reads
-                // ScreenUtil.screenWidth, which throws in widget tests that
-                // render this field without initialising ScreenUtil.
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.xl),
-                padding: const EdgeInsets.all(0),
-                margin: const EdgeInsets.all(0),
-                elevation: ElevationTokens.sm,
+              // Plain token rather than `20.r`: the .r extension reads
+              // ScreenUtil.screenWidth, which throws in widget tests that
+              // render this field without initialising ScreenUtil.
+              borderRadius: BorderRadius.circular(BorderRadiusTokens.xl),
+              padding: const EdgeInsets.all(0),
+              margin: const EdgeInsets.all(0),
+              elevation: ElevationTokens.sm,
 
-                // AppTextFormField's fill paints square corners when
-                // showBorder is false (InputBorder.none doesn't clip the
-                // fill) — clip explicitly so the visible shape stays rounded
-                // to match the shadow's outline.
-                child: AppTextFormField(
-                  controller: widget.controller,
-                  focusNode: widget.focusNode,
-                  hintText: widget.hintText,
-                  minLines: 1,
-                  maxLines: 5,
-                  showBorder: true,
-                  // prefixIcon: const Icon(Icons.search, size: 20),
-                  onFieldSubmitted: (_) => _handleSend(),
-                  label: '',
-                ),
+              // AppTextFormField's fill paints square corners when
+              // showBorder is false (InputBorder.none doesn't clip the
+              // fill) — clip explicitly so the visible shape stays rounded
+              // to match the shadow's outline.
+              child: AppTextFormField(
+                controller: widget.controller,
+                focusNode: widget.focusNode,
+                hintText: widget.hintText,
+                minLines: 1,
+                maxLines: 5,
+                showBorder: true,
+                focusedBorderColor: widget.sendButtonColor,
+                // prefixIcon: const Icon(Icons.search, size: 20),
+                onFieldSubmitted: (_) => _handleSend(),
+                label: '',
               ),
+            ),
           ),
           const SizedBox(width: 8),
           // Not wrapped in an entrance animation: AnimatedScaleFade starts at
@@ -124,6 +143,13 @@ class _ChatTextFieldState extends State<ChatTextField> {
           IconButton.filled(
             onPressed: widget.enabled && _hasText ? _handleSend : null,
             tooltip: 'Send message',
+            style:
+                widget.sendButtonColor == null
+                    ? null
+                    : IconButton.styleFrom(
+                      backgroundColor: widget.sendButtonColor,
+                      foregroundColor: widget.onSendButtonColor,
+                    ),
             icon: ScalePop(
               trigger: _sendPulse,
               child: const Icon(Icons.send_rounded),

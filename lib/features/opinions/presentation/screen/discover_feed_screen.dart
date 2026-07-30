@@ -1,6 +1,7 @@
 // lib/features/opinions/presentation/screens/discover_feed_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/widgets/create_content_chooser.dart';
 import 'package:attune/core/widgets/shop_listview_loading_shimmer.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
@@ -9,7 +10,6 @@ import 'package:attune/features/opinions/presentation/screen/comment_thread_scre
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
 import 'package:attune/home/providers/nav_visibility_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'opinion_compose_screen.dart';
 
 class DiscoverFeedScreen extends ConsumerStatefulWidget {
   const DiscoverFeedScreen({super.key});
@@ -96,6 +96,76 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
     );
   }
 
+  /// "All" (first, always present) plus one chip per tag in the fixed
+  /// vocabulary (§8.11 "Tags"), multi-select, OR-matched. Lives inside the
+  /// feed's own CustomScrollView (as a sliver) rather than as fixed chrome
+  /// in OpinionsTab's header, so it scrolls away with the rest of Discover
+  /// like the rest of this NestedScrollView-based surface.
+  Widget _buildTagChipSliver(BuildContext context) {
+    final tagsAsync = ref.watch(allTagsProvider);
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final selected = ref.watch(discoverFeedProvider.notifier).selectedTagSlugs;
+    return SliverToBoxAdapter(
+      child: tagsAsync.when(
+        loading: () => const SizedBox.shrink(),
+        error: (_, __) => const SizedBox.shrink(),
+        data: (tags) {
+          if (tags.isEmpty) return const SizedBox.shrink();
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              Spacing.md.w,
+              Spacing.lg.w,
+              Spacing.md.h,
+              0,
+            ),
+            child: SizedBox(
+              height: 36.h,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: tags.length + 1,
+                separatorBuilder: (_, __) => SizedBox(width: Spacing.xs.w),
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    final isAllSelected = selected.isEmpty;
+                    return AppFilterChip(
+                      label: 'All',
+                      selectedColor: colorScheme.primary.withOpacity(.8),
+                      selected: isAllSelected,
+                      onSelected: (_) {
+                        ref
+                            .read(discoverFeedProvider.notifier)
+                            .setTagFilter(const []);
+                      },
+                    );
+                  }
+                  final tag = tags[index - 1];
+                  final isSelected = selected.contains(tag);
+                  return AppFilterChip(
+                    label: tag,
+                    selectedColor: colorScheme.primary.withOpacity(.8),
+                    selected: isSelected,
+                    onSelected: (nowSelected) {
+                      final next = [...selected];
+                      if (nowSelected) {
+                        next.add(tag);
+                      } else {
+                        next.remove(tag);
+                      }
+                      ref
+                          .read(discoverFeedProvider.notifier)
+                          .setTagFilter(next);
+                    },
+                  );
+                },
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildFeedSliver(BuildContext context, List<OpinionModel> opinions) {
     if (opinions.isEmpty) {
       // Plain Center has nothing to scroll, so no scroll notification ever
@@ -111,6 +181,7 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
           SliverOverlapInjector(
             handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
           ),
+          _buildTagChipSliver(context),
           SliverFillRemaining(
             hasScrollBody: false,
             child: Center(
@@ -118,16 +189,12 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
                 icon: Icons.rate_review_outlined,
                 title: 'No opinions yet',
                 subtitle: 'Be the first to share your thoughts',
-                onAction: () async {
-                  final needsRefresh = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const OpinionComposeScreen(),
-                    ),
+                onAction: () {
+                  CreateContentChooser.show(
+                    context: context,
+                    backgroundColor: Theme.of(context).colorScheme.neutral,
+                    onOpinionPosted: () => ref.invalidate(discoverFeedProvider),
                   );
-                  if (needsRefresh == true) {
-                    ref.invalidate(discoverFeedProvider);
-                  }
                 },
                 actionLabel: 'Write your first opinion',
               ),
@@ -149,6 +216,7 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
         SliverOverlapInjector(
           handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
         ),
+        _buildTagChipSliver(context),
         SliverList(
           delegate: SliverChildBuilderDelegate((context, index) {
             if (index == opinions.length) {

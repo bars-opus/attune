@@ -1,6 +1,7 @@
 // lib/features/opinions/presentation/widgets/quoted_opinion_preview.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/utils/relationship_status_display.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -64,7 +65,7 @@ class QuotedOpinionPreview extends ConsumerWidget {
 
         final colorScheme = Theme.of(context).colorScheme;
         final textTheme = Theme.of(context).textTheme;
-        final statusDisplay = _statusDisplayFor(opinion.relationshipStatus);
+        final statusDisplay = statusDisplayFor(opinion.relationshipStatus);
 
         return _QuotedPreviewShell(
           onTap: onTap == null ? null : () => onTap!(opinion.id),
@@ -109,23 +110,6 @@ class QuotedOpinionPreview extends ConsumerWidget {
     );
   }
 
-  /// Mirrors OpinionCard's status mapping. Duplicated rather than shared
-  /// because OpinionCard's copy is a private method on that widget; if a third
-  /// consumer appears, lift both into one helper.
-  String _statusDisplayFor(String? status) {
-    switch (status) {
-      case 'single':
-        return 'Single';
-      case 'taken':
-        return 'Taken';
-      case 'figuring_it_out':
-        return 'Figuring it out';
-      case 'open':
-        return 'Open';
-      default:
-        return '';
-    }
-  }
 }
 
 /// The bordered, tinted container every preview state shares, so the card's

@@ -59,6 +59,22 @@ class SettingsDataSource {
               iconColor: Colors.red,
               order: 4,
             ),
+            // Distinct from "blocked" above: block operates on real chat/
+            // relationship identities, mute operates on the anonymous
+            // forum's opaque author_handle and can never know who the muted
+            // account actually is (FORUM.md §3) — the two cannot be merged,
+            // so mute gets its own settings entry alongside block rather
+            // than replacing it.
+            SettingsConfig(
+              id: 'muted',
+              title: loc.mutedItemTitle,
+              subtitle: loc.mutedItemSubtitle,
+              icon: Icons.volume_off_outlined,
+              type: SettingsItemType.navigation,
+              routeName: '/mutedAuthorsScreen',
+              iconColor: Colors.red,
+              order: 5,
+            ),
             SettingsConfig(
               id: 'qr_code',
               title: loc.qrCodeItemTitle,
@@ -66,7 +82,7 @@ class SettingsDataSource {
               icon: Icons.qr_code_2_rounded,
               type: SettingsItemType.navigation,
               iconColor: Colors.purple,
-              order: 5,
+              order: 6,
             ),
             SettingsConfig(
               id: 'share_profile',
@@ -76,7 +92,7 @@ class SettingsDataSource {
               url: 'https://yourapp.com/privacy',
               type: SettingsItemType.link,
               iconColor: Colors.blue,
-              order: 6,
+              order: 7,
             ),
           ],
         ),

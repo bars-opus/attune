@@ -14,12 +14,22 @@ class ForumPostModel {
   /// Non-null once the author has edited this post inside its 15-minute window
   /// (FORUM.md §7 "Editing"). Drives the "(edited)" marker; no history shown.
   ///
-  /// NOTE: as of this change the `public_forum_posts` VIEW that
-  /// forumPostsProvider selects from does NOT project `edited_at` (nor any
-  /// ownership column), so this parses as null in practice and the marker
-  /// never renders. Parsing it here anyway means the SQL follow-up that adds
-  /// the column to that view needs no further Dart change.
+  /// The `public_forum_posts` VIEW that forumPostsProvider selects from
+  /// projects `edited_at` as of
+  /// 20260730140000_forum_post_edit_view_columns.sql, so this parses for real
+  /// and the marker renders.
   final DateTime? editedAt;
+
+  /// True when the querying user authored this post.
+  ///
+  /// Comes from the view's `(user_id = auth.uid()) AS is_mine` computed column
+  /// — the same ownership-without-identity pattern every other read path in
+  /// this feature uses. The real `user_id` is never projected to the client
+  /// (FORUM.md §3) and must never be added to this model.
+  ///
+  /// Drives bubble alignment in the debate room: your posts right, everyone
+  /// else's left, exactly like the 1:1 chat thread.
+  final bool isMine;
 
   final DateTime createdAt;
 
@@ -34,6 +44,7 @@ class ForumPostModel {
     required this.likeCount,
     required this.userLiked,
     this.editedAt,
+    this.isMine = false,
     required this.createdAt,
   });
 
@@ -55,6 +66,7 @@ class ForumPostModel {
           json['edited_at'] != null
               ? DateTime.parse(json['edited_at'] as String)
               : null,
+      isMine: json['is_mine'] as bool? ?? false,
       createdAt: DateTime.parse(json['created_at']),
     );
   }

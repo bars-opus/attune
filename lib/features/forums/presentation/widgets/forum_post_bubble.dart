@@ -1,0 +1,623 @@
+// lib/features/forums/presentation/widgets/forum_post_bubble.dart
+
+import 'dart:async';
+
+import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/utils/relationship_status_display.dart';
+import 'package:attune/core/utils/relative_time.dart';
+import 'package:attune/core/widgets/reply_avatar_stack.dart';
+import 'package:attune/features/forums/data/models/forum_post_model.dart';
+import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
+
+/// A single forum post rendered as a chat bubble in the debate room's one
+/// chronological feed.
+///
+/// Two axes that used to be conflated are now separate:
+///   * ALIGNMENT is authorship — `post.isMine` puts the bubble right, everyone
+///     else's left. This mirrors [MessageBubble] in the 1:1 chat feature
+///     exactly, so the debate room reads like the group-chat thread it is.
+///   * SIDE (for/against) is a badge on the bubble, primary/green for FOR and
+///     error/red for AGAINST — the same token pair the rest of the forums
+///     feature uses (forum_card.dart, forum_card_subdetails.dart). Side no
+///     longer moves the bubble, so you can see your own AGAINST post sitting
+///     on the right next to someone else's AGAINST post on the left.
+///
+/// Deliberately does NOT borrow chat's read-receipt/status-chip machinery:
+/// forum posts have no delivery or read concept.
+class ForumPostBubble extends ConsumerStatefulWidget {
+  final ForumPostModel post;
+  final String userSide;
+  final VoidCallback onReply;
+
+  /// Replies to THIS post, or null when it has none. Unlike
+  /// CommentThreadScreen, these are never rendered inline here — they stay
+  /// in the main chronological feed at their own position (a real group
+  /// chat doesn't hide a message just because it was a reply). This is only
+  /// used to show the stacked-avatar "N replies" row and, via
+  /// [onShowReplies], open them in a bottom sheet.
+  final List<ForumPostModel>? replies;
+
+  /// Opens the replies sheet for this post. Null when [replies] is null —
+  /// the row that would trigger it doesn't render at all in that case, so
+  /// there is nothing to wire.
+  final VoidCallback? onShowReplies;
+
+  /// Scrolls the main feed to this post's parent and briefly highlights it —
+  /// WhatsApp-style "jump to replied message." Wired from the quoted-text
+  /// preview block, which only renders when post.quotedText != null (i.e.
+  /// this post IS a reply). Null in every context that can't jump — the
+  /// replies bottom sheet (_RepliesSheet) has no independent scroll target
+  /// of its own to jump within, so it leaves this null and the quoted block
+  /// renders without a tap affordance there.
+  final VoidCallback? onJumpToParent;
+
+  /// True while this specific post is the current jump-to target — flashes
+  /// the bubble border briefly so the viewer's eye lands on the right
+  /// message after the scroll completes, the same visual cue WhatsApp gives.
+  final bool isHighlighted;
+
+  const ForumPostBubble({
+    super.key,
+    required this.post,
+    required this.userSide,
+    required this.onReply,
+    this.replies,
+    this.onShowReplies,
+    this.onJumpToParent,
+    this.isHighlighted = false,
+  });
+
+  @override
+  ConsumerState<ForumPostBubble> createState() => _ForumPostBubbleState();
+}
+
+class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
+  bool _isLiking = false;
+
+  Future<void> _toggleLike() async {
+    if (_isLiking) return;
+
+    setState(() => _isLiking = true);
+
+    try {
+      if (widget.post.userLiked) {
+        await ref.read(unlikeForumPostProvider(widget.post.id).future);
+      } else {
+        await ref.read(likeForumPostProvider(widget.post.id).future);
+      }
+      ref.invalidate(forumPostsProvider(widget.post.topicId));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to like: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isLiking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    final post = widget.post;
+    final isMine = post.isMine;
+    final isForSide = post.side == 'for';
+    final canReply = widget.userSide != 'browse';
+    final sideColor =
+        isForSide ? colorScheme.primary : colorScheme.against.withOpacity(.9);
+
+    // Bubble fill: your own bubble is tinted by YOUR side — primary for FOR,
+    // against for AGAINST (same sideColor the badge uses) — everyone else's
+    // stays the neutral colorScheme.onBackground, paired with
+    // colorScheme.background for the content painted on top of it, the same
+    // content/fill pairing InfoRowWidget's comment avatar already uses
+    // (iconColor: colorScheme.background against a colored backgroundColor).
+    final bubbleColor = isMine ? sideColor : colorScheme.onBackground;
+    final onBubbleColor =
+        isMine
+            ? (isForSide ? colorScheme.onPrimary : colorScheme.onAgainst)
+            : colorScheme.background;
+
+    final statusDisplay = statusDisplayFor(post.relationshipStatus);
+    final statusIcon = statusIconFor(statusDisplay);
+    final statusIconColor = statusColorFor(statusDisplay, colorScheme);
+    // Same "(edited)" treatment as OpinionCard and the comment cards
+    // (FORUM.md §7 "Editing"): rides on the timestamp, muted, no history.
+    // Live now that `public_forum_posts` projects `edited_at`
+    // (20260730140000_forum_post_edit_view_columns.sql).
+    final timeAgo =
+        formatTimeAgo(post.createdAt) +
+        (post.editedAt != null ? ' · edited' : '');
+
+    return Align(
+      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: Spacing.sm.w,
+          vertical: Spacing.xs.h,
+        ),
+        // IntrinsicWidth, not just mainAxisSize.min on the inner Row: Slidable
+        // internally builds a Stack (for its action panes), which expands to
+        // fill whatever width constraint it's handed regardless of its
+        // child's own intrinsic size — that made every bubble render
+        // full-width and silently defeated Align's left/right positioning
+        // above (isMine was computing correctly the whole time; this is what
+        // was actually wrong). IntrinsicWidth forces Slidable to be
+        // constrained to its child's real content width instead, so Align
+        // has something narrower than full-width to actually position.
+        child: IntrinsicWidth(
+          child: Slidable(
+            key: ValueKey(post.id),
+            // Swipe right-to-left reveals Reply (only when canReply — browse
+            // mode has nothing to reply with, so there is no pane at all). A
+            // FULL swipe past the threshold fires Reply directly
+            // (DismissiblePane) instead of requiring a tap once revealed —
+            // same interchange CommentThreadScreen's cards just got: Reply is
+            // non-destructive, so it's safe on release.
+            startActionPane:
+                !canReply
+                    ? null
+                    : ActionPane(
+                      motion: const DrawerMotion(),
+                      extentRatio: 0.25,
+                      // Reply doesn't remove the post from the feed, so this
+                      // must NEVER actually dismiss — see
+                      // CommentThreadScreen._buildCommentCard's identical
+                      // pattern for why: firing widget.onReply from
+                      // confirmDismiss and vetoing (returning false) gets
+                      // DismissiblePane's past-threshold drag detection
+                      // without entering its resize/removal flow, which
+                      // would otherwise throw "A dismissed Slidable widget
+                      // is still part of the tree" once the post survives
+                      // to the next build.
+                      dismissible: DismissiblePane(
+                        confirmDismiss: () async {
+                          widget.onReply();
+                          return false;
+                        },
+                        onDismissed: () {},
+                        // closeOnCancel defaults to false, which leaves a
+                        // vetoed dismiss wherever the drag ended instead of
+                        // snapping the pane shut — explicit true so the
+                        // full-swipe-to-reply gesture always closes
+                        // afterward, matching CommentThreadScreen.
+                        closeOnCancel: true,
+                      ),
+                      children: [
+                        SlidableAction(
+                          onPressed: (_) => widget.onReply(),
+                          backgroundColor: sideColor,
+                          foregroundColor:
+                              isForSide
+                                  ? colorScheme.onPrimary
+                                  : colorScheme.onAgainst,
+                          icon: Icons.reply,
+                          label: 'Reply',
+                        ),
+                      ],
+                    ),
+            // Swipe left-to-right reveals Report (others' posts) or Delete
+            // (your own) — tap-only, no DismissiblePane: Delete is
+            // destructive, so a full swipe just reveals the pane instead of
+            // auto-firing, matching CommentThreadScreen's end pane after the
+            // same interchange. Delete confirms first either way.
+            endActionPane: ActionPane(
+              motion: const DrawerMotion(),
+              extentRatio: 0.25,
+              children: [
+                if (!isMine)
+                  SlidableAction(
+                    onPressed: (_) => _showReportDialog(),
+                    backgroundColor: colorScheme.error,
+                    foregroundColor: colorScheme.onError,
+                    icon: Icons.flag_outlined,
+                    label: 'Report',
+                  ),
+                if (isMine)
+                  SlidableAction(
+                    onPressed: (_) async {
+                      if (await _confirmDeletePost(context)) {
+                        await deleteForumPost(
+                          ref,
+                          postId: post.id,
+                          topicId: post.topicId,
+                          side: post.side,
+                        );
+                      }
+                    },
+                    backgroundColor: colorScheme.error,
+                    foregroundColor: colorScheme.onError,
+                    icon: Icons.delete_outline,
+                    label: 'Delete',
+                  ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Status avatar — same statusIcon/statusColorFor pairing
+                // InfoRowWidget uses for a comment's leading avatar in
+                // CommentThreadScreen. Only shown for other contributors: your
+                // own bubble is already picked out by sitting on the right in
+                // `colorScheme.primary`, so repeating your own status here would
+                // be redundant with the alignment that already marks it as
+                // yours.
+                if (!isMine) ...[
+                  CircleAvatar(
+                    radius: 14.r,
+                    backgroundColor: statusIconColor,
+                    child: Icon(
+                      statusIcon,
+                      size: 14.r,
+                      color: colorScheme.background,
+                    ),
+                  ),
+                  Gap(Spacing.xs.w),
+                ],
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment:
+                        isMine
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
+                    children: [
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: 320.w),
+                        child: AnimatedContainer(
+                          // WhatsApp-style "jump to replied message" flash: a
+                          // visible ring appears the instant this becomes the
+                          // scroll target and fades back out over the next beat,
+                          // so the eye lands on the right bubble after the jump
+                          // rather than having to search the screen for it.
+                          duration: const Duration(milliseconds: 400),
+                          curve: Curves.easeOut,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color:
+                                  widget.isHighlighted
+                                      ? sideColor
+                                      : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                          padding: const EdgeInsets.all(2),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: bubbleColor,
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: Spacing.md.w,
+                                vertical: Spacing.sm.h,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // Quoted text when this post replies to another
+                                  // (still cross-side: you can quote the
+                                  // opposing camp). Tapping it jumps to the
+                                  // parent post, like WhatsApp/iMessage — only
+                                  // when onJumpToParent is wired (not inside the
+                                  // replies bottom sheet, which has no
+                                  // independent scroll position of its own).
+                                  if (post.quotedText != null) ...[
+                                    Gap(Spacing.xs.h),
+                                    GestureDetector(
+                                      onTap: widget.onJumpToParent,
+                                      behavior: HitTestBehavior.opaque,
+                                      child: Container(
+                                        padding: EdgeInsets.all(Spacing.xs.w),
+                                        decoration: BoxDecoration(
+                                          color: colorScheme.onBackground
+                                              .withOpacity(.5),
+                                          borderRadius: BorderRadius.circular(
+                                            BorderRadiusTokens.sm.r,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.format_quote,
+                                              size: 30.h,
+                                              color: colorScheme.background,
+                                            ),
+                                            Gap(Spacing.xs.w),
+                                            Flexible(
+                                              child: Text(
+                                                post.quotedText!,
+                                                style: textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      // fontStyle: FontStyle.italic,
+                                                      color:
+                                                          colorScheme
+                                                              .background,
+                                                    ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  Gap(Spacing.xs.h),
+                                  // Content
+                                  Text(
+                                    post.content,
+                                    style: textTheme.bodyMedium?.copyWith(
+                                      color: onBubbleColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Gap(Spacing.xs.h),
+                      // Meta row below the bubble (chat puts its time label here too):
+                      // time, like, reply, report. Kept outside the bubble so a compact
+                      // bubble stays readable.
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: 320.w),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment:
+                              isMine
+                                  ? MainAxisAlignment.end
+                                  : MainAxisAlignment.start,
+                          children: [
+                            Text(
+                              timeAgo,
+                              style: textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurface.withOpacity(0.5),
+                              ),
+                            ),
+                            Gap(Spacing.sm.w),
+                            // Like
+                            InkWell(
+                              onTap: _toggleLike,
+                              borderRadius: BorderRadius.circular(
+                                BorderRadiusTokens.sm.r,
+                              ),
+                              child: Padding(
+                                padding: EdgeInsets.all(Spacing.xs.w),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      post.userLiked
+                                          ? Icons.favorite
+                                          : Icons.favorite_border,
+                                      size: 16,
+                                      color:
+                                          post.userLiked
+                                              ? colorScheme.error
+                                              : colorScheme.onSurface
+                                                  .withOpacity(0.6),
+                                    ),
+                                    if (post.likeCount > 0) ...[
+                                      Gap(Spacing.xs.w),
+                                      Text(
+                                        '${post.likeCount}',
+                                        style: textTheme.bodySmall?.copyWith(
+                                          color: colorScheme.onSurface
+                                              .withOpacity(0.6),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                            if (canReply) ...[
+                              Gap(Spacing.sm.w),
+                              InkWell(
+                                onTap: widget.onReply,
+                                borderRadius: BorderRadius.circular(
+                                  BorderRadiusTokens.sm.r,
+                                ),
+                                child: Padding(
+                                  padding: EdgeInsets.all(Spacing.xs.w),
+                                  child: Text(
+                                    'Reply',
+                                    style: textTheme.bodySmall?.copyWith(
+                                      color: sideColor,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                            Gap(Spacing.xs.w),
+                            if (!isMine)
+                              _SideBadge(
+                                isForSide: isForSide,
+                                sideColor: sideColor,
+                                onBubbleColor: onBubbleColor,
+                                isMine: isMine,
+                              ),
+                            SizedBox(
+                              height: 24.h,
+                              width: 24.w,
+                              child: PopupMenuButton<String>(
+                                padding: EdgeInsets.zero,
+                                iconSize: 16,
+                                tooltip: 'More',
+                                icon: Icon(
+                                  Icons.more_horiz,
+                                  size: 16,
+                                  color: colorScheme.onSurface.withOpacity(0.6),
+                                ),
+                                onSelected: (value) {
+                                  if (value == 'report') {
+                                    _showReportDialog();
+                                  }
+                                },
+                                itemBuilder:
+                                    (context) => [
+                                      const PopupMenuItem(
+                                        value: 'report',
+                                        child: Text('Report'),
+                                      ),
+                                    ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Stacked reply avatars — same overlapping-circle language
+                      // CommentThreadScreen uses, but tapping opens all replies
+                      // in a bottom sheet (as bubbles) instead of expanding
+                      // in place. Replies themselves stay inline in the main
+                      // feed at their own chronological position; this row is
+                      // just a shortcut into that subset.
+                      if (widget.replies != null && widget.replies!.isNotEmpty)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            top: Spacing.xs.h,
+                            right: Spacing.xl,
+                            left: Spacing.xl,
+                          ),
+                          child: RepliesRow(
+                            replyStatuses: [
+                              for (final reply in widget.replies!)
+                                reply.relationshipStatus,
+                            ],
+                            replyCount: widget.replies!.length,
+                            alignEnd: isMine,
+                            avatarSize: 18,
+                            overlap: 12,
+                            maxAvatars: 3,
+                            accentColor: sideColor,
+                            onTap: widget.onShowReplies!,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Bridges ConfirmationDialog's VoidCallback onto the Future<bool>
+  // DismissiblePane.confirmDismiss / tap-path expect — same bridge
+  // CommentThreadScreen._confirmDeleteComment uses, so a swipe-to-reveal +
+  // tap on Delete still asks before removing the post.
+  Future<bool> _confirmDeletePost(BuildContext context) {
+    final completer = Completer<bool>();
+    BottomSheetUtils.showDocumentationBottomSheet(
+      maxHeight: 320.h,
+      context: context,
+      widget: ConfirmationDialog(
+        noIcon: true,
+        type: ConfirmationType.destructive,
+        title: 'Delete this contribution?',
+        confirmText: 'Delete',
+        message: 'This cannot be undone.',
+        onConfirm: () => completer.complete(true),
+        onCancel: () => completer.complete(false),
+      ),
+    ).then((_) {
+      if (!completer.isCompleted) completer.complete(false);
+    });
+    return completer.future;
+  }
+
+  void _showReportDialog() {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Report this post'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildReportOption('Identifies a real person'),
+                _buildReportOption('Harmful or dangerous content'),
+                _buildReportOption('Hate speech or discrimination'),
+                _buildReportOption('Spam'),
+                _buildReportOption('Other'),
+              ],
+            ),
+          ),
+    );
+  }
+
+  Widget _buildReportOption(String reason) {
+    return ListTile(
+      title: Text(reason),
+      onTap: () async {
+        Navigator.pop(context);
+        await ref.read(
+          reportForumPostProvider((
+            postId: widget.post.id,
+            reason: reason,
+          )).future,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Thank you. We will review this.')),
+          );
+        }
+      },
+    );
+  }
+}
+
+/// The FOR / AGAINST tag carried by every bubble — a small dot in the side's
+/// own color (sideColor: primary for FOR, against for AGAINST).
+///
+/// On someone else's bubble (neutral onBackground fill) that reads fine
+/// as-is: the dot's sideColor stands out against the neutral fill. On your
+/// own bubble the fill is ALSO sideColor (see ForumPostBubble.bubbleColor —
+/// isMine tints by side, not a fixed primary), where a dot in that same
+/// color would sit invisibly on a same-colored background — so there it
+/// swaps to onBubbleColor (the fill's contrast color) instead.
+class _SideBadge extends StatelessWidget {
+  const _SideBadge({
+    required this.isForSide,
+    required this.sideColor,
+    required this.onBubbleColor,
+    required this.isMine,
+  });
+
+  final bool isForSide;
+  final Color sideColor;
+  final Color onBubbleColor;
+  final bool isMine;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = isMine ? onBubbleColor : sideColor;
+
+    return Semantics(
+      excludeSemantics: true,
+      child: Container(
+        height: 10.h,
+
+        width: 10.h,
+        decoration: BoxDecoration(
+          color: foreground,
+          shape: BoxShape.circle,
+          border: null,
+        ),
+      ),
+    );
+  }
+}

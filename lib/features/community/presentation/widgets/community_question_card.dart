@@ -223,6 +223,7 @@ class _CommunityQuestionCardState extends ConsumerState<CommunityQuestionCard> {
                 label: _isSaved ? '✓ Saved' : 'Save →',
                 onPressed: _isSaving ? null : _toggleSave,
                 size: ButtonSize.small,
+                width: 100.w,
                 customColor: _isSaved
                     ? colorScheme.primary.withOpacity(0.1)
                     : colorScheme.surfaceContainerHighest,

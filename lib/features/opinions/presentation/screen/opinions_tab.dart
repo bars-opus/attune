@@ -1,21 +1,21 @@
 // lib/features/opinions/presentation/screens/opinions_tab.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/utils/relationship_status_display.dart';
+import 'package:attune/core/widgets/create_content_chooser.dart';
+import 'package:attune/core/widgets/profile_avatar.dart';
 import 'package:attune/features/auth/presentation/widgets/logout_action.dart';
 import 'package:attune/features/forums/presentation/screens/forum_screen.dart';
 import 'package:attune/features/forums/presentation/screens/forums_section.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
+import 'package:attune/features/opinions/presentation/providers/profile_providers.dart';
+import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/discover_feed_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/following_feed_screen.dart';
-import 'package:attune/features/opinions/presentation/screen/muted_authors_screen.dart';
-import 'package:attune/features/opinions/presentation/screen/opinion_compose_screen.dart';
-import 'package:attune/features/opinions/presentation/screen/reposted_opinions_screen.dart';
-import 'package:attune/features/opinions/presentation/screen/saved_opinions_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/tag_search_screen.dart';
 import 'package:attune/home/providers/nav_visibility_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class OpinionsTab extends ConsumerStatefulWidget {
   const OpinionsTab({super.key});
@@ -142,6 +142,16 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    // Same status→icon/color mapping OpinionCard uses (see its
+    // _getStatusDisplay/_statusIconFor/_statusColorFor), so this avatar
+    // reads as "my status" the same way every opinion card's leading icon
+    // does. Guests have no relationship status to show, so they keep the
+    // plain person placeholder instead of a status glyph.
+    final myStatusAsync =
+        widget.isAuthenticated
+            ? ref.watch(userRelationshipStatusProvider)
+            : null;
+    final myStatusDisplay = statusDisplayFor(myStatusAsync?.value);
 
     return Scaffold(
       backgroundColor: colorScheme.neutral,
@@ -151,25 +161,23 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
                 scrollAware: true,
                 heroTag: 'opinions-fab',
                 icon: Icons.add,
-                onPressed: () async {
-                  final needsRefresh = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const OpinionComposeScreen(),
-                    ),
+                onPressed: () {
+                  CreateContentChooser.show(
+                    context: context,
+                    backgroundColor: colorScheme.neutral,
+                    onOpinionPosted: () async {
+                      if (_innerTabController.index == 0) {
+                        ref.invalidate(followingFeedProvider);
+                      } else {
+                        ref.invalidate(discoverFeedProvider);
+                      }
+                      // The feed RPCs already return newest-first — scroll
+                      // back to the top so the opinion just posted is
+                      // actually visible instead of existing off-screen
+                      // above wherever the user had scrolled to.
+                      await _scrollToTop();
+                    },
                   );
-                  if (needsRefresh == true) {
-                    if (_innerTabController.index == 0) {
-                      ref.invalidate(followingFeedProvider);
-                    } else {
-                      ref.invalidate(discoverFeedProvider);
-                    }
-                    // The feed RPCs already return newest-first — scroll back
-                    // to the top so the opinion just posted is actually
-                    // visible instead of existing off-screen above wherever
-                    // the user had scrolled to.
-                    await _scrollToTop();
-                  }
                 },
               )
               : null,
@@ -187,9 +195,42 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
                   pinned: false,
                   snap: true,
                   leading: AppIconButton(
-                    icon: Icons.menu,
-                    onPressed: () => LogoutAction.confirmAndSignOut(context),
+                    icon: Icons.add,
+                    tooltip: 'add opinions',
+                    onPressed: () {
+                      CreateContentChooser.show(
+                        context: context,
+                        backgroundColor: colorScheme.neutral,
+                        onOpinionPosted: () async {
+                          if (_innerTabController.index == 0) {
+                            ref.invalidate(followingFeedProvider);
+                          } else {
+                            ref.invalidate(discoverFeedProvider);
+                          }
+                          await _scrollToTop();
+                        },
+                      );
+                    },
                   ),
+
+                  // ProfileAvatar(
+                  //   avatarUrl: '',
+                  //   currentUserId: '',
+                  //   size: 25.h,
+                  //   enableHero: false,
+                  //   icon:
+                  //       widget.isAuthenticated
+                  //           ? statusIconFor(myStatusDisplay)
+                  //           : null,
+                  //   backgroundColor:
+                  //       widget.isAuthenticated
+                  //           ? statusColorFor(myStatusDisplay, colorScheme)
+                  //           : null,
+                  // ),
+                  //  AppIconButton(
+                  //   icon: Icons.menu,
+                  //   onPressed: () => LogoutAction.confirmAndSignOut(context),
+                  // ),
                   title: SizedBox(
                     width: 30,
                     height: 30,
@@ -205,58 +246,42 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
                     ),
                   ),
                   actions: [
-                    // "My saved opinions" lives on the Opinions app bar
-                    // because this tab is the user's opinions surface and
-                    // the bookmark toggle that fills the list is on the
-                    // cards below it. Authenticated-only: get_saved_opinions
-                    // is granted to `authenticated`, so a guest tapping it
-                    // would only ever get a 42501.
-                    if (widget.isAuthenticated)
-                      AppIconButton(
-                        icon: Icons.bookmark_border,
-                        tooltip: 'Saved',
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const SavedOpinionsScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                    // "My reposts", same authenticated-only gate and the same
-                    // reasoning as Saved above: get_reposted_opinions is
-                    // granted to `authenticated` only.
-                    if (widget.isAuthenticated)
-                      AppIconButton(
-                        icon: FontAwesomeIcons.repeat,
-                        tooltip: 'Reposted',
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const RepostedOpinionsScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                    // "Muted accounts", the only place a mute can be undone.
-                    // Same authenticated-only gate as Saved/Reposted above:
-                    // get_muted_authors is granted to `authenticated` only,
-                    // and a guest has no mute list to manage.
-                    if (widget.isAuthenticated)
-                      AppIconButton(
-                        icon: Icons.volume_off_outlined,
-                        tooltip: 'Muted',
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const MutedAuthorsScreen(),
-                            ),
-                          );
-                        },
-                      ),
+                    // // "My Profile" — Opinions/Reposts/Bookmarks now live as
+                    // // tabs on AnonymousProfileScreen rather than as separate
+                    // // icons here, so this is the one entry point to all
+                    // // three. get_my_author_handle resolves auth.uid() to the
+                    // // caller's own handle server-side — it takes no
+                    // // parameter, so it can only ever return the caller's own
+                    // // handle, never anyone else's (see the migration's own
+                    // // comment on why this does not weaken the
+                    // // handle-mapping's one-directional guarantee).
+                    // // Authenticated-only: an anonymous browsing user has no
+                    // // handle of their own to view.
+                    // if (widget.isAuthenticated)
+                    //   AppIconButton(
+                    //     icon: Icons.person_outline,
+                    //     tooltip: 'My Profile',
+                    //     onPressed: () async {
+                    //       final handle = await ref.read(
+                    //         myAuthorHandleProvider.future,
+                    //       );
+                    //       if (handle == null || !context.mounted) return;
+                    //       Navigator.push(
+                    //         context,
+                    //         MaterialPageRoute(
+                    //           builder:
+                    //               (_) => AnonymousProfileScreen(
+                    //                 authorHandle: handle,
+                    //               ),
+                    //         ),
+                    //       );
+                    //     },
+                    //   ),
+                    // Muted accounts now lives in Settings, alongside Block
+                    // (they're distinct systems — block is real-identity,
+                    // mute is anonymous-handle — but both belong under
+                    // account moderation, not in this feed's app bar).
+                    //
                     // Browse the fixed tag vocabulary (§8.11 "Tags"). Not
                     // gated on auth, unlike Saved/Reposted/Muted above:
                     // browsing tag results follows the same anonymous-browsing
@@ -264,14 +289,14 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
                     // requires phone-verified auth, and that happens in the
                     // composer, not here.
                     AppIconButton(
-                      icon: Icons.sell_outlined,
+                      icon: Icons.tag_sharp,
                       tooltip: 'Tags',
                       onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const TagSearchScreen(),
-                          ),
+                        BottomSheetUtils.showDocumentationBottomSheet(
+                          widget: TagSearchScreen(),
+
+                          backgroundColor: colorScheme.neutral,
+                          context: context,
                         );
                       },
                     ),

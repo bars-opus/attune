@@ -535,6 +535,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get blockedItemSubtitle => 'Accounts you have blocked';
 
   @override
+  String get mutedItemTitle => 'Muted Accounts';
+
+  @override
+  String get mutedItemSubtitle => 'Anonymous forum accounts you\'ve muted';
+
+  @override
   String get qrCodeItemTitle => 'Share QR Code';
 
   @override

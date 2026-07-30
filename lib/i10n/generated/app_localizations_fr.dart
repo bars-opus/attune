@@ -535,6 +535,13 @@ class AppLocalizationsFr extends AppLocalizations {
   String get blockedItemSubtitle => 'Comptes que vous avez bloqués';
 
   @override
+  String get mutedItemTitle => 'Comptes en sourdine';
+
+  @override
+  String get mutedItemSubtitle =>
+      'Comptes anonymes du forum que vous avez mis en sourdine';
+
+  @override
   String get qrCodeItemTitle => 'Partager le code QR';
 
   @override
