@@ -18,11 +18,14 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 ///   * ALIGNMENT is authorship — `post.isMine` puts the bubble right, everyone
 ///     else's left. This mirrors [MessageBubble] in the 1:1 chat feature
 ///     exactly, so the debate room reads like the group-chat thread it is.
-///   * SIDE (for/against) is a badge on the bubble, primary/green for FOR and
-///     error/red for AGAINST — the same token pair the rest of the forums
-///     feature uses (forum_card.dart, forum_card_subdetails.dart). Side no
-///     longer moves the bubble, so you can see your own AGAINST post sitting
-///     on the right next to someone else's AGAINST post on the left.
+///   * SIDE (for/against) is a badge dot on the bubble, primary for FOR and
+///     colorScheme.against for AGAINST — the same token pair the rest of the
+///     forums feature uses (forum_card.dart, forum_card_subdetails.dart).
+///     Side no longer moves the bubble, so you can see your own AGAINST post
+///     sitting on the right next to someone else's AGAINST post on the left.
+///     The bubble fill itself stays authorship-only (never side-tinted) —
+///     alignment already says "mine," so recoloring the fill by side too
+///     was a redundant, inconsistent second signal (see conversation).
 ///
 /// Deliberately does NOT borrow chat's read-receipt/status-chip machinery:
 /// forum posts have no delivery or read concept.
@@ -111,17 +114,19 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
     final sideColor =
         isForSide ? colorScheme.primary : colorScheme.against.withOpacity(.9);
 
-    // Bubble fill: your own bubble is tinted by YOUR side — primary for FOR,
-    // against for AGAINST (same sideColor the badge uses) — everyone else's
-    // stays the neutral colorScheme.onBackground, paired with
+    // Bubble fill: authorship only — your own bubble is colorScheme.primary,
+    // everyone else's is colorScheme.onBackground, paired with
     // colorScheme.background for the content painted on top of it, the same
     // content/fill pairing InfoRowWidget's comment avatar already uses
     // (iconColor: colorScheme.background against a colored backgroundColor).
-    final bubbleColor = isMine ? sideColor : colorScheme.onBackground;
+    // Side lives on the badge dot alone (sideColor, below) — alignment
+    // already says "mine," so tinting the fill by side too was a redundant,
+    // inconsistent second signal (only your own bubbles got it, not
+    // everyone else's) rather than a real reinforcement. See conversation:
+    // reverted after review.
+    final bubbleColor = isMine ? colorScheme.primary : colorScheme.onBackground;
     final onBubbleColor =
-        isMine
-            ? (isForSide ? colorScheme.onPrimary : colorScheme.onAgainst)
-            : colorScheme.background;
+        isMine ? colorScheme.onPrimary : colorScheme.background;
 
     final statusDisplay = statusDisplayFor(post.relationshipStatus);
     final statusIcon = statusIconFor(statusDisplay);
@@ -292,6 +297,17 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
                             decoration: BoxDecoration(
                               color: bubbleColor,
                               borderRadius: BorderRadius.circular(18),
+
+                              // Slight lift off the background. NOT
+                              // AppColors.shadow — that token is ~5% opacity
+                              // by design ("near-zero shadow — elevation via
+                              // color, not shadow", see app_colors.dart),
+                              // built for flat elevation contexts, not a
+                              // visible drop shadow — at that opacity no
+                              // blur/offset geometry makes it actually show
+                              // up. Black at a real, still-subtle opacity
+                              // instead, enough to read as a bubble rather
+                              // than a flat color block.
                             ),
                             child: Padding(
                               padding: EdgeInsets.symmetric(
@@ -433,7 +449,7 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
                                   child: Text(
                                     'Reply',
                                     style: textTheme.bodySmall?.copyWith(
-                                      color: sideColor,
+                                      color: colorScheme.primary,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
@@ -441,13 +457,7 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
                               ),
                             ],
                             Gap(Spacing.xs.w),
-                            if (!isMine)
-                              _SideBadge(
-                                isForSide: isForSide,
-                                sideColor: sideColor,
-                                onBubbleColor: onBubbleColor,
-                                isMine: isMine,
-                              ),
+                            _SideBadge(sideColor: sideColor),
                             SizedBox(
                               height: 24.h,
                               width: 24.w,
@@ -500,7 +510,7 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
                             avatarSize: 18,
                             overlap: 12,
                             maxAvatars: 3,
-                            accentColor: sideColor,
+                            accentColor: colorScheme.primary,
                             onTap: widget.onShowReplies!,
                           ),
                         ),
@@ -580,43 +590,25 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
   }
 }
 
-/// The FOR / AGAINST tag carried by every bubble — a small dot in the side's
-/// own color (sideColor: primary for FOR, against for AGAINST).
-///
-/// On someone else's bubble (neutral onBackground fill) that reads fine
-/// as-is: the dot's sideColor stands out against the neutral fill. On your
-/// own bubble the fill is ALSO sideColor (see ForumPostBubble.bubbleColor —
-/// isMine tints by side, not a fixed primary), where a dot in that same
-/// color would sit invisibly on a same-colored background — so there it
-/// swaps to onBubbleColor (the fill's contrast color) instead.
+/// The FOR / AGAINST tag carried by every bubble, mine included — a small
+/// dot in the side's own color (sideColor: primary for FOR, against for
+/// AGAINST). Bubble fill is authorship-only (ForumPostBubble.bubbleColor:
+/// primary if mine, onBackground otherwise), never side-tinted, so the dot
+/// always sits on a neutral-enough background and never needs a
+/// contrast-color swap.
 class _SideBadge extends StatelessWidget {
-  const _SideBadge({
-    required this.isForSide,
-    required this.sideColor,
-    required this.onBubbleColor,
-    required this.isMine,
-  });
+  const _SideBadge({required this.sideColor});
 
-  final bool isForSide;
   final Color sideColor;
-  final Color onBubbleColor;
-  final bool isMine;
 
   @override
   Widget build(BuildContext context) {
-    final foreground = isMine ? onBubbleColor : sideColor;
-
     return Semantics(
       excludeSemantics: true,
       child: Container(
         height: 10.h,
-
         width: 10.h,
-        decoration: BoxDecoration(
-          color: foreground,
-          shape: BoxShape.circle,
-          border: null,
-        ),
+        decoration: BoxDecoration(color: sideColor, shape: BoxShape.circle),
       ),
     );
   }

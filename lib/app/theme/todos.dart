@@ -1,0 +1,1 @@
+// lets chache the opinions and forums like the previous 5s, so since its just text ir would really take time, so when the apps reload we shows the caches insteantly before we load the new ones and then refresh the the feed. 

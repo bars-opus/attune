@@ -25,7 +25,7 @@ class IntroScreen extends ConsumerStatefulWidget {
 }
 
 class _IntroScreenState extends ConsumerState<IntroScreen> {
-  final PageController pageController = PageController();
+  // final PageController pageController = PageController();
   late ScrollController _scrollController;
 
   List<DocumentationModule> modules = [];
@@ -81,7 +81,6 @@ class _IntroScreenState extends ConsumerState<IntroScreen> {
 
   @override
   void dispose() {
-    pageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }

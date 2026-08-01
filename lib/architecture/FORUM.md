@@ -89,8 +89,9 @@ navigation and push notifications confirmed as already configured.
 
 - Editing (Section 7.x + Section 9 schema)
   Opinions, comments, and forum posts editable within 15 minutes of
-  posting. Same content validation as posting (280-char + keyword
-  filter). Shows "(edited)", no history. Independent of report state --
+  posting. Same content validation as posting (5000-char + keyword
+  filter — limit raised from 280 by later owner decision, see Section 9).
+  Shows "(edited)", no history. Independent of report state --
   an edit never resets report_count or hidden_pending_review.
 
 - Mute / hide (Section 7.x + Section 9 schema)
@@ -171,16 +172,30 @@ The only visible identity signals are:
 
 ```
 ┌─────────────────────────────────────┐
-│                                     │  ← name field is blank, nothing rendered
-│  Single                      2h ago │  ← relationship_status · time ago
+│  🟢 Single                   2h ago │  ← status icon + relationship_status · time ago
 │                                     │
 │  [post content here]                │
 └─────────────────────────────────────┘
 ```
 
-There is no name. There is no avatar. There is no username placeholder.
-The relationship status and time are the only identity signals.
+There is no name. There is no photo. There is no username placeholder.
 The name field is not rendered at all — it simply does not exist in the UI.
+
+**Owner decision (forum group-chat restructure):** the debate room's
+`ForumPostBubble` (`lib/features/forums/presentation/widgets/forum_post_bubble.dart`)
+carries a small `CircleAvatar` alongside each non-mine post, filled with a
+status-derived color and icon (via `statusIconFor`/`statusColorFor`). This is
+NOT a real avatar in the sense this section originally forbade — it encodes
+no photo, no identity, nothing beyond the same `relationship_status` value
+already shown as text next to it. It exists purely so the bubble reads as a
+message-thread participant marker (matching the 1:1 chat bubble convention
+this screen borrows), the same way the badge dot in the same bubble encodes
+FOR/AGAINST. The original "no avatar" rule stands for anything that could
+function as a persistent visual identity across posts (a generated
+image/icon unique per user, a color keyed to `user_id`, etc.) — that remains
+permanently forbidden. A status-icon glyph that any two posters with the
+same `relationship_status` render identically is not an identity signal and
+is allowed.
 
 ### Where relationship_status comes from
 
@@ -234,8 +249,9 @@ pulls from the user's profile location data.
 
 Text-only public feed. Works like Twitter/Threads with these rules:
 - Text only. No images. No video. No audio. No links previewed.
-- Maximum 280 characters per opinion post.
-- Comments allowed. Maximum 280 characters per comment.
+- Maximum 5000 characters per opinion post (owner decision, raised from the
+  original 280 — see the note on the canonical schema block in Section 9).
+- Comments allowed. Maximum 5000 characters per comment (same raise).
 - Likes and dislikes are the only reactions.
 - Fully anonymous — blank name, relationship status only.
 
@@ -281,16 +297,19 @@ Compose screen:
 │  │ What's on your mind?        │   │
 │  │                             │   │
 │  └─────────────────────────────┘   │
-│  280 characters remaining           │
+│  5000 characters remaining          │  ← owner decision, was 280
 │                             [Post]  │
 └─────────────────────────────────────┘
 
 Rules:
 - Text only — no media attachment option
-- Character count counts down from 280
+- Character count counts down from 5000 (owner decision, was 280)
 - [Post] disabled until at least 1 character entered
-- [Post] disabled if over 280 characters
-- Cannot edit after posting — only delete
+- [Post] disabled if over 5000 characters
+- Editable within 15 minutes of posting, then permanently fixed — see
+  Section 7 "Editing" (added after this section was originally written;
+  the "only delete" rule below has been superseded by that)
+- Deletable at any time by the owner (unchanged)
 - Confirmation before posting: "Post this?" [Cancel] [Post]
 - relationship_status_at_post captured at insert time from profile
 ```
@@ -312,7 +331,7 @@ Rules:
 Elements:
 - No name field rendered
 - Relationship status · time ago
-- Opinion text (full, no truncation under 280 chars)
+- Opinion text (full, no truncation under 5000 chars — owner decision, was 280)
 - 👍 like count (tappable)
 - 👎 dislike count (tappable)
 - 💬 comment count (tappable → opens comment thread)
@@ -363,7 +382,7 @@ Rules:
 - Reply taps pre-fill comment box but do NOT use @username
   (there are no usernames). Instead prefix with "> [first 40 chars
   of the post being replied to]" as a quote prefix.
-- Comment max 280 characters
+- Comment max 5000 characters (owner decision, was 280)
 - Comments can be liked and disliked
 - Comments cannot be edited, only deleted
 - relationship_status_at_post captured at insert time
@@ -582,84 +601,103 @@ Browse only:
 
 ### 5.6 Inside the forum — debate room
 
+**Owner decision (supersedes the original two-column layout below):**
+resolves the cross-side-reply `[NEEDS DECISION]` this section originally
+carried (see old Section 13 entry) as **Option B — YES, replies cross
+sides.** Implemented as `DebateRoomScreen` +
+`ForumPostBubble` (`lib/features/forums/presentation/screens/debate_room_screen.dart`,
+`lib/features/forums/presentation/widgets/forum_post_bubble.dart`).
+
 ```
-LAYOUT:
+LAYOUT (current):
 ┌─────────────────────────────────────┐
 │  ← Back                    [ⓘ] [⋯] │  ← ⓘ opens Forum Insight screen
-│  "Long distance relationships       │
-│   never really work"                │
-│  🟢 142 FOR · 🔴 89 AGAINST        │
-├──────────────────┬──────────────────┤
-│  FOR             │       AGAINST    │
-│  ──────────      │      ──────────  │
-│                  │                  │
-│  Single · 2h     │      Taken · 3h  │
-│                  │                  │
-│  I did it for 2  │  Time zones will │
-│  years and it    │  destroy you no  │
-│  absolutely      │  matter how      │
-│  works with      │  strong you are  │
-│  commitment      │                  │
-│                  │       👍 28      │
-│  👍 34           │    💬 Reply  ⋯   │
-│  💬 Reply  ⋯     │                  │
-│                  │                  │
-│  [more posts ↓]  │  [more posts ↓]  │
-├──────────────────┴──────────────────┤
-│  You are: FOR                       │
+│  Forum                              │
+│  231 contributions                  │  ← exact post count, not an estimate
+├─────────────────────────────────────┤
+│  [ForumCard: topic + poll, pinned   │  ← scrolls away with the feed, same
+│   at top of the list]               │    placement OpinionCard gets in
+│                                     │    CommentThreadScreen
+├─────────────────────────────────────┤
+│                                     │
+│  🟢 Single · 2h            ●FOR    │  ← someone else's post, left-aligned
+│  I did it for 2 years and it        │
+│  absolutely works with commitment   │
+│  👍 34  Reply  ⋯                    │
+│                                     │
+│           ●AGAINST   Taken · 3h 🟠  │  ← YOUR post, right-aligned
+│           Time zones will destroy   │
+│           you no matter how strong  │
+│           you are        👍 28  ⋯   │
+│                                     │
+│  [more posts ↓, single chrono list] │
+├─────────────────────────────────────┤
 │  ┌─────────────────────────────┐   │
 │  │ Add to the FOR argument...  │   │
 │  └─────────────────────────────┘   │
 │                           [Post]   │
 └─────────────────────────────────────┘
 
-Layout rules:
-- FOR on left column always
-- AGAINST on right column always
-- FOR posts are left-aligned text in left column
-- AGAINST posts are right-aligned text in right column
-- Both columns scroll independently
-- Pull either column to refresh both
-- Newest posts at BOTTOM (chronological, like chat)
-- Composer only visible if user picked a side
-- Browse-only users see both columns, no composer shown
-
-Post card — FOR side (left):
-┌────────────────────┐
-│ Single · 2h ago    │
-│                    │
-│ [post text]        │
-│                    │
-│ 👍 34  💬 Reply ⋯  │
-└────────────────────┘
-
-Post card — AGAINST side (right, right-aligned):
-        ┌────────────────────┐
-        │    Taken · 3h ago  │
-        │                    │
-        │        [post text] │
-        │                    │
-        │  ⋯ 💬 Reply  👍 28 │
-        └────────────────────┘
+Layout rules (current — replaces the two-column design):
+- ONE chronological feed, not two columns. Every post — FOR and AGAINST —
+  appears in the single order it was written, newest at the bottom, exactly
+  like a group chat thread.
+- ALIGNMENT is authorship, not side: `post.isMine` puts a bubble on the
+  right, everyone else's on the left. This mirrors the 1:1 chat
+  `MessageBubble` convention exactly.
+- SIDE (FOR/AGAINST) no longer determines column or alignment. It shows as:
+  - A small badge dot on every bubble (`colorScheme.primary` for FOR,
+    `colorScheme.against` for AGAINST).
+  - The bubble fill color, but ONLY for your own posts (`colorScheme.primary`
+    if mine, neutral `colorScheme.onBackground` otherwise) — this is
+    authorship-only tinting, not a second side signal; see the code comment
+    on `ForumPostBubble.bubbleColor` for the reasoning (alignment already
+    says "mine," so tinting the fill by side too would be redundant).
+- Because alignment is authorship, your own AGAINST post can sit on the
+  right, directly beside someone else's AGAINST post on the left — this is
+  the visual outcome of resolving cross-side replies as YES.
+- Replies stay inline in the main feed at their own chronological position
+  (never pulled out) — a real group chat doesn't hide a message just
+  because it was a reply. A stacked-avatar "N replies" row under a post
+  that has replies opens them in a bottom sheet as a shortcut, but the
+  canonical location of every reply is always its own position in the flat
+  feed.
+- Tapping a reply's quoted-text preview scrolls the main feed to its parent
+  post and briefly highlights it (WhatsApp-style "jump to replied
+  message"), rather than expanding anything in place.
+- Single scroll surface (not two independent columns). Sending a post, or
+  a reply, while scrolled up in history scrolls back to the bottom to show
+  what was just sent — same as WhatsApp/iMessage.
+- Composer only visible if user picked a side (unchanged from original).
+  Composer border/send-button color match the viewer's own side.
+- Browse-only users see the full feed, no composer shown (unchanged).
+- Swipe gestures: swipe past a threshold on a bubble fires Reply directly
+  (non-destructive, safe to fire on release); swipe-then-tap on your own
+  post's revealed pane opens Delete with a confirmation dialog; swipe-
+  then-tap on someone else's opens Report.
 
 Reactions inside forum:
-- 👍 like only (no dislike inside forums)
+- 👍 like only (no dislike inside forums) — unchanged.
   Reason: sides are already defined, dislikes would confuse the debate
 
 Reply mechanic:
-- Tap [Reply] → quotes first 60 chars of post inline as grey prefix
-  Example: "> Time zones will destroy you..."
-           [user types their response here]
-- Quote prefix is stored as reply_to_post_id on the post
-- Cannot reply across sides (FOR cannot reply to AGAINST, only post)
-  Wait — revisit: cross-side replies would make it a real debate.
-  DECISION NEEDED: See Open Questions Section 13.
+- Tap Reply, or swipe past threshold → quotes first 60 chars of post
+  inline as prefix, same mechanic as originally specified.
+- Quote prefix is stored as reply_to_post_id on the post — unchanged.
+- Cross-side replies ARE allowed (see Owner decision above) — a FOR post
+  can reply to an AGAINST post and vice versa. This is what makes it a real
+  debate rather than two parallel monologues.
 
 Post rules:
-- Max 280 characters
+- Max 5000 characters (see "Content length" under Section 7 — raised from
+  the original 280 across opinions, comments, and forum posts).
 - Text only
 - relationship_status_at_post captured at insert time
-- Side locked — you can only post on your chosen side
+- Side locked — you can only post on your chosen side (unchanged)
+- Deletable by the owner at any time (no time window, unlike the 15-minute
+  edit window) — soft-delete via `removed_at`, decrementing the topic's
+  `total_posts`/`for_posts`/`against_posts` counters. This is a newly added
+  capability — the original spec had no delete path for forum posts at all.
 ```
 
 ### 5.7 Forum lifecycle
@@ -857,8 +895,9 @@ reference to the opinion it quotes.
 
 ```
 SHAPE:
-- A quote goes through the SAME posting path as any opinion: 280-char
-  limit, Layer 1 keyword filter, the anti-spam limit/cooldown below,
+- A quote goes through the SAME posting path as any opinion: 5000-char
+  limit (raised from 280 by later owner decision, see Section 9), Layer 1
+  keyword filter, the anti-spam limit/cooldown below,
   the ban gate. It has its own like/comment/report counts and its own
   feed placement. Quoting adds no new moderated surface -- the quote
   text is an opinion's text, moderated exactly like one.
@@ -901,8 +940,9 @@ MODERATION:
 ```
 - 15-minute window from created_at, identical across all three content
   types -- one number, one rule.
-- Same validation as posting: 280-char limit, Layer 1 keyword filter.
-  Editing cannot bypass moderation that posting would have caught.
+- Same validation as posting: 5000-char limit (owner decision, raised from
+  280 -- see Section 9), Layer 1 keyword filter. Editing cannot bypass
+  moderation that posting would have caught.
 - Shows "(edited)" to readers. No edit history exposed.
 - Purely time-based -- existing reports / report_count /
   hidden_pending_review do not block editing and are not reset by it.
@@ -1068,12 +1108,22 @@ Admin dashboard (or Supabase direct) shows priority queue separately.
 -- Posts link directly to user_id from auth.
 -- relationship_status_at_post is denormalised from profiles
 -- at insert time for display performance.
+--
+-- Owner decision: the 280-char cap below on opinions/opinion_comments/
+-- forum_posts was raised to 5000 (migration
+-- 20260807120000_raise_content_length_to_5000.sql), across the table
+-- CHECK constraints and every posting/editing RPC. 280 read as a "tweet"
+-- limit that fought the actual use case -- these are often reflective,
+-- multi-paragraph posts about a relationship, not one-liners. This schema
+-- block is left showing 280 for historical/diff clarity against the
+-- original spec; treat 5000 as the current live limit everywhere content
+-- length is checked.
 
 -- Opinions
 CREATE TABLE opinions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid REFERENCES auth.users NOT NULL,
-  content text NOT NULL CHECK (char_length(content) <= 280),
+  content text NOT NULL CHECK (char_length(content) <= 280),  -- see note above: live limit is 5000
   relationship_status_at_post text CHECK (
     relationship_status_at_post IN (
       'single', 'taken', 'figuring_it_out', 'open'
@@ -1114,7 +1164,7 @@ CREATE TABLE opinion_comments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   opinion_id uuid REFERENCES opinions NOT NULL,
   user_id uuid REFERENCES auth.users NOT NULL,
-  content text NOT NULL CHECK (char_length(content) <= 280),
+  content text NOT NULL CHECK (char_length(content) <= 280),  -- see note above: live limit is 5000
   relationship_status_at_post text,
   quoted_text text,                        -- first 60 chars of replied-to post
   reply_to_comment_id uuid REFERENCES opinion_comments,
@@ -1257,7 +1307,7 @@ CREATE TABLE forum_posts (
   user_id uuid REFERENCES auth.users NOT NULL,
   side text CHECK (side IN ('for', 'against')) NOT NULL,
   -- browse-only users have no posts so no 'browse' value needed
-  content text NOT NULL CHECK (char_length(content) <= 280),
+  content text NOT NULL CHECK (char_length(content) <= 280),  -- see note above: live limit is 5000
   relationship_status_at_post text,
   reply_to_post_id uuid REFERENCES forum_posts,
   quoted_text text,                        -- first 60 chars of quoted post
@@ -1635,16 +1685,13 @@ NEEDS CONFIRMATION BEFORE PHASE 1:
 ## 13. OPEN QUESTIONS
 
 ```
-[NEEDS DECISION] Cross-side replies in forum debate room
+[RESOLVED] Cross-side replies in forum debate room
   Question: Can a FOR user reply directly to an AGAINST post?
-  Option A: NO — each side only posts on their own column.
-            Debate happens by reading the other side and responding
-            on your own side. More structured, cleaner layout.
-  Option B: YES — replies can cross sides and appear as a thread
-            connecting the two columns visually.
-            More dynamic debate, more complex UI.
-  Current spec says NO (Option A).
-  Confirm before Step 21.
+  Decision: Option B — YES. The debate room was restructured from two
+  independent-scrolling columns into a single chronological group-chat
+  feed (alignment = authorship via `post.isMine`, not side) specifically
+  to make cross-side replies possible. Full design recorded in
+  Section 5.6 above.
 
 [OPEN] Discover feed algorithm tuning
   Current ordering is rule-based (same status first, then
