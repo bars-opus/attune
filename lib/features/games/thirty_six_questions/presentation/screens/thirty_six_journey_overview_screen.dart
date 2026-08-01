@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import '../providers/thirty_six_question_providers.dart';
 import '../widgets/thirty_six_continuation_banner.dart';
-import 'thirty_six_chapter_introduction_screen.dart';
 
 class ThirtySixJourneyOverviewScreen extends ConsumerWidget {
   final String journeyId;
@@ -346,14 +345,11 @@ class ThirtySixJourneyOverviewScreen extends ConsumerWidget {
                   onPressed: () {
                     // Start chapter
                     if (chapter != null) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder:
-                              (_) => ThirtySixChapterIntroductionScreen(
-                                sessionId: chapter.sessionId,
-                                chapter: chapter.chapterNumber,
-                              ),
+                      context.pushNamed(
+                        'thirtySixChapterIntroduction',
+                        extra: (
+                          sessionId: chapter.sessionId,
+                          chapter: chapter.chapterNumber,
                         ),
                       );
                     }

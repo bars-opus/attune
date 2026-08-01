@@ -3,7 +3,6 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/healing/data/models/healing_journey.dart';
 import 'package:attune/features/healing/presentation/providers/healing_providers.dart';
-import 'package:attune/features/healing/presentation/screens/healing_stage_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class HealingJourneyScreen extends ConsumerWidget {
@@ -194,15 +193,9 @@ class HealingJourneyScreen extends ConsumerWidget {
                   AppButton(
                     label: 'Continue →',
                     onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder:
-                              (_) => HealingStageScreen(
-                                journey: journey,
-                                stage: journey.currentStage,
-                              ),
-                        ),
+                      context.pushNamed(
+                        'healingStage',
+                        extra: (journey: journey, stage: journey.currentStage),
                       );
                     },
                     size: ButtonSize.large,

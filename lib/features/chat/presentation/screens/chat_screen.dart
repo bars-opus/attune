@@ -12,8 +12,6 @@ import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/services/chat_image_preparer.dart';
 import 'package:attune/features/chat/presentation/providers/chat_experience_providers.dart';
-import 'package:attune/features/chat/presentation/screens/chat_insights_screen.dart';
-import 'package:attune/features/chat/presentation/screens/chat_import_screen.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/state/typing_controller.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
@@ -22,12 +20,12 @@ import 'package:attune/features/conflict_translator/data/models/translator_reque
 import 'package:attune/features/conflict_translator/presentation/providers/translator_providers.dart'
     as translator_providers;
 import 'package:attune/features/conflict_translator/presentation/screens/translator_sheet.dart';
-import 'package:attune/features/pulse/presentation/screens/pulse_screen.dart';
 import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/core/services/media/image_picker_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key, required this.conversation});
@@ -94,9 +92,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     unawaited(_persistDraft());
     ref
         .read(
-          typingControllerProvider(
-            widget.conversation.relationshipId,
-          ).notifier,
+          typingControllerProvider(widget.conversation.relationshipId).notifier,
         )
         .onComposingChanged(_controller.text.trim().isNotEmpty);
   }
@@ -143,9 +139,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
     ref
         .read(
-          typingControllerProvider(
-            widget.conversation.relationshipId,
-          ).notifier,
+          typingControllerProvider(widget.conversation.relationshipId).notifier,
         )
         .onSent();
     await _sendDraftText(text);
@@ -339,21 +333,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   Future<void> _openPulse() async {
     _syncViewActive();
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => const PulseScreen()));
+    await context.pushNamed('pulse');
     _syncViewActive();
   }
 
   Future<void> _openInsights() async {
     _syncViewActive();
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder:
-            (_) => ChatInsightsScreen(
-              relationshipId: widget.conversation.relationshipId,
-              partnerName: widget.conversation.name,
-            ),
+    await context.pushNamed(
+      'chatInsights',
+      extra: (
+        relationshipId: widget.conversation.relationshipId,
+        partnerName: widget.conversation.name,
       ),
     );
     _syncViewActive();
@@ -361,11 +351,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   Future<void> _openHistoricalImport() async {
     _syncViewActive();
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ChatImportScreen(conversation: widget.conversation),
-      ),
-    );
+    await context.pushNamed('chatImport', extra: widget.conversation);
     _syncViewActive();
   }
 
@@ -441,9 +427,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           ),
           Consumer(
             builder: (context, ref, _) {
-              final typing = ref
-                  .watch(typingControllerProvider(conversation.relationshipId))
-                  .partnerTyping;
+              final typing =
+                  ref
+                      .watch(
+                        typingControllerProvider(conversation.relationshipId),
+                      )
+                      .partnerTyping;
               if (!typing) return const SizedBox.shrink();
               return Padding(
                 key: const ValueKey('typing_indicator'),
@@ -960,7 +949,8 @@ class _MessageList extends ConsumerWidget {
           bool sameLocalDay(DateTime a, DateTime b) =>
               a.year == b.year && a.month == b.month && a.day == b.day;
           final isFirstOfDay =
-              older == null || !sameLocalDay(message.createdAt, older.createdAt);
+              older == null ||
+              !sameLocalDay(message.createdAt, older.createdAt);
           final isNew = message.createdAt.isAfter(firstBuildCutoff);
           // Play-once ledger: animate only the first time this message is ever
           // built on this screen. Without it, list recycling replays entry
@@ -977,9 +967,7 @@ class _MessageList extends ConsumerWidget {
                 message.isFailed
                     ? () => ref
                         .read(
-                          chatControllerProvider(
-                            state.conversation,
-                          ).notifier,
+                          chatControllerProvider(state.conversation).notifier,
                         )
                         .retryMessage(message)
                     : null,
@@ -987,9 +975,7 @@ class _MessageList extends ConsumerWidget {
                 message.isFailed
                     ? () => ref
                         .read(
-                          chatControllerProvider(
-                            state.conversation,
-                          ).notifier,
+                          chatControllerProvider(state.conversation).notifier,
                         )
                         .removeFailedMessage(message)
                     : null,
@@ -1007,11 +993,13 @@ class _MessageList extends ConsumerWidget {
           // position within the newest-first list. The index is clamped so a
           // large batch never produces an absurdly long settle. Cached
           // history (`isNew == false`) always uses the base duration.
-          final stepMs = expressive ? kCascadeStepExpressiveMs : kCascadeStepCalmMs;
-          final staggeredDuration = shouldAnimate
-              ? kSettleDuration +
-                  Duration(milliseconds: stepMs * index.clamp(0, 6))
-              : kSettleDuration;
+          final stepMs =
+              expressive ? kCascadeStepExpressiveMs : kCascadeStepCalmMs;
+          final staggeredDuration =
+              shouldAnimate
+                  ? kSettleDuration +
+                      Duration(milliseconds: stepMs * index.clamp(0, 6))
+                  : kSettleDuration;
 
           return SettleIn(
             key: ValueKey(message.clientMessageId),
@@ -1021,9 +1009,7 @@ class _MessageList extends ConsumerWidget {
             animate: shouldAnimate,
             duration: staggeredDuration,
             beginOffset:
-                message.isMine
-                    ? const Offset(0, 0.12)
-                    : const Offset(0, 0.10),
+                message.isMine ? const Offset(0, 0.12) : const Offset(0, 0.10),
             child: bubble,
           );
         },

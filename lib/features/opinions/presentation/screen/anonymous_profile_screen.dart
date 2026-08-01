@@ -7,7 +7,6 @@ import 'package:attune/core/widgets/shop_listview_loading_shimmer.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/providers/profile_providers.dart';
-import 'package:attune/features/opinions/presentation/screen/comment_thread_screen.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -61,10 +60,7 @@ class _AnonymousProfileScreenState extends ConsumerState<AnonymousProfileScreen>
   void _ensureTabController(bool isOwnProfile) {
     if (_tabControllerIsOwn == isOwnProfile) return;
     _tabController?.dispose();
-    _tabController = TabController(
-      length: isOwnProfile ? 3 : 2,
-      vsync: this,
-    );
+    _tabController = TabController(length: isOwnProfile ? 3 : 2, vsync: this);
     _tabControllerIsOwn = isOwnProfile;
   }
 
@@ -89,14 +85,15 @@ class _AnonymousProfileScreenState extends ConsumerState<AnonymousProfileScreen>
                 ),
                 sliver: SliverAppBar(
                   backgroundColor: colorScheme.neutral,
+                  automaticallyImplyLeading: true,
                   floating: true,
                   pinned: false,
                   snap: true,
-                  leading: IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  title: const Text('Profile', style: TextStyle(fontSize: 18)),
+                  // leading: IconButton(
+                  //   icon: const Icon(Icons.arrow_back),
+                  //   onPressed: () => Navigator.pop(context),
+                  // ),
+                  // title: const Text('Profile', style: TextStyle(fontSize: 18)),
                   bottom: PreferredSize(
                     // Header content + tab bar, both scroll away together —
                     // same collapsing-header shape as OpinionsTab.
@@ -171,7 +168,7 @@ class _AnonymousProfileScreenState extends ConsumerState<AnonymousProfileScreen>
     TextTheme textTheme,
   ) {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: Spacing.lg.w, vertical: Spacing.sm.h),
+      padding: EdgeInsets.symmetric(horizontal: Spacing.lg.w),
       child: SizedBox(
         height: (_headerContentHeight + _followButtonRowHeight).h,
         child: profileAsync.when(
@@ -186,7 +183,7 @@ class _AnonymousProfileScreenState extends ConsumerState<AnonymousProfileScreen>
                 // No avatar, no name — just status and follower count.
                 Text(
                   statusDisplay,
-                  style: textTheme.headlineSmall?.copyWith(
+                  style: textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w600,
                     color: colorScheme.primary,
                   ),
@@ -194,7 +191,7 @@ class _AnonymousProfileScreenState extends ConsumerState<AnonymousProfileScreen>
                 Gap(Spacing.xs.h),
                 Text(
                   '$count follower${count != 1 ? 's' : ''}',
-                  style: textTheme.bodyMedium?.copyWith(
+                  style: textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
@@ -207,31 +204,35 @@ class _AnonymousProfileScreenState extends ConsumerState<AnonymousProfileScreen>
                   maintainState: true,
                   maintainAnimation: true,
                   maintainSize: true,
-                  child: AppButton(
-                    label: profile.isFollowing ? 'Unfollow' : 'Follow',
-                    onPressed: () async {
-                      if (profile.isFollowing) {
-                        await ref.read(
-                          unfollowUserProvider(widget.authorHandle).future,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: Spacing.md),
+                    child: AppButton(
+                      elevation: 0,
+                      label: profile.isFollowing ? 'Unfollow' : 'Follow',
+                      onPressed: () async {
+                        if (profile.isFollowing) {
+                          await ref.read(
+                            unfollowUserProvider(widget.authorHandle).future,
+                          );
+                        } else {
+                          await ref.read(
+                            followUserProvider(widget.authorHandle).future,
+                          );
+                        }
+                        ref.invalidate(
+                          authorProfileProvider(widget.authorHandle),
                         );
-                      } else {
-                        await ref.read(
-                          followUserProvider(widget.authorHandle).future,
-                        );
-                      }
-                      ref.invalidate(
-                        authorProfileProvider(widget.authorHandle),
-                      );
-                    },
-                    size: ButtonSize.small,
-                    customColor:
-                        profile.isFollowing
-                            ? colorScheme.surfaceContainerHighest
-                            : colorScheme.primary,
-                    textColor:
-                        profile.isFollowing
-                            ? colorScheme.onSurface
-                            : colorScheme.onPrimary,
+                      },
+                      size: ButtonSize.small,
+                      customColor:
+                          profile.isFollowing
+                              ? colorScheme.surfaceContainerHighest
+                              : colorScheme.primary,
+                      textColor:
+                          profile.isFollowing
+                              ? colorScheme.onSurface
+                              : colorScheme.onPrimary,
+                    ),
                   ),
                 ),
               ],
@@ -241,16 +242,10 @@ class _AnonymousProfileScreenState extends ConsumerState<AnonymousProfileScreen>
       ),
     );
   }
-
 }
 
 void _openThread(BuildContext context, OpinionModel opinion) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => CommentThreadScreen(opinionId: opinion.id, opinion: opinion),
-    ),
-  );
+  context.pushNamed('commentThread', extra: opinion);
 }
 
 /// Common empty/loading/error/list rendering shared by all three tab bodies,

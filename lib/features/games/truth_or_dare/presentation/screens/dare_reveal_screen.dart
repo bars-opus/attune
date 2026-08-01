@@ -5,8 +5,6 @@ import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
-import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_or_dare_session_router_screen.dart';
-import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_reveal_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class DareRevealScreen extends ConsumerStatefulWidget {
@@ -133,25 +131,22 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
 
       // Navigate to Truth reveal with the new question
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder:
-                (_) => TruthRevealScreen(
-                  sessionId: widget.sessionId,
-                  roundId: widget.roundId,
-                  roundNumber: widget.roundNumber,
-                  totalRounds: widget.totalRounds,
-                  tone: widget.tone,
-                  isPartnerA: widget.isPartnerA,
-                  partnerName: widget.partnerName,
-                  questionText: questionData['question_text'],
-                  isCustom: questionData['is_custom'],
-                  customQuestionId:
-                      questionData['is_custom']
-                          ? questionData['question_id']
-                          : null,
-                ),
+        context.pushReplacementNamed(
+          'truthReveal',
+          extra: (
+            sessionId: widget.sessionId,
+            roundId: widget.roundId,
+            roundNumber: widget.roundNumber,
+            totalRounds: widget.totalRounds,
+            tone: widget.tone,
+            isPartnerA: widget.isPartnerA,
+            partnerName: widget.partnerName,
+            questionText: questionData['question_text'] as String,
+            isCustom: questionData['is_custom'] as bool,
+            customQuestionId:
+                questionData['is_custom'] as bool
+                    ? questionData['question_id'] as String?
+                    : null,
           ),
         );
       }
@@ -229,13 +224,9 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
       }
 
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder:
-                (_) =>
-                    TruthOrDareSessionRouterScreen(sessionId: widget.sessionId),
-          ),
+        context.pushReplacementNamed(
+          'truthOrDareSessionRouter',
+          extra: widget.sessionId,
         );
       }
     } catch (e) {

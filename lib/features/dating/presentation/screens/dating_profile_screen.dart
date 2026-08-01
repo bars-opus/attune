@@ -1,6 +1,5 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/dating/presentation/providers/dating_providers.dart';
-import 'package:attune/features/dating/presentation/screens/dating_dashboard_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class DatingProfileScreen extends ConsumerStatefulWidget {
@@ -106,11 +105,9 @@ class _DatingProfileScreenState extends ConsumerState<DatingProfileScreen> {
       await ref.read(activateDatingProfileProvider.future);
 
       if (mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const DatingDashboardScreen()),
-          (route) => route.isFirst,
-        );
+        // Clears the whole stack down to the dashboard — the GoRouter
+        // equivalent of the old pushAndRemoveUntil(isFirst).
+        context.goNamed('datingMode');
       }
     } catch (_) {
       if (mounted) {

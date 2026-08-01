@@ -6,9 +6,7 @@ import 'package:attune/features/games/truth_or_dare/presentation/screens/card_fl
 import 'package:attune/features/games/truth_or_dare/presentation/screens/dare_reveal_screen.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/screens/partner_watching_screen.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_or_dare_end_screen.dart';
-import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_or_dare_game_screen.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_or_dare_round_result_screen.dart';
-import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_or_dare_tone_selector_screen.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_reveal_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -30,9 +28,8 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
 
     return sessionAsync.when(
       loading:
-          () => const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          ),
+          () =>
+              const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (error, _) => Scaffold(body: Center(child: Text('Error: $error'))),
       data: (session) {
         if (session == null) {
@@ -77,12 +74,7 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
                           abandonTruthOrDareSessionProvider(session.id).future,
                         );
                         if (!context.mounted) return;
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const TruthOrDareGameScreen(),
-                          ),
-                        );
+                        context.pushReplacementNamed('truthOrDareGame');
                       },
                     );
                   }
@@ -144,13 +136,7 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
                             child: AppButton(
                               label: 'Back to games',
                               onPressed: () {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder:
-                                        (_) => const TruthOrDareGameScreen(),
-                                  ),
-                                );
+                                context.pushReplacementNamed('truthOrDareGame');
                               },
                             ),
                           ),
@@ -242,7 +228,8 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
             )
             .length;
 
-    if (session.status == 'completed' || session.currentRound > session.totalRounds) {
+    if (session.status == 'completed' ||
+        session.currentRound > session.totalRounds) {
       return TruthOrDareEndScreen(
         userTruths: isPartnerA ? truthsForA : truthsForB,
         userDares: isPartnerA ? daresForA : daresForB,
@@ -250,18 +237,10 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
         partnerDares: isPartnerA ? daresForB : daresForA,
         mostInterestingPick: _buildMostInterestingPick(rounds),
         onPlayAgain: () {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => const TruthOrDareToneSelectorScreen(),
-            ),
-          );
+          context.pushReplacementNamed('truthOrDareToneSelector');
         },
         onTryAnotherGame: () {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const TruthOrDareGameScreen()),
-          );
+          context.pushReplacementNamed('truthOrDareGame');
         },
       );
     }
@@ -389,12 +368,16 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
     return session.currentRound.isOdd ? session.initiatorId : otherUserId;
   }
 
-  Map<String, dynamic> _buildMostInterestingPick(List<TruthOrDareRound> rounds) {
+  Map<String, dynamic> _buildMostInterestingPick(
+    List<TruthOrDareRound> rounds,
+  ) {
     final truthRounds =
         rounds.where((round) {
           if (round.questionType != 'truth') return false;
           final answer = _roundAnswer(round);
-          return answer != null && answer.isNotEmpty && answer != '__revealed__';
+          return answer != null &&
+              answer.isNotEmpty &&
+              answer != '__revealed__';
         }).toList();
 
     if (truthRounds.isNotEmpty) {
@@ -419,14 +402,17 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
       }
     }
 
-    return rounds.isEmpty ? <String, dynamic>{} : {'text': rounds.first.questionText};
+    return rounds.isEmpty
+        ? <String, dynamic>{}
+        : {'text': rounds.first.questionText};
   }
 
   String? _roundAnswer(TruthOrDareRound round) {
-    final answers = [round.answerA, round.answerB]
-        .whereType<String>()
-        .where((value) => value.isNotEmpty && value != '__revealed__')
-        .toList();
+    final answers =
+        [round.answerA, round.answerB]
+            .whereType<String>()
+            .where((value) => value.isNotEmpty && value != '__revealed__')
+            .toList();
     return answers.isEmpty ? null : answers.first;
   }
 }

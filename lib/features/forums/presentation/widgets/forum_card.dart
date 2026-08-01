@@ -3,12 +3,9 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/utils/relative_time.dart';
 import 'package:attune/features/forums/data/models/topic_model.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
-import 'package:attune/features/forums/presentation/screens/debate_room_screen.dart';
 import 'package:attune/core/widgets/tag_chip_row.dart';
-import 'package:attune/features/forums/presentation/screens/side_selection_screen.dart';
 import 'package:attune/features/forums/presentation/widgets/forum_card_subdetails.dart';
 import 'package:attune/features/forums/presentation/widgets/mini_container_indicator.dart';
-import 'package:attune/features/opinions/presentation/screen/tag_browse_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class ForumCard extends ConsumerWidget {
@@ -100,40 +97,29 @@ class ForumCard extends ConsumerWidget {
                     'This forum is archived and read-only.',
                   );
                 } else if (!isAuthenticated) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder:
-                          (_) => DebateRoomScreen(
-                            topicId: forum.id,
-                            topicTitle: forum.content,
-                            userSide: 'browse',
-                            initialTopic: forum,
-                          ),
+                  context.pushNamed(
+                    'debateRoom',
+                    extra: (
+                      topicId: forum.id,
+                      topicTitle: forum.content,
+                      userSide: 'browse',
+                      initialTopic: forum,
                     ),
                   );
                 } else if (userSide != null && userSide != 'Browsing') {
                   // User already has a side
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder:
-                          (_) => DebateRoomScreen(
-                            topicId: forum.id,
-                            topicTitle: forum.content,
-                            userSide: userSide!.toLowerCase(),
-                            initialTopic: forum,
-                          ),
+                  context.pushNamed(
+                    'debateRoom',
+                    extra: (
+                      topicId: forum.id,
+                      topicTitle: forum.content,
+                      userSide: userSide!.toLowerCase(),
+                      initialTopic: forum,
                     ),
                   );
                 } else {
                   // User needs to pick a side
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => SideSelectionScreen(topic: forum),
-                    ),
-                  );
+                  context.pushNamed('sideSelection', extra: forum);
                 }
               },
       child: Padding(
@@ -154,27 +140,30 @@ class ForumCard extends ConsumerWidget {
             // topic is untagged (most are), so no gap is reserved.
             TagChipRow(
               tags: forum.tags,
-              onTagTap:
-                  (slug) => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => TagBrowseScreen(tagSlug: slug),
-                    ),
-                  ),
+              onTagTap: (slug) => context.pushNamed('tagBrowse', extra: slug),
             ),
             Gap(Spacing.md.h),
 
             Row(
               children: [
-                Expanded(
-                  child: ForumCardSubDetails(
-                    forPeople: forum.forPeople.toString(),
-                    againstPeople: forum.againstPeople.toString(),
-                    contributors:
-                        '${forum.totalPosts > 0 ? (forum.totalPosts / 2).ceil() : 0}',
-                    userSide: userSide,
-                  ),
-                ),
+                // Hidden when this card is the one pinned inside
+                // DebateRoomScreen (disableNavigation == true) — the debate
+                // room already shows FOR/AGAINST via every bubble's badge
+                // dot and the composer's side tint, so repeating the same
+                // counts here would just be noise above a feed that's
+                // already showing the live breakdown post by post.
+                if (!disableNavigation)
+                  Expanded(
+                    child: ForumCardSubDetails(
+                      forPeople: forum.forPeople.toString(),
+                      againstPeople: forum.againstPeople.toString(),
+                      contributors:
+                          '${forum.totalPosts > 0 ? (forum.totalPosts / 2).ceil() : 0}',
+                      userSide: userSide,
+                    ),
+                  )
+                else
+                  const Spacer(),
                 Gap(Spacing.md.w),
                 Text(
                   timeAgo,

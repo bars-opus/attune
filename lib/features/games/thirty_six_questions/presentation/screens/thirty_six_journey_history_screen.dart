@@ -5,7 +5,6 @@ import 'package:attune/features/games/thirty_six_questions/presentation/provider
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
-import 'thirty_six_chapter_history_screen.dart';
 
 class ThirtySixJourneyHistoryScreen extends ConsumerWidget {
   const ThirtySixJourneyHistoryScreen({super.key});
@@ -244,17 +243,11 @@ class ThirtySixJourneyHistoryScreen extends ConsumerWidget {
                                   ? TextButton(
                                     onPressed: () {
                                       Navigator.pop(context);
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder:
-                                              (_) =>
-                                                  ThirtySixChapterHistoryScreen(
-                                                    sessionId:
-                                                        chapter.sessionId,
-                                                    chapter:
-                                                        chapter.chapterNumber,
-                                                  ),
+                                      context.pushNamed(
+                                        'thirtySixChapterHistory',
+                                        extra: (
+                                          sessionId: chapter.sessionId,
+                                          chapter: chapter.chapterNumber,
                                         ),
                                       );
                                     },

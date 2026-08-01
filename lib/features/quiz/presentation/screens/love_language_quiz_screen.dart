@@ -5,21 +5,22 @@ import 'dart:convert';
 import 'package:attune/features/quiz/data/love_language_questions.dart';
 import 'package:attune/features/quiz/domain/models/question_data.dart';
 import 'package:attune/features/quiz/domain/services/love_language_scoring_service.dart';
-import 'package:attune/features/quiz/presentation/screens/love_language_loading_screen.dart';
 import 'package:attune/features/quiz/presentation/widgets/question_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'love_language_result_screen.dart';
 
 class LoveLanguageQuizScreen extends ConsumerStatefulWidget {
   const LoveLanguageQuizScreen({super.key});
 
   @override
-  ConsumerState<LoveLanguageQuizScreen> createState() => _LoveLanguageQuizScreenState();
+  ConsumerState<LoveLanguageQuizScreen> createState() =>
+      _LoveLanguageQuizScreenState();
 }
 
-class _LoveLanguageQuizScreenState extends ConsumerState<LoveLanguageQuizScreen> {
+class _LoveLanguageQuizScreenState
+    extends ConsumerState<LoveLanguageQuizScreen> {
   late PageController _pageController;
   Map<int, int?> _answers = {};
   int _currentScreen = 0;
@@ -87,29 +88,30 @@ class _LoveLanguageQuizScreenState extends ConsumerState<LoveLanguageQuizScreen>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Continue where you left off?'),
-        content: const Text('You have a love language quiz in progress.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _startFresh();
-            },
-            child: const Text('Start over'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Continue where you left off?'),
+            content: const Text('You have a love language quiz in progress.'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _startFresh();
+                },
+                child: const Text('Start over'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _resumeQuiz(savedAnswers, savedScreen);
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.primary,
+                ),
+                child: const Text('Continue'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _resumeQuiz(savedAnswers, savedScreen);
-            },
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.primary,
-            ),
-            child: const Text('Continue'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -187,24 +189,27 @@ class _LoveLanguageQuizScreenState extends ConsumerState<LoveLanguageQuizScreen>
   void _showExitConfirmation() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Exit quiz?'),
-        content: const Text('Your progress will be saved. You can continue later.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Exit quiz?'),
+            content: const Text(
+              'Your progress will be saved. You can continue later.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  _saveProgress();
+                  Navigator.pop(context);
+                  Navigator.pop(context);
+                },
+                child: const Text('Exit'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () {
-              _saveProgress();
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text('Exit'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -212,7 +217,9 @@ class _LoveLanguageQuizScreenState extends ConsumerState<LoveLanguageQuizScreen>
     final totalQuestions = _screens.length * _questionsPerScreen;
     if (_answers.length != totalQuestions) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please answer all questions before submitting.')),
+        const SnackBar(
+          content: Text('Please answer all questions before submitting.'),
+        ),
       );
       return;
     }
@@ -227,21 +234,14 @@ class _LoveLanguageQuizScreenState extends ConsumerState<LoveLanguageQuizScreen>
     final result = LoveLanguageScoringService.calculateScore(_answers);
 
     // Navigate to loading screen
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LoveLanguageLoadingScreen(
-          result: result,
-          answers: Map.from(_answers),
-          onComplete: () {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) => LoveLanguageResultScreen(result: result),
-              ),
-            );
-          },
-        ),
+    context.pushNamed(
+      'loveLanguageLoading',
+      extra: (
+        result: result,
+        answers: Map<int, int?>.from(_answers),
+        onComplete: () {
+          context.pushReplacementNamed('loveLanguageResult', extra: result);
+        },
       ),
     );
   }

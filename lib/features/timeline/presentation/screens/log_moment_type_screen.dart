@@ -1,7 +1,6 @@
 // lib/features/timeline/presentation/screens/log_moment_type_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'log_moment_details_screen.dart';
 
 class LogMomentTypeScreen extends StatelessWidget {
   const LogMomentTypeScreen({super.key});
@@ -87,11 +86,9 @@ class LogMomentTypeScreen extends StatelessWidget {
   }) {
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => LogMomentDetailsScreen(eventType: type),
-          ),
+        context.pushNamed(
+          'logMomentDetails',
+          extra: (eventType: type, editEventId: null, initialData: null),
         );
       },
       child: Container(

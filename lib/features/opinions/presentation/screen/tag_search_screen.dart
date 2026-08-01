@@ -4,7 +4,6 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/bottom_sheet_header.dart';
 import 'package:attune/core/widgets/search_text_field.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
-import 'package:attune/features/opinions/presentation/screen/tag_browse_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Browse/search the fixed tag vocabulary, landing on the same filtered feed a
@@ -96,18 +95,12 @@ class _TagSearchScreenState extends ConsumerState<TagSearchScreen> {
                         icon: Icons.tag,
                         avatarRadius: 25.h,
                         onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => TagBrowseScreen(tagSlug: slug),
-                            ),
-                          );
+                          context.pushNamed('tagBrowse', extra: slug);
                         },
                         disableTrailing: true,
                         showAvatar: false,
                         showTrailingArrow: false,
                       );
-                     
                     },
                   );
                 },

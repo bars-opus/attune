@@ -4,7 +4,6 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/forums/data/models/topic_model.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
-import 'package:attune/features/forums/presentation/screens/debate_room_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -37,16 +36,13 @@ class _SideSelectionScreenState extends ConsumerState<SideSelectionScreen> {
       );
 
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder:
-                (_) => DebateRoomScreen(
-                  topicId: widget.topic.id,
-                  topicTitle: widget.topic.content,
-                  userSide: _selectedSide!,
-                  initialTopic: widget.topic,
-                ),
+        context.pushReplacementNamed(
+          'debateRoom',
+          extra: (
+            topicId: widget.topic.id,
+            topicTitle: widget.topic.content,
+            userSide: _selectedSide!,
+            initialTopic: widget.topic,
           ),
         );
       }
@@ -150,16 +146,13 @@ class _SideSelectionScreenState extends ConsumerState<SideSelectionScreen> {
             Center(
               child: TextButton(
                 onPressed: () {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder:
-                          (_) => DebateRoomScreen(
-                            topicId: widget.topic.id,
-                            topicTitle: widget.topic.content,
-                            userSide: 'browse',
-                            initialTopic: widget.topic,
-                          ),
+                  context.pushReplacementNamed(
+                    'debateRoom',
+                    extra: (
+                      topicId: widget.topic.id,
+                      topicTitle: widget.topic.content,
+                      userSide: 'browse',
+                      initialTopic: widget.topic,
                     ),
                   );
                 },

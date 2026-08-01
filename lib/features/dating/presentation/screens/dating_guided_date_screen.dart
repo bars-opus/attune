@@ -1,7 +1,6 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/dating/presentation/providers/dating_providers.dart';
 import 'package:attune/features/safety/domain/services/quick_exit_service.dart';
-import 'package:attune/features/safety/presentation/screens/safety_resources_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class DatingGuidedDateScreen extends ConsumerStatefulWidget {
@@ -85,7 +84,7 @@ class _DatingGuidedDateScreenState
             icon: const Icon(Icons.shield_outlined),
             tooltip: 'Safety resources',
             onPressed: () {
-              Navigator.pushNamed(context, SafetyResourcesScreen.routeName);
+              context.pushNamed('safetyResources');
             },
           ),
         ],
@@ -189,10 +188,7 @@ class _DatingGuidedDateScreenState
                         child: AppButton(
                           label: 'Safety resources',
                           onPressed: () {
-                            Navigator.pushNamed(
-                              context,
-                              SafetyResourcesScreen.routeName,
-                            );
+                            context.pushNamed('safetyResources');
                           },
                           size: ButtonSize.small,
                           customColor: colorScheme.surfaceContainerHighest,

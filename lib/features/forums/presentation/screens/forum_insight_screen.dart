@@ -4,6 +4,8 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/polls/data/models/poll_model.dart';
 import 'package:attune/core/polls/presentation/providers/poll_providers.dart';
+import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/features/forums/data/models/forum_post_model.dart';
 import 'package:attune/features/forums/data/models/topic_model.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
@@ -48,7 +50,14 @@ class ForumInsightScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Forum insights', style: TextStyle(fontSize: 18)),
+        backgroundColor: Colors.transparent,
+        title: Text(
+          'Forum insights',
+          style: textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface.withValues(alpha: 0.8),
+          ),
+        ),
       ),
       body: topicAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -56,18 +65,10 @@ class ForumInsightScreen extends ConsumerWidget {
         data: (topic) {
           if (topic == null) {
             return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.error_outline, size: 64, color: colorScheme.error),
-                  Gap(Spacing.md.h),
-                  Text('Forum not found', style: textTheme.titleMedium),
-                  Gap(Spacing.sm.h),
-                  Text(
-                    'This forum may have been removed or archived.',
-                    style: textTheme.bodyMedium,
-                  ),
-                ],
+              child: EmptyStateWidget(
+                title: 'Forum not found',
+                icon: Icons.bar_chart,
+                subtitle: 'This forum may have been removed or archived.',
               ),
             );
           }
@@ -85,6 +86,7 @@ class ForumInsightScreen extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      AppDivider(),
                       _buildQuickFacts(context, topic),
                       Gap(Spacing.xl.h),
                       _SideSplitCard(topic: topic),
@@ -98,11 +100,8 @@ class ForumInsightScreen extends ConsumerWidget {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Gap(Spacing.lg.h),
                               _ActivityOverTimeCard(posts: posts),
-                              Gap(Spacing.lg.h),
                               _EngagementBySideCard(posts: posts),
-                              Gap(Spacing.lg.h),
                               _ThreadShapeCard(posts: posts),
                             ],
                           );
@@ -168,26 +167,22 @@ class ForumInsightScreen extends ConsumerWidget {
     final textTheme = Theme.of(context).textTheme;
     final daysOld = DateTime.now().difference(topic.createdAt).inDays;
 
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _buildInsightRow(
-            'Started',
-            '${_formatDate(topic.createdAt)} · $daysOld d ago',
-            Icons.calendar_today,
-            colorScheme,
-            textTheme,
-          ),
+        _buildInsightRow(
+          'Started',
+          '${_formatDate(topic.createdAt)} · $daysOld d ago',
+          Icons.calendar_today,
+          colorScheme,
+          textTheme,
         ),
         if (topic.lastPostAt != null)
-          Expanded(
-            child: _buildInsightRow(
-              'Last activity',
-              _formatTimeAgo(topic.lastPostAt!),
-              Icons.access_time,
-              colorScheme,
-              textTheme,
-            ),
+          _buildInsightRow(
+            'Last activity',
+            _formatTimeAgo(topic.lastPostAt!),
+            Icons.access_time,
+            colorScheme,
+            textTheme,
           ),
       ],
     );
@@ -200,34 +195,15 @@ class ForumInsightScreen extends ConsumerWidget {
     ColorScheme colorScheme,
     TextTheme textTheme,
   ) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 20, color: colorScheme.primary),
-        Gap(Spacing.md.w),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Gap(Spacing.xs.h),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: colorScheme.onSurface.withOpacity(0.8),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+    return InfoRowWidget(
+      subtitle: label,
+      title: value,
+      icon: icon,
+      iconSize: 18.h,
+      onTap: () {},
+      disableTrailing: true,
+      showAvatar: false,
+      showTrailingArrow: false,
     );
   }
 
@@ -283,30 +259,30 @@ class _ChartCard extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(Spacing.md.w),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          Gap(Spacing.xs.h),
-          Text(
-            subtitle,
-            style: textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurface.withOpacity(0.6),
+    return CardInkWell(
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: textTheme.titleSmall?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
-          Gap(Spacing.md.h),
-          chart,
-        ],
+            Gap(Spacing.xs.h),
+            Text(
+              subtitle,
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurface.withOpacity(0.6),
+              ),
+            ),
+            Gap(Spacing.md.h),
+            chart,
+          ],
+        ),
       ),
     );
   }
@@ -414,6 +390,8 @@ class _LegendRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Row(
       children: [
         Container(
@@ -424,10 +402,16 @@ class _LegendRow extends StatelessWidget {
         Gap(Spacing.sm.w),
         Text(
           label,
-          style: textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+          style: textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: colorScheme.onSurface,
+          ),
         ),
         Gap(Spacing.xs.w),
-        Text(value, style: textTheme.bodySmall),
+        Text(
+          value,
+          style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurface),
+        ),
       ],
     );
   }

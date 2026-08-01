@@ -2,7 +2,6 @@
 
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_custom_providers.dart';
-import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_custom_create_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_custom_card.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -48,11 +47,8 @@ class _ThisOrThatCustomListScreenState
         floatingActionButton: AppFab(
           icon: Icons.add,
           onPressed: () async {
-            final needsRefresh = await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const ThisOrThatCustomCreateScreen(),
-              ),
+            final needsRefresh = await context.pushNamed(
+              'thisOrThatCustomCreate',
             );
             if (needsRefresh == true) {
               ref.invalidate(myThisOrThatCustomQuestionsProvider);
@@ -92,14 +88,13 @@ class _ThisOrThatCustomListScreenState
                         AppButton(
                           label: 'Create your first question',
                           onPressed: () async {
-                            final needsRefresh = await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const ThisOrThatCustomCreateScreen(),
-                              ),
+                            final needsRefresh = await context.pushNamed(
+                              'thisOrThatCustomCreate',
                             );
                             if (needsRefresh == true) {
-                              ref.invalidate(myThisOrThatCustomQuestionsProvider);
+                              ref.invalidate(
+                                myThisOrThatCustomQuestionsProvider,
+                              );
                             }
                           },
                         ),
@@ -121,11 +116,15 @@ class _ThisOrThatCustomListScreenState
                       },
                       onPrivacyChanged: () {
                         ref.invalidate(myThisOrThatCustomQuestionsProvider);
-                        ref.invalidate(partnerThisOrThatCustomQuestionsProvider);
+                        ref.invalidate(
+                          partnerThisOrThatCustomQuestionsProvider,
+                        );
                       },
                       onSharedChanged: () {
                         ref.invalidate(myThisOrThatCustomQuestionsProvider);
-                        ref.invalidate(partnerThisOrThatCustomQuestionsProvider);
+                        ref.invalidate(
+                          partnerThisOrThatCustomQuestionsProvider,
+                        );
                       },
                     );
                   },
@@ -133,57 +132,64 @@ class _ThisOrThatCustomListScreenState
               },
             ),
             // Partner's questions tab
-            ref.watch(partnerThisOrThatCustomQuestionsProvider).when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, stack) => Center(child: Text('Error: $error')),
-              data: (questions) {
-                if (questions.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.person_outline,
-                          size: 64,
-                          color: Colors.grey,
+            ref
+                .watch(partnerThisOrThatCustomQuestionsProvider)
+                .when(
+                  loading:
+                      () => const Center(child: CircularProgressIndicator()),
+                  error: (error, stack) => Center(child: Text('Error: $error')),
+                  data: (questions) {
+                    if (questions.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.person_outline,
+                              size: 64,
+                              color: Colors.grey,
+                            ),
+                            Gap(Spacing.md.h),
+                            Text(
+                              'No shared questions yet',
+                              style: textTheme.titleMedium,
+                            ),
+                            Gap(Spacing.sm.h),
+                            Text(
+                              "$partnerName hasn't shared any custom questions yet.",
+                              textAlign: TextAlign.center,
+                              style: textTheme.bodyMedium,
+                            ),
+                          ],
                         ),
-                        Gap(Spacing.md.h),
-                        Text(
-                          'No shared questions yet',
-                          style: textTheme.titleMedium,
-                        ),
-                        Gap(Spacing.sm.h),
-                        Text(
-                          "$partnerName hasn't shared any custom questions yet.",
-                          textAlign: TextAlign.center,
-                          style: textTheme.bodyMedium,
-                        ),
-                      ],
-                    ),
-                  );
-                }
+                      );
+                    }
 
-                return ListView.builder(
-                  padding: EdgeInsets.all(Spacing.md.w),
-                  itemCount: questions.length,
-                  itemBuilder: (context, index) {
-                    final question = questions[index];
-                    return ThisOrThatCustomCard(
-                      question: question,
-                      isOwnQuestion: false,
-                      onReported: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Thank you for reporting. We will review it.'),
-                          ),
+                    return ListView.builder(
+                      padding: EdgeInsets.all(Spacing.md.w),
+                      itemCount: questions.length,
+                      itemBuilder: (context, index) {
+                        final question = questions[index];
+                        return ThisOrThatCustomCard(
+                          question: question,
+                          isOwnQuestion: false,
+                          onReported: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Thank you for reporting. We will review it.',
+                                ),
+                              ),
+                            );
+                            ref.invalidate(
+                              partnerThisOrThatCustomQuestionsProvider,
+                            );
+                          },
                         );
-                        ref.invalidate(partnerThisOrThatCustomQuestionsProvider);
                       },
                     );
                   },
-                );
-              },
-            ),
+                ),
           ],
         ),
       ),

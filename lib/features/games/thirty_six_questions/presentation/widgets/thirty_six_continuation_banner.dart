@@ -5,7 +5,6 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/buttons/app_button.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/providers/thirty_six_question_providers.dart'
     show inviteToChapterProvider, partnerNameProvider;
-import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_invitation_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -101,15 +100,12 @@ class ThirtySixContinuationBanner extends ConsumerWidget {
       );
 
       if (context.mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder:
-                (_) => ThirtySixChapterInvitationScreen(
-                  sessionId: chapter.sessionId,
-                  chapter: chapter.chapterNumber,
-                  isInitiator: true,
-                ),
+        context.pushNamed(
+          'thirtySixChapterInvitation',
+          extra: (
+            sessionId: chapter.sessionId,
+            chapter: chapter.chapterNumber,
+            isInitiator: true,
           ),
         );
       }

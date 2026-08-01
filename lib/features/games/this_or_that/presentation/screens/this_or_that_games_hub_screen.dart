@@ -1,9 +1,5 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
-import 'package:attune/features/games/this_or_that/presentation/screens/custom_question_list_screen.dart';
-import 'package:attune/features/games/this_or_that/presentation/screens/session_history_screen.dart';
-import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_session_router_screen.dart';
-import 'package:attune/features/games/this_or_that/presentation/screens/tone_selector_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class ThisOrThatGamesHubScreen extends ConsumerWidget {
@@ -70,14 +66,9 @@ class ThisOrThatGamesHubScreen extends ConsumerWidget {
                     child: AppButton(
                       label: actionLabel,
                       onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder:
-                                (_) => ThisOrThatSessionRouterScreen(
-                                  sessionId: session.id,
-                                ),
-                          ),
+                        context.pushNamed(
+                          'thisOrThatSessionRouter',
+                          extra: session.id,
                         );
                       },
                     ),
@@ -89,10 +80,7 @@ class ThisOrThatGamesHubScreen extends ConsumerWidget {
             AppButton(
               label: 'Play',
               onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ToneSelectorScreen()),
-                );
+                context.pushNamed('thisOrThatToneSelector');
               },
               width: double.infinity,
               size: ButtonSize.large,
@@ -104,12 +92,7 @@ class ThisOrThatGamesHubScreen extends ConsumerWidget {
                   child: AppButton(
                     label: 'Custom questions',
                     onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const CustomQuestionListScreen(),
-                        ),
-                      );
+                      context.pushNamed('customQuestionList');
                     },
                     customColor: colorScheme.surfaceContainerHighest,
                     textColor: colorScheme.onSurface,
@@ -120,12 +103,7 @@ class ThisOrThatGamesHubScreen extends ConsumerWidget {
                   child: AppButton(
                     label: 'History',
                     onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const SessionHistoryScreen(),
-                        ),
-                      );
+                      context.pushNamed('thisOrThatSessionHistory');
                     },
                     customColor: colorScheme.surfaceContainerHighest,
                     textColor: colorScheme.onSurface,

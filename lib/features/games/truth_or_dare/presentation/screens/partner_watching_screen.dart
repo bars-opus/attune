@@ -4,7 +4,6 @@ import 'dart:async';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'truth_or_dare_session_router_screen.dart';
 
 class PartnerWatchingScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -33,7 +32,8 @@ class PartnerWatchingScreen extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<PartnerWatchingScreen> createState() => _PartnerWatchingScreenState();
+  ConsumerState<PartnerWatchingScreen> createState() =>
+      _PartnerWatchingScreenState();
 }
 
 class _PartnerWatchingScreenState extends ConsumerState<PartnerWatchingScreen> {
@@ -74,12 +74,9 @@ class _PartnerWatchingScreenState extends ConsumerState<PartnerWatchingScreen> {
   }
 
   void _navigateToSessionRouter() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder:
-            (_) => TruthOrDareSessionRouterScreen(sessionId: widget.sessionId),
-      ),
+    context.pushReplacementNamed(
+      'truthOrDareSessionRouter',
+      extra: widget.sessionId,
     );
   }
 
@@ -93,7 +90,9 @@ class _PartnerWatchingScreenState extends ConsumerState<PartnerWatchingScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Truth or Dare • Round ${widget.roundNumber}/${widget.totalRounds}'),
+        title: Text(
+          'Truth or Dare • Round ${widget.roundNumber}/${widget.totalRounds}',
+        ),
         centerTitle: true,
       ),
       body: Padding(
@@ -108,11 +107,15 @@ class _PartnerWatchingScreenState extends ConsumerState<PartnerWatchingScreen> {
             Gap(Spacing.md.h),
             // Type badge
             Container(
-              padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w, vertical: Spacing.xs.h),
+              padding: EdgeInsets.symmetric(
+                horizontal: Spacing.sm.w,
+                vertical: Spacing.xs.h,
+              ),
               decoration: BoxDecoration(
-                color: widget.questionType == 'truth'
-                    ? Colors.green.withOpacity(0.1)
-                    : Colors.orange.withOpacity(0.1),
+                color:
+                    widget.questionType == 'truth'
+                        ? Colors.green.withOpacity(0.1)
+                        : Colors.orange.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
               ),
               child: Row(
@@ -123,9 +126,10 @@ class _PartnerWatchingScreenState extends ConsumerState<PartnerWatchingScreen> {
                   Text(
                     typeLabel,
                     style: textTheme.labelSmall?.copyWith(
-                      color: widget.questionType == 'truth'
-                          ? Colors.green
-                          : Colors.orange,
+                      color:
+                          widget.questionType == 'truth'
+                              ? Colors.green
+                              : Colors.orange,
                       fontWeight: FontWeight.w600,
                     ),
                   ),

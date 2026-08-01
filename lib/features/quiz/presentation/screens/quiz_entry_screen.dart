@@ -1,10 +1,6 @@
 // lib/features/quiz/presentation/screens/quiz_entry_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/quiz/presentation/screens/attachment_quiz_screen.dart';
-import 'package:attune/features/quiz/presentation/screens/communication_style_quiz_screen.dart';
-import 'package:attune/features/quiz/presentation/screens/conflict_style_quiz_screen.dart';
-import 'package:attune/features/quiz/presentation/screens/love_language_quiz_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class QuizEntryScreen extends ConsumerWidget {
@@ -147,25 +143,20 @@ class QuizEntryScreen extends ConsumerWidget {
             AppButton(
               label: 'Start quiz →',
               onPressed: () {
-                final Widget quizScreen;
                 switch (quizType) {
                   case 'love_language':
-                    quizScreen = const LoveLanguageQuizScreen();
+                    context.pushNamed('loveLanguageQuiz');
                     break;
                   case 'communication':
-                    quizScreen = const CommunicationStyleQuizScreen();
+                    context.pushNamed('communicationStyleQuiz');
                     break;
                   case 'conflict':
-                    quizScreen = const ConflictStyleQuizScreen();
+                    context.pushNamed('conflictStyleQuiz');
                     break;
                   case 'attachment':
                   default:
-                    quizScreen = AttachmentQuizScreen(quizType: quizType);
+                    context.pushNamed('attachmentQuiz', extra: quizType);
                 }
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => quizScreen),
-                );
               },
               size: ButtonSize.large,
               width: double.infinity,

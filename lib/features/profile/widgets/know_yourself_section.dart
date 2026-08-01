@@ -6,10 +6,6 @@ import 'package:attune/features/quiz/domain/models/communication_style_result.da
 import 'package:attune/features/quiz/domain/models/conflict_style_result.dart';
 import 'package:attune/features/quiz/domain/models/love_language_result.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart';
-import 'package:attune/features/quiz/presentation/screens/communication_style_result_screen.dart';
-import 'package:attune/features/quiz/presentation/screens/conflict_style_result_screen.dart';
-import 'package:attune/features/quiz/presentation/screens/quiz_entry_screen.dart';
-import 'package:attune/features/quiz/presentation/screens/love_language_result_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class KnowYourselfSection extends ConsumerWidget {
@@ -246,13 +242,7 @@ class KnowYourselfSection extends ConsumerWidget {
                           label: 'Retake quiz',
                           onPressed: () {
                             Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder:
-                                    (_) => QuizEntryScreen(quizType: quizType),
-                              ),
-                            );
+                            context.pushNamed('quizEntry', extra: quizType);
                           },
                           size: ButtonSize.medium,
                           customColor:
@@ -313,14 +303,9 @@ class KnowYourselfSection extends ConsumerWidget {
                           label: 'View result',
                           onPressed: () {
                             Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder:
-                                    (_) => LoveLanguageResultScreen(
-                                      result: loveLanguageResult,
-                                    ),
-                              ),
+                            context.pushNamed(
+                              'loveLanguageResult',
+                              extra: loveLanguageResult,
                             );
                           },
                           size: ButtonSize.medium,
@@ -332,13 +317,7 @@ class KnowYourselfSection extends ConsumerWidget {
                           label: 'Retake quiz',
                           onPressed: () {
                             Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder:
-                                    (_) => QuizEntryScreen(quizType: quizType),
-                              ),
-                            );
+                            context.pushNamed('quizEntry', extra: quizType);
                           },
                           size: ButtonSize.medium,
                           customColor:
@@ -362,29 +341,15 @@ class KnowYourselfSection extends ConsumerWidget {
             ),
       );
     } else if (communicationStyleResult != null) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder:
-              (_) => CommunicationStyleResultScreen(
-                result: communicationStyleResult,
-              ),
-        ),
+      context.pushNamed(
+        'communicationStyleResult',
+        extra: communicationStyleResult,
       );
     } else if (conflictStyleResult != null) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder:
-              (_) => ConflictStyleResultScreen(result: conflictStyleResult),
-        ),
-      );
+      context.pushNamed('conflictStyleResult', extra: conflictStyleResult);
     } else {
       // Start new quiz
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => QuizEntryScreen(quizType: quizType)),
-      );
+      context.pushNamed('quizEntry', extra: quizType);
     }
   }
 }

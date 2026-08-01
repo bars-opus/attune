@@ -8,15 +8,11 @@ import '../state/paint_ball_provider.dart';
 import '../widgets/paint_ball_arena.dart';
 import '../widgets/paint_ball_controls.dart';
 import '../widgets/paint_ball_lives_display.dart';
-import 'paint_ball_knockout_screen.dart';
 
 class PaintBallBattleScreen extends ConsumerStatefulWidget {
   final String sessionId;
 
-  const PaintBallBattleScreen({
-    super.key,
-    required this.sessionId,
-  });
+  const PaintBallBattleScreen({super.key, required this.sessionId});
 
   @override
   ConsumerState<PaintBallBattleScreen> createState() =>
@@ -30,21 +26,24 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final state = ref.read(paintBallSessionProvider);
       if (state.session?.sessionId != widget.sessionId) {
-        ref.read(paintBallSessionProvider.notifier).loadSession(widget.sessionId);
+        ref
+            .read(paintBallSessionProvider.notifier)
+            .loadSession(widget.sessionId);
       }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<PaintBallGamePhase>(paintBallGamePhaseProvider, (previous, next) {
+    ref.listen<PaintBallGamePhase>(paintBallGamePhaseProvider, (
+      previous,
+      next,
+    ) {
       if (!mounted) return;
       if (next == PaintBallGamePhase.knockout) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PaintBallKnockoutScreen(sessionId: widget.sessionId),
-          ),
+        context.pushReplacementNamed(
+          'paintBallKnockout',
+          pathParameters: {'sessionId': widget.sessionId},
         );
       }
     });
@@ -58,9 +57,7 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen> {
 
     final session = state.session;
     if (session == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -91,7 +88,9 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen> {
                 width: double.infinity,
                 padding: EdgeInsets.all(Spacing.md.w),
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                  color: colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.35,
+                  ),
                   borderRadius: BorderRadius.circular(12.r),
                   border: Border.all(
                     color: colorScheme.outline.withValues(alpha: 0.08),
@@ -132,9 +131,7 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen> {
               padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
               child: Text(
                 state.errorMessage!,
-                style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.error,
-                ),
+                style: textTheme.bodySmall?.copyWith(color: colorScheme.error),
               ),
             ),
           Gap(Spacing.md.h),
@@ -146,21 +143,22 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen> {
   void _showHowToPlayDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('How to Play'),
-        content: const Text(
-          'Wait for the moving marker to line up, then tap the arena.\n\n'
-          'Hit: opponent loses 1 life\n'
-          'Miss: no life lost\n'
-          'Lose all 3 lives: Truth or Dare penalty',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Got it'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('How to Play'),
+            content: const Text(
+              'Wait for the moving marker to line up, then tap the arena.\n\n'
+              'Hit: opponent loses 1 life\n'
+              'Miss: no life lost\n'
+              'Lose all 3 lives: Truth or Dare penalty',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Got it'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 }

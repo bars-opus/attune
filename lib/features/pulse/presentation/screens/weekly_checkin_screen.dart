@@ -2,7 +2,6 @@
 
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/pulse/presentation/screens/checkin_complete_screen.dart';
 import 'package:attune/features/pulse/providers/pulse_providers.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart';
 import 'package:flutter/material.dart';
@@ -54,10 +53,7 @@ class _WeeklyCheckinScreenState extends ConsumerState<WeeklyCheckinScreen> {
       );
 
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const CheckinCompleteScreen()),
-        );
+        context.pushReplacementNamed('checkinComplete');
       }
     } catch (e) {
       if (mounted) {

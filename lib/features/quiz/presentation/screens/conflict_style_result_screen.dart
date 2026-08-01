@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/conflict_style_result.dart';
 import '../widgets/spectrum_bar.dart';
 import '../widgets/share_quiz_button.dart';
-import 'conflict_style_quiz_screen.dart';
 
 class ConflictStyleResultScreen extends ConsumerStatefulWidget {
   final ConflictStyleResult result;
@@ -211,11 +210,8 @@ class _ConflictStyleResultScreenState
                       child: AppButton(
                         label: 'Retake quiz',
                         onPressed:
-                            () => Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const ConflictStyleQuizScreen(),
-                              ),
+                            () => context.pushReplacementNamed(
+                              'conflictStyleQuiz',
                             ),
                         size: ButtonSize.medium,
                         customColor: colorScheme.surfaceContainerHighest,

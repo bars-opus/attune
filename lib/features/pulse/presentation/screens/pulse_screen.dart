@@ -2,7 +2,6 @@
 
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/pulse/data/models/pulse_score.dart';
-import 'package:attune/features/pulse/presentation/screens/weekly_checkin_screen.dart';
 import 'package:attune/features/pulse/presentation/widgets/dimension_row.dart';
 import 'package:attune/features/pulse/presentation/widgets/number_view.dart';
 import 'package:attune/features/pulse/presentation/widgets/radar_chart.dart';
@@ -11,7 +10,6 @@ import 'package:attune/features/pulse/presentation/widgets/checkin_banner.dart';
 import 'package:attune/features/pulse/presentation/widgets/trend_chart.dart';
 import 'package:attune/features/pulse/presentation/widgets/visualisation_switcher.dart';
 import 'package:attune/features/pulse/providers/pulse_providers.dart';
-import 'package:attune/features/timeline/presentation/screens/log_moment_type_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -310,20 +308,14 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
         AppButton(
           label: 'Start check-in',
           onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const WeeklyCheckinScreen()),
-            );
+            context.pushNamed('weeklyCheckin');
           },
         ),
         Gap(Spacing.md.h), // Add spacing between buttons
         AppButton(
           label: 'Log your first moment',
           onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const LogMomentTypeScreen()),
-            );
+            context.pushNamed('logMomentType');
           },
           customColor: Theme.of(context).colorScheme.surfaceContainerHighest,
           textColor: Theme.of(context).colorScheme.onSurface,

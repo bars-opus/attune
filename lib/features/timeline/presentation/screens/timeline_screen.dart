@@ -3,7 +3,6 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart';
-import 'package:attune/features/timeline/presentation/screens/log_moment_type_screen.dart';
 import 'package:attune/features/timeline/presentation/widgets/calendar_strip.dart';
 import 'package:attune/features/timeline/presentation/widgets/moments_list.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -51,10 +50,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
           floatingActionButton: AppFab(
             icon: Icons.add,
             onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const LogMomentTypeScreen()),
-              ).then((refreshNeeded) {
+              context.pushNamed('logMomentType').then((refreshNeeded) {
                 if (refreshNeeded == true && mounted) {
                   ref.invalidate(timelineEventsProvider(_focusedMonth));
                 }

@@ -12,7 +12,6 @@ import 'package:attune/features/opinions/data/models/comment_model.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/data/opinion_more_data.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
-import 'package:attune/features/opinions/presentation/screen/edit_opinion_screen.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -263,11 +262,9 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
           // and matches what Delete above already does.
           onEdit: () async {
             Navigator.pop(sheetContext);
-            final edited = await Navigator.push<bool>(
-              context,
-              MaterialPageRoute(
-                builder: (_) => EditOpinionScreen(opinion: widget.opinion),
-              ),
+            final edited = await context.pushNamed<bool>(
+              'editOpinion',
+              extra: widget.opinion,
             );
             if (edited == true && context.mounted) Navigator.pop(context);
           },

@@ -1,14 +1,11 @@
 // lib/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_completion_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/games/presentation/screens/games_hub_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/providers/thirty_six_question_providers.dart'
     show
         inviteToChapterProvider,
         thirtySixQuestionRepositoryProvider,
         supabaseClientProvider;
-import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_invitation_screen.dart';
-import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_journey_completion_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -87,13 +84,9 @@ class _ThirtySixChapterCompletionScreenState
   Future<void> _handleContinue() async {
     if (_isLastChapter) {
       // Journey complete — show final journey reflection
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder:
-              (_) =>
-                  ThirtySixJourneyCompletionScreen(sessionId: widget.sessionId),
-        ),
+      context.pushReplacementNamed(
+        'thirtySixJourneyCompletion',
+        extra: widget.sessionId,
       );
       return;
     }
@@ -145,15 +138,12 @@ class _ThirtySixChapterCompletionScreenState
         );
 
         if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder:
-                  (_) => ThirtySixChapterInvitationScreen(
-                    sessionId: chapter.sessionId,
-                    chapter: chapter.chapterNumber,
-                    isInitiator: true,
-                  ),
+          context.pushReplacementNamed(
+            'thirtySixChapterInvitation',
+            extra: (
+              sessionId: chapter.sessionId,
+              chapter: chapter.chapterNumber,
+              isInitiator: true,
             ),
           );
         }
@@ -254,13 +244,7 @@ class _ThirtySixChapterCompletionScreenState
                   child: AppButton(
                     label: 'Back to games',
                     onPressed: () {
-                      Navigator.pushAndRemoveUntil(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const GamesHubScreen(),
-                        ),
-                        (route) => route.isFirst,
-                      );
+                      context.goNamed('gamesHub');
                     },
                     size: ButtonSize.medium,
                     customColor: colorScheme.surfaceContainerHighest,

@@ -4,11 +4,7 @@ import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/dating/data/models/dating_introduction.dart';
 import 'package:attune/features/dating/presentation/providers/dating_providers.dart';
-import 'package:attune/features/dating/presentation/screens/dating_consent_screen.dart';
-import 'package:attune/features/dating/presentation/screens/dating_matches_screen.dart';
-import 'package:attune/features/dating/presentation/screens/dating_profile_screen.dart';
 import 'package:attune/features/safety/domain/services/quick_exit_service.dart';
-import 'package:attune/features/safety/presentation/screens/safety_resources_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class DatingDashboardScreen extends ConsumerWidget {
@@ -41,19 +37,14 @@ class DatingDashboardScreen extends ConsumerWidget {
                 icon: const Icon(Icons.favorite_outline),
                 tooltip: 'Matches',
                 onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const DatingMatchesScreen(),
-                    ),
-                  );
+                  context.pushNamed('datingMatches');
                 },
               ),
               IconButton(
                 icon: const Icon(Icons.shield_outlined),
                 tooltip: 'Safety resources',
                 onPressed: () {
-                  Navigator.pushNamed(context, SafetyResourcesScreen.routeName);
+                  context.pushNamed('safetyResources');
                 },
               ),
             ],
@@ -165,12 +156,7 @@ class DatingDashboardScreen extends ConsumerWidget {
               AppButton(
                 label: 'Get started',
                 onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const DatingConsentScreen(),
-                    ),
-                  );
+                  context.pushNamed('datingConsent');
                 },
                 size: ButtonSize.large,
                 width: double.infinity,
@@ -213,12 +199,7 @@ class DatingDashboardScreen extends ConsumerWidget {
             AppButton(
               label: 'Review consent',
               onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const DatingConsentScreen(),
-                  ),
-                );
+                context.pushNamed('datingConsent');
               },
               size: ButtonSize.large,
               width: double.infinity,
@@ -252,12 +233,7 @@ class DatingDashboardScreen extends ConsumerWidget {
             AppButton(
               label: 'Open profile',
               onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const DatingProfileScreen(),
-                  ),
-                );
+                context.pushNamed('datingProfile');
               },
               size: ButtonSize.large,
               width: double.infinity,
@@ -606,12 +582,7 @@ class DatingDashboardScreen extends ConsumerWidget {
             AppButton(
               label: 'Review consent again',
               onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const DatingConsentScreen(),
-                  ),
-                );
+                context.pushNamed('datingConsent');
               },
               size: ButtonSize.medium,
             ),

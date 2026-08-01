@@ -2,15 +2,9 @@
 
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/community/presentation/screens/community_feed_screen.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/providers/thirty_six_question_providers.dart'
     as thirty_six;
-import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_invitation_screen.dart';
-import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_journey_overview_screen.dart';
-import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_lobby_screen.dart';
-import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_games_hub_screen.dart';
-import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_or_dare_game_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 
@@ -358,10 +352,7 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
 
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const CommunityFeedScreen()),
-        );
+        context.pushNamed('communityFeed');
       },
       child: Container(
         padding: EdgeInsets.all(Spacing.md.w),
@@ -447,14 +438,7 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
         ) {
           if (journey != null) {
             // Navigate to journey overview / next chapter
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder:
-                    (_) =>
-                        ThirtySixJourneyOverviewScreen(journeyId: journey.id),
-              ),
-            );
+            context.pushNamed('thirtySixJourneyOverview', extra: journey.id);
           } else {
             // Start new journey flow
             _startNewJourney(context, ref);
@@ -513,14 +497,9 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
                   return AppButton(
                     label: 'Resume',
                     onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder:
-                              (_) => ThirtySixJourneyOverviewScreen(
-                                journeyId: journey.id,
-                              ),
-                        ),
+                      context.pushNamed(
+                        'thirtySixJourneyOverview',
+                        extra: journey.id,
                       );
                     },
                     size: ButtonSize.small,
@@ -596,15 +575,12 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
           );
 
           if (context.mounted) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder:
-                    (_) => ThirtySixChapterInvitationScreen(
-                      sessionId: chapter.sessionId,
-                      chapter: chapter.chapterNumber,
-                      isInitiator: true,
-                    ),
+            context.pushNamed(
+              'thirtySixChapterInvitation',
+              extra: (
+                sessionId: chapter.sessionId,
+                chapter: chapter.chapterNumber,
+                isInitiator: true,
               ),
             );
           }
@@ -625,16 +601,10 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
     // This will be implemented when we wire up the game flows
     switch (gameType) {
       case 'this_or_that':
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ThisOrThatGamesHubScreen()),
-        );
+        context.pushNamed('thisOrThatGamesHub');
         break;
       case 'truth_or_dare':
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const TruthOrDareGameScreen()),
-        );
+        context.pushNamed('truthOrDareGame');
         break;
       case 'paint_ball':
         _startPaintBall(context, ref);
@@ -651,7 +621,9 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
   }
 
   void _startPaintBall(BuildContext context, WidgetRef ref) {
-    final relationshipId = ref.read(thirty_six.currentRelationshipIdProvider.future);
+    final relationshipId = ref.read(
+      thirty_six.currentRelationshipIdProvider.future,
+    );
 
     showDialog(
       context: context,
@@ -659,31 +631,31 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
       builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
-    relationshipId.then((relId) {
-      if (!context.mounted) return;
-      Navigator.pop(context);
-      if (relId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No active relationship found.')),
-        );
-        return;
-      }
+    relationshipId
+        .then((relId) {
+          if (!context.mounted) return;
+          Navigator.pop(context);
+          if (relId == null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No active relationship found.')),
+            );
+            return;
+          }
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PaintBallLobbyScreen(relationshipId: relId),
-        ),
-      );
-    }).catchError((error) {
-      if (!context.mounted) return;
-      Navigator.pop(context);
-      // Never surface the raw exception to the user (project convention).
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not open Paint Ball. Please try again.'),
-        ),
-      );
-    });
+          context.pushNamed(
+            'paintBallLobby',
+            pathParameters: {'relationshipId': relId},
+          );
+        })
+        .catchError((error) {
+          if (!context.mounted) return;
+          Navigator.pop(context);
+          // Never surface the raw exception to the user (project convention).
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not open Paint Ball. Please try again.'),
+            ),
+          );
+        });
   }
 }

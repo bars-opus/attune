@@ -9,7 +9,6 @@ import 'package:attune/features/forums/presentation/screens/forum_screen.dart';
 import 'package:attune/features/forums/presentation/screens/forums_section.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/providers/profile_providers.dart';
-import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/discover_feed_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/following_feed_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/tag_search_screen.dart';
@@ -153,6 +152,13 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
             : null;
     final myStatusDisplay = statusDisplayFor(myStatusAsync?.value);
 
+    // This screen only ever renders for a signed-in user (gated upstream by
+    // AuthenticatedChatWorkspace's userId check), so the status fetch is
+    // unconditional — unlike OpinionsTab's guest-or-authenticated header,
+    // there is no guest branch to account for here.
+
+    final currentUserId = ref.watch(currentUserIdProvider) ?? '';
+
     return Scaffold(
       backgroundColor: colorScheme.neutral,
       floatingActionButton:
@@ -194,23 +200,79 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
                   floating: true,
                   pinned: false,
                   snap: true,
-                  leading: AppIconButton(
-                    icon: Icons.add,
-                    tooltip: 'add opinions',
-                    onPressed: () {
-                      CreateContentChooser.show(
-                        context: context,
-                        backgroundColor: colorScheme.neutral,
-                        onOpinionPosted: () async {
-                          if (_innerTabController.index == 0) {
-                            ref.invalidate(followingFeedProvider);
-                          } else {
-                            ref.invalidate(discoverFeedProvider);
-                          }
-                          await _scrollToTop();
+                  // Three children in the Row below: add-icon AppIconButton
+                  // (48.w min tap target) + gap + the 30.h avatar + gap +
+                  // notification AppIconButton (48.w) — leadingWidth must fit
+                  // all three or the Row overflows the fixed-width box AppBar
+                  // allocates for `leading`.
+                  leadingWidth:
+                      48.w + Spacing.sm.w + 30.h + Spacing.sm.w + 48.w,
+                  leading: Row(
+                    children: [
+                      AppIconButton(
+                        icon: Icons.add,
+                        tooltip: 'add opinions',
+                        onPressed: () {
+                          CreateContentChooser.show(
+                            context: context,
+                            backgroundColor: colorScheme.neutral,
+                            onOpinionPosted: () async {
+                              if (_innerTabController.index == 0) {
+                                ref.invalidate(followingFeedProvider);
+                              } else {
+                                ref.invalidate(discoverFeedProvider);
+                              }
+                              await _scrollToTop();
+                            },
+                          );
                         },
-                      );
-                    },
+                      ),
+                      Gap(Spacing.sm.w),
+                      AppIconButton(
+                        icon: Icons.notifications_active_outlined,
+                        onPressed: () {
+                          if (kDebugMode) {
+                            context.push(RouteNames.onboarding, extra: true);
+                          }
+                        },
+                      ),
+                      Gap(Spacing.sm.w),
+                      Center(
+                        child: GestureDetector(
+                          // Same "My Profile" entry point the commented-out
+                          // AppIconButton below this used to offer:
+                          // get_my_author_handle resolves auth.uid() to the
+                          // caller's own anonymous handle server-side (see
+                          // myAuthorHandleProvider's doc — it takes no
+                          // parameter, so it can only ever resolve the
+                          // caller's own handle), same as tapping any other
+                          // author's avatar on an OpinionCard navigates to
+                          // RouteNames.anonymousProfile.
+                          onTap: () async {
+                            final handle = await ref.read(
+                              myAuthorHandleProvider.future,
+                            );
+                            if (handle == null || !context.mounted) return;
+                            context.pushNamed(
+                              'anonymousProfile',
+                              extra: handle,
+                            );
+                          },
+                          child: ProfileAvatar(
+                            avatarUrl: '',
+
+                            currentUserId: currentUserId,
+                            size: 30.h,
+                            enableHero: false,
+                            icon: statusIconFor(myStatusDisplay),
+                            backgroundColor: statusColorFor(
+                              myStatusDisplay,
+                              colorScheme,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
 
                   // ProfileAvatar(
@@ -231,20 +293,20 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
                   //   icon: Icons.menu,
                   //   onPressed: () => LogoutAction.confirmAndSignOut(context),
                   // ),
-                  title: SizedBox(
-                    width: 30,
-                    height: 30,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(
-                        BorderRadiusTokens.md,
-                      ),
-                      child: Image.asset(
-                        color: colorScheme.primary,
-                        'assets/images/attune_logo_white.png',
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
+                  // title: SizedBox(
+                  //   width: 30,
+                  //   height: 30,
+                  //   child: ClipRRect(
+                  //     borderRadius: BorderRadius.circular(
+                  //       BorderRadiusTokens.md,
+                  //     ),
+                  //     child: Image.asset(
+                  //       color: colorScheme.primary,
+                  //       'assets/images/attune_logo_white.png',
+                  //       fit: BoxFit.cover,
+                  //     ),
+                  //   ),
+                  // ),
                   actions: [
                     // // "My Profile" — Opinions/Reposts/Bookmarks now live as
                     // // tabs on AnonymousProfileScreen rather than as separate

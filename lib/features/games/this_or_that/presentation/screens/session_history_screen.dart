@@ -3,7 +3,6 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_session.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
-import 'package:attune/features/games/this_or_that/presentation/screens/session_detail_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/session_history_card.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -175,13 +174,12 @@ class _SessionHistoryScreenState extends ConsumerState<SessionHistoryScreen> {
                     session: session,
                     onHide: () => _hideSession(session.id),
                     onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder:
-                              (_) => SessionDetailScreen(sessionId: session.id),
-                        ),
-                      ).then((_) => _loadInitialSessions());
+                      context
+                          .pushNamed(
+                            'thisOrThatSessionDetail',
+                            extra: session.id,
+                          )
+                          .then((_) => _loadInitialSessions());
                     },
                   );
                 }, childCount: _sessions.length),

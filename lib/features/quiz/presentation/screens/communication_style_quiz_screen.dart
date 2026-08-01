@@ -1,17 +1,16 @@
 // lib/features/quiz/presentation/screens/communication_style_quiz_screen.dart
 
 import 'dart:convert';
+import 'package:attune/features/quiz/domain/models/communication_style_result.dart';
 import 'package:attune/features/quiz/domain/models/question_data.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'communication_style_loading_screen.dart';
-import 'communication_style_result_screen.dart';
 import '../widgets/question_screen.dart';
 import '../../data/communication_style_questions.dart';
 import '../../domain/services/communication_style_scoring_service.dart';
-
 
 class CommunicationStyleQuizScreen extends ConsumerStatefulWidget {
   const CommunicationStyleQuizScreen({super.key});
@@ -95,29 +94,32 @@ class _CommunicationStyleQuizScreenState
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Continue where you left off?'),
-        content: const Text('You have a communication style quiz in progress.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _startFresh();
-            },
-            child: const Text('Start over'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _resumeQuiz(savedAnswers, savedScreen);
-            },
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.primary,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Continue where you left off?'),
+            content: const Text(
+              'You have a communication style quiz in progress.',
             ),
-            child: const Text('Continue'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _startFresh();
+                },
+                child: const Text('Start over'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _resumeQuiz(savedAnswers, savedScreen);
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.primary,
+                ),
+                child: const Text('Continue'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -200,24 +202,27 @@ class _CommunicationStyleQuizScreenState
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Exit quiz?'),
-        content: const Text('Your progress will be saved. You can continue later.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Exit quiz?'),
+            content: const Text(
+              'Your progress will be saved. You can continue later.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  _saveProgress();
+                  Navigator.pop(context);
+                  Navigator.pop(context);
+                },
+                child: const Text('Exit'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () {
-              _saveProgress();
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text('Exit'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -225,7 +230,9 @@ class _CommunicationStyleQuizScreenState
     final totalQuestions = _screens.length * _questionsPerScreen;
     if (_answers.length != totalQuestions) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please answer all questions before submitting.')),
+        const SnackBar(
+          content: Text('Please answer all questions before submitting.'),
+        ),
       );
       return;
     }
@@ -235,7 +242,9 @@ class _CommunicationStyleQuizScreenState
       final value = _answers[i];
       if (value == null || value < 1 || value > 7) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invalid answer detected. Please retry.')),
+          const SnackBar(
+            content: Text('Invalid answer detected. Please retry.'),
+          ),
         );
         return;
       }
@@ -247,23 +256,17 @@ class _CommunicationStyleQuizScreenState
     final result = CommunicationStyleScoringService.calculateScore(_answers);
 
     // Navigate to loading screen
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CommunicationStyleLoadingScreen(
-          result: result,
-          answers: Map.from(_answers),
-          onComplete: (savedResult) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) => CommunicationStyleResultScreen(
-                  result: savedResult,
-                ),
-              ),
-            );
-          },
-        ),
+    context.pushNamed(
+      'communicationStyleLoading',
+      extra: (
+        result: result,
+        answers: Map<int, int?>.from(_answers),
+        onComplete: (CommunicationStyleResult savedResult) {
+          context.pushReplacementNamed(
+            'communicationStyleResult',
+            extra: savedResult,
+          );
+        },
       ),
     );
   }

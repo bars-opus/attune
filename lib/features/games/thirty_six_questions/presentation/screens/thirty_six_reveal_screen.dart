@@ -5,8 +5,6 @@ import 'package:attune/features/games/thirty_six_questions/presentation/provider
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
-import 'thirty_six_question_screen.dart';
-import 'thirty_six_chapter_completion_screen.dart';
 
 class ThirtySixRevealScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -117,27 +115,15 @@ class _ThirtySixRevealScreenState extends ConsumerState<ThirtySixRevealScreen>
   Future<void> _goToNext() async {
     if (widget.roundNumber == widget.totalRounds) {
       // All rounds complete — show chapter completion
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder:
-              (_) => ThirtySixChapterCompletionScreen(
-                sessionId: widget.sessionId,
-                chapter: widget.chapter,
-              ),
-        ),
+      context.pushReplacementNamed(
+        'thirtySixChapterCompletion',
+        extra: (sessionId: widget.sessionId, chapter: widget.chapter),
       );
     } else {
       // Next round
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder:
-              (_) => ThirtySixQuestionScreen(
-                sessionId: widget.sessionId,
-                chapter: widget.chapter,
-              ),
-        ),
+      context.pushReplacementNamed(
+        'thirtySixQuestion',
+        extra: (sessionId: widget.sessionId, chapter: widget.chapter),
       );
     }
   }

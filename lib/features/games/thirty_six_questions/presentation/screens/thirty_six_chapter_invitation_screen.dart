@@ -1,7 +1,6 @@
 // lib/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_invitation_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_introduction_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -48,15 +47,9 @@ class _ThirtySixChapterInvitationScreenState
 
       if (mounted) {
         // Navigate to chapter introduction screen
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder:
-                (_) => ThirtySixChapterIntroductionScreen(
-                  sessionId: widget.sessionId,
-                  chapter: widget.chapter,
-                ),
-          ),
+        context.pushReplacementNamed(
+          'thirtySixChapterIntroduction',
+          extra: (sessionId: widget.sessionId, chapter: widget.chapter),
         );
       }
     } catch (e) {

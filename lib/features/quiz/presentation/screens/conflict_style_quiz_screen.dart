@@ -1,13 +1,13 @@
 // lib/features/quiz/presentation/screens/conflict_style_quiz_screen.dart
 
 import 'dart:convert';
+import 'package:attune/features/quiz/domain/models/conflict_style_result.dart';
 import 'package:attune/features/quiz/domain/models/question_data.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'conflict_style_loading_screen.dart';
-import 'conflict_style_result_screen.dart';
 import '../widgets/question_screen.dart';
 import '../../data/conflict_style_questions.dart';
 import '../../domain/services/conflict_style_scoring_service.dart';
@@ -254,23 +254,17 @@ class _ConflictStyleQuizScreenState
     final result = ConflictStyleScoringService.calculateScore(_answers);
 
     // Navigate to loading screen
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder:
-            (_) => ConflictStyleLoadingScreen(
-              result: result,
-              answers: Map.from(_answers),
-              onComplete: (savedResult) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder:
-                        (_) => ConflictStyleResultScreen(result: savedResult),
-                  ),
-                );
-              },
-            ),
+    context.pushNamed(
+      'conflictStyleLoading',
+      extra: (
+        result: result,
+        answers: Map<int, int?>.from(_answers),
+        onComplete: (ConflictStyleResult savedResult) {
+          context.pushReplacementNamed(
+            'conflictStyleResult',
+            extra: savedResult,
+          );
+        },
       ),
     );
   }

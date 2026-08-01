@@ -1,9 +1,5 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
-import 'package:attune/features/games/truth_or_dare/presentation/screens/custom_truth_or_dare_list_screen.dart';
-import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_or_dare_history_screen.dart';
-import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_or_dare_session_router_screen.dart';
-import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_or_dare_tone_selector_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class TruthOrDareGameScreen extends ConsumerWidget {
@@ -46,14 +42,9 @@ class TruthOrDareGameScreen extends ConsumerWidget {
                             ? 'Open invitation'
                             : 'Resume active game',
                     onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder:
-                              (_) => TruthOrDareSessionRouterScreen(
-                                sessionId: session.id,
-                              ),
-                        ),
+                      context.pushNamed(
+                        'truthOrDareSessionRouter',
+                        extra: session.id,
                       );
                     },
                     width: double.infinity,
@@ -65,12 +56,7 @@ class TruthOrDareGameScreen extends ConsumerWidget {
             AppButton(
               label: 'Start new game',
               onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const TruthOrDareToneSelectorScreen(),
-                  ),
-                );
+                context.pushNamed('truthOrDareToneSelector');
               },
               width: double.infinity,
               size: ButtonSize.large,
@@ -79,12 +65,7 @@ class TruthOrDareGameScreen extends ConsumerWidget {
             AppButton(
               label: 'Custom questions',
               onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const CustomTruthOrDareListScreen(),
-                  ),
-                );
+                context.pushNamed('customTruthOrDareList');
               },
               width: double.infinity,
               size: ButtonSize.large,
@@ -93,12 +74,7 @@ class TruthOrDareGameScreen extends ConsumerWidget {
             AppButton(
               label: 'Past sessions',
               onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const TruthOrDareHistoryScreen(),
-                  ),
-                );
+                context.pushNamed('truthOrDareHistory');
               },
               width: double.infinity,
               size: ButtonSize.large,

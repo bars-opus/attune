@@ -4,8 +4,6 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/shop_listview_loading_shimmer.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
-import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
-import 'package:attune/features/opinions/presentation/screen/comment_thread_screen.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
 import 'package:attune/home/providers/nav_visibility_provider.dart';
 import 'package:flutter/material.dart';
@@ -52,8 +50,7 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
                 : followingAsync.when(
                   loading: () => const ListviewLoadingShimmer(),
                   error: (error, stack) => ErrorStateWidget.from(error),
-                  data: (opinions) => 
-                   _buildFeedSliver(context, opinions),
+                  data: (opinions) => _buildFeedSliver(context, opinions),
                 ),
       ),
     );
@@ -129,16 +126,7 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
           delegate: SliverChildBuilderDelegate((context, index) {
             final opinion = opinions[index];
             void openOpinion() {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder:
-                      (_) => CommentThreadScreen(
-                        opinionId: opinion.id,
-                        opinion: opinion,
-                      ),
-                ),
-              );
+              context.pushNamed('commentThread', extra: opinion);
             }
 
             return OpinionCard(
@@ -146,14 +134,9 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
               onOpinionTap: openOpinion,
               onCommentTap: openOpinion,
               onProfileTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder:
-                        (_) => AnonymousProfileScreen(
-                          authorHandle: opinion.authorHandle,
-                        ),
-                  ),
+                context.pushNamed(
+                  'anonymousProfile',
+                  extra: opinion.authorHandle,
                 );
               },
             );

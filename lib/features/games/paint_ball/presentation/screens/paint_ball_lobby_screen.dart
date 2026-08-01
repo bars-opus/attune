@@ -5,16 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../../core/utils/exports/export_screens.dart';
 import '../../models/paint_ball_models.dart';
 import '../state/paint_ball_provider.dart';
-import 'paint_ball_battle_screen.dart';
-import 'paint_ball_knockout_screen.dart';
 
 class PaintBallLobbyScreen extends ConsumerStatefulWidget {
   final String relationshipId;
 
-  const PaintBallLobbyScreen({
-    super.key,
-    required this.relationshipId,
-  });
+  const PaintBallLobbyScreen({super.key, required this.relationshipId});
 
   @override
   ConsumerState<PaintBallLobbyScreen> createState() =>
@@ -44,7 +39,10 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<PaintBallGamePhase>(paintBallGamePhaseProvider, (previous, next) {
+    ref.listen<PaintBallGamePhase>(paintBallGamePhaseProvider, (
+      previous,
+      next,
+    ) {
       final sessionId = ref.read(paintBallCurrentSessionProvider)?.sessionId;
       if (sessionId != null) {
         _routeForPhase(next, sessionId);
@@ -61,7 +59,8 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
     // An incoming invite: an existing 'invited' session this user did NOT
     // initiate. Without an accept/decline path the game can never leave the
     // invited state, so the invited partner gets Accept / Decline here.
-    final isIncomingInvite = session != null &&
+    final isIncomingInvite =
+        session != null &&
         session.relationshipId == widget.relationshipId &&
         session.isInvited &&
         currentUserId != null &&
@@ -129,10 +128,7 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
               ),
             ),
             Gap(Spacing.xl.h),
-            Text(
-              'Choose your tone',
-              style: textTheme.titleMedium,
-            ),
+            Text('Choose your tone', style: textTheme.titleMedium),
             Gap(Spacing.sm.h),
             Wrap(
               spacing: Spacing.sm.w,
@@ -144,12 +140,15 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
               ],
             ),
             Gap(Spacing.lg.h),
-            if (session != null && session.relationshipId == widget.relationshipId) ...[
+            if (session != null &&
+                session.relationshipId == widget.relationshipId) ...[
               Container(
                 width: double.infinity,
                 padding: EdgeInsets.all(Spacing.md.w),
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                  color: colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.35,
+                  ),
                   borderRadius: BorderRadius.circular(12.r),
                   border: Border.all(
                     color: colorScheme.outline.withValues(alpha: 0.08),
@@ -159,10 +158,10 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
                   session.isInvited
                       ? 'Waiting for your partner to accept.'
                       : session.hasPendingPenalty
-                          ? 'Penalty is ready.'
-                          : session.isActive
-                              ? 'Game in progress.'
-                              : 'Session complete.',
+                      ? 'Penalty is ready.'
+                      : session.isActive
+                      ? 'Game in progress.'
+                      : 'Session complete.',
                   style: textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -178,8 +177,8 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
                   Expanded(
                     child: AppButton(
                       label: 'Decline',
-                      onPressed: () =>
-                          notifier.declineSession(session.sessionId),
+                      onPressed:
+                          () => notifier.declineSession(session.sessionId),
                       variant: ButtonVariant.outline,
                       size: ButtonSize.small,
                     ),
@@ -188,8 +187,8 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
                   Expanded(
                     child: AppButton(
                       label: 'Accept',
-                      onPressed: () =>
-                          notifier.acceptSession(session.sessionId),
+                      onPressed:
+                          () => notifier.acceptSession(session.sessionId),
                       size: ButtonSize.small,
                     ),
                   ),
@@ -215,9 +214,7 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
             if (state.errorMessage != null)
               Text(
                 state.errorMessage!,
-                style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.error,
-                ),
+                style: textTheme.bodySmall?.copyWith(color: colorScheme.error),
               ),
           ],
         ),
@@ -281,20 +278,16 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
   void _routeForPhase(PaintBallGamePhase phase, String sessionId) {
     if (!mounted) return;
     if (phase == PaintBallGamePhase.playing) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PaintBallBattleScreen(sessionId: sessionId),
-        ),
+      context.pushReplacementNamed(
+        'paintBallBattle',
+        pathParameters: {'sessionId': sessionId},
       );
       return;
     }
     if (phase == PaintBallGamePhase.knockout) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PaintBallKnockoutScreen(sessionId: sessionId),
-        ),
+      context.pushReplacementNamed(
+        'paintBallKnockout',
+        pathParameters: {'sessionId': sessionId},
       );
     }
   }

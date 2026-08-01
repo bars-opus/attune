@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:attune/core/providers/profile_providers/profile_provider.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/profile/models/profile.dart';
 import 'package:attune/features/profile/widgets/profile_header.dart';
@@ -106,12 +105,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       }
 
       if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ChatScreen(conversation: conversation),
-          ),
-        );
+        context.pushNamed('chatScreen', extra: conversation);
       }
     } catch (e) {
       debugPrint('❌ [START-CHAT] error: $e');

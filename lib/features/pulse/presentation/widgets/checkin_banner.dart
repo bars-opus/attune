@@ -1,5 +1,4 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/pulse/presentation/screens/weekly_checkin_screen.dart';
 
 class CheckinBanner extends StatelessWidget {
   const CheckinBanner({super.key});
@@ -23,10 +22,7 @@ class CheckinBanner extends StatelessWidget {
         child: AppButton(
           label: 'Open check-in',
           onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const WeeklyCheckinScreen()),
-            );
+            context.pushNamed('weeklyCheckin');
           },
         ),
       ),

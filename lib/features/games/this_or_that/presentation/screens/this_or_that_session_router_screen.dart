@@ -6,9 +6,7 @@ import 'package:attune/features/games/this_or_that/presentation/providers/this_o
 import 'package:attune/features/games/this_or_that/presentation/screens/end_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/question_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/reveal_screen.dart';
-import 'package:attune/features/games/this_or_that/presentation/screens/tone_selector_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/waiting_screen.dart';
-import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_games_hub_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class ThisOrThatSessionRouterScreen extends ConsumerWidget {
@@ -75,12 +73,7 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
                           abandonSessionProvider(session.id).future,
                         );
                         if (!context.mounted) return;
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ThisOrThatGamesHubScreen(),
-                          ),
-                        );
+                        context.pushReplacementNamed('thisOrThatGamesHub');
                       },
                     );
                   }
@@ -142,12 +135,8 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
                             child: AppButton(
                               label: 'Back to games',
                               onPressed: () {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder:
-                                        (_) => const ThisOrThatGamesHubScreen(),
-                                  ),
+                                context.pushReplacementNamed(
+                                  'thisOrThatGamesHub',
                                 );
                               },
                             ),
@@ -221,16 +210,10 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
         totalRounds: session.totalRounds,
         mostInterestingPick: interestingPick,
         onPlayAgain: () {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const ToneSelectorScreen()),
-          );
+          context.pushReplacementNamed('thisOrThatToneSelector');
         },
         onTryAnotherGame: () {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const ThisOrThatGamesHubScreen()),
-          );
+          context.pushReplacementNamed('thisOrThatGamesHub');
         },
       );
     }

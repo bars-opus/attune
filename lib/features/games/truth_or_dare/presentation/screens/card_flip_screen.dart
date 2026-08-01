@@ -5,8 +5,6 @@ import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
-import 'package:attune/features/games/truth_or_dare/presentation/screens/dare_reveal_screen.dart';
-import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_reveal_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class CardFlipScreen extends ConsumerStatefulWidget {
@@ -110,41 +108,35 @@ class _CardFlipScreenState extends ConsumerState<CardFlipScreen>
 
   void _navigateToReveal() {
     if (_selectedType == 'truth') {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder:
-              (_) => TruthRevealScreen(
-                sessionId: widget.sessionId,
-                roundId: _roundId!,
-                roundNumber: widget.roundNumber,
-                totalRounds: widget.totalRounds,
-                tone: widget.tone,
-                isPartnerA: widget.isPartnerA,
-                partnerName: widget.partnerName,
-                questionText: _questionData!['question_text'],
-                isCustom: _questionData!['is_custom'],
-                customQuestionId: _questionData!['question_id'],
-              ),
+      context.pushReplacementNamed(
+        'truthReveal',
+        extra: (
+          sessionId: widget.sessionId,
+          roundId: _roundId!,
+          roundNumber: widget.roundNumber,
+          totalRounds: widget.totalRounds,
+          tone: widget.tone,
+          isPartnerA: widget.isPartnerA,
+          partnerName: widget.partnerName,
+          questionText: _questionData!['question_text'] as String,
+          isCustom: _questionData!['is_custom'] as bool,
+          customQuestionId: _questionData!['question_id'] as String?,
         ),
       );
     } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder:
-              (_) => DareRevealScreen(
-                sessionId: widget.sessionId,
-                roundId: _roundId!,
-                roundNumber: widget.roundNumber,
-                totalRounds: widget.totalRounds,
-                tone: widget.tone,
-                isPartnerA: widget.isPartnerA,
-                partnerName: widget.partnerName,
-                dareText: _questionData!['question_text'],
-                isCustom: _questionData!['is_custom'],
-                customQuestionId: _questionData!['question_id'],
-              ),
+      context.pushReplacementNamed(
+        'dareReveal',
+        extra: (
+          sessionId: widget.sessionId,
+          roundId: _roundId!,
+          roundNumber: widget.roundNumber,
+          totalRounds: widget.totalRounds,
+          tone: widget.tone,
+          isPartnerA: widget.isPartnerA,
+          partnerName: widget.partnerName,
+          dareText: _questionData!['question_text'] as String,
+          isCustom: _questionData!['is_custom'] as bool,
+          customQuestionId: _questionData!['question_id'] as String?,
         ),
       );
     }

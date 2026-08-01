@@ -5,7 +5,6 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/quiz/data/local/quiz_progress_store.dart';
 import 'package:attune/features/quiz/domain/models/attachment_result.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart';
-import 'package:attune/features/quiz/presentation/screens/quiz_entry_screen.dart';
 import 'package:attune/features/quiz/presentation/widgets/share_quiz_button.dart';
 import 'package:attune/features/quiz/presentation/widgets/spectrum_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -347,20 +346,10 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen>
     final progressStore = QuizProgressStore(prefs);
     await progressStore.clearProgress(widget.quizType);
 
-    // Navigate back to quiz entry
-    Navigator.popUntil(context, (route) => route.isFirst);
-
-    // Small delay then start fresh quiz
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const QuizEntryScreen(quizType: 'attachment'),
-          ),
-        );
-      }
-    });
+    if (!mounted) return;
+    // Clears the whole stack and lands fresh on quiz entry — the GoRouter
+    // equivalent of the old popUntil(isFirst) + push pair.
+    context.goNamed('quizEntry', extra: 'attachment');
   }
 
   Color _getSpectrumColor(String type) {

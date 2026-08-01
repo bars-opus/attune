@@ -2,7 +2,6 @@ import 'package:attune/app/routing/app_router.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/providers/chat_ui_providers.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
-import 'package:attune/features/healing/presentation/screens/healing_journey_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -114,9 +113,7 @@ class ConversationsScreen extends ConsumerWidget {
   }
 
   void _openReflections(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const HealingJourneyScreen()),
-    );
+    context.pushNamed('healingJourney');
   }
 
   String _previewText(Conversation conversation) {

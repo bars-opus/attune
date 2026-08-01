@@ -6,10 +6,7 @@ import 'package:attune/core/utils/relative_time.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/data/opinion_more_data.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
-import 'package:attune/features/opinions/presentation/screen/edit_opinion_screen.dart';
 import 'package:attune/core/widgets/tag_chip_row.dart';
-import 'package:attune/features/opinions/presentation/screen/quote_compose_screen.dart';
-import 'package:attune/features/opinions/presentation/screen/tag_browse_screen.dart';
 import 'package:attune/features/opinions/presentation/widgets/quoted_opinion_preview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/core/widgets/poll_card.dart';
@@ -126,12 +123,8 @@ class OpinionCard extends ConsumerWidget {
                       TagChipRow(
                         tags: opinion.tags,
                         onTagTap:
-                            (slug) => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => TagBrowseScreen(tagSlug: slug),
-                              ),
-                            ),
+                            (slug) =>
+                                context.pushNamed('tagBrowse', extra: slug),
                       ),
                       Padding(
                         padding: const EdgeInsets.only(
@@ -502,10 +495,7 @@ class OpinionCard extends ConsumerWidget {
   /// here would only reorder discover and lose the user's scroll position for
   /// no gain.
   Future<void> _openEditor(BuildContext context, WidgetRef ref) async {
-    await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => EditOpinionScreen(opinion: opinion)),
-    );
+    await context.pushNamed<bool>('editOpinion', extra: opinion);
   }
 
   Future<void> _openQuoteComposer(BuildContext context, WidgetRef ref) async {
@@ -520,11 +510,9 @@ class OpinionCard extends ConsumerWidget {
       return;
     }
 
-    final posted = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => QuoteComposeScreen(quotedOpinion: opinion),
-      ),
+    final posted = await context.pushNamed<bool>(
+      'quoteCompose',
+      extra: opinion,
     );
 
     // Mirrors the FAB in opinions_tab.dart: the composer pops `true` and the

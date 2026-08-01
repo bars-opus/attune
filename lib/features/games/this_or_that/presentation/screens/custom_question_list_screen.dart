@@ -2,12 +2,10 @@
 
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
-import 'package:attune/features/games/this_or_that/presentation/screens/custom_question_create_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/custom_question_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
-
 
 class CustomQuestionListScreen extends ConsumerStatefulWidget {
   const CustomQuestionListScreen({super.key});
@@ -51,11 +49,8 @@ class _CustomQuestionListScreenState
         floatingActionButton: AppFab(
           icon: Icons.add,
           onPressed: () async {
-            final needsRefresh = await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const CustomQuestionCreateScreen(),
-              ),
+            final needsRefresh = await context.pushNamed(
+              'customQuestionCreate',
             );
             if (needsRefresh == true) {
               ref.invalidate(myCustomQuestionsProvider);
@@ -94,11 +89,8 @@ class _CustomQuestionListScreenState
                         AppButton(
                           label: 'Create your first question',
                           onPressed: () async {
-                            final needsRefresh = await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const CustomQuestionCreateScreen(),
-                              ),
+                            final needsRefresh = await context.pushNamed(
+                              'customQuestionCreate',
                             );
                             if (needsRefresh == true) {
                               ref.invalidate(myCustomQuestionsProvider);
@@ -131,55 +123,60 @@ class _CustomQuestionListScreenState
               },
             ),
             // Partner's questions tab
-            ref.watch(partnerCustomQuestionsProvider).when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, stack) => Center(child: Text('Error: $error')),
-              data: (questions) {
-                if (questions.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.person_outline,
-                          size: 64,
-                          color: Colors.grey,
+            ref
+                .watch(partnerCustomQuestionsProvider)
+                .when(
+                  loading:
+                      () => const Center(child: CircularProgressIndicator()),
+                  error: (error, stack) => Center(child: Text('Error: $error')),
+                  data: (questions) {
+                    if (questions.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.person_outline,
+                              size: 64,
+                              color: Colors.grey,
+                            ),
+                            Gap(Spacing.md.h),
+                            Text(
+                              'No shared questions yet',
+                              style: textTheme.titleMedium,
+                            ),
+                            Gap(Spacing.sm.h),
+                            Text(
+                              "$partnerName hasn't shared any custom questions yet.",
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
                         ),
-                        Gap(Spacing.md.h),
-                        Text(
-                          'No shared questions yet',
-                          style: textTheme.titleMedium,
-                        ),
-                        Gap(Spacing.sm.h),
-                        Text(
-                          "$partnerName hasn't shared any custom questions yet.",
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  );
-                }
+                      );
+                    }
 
-                return ListView.builder(
-                  padding: EdgeInsets.all(Spacing.md.w),
-                  itemCount: questions.length,
-                  itemBuilder: (context, index) {
-                    final question = questions[index];
-                    return CustomQuestionCard(
-                      question: question,
-                      isOwnQuestion: false,
-                      onReported: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Thank you for reporting. We will review it.'),
-                          ),
+                    return ListView.builder(
+                      padding: EdgeInsets.all(Spacing.md.w),
+                      itemCount: questions.length,
+                      itemBuilder: (context, index) {
+                        final question = questions[index];
+                        return CustomQuestionCard(
+                          question: question,
+                          isOwnQuestion: false,
+                          onReported: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Thank you for reporting. We will review it.',
+                                ),
+                              ),
+                            );
+                          },
                         );
                       },
                     );
                   },
-                );
-              },
-            ),
+                ),
           ],
         ),
       ),

@@ -3,7 +3,6 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/quiz/domain/models/attachment_compatibility.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart';
-import 'package:attune/features/quiz/presentation/screens/partner_quiz_result_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -13,7 +12,9 @@ class CompatibilitySection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final compatibilityAsync = ref.watch(refreshedAttachmentCompatibilityProvider);
+    final compatibilityAsync = ref.watch(
+      refreshedAttachmentCompatibilityProvider,
+    );
 
     final isInCouplesMode =
         ref.watch(userRelationshipModeProvider).valueOrNull == 'couples';
@@ -316,15 +317,11 @@ class CompatibilitySection extends ConsumerWidget {
                                       label: 'View partner\'s result',
                                       onPressed: () {
                                         Navigator.pop(context);
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder:
-                                                (_) => PartnerQuizResultScreen(
-                                                  quizType: 'attachment',
-                                                  partnerId:
-                                                      compatibility.partnerId,
-                                                ),
+                                        context.pushNamed(
+                                          'partnerQuizResult',
+                                          extra: (
+                                            quizType: 'attachment',
+                                            partnerId: compatibility.partnerId,
                                           ),
                                         );
                                       },

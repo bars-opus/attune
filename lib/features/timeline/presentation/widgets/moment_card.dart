@@ -3,7 +3,6 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart';
-import 'package:attune/features/timeline/presentation/screens/log_moment_details_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -31,26 +30,25 @@ class _MomentCardState extends ConsumerState<MomentCard> {
   bool get _isOwnEvent => widget.event.loggedBy == widget.currentUserId;
 
   void _editMoment() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder:
-            (_) => LogMomentDetailsScreen(
-              eventType: widget.event.eventType,
-              editEventId: widget.event.id,
-              initialData: {
-                'title': widget.event.title,
-                'note': widget.event.note,
-                'occurred_at': widget.event.occurredAt,
-                'mood_score': widget.event.moodScore,
-              },
-            ),
-      ),
-    ).then((refreshNeeded) {
-      if (refreshNeeded == true && mounted) {
-        ref.invalidate(timelineEventsProvider(widget.currentMonth));
-      }
-    });
+    context
+        .pushNamed(
+          'logMomentDetails',
+          extra: (
+            eventType: widget.event.eventType,
+            editEventId: widget.event.id,
+            initialData: {
+              'title': widget.event.title,
+              'note': widget.event.note,
+              'occurred_at': widget.event.occurredAt,
+              'mood_score': widget.event.moodScore,
+            },
+          ),
+        )
+        .then((refreshNeeded) {
+          if (refreshNeeded == true && mounted) {
+            ref.invalidate(timelineEventsProvider(widget.currentMonth));
+          }
+        });
   }
 
   void _showDeleteConfirmation() {

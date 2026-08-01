@@ -2,13 +2,13 @@
 
 import 'package:attune/features/quiz/data/attachment_questions.dart';
 import 'package:attune/features/quiz/data/local/quiz_progress_store.dart';
+import 'package:attune/features/quiz/domain/models/attachment_result.dart';
 import 'package:attune/features/quiz/domain/models/question_data.dart';
 import 'package:attune/features/quiz/domain/models/saved_quiz_progress.dart';
-import 'package:attune/features/quiz/presentation/screens/quiz_loading_screen.dart';
-import 'package:attune/features/quiz/presentation/screens/quiz_result_screen.dart';
 import 'package:attune/features/quiz/presentation/widgets/question_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AttachmentQuizScreen extends ConsumerStatefulWidget {
@@ -257,26 +257,17 @@ class _AttachmentQuizScreenState extends ConsumerState<AttachmentQuizScreen>
 
     if (!mounted) return;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder:
-            (_) => QuizLoadingScreen(
-              answers: Map.from(_answers),
-              quizType: widget.quizType,
-              onComplete: (result) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder:
-                        (_) => QuizResultScreen(
-                          result: result,
-                          quizType: widget.quizType,
-                        ),
-                  ),
-                );
-              },
-            ),
+    context.pushNamed(
+      'attachmentQuizLoading',
+      extra: (
+        answers: Map<int, int?>.from(_answers),
+        quizType: widget.quizType,
+        onComplete: (AttachmentResult result) {
+          context.pushReplacementNamed(
+            'attachmentQuizResult',
+            extra: (result: result, quizType: widget.quizType),
+          );
+        },
       ),
     );
   }

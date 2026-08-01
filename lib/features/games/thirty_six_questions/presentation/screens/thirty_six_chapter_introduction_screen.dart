@@ -1,7 +1,6 @@
 // lib/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_introduction_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_question_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -75,15 +74,9 @@ class ThirtySixChapterIntroductionScreen extends ConsumerWidget {
             AppButton(
               label: 'Begin →',
               onPressed: () {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder:
-                        (_) => ThirtySixQuestionScreen(
-                          sessionId: sessionId,
-                          chapter: chapter,
-                        ),
-                  ),
+                context.pushReplacementNamed(
+                  'thirtySixQuestion',
+                  extra: (sessionId: sessionId, chapter: chapter),
                 );
               },
               size: ButtonSize.large,

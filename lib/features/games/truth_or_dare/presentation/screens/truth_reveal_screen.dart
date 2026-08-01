@@ -4,7 +4,6 @@ import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_or_dare_session_router_screen.dart';
 
 class TruthRevealScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -120,13 +119,9 @@ class _TruthRevealScreenState extends ConsumerState<TruthRevealScreen> {
       }
 
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder:
-                (_) =>
-                    TruthOrDareSessionRouterScreen(sessionId: widget.sessionId),
-          ),
+        context.pushReplacementNamed(
+          'truthOrDareSessionRouter',
+          extra: widget.sessionId,
         );
       }
     } catch (e) {

@@ -1,11 +1,9 @@
 // lib/features/games/thirty_six_questions/presentation/screens/thirty_six_question_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_completion_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../providers/thirty_six_question_providers.dart';
-import 'thirty_six_waiting_screen.dart';
 
 class ThirtySixQuestionScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -197,15 +195,9 @@ class _ThirtySixQuestionScreenState
 
     if (allComplete && mounted) {
       // Chapter is complete — show completion ceremony
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder:
-              (_) => ThirtySixChapterCompletionScreen(
-                sessionId: widget.sessionId,
-                chapter: widget.chapter,
-              ),
-        ),
+      context.pushReplacementNamed(
+        'thirtySixChapterCompletion',
+        extra: (sessionId: widget.sessionId, chapter: widget.chapter),
       );
     }
   }
@@ -256,19 +248,16 @@ class _ThirtySixQuestionScreenState
 
       if (mounted) {
         // Navigate to waiting screen
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder:
-                (_) => ThirtySixWaitingScreen(
-                  sessionId: widget.sessionId,
-                  roundId: _roundId!,
-                  roundNumber: _currentRoundNumber,
-                  totalRounds: _totalRounds,
-                  chapter: widget.chapter,
-                  questionText: _questionText,
-                  answerText: answer,
-                ),
+        context.pushReplacementNamed(
+          'thirtySixWaiting',
+          extra: (
+            sessionId: widget.sessionId,
+            roundId: _roundId!,
+            roundNumber: _currentRoundNumber,
+            totalRounds: _totalRounds,
+            chapter: widget.chapter,
+            questionText: _questionText,
+            answerText: answer,
           ),
         );
       }

@@ -1,6 +1,5 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/dating/presentation/providers/dating_providers.dart';
-import 'package:attune/features/dating/presentation/screens/dating_profile_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class DatingConsentScreen extends ConsumerStatefulWidget {
@@ -176,10 +175,7 @@ class _DatingConsentScreenState extends ConsumerState<DatingConsentScreen> {
       );
 
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const DatingProfileScreen()),
-        );
+        context.pushReplacementNamed('datingProfile');
       }
     } catch (_) {
       if (mounted) {

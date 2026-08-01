@@ -1,7 +1,6 @@
 // lib/features/games/thirty_six_questions/presentation/screens/thirty_six_journey_completion_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/games/presentation/screens/games_hub_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/providers/thirty_six_question_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -174,13 +173,7 @@ class _ThirtySixJourneyCompletionScreenState
                   child: AppButton(
                     label: 'Back to games',
                     onPressed: () {
-                      Navigator.pushAndRemoveUntil(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const GamesHubScreen(),
-                        ),
-                        (route) => route.isFirst,
-                      );
+                      context.goNamed('gamesHub');
                     },
                     size: ButtonSize.medium,
                   ),

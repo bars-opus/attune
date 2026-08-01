@@ -5,7 +5,6 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../providers/thirty_six_question_providers.dart';
-import 'thirty_six_reveal_screen.dart';
 
 class ThirtySixWaitingScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -111,19 +110,16 @@ class _ThirtySixWaitingScreenState
   }
 
   void _navigateToReveal() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder:
-            (_) => ThirtySixRevealScreen(
-              sessionId: widget.sessionId,
-              roundId: widget.roundId,
-              roundNumber: widget.roundNumber,
-              totalRounds: widget.totalRounds,
-              chapter: widget.chapter,
-              questionText: widget.questionText,
-              userAnswer: widget.answerText,
-            ),
+    context.pushReplacementNamed(
+      'thirtySixReveal',
+      extra: (
+        sessionId: widget.sessionId,
+        roundId: widget.roundId,
+        roundNumber: widget.roundNumber,
+        totalRounds: widget.totalRounds,
+        chapter: widget.chapter,
+        questionText: widget.questionText,
+        userAnswer: widget.answerText,
       ),
     );
   }

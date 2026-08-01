@@ -11,8 +11,6 @@ import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/forums/data/models/forum_post_model.dart';
 import 'package:attune/features/forums/data/models/topic_model.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
-import 'package:attune/features/forums/presentation/screens/forum_insight_screen.dart';
-import 'package:attune/features/forums/presentation/widgets/forum_card.dart';
 import 'package:attune/features/forums/presentation/widgets/forum_post_bubble.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -68,7 +66,18 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
   /// heights this feed doesn't have). Built fresh each build from the
   /// current posts list rather than accumulated forever, so it never holds
   /// keys for posts that scrolled out of a since-refetched list.
+  ///
+  /// Only holds keys for posts SliverList has actually built — a post
+  /// scrolled far enough out of view has no entry here at all (its
+  /// GlobalKey exists in the delegate but Flutter never called the builder
+  /// for it), which is exactly the case _jumpToPost's index-based fallback
+  /// below exists to handle.
   final Map<String, GlobalKey> _postKeys = {};
+
+  /// The most recent posts list, kept for _jumpToPost's index-based
+  /// fallback (see its doc) — needs each post's position in the flat feed
+  /// to estimate a scroll offset when the target isn't already built.
+  List<ForumPostModel> _latestPosts = const [];
 
   /// The post currently flashed as the jump-to target — cleared automatically
   /// after the highlight animation's duration via a timer reset on every tap,
@@ -94,17 +103,59 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
   }
 
   /// Scrolls the parent post identified by [parentPostId] into view and
-  /// flashes it — WhatsApp/iMessage-style "jump to replied message". No-op
-  /// if the parent isn't currently rendered (its GlobalKey was never
-  /// registered this build): forumPostsProvider fetches every post for the
-  /// topic unfiltered, so in practice every reply's parent is always in the
-  /// same list, but a stale tap during a refetch could momentarily race
-  /// this, and silently doing nothing is better than crashing on a null
-  /// context.
-  void _jumpToPost(String parentPostId) {
-    final key = _postKeys[parentPostId];
-    final targetContext = key?.currentContext;
-    if (targetContext == null) return;
+  /// flashes it — WhatsApp/iMessage-style "jump to replied message".
+  ///
+  /// SliverList only builds the items currently near the viewport (plus a
+  /// small cache extent) — a post far enough out of view was never built,
+  /// so it has no GlobalKey/context yet and Scrollable.ensureVisible alone
+  /// has nothing to scroll to. That was the original bug: this worked when
+  /// the parent happened to already be built (near the visible area) and
+  /// silently did nothing otherwise.
+  ///
+  /// Fix: when the fast path (already-built context) isn't available,
+  /// estimate the target's scroll offset from its index in the flat post
+  /// list — average-extent-per-item × distance from the current scroll
+  /// position — and animate there first. That jump doesn't need to be
+  /// pixel-accurate; it only needs to land the target inside SliverList's
+  /// build window, which lets a follow-up ensureVisible do the exact
+  /// alignment once the target is actually mounted.
+  Future<void> _jumpToPost(String parentPostId) async {
+    if (_tryEnsureVisible(parentPostId)) return;
+
+    final index = _latestPosts.indexWhere((p) => p.id == parentPostId);
+    // Not in the current list at all (a stale tap racing a refetch) —
+    // nothing to scroll to. Rare: forumPostsProvider fetches every post
+    // for the topic unfiltered, so in practice a reply's parent is always
+    // present.
+    if (index == -1 || !_scrollController.hasClients) return;
+
+    final position = _scrollController.position;
+    // +1 accounts for the pinned topic card sliver ahead of the post list.
+    final averageExtent =
+        position.viewportDimension / (_postKeys.isEmpty ? 8 : _postKeys.length);
+    final estimatedOffset = (index + 1) * averageExtent;
+
+    await _scrollController.animateTo(
+      estimatedOffset.clamp(0.0, position.maxScrollExtent),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOut,
+    );
+
+    // The estimate rarely lands exactly on the target, but it lands close
+    // enough for SliverList to have built it by now — one more frame for
+    // that build to actually land, then the precise pass.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    if (!mounted) return;
+    _tryEnsureVisible(parentPostId);
+  }
+
+  /// Scrolls to [postId] and flashes it if its GlobalKey is currently
+  /// mounted (built by SliverList). Returns whether it found something to
+  /// scroll to — the caller falls back to an index-based jump when this
+  /// returns false.
+  bool _tryEnsureVisible(String postId) {
+    final targetContext = _postKeys[postId]?.currentContext;
+    if (targetContext == null) return false;
 
     Scrollable.ensureVisible(
       targetContext,
@@ -114,10 +165,11 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
     );
 
     _highlightTimer?.cancel();
-    setState(() => _highlightedPostId = parentPostId);
+    setState(() => _highlightedPostId = postId);
     _highlightTimer = Timer(const Duration(milliseconds: 1200), () {
       if (mounted) setState(() => _highlightedPostId = null);
     });
+    return true;
   }
 
   void _loadPosts() {
@@ -296,39 +348,46 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
                     child:
                         topic == null
                             ? const SizedBox.shrink()
-                            : Column(
-                              children: [
-                                GestureDetector(
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder:
-                                            (_) => ForumInsightScreen(
-                                              topicId: widget.topicId,
-                                            ),
+                            : Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: Spacing.md,
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Gap(Spacing.md),
+                                  GestureDetector(
+                                    onTap: () {
+                                      context.pushNamed(
+                                        'forumInsight',
+                                        extra: widget.topicId,
+                                      );
+                                    },
+                                    child: Text(
+                                      topic.content,
+                                      style: textTheme.bodyMedium?.copyWith(
+                                        color: colorScheme.onSurface.withValues(
+                                          alpha: 0.8,
+                                        ),
                                       ),
-                                    );
-                                  },
-                                  child: ForumCard(
-                                    forum: topic,
-                                    userSide: widget.userSide.toUpperCase(),
-                                    disableNavigation: true,
+                                    ),
                                   ),
-                                ),
-                                // The topic's poll, if it has one (§8.11).
-                                // Separate from the FOR / AGAINST split and
-                                // from the vote that activated this topic —
-                                // this asks readers a question and gates
-                                // nothing. Renders nothing when the topic has
-                                // no poll.
-                                Padding(
-                                  padding: EdgeInsets.only(top: Spacing.sm.h),
-                                  child: PollCard(
-                                    target: PollTarget.topic(widget.topicId),
+                                  // The topic's poll, if it has one (§8.11).
+                                  // Separate from the FOR / AGAINST split and
+                                  // from the vote that activated this topic —
+                                  // this asks readers a question and gates
+                                  // nothing. Renders nothing when the topic has
+                                  // no poll.
+                                  Padding(
+                                    padding: EdgeInsets.only(top: Spacing.sm.h),
+                                    child: PollCard(
+                                      target: PollTarget.topic(widget.topicId),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                  AppDivider(),
+                                ],
+                              ),
                             ),
                   ),
                   // One chronological group-chat feed: FOR and AGAINST posts
@@ -351,6 +410,10 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
                           child: ErrorStateWidget.from(error),
                         ),
                     data: (posts) {
+                      // Read-only bookkeeping for _jumpToPost's index-based
+                      // fallback (see its doc) — not a setState, this must
+                      // never trigger its own rebuild mid-build.
+                      _latestPosts = posts;
                       final repliesByParent = _repliesByParent(posts);
                       // forumPostsProvider already orders by created_at
                       // ascending, so the list is chronological as fetched —
@@ -601,13 +664,7 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
                   title: const Text('Forum insight'),
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder:
-                            (_) => ForumInsightScreen(topicId: widget.topicId),
-                      ),
-                    );
+                    context.pushNamed('forumInsight', extra: widget.topicId);
                   },
                 ),
                 ListTile(
@@ -639,9 +696,19 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
               TextButton(
                 onPressed: () async {
                   Navigator.pop(context);
-                  await ref.read(reportForumProvider(widget.topicId).future);
-                  if (context.mounted) {
-                    context.showInfoSnackbar('Thank you. We will review this.');
+                  try {
+                    await ref.read(reportForumProvider(widget.topicId).future);
+                    if (context.mounted) {
+                      context.showInfoSnackbar(
+                        'Thank you. We will review this.',
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to report: $e')),
+                      );
+                    }
                   }
                 },
                 child: const Text('Submit'),
