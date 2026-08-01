@@ -82,17 +82,20 @@ async function ensureUserRow(
   const displayName = user.phone ?? user.email?.split("@")[0] ??
     `user-${user.id.slice(0, 8)}`;
 
+  // public.users has no `email` column (20260606133000_phone_only_auth.sql
+  // dropped it — launch auth is phone OTP only). ignoreDuplicates so this
+  // only ever INSERTs a missing row; it must never overwrite an existing
+  // user's `mode` on every invite creation.
   const { error } = await supabase
     .from("users")
     .upsert(
       {
         id: user.id,
-        email: user.email,
         phone: user.phone,
         display_name: displayName,
         mode: "couples",
       },
-      { onConflict: "id" },
+      { onConflict: "id", ignoreDuplicates: true },
     );
   if (error) throw error;
 }
@@ -119,7 +122,7 @@ function handleError(error: unknown): Response {
   }
   console.error(
     "create-relationship-invite failed:",
-    error instanceof Error ? error.name : typeof error,
+    error instanceof Error ? error.stack ?? error.message : JSON.stringify(error),
   );
   return jsonResponse({ error: "Could not create relationship invite" }, 500);
 }

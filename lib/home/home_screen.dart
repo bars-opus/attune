@@ -86,6 +86,22 @@ class _HomeScreenState extends State<HomeScreen> {
     return store;
   }
 
+  /// Persists a personal-mode user's move onto the couplesPending track
+  /// (see OnboardingStore.startCouplesInvite's doc) after they generate a
+  /// partner invite from ChatCouplesLockedScreen, then reloads the store so
+  /// this shell re-reads `mode` and swaps the Chat tab over to the pending
+  /// state on the next build. The screen that triggers this has no access
+  /// to _storeFuture itself — it lives several widgets below where the
+  /// store is owned — so this is threaded down as a callback instead.
+  Future<void> _onInviteSent() async {
+    final store = await _storeFuture;
+    await store.startCouplesInvite();
+    if (!mounted) return;
+    setState(() {
+      _storeFuture = _loadStore();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<OnboardingStore>(
@@ -135,6 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ? AuthenticatedChatWorkspace(
                       isCouples: isActiveCouples,
                       isPendingCouples: isRelationshipTrack && !isActiveCouples,
+                      onInviteSent: _onInviteSent,
                     )
                     : const LoginProfile(),
           ),

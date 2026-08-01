@@ -1,4 +1,5 @@
 import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/chat/presentation/screens/chat_couples_locked_screen.dart';
 import 'package:attune/features/chat/presentation/screens/chat_home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,10 +9,16 @@ class AuthenticatedChatWorkspace extends ConsumerWidget {
     super.key,
     required this.isCouples,
     required this.isPendingCouples,
+    required this.onInviteSent,
   });
 
   final bool isCouples;
   final bool isPendingCouples;
+
+  /// Bubbled up to HomeScreen (see its doc) so the app shell can reload the
+  /// OnboardingStore and re-route once a personal-mode user generates a
+  /// partner invite and moves onto the couplesPending track.
+  final VoidCallback onInviteSent;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -22,16 +29,9 @@ class AuthenticatedChatWorkspace extends ConsumerWidget {
     }
 
     if (!isCouples) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            isPendingCouples
-                ? 'Your relationship invite is still pending. Chat unlocks when both partners are connected.'
-                : 'Chat is available in Couples mode.',
-            textAlign: TextAlign.center,
-          ),
-        ),
+      return ChatCouplesLockedScreen(
+        isPendingCouples: isPendingCouples,
+        onInviteSent: onInviteSent,
       );
     }
 

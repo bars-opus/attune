@@ -125,6 +125,16 @@ class OnboardingStore {
     await _prefs.setBool(_key(_completedKey), true);
   }
 
+  /// Moves an already-completed personal-mode user onto the couples track
+  /// after they generate a partner invite from the Chat tab (see
+  /// ChatCouplesLockedScreen) — NOT part of the one-time onboarding flow,
+  /// which is the only other place `mode` was previously ever written.
+  /// `completed` and `displayName` are untouched: this is a track change
+  /// for an already-onboarded user, not a fresh completion.
+  Future<void> startCouplesInvite() async {
+    await _prefs.setString(_key(_modeKey), OnboardingMode.couplesPending.name);
+  }
+
   Future<void> reset() async {
     await _prefs.remove(_key(_completedKey));
     await _prefs.remove(_key(_modeKey));
