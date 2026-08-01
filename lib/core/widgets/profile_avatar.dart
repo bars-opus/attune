@@ -4,9 +4,6 @@ import 'dart:io';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/profile_avatar_placeholder.dart';
 
-
-
-
 class ProfileAvatar extends StatelessWidget {
   String avatarUrl;
   String currentUserId;
@@ -52,13 +49,6 @@ class ProfileAvatar extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           border: Border.all(color: colorScheme.surface, width: 3.w),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 8.r,
-              offset: Offset(0, 2.h),
-            ),
-          ],
         ),
         child: ClipOval(
           child:
@@ -92,6 +82,8 @@ class ProfileAvatar extends StatelessWidget {
   Widget _buildPlaceholder(ColorScheme colorScheme) {
     if (icon == null) return ProfileAvatarPlaceholder(size: size);
     return Container(
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: backgroundColor ?? colorScheme.primary,
