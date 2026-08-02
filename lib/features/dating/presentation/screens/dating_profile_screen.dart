@@ -276,7 +276,7 @@ class _DatingProfileScreenState extends ConsumerState<DatingProfileScreen> {
                 borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
               ),
               child: Text(
-                'Your profile must pass moderation and trusted age verification before activation. Photos remain unavailable until their production gate is approved.',
+                'Your profile must pass moderation and trusted age verification before activation.',
                 style: textTheme.bodySmall,
               ),
             ),

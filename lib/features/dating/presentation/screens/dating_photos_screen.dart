@@ -17,6 +17,7 @@ class _DatingPhotosScreenState extends ConsumerState<DatingPhotosScreen> {
   final Set<int> _uploadingPositions = {};
 
   Future<void> _addPhoto(int position) async {
+    if (_uploadingPositions.contains(position)) return;
     final picked = await _imagePicker.pickImage(
       fromCamera: false,
       crop: true,
@@ -127,6 +128,7 @@ class _DatingPhotosScreenState extends ConsumerState<DatingPhotosScreen> {
         ),
         data: (photos) {
           final byPosition = {for (final p in photos) p.position: p};
+          final hasApprovedPhoto = photos.any((p) => p.isApproved);
           return Padding(
             padding: EdgeInsets.all(Spacing.md.w),
             child: Column(
@@ -195,11 +197,55 @@ class _DatingPhotosScreenState extends ConsumerState<DatingPhotosScreen> {
                     );
                   }),
                 ),
+                if (hasApprovedPhoto) ...[
+                  Gap(Spacing.xl.h),
+                  _VerificationSection(),
+                ],
               ],
             ),
           );
         },
       ),
+    );
+  }
+}
+
+class _VerificationSection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final textTheme = Theme.of(context).textTheme;
+    final verificationAsync = ref.watch(datingVerificationStateProvider);
+
+    return verificationAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (error, stack) => const SizedBox.shrink(),
+      data: (state) {
+        if (state == 'verified' || state == 'pending') {
+          return const SizedBox.shrink();
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Confirm it\'s really you',
+              style: textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Gap(Spacing.sm.h),
+            Text(
+              'Take a quick verification selfie to confirm your photos are consistent with each other.',
+              style: textTheme.bodyMedium,
+            ),
+            Gap(Spacing.sm.h),
+            AppButton(
+              label: 'Verify your photos',
+              onPressed: () => context.pushNamed('datingVerification'),
+              variant: ButtonVariant.outline,
+            ),
+          ],
+        );
+      },
     );
   }
 }
