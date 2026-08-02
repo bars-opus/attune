@@ -1,0 +1,199 @@
+// supabase/functions/process-dating-photo/index.ts
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import {
+  jsonResponse,
+  requireServiceRole,
+  serviceRoleClient,
+} from "../_shared/attune_auth.ts";
+import {
+  analyzeDatingPhoto,
+  computeFaceAreaRatio,
+  decideModerationOutcome,
+} from "../_shared/google_vision.ts";
+
+const MAX_ATTEMPTS = 5;
+const VISION_API_KEY = Deno.env.get("GOOGLE_VISION_API_KEY");
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return jsonResponse({ ok: true });
+  try {
+    requireServiceRole(req);
+    if (!VISION_API_KEY) {
+      throw new Error("missing_vision_api_key");
+    }
+    const supabase = serviceRoleClient();
+    const body = await req.json().catch(() => ({}));
+    const requestedId = typeof body.photo_id === "string" ? body.photo_id : null;
+
+    const { data: jobs, error } = await supabase.rpc("claim_dating_photo_jobs", {
+      p_limit: requestedId ? 1 : 20,
+      p_photo_id: requestedId,
+    });
+    if (error) throw error;
+
+    const { data: configRows } = await supabase
+      .from("dating_photo_moderation_config")
+      .select("min_face_confidence, min_face_area_ratio")
+      .limit(1);
+    const config = configRows?.[0] ?? {
+      min_face_confidence: 0.7,
+      min_face_area_ratio: 0.06,
+    };
+
+    let processed = 0;
+    for (const job of jobs ?? []) {
+      try {
+        const { data: photo, error: photoError } = await supabase
+          .from("dating_profile_photos")
+          .select("id, storage_key")
+          .eq("id", job.photo_id)
+          .single();
+        if (photoError || !photo) throw new Error("photo_missing");
+
+        const { data: image, error: downloadError } = await supabase.storage
+          .from("dating-profile-photos")
+          .download(photo.storage_key);
+        if (downloadError || !image) throw new Error("decode_failed");
+
+        const bytes = new Uint8Array(await image.arrayBuffer());
+        const dimensions = await readImageDimensions(bytes);
+        if (!dimensions || dimensions.width < 600 || dimensions.height < 600) {
+          await writeVerdict(supabase, photo.id, "rejected", "image_too_small");
+          await finish(supabase, job.photo_id, "done", null);
+          processed++;
+          continue;
+        }
+
+        const visionResult = await analyzeDatingPhoto({
+          imageBytes: bytes,
+          apiKey: VISION_API_KEY,
+        });
+
+        // Compute the precise face-area ratio using the raw bounding box and
+        // our own known image dimensions (Vision doesn't return image size).
+        const rawResponse = await fetch(
+          `https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              requests: [{
+                image: { content: base64(bytes) },
+                features: [{ type: "FACE_DETECTION", maxResults: 1 }],
+              }],
+            }),
+            signal: AbortSignal.timeout(10000),
+          },
+        );
+        const rawPayload = await rawResponse.json();
+        const vertices =
+          rawPayload?.responses?.[0]?.faceAnnotations?.[0]?.fdBoundingPoly?.vertices;
+        const faceAreaRatio = vertices
+          ? computeFaceAreaRatio(vertices, dimensions.width, dimensions.height)
+          : null;
+
+        const outcome = decideModerationOutcome(
+          { ...visionResult, faceAreaRatio },
+          {
+            minFaceConfidence: config.min_face_confidence,
+            minFaceAreaRatio: config.min_face_area_ratio,
+          },
+        );
+
+        await writeVerdict(supabase, photo.id, outcome.state, outcome.reason);
+        await finish(supabase, job.photo_id, "done", null);
+        processed++;
+      } catch (jobError) {
+        const dead = Number(job.attempts ?? 0) >= MAX_ATTEMPTS;
+        if (dead) {
+          await writeVerdict(supabase, job.photo_id, "needs_review", "moderation_failed");
+        }
+        await finish(
+          supabase,
+          job.photo_id,
+          dead ? "dead_letter" : "pending",
+          errorCode(jobError),
+        );
+      }
+    }
+    return jsonResponse({ success: true, processed });
+  } catch (error) {
+    return jsonResponse({ success: false, error: errorCode(error) }, 500);
+  }
+});
+
+async function writeVerdict(
+  supabase: ReturnType<typeof serviceRoleClient>,
+  photoId: string,
+  state: "approved" | "rejected" | "needs_review",
+  reason: string | null,
+) {
+  const { error } = await supabase
+    .from("dating_profile_photos")
+    .update({
+      moderation_state: state,
+      rejection_reason: reason,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq("id", photoId);
+  if (error) throw error;
+}
+
+async function finish(
+  supabase: ReturnType<typeof serviceRoleClient>,
+  photoId: string,
+  state: "pending" | "done" | "dead_letter",
+  code: string | null,
+) {
+  const { error } = await supabase.from("dating_photo_moderation_outbox")
+    .update({
+      state,
+      last_error_code: code,
+      processing_started_at: state === "pending" ? null : undefined,
+      completed_at: state === "done" || state === "dead_letter"
+        ? new Date().toISOString()
+        : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("photo_id", photoId).eq("state", "processing");
+  if (error) throw error;
+}
+
+async function readImageDimensions(
+  bytes: Uint8Array,
+): Promise<{ width: number; height: number } | null> {
+  // Minimal JPEG/PNG header parse sufficient for the dimension gate; a full
+  // decode is not required here since Vision already validated decodability.
+  if (bytes.length > 24 && bytes[0] === 0x89 && bytes[1] === 0x50) {
+    // PNG: width/height are big-endian uint32 at offset 16/20.
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return { width: view.getUint32(16), height: view.getUint32(20) };
+  }
+  if (bytes.length > 4 && bytes[0] === 0xFF && bytes[1] === 0xD8) {
+    // JPEG: scan markers for SOF0/SOF2 to find dimensions.
+    let offset = 2;
+    while (offset < bytes.length - 8) {
+      if (bytes[offset] !== 0xFF) { offset++; continue; }
+      const marker = bytes[offset + 1];
+      if (marker === 0xC0 || marker === 0xC2) {
+        const height = (bytes[offset + 5] << 8) | bytes[offset + 6];
+        const width = (bytes[offset + 7] << 8) | bytes[offset + 8];
+        return { width, height };
+      }
+      const segmentLength = (bytes[offset + 2] << 8) | bytes[offset + 3];
+      offset += 2 + segmentLength;
+    }
+    return null;
+  }
+  return null;
+}
+
+function base64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+function errorCode(error: unknown) {
+  return (error instanceof Error ? error.message : "unknown_error").slice(0, 120);
+}
