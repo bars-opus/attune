@@ -6,7 +6,6 @@ import 'package:attune/core/widgets/profile_avatar.dart';
 import 'package:attune/features/auth/intro/widgets/intro_guide_widget.dart';
 import 'package:attune/core/widgets/animated_circle.dart';
 
-import 'package:attune/features/healing/presentation/providers/healing_providers.dart';
 import 'package:attune/features/onboarding/presentation/widgets/invite_card.dart';
 import 'package:attune/app/documentations/user_manual/data/manual_documentation_registry.dart';
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart';
@@ -166,19 +165,6 @@ class _ChatCouplesLockedScreenState
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final loc = AppLocalizations.of(context)!;
-
-    // ATTUNE_MASTER_SPEC.md §8.9: the Healing journey is "if applicable" —
-    // eligible only for a user who already has a journey (in progress or
-    // done) or has an actual ended relationship to start one from. A
-    // couplesPending/brand-new-personal user has neither: they've never had
-    // an Attune relationship yet, just a pending invite. Showing the card
-    // to them routed straight into HealingJourneyScreen's empty state, a
-    // dead end for a button that should not have been reachable.
-    final hasHealingJourney =
-        ref.watch(healingJourneyProvider).valueOrNull != null;
-    final hasStartableRelationship =
-        ref.watch(healingStartContextProvider).valueOrNull != null;
-    final isHealingEligible = hasHealingJourney || hasStartableRelationship;
 
     return Scaffold(
       // No AppBar: TripleTapDetector's invisible quick-exit gesture zone is
@@ -354,12 +340,9 @@ class _ChatCouplesLockedScreenState
                 ],
               ),
             ),
-            if (isHealingEligible) ...[
-              // Gap(Spacing.m.h),
-              _ReflectionEntryCard(
-                onTap: () => context.pushNamed('healingJourney'),
-              ),
-            ],
+            _ReflectionEntryCard(
+              onTap: () => context.pushNamed('reflectionJournal'),
+            ),
 
             if (!_isCreatingInvite)
               if (_invite == null) ...[
