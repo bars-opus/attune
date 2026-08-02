@@ -190,6 +190,32 @@ CREATE TRIGGER trigger_reject_unimplemented_recurrence
   BEFORE INSERT OR UPDATE ON public.reminders
   FOR EACH ROW EXECUTE FUNCTION public.reject_unimplemented_recurrence();
 
+-- Validate that family_member_id (client-writable on INSERT and UPDATE)
+-- actually belongs to the reminder's own relationship. A plain CHECK
+-- constraint can't query another table, so this is enforced via trigger —
+-- without it, a malicious/buggy client could point a reminder at a family
+-- member belonging to a different couple's relationship.
+CREATE OR REPLACE FUNCTION public.validate_reminder_family_member_relationship()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.family_member_id IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.couple_family_members
+      WHERE id = NEW.family_member_id
+        AND relationship_id = NEW.relationship_id
+    ) THEN
+      RAISE EXCEPTION 'family_member_id does not belong to this relationship';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trigger_validate_reminder_family_member_relationship ON public.reminders;
+CREATE TRIGGER trigger_validate_reminder_family_member_relationship
+  BEFORE INSERT OR UPDATE ON public.reminders
+  FOR EACH ROW EXECUTE FUNCTION public.validate_reminder_family_member_relationship();
+
 -- === Indexes ===
 
 CREATE INDEX IF NOT EXISTS idx_reminders_relationship_remind_at
@@ -301,18 +327,40 @@ BEGIN
     WHERE r.recurrence = 'yearly' OR (r.recurrence = 'none' AND r.sent = false)
   LOOP
     IF v_reminder.recurrence = 'yearly' THEN
-      v_next_occurrence := make_date(
-        EXTRACT(YEAR FROM v_today)::int,
-        EXTRACT(MONTH FROM v_reminder.remind_at)::int,
-        EXTRACT(DAY FROM v_reminder.remind_at)::int
-      );
-      IF v_next_occurrence < v_today THEN
+      -- Per-row computation is wrapped so a single malformed/edge-case date
+      -- (e.g. a Feb-29 birthday in a non-leap year) can't raise an
+      -- unhandled exception that would abort the entire FOR loop and skip
+      -- every other reminder in this cron run.
+      BEGIN
         v_next_occurrence := make_date(
-          EXTRACT(YEAR FROM v_today)::int + 1,
+          EXTRACT(YEAR FROM v_today)::int,
           EXTRACT(MONTH FROM v_reminder.remind_at)::int,
           EXTRACT(DAY FROM v_reminder.remind_at)::int
         );
-      END IF;
+        IF v_next_occurrence < v_today THEN
+          v_next_occurrence := make_date(
+            EXTRACT(YEAR FROM v_today)::int + 1,
+            EXTRACT(MONTH FROM v_reminder.remind_at)::int,
+            EXTRACT(DAY FROM v_reminder.remind_at)::int
+          );
+        END IF;
+      EXCEPTION WHEN OTHERS THEN
+        -- The only case that can raise here is a Feb-29 reminder landing on
+        -- a non-leap year: fall back to firing on Feb 28 of that year
+        -- (standard "day before" convention) rather than silently skipping
+        -- the reminder for the whole year.
+        IF EXTRACT(MONTH FROM v_reminder.remind_at)::int = 2
+           AND EXTRACT(DAY FROM v_reminder.remind_at)::int = 29 THEN
+          v_next_occurrence := make_date(EXTRACT(YEAR FROM v_today)::int, 2, 28);
+          IF v_next_occurrence < v_today THEN
+            v_next_occurrence := make_date(EXTRACT(YEAR FROM v_today)::int + 1, 2, 28);
+          END IF;
+        ELSE
+          RAISE WARNING 'generate_reminder_notifications: failed to compute next occurrence for reminder %: %',
+            v_reminder.id, SQLERRM;
+          CONTINUE;
+        END IF;
+      END;
     ELSE
       v_next_occurrence := v_reminder.remind_at::date;
     END IF;
