@@ -1,6 +1,7 @@
 // lib/features/pulse/presentation/screens/pulse_tab.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/reminders/presentation/screens/couples_calendar_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'pulse_screen.dart';
@@ -19,7 +20,7 @@ class _PulseTabState extends ConsumerState<PulseTab>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (mounted) {
         setState(() {});
@@ -54,6 +55,7 @@ class _PulseTabState extends ConsumerState<PulseTab>
                   children: [
                     _buildPillOption('Pulse', 0),
                     _buildPillOption('Timeline', 1),
+                    _buildPillOption('Calendar', 2),
                   ],
                 ),
               ),
@@ -64,7 +66,7 @@ class _PulseTabState extends ConsumerState<PulseTab>
             child: TabBarView(
               controller: _tabController,
               physics: const PageScrollPhysics(),
-              children: const [PulseScreen(), TimelineScreen()],
+              children: const [PulseScreen(), TimelineScreen(), CouplesCalendarScreen()],
             ),
           ),
         ],
