@@ -10,7 +10,7 @@ Deno.test("decideModerationOutcome: approves a clean, confident, well-framed fac
     faceConfidence: 0.95,
     faceBlurred: false,
     faceUnderexposed: false,
-    faceAreaRatio: 0.15,
+    faceAreaRatio: 0.15, faceBoundingPolyVertices: null,
   };
   const outcome = decideModerationOutcome(result, config);
   assertEquals(outcome.state, "approved");
@@ -24,7 +24,7 @@ Deno.test("decideModerationOutcome: rejects adult content at POSSIBLE", () => {
     faceConfidence: 0.95,
     faceBlurred: false,
     faceUnderexposed: false,
-    faceAreaRatio: 0.15,
+    faceAreaRatio: 0.15, faceBoundingPolyVertices: null,
   };
   const outcome = decideModerationOutcome(result, config);
   assertEquals(outcome.state, "rejected");
@@ -34,7 +34,7 @@ Deno.test("decideModerationOutcome: rejects adult content at POSSIBLE", () => {
 Deno.test("decideModerationOutcome: rejects racy only at LIKELY, not POSSIBLE", () => {
   const possible = {
     safeSearchFlags: { adult: "VERY_UNLIKELY", violence: "VERY_UNLIKELY", racy: "POSSIBLE", medical: "VERY_UNLIKELY", spoof: "VERY_UNLIKELY" },
-    faceDetected: true, faceConfidence: 0.95, faceBlurred: false, faceUnderexposed: false, faceAreaRatio: 0.15,
+    faceDetected: true, faceConfidence: 0.95, faceBlurred: false, faceUnderexposed: false, faceAreaRatio: 0.15, faceBoundingPolyVertices: null,
   };
   assertEquals(decideModerationOutcome(possible, config).state, "approved");
 
@@ -49,7 +49,7 @@ Deno.test("decideModerationOutcome: no face detected routes to needs_review, not
     faceConfidence: null,
     faceBlurred: false,
     faceUnderexposed: false,
-    faceAreaRatio: null,
+    faceAreaRatio: null, faceBoundingPolyVertices: null,
   };
   const outcome = decideModerationOutcome(result, config);
   assertEquals(outcome.state, "needs_review");
@@ -63,7 +63,7 @@ Deno.test("decideModerationOutcome: low face confidence routes to needs_review",
     faceConfidence: 0.4,
     faceBlurred: false,
     faceUnderexposed: false,
-    faceAreaRatio: 0.15,
+    faceAreaRatio: 0.15, faceBoundingPolyVertices: null,
   };
   const outcome = decideModerationOutcome(result, config);
   assertEquals(outcome.state, "needs_review");
@@ -77,7 +77,7 @@ Deno.test("decideModerationOutcome: blurred face rejects with specific reason", 
     faceConfidence: 0.9,
     faceBlurred: true,
     faceUnderexposed: false,
-    faceAreaRatio: 0.15,
+    faceAreaRatio: 0.15, faceBoundingPolyVertices: null,
   };
   const outcome = decideModerationOutcome(result, config);
   assertEquals(outcome.state, "rejected");
@@ -91,7 +91,7 @@ Deno.test("decideModerationOutcome: face too small in frame rejects with specifi
     faceConfidence: 0.9,
     faceBlurred: false,
     faceUnderexposed: false,
-    faceAreaRatio: 0.02,
+    faceAreaRatio: 0.02, faceBoundingPolyVertices: null,
   };
   const outcome = decideModerationOutcome(result, config);
   assertEquals(outcome.state, "rejected");

@@ -1,6 +1,7 @@
 // supabase/functions/process-dating-photo/index.ts
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import {
+  HttpError,
   jsonResponse,
   requireServiceRole,
   serviceRoleClient,
@@ -69,27 +70,16 @@ serve(async (req) => {
           apiKey: VISION_API_KEY,
         });
 
-        // Compute the precise face-area ratio using the raw bounding box and
-        // our own known image dimensions (Vision doesn't return image size).
-        const rawResponse = await fetch(
-          `https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              requests: [{
-                image: { content: base64(bytes) },
-                features: [{ type: "FACE_DETECTION", maxResults: 1 }],
-              }],
-            }),
-            signal: AbortSignal.timeout(10000),
-          },
-        );
-        const rawPayload = await rawResponse.json();
-        const vertices =
-          rawPayload?.responses?.[0]?.faceAnnotations?.[0]?.fdBoundingPoly?.vertices;
-        const faceAreaRatio = vertices
-          ? computeFaceAreaRatio(vertices, dimensions.width, dimensions.height)
+        // Vision doesn't return image dimensions, so the precise face-area
+        // ratio is computed here using the decode step's own known
+        // dimensions plus the bounding-box vertices already fetched by
+        // analyzeDatingPhoto — no second Vision call needed.
+        const faceAreaRatio = visionResult.faceBoundingPolyVertices
+          ? computeFaceAreaRatio(
+            visionResult.faceBoundingPolyVertices,
+            dimensions.width,
+            dimensions.height,
+          )
           : null;
 
         const outcome = decideModerationOutcome(
@@ -118,7 +108,8 @@ serve(async (req) => {
     }
     return jsonResponse({ success: true, processed });
   } catch (error) {
-    return jsonResponse({ success: false, error: errorCode(error) }, 500);
+    const status = error instanceof HttpError ? error.status : 500;
+    return jsonResponse({ success: false, error: errorCode(error) }, status);
   }
 });
 
@@ -186,12 +177,6 @@ async function readImageDimensions(
     return null;
   }
   return null;
-}
-
-function base64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
 }
 
 function errorCode(error: unknown) {

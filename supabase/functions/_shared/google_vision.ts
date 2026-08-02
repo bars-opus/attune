@@ -11,6 +11,7 @@ export interface VisionModerationResult {
   faceBlurred: boolean;
   faceUnderexposed: boolean;
   faceAreaRatio: number | null;
+  faceBoundingPolyVertices: Array<{ x?: number; y?: number }> | null;
 }
 
 export interface ModerationConfig {
@@ -106,16 +107,11 @@ export async function analyzeDatingPhoto(params: {
   const faces = annotation.faceAnnotations ?? [];
   const primaryFace = faces[0];
 
-  let faceAreaRatio: number | null = null;
-  if (primaryFace?.fdBoundingPoly?.vertices) {
-    // Image dimensions are not returned by Vision; the caller supplies the
-    // decoded image's own known dimensions via a second pass if area ratio
-    // is required precisely. For v1, approximate using bounding-box pixel
-    // span alone is insufficient without image dimensions, so this field is
-    // computed by the caller (process-dating-photo) which already knows the
-    // source image dimensions from the decode step, not here.
-    faceAreaRatio = null;
-  }
+  // Image dimensions are not returned by Vision, so the precise area ratio
+  // can't be computed here. The raw vertices are passed through so the
+  // caller (which already has the decoded image's dimensions) can compute
+  // it via computeFaceAreaRatio without a second Vision API call.
+  const faceBoundingPolyVertices = primaryFace?.fdBoundingPoly?.vertices ?? null;
 
   return {
     safeSearchFlags: {
@@ -133,7 +129,8 @@ export async function analyzeDatingPhoto(params: {
     faceUnderexposed: primaryFace?.underExposedLikelihood
       ? REJECT_AT_POSSIBLE.has(primaryFace.underExposedLikelihood)
       : false,
-    faceAreaRatio,
+    faceAreaRatio: null,
+    faceBoundingPolyVertices,
   };
 }
 
