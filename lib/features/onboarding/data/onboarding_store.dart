@@ -135,6 +135,16 @@ class OnboardingStore {
     await _prefs.setString(_key(_modeKey), OnboardingMode.couplesPending.name);
   }
 
+  /// Overwrites the locally-cached mode with a value derived from the
+  /// server's relationships.status — the one place mode is written from a
+  /// source other than the user's own device. Called by
+  /// HomeScreen._syncRelationshipMode after resolving the server state via
+  /// resolveModeFromRelationshipStatus. completed/displayName are
+  /// untouched, matching startCouplesInvite's own scope.
+  Future<void> syncModeFromServer(OnboardingMode mode) async {
+    await _prefs.setString(_key(_modeKey), mode.name);
+  }
+
   Future<void> reset() async {
     await _prefs.remove(_key(_completedKey));
     await _prefs.remove(_key(_modeKey));
