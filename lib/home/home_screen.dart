@@ -86,7 +86,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// §1.
   Future<void> _syncRelationshipMode() async {
     final store = await _storeFuture;
-    if (store.mode == OnboardingMode.personal) return;
+    // mode is null for a signed-in user who hasn't completed onboarding —
+    // that's not a relationship-track state either, so it must short
+    // circuit here too, not just the explicit `personal` case.
+    if (store.mode == null || store.mode == OnboardingMode.personal) return;
 
     final supabase = Supabase.instance.client;
     final userId = supabase.auth.currentUser?.id;
