@@ -14,52 +14,56 @@ class FamilyMembersScreen extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       builder: (sheetContext) {
-        return Padding(
-          padding: EdgeInsets.all(Spacing.md.w),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AppTextFormField(controller: nameController, label: 'Name'),
-              Gap(Spacing.md.h),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Birthday (optional)'),
-                subtitle: Text(birthday == null
-                    ? 'Not set'
-                    : '${birthday!.year}-${birthday!.month.toString().padLeft(2, '0')}-${birthday!.day.toString().padLeft(2, '0')}'),
-                trailing: const Icon(Icons.cake_outlined),
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: sheetContext,
-                    initialDate: birthday ?? DateTime(2020),
-                    firstDate: DateTime(1900),
-                    lastDate: DateTime(2100),
-                  );
-                  if (picked != null) birthday = picked;
-                },
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.all(Spacing.md.w),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppTextFormField(controller: nameController, label: 'Name'),
+                  Gap(Spacing.md.h),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Birthday (optional)'),
+                    subtitle: Text(birthday == null
+                        ? 'Not set'
+                        : '${birthday!.year}-${birthday!.month.toString().padLeft(2, '0')}-${birthday!.day.toString().padLeft(2, '0')}'),
+                    trailing: const Icon(Icons.cake_outlined),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: sheetContext,
+                        initialDate: birthday ?? DateTime(2020),
+                        firstDate: DateTime(1900),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) setSheetState(() { birthday = picked; });
+                    },
+                  ),
+                  Gap(Spacing.md.h),
+                  AppButton(
+                    label: 'Save',
+                    width: double.infinity,
+                    onPressed: () async {
+                      if (nameController.text.trim().isEmpty) return;
+                      await ref.read(
+                        upsertFamilyMemberProvider((
+                          id: id,
+                          name: nameController.text.trim(),
+                          birthday: birthday,
+                        )).future,
+                      );
+                      if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+                    },
+                  ),
+                ],
               ),
-              Gap(Spacing.md.h),
-              AppButton(
-                label: 'Save',
-                width: double.infinity,
-                onPressed: () async {
-                  if (nameController.text.trim().isEmpty) return;
-                  await ref.read(
-                    upsertFamilyMemberProvider((
-                      id: id,
-                      name: nameController.text.trim(),
-                      birthday: birthday,
-                    )).future,
-                  );
-                  if (sheetContext.mounted) Navigator.of(sheetContext).pop();
-                },
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
-    );
+    ).whenComplete(() => nameController.dispose());
   }
 
   @override
