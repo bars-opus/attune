@@ -7,6 +7,7 @@ import 'package:attune/features/chat/presentation/widgets/authenticated_chat_wor
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_sync_service.dart';
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
+import 'package:attune/features/onboarding/domain/relationship_mode_sync.dart';
 import 'package:attune/features/opinions/presentation/screen/opinions_tab.dart';
 import 'package:attune/features/safety/presentation/widgets/triple_tap_detector.dart';
 import 'package:attune/home/widgets/home_tab.dart';
@@ -32,7 +33,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _authService = PasswordlessAuthService();
   final _syncService = OnboardingSyncService();
 
@@ -43,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scopeUserId = _authService.currentUser?.id;
     _storeFuture = _loadStore();
 
@@ -58,12 +60,51 @@ class _HomeScreenState extends State<HomeScreen> {
         _storeFuture = _loadStore();
       });
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncRelationshipMode());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _authSubscription?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _syncRelationshipMode();
+  }
+
+  /// Reconciles the locally-cached OnboardingMode against the server's
+  /// relationships.status, in both directions: a partner accepting an
+  /// invite (pending -> active) and either partner ending a relationship
+  /// (active -> ended). This is the self-healing half of the fix — it
+  /// runs independent of whether a push notification was delivered,
+  /// tapped, or missed entirely, so the worst case is "found out when you
+  /// next open the app" rather than "never found out." See design spec
+  /// docs/superpowers/specs/2026-08-02-relationship-lifecycle-sync-design.md
+  /// §1.
+  Future<void> _syncRelationshipMode() async {
+    final store = await _storeFuture;
+    if (store.mode == OnboardingMode.personal) return;
+
+    final supabase = Supabase.instance.client;
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    final row = await supabase
+        .from('relationships')
+        .select('status')
+        .or('user_a.eq.$userId,user_b.eq.$userId')
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+
+    final resolved = resolveModeFromRelationshipStatus(row?['status'] as String?);
+    if (resolved != store.mode) {
+      await store.syncModeFromServer(resolved);
+      if (mounted) setState(() => _storeFuture = _loadStore());
+    }
   }
 
   Future<OnboardingStore> _loadStore() async {
