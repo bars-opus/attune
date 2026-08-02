@@ -1,15 +1,25 @@
 // lib/core/documentation/documentation_registry.dart
-import 'package:attune/app/documentations/user_manual/data/architecture_docs.dart';
-import 'package:attune/app/documentations/user_manual/data/booking/booking_getting_started.dart';
-import 'package:attune/app/documentations/user_manual/data/booking/faqs.dart';
-import 'package:attune/app/documentations/user_manual/data/booking/group_bookings.dart';
-import 'package:attune/app/documentations/user_manual/data/booking/how_to_book_services.dart';
-import 'package:attune/app/documentations/user_manual/data/booking/payment_fees_explained.dart';
-import 'package:attune/app/documentations/user_manual/data/booking/time_slots_explained.dart';
-import 'package:attune/app/documentations/user_manual/data/dash_board_docs.dart';
-import 'package:attune/app/documentations/user_manual/data/getting_started_docs.dart';
-import 'package:attune/app/documentations/user_manual/data/testing_docs.dart';
-import 'package:attune/app/documentations/user_manual/data/ui_components_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/about_attune_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/attachment_style_quiz_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/chat_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/communication_style_quiz_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/community_questions_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/conflict_style_quiz_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/conflict_translator_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/dating_mode_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/forum_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/games_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/healing_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/love_language_quiz_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/opinions_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/paint_ball_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/pulse_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/reflection_journal_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/safety_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/thirty_six_questions_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/this_or_that_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/truth_or_dare_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/verdict_docs.dart';
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart';
 import 'package:attune/features/onboarding/presentation/data/anchors_docs.dart';
 import 'package:attune/features/onboarding/presentation/data/attachment_quiz_docs.dart';
@@ -24,20 +34,32 @@ class DocumentationRegistry {
   // Initialize with default modules
   static void initialize() {
     // Register all your modules here
-    registerModule(BookingGettingStartedDocs());
-    registerModule(HowToBookServicesDocs());
-    registerModule(GroupBookingsDocs());
-    registerModule(PaymentFeesExplainedDocs());
-    registerModule(TimeSlotsExplainedDocs());
-    registerModule(FAQsDocs());
+    registerModule(AboutAttuneDocs());
 
-    registerModule(ArchitectureDocs());
-    registerModule(DashboardDocs());
-    registerModule(GettingStartedDocs());
-    registerModule(TestingDocs());
-    registerModule(UIComponentsDocs());
+    registerModule(ChatDocs());
+    registerModule(GamesDocs());
+    registerModule(TruthOrDareDocs());
+    registerModule(ThisOrThatDocs());
+    registerModule(ThirtySixQuestionsDocs());
+    registerModule(HealingDocs());
+
+    registerModule(ReflectionJournalDocs());
+    registerModule(PulseDocs());
+    registerModule(VerdictDocs());
+    registerModule(ConflictTranslatorDocs());
+    registerModule(SafetyDocs());
     registerModule(AttachmentQuizDocs());
     registerModule(AnchorsDocs());
+
+    registerModule(DatingModeDocs());
+    registerModule(OpinionsDocs());
+    registerModule(ForumDocs());
+    registerModule(CommunityQuestionsDocs());
+    registerModule(PaintBallDocs());
+    registerModule(AttachmentStyleQuizDocs());
+    registerModule(CommunicationStyleQuizDocs());
+    registerModule(ConflictStyleQuizDocs());
+    registerModule(LoveLanguageQuizDocs());
 
     // Add more as needed
   }
@@ -50,27 +72,42 @@ class DocumentationRegistry {
   // ✅ 2. Get module by ID
   static DocumentationModule? getById(String id) => _idMap[id];
 
-  static BookingGettingStartedDocs get bookingGettingStarted =>
-      getById('bookingGettingStarted') as BookingGettingStartedDocs;
-  static HowToBookServicesDocs get howToBookServices =>
-      getById('howToBookServices') as HowToBookServicesDocs;
-  static GroupBookingsDocs get groupBookings =>
-      getById('groupBookings') as GroupBookingsDocs;
-  static PaymentFeesExplainedDocs get paymentFeesExplained =>
-      getById('paymentFeesExplained') as PaymentFeesExplainedDocs;
-  static TimeSlotsExplainedDocs get timeSlotsExplained =>
-      getById('timeSlotsExplained') as TimeSlotsExplainedDocs;
-  static FAQsDocs get faqs => getById('faqs') as FAQsDocs;
+  static AboutAttuneDocs get aboutAttune =>
+      getById('aboutAttune') as AboutAttuneDocs;
+  static ChatDocs get chat => getById('chat') as ChatDocs;
+  static GamesDocs get games => getById('games') as GamesDocs;
+  static TruthOrDareDocs get truthOrDare =>
+      getById('truthOrDare') as TruthOrDareDocs;
+  static ThisOrThatDocs get thisOrThat =>
+      getById('thisOrThat') as ThisOrThatDocs;
+  static ThirtySixQuestionsDocs get thirtySixQuestions =>
+      getById('thirtySixQuestions') as ThirtySixQuestionsDocs;
+  static HealingDocs get healing => getById('healing') as HealingDocs;
 
   // ✅ 3. Get direct instances (for type-safe access)
-  static ArchitectureDocs get architecture =>
-      getById('architecture') as ArchitectureDocs;
-  static DashboardDocs get dashboard => getById('dashboard') as DashboardDocs;
-  static GettingStartedDocs get gettingStarted =>
-      getById('gettingStarted') as GettingStartedDocs;
-  static TestingDocs get testing => getById('testing') as TestingDocs;
-  static UIComponentsDocs get uiComponents =>
-      getById('uiComponents') as UIComponentsDocs;
+  static ReflectionJournalDocs get reflectionJournal =>
+      getById('reflectionJournal') as ReflectionJournalDocs;
+  static PulseDocs get pulse => getById('pulse') as PulseDocs;
+  static VerdictDocs get verdict => getById('verdict') as VerdictDocs;
+  static ConflictTranslatorDocs get conflictTranslator =>
+      getById('conflictTranslator') as ConflictTranslatorDocs;
+  static SafetyDocs get safety => getById('safety') as SafetyDocs;
+  static DatingModeDocs get datingMode =>
+      getById('datingMode') as DatingModeDocs;
+  static OpinionsDocs get opinions => getById('opinions') as OpinionsDocs;
+  static ForumDocs get forums => getById('forums') as ForumDocs;
+  static CommunityQuestionsDocs get communityQuestions =>
+      getById('communityQuestions') as CommunityQuestionsDocs;
+  static PaintBallDocs get paintBall =>
+      getById('paintBall') as PaintBallDocs;
+  static AttachmentStyleQuizDocs get attachmentStyleQuiz =>
+      getById('attachmentStyleQuiz') as AttachmentStyleQuizDocs;
+  static CommunicationStyleQuizDocs get communicationQuiz =>
+      getById('communicationQuiz') as CommunicationStyleQuizDocs;
+  static ConflictStyleQuizDocs get conflictStyleQuiz =>
+      getById('conflictStyleQuiz') as ConflictStyleQuizDocs;
+  static LoveLanguageQuizDocs get loveLanguageQuiz =>
+      getById('loveLanguageQuiz') as LoveLanguageQuizDocs;
   // static AuthenticationDocs get authentication =>
   // getById('authentication') as AuthenticationDocs;
 
