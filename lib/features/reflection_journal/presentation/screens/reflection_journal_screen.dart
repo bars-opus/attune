@@ -74,8 +74,16 @@ class _EntriesTab extends ConsumerWidget {
 
     return entriesAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) =>
-          Center(child: ErrorStateWidget(subtitle: 'Error: $error', title: '')),
+      error: (error, stack) {
+        debugPrint('reflection_journal error: $error');
+        return const Center(
+          child: ErrorStateWidget(
+            title: 'Something went wrong',
+            subtitle:
+                'We couldn\'t load your entries right now. Please try again in a moment.',
+          ),
+        );
+      },
       data: (entries) {
         if (entries.isEmpty) {
           return EmptyStateWidget(
@@ -118,8 +126,16 @@ class _PatternsTab extends ConsumerWidget {
 
     return patternsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) =>
-          Center(child: ErrorStateWidget(subtitle: 'Error: $error', title: '')),
+      error: (error, stack) {
+        debugPrint('reflection_journal error: $error');
+        return const Center(
+          child: ErrorStateWidget(
+            title: 'Something went wrong',
+            subtitle:
+                'We couldn\'t load your patterns right now. Please try again in a moment.',
+          ),
+        );
+      },
       data: (patterns) {
         if (patterns.status == 'insufficient_evidence') {
           return EmptyStateWidget(

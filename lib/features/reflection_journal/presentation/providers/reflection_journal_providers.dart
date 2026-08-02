@@ -51,6 +51,7 @@ final updateJournalEntryProvider =
           .updateEntry(entryId: params.entryId, content: params.content);
       ref.invalidate(journalEntriesProvider);
       ref.invalidate(journalEntryProvider(params.entryId));
+      ref.invalidate(analyseJournalEntryProvider(params.entryId));
     });
 
 final deleteJournalEntryProvider = FutureProvider.family<void, String>((

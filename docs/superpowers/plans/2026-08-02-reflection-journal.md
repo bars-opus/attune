@@ -119,10 +119,18 @@ ALTER TABLE public.reflection_journal_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reflection_journal_analysis ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.reflection_journal_entries FROM anon;
-REVOKE ALL ON public.reflection_journal_analysis FROM anon, authenticated;
+REVOKE ALL ON public.reflection_journal_analysis FROM anon;
 
 GRANT SELECT ON public.reflection_journal_entries TO authenticated;
 GRANT SELECT ON public.reflection_journal_analysis TO authenticated;
+
+-- RLS is bypassed for service_role, but base table privileges are still
+-- checked before RLS regardless of role (see
+-- 20260812120000_grant_service_role_core_tables.sql for the earlier fix of
+-- this exact bug class). The analyse-journal-entry edge function's
+-- adminClient does direct .from(...) reads/writes on both tables.
+GRANT SELECT, UPDATE ON public.reflection_journal_entries TO service_role;
+GRANT SELECT, INSERT, UPDATE ON public.reflection_journal_analysis TO service_role;
 
 DROP POLICY IF EXISTS "journal entries owner read" ON public.reflection_journal_entries;
 CREATE POLICY "journal entries owner read"

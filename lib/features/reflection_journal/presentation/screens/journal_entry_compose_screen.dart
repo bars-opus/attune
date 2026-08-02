@@ -65,6 +65,12 @@ class _JournalEntryComposeScreenState
         context.showSuccessSnackbar('Saved. Sit with that for a bit.');
         context.pop();
       }
+    } catch (e) {
+      if (mounted) {
+        context.showErrorSnackbar(
+          'Could not save that just now. Your writing is still here — try again.',
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }

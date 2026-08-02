@@ -60,8 +60,16 @@ class JournalEntryDetailScreen extends ConsumerWidget {
       ),
       body: entryAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) =>
-            Center(child: ErrorStateWidget(subtitle: 'Error: $error', title: '')),
+        error: (error, stack) {
+          debugPrint('reflection_journal error: $error');
+          return const Center(
+            child: ErrorStateWidget(
+              title: 'Something went wrong',
+              subtitle:
+                  'We couldn\'t load this entry right now. Please try again in a moment.',
+            ),
+          );
+        },
         data: (entry) {
           final analysisAsync = ref.watch(analyseJournalEntryProvider(entryId));
 
