@@ -4,6 +4,7 @@ import {
   requireUser,
   serviceRoleClient,
 } from "../_shared/attune_auth.ts";
+import { sendOneSignalPush } from "../_shared/onesignal_push.ts";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
@@ -82,6 +83,25 @@ Deno.serve(async (req) => {
       });
 
     if (acceptanceError) throw acceptanceError;
+
+    // Best-effort: a failed push must never make this endpoint appear to
+    // fail to the accepting user — the relationship update already
+    // committed, and HomeScreen._syncRelationshipMode's resume-resync is
+    // the correctness guarantee, not this push. See design spec
+    // docs/superpowers/specs/2026-08-02-relationship-lifecycle-sync-design.md §2.
+    try {
+      await sendOneSignalPush({
+        userId: relationship.user_a,
+        title: "Your partner joined Attune",
+        body: "You can start chatting now.",
+        data: { type: "invite_accepted", screen: "chat" },
+      });
+    } catch (pushError) {
+      console.error(
+        "accept-invite: push notification failed (non-fatal):",
+        pushError instanceof Error ? pushError.message : "unknown",
+      );
+    }
 
     return jsonResponse({
       relationship_id: updated.id,
