@@ -70,9 +70,18 @@ serve(async (req) => {
         }
       }
     } catch (compareError) {
-      // API failure (not a low-confidence result): retry-eligible, land in
-      // pending rather than a false verified/needs_review verdict.
+      // API failure (not a low-confidence result): retry-eligible. Revert
+      // the row to unverified rather than leaving it stranded at 'pending'
+      // — 'pending' in the response is a same-request signal for the
+      // client's retry UI, not a state that should persist if the user
+      // abandons the retry (a stranded 'pending' row would silently block
+      // discoverability forever, per dating_profile_ready()'s verified-only
+      // check).
       console.error("verify-dating-profile compare failed:", compareError instanceof Error ? compareError.message : "unknown");
+      await supabase
+        .from("dating_profiles")
+        .update({ verification_state: "unverified" })
+        .eq("user_id", user.id);
       return jsonResponse({ verification_state: "pending", retry: true }, 200);
     }
 
