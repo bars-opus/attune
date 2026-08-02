@@ -1,5 +1,7 @@
 // lib/features/settings/data/settings_data.dart
 import 'package:attune/features/auth/presentation/widgets/logout_action.dart';
+import 'package:attune/features/relationships/data/relationship_lifecycle_service.dart';
+import 'package:attune/features/relationships/presentation/widgets/end_relationship_action.dart';
 import 'package:attune/features/settings/utility/settings_exports.dart';
 
 class SettingsDataSource {
@@ -264,6 +266,38 @@ class SettingsDataSource {
               onTap: () {},
               iconColor: Colors.red,
               order: 2,
+            ),
+            SettingsConfig(
+              id: 'endRelationship',
+              title: 'End relationship',
+              subtitle: 'Permanently end your relationship on Attune',
+              icon: Icons.heart_broken_outlined,
+              type: SettingsItemType.destructive,
+              onTap: () async {
+                final container = ProviderScope.containerOf(
+                  context,
+                  listen: false,
+                );
+                final relationshipId = await container.read(
+                  activeRelationshipIdProvider.future,
+                );
+                if (relationshipId == null) {
+                  if (context.mounted) {
+                    context.showErrorSnackbar(
+                      'No active relationship to end.',
+                    );
+                  }
+                  return;
+                }
+                if (context.mounted) {
+                  EndRelationshipAction.confirmAndEnd(
+                    context,
+                    relationshipId: relationshipId,
+                  );
+                }
+              },
+              iconColor: theme.colorScheme.error,
+              order: 0,
             ),
             SettingsConfig(
               id: 'logout',
