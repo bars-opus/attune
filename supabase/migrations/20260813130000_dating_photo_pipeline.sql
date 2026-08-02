@@ -257,7 +257,7 @@ $$;
 CREATE OR REPLACE FUNCTION public.list_dating_profile_photos()
 RETURNS TABLE (
   id uuid,
-  position smallint,
+  "position" smallint,
   moderation_state text,
   rejection_reason text,
   storage_key text,
