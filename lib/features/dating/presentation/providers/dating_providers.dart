@@ -1,5 +1,6 @@
 import 'package:attune/features/dating/data/models/dating_enrollment.dart';
 import 'package:attune/features/dating/data/models/dating_introduction.dart';
+import 'package:attune/features/dating/data/models/dating_profile_photo.dart';
 import 'package:attune/features/dating/data/repositories/dating_repository.dart';
 import 'package:attune/features/dating/domain/services/dating_feature_flags.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -251,4 +252,45 @@ final deleteDatingProfileProvider = FutureProvider<void>((ref) async {
   ref.invalidate(datingEnrollmentProvider);
   ref.invalidate(datingIntroductionsProvider);
   ref.invalidate(datingMatchesProvider);
+});
+
+final datingPhotosProvider = FutureProvider<List<DatingProfilePhoto>>((ref) async {
+  return ref.read(datingRepositoryProvider).listPhotos();
+});
+
+final uploadDatingPhotoProvider = FutureProvider.family<
+  String,
+  ({String localPath, int position})
+>((ref, params) async {
+  final repository = ref.read(datingRepositoryProvider);
+  final photoId = await repository.uploadPhoto(
+    localPath: params.localPath,
+    position: params.position,
+  );
+  ref.invalidate(datingPhotosProvider);
+  ref.invalidate(datingVerificationStateProvider);
+  return photoId;
+});
+
+final deleteDatingPhotoProvider = FutureProvider.family<void, String>((
+  ref,
+  photoId,
+) async {
+  await ref.read(datingRepositoryProvider).deletePhoto(photoId);
+  ref.invalidate(datingPhotosProvider);
+});
+
+final submitVerificationSelfieProvider = FutureProvider.family<
+  String,
+  ({String localPath})
+>((ref, params) async {
+  final state = await ref
+      .read(datingRepositoryProvider)
+      .submitVerificationSelfie(localPath: params.localPath);
+  ref.invalidate(datingVerificationStateProvider);
+  return state;
+});
+
+final datingVerificationStateProvider = FutureProvider<String>((ref) async {
+  return ref.read(datingRepositoryProvider).getVerificationState();
 });

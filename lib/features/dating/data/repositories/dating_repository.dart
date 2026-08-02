@@ -1,7 +1,11 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:attune/features/dating/data/models/dating_enrollment.dart';
 import 'package:attune/features/dating/data/models/dating_introduction.dart';
+import 'package:attune/features/dating/data/models/dating_profile_photo.dart';
+import 'package:attune/features/dating/domain/services/dating_image_preparer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DatingRepository {
@@ -328,6 +332,100 @@ class DatingRepository {
         params: {'p_idempotency_key': key},
       ),
     );
+  }
+
+  Future<List<DatingProfilePhoto>> listPhotos() async {
+    final response = await _supabase.rpc('list_dating_profile_photos');
+    if (response is! List) {
+      return const <DatingProfilePhoto>[];
+    }
+    return response
+        .whereType<Map>()
+        .map((row) => DatingProfilePhoto.fromJson(Map<String, dynamic>.from(row)))
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> _createPhotoUploadIntent(String mimeType) async {
+    final response = await _supabase.rpc(
+      'create_dating_photo_upload_intent',
+      params: {'p_mime_type': mimeType},
+    );
+    final row = response is List && response.isNotEmpty
+        ? Map<String, dynamic>.from(response.first as Map)
+        : Map<String, dynamic>.from(response as Map);
+    return row;
+  }
+
+  Future<String> uploadPhoto({
+    required String localPath,
+    required int position,
+  }) async {
+    const preparer = DatingImagePreparer();
+    final prepared = await preparer.prepare(localPath);
+
+    final intent = await _createPhotoUploadIntent(prepared.mimeType);
+    final storageKey = intent['storage_key'] as String;
+    final bucket = intent['bucket'] as String;
+    final intentId = intent['intent_id'] as String;
+
+    await _supabase.storage.from(bucket).upload(
+          storageKey,
+          prepared.file,
+          fileOptions: FileOptions(upsert: false, contentType: prepared.mimeType),
+        );
+
+    final response = await _supabase.rpc(
+      'insert_dating_profile_photo',
+      params: {'p_intent_id': intentId, 'p_position': position},
+    );
+    return response as String;
+  }
+
+  Future<void> deletePhoto(String photoId) async {
+    await _runIdempotent(
+      'delete_photo_$photoId',
+      (key) => _supabase.rpc(
+        'delete_dating_profile_photo',
+        params: {'p_photo_id': photoId},
+      ),
+    );
+  }
+
+  /// Returns the resulting `verification_state` ('verified' | 'needs_review'
+  /// | 'pending'). A 'pending' result means the Rekognition call itself
+  /// failed (not a low-confidence match) — per spec §4 step 6, the caller
+  /// should offer the user a retry rather than treating this as either
+  /// success or failure.
+  Future<String> submitVerificationSelfie({
+    required String localPath,
+  }) async {
+    const preparer = DatingImagePreparer();
+    final prepared = await preparer.prepare(localPath);
+    final bytes = await File(prepared.file.path).readAsBytes();
+
+    final response = await _supabase.functions.invoke(
+      'verify-dating-profile',
+      body: {
+        'selfie_base64': base64Encode(bytes),
+        'mime_type': prepared.mimeType,
+      },
+    );
+    if (response.status != 200) {
+      throw Exception('Verification request failed');
+    }
+    final data = Map<String, dynamic>.from(response.data as Map);
+    return data['verification_state'] as String? ?? 'pending';
+  }
+
+  Future<String> getVerificationState() async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) return 'unverified';
+    final response = await _supabase
+        .from('dating_profiles')
+        .select('verification_state')
+        .eq('user_id', userId)
+        .maybeSingle();
+    return response?['verification_state'] as String? ?? 'unverified';
   }
 
   Map<String, dynamic> _mapResponse(dynamic response) {
