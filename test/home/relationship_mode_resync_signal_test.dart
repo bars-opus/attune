@@ -33,6 +33,8 @@ void main() {
     void listener() => callCount++;
 
     relationshipModeResyncSignal.addListener(listener);
+    addTearDown(() => relationshipModeResyncSignal.removeListener(listener));
+
     relationshipModeResyncSignal.value++;
     expect(callCount, 1);
 
