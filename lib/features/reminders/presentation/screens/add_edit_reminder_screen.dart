@@ -1,7 +1,9 @@
 // lib/features/reminders/presentation/screens/add_edit_reminder_screen.dart
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
+import 'package:attune/features/timeline/data/repositories/timeline_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AddEditReminderScreen extends ConsumerStatefulWidget {
   const AddEditReminderScreen({super.key});
@@ -42,7 +44,7 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
     }
     setState(() => _isSaving = true);
     try {
-      await ref.read(
+      final reminder = await ref.read(
         createReminderProvider((
           reminderType: _reminderType,
           title: _titleController.text.trim(),
@@ -52,6 +54,7 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
           familyMemberId: null,
         )).future,
       );
+      await _offerTimelineLink(reminder.id);
       if (!mounted) return;
       context.showSuccessSnackbar('Added to your calendar.');
       context.pop();
@@ -61,6 +64,47 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  Future<void> _offerTimelineLink(String reminderId) async {
+    if (_reminderType != 'anniversary') return;
+    final shouldLink = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add to your Timeline too?'),
+        content: const Text('This will also log it as a memory you can look back on.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Not now'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Add it'),
+          ),
+        ],
+      ),
+    );
+    if (shouldLink != true || !mounted) return;
+
+    final supabase = Supabase.instance.client;
+    final relationshipId = await ref.read(currentRelationshipIdProvider.future);
+    final userId = supabase.auth.currentUser?.id;
+    if (relationshipId == null || userId == null) return;
+
+    final timelineRepository = TimelineRepository(supabase);
+    final event = await timelineRepository.createEvent(
+      relationshipId: relationshipId,
+      loggedBy: userId,
+      eventType: 'anniversary',
+      title: _titleController.text.trim(),
+      occurredAt: _remindAt,
+      note: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
+    );
+    await ref.read(remindersRepositoryProvider).linkReminderToTimelineEvent(
+          reminderId: reminderId,
+          timelineEventId: event.id,
+        );
   }
 
   @override

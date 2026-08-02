@@ -105,4 +105,14 @@ class RemindersRepository {
   Future<void> deleteFamilyMember(String id) async {
     await _supabase.from('couple_family_members').delete().eq('id', id);
   }
+
+  Future<void> linkReminderToTimelineEvent({
+    required String reminderId,
+    required String timelineEventId,
+  }) async {
+    await _supabase
+        .from('reminders')
+        .update({'linked_timeline_event_id': timelineEventId})
+        .eq('id', reminderId);
+  }
 }
