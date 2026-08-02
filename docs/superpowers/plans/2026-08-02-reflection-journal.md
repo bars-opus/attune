@@ -628,7 +628,7 @@ git commit -m "feat(reflection-journal): add curated daily prompt bank"
 
 **Interfaces:**
 - Consumes: `callGeminiJson` and `STATIC_PROHIBITED_PATTERNS` from `_shared/gemini_json.ts` (Task 2); RPC `upsert_journal_analysis` from Task 1's migration.
-- Produces: an HTTP endpoint accepting `POST { action: "analyse_entry", entry_id: string }` → `{ status: "pending" | "completed" | "insufficient_evidence" | "failed", tone: string | null, observation: string | null, confidence: string | null }`, and `POST { action: "get_patterns" }` → `{ status: "completed" | "insufficient_evidence", summary: string | null, entry_count: number }`.
+- Produces: an HTTP endpoint accepting `POST { action: "analyse_entry", entry_id: string }` → `{ status: "completed" | "insufficient_evidence", tone: string | null, observation: string | null, confidence: string | null }`, and `POST { action: "get_patterns" }` → `{ status: "completed" | "insufficient_evidence", summary: string | null, entry_count: number }`. The request is handled synchronously end-to-end (the Gemini call is awaited inline) — the client-visible contract only ever has two states, not four. `"pending"`/`"failed"` remain valid values in the `reflection_journal_analysis.status` DB column (Task 1) for internal bookkeeping, but the edge function never returns them to the caller: a genuine model/network failure is caught and silently resolved to a warm fallback `"completed"` response (never a raw error, per Global Constraints), and there is no separate async "still working" state the client waits on — Task 7's client already relies on this (it re-fetches on next view, no polling UI).
 
 - [ ] **Step 1: Write the implementation**
 
