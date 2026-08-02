@@ -149,6 +149,8 @@ dev_dependencies:
   json_serializable: ^6.7.1
   flutter_launcher_icons: ^0.14.1
   flutter_native_splash: ^2.3.6
+  path_provider_platform_interface: ^2.1.2
+  plugin_platform_interface: ^2.1.8
 
 
 # For information on the generic Dart part of this file, see the
