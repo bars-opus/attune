@@ -1,10 +1,6 @@
 // lib/features/relationships/presentation/widgets/end_relationship_action.dart
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/onboarding/data/onboarding_store.dart';
-import 'package:attune/features/onboarding/domain/onboarding_models.dart';
 import 'package:attune/features/relationships/data/relationship_lifecycle_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Shared end-relationship confirmation + action flow, mirroring
 /// LogoutAction (lib/features/auth/presentation/widgets/logout_action.dart)
@@ -31,26 +27,21 @@ class EndRelationshipAction {
             await RelationshipLifecycleService().endRelationship(
               relationshipId: relationshipId,
             );
-            // Update the same local OnboardingStore HomeScreen reads,
-            // directly, rather than waiting for the next
+            // Force HomeScreen's existing _syncRelationshipMode to run
+            // immediately rather than waiting for the next
             // background->resume cycle — the ending user (unlike their
             // now-notified ex-partner) already knows what just happened
             // and shouldn't have to background the app to stop seeing a
             // stale Chat tab underneath the Healing Mode screen this
-            // pushes to next. Mirrors HomeScreen._loadStore's own
-            // scope-derivation exactly (final HomeScreen.mode reconciler
-            // still runs on next resume regardless, as a safety net if
-            // this write or the read that follows it doesn't land before
-            // the user navigates back).
-            final userId = Supabase.instance.client.auth.currentUser?.id;
-            if (userId != null && userId.isNotEmpty) {
-              final prefs = await SharedPreferences.getInstance();
-              final store = OnboardingStore(
-                prefs,
-                scope: '${OnboardingStore.userScopePrefix}.$userId',
-              );
-              await store.syncModeFromServer(OnboardingMode.personal);
-            }
+            // pushes to next. A plain SharedPreferences write alone is
+            // NOT sufficient here: HomeScreen's FutureBuilder watches an
+            // already-resolved Future<OnboardingStore> that doesn't
+            // re-invoke its builder just because this route stack pops
+            // back to it, so an explicit signal is required, not just
+            // shared storage (see relationshipModeResyncSignal's doc in
+            // home_screen.dart). _syncRelationshipMode re-derives mode
+            // from the server itself, so no local write happens here.
+            relationshipModeResyncSignal.value++;
             if (!context.mounted) return;
             context.showSuccessSnackbar('Relationship ended.');
             context.push(RouteNames.healingJourney);

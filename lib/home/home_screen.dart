@@ -15,6 +15,20 @@ import 'package:attune/home/widgets/home_widget_responsive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// Bumped whenever code outside HomeScreen's own subtree needs to force an
+/// immediate relationship-mode resync — currently only
+/// EndRelationshipAction, whose confirm-and-end flow navigates away from
+/// Settings (not a descendant of HomeScreen's build method the way
+/// AuthenticatedChatWorkspace/_onInviteSent is) immediately after ending a
+/// relationship. A plain SharedPreferences write is NOT sufficient on its
+/// own: HomeScreen's FutureBuilder watches an already-resolved future
+/// (Future of OnboardingStore) that doesn't re-invoke its builder just
+/// because an ancestor route rebuilds on a Navigator pop, so a caller with no
+/// reference to _HomeScreenState needs an explicit signal, not just a
+/// shared-storage write. See docs/superpowers/specs/
+/// 2026-08-02-relationship-lifecycle-sync-design.md §1/§3.
+final relationshipModeResyncSignal = ValueNotifier<int>(0);
+
 /// The app shell: an anonymous-browsable two-tab home (Opinions + Chat).
 ///
 /// Guests see the Opinions feed and a sign-in surface in the Chat tab. Once the
@@ -61,11 +75,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       });
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncRelationshipMode());
+    relationshipModeResyncSignal.addListener(_syncRelationshipMode);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    relationshipModeResyncSignal.removeListener(_syncRelationshipMode);
     _authSubscription?.cancel();
     super.dispose();
   }
