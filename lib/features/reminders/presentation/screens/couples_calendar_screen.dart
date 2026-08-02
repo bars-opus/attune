@@ -2,6 +2,7 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
+import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class CouplesCalendarScreen extends ConsumerWidget {
@@ -55,46 +56,32 @@ class CouplesCalendarScreen extends ConsumerWidget {
           ),
         ),
         data: (reminders) {
+          final timelineAsync = ref.watch(timelineAnniversariesThisMonthProvider);
+          final sorted = [...reminders]
+            ..sort((a, b) => _nextOccurrence(a).compareTo(_nextOccurrence(b)));
+
           if (reminders.isEmpty) {
-            return Center(
-              child: EmptyStateWidget(
-                title: 'No events yet',
-                subtitle: 'Add an anniversary, birthday, or any date you want to remember together.',
+            return timelineAsync.maybeWhen(
+              data: (timelineEvents) => timelineEvents.isEmpty
+                  ? Center(
+                      child: EmptyStateWidget(
+                        title: 'No events yet',
+                        subtitle: 'Add an anniversary, birthday, or any date you want to remember together.',
+                      ),
+                    )
+                  : _buildList(context, sorted, timelineEvents, textTheme),
+              orElse: () => Center(
+                child: EmptyStateWidget(
+                  title: 'No events yet',
+                  subtitle: 'Add an anniversary, birthday, or any date you want to remember together.',
+                ),
               ),
             );
           }
-          final sorted = [...reminders]
-            ..sort((a, b) => _nextOccurrence(a).compareTo(_nextOccurrence(b)));
-          return ListView.separated(
-            padding: EdgeInsets.all(Spacing.md.w),
-            itemCount: sorted.length,
-            separatorBuilder: (_, __) => Gap(Spacing.sm.h),
-            itemBuilder: (context, index) {
-              final reminder = sorted[index];
-              final occurrence = _nextOccurrence(reminder);
-              return Container(
-                padding: EdgeInsets.all(Spacing.md.w),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-                ),
-                child: Row(
-                  children: [
-                    Icon(reminder.isRecurring ? Icons.repeat : Icons.event_outlined),
-                    Gap(Spacing.sm.w),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(reminder.title, style: textTheme.titleSmall),
-                          Text(_countdownLabel(occurrence), style: textTheme.bodySmall),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
+
+          return timelineAsync.maybeWhen(
+            data: (timelineEvents) => _buildList(context, sorted, timelineEvents, textTheme),
+            orElse: () => _buildList(context, sorted, const [], textTheme),
           );
         },
       ),
@@ -102,6 +89,59 @@ class CouplesCalendarScreen extends ConsumerWidget {
         onPressed: () => context.pushNamed('addEditReminder'),
         child: const Icon(Icons.add),
       ),
+    );
+  }
+
+  Widget _buildList(
+    BuildContext context,
+    List<ReminderModel> reminders,
+    List<TimelineEventModel> timelineEvents,
+    TextTheme textTheme,
+  ) {
+    return ListView(
+      padding: EdgeInsets.all(Spacing.md.w),
+      children: [
+        if (timelineEvents.isNotEmpty) ...[
+          Text('This month in your Timeline', style: textTheme.titleSmall),
+          Gap(Spacing.sm.h),
+          for (final event in timelineEvents)
+            Padding(
+              padding: EdgeInsets.only(bottom: Spacing.sm.h),
+              child: ListTile(
+                leading: const Icon(Icons.history_outlined),
+                title: Text(event.title),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          Gap(Spacing.lg.h),
+        ],
+        for (final reminder in reminders)
+          Padding(
+            padding: EdgeInsets.only(bottom: Spacing.sm.h),
+            child: Container(
+              padding: EdgeInsets.all(Spacing.md.w),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
+              ),
+              child: Row(
+                children: [
+                  Icon(reminder.isRecurring ? Icons.repeat : Icons.event_outlined),
+                  Gap(Spacing.sm.w),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(reminder.title, style: textTheme.titleSmall),
+                        Text(_countdownLabel(_nextOccurrence(reminder)), style: textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

@@ -1,6 +1,8 @@
 // lib/features/reminders/presentation/providers/reminders_providers.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
+import 'package:attune/features/timeline/data/repositories/timeline_repository.dart';
 import '../../data/models/family_member_model.dart';
 import '../../data/models/reminder_model.dart';
 import '../../data/repositories/reminders_repository.dart';
@@ -98,4 +100,16 @@ final deleteFamilyMemberProvider = FutureProvider.family<void, String>((ref, id)
   await ref.read(remindersRepositoryProvider).deleteFamilyMember(id);
   ref.invalidate(familyMembersListProvider);
   ref.invalidate(remindersListProvider);
+});
+
+final timelineAnniversariesThisMonthProvider =
+    FutureProvider<List<TimelineEventModel>>((ref) async {
+  final relationshipId = await ref.read(currentRelationshipIdProvider.future);
+  if (relationshipId == null) return const [];
+  final supabase = ref.read(supabaseClientProvider);
+  final events = await TimelineRepository(supabase).getEventsForMonth(
+    relationshipId: relationshipId,
+    month: DateTime.now(),
+  );
+  return events.where((e) => e.eventType == 'anniversary').toList(growable: false);
 });
