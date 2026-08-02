@@ -86,6 +86,8 @@ import 'package:attune/features/dating/presentation/screens/dating_guided_date_s
 import 'package:attune/features/dating/presentation/screens/dating_matches_screen.dart';
 import 'package:attune/features/dating/presentation/screens/dating_profile_screen.dart';
 import 'package:attune/features/profile/widgets/profile_screen.dart';
+import 'package:attune/core/notifications/presentation/screens/notification_inbox_screen.dart';
+import 'package:attune/features/safety/domain/services/quick_exit_service.dart';
 import 'package:attune/features/safety/presentation/screens/safety_resources_screen.dart';
 import 'package:attune/features/settings/screens/language_screen.dart';
 import 'package:attune/features/settings/screens/settings_screen.dart';
@@ -242,6 +244,8 @@ class RouteNames {
   static const String thisOrThatSessionDetail = '/thisOrThatSessionDetail';
   static const String thisOrThatCustomList = '/thisOrThatCustomList';
   static const String thisOrThatCustomCreate = '/thisOrThatCustomCreate';
+  static const String neutralScreen = '/neutralScreen';
+  static const String notificationInbox = '/notificationInbox';
 }
 
 GoRouter createAppRouter(RoutingNotifier routingNotifier) {
@@ -1080,6 +1084,16 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.thisOrThatCustomCreate,
         name: 'thisOrThatCustomCreate',
         builder: (context, state) => const ThisOrThatCustomCreateScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.neutralScreen,
+        name: 'neutralScreen',
+        builder: (context, state) => const NeutralScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.notificationInbox,
+        name: 'notificationInbox',
+        builder: (context, state) => const NotificationInboxScreen(),
       ),
       GoRoute(
         path: RouteNames.chatScreen,

@@ -3,10 +3,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:go_router/go_router.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/core/notifications/presentation/providers/notification_provider.dart';
-import 'package:attune/core/notifications/presentation/screens/notification_inbox_screen.dart';
 
 /// Notification bell icon with unread count badge
 /// Automatically shows/hides based on auth state
@@ -14,7 +14,7 @@ class NotificationBellIcon extends ConsumerWidget {
   final VoidCallback? onPressed;
   final double iconSize;
   final Color? iconColor;
-  
+
   const NotificationBellIcon({
     super.key,
     this.onPressed,
@@ -26,12 +26,12 @@ class NotificationBellIcon extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
     final isLoggedIn = authState.valueOrNull != null;
-    
+
     // Don't show notification bell if not logged in
     if (!isLoggedIn) {
       return const SizedBox.shrink();
     }
-    
+
     final unreadCount = ref.watch(unreadNotificationCountProvider);
 
     return Stack(
@@ -43,14 +43,11 @@ class NotificationBellIcon extends ConsumerWidget {
             size: iconSize.w,
             color: iconColor,
           ),
-          onPressed: onPressed ?? () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const NotificationInboxScreen(),
-              ),
-            );
-          },
+          onPressed:
+              onPressed ??
+              () {
+                context.pushNamed('notificationInbox');
+              },
         ),
         if (unreadCount > 0)
           Positioned(
@@ -66,10 +63,7 @@ class NotificationBellIcon extends ConsumerWidget {
                   width: BorderWidthTokens.hairline,
                 ),
               ),
-              constraints: BoxConstraints(
-                minWidth: 16.w,
-                minHeight: 16.h,
-              ),
+              constraints: BoxConstraints(minWidth: 16.w, minHeight: 16.h),
               child: Text(
                 _formatCount(unreadCount),
                 style: TextStyle(
@@ -84,7 +78,7 @@ class NotificationBellIcon extends ConsumerWidget {
       ],
     );
   }
-  
+
   String _formatCount(int count) {
     if (count > 99) return '99+';
     return count.toString();

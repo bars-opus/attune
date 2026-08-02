@@ -7,8 +7,6 @@ import 'package:attune/features/forums/presentation/providers/forum_providers.da
 import 'package:attune/features/forums/presentation/widgets/forum_card.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
-import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
-import 'package:attune/features/opinions/presentation/screen/comment_thread_screen.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -157,16 +155,7 @@ class _TagBrowseScreenState extends ConsumerState<TagBrowseScreen> {
             }
             final opinion = opinions[index];
             void openOpinion() {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder:
-                      (_) => CommentThreadScreen(
-                        opinionId: opinion.id,
-                        opinion: opinion,
-                      ),
-                ),
-              );
+              context.pushNamed('commentThread', extra: opinion);
             }
 
             return OpinionCard(
@@ -174,14 +163,9 @@ class _TagBrowseScreenState extends ConsumerState<TagBrowseScreen> {
               onOpinionTap: openOpinion,
               onCommentTap: openOpinion,
               onProfileTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder:
-                        (_) => AnonymousProfileScreen(
-                          authorHandle: opinion.authorHandle,
-                        ),
-                  ),
+                context.pushNamed(
+                  'anonymousProfile',
+                  extra: opinion.authorHandle,
                 );
               },
             );

@@ -7,6 +7,7 @@ class AllLegalDocumentationsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         automaticallyImplyLeading: false,
@@ -35,7 +36,6 @@ class AllLegalDocumentationsScreen extends StatelessWidget {
 
               //   errorMessage: 'Cannot open this link',
               // );
-             
             },
             showTrailingArrow: false,
           ),
@@ -101,7 +101,8 @@ class AllLegalDocumentationsScreen extends StatelessWidget {
             avatarRadius: 25.h,
             onTap: () async {
               BottomSheetUtils.showDocumentationBottomSheet(
-                context: context,maxHeight: 400.h,
+                context: context,
+                maxHeight: 400.h,
                 widget: ConfirmationDialog(
                   type: ConfirmationType.warning,
                   title: 'Are you sure you want to continue',

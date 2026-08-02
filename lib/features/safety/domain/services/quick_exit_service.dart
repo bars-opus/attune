@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 
 class QuickExitService {
   static const _storage = FlutterSecureStorage(
@@ -36,10 +37,11 @@ class QuickExitService {
   }
 
   static void _showNeutralCover(BuildContext context) {
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const NeutralScreen()),
-      (route) => false,
-    );
+    // GoRouter owns the root Navigator declaratively (its Page list), so an
+    // imperative Navigator.pushAndRemoveUntil here throws
+    // '!pageBased || isWaitingForExitingDecision' — context.go replaces the
+    // whole stack the same way (route) => false used to.
+    context.goNamed('neutralScreen');
   }
 
   static void _exitApp() {

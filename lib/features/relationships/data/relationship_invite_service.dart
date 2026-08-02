@@ -47,7 +47,17 @@ class RelationshipInviteService {
 
   bool get isConfigured => _safeClient != null;
 
-  Future<RelationshipInvite> createInvite() async {
+  /// Returns the caller's current live pending invite (creating the first
+  /// one if none exists) — safe to call on every load, per
+  /// ATTUNE_MASTER_SPEC.md's "Invite codes are reusable until accepted or
+  /// expired": it never mints a new code while one is still live.
+  ///
+  /// Pass [forceNew] only for the Day 7 pivot's "Invite someone else
+  /// (doesn't cancel existing invite)" option — this always creates an
+  /// additional pending invite instead of returning an existing one, up to
+  /// the spec's cap of 3 concurrent pending invites per inviter (the
+  /// function rejects a 4th with [RelationshipInviteException]).
+  Future<RelationshipInvite> createInvite({bool forceNew = false}) async {
     final client = _safeClient;
     if (client == null) {
       // Never name the backend in a user-facing message (auth engine spec
@@ -59,7 +69,7 @@ class RelationshipInviteService {
 
     try {
       final response = await client.functions
-          .invoke('create-relationship-invite')
+          .invoke('create-relationship-invite', body: {'force_new': forceNew})
           .timeout(timeout);
       final data = _readMap(response.data);
 
@@ -71,6 +81,11 @@ class RelationshipInviteService {
     } catch (error) {
       debugPrint('[relationship-invite] create failed: ${error.runtimeType}');
       if (error is RelationshipInviteException) rethrow;
+      if (error is FunctionException && error.status == 409) {
+        throw const RelationshipInviteException(
+          'You already have the maximum number of pending invites.',
+        );
+      }
       throw const RelationshipInviteException('Could not create invite.');
     }
   }

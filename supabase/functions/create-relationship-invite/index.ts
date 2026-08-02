@@ -8,6 +8,11 @@ import {
 const INVITE_TTL_DAYS = 7;
 const INVITE_CODE_LENGTH = 6;
 const INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+// ATTUNE_MASTER_SPEC.md "Invite code rules": "A user may hold multiple
+// pending relationships (the Day 7 'invite someone else' option requires
+// it); create-relationship-invite caps concurrent pending invites at 3 per
+// inviter."
+const MAX_CONCURRENT_PENDING_INVITES = 3;
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
@@ -20,25 +25,53 @@ Deno.serve(async (req) => {
 
     await ensureUserRow(supabase, user);
 
-    const nowIso = new Date().toISOString();
-    const { data: existing, error: existingError } = await supabase
-      .from("relationships")
-      .select("id, invite_code, invite_expires_at, status")
-      .eq("user_a", user.id)
-      .eq("status", "pending")
-      .is("user_b", null)
-      .gt("invite_expires_at", nowIso)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // force_new: true is the Day 7 pivot's "Invite someone else (doesn't
+    // cancel existing invite)" option (ATTUNE_MASTER_SPEC.md). Default
+    // (absent/false) is the normal "reusable until accepted or expired"
+    // path every other caller (including a returning user's Chat tab,
+    // re-fetching on load) relies on — it must keep returning the same
+    // live invite rather than minting a new one.
+    const body = await req.json().catch(() => ({}));
+    const forceNew = body?.force_new === true;
 
-    if (existingError) throw existingError;
-    if (existing?.invite_code) {
-      return jsonResponse({
-        relationship_id: existing.id,
-        invite_code: existing.invite_code,
-        invite_expires_at: existing.invite_expires_at,
-      });
+    const nowIso = new Date().toISOString();
+
+    if (!forceNew) {
+      const { data: existing, error: existingError } = await supabase
+        .from("relationships")
+        .select("id, invite_code, invite_expires_at, status")
+        .eq("user_a", user.id)
+        .eq("status", "pending")
+        .is("user_b", null)
+        .gt("invite_expires_at", nowIso)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingError) throw existingError;
+      if (existing?.invite_code) {
+        return jsonResponse({
+          relationship_id: existing.id,
+          invite_code: existing.invite_code,
+          invite_expires_at: existing.invite_expires_at,
+        });
+      }
+    } else {
+      const { count, error: countError } = await supabase
+        .from("relationships")
+        .select("id", { count: "exact", head: true })
+        .eq("user_a", user.id)
+        .eq("status", "pending")
+        .is("user_b", null)
+        .gt("invite_expires_at", nowIso);
+
+      if (countError) throw countError;
+      if ((count ?? 0) >= MAX_CONCURRENT_PENDING_INVITES) {
+        throw new HttpError(
+          "You already have the maximum number of pending invites",
+          409,
+        );
+      }
     }
 
     const expiresAt = new Date(

@@ -4,6 +4,9 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/utils/relationship_status_display.dart';
 import 'package:attune/core/widgets/profile_avatar.dart';
 import 'package:attune/features/auth/intro/widgets/intro_guide_widget.dart';
+import 'package:attune/core/widgets/animated_circle.dart';
+
+import 'package:attune/features/healing/presentation/providers/healing_providers.dart';
 import 'package:attune/features/onboarding/presentation/widgets/invite_card.dart';
 import 'package:attune/app/documentations/user_manual/data/manual_documentation_registry.dart';
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart';
@@ -86,6 +89,42 @@ class _ChatCouplesLockedScreenState
         _scrollController.jumpTo(clampedOffset);
       }
     });
+
+    // A returning couplesPending user (app restart, re-navigation) has no
+    // locally-held invite — `_invite` only ever lived in this State object,
+    // never persisted. ATTUNE_MASTER_SPEC.md: "Invite codes are reusable
+    // until accepted or expired," and create-relationship-invite already
+    // returns the existing live invite instead of minting a new one, so
+    // silently re-fetching here re-displays the same code rather than
+    // creating a duplicate. onInviteSent() is NOT called from this path —
+    // the user is already on the couplesPending track, so there is nothing
+    // new for the app shell to persist.
+    if (widget.isPendingCouples) {
+      _loadExistingInvite();
+    }
+  }
+
+  Future<void> _loadExistingInvite() async {
+    setState(() {
+      _isCreatingInvite = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final invite = await _inviteService.createInvite();
+      if (!mounted) return;
+      setState(() => _invite = invite);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage =
+            error is RelationshipInviteException
+                ? error.message
+                : 'Could not load your invite.';
+      });
+    } finally {
+      if (mounted) setState(() => _isCreatingInvite = false);
+    }
   }
 
   double _getItemWidth() {
@@ -128,199 +167,240 @@ class _ChatCouplesLockedScreenState
     final textTheme = Theme.of(context).textTheme;
     final loc = AppLocalizations.of(context)!;
 
+    // ATTUNE_MASTER_SPEC.md §8.9: the Healing journey is "if applicable" —
+    // eligible only for a user who already has a journey (in progress or
+    // done) or has an actual ended relationship to start one from. A
+    // couplesPending/brand-new-personal user has neither: they've never had
+    // an Attune relationship yet, just a pending invite. Showing the card
+    // to them routed straight into HealingJourneyScreen's empty state, a
+    // dead end for a button that should not have been reachable.
+    final hasHealingJourney =
+        ref.watch(healingJourneyProvider).valueOrNull != null;
+    final hasStartableRelationship =
+        ref.watch(healingStartContextProvider).valueOrNull != null;
+    final isHealingEligible = hasHealingJourney || hasStartableRelationship;
+
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: Colors.transparent,
-        // AppBar centers `leading` in a fixed-width box (leadingWidth,
-        // default 56) rather than sizing that box to its child — without
-        // this, ProfileAvatar's own `size` correctly resizes the circle
-        // itself but the surrounding AppBar slot never shrinks/grows to
-        // match, so the change reads as "doing nothing" in the toolbar.
-
-        // leading: Center(
-        //   child: ProfileAvatar(
-        //     avatarUrl: '',
-        //     currentUserId: currentUserId,
-        //     size: 30.h,
-        //     enableHero: false,
-        //     icon: statusIconFor(myStatusDisplay),
-        //     backgroundColor: statusColorFor(myStatusDisplay, colorScheme),
-        //   ),
-        // ),
-        // centerTitle: false,
-        leadingWidth: 100.w,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: Spacing.lg),
-          child: Text(
-            'Chat',
-            style: textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurface.withValues(alpha: 0.8),
-            ),
-          ),
-        ),
-        title: GestureDetector(
-          onTap: () {
-            BottomSheetUtils.showDocumentationBottomSheet(
-              context: context,
-              // Info items are typically view-only (no agree/decline)
-              showButtons: false,
-              maxHeight: 700,
-              // Dynamic sizing: full guide gets 90% height, others get 70%
-
-              // Dynamic content: guide shows full DocumentationScreen, others show legal docs
-              widget: DocumentationScreen(),
-            );
-          },
-          child: SizedBox(
-            width: 30,
-            height: 30,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(BorderRadiusTokens.md),
-              child: Image.asset(
-                color: colorScheme.primary,
-                'assets/images/attune_logo_white.png',
-                fit: BoxFit.cover,
-              ),
-            ),
-          ),
-        ),
-        actions: [
-          AppIconButton(
-            icon: Icons.menu,
-            onPressed: () {
-              context.pushNamed('settings');
-            },
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: EdgeInsets.all(Spacing.md.h),
-        children: [
-          // Real, functional — Personal mode's reflection journal is
-          // explicitly AVAILABLE per §8.9, not locked.
-          CardInkWell(
-            child: Column(
+      // No AppBar: TripleTapDetector's invisible quick-exit gesture zone is
+      // centered at the very top of every screen (same region a centered
+      // AppBar title occupies), and it was winning the tap-gesture arena
+      // against the logo's own GestureDetector — a single tap on the logo
+      // never opened the sheet. Moving these three items into the body as a
+      // plain Row (below the top inset, not overlapping that zone) sidesteps
+      // the collision entirely instead of fighting over hit-test priority.
+      body: SafeArea(
+        child: ListView(
+          padding: EdgeInsets.all(Spacing.md.h),
+          children: [
+            Row(
               children: [
-                Gap(Spacing.md.h),
-                // AnimatedCircle(
-                //   size: 30,
-                //   stroke: 2,
-                //   animateSize: true,
-                //   animateShape: true,
-                //   firstColor: colorScheme.primary,
-                //   secondColor: colorScheme.primary,
-                // ),
-                // Gap(Spacing.lg.h),
-                // AppDivider(), Gap(Spacing.lg.h),
-                // Locked preview — same card language ConversationsScreen uses
-                // for a real conversation, so a personal-mode user sees the
-                // actual couples chat surface rather than reading about it.
-                _LockedConversationPreview(
-                  colorScheme: colorScheme,
-                  isPendingCouples: widget.isPendingCouples,
+                Padding(
+                  padding: const EdgeInsets.only(left: Spacing.sm),
+                  child: Text(
+                    'Chat',
+                    style: textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface.withValues(alpha: 0.8),
+                    ),
+                  ),
                 ),
-
-                Gap(Spacing.xl.h),
-
-                // Gap(Spacing.xl.h),
-                if (widget.isPendingCouples)
-                  _PendingInviteSection(
-                    invite: _invite,
-                    isCreating: _isCreatingInvite,
-                    errorMessage: _errorMessage,
-                    onRetry: _createInvite,
-                  )
-                else ...[
-                  if (!_inviteService.isConfigured)
-                    Text(
-                      'Invites are unavailable right now. Please try again later.',
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colorScheme.error,
+                const Spacer(),
+                if (_invite != null) ...[
+                  AnimatedCircle(
+                    size: 50,
+                    stroke: 2,
+                    animateSize: true,
+                    animateShape: true,
+                    firstColor: colorScheme.primary,
+                    secondColor: colorScheme.primary,
+                  ),
+                ] else
+                  GestureDetector(
+                    // Opaque so the whole 30x30 box is tappable, not just the
+                    // non-transparent pixels of the tinted logo PNG.
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      BottomSheetUtils.showDocumentationBottomSheet(
+                        context: context,
+                        // Info items are typically view-only (no agree/decline)
+                        showButtons: false,
+                        maxHeight: 700,
+                        // Dynamic content: guide shows the documentation list,
+                        // others show legal docs. DocumentationList (not
+                        // DocumentationScreen) — the sheet already supplies its
+                        // own Scaffold, and a nested Scaffold inside it renders
+                        // blank instead of showing.
+                        widget: Padding(
+                          padding: const EdgeInsets.only(top: Spacing.md),
+                          child: const DocumentationList(),
+                        ),
+                      );
+                    },
+                    child: SizedBox(
+                      width: 30,
+                      height: 30,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(
+                          BorderRadiusTokens.md,
+                        ),
+                        child: Image.asset(
+                          color: colorScheme.primary,
+                          'assets/images/attune_logo_white.png',
+                          fit: BoxFit.cover,
+                        ),
                       ),
+                    ),
+                  ),
+                const Spacer(),
+                AppIconButton(
+                  icon: Icons.menu,
+                  onPressed: () {
+                    context.pushNamed('settings');
+                  },
+                ),
+              ],
+            ),
+            Gap(Spacing.md.h),
+            // Real, functional — Personal mode's reflection journal is
+            // explicitly AVAILABLE per §8.9, not locked.
+            CardInkWell(
+              child: Column(
+                children: [
+                  Gap(Spacing.md.h),
+                  // AnimatedCircle(
+                  //   size: 30,
+                  //   stroke: 2,
+                  //   animateSize: true,
+                  //   animateShape: true,
+                  //   firstColor: colorScheme.primary,
+                  //   secondColor: colorScheme.primary,
+                  // ),
+                  // Gap(Spacing.lg.h),
+                  // AppDivider(), Gap(Spacing.lg.h),
+                  // Locked preview — same card language ConversationsScreen uses
+                  // for a real conversation, so a personal-mode user sees the
+                  // actual couples chat surface rather than reading about it.
+                  _LockedConversationPreview(
+                    colorScheme: colorScheme,
+                    isPendingCouples: widget.isPendingCouples,
+                  ),
+
+                  Gap(Spacing.xl.h),
+
+                  // Gap(Spacing.xl.h),
+                  if (widget.isPendingCouples)
+                    _PendingInviteSection(
+                      invite: _invite,
+                      isCreating: _isCreatingInvite,
+                      errorMessage: _errorMessage,
+                      onRetry: _loadExistingInvite,
                     )
-                  else if (_isCreatingInvite)
-                    const Center(child: CircularProgressIndicator())
-                  else if (_invite != null)
-                    InviteCard(invite: _invite!)
                   else ...[
-                    if (_errorMessage != null) ...[
+                    if (!_inviteService.isConfigured)
                       Text(
-                        _errorMessage!,
+                        'Invites are unavailable right now. Please try again later.',
                         style: textTheme.bodySmall?.copyWith(
                           color: colorScheme.error,
                         ),
+                      )
+                    else if (_isCreatingInvite)
+                      const Center(child: CircularProgressIndicator())
+                    else if (_invite != null)
+                      InviteCard(invite: _invite!)
+                    else ...[
+                      if (_errorMessage != null) ...[
+                        Text(
+                          _errorMessage!,
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.error,
+                          ),
+                        ),
+                        Gap(Spacing.sm.h),
+                      ],
+
+                      AppButton(
+                        height: 40.h,
+                        elevation: 0,
+                        animateButton: false,
+                        size: ButtonSize.small,
+                        label: 'Invite your partner',
+                        prefixIcon: Icons.person_add_alt_outlined,
+                        onPressed:
+                            _inviteService.isConfigured ? _createInvite : null,
                       ),
-                      Gap(Spacing.sm.h),
                     ],
-
-                    AppButton(
-                      height: 40.h,
-                      elevation: 0,
-                      animateButton: false,
-                      size: ButtonSize.small,
-                      label: 'Invite your partner',
-                      prefixIcon: Icons.person_add_alt_outlined,
-                      onPressed:
-                          _inviteService.isConfigured ? _createInvite : null,
-                    ),
+                    // Hidden once an invite exists: get_dating_eligibility()
+                    // already returns reason: 'relationship_active' and
+                    // refuses Dating Mode entirely while the caller has a
+                    // pending relationship (20260703194500_dating_mode_v1_1.sql)
+                    // — a sent invite creates exactly that pending row, so
+                    // this button would just lead to a dead end. Hiding it
+                    // matches the backend's own rule instead of just
+                    // tidying the UI.
+                    if (_invite == null) ...[
+                      Gap(Spacing.smMd.h),
+                      AppButton(
+                        height: 40.h,
+                        animateButton: false,
+                        size: ButtonSize.small,
+                        label: 'Meet someone in Dating mode',
+                        variant: ButtonVariant.outline,
+                        prefixIcon: Icons.favorite_border,
+                        onPressed: () => context.push(RouteNames.datingMode),
+                      ),
+                    ],
                   ],
-                  Gap(Spacing.smMd.h),
-                  AppButton(
-                    height: 40.h,
-                    animateButton: false,
-                    size: ButtonSize.small,
-                    label: 'Meet someone in Dating mode',
-                    variant: ButtonVariant.outline,
-                    prefixIcon: Icons.favorite_border,
-                    onPressed: () => context.push(RouteNames.datingMode),
-                  ),
+                  Gap(Spacing.md.h),
                 ],
-                Gap(Spacing.md.h),
-              ],
-            ),
-          ),
-          _ReflectionEntryCard(
-            onTap: () => context.pushNamed('healingJourney'),
-          ),
-
-          SizedBox(
-            height: 250.h,
-            child: ListView.builder(
-              controller: _scrollController,
-              scrollDirection: Axis.horizontal,
-              itemCount: modules.length,
-              itemBuilder: (context, index) {
-                final module = modules[index];
-                return SizedBox(
-                  width: 250.w, // Make sure items have fixed width
-                  child: IntroGuideWidget(module: module),
-                );
-              },
-            ),
-          ),
-          Gap(Spacing.xxl.h),
-          GestureDetector(
-            onTap: () {
-              BottomSheetUtils.showDocumentationBottomSheet(
-                maxHeight: MediaQuery.of(context).size.height * 0.7,
-                context: context,
-                widget: AllLegalDocumentationsScreen(),
-              );
-            },
-            child: Text(
-              loc.authReadLegalities,
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.primary,
-                decoration: TextDecoration.underline,
-                letterSpacing: 1.2,
               ),
-              textAlign: TextAlign.center,
             ),
-          ),
-          Gap(Spacing.xxl.h * 3),
-        ],
+            if (isHealingEligible) ...[
+              // Gap(Spacing.m.h),
+              _ReflectionEntryCard(
+                onTap: () => context.pushNamed('healingJourney'),
+              ),
+            ],
+
+            if (!_isCreatingInvite)
+              if (_invite == null) ...[
+                SizedBox(
+                  height: 250.h,
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    scrollDirection: Axis.horizontal,
+                    itemCount: modules.length,
+                    itemBuilder: (context, index) {
+                      final module = modules[index];
+                      return SizedBox(
+                        width: 250.w, // Make sure items have fixed width
+                        child: IntroGuideWidget(module: module),
+                      );
+                    },
+                  ),
+                ),
+                Gap(Spacing.xxl.h),
+                GestureDetector(
+                  onTap: () {
+                    BottomSheetUtils.showDocumentationBottomSheet(
+                      maxHeight: MediaQuery.of(context).size.height * 0.7,
+                      context: context,
+                      widget: AllLegalDocumentationsScreen(),
+                    );
+                  },
+                  child: Text(
+                    loc.authReadLegalities,
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.primary,
+                      decoration: TextDecoration.underline,
+                      letterSpacing: 1.2,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            Gap(Spacing.xxl.h * 3),
+          ],
+        ),
       ),
     );
   }
@@ -342,10 +422,9 @@ class _ReflectionEntryCard extends StatelessWidget {
         title: 'Personal reflections',
         icon: Icons.self_improvement_outlined,
         subTitleMaxLines: 5,
-
         iconSize: 25.h,
         showDivider: false,
-        onTap: () {},
+        onTap: onTap,
         disableTrailing: false,
         showAvatar: true,
         showTrailingArrow: false,
@@ -406,36 +485,20 @@ class _PendingInviteSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    // The invite that started the pending track was already created
-    // elsewhere (onboarding, or a prior visit here) — this screen only
-    // creates a NEW one on retry after an error. Absent both, there is
-    // nothing to show but the waiting message above; the code is not
-    // re-fetchable from the client (RelationshipInviteService only
-    // creates or accepts, it does not look up an existing one), so a
-    // returning user who already sent their invite sees the waiting copy
-    // without the code repeated — a real gap, but not one guessable data
-    // can fill without a new read endpoint.
+    // `invite` starts null on every build (including after an app restart)
+    // and is populated by _ChatCouplesLockedScreenState.initState calling
+    // _loadExistingInvite, which re-fetches the caller's existing live
+    // invite (create-relationship-invite is idempotent per
+    // ATTUNE_MASTER_SPEC.md's "reusable until accepted or expired") rather
+    // than minting a new one — so a returning user sees their real,
+    // previously-sent code again, not just the waiting message.
     if (invite != null) return InviteCard(invite: invite!);
     if (isCreating) return const Center(child: CircularProgressIndicator());
     if (errorMessage != null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            errorMessage!,
-            style: textTheme.bodySmall?.copyWith(color: colorScheme.error),
-          ),
-          Gap(Spacing.sm.h),
-          AppButton(
-            label: 'Try again',
-            prefixIcon: Icons.refresh,
-            variant: ButtonVariant.outline,
-            onPressed: onRetry,
-          ),
-        ],
+      return ErrorStateWidget(
+        subtitle: errorMessage!,
+        onPrimaryAction: onRetry,
+        primaryActionLabel: 'Try again',
       );
     }
     return const SizedBox.shrink();

@@ -48,9 +48,21 @@ class _TripleTapDetectorState extends State<TripleTapDetector> {
             child: Semantics(
               label: 'Quick exit gesture area',
               button: true,
-              child: GestureDetector(
-                onTap: () => _handleTap(context),
-                behavior: HitTestBehavior.opaque,
+              // Listener, NOT GestureDetector. A GestureDetector here — even
+              // with HitTestBehavior.translucent — enters the tap-gesture
+              // ARENA (not just the hit test), and real, unrelated
+              // GestureDetectors underneath it (e.g. a header logo opening a
+              // bottom sheet) can lose that arena to it, or get
+              // double-counted on every tap. That produced two real bugs:
+              // taps on the Chat tab's logo either did nothing, or silently
+              // fed this counter and fired quick-exit on what looked like a
+              // single tap. Listener only OBSERVES raw pointer-down events —
+              // it never joins the arena and never consumes the gesture —
+              // so it can coexist with any GestureDetector underneath
+              // without blocking or double-counting its taps.
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: (_) => _handleTap(context),
                 child: const SizedBox(width: 72, height: 72),
               ),
             ),

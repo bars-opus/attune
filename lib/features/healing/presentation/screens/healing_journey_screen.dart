@@ -3,6 +3,7 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/healing/data/models/healing_journey.dart';
 import 'package:attune/features/healing/presentation/providers/healing_providers.dart';
+import 'package:attune/features/safety/domain/services/quick_exit_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class HealingJourneyScreen extends ConsumerWidget {
@@ -17,21 +18,22 @@ class HealingJourneyScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Healing journey'),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.exit_to_app),
-            onPressed: () {
-              // Quick exit
-            },
-            tooltip: 'Quick exit',
+        backgroundColor: Colors.transparent,
+        title: Text(
+          'Healing journey',
+          style: textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface.withValues(alpha: 0.8),
           ),
-        ],
+        ),
+        centerTitle: true,
       ),
       body: journeyAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(child: Text('Error: $error')),
+        error:
+            (error, stack) => Center(
+              child: ErrorStateWidget(subtitle: 'Error: $error', title: ''),
+            ),
         data: (journey) {
           if (journey == null) {
             return _buildEmptyState(context, ref, startContextAsync);
@@ -215,61 +217,29 @@ class HealingJourneyScreen extends ConsumerWidget {
     WidgetRef ref,
     AsyncValue<HealingStartContext?> startContextAsync,
   ) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
     return Center(
-      child: Padding(
-        padding: EdgeInsets.all(Spacing.xl.w),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.healing_outlined,
-              size: 64,
-              color: colorScheme.onSurface.withValues(alpha: 0.3),
-            ),
-            Gap(Spacing.md.h),
-            Text(
-              'When you\'re ready, a healing journey is available.',
-              style: textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            Gap(Spacing.sm.h),
-            Text(
-              'This private journey is here for you when you need it.',
-              style: textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-            Gap(Spacing.lg.h),
-            startContextAsync.when(
-              loading: () => const CircularProgressIndicator(),
-              error: (_, __) => const SizedBox.shrink(),
-              data: (startContext) {
-                if (startContext == null) {
-                  return Text(
-                    'Healing Mode becomes available after an ended relationship or a previously saved journey.',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withValues(alpha: 0.6),
-                    ),
-                    textAlign: TextAlign.center,
-                  );
-                }
-
-                return AppButton(
-                  label: 'Start journey',
-                  onPressed: () async {
-                    await ref.read(
-                      startHealingJourneyProvider(startContext).future,
-                    );
-                    ref.invalidate(healingJourneyProvider);
-                  },
-                  size: ButtonSize.medium,
-                );
-              },
-            ),
-          ],
-        ),
+      child: startContextAsync.when(
+        loading: () => const CircularProgressIndicator(),
+        error: (_, __) => const SizedBox.shrink(),
+        data: (startContext) {
+          return EmptyStateWidget(
+            icon: Icons.healing_outlined,
+            title:
+                'When you\'re ready, a healing journey is available. This private journey is here for you when you need it.',
+            subtitle:
+                'Healing Mode becomes available after an ended relationship or a previously saved journey.',
+            actionLabel: startContext == null ? '' : 'Start journey',
+            onAction:
+                startContext == null
+                    ? () {}
+                    : () async {
+                      await ref.read(
+                        startHealingJourneyProvider(startContext!).future,
+                      );
+                      ref.invalidate(healingJourneyProvider);
+                    },
+          );
+        },
       ),
     );
   }
