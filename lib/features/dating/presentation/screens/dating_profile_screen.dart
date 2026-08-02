@@ -253,6 +253,19 @@ class _DatingProfileScreenState extends ConsumerState<DatingProfileScreen> {
               maxLines: 4,
               maxLength: 500,
             ),
+            Gap(Spacing.lg.h),
+            Text(
+              'Photos',
+              style: textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Gap(Spacing.sm.h),
+            AppButton(
+              label: 'Manage photos',
+              onPressed: () => context.pushNamed('datingPhotos'),
+              variant: ButtonVariant.outline,
+            ),
             Gap(Spacing.md.h),
             Container(
               padding: EdgeInsets.all(Spacing.md.w),

@@ -88,6 +88,8 @@ import 'package:attune/features/dating/presentation/screens/dating_consent_scree
 import 'package:attune/features/dating/presentation/screens/dating_guided_date_screen.dart';
 import 'package:attune/features/dating/presentation/screens/dating_matches_screen.dart';
 import 'package:attune/features/dating/presentation/screens/dating_profile_screen.dart';
+import 'package:attune/features/dating/presentation/screens/dating_photos_screen.dart';
+import 'package:attune/features/dating/presentation/screens/dating_verification_screen.dart';
 import 'package:attune/features/profile/widgets/profile_screen.dart';
 import 'package:attune/core/notifications/presentation/screens/notification_inbox_screen.dart';
 import 'package:attune/features/safety/domain/services/quick_exit_service.dart';
@@ -217,6 +219,8 @@ class RouteNames {
   static const String datingProfile = '/datingProfile';
   static const String datingMatches = '/datingMatches';
   static const String datingGuidedDate = '/datingGuidedDate';
+  static const String datingPhotos = '/datingPhotos';
+  static const String datingVerification = '/datingVerification';
   static const String logMomentDetails = '/logMomentDetails';
   static const String gamesHub = '/gamesHub';
   static const String thirtySixChapterInvitation =
@@ -734,6 +738,16 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
           }
           return DatingGuidedDateScreen(matchId: matchId);
         },
+      ),
+      GoRoute(
+        path: RouteNames.datingPhotos,
+        name: 'datingPhotos',
+        builder: (context, state) => const DatingPhotosScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.datingVerification,
+        name: 'datingVerification',
+        builder: (context, state) => const DatingVerificationScreen(),
       ),
       GoRoute(
         path: RouteNames.logMomentDetails,
