@@ -122,6 +122,73 @@ NotificationConfig buildNanoEmbryoNotificationConfig() {
           }
           return;
 
+        case 'checkin_reminder':
+          GoRouter.of(context).go(RouteNames.weeklyCheckin);
+          return;
+
+        case 'pulse_updated':
+          GoRouter.of(context).go(RouteNames.pulse);
+          return;
+
+        case 'moment_logged':
+          GoRouter.of(context).go(RouteNames.timeline);
+          return;
+
+        case 'thirty_six_question_invite':
+          final sessionId = notification.data?['session_id'] as String?;
+          final chapter = notification.data?['chapter'] as int?;
+          if (sessionId != null && sessionId.isNotEmpty && chapter != null) {
+            GoRouter.of(context).push(
+              RouteNames.thirtySixChapterInvitation,
+              extra: (sessionId: sessionId, chapter: chapter, isInitiator: false),
+            );
+          } else {
+            GoRouter.of(context).go(RouteNames.home);
+          }
+          return;
+
+        case 'forum_topic_activated':
+        case 'forum_activity':
+        case 'forum_quiet':
+          final topicId = notification.data?['topic_id'] as String?;
+          if (topicId != null && topicId.isNotEmpty) {
+            GoRouter.of(context).push(RouteNames.forumInsight, extra: topicId);
+          } else {
+            GoRouter.of(context).go(RouteNames.home);
+          }
+          return;
+
+        case 'opinion_liked':
+        case 'opinion_commented':
+        case 'opinion_comment_reply':
+          final opinionId = notification.data?['opinion_id'] as String?;
+          if (opinionId != null && opinionId.isNotEmpty) {
+            GoRouter.of(context).push(RouteNames.opinionLoader, extra: opinionId);
+          } else {
+            GoRouter.of(context).go(RouteNames.home);
+          }
+          return;
+
+        case 'forum_content_removed':
+        case 'forum_posting_banned':
+          // Content is gone (forum_content_removed) or this is an
+          // account-level notice with no content id (forum_posting_banned)
+          // — home is deliberate here, not a missing case. See design spec
+          // docs/superpowers/specs/2026-08-02-notification-routing-completion-design.md §5.
+          GoRouter.of(context).go(RouteNames.home);
+          return;
+
+        case 'relationship_ended':
+          // Payload already carries screen: "home" and no relationship id
+          // to route more specifically with — this is the intended
+          // destination, not an oversight. See design spec §5.
+          GoRouter.of(context).go(RouteNames.home);
+          return;
+
+        case 'dating_mutual_match':
+          GoRouter.of(context).go(RouteNames.datingMatches);
+          return;
+
         default:
           GoRouter.of(context).go(RouteNames.home);
           return;
