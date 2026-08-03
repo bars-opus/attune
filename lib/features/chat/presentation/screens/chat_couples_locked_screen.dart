@@ -11,6 +11,8 @@ import 'package:attune/app/documentations/user_manual/data/manual_documentation_
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/relationships/data/relationship_invite_service.dart';
+import 'package:attune/features/healing/presentation/providers/healing_providers.dart';
+import 'package:attune/features/healing/presentation/widgets/healing_self_report_sheet.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// What a non-couples user sees on the Chat tab.
@@ -124,6 +126,24 @@ class _ChatCouplesLockedScreenState
     } finally {
       if (mounted) setState(() => _isCreatingInvite = false);
     }
+  }
+
+  Future<void> _onHealingEntryTap() async {
+    final hasActiveSoloJourney =
+        await ref.read(hasActiveSoloHealingJourneyProvider.future);
+    if (!mounted) return;
+
+    if (hasActiveSoloJourney) {
+      context.push(RouteNames.healingJourney);
+      return;
+    }
+
+    await BottomSheetUtils.showDocumentationBottomSheet(
+      context: context,
+      widget: const HealingSelfReportSheet(),
+    );
+    if (!mounted) return;
+    context.push(RouteNames.healingJourney);
   }
 
   double _getItemWidth() {
@@ -346,6 +366,8 @@ class _ChatCouplesLockedScreenState
 
             if (!_isCreatingInvite)
               if (_invite == null) ...[
+                _HealingEntryCard(onTap: _onHealingEntryTap),
+                Gap(Spacing.md.h),
                 SizedBox(
                   height: 250.h,
                   child: ListView.builder(
@@ -404,6 +426,36 @@ class _ReflectionEntryCard extends StatelessWidget {
             'A private space for your own reflection work. This never sends messages to anyone, just reflections to heal after breakup or prepare for dating.',
         title: 'Personal reflections',
         icon: Icons.self_improvement_outlined,
+        subTitleMaxLines: 5,
+        iconSize: 25.h,
+        showDivider: false,
+        onTap: onTap,
+        disableTrailing: false,
+        showAvatar: true,
+        showTrailingArrow: false,
+        trailing: Icon(Icons.chevron_right_rounded, size: 25.h),
+      ),
+    );
+  }
+}
+
+/// Entry point into a self-reported (no tracked relationship) Healing
+/// Mode journey. Shown only alongside the intro carousel, i.e. only for a
+/// true single with no pending invite — see the enclosing conditional in
+/// build() above.
+class _HealingEntryCard extends StatelessWidget {
+  const _HealingEntryCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return CardInkWell(
+      child: InfoRowWidget(
+        subtitle:
+            'Start a private healing journey, even if it wasn\'t tracked in Attune.',
+        title: 'Healing from a breakup?',
+        icon: Icons.healing_outlined,
         subTitleMaxLines: 5,
         iconSize: 25.h,
         showDivider: false,
