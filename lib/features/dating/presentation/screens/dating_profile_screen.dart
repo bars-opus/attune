@@ -1,6 +1,8 @@
+import 'package:attune/core/intro/data/seen_feature_intro_store.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/dating/presentation/providers/dating_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DatingProfileScreen extends ConsumerStatefulWidget {
   const DatingProfileScreen({super.key});
@@ -103,6 +105,15 @@ class _DatingProfileScreenState extends ConsumerState<DatingProfileScreen> {
       }
 
       await ref.read(activateDatingProfileProvider.future);
+
+      // By this point the user has already been through the Dating Mode
+      // dashboard earlier in this same flow (dashboard → consent →
+      // profile → activation), so the first-time intro would be
+      // redundant — and showing it now would be backwards, appearing
+      // after setup rather than before it. Mark it seen so the route
+      // gate below shows the dashboard directly.
+      final prefs = await SharedPreferences.getInstance();
+      await SeenFeatureIntroStore(prefs).markIntroSeen('datingMode');
 
       if (mounted) {
         // Clears the whole stack down to the dashboard — the GoRouter
