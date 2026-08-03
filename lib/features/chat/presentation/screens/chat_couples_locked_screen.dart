@@ -138,12 +138,14 @@ class _ChatCouplesLockedScreenState
       return;
     }
 
-    await BottomSheetUtils.showDocumentationBottomSheet(
+    final started = await BottomSheetUtils.showDocumentationBottomSheet<bool>(
       context: context,
       widget: const HealingSelfReportSheet(),
     );
     if (!mounted) return;
-    context.push(RouteNames.healingJourney);
+    if (started == true) {
+      context.push(RouteNames.healingJourney);
+    }
   }
 
   double _getItemWidth() {

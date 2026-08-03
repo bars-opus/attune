@@ -2,28 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:attune/features/healing/data/models/healing_journey.dart';
 import 'package:attune/features/healing/data/repositories/healing_repository.dart';
 import 'package:attune/features/healing/presentation/providers/healing_providers.dart';
 import 'package:attune/features/healing/presentation/widgets/healing_self_report_sheet.dart';
-
-HealingJourney _fakeJourney() {
-  final now = DateTime.now();
-  return HealingJourney(
-    id: 'journey-1',
-    userId: 'user-1',
-    relationshipId: null,
-    breakupAt: now,
-    breakupAtSource: 'user_reported',
-    status: 'active',
-    currentStage: 1,
-    reflectionAnswers: const {},
-    postMortemStatus: 'not_started',
-    portraitStatus: 'not_started',
-    createdAt: now,
-    updatedAt: now,
-  );
-}
 
 void main() {
   testWidgets('primary button is disabled until a date is picked', (tester) async {

@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 class BottomSheetUtils {
-  static Future<void> showDocumentationBottomSheet({
+  static Future<T?> showDocumentationBottomSheet<T>({
     required BuildContext context,
     DocumentationItem? document,
     VoidCallback? onAgree,
@@ -34,7 +34,7 @@ class BottomSheetUtils {
         maxHeight ?? MediaQuery.of(context).size.height * 0.9;
     final contentPadding = padding ?? Spacing.xl.h;
 
-    await showModalBottomSheet(
+    return showModalBottomSheet<T>(
       context: context,
       isScrollControlled: true,
       isDismissible: isDismissible,

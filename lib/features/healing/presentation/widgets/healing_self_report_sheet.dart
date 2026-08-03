@@ -63,7 +63,7 @@ class _HealingSelfReportSheetState
           );
       ref.invalidate(healingJourneyProvider);
       if (!mounted) return;
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(true);
     } catch (_) {
       if (!mounted) return;
       setState(() {
