@@ -1,4 +1,5 @@
 import 'package:attune/app/theme/app_theme.dart';
+import 'package:attune/core/notifications/services/onesignal_service.dart';
 import 'package:attune/core/providers/locale_provider.dart';
 import 'package:attune/core/providers/routing_providers.dart';
 import 'package:attune/core/providers/theme_provider.dart';
@@ -22,6 +23,10 @@ class _AppState extends ConsumerState<App> {
     Future.microtask(() {
       if (!mounted) return;
       ref.read(localeNotifierProvider.notifier).initialize();
+    });
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(oneSignalServiceProvider).initialize();
     });
     // Fire-and-forget preload so first send/receive has no cold-start latency.
     WidgetsBinding.instance.addPostFrameCallback((_) {
