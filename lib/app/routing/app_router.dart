@@ -264,8 +264,15 @@ class RouteNames {
   static const String notificationInbox = '/notificationInbox';
 }
 
+/// Lets code with no widget BuildContext of its own (e.g. a push
+/// notification tap arriving from the OS, which has no guaranteed
+/// context) still navigate. Read via appNavigatorKey.currentContext,
+/// which is non-null any time the app has rendered at least one frame.
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
 GoRouter createAppRouter(RoutingNotifier routingNotifier) {
   return GoRouter(
+    navigatorKey: appNavigatorKey,
     debugLogDiagnostics: kDebugMode,
     initialLocation: '/_invisible',
     refreshListenable: routingNotifier,
