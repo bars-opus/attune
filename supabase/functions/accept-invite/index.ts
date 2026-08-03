@@ -94,7 +94,11 @@ Deno.serve(async (req) => {
         userId: relationship.user_a,
         title: "Your partner joined Attune",
         body: "You can start chatting now.",
-        data: { type: "invite_accepted", screen: "chat" },
+        data: {
+          type: "invite_accepted",
+          screen: "chat",
+          relationship_id: updated.id,
+        },
       });
     } catch (pushError) {
       console.error(
