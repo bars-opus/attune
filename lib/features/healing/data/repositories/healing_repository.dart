@@ -64,7 +64,7 @@ class HealingRepository {
         .inFilter('status', ['active', 'paused'])
         .maybeSingle();
 
-    return response != null;
+    return hasActiveSoloJourneyFromResponse(response);
   }
 
   Future<HealingJourney> getOrCreateJourney({
@@ -210,4 +210,12 @@ class HealingRepository {
       params: {'p_journey_id': journeyId},
     );
   }
+}
+
+/// Pure decision logic for [HealingRepository.hasActiveSoloJourney] —
+/// separated out so it's unit-testable without mocking Supabase's
+/// PostgrestFilterBuilder chain, which returns a new builder instance
+/// per chained call rather than mutating `this`.
+bool hasActiveSoloJourneyFromResponse(Map<String, dynamic>? response) {
+  return response != null;
 }
