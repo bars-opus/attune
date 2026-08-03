@@ -2,11 +2,19 @@
 --
 -- act_on_dating_introduction's dating_mutual_match push never included the
 -- match id, despite v_match_id being in scope — a real payload gap, not
--- just a missing allowlist entry. Re-declares the function verbatim, only
--- adding 'match_id', v_match_id::text to both jsonb_build_object calls.
--- See design spec docs/superpowers/specs/
+-- just a missing allowlist entry. Re-declares the function, only adding
+-- 'match_id', v_match_id::text to both jsonb_build_object calls.
+--
+-- IMPORTANT: this re-declares the version from
+-- 20260712160000_dating_former_partner_exclusion.sql, NOT the earlier
+-- 20260705210000_dating_mode_v1_2_hardening.sql — that migration is the
+-- most recent prior CREATE OR REPLACE of this function (confirmed via
+-- grep across every migration in this repo before writing this file) and
+-- is the version that actually executes today. Baselining the wrong
+-- (older) version here was caught by a final whole-branch review that
+-- found it would have silently dropped the DATING-C4 former-partner
+-- exclusion clause — see docs/superpowers/specs/
 -- 2026-08-02-notification-routing-completion-design.md §6.
-
 CREATE OR REPLACE FUNCTION public.act_on_dating_introduction(
   p_idempotency_key text,
   p_introduction_id uuid,
@@ -43,6 +51,8 @@ BEGIN
   IF NOT public.dating_candidate_is_current(v_intro.user_low_id)
      OR NOT public.dating_candidate_is_current(v_intro.user_high_id)
      OR EXISTS(SELECT 1 FROM public.dating_blocks b WHERE b.pair_key=v_intro.pair_key)
+     -- DATING-C4: former-partner exclusion (survives re-registration by phone-HMAC).
+     OR public.dating_former_partner_excluded(v_intro.user_low_id, v_intro.user_high_id)
      OR NOT EXISTS(SELECT 1 FROM public.dating_feature_snapshots s WHERE s.id=v_intro.snapshot_low_id AND s.invalidated_at IS NULL)
      OR NOT EXISTS(SELECT 1 FROM public.dating_feature_snapshots s WHERE s.id=v_intro.snapshot_high_id AND s.invalidated_at IS NULL) THEN
     UPDATE public.dating_introductions SET state='invalidated' WHERE id=v_intro.id;
