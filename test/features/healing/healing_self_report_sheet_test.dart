@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:attune/features/healing/data/models/healing_journey.dart';
 import 'package:attune/features/healing/data/repositories/healing_repository.dart';
@@ -28,7 +29,11 @@ void main() {
   testWidgets('primary button is disabled until a date is picked', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
-        child: MaterialApp(home: Scaffold(body: HealingSelfReportSheet())),
+        child: ScreenUtilInit(
+          designSize: const Size(375, 812),
+          builder: (context, child) =>
+              MaterialApp(home: Scaffold(body: HealingSelfReportSheet())),
+        ),
       ),
     );
 
@@ -42,7 +47,11 @@ void main() {
         overrides: [
           healingRepositoryProvider.overrideWithValue(_ThrowingHealingRepository()),
         ],
-        child: MaterialApp(home: Scaffold(body: HealingSelfReportSheet())),
+        child: ScreenUtilInit(
+          designSize: const Size(375, 812),
+          builder: (context, child) =>
+              MaterialApp(home: Scaffold(body: HealingSelfReportSheet())),
+        ),
       ),
     );
 

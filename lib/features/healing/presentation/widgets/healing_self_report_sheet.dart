@@ -4,6 +4,7 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/healing/presentation/providers/healing_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 
@@ -85,14 +86,14 @@ class _HealingSelfReportSheetState
           'Healing from a breakup?',
           style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
-        const Gap(Spacing.sm),
+        Gap(Spacing.sm.h),
         Text(
           'Start a private healing journey, even if it wasn\'t tracked in Attune.',
           style: textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurface.withValues(alpha: 0.7),
           ),
         ),
-        const Gap(Spacing.lg),
+        Gap(Spacing.lg.h),
         ListTile(
           key: const Key('healingSelfReportDateRow'),
           contentPadding: EdgeInsets.zero,
@@ -106,22 +107,22 @@ class _HealingSelfReportSheetState
           onTap: _submitting ? null : _pickDate,
         ),
         if (_errorText != null) ...[
-          const Gap(Spacing.sm),
+          Gap(Spacing.sm.h),
           Text(
             _errorText!,
             style: textTheme.bodySmall?.copyWith(color: colorScheme.error),
           ),
         ],
-        const Gap(Spacing.lg),
+        Gap(Spacing.lg.h),
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
             onPressed: (_selectedDate == null || _submitting) ? null : _submit,
             child: _submitting
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                ? SizedBox(
+                    width: 20.w,
+                    height: 20.w,
+                    child: const CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Text('Start healing journey'),
           ),
