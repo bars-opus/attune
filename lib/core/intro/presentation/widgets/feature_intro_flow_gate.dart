@@ -1,5 +1,7 @@
 // lib/core/intro/presentation/widgets/feature_intro_flow_gate.dart
 
+import 'dart:async';
+
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart';
 import 'package:attune/core/intro/data/seen_feature_intro_store.dart';
 import 'package:attune/core/intro/presentation/screens/feature_intro_flow_screen.dart';
@@ -55,7 +57,19 @@ class _FeatureIntroFlowGateState extends State<FeatureIntroFlowGate> {
   }
 
   void _handleIntroComplete() {
-    _store?.markIntroSeen(widget.module.id);
+    // Fire-and-forget by design: the user proceeds into the feature
+    // immediately regardless of whether this write succeeds. We still
+    // surface failures so the "show exactly once" contract silently
+    // breaking is at least visible in logs.
+    unawaited(
+      _store?.markIntroSeen(widget.module.id).catchError((error, stack) {
+            debugPrint(
+              'Failed to persist seen-intro flag for '
+              '${widget.module.id}: $error',
+            );
+          }) ??
+          Future.value(),
+    );
     setState(() => _seen = true);
   }
 

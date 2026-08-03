@@ -8,6 +8,23 @@ import 'package:attune/app/documentations/user_manual/models/manual_section.dart
 import 'package:attune/core/intro/data/seen_feature_intro_store.dart';
 import 'package:attune/core/intro/presentation/widgets/feature_intro_flow_gate.dart';
 
+/// Wraps a real store but makes markIntroSeen fail, to verify the gate
+/// still advances the UI (setState still fires) even when the
+/// fire-and-forget persistence write throws.
+class _ThrowingMarkSeenStore implements SeenFeatureIntroStore {
+  _ThrowingMarkSeenStore(this._delegate);
+
+  final SeenFeatureIntroStore _delegate;
+
+  @override
+  bool hasSeenIntro(String featureId) => _delegate.hasSeenIntro(featureId);
+
+  @override
+  Future<void> markIntroSeen(String featureId) {
+    return Future<void>.error(StateError('simulated persistence failure'));
+  }
+}
+
 class _FakeDocs implements DocumentationModule {
   @override
   String get id => 'fakeFeature';
@@ -80,4 +97,25 @@ void main() {
     expect(find.text('Real Feature Screen'), findsOneWidget);
     expect(store.hasSeenIntro('fakeFeature'), isTrue);
   });
+
+  testWidgets(
+    'still advances to the real feature when markIntroSeen fails',
+    (tester) async {
+      final prefs = await SharedPreferences.getInstance();
+      final store = _ThrowingMarkSeenStore(SeenFeatureIntroStore(prefs));
+
+      await tester.pumpWidget(buildTestable(store));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Fake Feature'), findsOneWidget);
+
+      // Should not throw up through the widget tree despite the
+      // underlying store's markIntroSeen rejecting.
+      await tester.tap(find.text('Skip intro'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Real Feature Screen'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
