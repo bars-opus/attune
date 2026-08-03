@@ -39,6 +39,11 @@ final healingStartContextProvider = FutureProvider<HealingStartContext?>((
   );
 });
 
+final hasActiveSoloHealingJourneyProvider = FutureProvider<bool>((ref) async {
+  final repository = ref.read(healingRepositoryProvider);
+  return repository.hasActiveSoloJourney();
+});
+
 final startHealingJourneyProvider =
     FutureProvider.family<HealingJourney, HealingStartContext>((
       ref,

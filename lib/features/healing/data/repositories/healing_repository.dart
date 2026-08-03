@@ -50,6 +50,23 @@ class HealingRepository {
         .maybeSingle();
   }
 
+  Future<bool> hasActiveSoloJourney() async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) {
+      return false;
+    }
+
+    final response = await _supabase
+        .from('healing_journeys')
+        .select('id')
+        .eq('user_id', userId)
+        .isFilter('relationship_id', null)
+        .inFilter('status', ['active', 'paused'])
+        .maybeSingle();
+
+    return response != null;
+  }
+
   Future<HealingJourney> getOrCreateJourney({
     String? relationshipId,
     required DateTime breakupAt,
