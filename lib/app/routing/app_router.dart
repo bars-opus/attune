@@ -1,6 +1,9 @@
 import 'package:attune/app/app_info/app_info_screen.dart';
 import 'package:attune/app/documentations/legal_documentation/widgets/all_legal_documentations_screen.dart';
+import 'package:attune/app/documentations/user_manual/data/dating_mode_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/healing_docs.dart';
 import 'package:attune/app/licenses_screen.dart';
+import 'package:attune/core/intro/presentation/widgets/feature_intro_flow_gate.dart';
 import 'package:attune/app/routing/routing_notifier.dart';
 import 'package:attune/features/onboarding/presentation/screens/ask2_flow.dart';
 import 'package:attune/core/moderation/presentation/screens/blocked_accounts_screen.dart';
@@ -450,7 +453,15 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.healingJourney,
         name: 'healingJourney',
-        builder: (context, state) => const HealingJourneyScreen(),
+        builder: (context, state) => FeatureIntroFlowGate(
+          module: HealingDocs(),
+          briefParagraph:
+              'Healing Mode is private and self-paced. It\'s not therapy, it '
+              'doesn\'t diagnose you or your relationship, and your former '
+              'partner is never told you\'re using it.',
+          launchLabel: 'Enter Healing Mode',
+          buildFeature: () => const HealingJourneyScreen(),
+        ),
       ),
       GoRoute(
         path: RouteNames.reflectionJournal,
@@ -1265,7 +1276,15 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.datingMode,
         name: 'datingMode',
-        builder: (context, state) => const DatingDashboardScreen(),
+        builder: (context, state) => FeatureIntroFlowGate(
+          module: DatingModeDocs(),
+          briefParagraph:
+              'Dating Mode is separate from Healing Mode, and never automatic. '
+              'Before you can browse introductions, you\'ll go through a short, '
+              'explicit consent step — nothing here is enabled without your say-so.',
+          launchLabel: 'Continue to Dating Mode',
+          buildFeature: () => const DatingDashboardScreen(),
+        ),
       ),
       GoRoute(
         path: '/games/paint-ball/lobby/:relationshipId',
