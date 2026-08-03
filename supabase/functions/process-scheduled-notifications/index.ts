@@ -92,6 +92,10 @@ function privacySafeData(metadata: Record<string, unknown>) {
     "forum_post_id",
     // Forum activity/quiet notifications (§10 #5/#6) deep-link to the topic.
     "topic_id",
+    // Couples calendar reminder deep link (reminder-notifications feature).
+    "reminder_id",
+    // Dating mutual-match deep link.
+    "match_id",
   ];
   return Object.fromEntries(
     allowed.filter((key) => metadata[key] != null).map((key) => [key, metadata[key]]),
