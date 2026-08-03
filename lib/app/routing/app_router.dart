@@ -18,6 +18,7 @@ import 'package:attune/features/opinions/presentation/screen/comment_thread_scre
 import 'package:attune/features/opinions/presentation/screen/edit_opinion_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/quote_compose_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/tag_browse_screen.dart';
+import 'package:attune/features/opinions/presentation/screens/opinion_thread_loader.dart';
 import 'package:attune/features/forums/data/models/topic_model.dart';
 import 'package:attune/features/forums/presentation/screens/debate_room_screen.dart';
 import 'package:attune/features/forums/presentation/screens/forum_insight_screen.dart';
@@ -39,6 +40,7 @@ import 'package:attune/features/reminders/presentation/screens/add_edit_reminder
 import 'package:attune/features/reminders/presentation/screens/family_members_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/log_moment_details_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/log_moment_type_screen.dart';
+import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
 import 'package:attune/features/games/presentation/screens/games_hub_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_completion_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_history_screen.dart';
@@ -199,6 +201,8 @@ class RouteNames {
   static const String journalEntryDetail = '/journalEntryDetail';
   static const String pulse = '/pulse';
   static const String couplesCalendar = '/couples-calendar';
+  static const String timeline = '/timeline';
+  static const String opinionLoader = '/opinionLoader';
   static const String addEditReminder = '/couples-calendar/add';
   static const String familyMembers = '/couples-calendar/family';
   static const String chatInsights = '/chatInsights';
@@ -478,6 +482,24 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.couplesCalendar,
         name: 'couplesCalendar',
         builder: (context, state) => const CouplesCalendarScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.timeline,
+        name: 'timeline',
+        builder: (context, state) => const TimelineScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.opinionLoader,
+        name: 'opinionLoader',
+        builder: (context, state) {
+          final opinionId = state.extra as String?;
+          if (opinionId == null) {
+            return const Scaffold(
+              body: Center(child: Text('Opinion unavailable.')),
+            );
+          }
+          return OpinionThreadLoader(opinionId: opinionId);
+        },
       ),
       GoRoute(
         path: RouteNames.addEditReminder,
