@@ -1,6 +1,5 @@
 // lib/features/documentation/presentation/widgets/documentation_tab_view.dart
 import 'package:attune/app/documentations/user_manual/data/manual_documentation_registry.dart';
-import 'package:attune/app/documentations/user_manual/models/documentation_model.dart';
 import 'package:attune/app/documentations/user_manual/widgets/faq_widget.dart';
 import 'package:attune/app/documentations/user_manual/widgets/manual_widget.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
@@ -21,6 +20,10 @@ class DocumentationTabView extends StatefulWidget {
 
 class _DocumentationTabViewState extends State<DocumentationTabView> {
   late DocumentationModule _currentModule;
+
+  /// Single slot for the parent module, not a stack — sufficient for the
+  /// current one-level-only drill-down design. A future second nesting
+  /// level would require replacing this with a list/stack.
   DocumentationModule? _parentModule;
 
   @override
@@ -136,25 +139,32 @@ class _BackToParentRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: Spacing.lg.w,
-          vertical: Spacing.sm.h,
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.arrow_back, size: IconSizes.sm.h, color: colorScheme.primary),
-            Gap(Spacing.xs.w),
-            Text(
-              parentTitle,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: colorScheme.primary,
-                fontWeight: FontWeight.w600,
-              ),
+    return Semantics(
+      button: true,
+      label: 'Back to $parentTitle',
+      child: InkWell(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: 48.h),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: Spacing.lg.w,
+              vertical: Spacing.sm.h,
             ),
-          ],
+            child: Row(
+              children: [
+                Icon(Icons.arrow_back, size: IconSizes.sm.h, color: colorScheme.primary),
+                Gap(Spacing.xs.w),
+                Text(
+                  parentTitle,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

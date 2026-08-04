@@ -28,8 +28,7 @@ import 'package:glass_kit/glass_kit.dart';
 ///   builder: (context) => CircularDocumentationContainer(
 ///     padding: 20, // Optional custom padding
 ///     child: DocumentationTabView(
-///       documentation: architectureDocs,
-///       faqs: architectureFAQs,
+///       module: architectureModule,
 ///     ),
 ///   ),
 /// )
@@ -55,8 +54,7 @@ import 'package:glass_kit/glass_kit.dart';
 /// // Basic documentation modal container
 /// CircularDocumentationContainer(
 ///   child: DocumentationTabView(
-///     documentation: allSections,
-///     faqs: allFAQs,
+///     module: someModule,
 ///     showDocumentationFirst: true,
 ///   ),
 /// )
