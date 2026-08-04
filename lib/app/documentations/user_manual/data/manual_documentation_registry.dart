@@ -31,6 +31,20 @@ class DocumentationRegistry {
   // Store all modules by ID
   static final Map<String, DocumentationModule> _idMap = {};
 
+  /// IDs of modules related to [moduleId], shown as a "Related" tab in
+  /// DocumentationTabView. Empty for every module except the ones
+  /// explicitly listed here. One level only: a related module's own
+  /// related ids are not consulted (no sibling-to-sibling or
+  /// multi-level nesting).
+  static List<String> getRelatedModuleIds(String moduleId) {
+    switch (moduleId) {
+      case 'games':
+        return const ['truthOrDare', 'thisOrThat', 'thirtySixQuestions'];
+      default:
+        return const [];
+    }
+  }
+
   // Initialize with default modules
   static void initialize() {
     // Register all your modules here
