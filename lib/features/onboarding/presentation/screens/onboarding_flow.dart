@@ -136,8 +136,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         children: [
           Expanded(
             child: DocumentationTabView(
-              documentation: docs.getSections(context),
-              faqs: docs.getFAQs(context),
+              module: docs,
               showDocumentationFirst: true,
             ),
           ),
@@ -184,8 +183,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         children: [
           Expanded(
             child: DocumentationTabView(
-              documentation: docs.getSections(context),
-              faqs: docs.getFAQs(context),
+              module: docs,
               showDocumentationFirst: true,
             ),
           ),

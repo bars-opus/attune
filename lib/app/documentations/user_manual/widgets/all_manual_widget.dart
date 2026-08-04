@@ -59,8 +59,7 @@ class DocumentationList extends StatelessWidget {
                   context: context,
                   showButtons: false,
                   widget: DocumentationTabView(
-                    documentation: module.getSections(context),
-                    faqs: module.getFAQs(context),
+                    module: module,
                     showDocumentationFirst: true,
                   ),
                 );
