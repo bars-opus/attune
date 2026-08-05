@@ -30,12 +30,45 @@ class ReflectionJournalDocs implements DocumentationModule {
   @override
   List<ManualSection> getSections(BuildContext context) => [
     ManualSection(
+      id: 'journal_why_it_exists',
+      title: 'Why it exists',
+      subtitle: 'Not a consolation prize — a place for everyone',
+      icon: Icons.lightbulb_outline,
+      category: 'Reflection Journal',
+      order: 1,
+      contents: [
+        ManualContent(
+          id: 'journal_why_gap',
+          title: 'Somewhere to write, regardless of relationship status',
+          numberPrefix: '1',
+          content:
+              'Before this existed, anyone not in an active couple got routed toward Healing Mode by default — a journey built specifically for processing a breakup. That made no sense for someone who\'s single by choice, waiting on a partner to join, or simply wants to reflect on an ordinary day. The Reflection Journal closes that gap: a real writing space for Personal-mode users, not a fallback screen.',
+          type: ManualContentType.text,
+        ),
+        ManualContent(
+          id: 'journal_why_not_download_one',
+          title: 'Why use this instead of a dedicated journaling app?',
+          numberPrefix: '2',
+          content:
+              'A standalone journal app will usually beat Attune on raw journaling features — tags, search, exports, themes. What it can\'t offer is the connection to the rest of your relational picture. Your entries here are read for tone and communication patterns using the same NVC-informed lens Attune applies elsewhere, so what you write becomes part of understanding how you relate to others over time — never sent anywhere, never seen by anyone else, but not writing into a void either.',
+          type: ManualContentType.text,
+        ),
+        ManualContent(
+          id: 'journal_why_honesty',
+          title: '',
+          content:
+              'Every claim the AI makes is sourced to your own words, confidence is always hedged, and there are no streaks or engagement mechanics pushing you to write. That restraint is deliberate — most journaling apps compete on features or gamification; this one competes on trustworthiness.',
+          type: ManualContentType.tip,
+        ),
+      ],
+    ),
+    ManualSection(
       id: 'journal_what_it_is',
       title: 'What it is',
       subtitle: 'Always available, whoever you are',
       icon: Icons.book_outlined,
       category: 'Reflection Journal',
-      order: 1,
+      order: 2,
       contents: [
         ManualContent(
           id: 'journal_intro',
@@ -68,7 +101,7 @@ class ReflectionJournalDocs implements DocumentationModule {
       subtitle: 'Freeform, with an optional nudge',
       icon: Icons.create_outlined,
       category: 'Reflection Journal',
-      order: 2,
+      order: 3,
       contents: [
         ManualContent(
           id: 'journal_freeform',
@@ -85,6 +118,14 @@ class ReflectionJournalDocs implements DocumentationModule {
               'Once you save, your entry appears right away. A gentle reflection may follow shortly after — there\'s no need to wait for it before moving on.',
           type: ManualContentType.tip,
         ),
+        ManualContent(
+          id: 'journal_how_to_use_well',
+          title: 'Getting the most out of it',
+          content:
+              'Write like nobody\'s reading — because nobody is. The reflections and patterns get more useful the more honestly and regularly you write, but "regularly" is whatever pace suits you: there\'s no schedule to keep. A few real sentences about what actually happened beats a polished paragraph every time; the analysis works from specifics, not summaries.',
+          numberPrefix: '2',
+          type: ManualContentType.text,
+        ),
       ],
     ),
     ManualSection(
@@ -93,7 +134,7 @@ class ReflectionJournalDocs implements DocumentationModule {
       subtitle: 'Grounded in your own words, never a verdict',
       icon: Icons.psychology_outlined,
       category: 'Reflection Journal',
-      order: 3,
+      order: 4,
       contents: [
         ManualContent(
           id: 'journal_ai_scope',
@@ -126,7 +167,7 @@ class ReflectionJournalDocs implements DocumentationModule {
       subtitle: 'Edit, delete, and nothing else',
       icon: Icons.tune,
       category: 'Reflection Journal',
-      order: 4,
+      order: 5,
       contents: [
         ManualContent(
           id: 'journal_edit',
@@ -167,12 +208,29 @@ class ReflectionJournalDocs implements DocumentationModule {
         order: 1,
       ),
       FAQModel(
+        id: 'faq_journal_why_needed',
+        question: 'Why does Attune have a journal at all?',
+        answer:
+            'Before this existed, anyone outside an active couple was routed toward Healing Mode by default — a journey built specifically for breakups. That left no real writing space for someone who\'s single by choice, waiting on a partner, or just wants to reflect on an ordinary day. The Reflection Journal fills that gap.',
+        category: 'Reflection Journal',
+        order: 2,
+      ),
+      FAQModel(
+        id: 'faq_journal_vs_other_apps',
+        question:
+            'Why use this instead of a journaling app from the App Store or Play Store?',
+        answer:
+            'A dedicated journaling app will usually have more features — tags, search, exports, themes. What it won\'t have is the connection to the rest of your relational picture: your entries here are read for tone and communication patterns using the same lens Attune applies elsewhere, so your writing becomes part of understanding how you relate to others over time, without ever leaving your account. If you just want a feature-rich standalone journal, a dedicated app may serve you better — Attune\'s journal is about that connection, not about out-featuring them.',
+        category: 'Reflection Journal',
+        order: 3,
+      ),
+      FAQModel(
         id: 'faq_journal_partner_sees',
         question: 'Can my partner see what I write?',
         answer:
             'No, never. Entries are completely private to you and are never shown to a partner, used as evidence, or combined into any shared view.',
         category: 'Reflection Journal',
-        order: 2,
+        order: 4,
       ),
       FAQModel(
         id: 'faq_journal_no_reflection',
@@ -180,7 +238,7 @@ class ReflectionJournalDocs implements DocumentationModule {
         answer:
             'Very short entries don\'t get one — there simply isn\'t enough written to say something meaningful. Write a bit more and a reflection is more likely to appear.',
         category: 'Reflection Journal',
-        order: 3,
+        order: 5,
       ),
       FAQModel(
         id: 'faq_journal_edit_reflection',
@@ -188,7 +246,7 @@ class ReflectionJournalDocs implements DocumentationModule {
         answer:
             'Editing regenerates the reflection to match your updated content, so it never stays attached to text you\'ve since changed.',
         category: 'Reflection Journal',
-        order: 4,
+        order: 6,
       ),
       FAQModel(
         id: 'faq_journal_delete_undo',
@@ -196,7 +254,7 @@ class ReflectionJournalDocs implements DocumentationModule {
         answer:
             'No — deletion is permanent once confirmed. You\'ll always be asked to confirm first, precisely because there\'s no way to bring it back afterward.',
         category: 'Reflection Journal',
-        order: 5,
+        order: 7,
       ),
       FAQModel(
         id: 'faq_journal_vs_healing',
@@ -205,7 +263,7 @@ class ReflectionJournalDocs implements DocumentationModule {
         answer:
             'Healing Mode is a structured, multi-stage journey specifically for processing a breakup. The Reflection Journal is simpler, always available regardless of relationship status, and has no stages or eligibility requirements.',
         category: 'Reflection Journal',
-        order: 6,
+        order: 8,
       ),
       FAQModel(
         id: 'faq_journal_streaks',
@@ -213,7 +271,7 @@ class ReflectionJournalDocs implements DocumentationModule {
         answer:
             'No. There are no streaks, badges, or nagging reminders — writing here is entirely optional and on your own schedule.',
         category: 'Reflection Journal',
-        order: 7,
+        order: 9,
       ),
     ];
   }

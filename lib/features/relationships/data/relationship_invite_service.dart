@@ -14,7 +14,15 @@ class RelationshipInvite {
   final String code;
   final DateTime expiresAt;
 
-  String get deepLink => 'attune://invite?code=$code';
+  /// A real https:// Universal/App Link — required so the QR code and
+  /// shared link actually open (the stock iOS Camera app refuses to open
+  /// custom schemes like attune://, and most share targets treat bare
+  /// custom schemes as plain unclickable text). Opens the app directly via
+  /// Associated Domains / App Links when installed; falls back to a web
+  /// landing page (App Store / Play Store) otherwise. The association files
+  /// this depends on live in the bars-opus/attune-invite-web repo; see
+  /// main.dart's _handleDeepLink for the receiving side.
+  String get deepLink => 'https://invite.attune.barsopus.com/i/$code';
 }
 
 class InviteAcceptance {

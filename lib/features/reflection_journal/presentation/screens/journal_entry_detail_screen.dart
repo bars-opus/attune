@@ -8,31 +8,23 @@ class JournalEntryDetailScreen extends ConsumerWidget {
 
   final String entryId;
 
-  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
+  void _confirmDelete(BuildContext context, WidgetRef ref) {
+    BottomSheetUtils.showDocumentationBottomSheet(
+      maxHeight: 400.h,
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete this entry?'),
-        content: const Text(
-          'This can\'t be undone. The entry and its reflection will be permanently removed.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
+      widget: ConfirmationDialog(
+        type: ConfirmationType.warning,
+        icon: Icons.delete,
+        title: 'Delete this entry?',
+        message:
+            'This can\'t be undone. The entry and its reflection will be permanently removed.',
+        confirmText: 'Delete',
+        onConfirm: () async {
+          await ref.read(deleteJournalEntryProvider(entryId).future);
+          if (context.mounted) context.pop();
+        },
       ),
     );
-
-    if (confirmed == true) {
-      await ref.read(deleteJournalEntryProvider(entryId).future);
-      if (context.mounted) context.pop();
-    }
   }
 
   @override
@@ -45,15 +37,14 @@ class JournalEntryDetailScreen extends ConsumerWidget {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () => context.pushNamed(
-              'journalEntryCompose',
-              extra: entryId,
-            ),
+          AppIconButton(
+            icon: Icons.edit_outlined,
+            onPressed:
+                () => context.pushNamed('journalEntryCompose', extra: entryId),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
+
+          AppIconButton(
+            icon: Icons.delete_outline,
             onPressed: () => _confirmDelete(context, ref),
           ),
         ],
@@ -78,7 +69,7 @@ class JournalEntryDetailScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(entry.content, style: textTheme.bodyLarge),
+                Text(entry.content, style: textTheme.bodyMedium),
                 Gap(Spacing.lg.h),
                 analysisAsync.when(
                   loading: () => const SizedBox.shrink(),
@@ -87,17 +78,10 @@ class JournalEntryDetailScreen extends ConsumerWidget {
                     if (!analysis.isComplete || analysis.observation == null) {
                       return const SizedBox.shrink();
                     }
-                    return Container(
-                      padding: EdgeInsets.all(Spacing.md.w),
-                      decoration: BoxDecoration(
-                        color: colorScheme.primary.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(
-                          BorderRadiusTokens.md.r,
-                        ),
-                      ),
+                    return CardInkWell(
                       child: Text(
                         analysis.observation!,
-                        style: textTheme.bodyMedium,
+                        style: textTheme.bodySmall,
                       ),
                     );
                   },

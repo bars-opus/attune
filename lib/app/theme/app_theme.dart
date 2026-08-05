@@ -73,7 +73,17 @@ class AppTheme {
   // Usage in MaterialApp:
   //   MaterialApp(theme: AppTheme.lightTheme, ...)
   // ===========================================================================
-  static ThemeData get lightTheme => ThemeData(
+  static ThemeData get lightTheme => _lightThemeBase.copyWith(
+    // Merge (not overwrite) onto ThemeData's own colorScheme-derived
+    // textTheme — that's what gives bodyMedium/titleLarge/etc. a correct
+    // onSurface-based color automatically. Replacing textTheme outright
+    // with AppTextTheme.lightTextTheme (which sets no color on any style)
+    // discarded that derivation and left every style resolving to Flutter's
+    // TextStyle color default instead of the theme's colorScheme.
+    textTheme: _lightThemeBase.textTheme.merge(AppTextTheme.lightTextTheme),
+  );
+
+  static ThemeData get _lightThemeBase => ThemeData(
     useMaterial3: true,
     brightness: Brightness.light,
     colorScheme: ColorScheme.light(
@@ -91,6 +101,13 @@ class AppTheme {
       onSurface: LightColors.textPrimary,
       error: LightColors.error,
       primaryContainer: LightColors.foreground,
+      // foreground (#ECFFE6) is a near-white pale green — left unset, this
+      // fell back to Material's algorithmic onPrimaryContainer default,
+      // which isn't aware primaryContainer was hijacked to a near-white
+      // custom tint and could resolve close to white, making e.g. the
+      // success snackbar's text unreadable. textPrimary (near-black) reads
+      // correctly against any of the near-white foreground tones.
+      onPrimaryContainer: LightColors.textPrimary,
       surfaceDim: LightColors.background,
     ),
 
@@ -184,7 +201,7 @@ class AppTheme {
       thickness: 0.5,
       space: 0,
     ),
-  ).copyWith(textTheme: AppTextTheme.lightTextTheme);
+  );
 
   // ===========================================================================
   // STATIC PROPERTY: darkTheme
@@ -213,7 +230,11 @@ class AppTheme {
   //   MaterialApp(darkTheme: AppTheme.darkTheme, themeMode: ThemeMode.dark, ...)
   //   OR MaterialApp(darkTheme: AppTheme.darkTheme, themeMode: ThemeMode.system)
   // ===========================================================================
-  static ThemeData get darkTheme => ThemeData(
+  static ThemeData get darkTheme => _darkThemeBase.copyWith(
+    textTheme: _darkThemeBase.textTheme.merge(AppTextTheme.darkTextTheme),
+  );
+
+  static ThemeData get _darkThemeBase => ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
     colorScheme: ColorScheme.dark(
@@ -225,6 +246,9 @@ class AppTheme {
       onSurface: DarkColors.textPrimary,
       error: DarkColors.error,
       primaryContainer: DarkColors.foreground,
+      // See onPrimaryContainer note in lightTheme — same fix, explicit
+      // rather than relying on Material's default matching by luck.
+      onPrimaryContainer: DarkColors.textPrimary,
       surfaceDim: DarkColors.background,
     ),
 
@@ -312,7 +336,7 @@ class AppTheme {
       thickness: 0.5,
       space: 0,
     ),
-  ).copyWith(textTheme: AppTextTheme.darkTextTheme);
+  );
 }
 
 // =============================================================================

@@ -135,15 +135,36 @@ bool _isAuthCallback(Uri uri) {
       uri.path == '/callback';
 }
 
-String? _extractInviteCode(Uri uri) {
-  final isInviteLink = uri.scheme == 'attune' && uri.host == 'invite';
-  if (!isInviteLink) return null;
+const _inviteLinkHost = 'invite.attune.barsopus.com';
 
-  final code = uri.queryParameters['code']?.trim();
-  return code == null || code.isEmpty ? null : code;
+String? _extractInviteCode(Uri uri) {
+  // Legacy/companion form: attune://invite?code=<code>. Still handled since
+  // anything already holding this raw scheme link (e.g. a prior share) must
+  // keep working; new links minted by RelationshipInvite.deepLink use the
+  // https path form below instead — see relationship_invite_service.dart.
+  if (uri.scheme == 'attune' && uri.host == 'invite') {
+    final code = uri.queryParameters['code']?.trim();
+    return code == null || code.isEmpty ? null : code;
+  }
+
+  // Universal/App Link form: https://invite.attune.barsopus.com/i/<code>.
+  if (uri.scheme == 'https' &&
+      uri.host == _inviteLinkHost &&
+      uri.pathSegments.length == 2 &&
+      uri.pathSegments.first == 'i') {
+    final code = uri.pathSegments[1].trim();
+    return code.isEmpty ? null : code;
+  }
+
+  return null;
 }
 
 String _redactUri(Uri uri) {
-  final base = '${uri.scheme}://${uri.host}${uri.path}';
+  // Invite codes live in the query string for the attune:// form but in the
+  // path itself for the https://invite.attune.barsopus.com/i/<code> form —
+  // redact the path there too, not just the query, so codes never hit logs.
+  final isInviteLinkHost = uri.host == _inviteLinkHost;
+  final path = isInviteLinkHost ? '/[redacted]' : uri.path;
+  final base = '${uri.scheme}://${uri.host}$path';
   return uri.hasQuery ? '$base?[redacted]' : base;
 }

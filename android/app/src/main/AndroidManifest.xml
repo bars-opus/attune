@@ -26,6 +26,31 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Custom scheme (attune://invite?code=..., attune://auth/callback) —
+                 opened directly by anything that already has the raw link
+                 (Messages, email, third-party QR apps). Does not help the stock
+                 iOS/Android Camera QR scanner; see the https intent-filter below
+                 for that. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="attune"/>
+            </intent-filter>
+            <!-- Android App Links — autoVerify lets Android open these
+                 https://invite.attune.barsopus.com links directly in the app
+                 (skipping the disambiguation dialog) once
+                 assetlinks.json is deployed and verified. This is also what
+                 the stock Camera app's QR scanner can actually open, unlike
+                 the attune:// scheme above. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data
+                    android:scheme="https"
+                    android:host="invite.attune.barsopus.com"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

@@ -19,8 +19,12 @@ class JournalEntryComposeScreen extends ConsumerStatefulWidget {
 class _JournalEntryComposeScreenState
     extends ConsumerState<JournalEntryComposeScreen> {
   final _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+
   bool _promptDismissed = false;
   bool _isSaving = false;
+  static const int minContentLength = 10;
+
   String? _promptUsed;
   bool _loadedExisting = false;
 
@@ -32,6 +36,7 @@ class _JournalEntryComposeScreenState
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -91,62 +96,80 @@ class _JournalEntryComposeScreenState
       });
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        title: Text(
-          widget.entryId != null ? 'Edit entry' : 'New entry',
-          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        actions: [
-          TextButton(
-            onPressed: _isSaving ? null : _save,
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: EdgeInsets.all(Spacing.md.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (widget.entryId == null &&
-                !_promptDismissed &&
-                _promptUsed != null)
-              Container(
-                padding: EdgeInsets.all(Spacing.smMd.w),
-                margin: EdgeInsets.only(bottom: Spacing.md.h),
-                decoration: BoxDecoration(
-                  color: colorScheme.primary.withOpacity(0.06),
-                  borderRadius: BorderRadius.circular(
-                    BorderRadiusTokens.md.r,
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        body: SafeArea(
+          child: ListView(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: InfoRowWidget(
+                      title:
+                          widget.entryId != null ? 'Edit entry' : 'New entry',
+                      subtitle: '',
+                      iconColor: colorScheme.onBackground,
+                      icon: Icons.close,
+                      showAvatar: false,
+                      showTrailingArrow: true,
+                      showDivider: false,
+                      disableTrailing: true,
+                      onTap: () {
+                        Navigator.pop(context);
+                      },
+                    ),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(_promptUsed!, style: textTheme.bodyMedium),
+
+                  if (_controller.text.trim().length >= minContentLength)
+                    ShakeTransition(
+                      duration: const Duration(milliseconds: 800),
+                      curve: Curves.easeOutBack,
+                      child: AppButton(
+                        elevation: 0,
+                        animateButton: false,
+                        label: 'Save',
+                        isLoading: _isSaving,
+                        onPressed: _isSaving ? null : _save,
+                        textColor: colorScheme.surface,
+                        size: ButtonSize.large,
+                        width: 100,
+                        padding: Spacing.horizontalMd,
+                        height: 30.h,
+                        borderRadius: BorderRadius.circular(100.r),
+                      ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 18),
-                      onPressed: () => setState(() => _promptDismissed = true),
-                    ),
-                  ],
-                ),
+                ],
               ),
-            Expanded(
-              child: TextField(
+              Gap(Spacing.lg.h),
+              if (widget.entryId == null &&
+                  !_promptDismissed &&
+                  _promptUsed != null)
+                SemanticContainerWidget(
+                  content: _promptUsed ?? '',
+                  icon: Icons.lightbulb_outline,
+                  title: 'Pro Tip',
+                  backgroundColor: colorScheme.success.withOpacity(0.1),
+                  borderColor: colorScheme.success,
+                  iconColor: colorScheme.success,
+                  textTheme: textTheme,
+                ),
+              Gap(Spacing.lg.h),
+              AppTextFormField(
                 controller: _controller,
-                maxLines: null,
-                expands: true,
-                textAlignVertical: TextAlignVertical.top,
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  hintText: 'Write freely. This stays private.',
-                ),
+                focusNode: _focusNode,
+                hintText:
+                    "What's on your mind? Write freely. This stays private",
+                maxLines: 12,
+                minLines: 5,
+                autofocus: true,
+                // buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null, // Custom counter
+                onChanged: (_) => setState(() {}),
+                enabled: !_isSaving,
+                label: '',
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

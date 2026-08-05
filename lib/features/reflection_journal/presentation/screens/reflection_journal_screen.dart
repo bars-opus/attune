@@ -2,6 +2,7 @@
 import 'package:attune/app/documentations/user_manual/data/reflection_journal_docs.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/reflection_journal/presentation/providers/reflection_journal_providers.dart';
+import 'package:attune/features/reflection_journal/presentation/screens/journal_entry_compose_screen.dart';
 import 'package:attune/features/reflection_journal/presentation/widgets/journal_entry_card.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -59,7 +60,7 @@ class _ReflectionJournalScreenState
         ),
         actions: [
           AppIconButton(
-            icon: Icons.book,
+            icon: Icons.notes_rounded,
             tooltip: 'Tags',
             onPressed: () {
               BottomSheetUtils.showDocumentationBottomSheet(
@@ -81,53 +82,17 @@ class _ReflectionJournalScreenState
         showContent: true,
       ),
       floatingActionButton: AppFab(
-        scrollAware: true,
-        heroTag: 'opinions-fab',
         icon: Icons.edit_outlined,
         onPressed: () {
-          context.pushNamed('journalEntryCompose');
+          BottomSheetUtils.showDocumentationBottomSheet(
+            context: context,
+            backgroundColor: colorScheme.neutral,
+            widget: JournalEntryComposeScreen(),
+          );
         },
       ),
-
-      //  FloatingActionButton.extended(
-      //   onPressed: () {
-      //     context.pushNamed('journalEntryCompose');
-      //   },
-      //   icon: const Icon(Icons.edit_outlined),
-      //   label: const Text('Write'),
-      // ),
     );
   }
-
-  //   return Scaffold(
-  //     appBar: AppBar(
-  //       backgroundColor: Colors.transparent,
-  //       title: Text(
-  //         'Reflection journal',
-  //         style: textTheme.titleLarge?.copyWith(
-  //           fontWeight: FontWeight.w600,
-  //           color: colorScheme.onSurface.withValues(alpha: 0.8),
-  //         ),
-  //       ),
-  //       centerTitle: true,
-  //       bottom: TabBar(
-  //         controller: _tabController,
-  //         tabs: const [Tab(text: 'Entries'), Tab(text: 'Patterns')],
-  //       ),
-  //     ),
-  // floatingActionButton: FloatingActionButton.extended(
-  //   onPressed: () {
-  //     context.pushNamed('journalEntryCompose');
-  //   },
-  //   icon: const Icon(Icons.edit_outlined),
-  //   label: const Text('Write'),
-  // ),
-  //     body: TabBarView(
-  //       controller: _tabController,
-  //       children: const [_EntriesTab(), _PatternsTab()],
-  //     ),
-  //   );
-  // }
 }
 
 class _EntriesTab extends ConsumerWidget {
@@ -187,7 +152,6 @@ class _PatternsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final patternsAsync = ref.watch(journalPatternsProvider);
     final textTheme = Theme.of(context).textTheme;
-
     return patternsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, stack) {

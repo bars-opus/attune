@@ -189,7 +189,6 @@ class _ChatCouplesLockedScreenState
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final loc = AppLocalizations.of(context)!;
-    final docs = ChatDocs();
 
     return Scaffold(
       // No AppBar: TripleTapDetector's invisible quick-exit gesture zone is
@@ -354,53 +353,10 @@ class _ChatCouplesLockedScreenState
                 ],
               ),
             ),
-            if (widget.isPendingCouples) ...[
-              CardInkWell(
-                child: InfoRowWidget(
-                  subtitle:
-                      'Once your partner accepts and completes their own onboarding, A private private chat would open for the two of you to start atunning.',
-                  title: 'Your invite is pending',
-                  icon: Icons.chat,
-                  // iconColor: colorScheme.error,
-                  // backgroundColor: colorScheme.error.withOpacity(0.1),
-                  subTitleMaxLines: 5,
-                  iconSize: 25.h,
-                  showDivider: false,
-                  onTap: () {
-                    BottomSheetUtils.showDocumentationBottomSheet(
-                      context: context,
-                      showButtons: false,
-                      widget: DocumentationTabView(
-                        module: docs,
-                        showDocumentationFirst: true,
-                      ),
-                    );
-                  },
-                  disableTrailing: false,
-                  showAvatar: true,
-                  showTrailingArrow: false,
-                  trailing: Icon(
-                    Icons.lock,
-                    size: 25.h,
-                    color: colorScheme.error,
-                  ),
-                ),
-              ),
-              // SemanticContainerWidget(
-              //   icon: Icons.lock,
-              //   prefixIcon: Icons.lock,
-              //   content:
-              //       'Once your partner accepts and completes their own onboarding, A private private chat would open for the two of you to start atunning.',
-              //   title: 'Your invite is pending',
-              //   backgroundColor: colorScheme.error.withOpacity(0.1),
-              //   borderColor: colorScheme.error,
-              //   iconColor: colorScheme.error,
-              //   textTheme: textTheme,
-              // ),
-              // Gap(Spacing.md),
-            ],
 
             _ReflectionEntryCard(
+              colorScheme: colorScheme,
+              isPendingCouples: widget.isPendingCouples,
               onTap: () => context.pushNamed('reflectionJournal'),
             ),
 
@@ -454,26 +410,68 @@ class _ChatCouplesLockedScreenState
 /// Mirrors ConversationsScreen's own _ReflectionCard so the real entry
 /// point looks identical whether you arrive here or already have chat.
 class _ReflectionEntryCard extends StatelessWidget {
-  const _ReflectionEntryCard({required this.onTap});
+  final bool isPendingCouples;
+  final ColorScheme colorScheme;
+  const _ReflectionEntryCard({
+    required this.colorScheme,
+    required this.isPendingCouples,
+    required this.onTap,
+  });
 
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final docs = ChatDocs();
+
     return CardInkWell(
-      child: InfoRowWidget(
-        subtitle:
-            'A private space for your own reflection work. This never sends messages to anyone, just reflections to heal after breakup or prepare for dating.',
-        title: 'Personal reflections',
-        icon: Icons.self_improvement_outlined,
-        subTitleMaxLines: 5,
-        iconSize: 25.h,
-        showDivider: false,
-        onTap: onTap,
-        disableTrailing: false,
-        showAvatar: true,
-        showTrailingArrow: false,
-        trailing: Icon(Icons.chevron_right_rounded, size: 25.h),
+      child: Column(
+        children: [
+          if (isPendingCouples) ...[
+            InfoRowWidget(
+              subtitle:
+                  'Once your partner accepts and completes their own onboarding, A private private chat would open for the two of you to start atunning.',
+              title: 'Your invite is pending',
+              icon: Icons.chat,
+              // iconColor: colorScheme.error,
+              // backgroundColor: colorScheme.error.withOpacity(0.1),
+              subTitleMaxLines: 5,
+              iconSize: 25.h,
+              showDivider: false,
+              onTap: () {
+                BottomSheetUtils.showDocumentationBottomSheet(
+                  context: context,
+                  showButtons: false,
+                  widget: DocumentationTabView(
+                    module: docs,
+                    showDocumentationFirst: true,
+                  ),
+                );
+              },
+              disableTrailing: false,
+              showAvatar: true,
+              showTrailingArrow: false,
+              trailing: Icon(Icons.lock, size: 25.h, color: colorScheme.error),
+            ),
+            Gap(Spacing.md),
+            AppDivider(),
+            Gap(Spacing.sm),
+          ],
+          InfoRowWidget(
+            subtitle:
+                'A private space for your own reflection work. This never sends messages to anyone, just reflections to heal after breakup or prepare for dating.',
+            title: 'Personal reflections',
+            icon: Icons.self_improvement_outlined,
+            subTitleMaxLines: 5,
+            iconSize: 25.h,
+            showDivider: false,
+            onTap: onTap,
+            disableTrailing: false,
+            showAvatar: true,
+            showTrailingArrow: false,
+            trailing: Icon(Icons.chevron_right_rounded, size: 25.h),
+          ),
+        ],
       ),
     );
   }
