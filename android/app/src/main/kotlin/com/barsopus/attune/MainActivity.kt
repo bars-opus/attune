@@ -1,4 +1,4 @@
-package com.attune.attune
+package com.barsopus.attune
 
 import io.flutter.embedding.android.FlutterActivity
 

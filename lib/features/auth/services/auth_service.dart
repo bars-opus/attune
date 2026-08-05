@@ -106,7 +106,11 @@ class AuthService {
   }
 
   Future<void> _nativeGoogleSignIn() async {
-    // iOS OAuth client (com.attune.attune) — used for the native sign-in flow.
+    // TODO(bundle-id): this iOS OAuth client is still registered to the old
+    // bundle ID com.attune.attune in Google Cloud Console, but the app now
+    // ships as com.barsopus.attune. Native Google Sign-In will fail on iOS
+    // until a new iOS OAuth client is created for com.barsopus.attune and
+    // its client ID replaces the value below.
     const iosClientId =
         '706235705872-cnj9o5fvdqla35sodsrfbkfudrupqf05.apps.googleusercontent.com';
 

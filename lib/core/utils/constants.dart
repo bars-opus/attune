@@ -39,8 +39,8 @@ class AppConstants {
   static const String appReleaseDate = '2024-01-19';
   static const String appCopyright = '© 2024 Bars Opus, Ltd.';
   static const String appDeveloper = 'Bars Opus, Ltd.';
-  static const String appPackageName = 'com.attune.attune';
-  static const String appBundleId = 'com.attune.attune';
+  static const String appPackageName = 'com.barsopus.attune';
+  static const String appBundleId = 'com.barsopus.attune';
 
   // App URLs
   static const String websiteUrl = 'https://barsopus.com';

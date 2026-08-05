@@ -51,7 +51,7 @@
 		<array>
 			<dict>
 				<key>CFBundleURLName</key>
-				<string>com.attune.attune.deeplink</string>
+				<string>com.barsopus.attune.deeplink</string>
 				<key>CFBundleURLSchemes</key>
 				<array>
 					<string>attune</string>
