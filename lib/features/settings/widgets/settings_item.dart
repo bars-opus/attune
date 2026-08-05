@@ -106,7 +106,7 @@ class SettingsItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     var modalIcon = Icon(
-      Icons.expand_more,
+      Icons.arrow_forward_ios,
       size: IconSizes.md.h,
       color: colorScheme.onBackground.withOpacity(0.3),
     );

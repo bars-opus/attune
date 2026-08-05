@@ -33,7 +33,7 @@ class ConflictStyleQuizDocs implements DocumentationModule {
       id: 'conflict_what_it_is',
       title: 'What it is',
       subtitle: 'No approach is universally right',
-      icon: Icons.compare_arrows,
+      icon: Icons.balance_outlined,
       category: 'Conflict Style Quiz',
       order: 1,
       contents: [

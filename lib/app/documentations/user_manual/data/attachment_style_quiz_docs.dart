@@ -33,7 +33,7 @@ class AttachmentStyleQuizDocs implements DocumentationModule {
       id: 'attach_what_it_is',
       title: 'What it is',
       subtitle: 'A spectrum, not a fixed label',
-      icon: Icons.explore_outlined,
+      icon: Icons.psychology_alt_outlined,
       category: 'Attachment Quiz',
       order: 1,
       contents: [

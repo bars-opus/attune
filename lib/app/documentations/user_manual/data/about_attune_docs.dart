@@ -26,7 +26,7 @@ class AboutAttuneDocs implements DocumentationModule {
       'Why we built this, and what we\'ll never do';
 
   @override
-  IconData get icon => Icons.diamond_outlined;
+  IconData get icon => Icons.lightbulb_outline;
 
   @override
   int get order => 1;

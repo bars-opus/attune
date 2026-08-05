@@ -33,7 +33,7 @@ class CommunityQuestionsDocs implements DocumentationModule {
       id: 'community_what_it_is',
       title: 'What it is',
       subtitle: 'A shared bank of custom game questions',
-      icon: Icons.collections_bookmark_outlined,
+      icon: Icons.public_outlined,
       category: 'Community Questions',
       order: 1,
       contents: [

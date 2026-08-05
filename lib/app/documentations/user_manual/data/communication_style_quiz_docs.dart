@@ -22,7 +22,7 @@ class CommunicationStyleQuizDocs implements DocumentationModule {
       'How you tend to communicate when it matters most';
 
   @override
-  IconData get icon => Icons.chat_outlined;
+  IconData get icon => Icons.record_voice_over_outlined;
 
   @override
   int get order => 10;

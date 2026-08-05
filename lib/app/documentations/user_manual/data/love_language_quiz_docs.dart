@@ -22,7 +22,7 @@ class LoveLanguageQuizDocs implements DocumentationModule {
       'How you most naturally give and receive affection';
 
   @override
-  IconData get icon => Icons.favorite_outline;
+  IconData get icon => Icons.self_improvement_outlined;
 
   @override
   int get order => 12;

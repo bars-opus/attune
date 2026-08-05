@@ -33,7 +33,7 @@ class ConflictTranslatorDocs implements DocumentationModule {
       id: 'ct_what_it_is',
       title: 'What it is',
       subtitle: 'A private thinking tool, not autocorrect',
-      icon: Icons.lightbulb_outline,
+      icon: Icons.translate_outlined,
       category: 'Conflict Translator',
       order: 1,
       contents: [

@@ -59,15 +59,15 @@ class ManualWidget extends StatelessWidget {
         Center(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.start,
             children: [
-              Gap(Spacing.xl.h),
+              Gap(Spacing.xxl.h + Spacing.lg.h),
               Icon(
                 section.icon,
                 size: IconSizes.xxl.h,
                 color: appColors.primary,
               ),
-              Gap(Spacing.xl.h),
+              Gap(Spacing.xxl.h),
               Text(
                 section.title,
                 style: textTheme.titleLarge?.copyWith(
@@ -75,6 +75,7 @@ class ManualWidget extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   fontSize: 22.sp,
                 ),
+                textAlign: TextAlign.center,
               ),
               Gap(Spacing.sm.h),
               if (section.subtitle != null) ...[

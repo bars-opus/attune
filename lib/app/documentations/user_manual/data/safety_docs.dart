@@ -36,7 +36,7 @@ class SafetyDocs implements DocumentationModule {
       id: 'safety_what_it_is',
       title: 'What this is',
       subtitle: 'Quiet routing to real help, honestly limited',
-      icon: Icons.info_outline,
+      icon: Icons.shield_outlined,
       category: 'Safety',
       order: 1,
       contents: [
@@ -194,8 +194,7 @@ class SafetyDocs implements DocumentationModule {
       ),
       FAQModel(
         id: 'faq_safety_guarantee',
-        question:
-            'Can I rely on this to always catch a dangerous message?',
+        question: 'Can I rely on this to always catch a dangerous message?',
         answer:
             'No — please don\'t treat it that way. This is a best-effort feature with real limits, not comprehensive monitoring, a clinical assessment, or an emergency service. If you\'re in immediate danger, contact local emergency services directly.',
         category: 'Safety',
@@ -203,7 +202,8 @@ class SafetyDocs implements DocumentationModule {
       ),
       FAQModel(
         id: 'faq_safety_access_anytime',
-        question: 'Can I open the resources screen without something triggering it?',
+        question:
+            'Can I open the resources screen without something triggering it?',
         answer:
             'Yes — it\'s always available manually from Settings, any time, for any reason. You don\'t need a trigger to use it.',
         category: 'Safety',

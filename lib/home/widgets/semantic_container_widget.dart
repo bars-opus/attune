@@ -108,6 +108,10 @@ class SemanticContainerWidget extends StatelessWidget {
   /// Should semantically match the content type (e.g., info, warning, help).
   /// Size is controlled by `IconSizes.md` token for consistency.
   final IconData? icon;
+  final IconData? prefixIcon;
+
+
+  
 
   /// Title text displayed prominently at the top of the container.
   ///
@@ -153,6 +157,7 @@ class SemanticContainerWidget extends StatelessWidget {
     super.key,
     required this.content,
      this.icon,
+     this.prefixIcon,
     required this.title,
     required this.backgroundColor,
     required this.borderColor,
@@ -214,6 +219,9 @@ class SemanticContainerWidget extends StatelessWidget {
               ],
             ),
           ),
+
+           if(prefixIcon != null)
+          Icon(prefixIcon, size: IconSizes.md.r, color: iconColor),
         ],
       ),
     );

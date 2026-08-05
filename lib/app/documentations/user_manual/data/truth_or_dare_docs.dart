@@ -33,7 +33,7 @@ class TruthOrDareDocs implements DocumentationModule {
       id: 'tod_how_it_works',
       title: 'How it works',
       subtitle: 'The app decides — not you',
-      icon: Icons.casino_outlined,
+      icon: Icons.style_outlined,
       category: 'Truth or Dare',
       order: 1,
       contents: [
@@ -75,7 +75,7 @@ class TruthOrDareDocs implements DocumentationModule {
       id: 'tod_skip',
       title: 'The skip',
       subtitle: 'One per person, and it\'s private',
-      icon: Icons.visibility_off_outlined,
+      icon: Icons.skip_next_outlined,
       category: 'Truth or Dare',
       order: 2,
       contents: [

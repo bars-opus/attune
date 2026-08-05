@@ -33,7 +33,7 @@ class ReflectionJournalDocs implements DocumentationModule {
       id: 'journal_what_it_is',
       title: 'What it is',
       subtitle: 'Always available, whoever you are',
-      icon: Icons.edit_outlined,
+      icon: Icons.book_outlined,
       category: 'Reflection Journal',
       order: 1,
       contents: [

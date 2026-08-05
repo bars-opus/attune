@@ -33,7 +33,7 @@ class PaintBallDocs implements DocumentationModule {
       id: 'paintball_what_it_is',
       title: 'What it is',
       subtitle: 'Fast, light, and a little suspenseful',
-      icon: Icons.flash_on_outlined,
+      icon: Icons.sports_esports_outlined,
       category: 'Paint Ball',
       order: 1,
       contents: [

@@ -22,7 +22,7 @@ class PulseDocs implements DocumentationModule {
       'Your relationship\'s weekly health picture, built from real moments';
 
   @override
-  IconData get icon => Icons.favorite_outline;
+  IconData get icon => Icons.monitor_heart_outlined;
 
   @override
   int get order => 5;

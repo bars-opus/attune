@@ -32,7 +32,7 @@ class DatingModeDocs implements DocumentationModule {
       id: 'dating_what_it_is',
       title: 'What Dating Mode is',
       subtitle: 'Psychology-first, not a browsing pool',
-      icon: Icons.explore_outlined,
+      icon: Icons.favorite_border,
       category: 'Dating Mode',
       order: 1,
       contents: [
@@ -97,7 +97,7 @@ class DatingModeDocs implements DocumentationModule {
       id: 'dating_interest',
       title: 'Expressing interest',
       subtitle: 'Double-blind, so rejection is never public',
-      icon: Icons.visibility_off_outlined,
+      icon: Icons.thumb_up_alt_outlined,
       category: 'Dating Mode',
       order: 3,
       contents: [
@@ -231,8 +231,7 @@ class DatingModeDocs implements DocumentationModule {
       ),
       FAQModel(
         id: 'faq_dating_love_language',
-        question:
-            'Does my love language affect who I\'m matched with?',
+        question: 'Does my love language affect who I\'m matched with?',
         answer:
             'No. Love language results are never used as evidence of compatibility — they may personalize your own guidance, but they never factor into who you\'re introduced to.',
         category: 'Dating Mode',
@@ -240,8 +239,7 @@ class DatingModeDocs implements DocumentationModule {
       ),
       FAQModel(
         id: 'faq_dating_money_request',
-        question:
-            'A match is asking me to send money — is that normal?',
+        question: 'A match is asking me to send money — is that normal?',
         answer:
             'No — never send money, account details, or mobile-money transfers to someone you haven\'t met in person, regardless of the reason given. Please report it immediately using the report option in your conversation.',
         category: 'Dating Mode',
@@ -249,8 +247,7 @@ class DatingModeDocs implements DocumentationModule {
       ),
       FAQModel(
         id: 'faq_dating_auto_relationship',
-        question:
-            'Does matching automatically start an Attune relationship?',
+        question: 'Does matching automatically start an Attune relationship?',
         answer:
             'No. A mutual match only opens a dating conversation. Moving into an official Couples relationship on Attune always requires a separate, deliberate step from both of you.',
         category: 'Dating Mode',

@@ -35,7 +35,7 @@ class GamesDocs implements DocumentationModule {
       id: 'games_overview',
       title: 'What Games are for',
       subtitle: 'Connection, not competition',
-      icon: Icons.favorite_border,
+      icon: Icons.stadium_outlined,
       category: 'Games',
       order: 1,
       contents: [

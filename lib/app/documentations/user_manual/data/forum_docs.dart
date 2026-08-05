@@ -33,7 +33,7 @@ class ForumDocs implements DocumentationModule {
       id: 'forum_what_it_is',
       title: 'What Forums are',
       subtitle: 'Real debates, voted into existence',
-      icon: Icons.gavel_outlined,
+      icon: Icons.groups_outlined,
       category: 'Forums',
       order: 1,
       contents: [

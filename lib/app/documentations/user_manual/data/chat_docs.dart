@@ -36,7 +36,7 @@ class ChatDocs implements DocumentationModule {
       id: 'chat_what_it_is',
       title: 'What Chat is',
       subtitle: 'A private conversation, just the two of you',
-      icon: Icons.favorite_border,
+      icon: Icons.chat_bubble_outline,
       category: 'Chat',
       order: 1,
       contents: [

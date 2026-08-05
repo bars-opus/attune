@@ -1,4 +1,5 @@
 // lib/features/reflection_journal/presentation/screens/reflection_journal_screen.dart
+import 'package:attune/app/documentations/user_manual/data/reflection_journal_docs.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/reflection_journal/presentation/providers/reflection_journal_providers.dart';
 import 'package:attune/features/reflection_journal/presentation/widgets/journal_entry_card.dart';
@@ -33,36 +34,100 @@ class _ReflectionJournalScreenState
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final docs = ReflectionJournalDocs();
+
+    final tabs = [
+      AppTabItem(label: 'Entries', icon: Icons.edit, content: _EntriesTab()),
+      AppTabItem(
+        label: 'Patterns',
+        icon: Icons.pattern,
+        content: _PatternsTab(),
+      ),
+    ];
 
     return Scaffold(
+      backgroundColor: colorScheme.neutral,
       appBar: AppBar(
+        automaticallyImplyLeading: true,
         backgroundColor: Colors.transparent,
         title: Text(
           'Reflection journal',
           style: textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w600,
-            color: colorScheme.onSurface.withValues(alpha: 0.8),
+            color: colorScheme.onSurface.withOpacity(0.8),
           ),
         ),
-        centerTitle: true,
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [Tab(text: 'Entries'), Tab(text: 'Patterns')],
-        ),
+        actions: [
+          AppIconButton(
+            icon: Icons.book,
+            tooltip: 'Tags',
+            onPressed: () {
+              BottomSheetUtils.showDocumentationBottomSheet(
+                context: context,
+                showButtons: false,
+                widget: DocumentationTabView(
+                  module: docs,
+                  showDocumentationFirst: true,
+                ),
+              );
+            },
+          ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      body: TabsWithContent(
+        tabs: tabs,
+        initialIndex: 0,
+        scrollable: false,
+        showContent: true,
+      ),
+      floatingActionButton: AppFab(
+        scrollAware: true,
+        heroTag: 'opinions-fab',
+        icon: Icons.edit_outlined,
         onPressed: () {
           context.pushNamed('journalEntryCompose');
         },
-        icon: const Icon(Icons.edit_outlined),
-        label: const Text('Write'),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: const [_EntriesTab(), _PatternsTab()],
-      ),
+
+      //  FloatingActionButton.extended(
+      //   onPressed: () {
+      //     context.pushNamed('journalEntryCompose');
+      //   },
+      //   icon: const Icon(Icons.edit_outlined),
+      //   label: const Text('Write'),
+      // ),
     );
   }
+
+  //   return Scaffold(
+  //     appBar: AppBar(
+  //       backgroundColor: Colors.transparent,
+  //       title: Text(
+  //         'Reflection journal',
+  //         style: textTheme.titleLarge?.copyWith(
+  //           fontWeight: FontWeight.w600,
+  //           color: colorScheme.onSurface.withValues(alpha: 0.8),
+  //         ),
+  //       ),
+  //       centerTitle: true,
+  //       bottom: TabBar(
+  //         controller: _tabController,
+  //         tabs: const [Tab(text: 'Entries'), Tab(text: 'Patterns')],
+  //       ),
+  //     ),
+  // floatingActionButton: FloatingActionButton.extended(
+  //   onPressed: () {
+  //     context.pushNamed('journalEntryCompose');
+  //   },
+  //   icon: const Icon(Icons.edit_outlined),
+  //   label: const Text('Write'),
+  // ),
+  //     body: TabBarView(
+  //       controller: _tabController,
+  //       children: const [_EntriesTab(), _PatternsTab()],
+  //     ),
+  //   );
+  // }
 }
 
 class _EntriesTab extends ConsumerWidget {
@@ -104,10 +169,9 @@ class _EntriesTab extends ConsumerWidget {
             final entry = entries[index];
             return JournalEntryCard(
               entry: entry,
-              onTap: () => context.pushNamed(
-                'journalEntryDetail',
-                extra: entry.id,
-              ),
+              onTap:
+                  () =>
+                      context.pushNamed('journalEntryDetail', extra: entry.id),
             );
           },
         );

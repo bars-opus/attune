@@ -33,7 +33,7 @@ class HealingDocs implements DocumentationModule {
       id: 'healing_what_it_is',
       title: 'What Healing Mode is',
       subtitle: 'Not therapy — a private way to make sense of things',
-      icon: Icons.spa_outlined,
+      icon: Icons.self_improvement_outlined,
       category: 'Healing Mode',
       order: 1,
       contents: [

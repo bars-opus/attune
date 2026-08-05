@@ -15,6 +15,7 @@ class DocumentationScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         automaticallyImplyLeading: false,
         backgroundColor: Colors.transparent,
@@ -33,8 +34,7 @@ class DocumentationList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    // Get all modules from registry
+    
     DocumentationRegistry.initialize();
     final modules = DocumentationRegistry.getAllModules();
 
@@ -48,11 +48,11 @@ class DocumentationList extends StatelessWidget {
               title: module.getTitle(context),
               subtitle: module.getSubtitle(context),
               icon: module.icon,
-              trailing: Icon(
-                Icons.expand_more,
-                size: IconSizes.md.h,
-                color: colorScheme.onBackground.withOpacity(0.3),
-              ),
+              // trailing: Icon(
+              //   Icons.expand_more,
+              //   size: IconSizes.md.h,
+              //   color: colorScheme.onBackground.withOpacity(0.3),
+              // ),
               avatarRadius: 25.h,
               onTap: () {
                 BottomSheetUtils.showDocumentationBottomSheet(

@@ -33,7 +33,7 @@ class ThirtySixQuestionsDocs implements DocumentationModule {
       id: 'tsq_what_it_is',
       title: 'What it is',
       subtitle: 'Based on a well-known closeness study',
-      icon: Icons.route_outlined,
+      icon: Icons.diversity_1_outlined,
       category: '36 Questions',
       order: 1,
       contents: [

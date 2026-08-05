@@ -81,9 +81,9 @@ class _FAQWidgetState extends State<FAQWidget> {
             ...categoryFaqs.map((faq) => _buildFAQItem(context, faq)),
             // Divider between categories (except last)
             if (categoryIndex < categories.length - 1) ...[
-             Gap(24.h),
-              const Divider(),
-             Gap(24.h),
+              Gap(Spacing.md),
+              const AppDivider(),
+              Gap(Spacing.md),
             ],
           ],
         );
@@ -104,38 +104,38 @@ class _FAQWidgetState extends State<FAQWidget> {
     final isExpanded = _expandedStates[faq.id] ?? false;
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Card(
-      margin: Spacing.verticalMd,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12.r),
-        side: BorderSide(color: Colors.transparent),
-      ),
-      child: ExpansionTile(
-        key: ValueKey(faq.id),
-        title: Text(
-          faq.question,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w500,
-            color: colorScheme.primary,
-          ),
-        ),
-        initiallyExpanded: isExpanded,
-        onExpansionChanged: (expanded) {
-          setState(() {
-            _expandedStates[faq.id] = expanded;
-          });
-        },
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Spacing.sm),
+      child: Column(
         children: [
-          Padding(
-            padding:  EdgeInsets.fromLTRB(24.w, 8.h, 24.w, 16.h),
-            child: Text(
-              faq.answer,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyLarge?.copyWith(color: colorScheme.onBackground),
+          ExpansionTile(
+            key: ValueKey(faq.id),
+            title: Text(
+              faq.question,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+                color: colorScheme.primary,
+              ),
             ),
+            initiallyExpanded: isExpanded,
+            onExpansionChanged: (expanded) {
+              setState(() {
+                _expandedStates[faq.id] = expanded;
+              });
+            },
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(24.w, 8.h, 24.w, 16.h),
+                child: Text(
+                  faq.answer,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: colorScheme.onBackground,
+                  ),
+                ),
+              ),
+            ],
           ),
+          AppDivider(),
         ],
       ),
     );

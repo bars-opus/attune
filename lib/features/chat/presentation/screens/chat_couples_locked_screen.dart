@@ -1,5 +1,6 @@
 // lib/features/chat/presentation/screens/chat_couples_locked_screen.dart
 
+import 'package:attune/app/documentations/user_manual/data/chat_docs.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/utils/relationship_status_display.dart';
 import 'package:attune/core/widgets/profile_avatar.dart';
@@ -129,8 +130,9 @@ class _ChatCouplesLockedScreenState
   }
 
   Future<void> _onHealingEntryTap() async {
-    final hasActiveSoloJourney =
-        await ref.read(hasActiveSoloHealingJourneyProvider.future);
+    final hasActiveSoloJourney = await ref.read(
+      hasActiveSoloHealingJourneyProvider.future,
+    );
     if (!mounted) return;
 
     if (hasActiveSoloJourney) {
@@ -187,6 +189,7 @@ class _ChatCouplesLockedScreenState
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final loc = AppLocalizations.of(context)!;
+    final docs = ChatDocs();
 
     return Scaffold(
       // No AppBar: TripleTapDetector's invisible quick-exit gesture zone is
@@ -213,52 +216,43 @@ class _ChatCouplesLockedScreenState
                   ),
                 ),
                 const Spacer(),
-                if (_invite != null) ...[
-                  AnimatedCircle(
-                    size: 50,
-                    stroke: 2,
-                    animateSize: true,
-                    animateShape: true,
-                    firstColor: colorScheme.primary,
-                    secondColor: colorScheme.primary,
-                  ),
-                ] else
-                  GestureDetector(
-                    // Opaque so the whole 30x30 box is tappable, not just the
-                    // non-transparent pixels of the tinted logo PNG.
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      BottomSheetUtils.showDocumentationBottomSheet(
-                        context: context,
-                        // Info items are typically view-only (no agree/decline)
-                        showButtons: false,
-                        maxHeight: 700,
-                        // Dynamic content: guide shows the documentation list,
-                        // others show legal docs. DocumentationList (not
-                        // DocumentationScreen) — the sheet already supplies its
-                        // own Scaffold, and a nested Scaffold inside it renders
-                        // blank instead of showing.
-                        widget: Padding(
-                          padding: const EdgeInsets.only(top: Spacing.md),
-                          child: const DocumentationList(),
-                        ),
-                      );
-                    },
-                    child: SizedBox(
-                      width: 30,
-                      height: 30,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(
-                          BorderRadiusTokens.md,
-                        ),
-                        child: Image.asset(
-                          color: colorScheme.primary,
-                          'assets/images/attune_logo_white.png',
-                          fit: BoxFit.cover,
-                        ),
+
+                GestureDetector(
+                  // Opaque so the whole 30x30 box is tappable, not just the
+                  // non-transparent pixels of the tinted logo PNG.
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    BottomSheetUtils.showDocumentationBottomSheet(
+                      context: context,
+                      // Info items are typically view-only (no agree/decline)
+                      showButtons: false,
+                      // maxHeight: 700,
+                      // Dynamic content: guide shows the documentation list,
+                      // others show legal docs. DocumentationList (not
+                      // DocumentationScreen) — the sheet already supplies its
+                      // own Scaffold, and a nested Scaffold inside it renders
+                      // blank instead of showing.
+                      widget: Padding(
+                        padding: const EdgeInsets.only(top: Spacing.md),
+                        child: const DocumentationList(),
+                      ),
+                    );
+                  },
+                  child: SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        BorderRadiusTokens.md,
+                      ),
+                      child: Image.asset(
+                        color: colorScheme.primary,
+                        'assets/images/attune_logo_white.png',
+                        fit: BoxFit.cover,
                       ),
                     ),
                   ),
+                ),
                 const Spacer(),
                 AppIconButton(
                   icon: Icons.menu,
@@ -275,6 +269,7 @@ class _ChatCouplesLockedScreenState
               child: Column(
                 children: [
                   Gap(Spacing.md.h),
+
                   // AnimatedCircle(
                   //   size: 30,
                   //   stroke: 2,
@@ -288,11 +283,8 @@ class _ChatCouplesLockedScreenState
                   // Locked preview — same card language ConversationsScreen uses
                   // for a real conversation, so a personal-mode user sees the
                   // actual couples chat surface rather than reading about it.
-                  _LockedConversationPreview(
-                    colorScheme: colorScheme,
-                    isPendingCouples: widget.isPendingCouples,
-                  ),
-
+                  if (!widget.isPendingCouples)
+                    _LockedConversationPreview(colorScheme: colorScheme),
                   Gap(Spacing.xl.h),
 
                   // Gap(Spacing.xl.h),
@@ -362,6 +354,52 @@ class _ChatCouplesLockedScreenState
                 ],
               ),
             ),
+            if (widget.isPendingCouples) ...[
+              CardInkWell(
+                child: InfoRowWidget(
+                  subtitle:
+                      'Once your partner accepts and completes their own onboarding, A private private chat would open for the two of you to start atunning.',
+                  title: 'Your invite is pending',
+                  icon: Icons.chat,
+                  // iconColor: colorScheme.error,
+                  // backgroundColor: colorScheme.error.withOpacity(0.1),
+                  subTitleMaxLines: 5,
+                  iconSize: 25.h,
+                  showDivider: false,
+                  onTap: () {
+                    BottomSheetUtils.showDocumentationBottomSheet(
+                      context: context,
+                      showButtons: false,
+                      widget: DocumentationTabView(
+                        module: docs,
+                        showDocumentationFirst: true,
+                      ),
+                    );
+                  },
+                  disableTrailing: false,
+                  showAvatar: true,
+                  showTrailingArrow: false,
+                  trailing: Icon(
+                    Icons.lock,
+                    size: 25.h,
+                    color: colorScheme.error,
+                  ),
+                ),
+              ),
+              // SemanticContainerWidget(
+              //   icon: Icons.lock,
+              //   prefixIcon: Icons.lock,
+              //   content:
+              //       'Once your partner accepts and completes their own onboarding, A private private chat would open for the two of you to start atunning.',
+              //   title: 'Your invite is pending',
+              //   backgroundColor: colorScheme.error.withOpacity(0.1),
+              //   borderColor: colorScheme.error,
+              //   iconColor: colorScheme.error,
+              //   textTheme: textTheme,
+              // ),
+              // Gap(Spacing.md),
+            ],
+
             _ReflectionEntryCard(
               onTap: () => context.pushNamed('reflectionJournal'),
             ),
@@ -477,10 +515,10 @@ class _HealingEntryCard extends StatelessWidget {
 /// couples chat looks like without pretending there is a real conversation
 /// underneath it.
 class _LockedConversationPreview extends StatelessWidget {
-  final bool isPendingCouples;
+  // final bool isPendingCouples;
   const _LockedConversationPreview({
     required this.colorScheme,
-    required this.isPendingCouples,
+    // required this.isPendingCouples,
   });
 
   final ColorScheme colorScheme;
@@ -489,11 +527,13 @@ class _LockedConversationPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     return InfoRowWidget(
       subtitle:
-          isPendingCouples
-              ? 'Once your partner accepts and completes their own onboarding, this becomes your private chat.'
-              : 'A shared chat opens once you and a partner are both connected. Invite your lover, or meet someone new in Dating mode.',
+          // isPendingCouples
+          //     ? 'Once your partner accepts and completes their own onboarding, this becomes your private chat.'
+          //     :
+          'A shared chat opens once you and a partner are both connected. Invite your lover, or meet someone new in Dating mode.',
       title:
-          isPendingCouples ? 'Your invite is pending' : 'Chat is for couples',
+          // isPendingCouples ? 'Your invite is pending' :
+          'Chat is for couples',
       icon: Icons.send,
 
       iconSize: 0.h,

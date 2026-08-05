@@ -48,11 +48,14 @@ class _DocumentationTabViewState extends State<DocumentationTabView> {
 
   @override
   Widget build(BuildContext context) {
-    final relatedIds = DocumentationRegistry.getRelatedModuleIds(_currentModule.id);
-    final relatedModules = relatedIds
-        .map((id) => DocumentationRegistry.getById(id))
-        .whereType<DocumentationModule>()
-        .toList();
+    final relatedIds = DocumentationRegistry.getRelatedModuleIds(
+      _currentModule.id,
+    );
+    final relatedModules =
+        relatedIds
+            .map((id) => DocumentationRegistry.getById(id))
+            .whereType<DocumentationModule>()
+            .toList();
 
     final tabs = [
       AppTabItem(
@@ -106,26 +109,28 @@ class _RelatedModulesList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    // final colorScheme = Theme.of(context).colorScheme;
     return ListView(
-      children: modules.map((module) {
-        return Padding(
-          padding: EdgeInsets.symmetric(vertical: Spacing.xs.h),
-          child: InfoRowWidget(
-            title: module.getTitle(context),
-            subtitle: module.getSubtitle(context),
-            icon: module.icon,
-            trailing: Icon(
-              Icons.chevron_right_rounded,
-              size: IconSizes.md.h,
-              color: colorScheme.onBackground.withOpacity(0.3),
-            ),
-            avatarRadius: 25.h,
-            onTap: () => onTap(module),
-            showTrailingArrow: true,
-          ),
-        );
-      }).toList(),
+      children:
+          modules.map((module) {
+            return Padding(
+              padding: EdgeInsets.symmetric(vertical: Spacing.xs.h),
+              child: InfoRowWidget(
+                title: module.getTitle(context),
+                subtitle: module.getSubtitle(context),
+                icon: module.icon,
+
+                // trailing: Icon(
+                //   Icons.chevron_right_rounded,
+                //   size: IconSizes.md.h,
+                //   color: colorScheme.onBackground.withOpacity(0.3),
+                // ),
+                avatarRadius: 25.h,
+                onTap: () => onTap(module),
+                showTrailingArrow: true,
+              ),
+            );
+          }).toList(),
     );
   }
 }
@@ -153,7 +158,11 @@ class _BackToParentRow extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Icon(Icons.arrow_back, size: IconSizes.sm.h, color: colorScheme.primary),
+                Icon(
+                  Icons.arrow_back_ios,
+                  size: IconSizes.sm.h,
+                  color: colorScheme.primary,
+                ),
                 Gap(Spacing.xs.w),
                 Text(
                   parentTitle,
