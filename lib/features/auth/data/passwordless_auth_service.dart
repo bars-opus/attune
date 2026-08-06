@@ -62,6 +62,10 @@ class PasswordlessAuthService {
       return const PasswordlessAuthResult(isConfigured: false);
     }
 
+    // OtpType.sms is correct for BOTH delivery channels — OtpChannel has an
+    // sms/whatsapp split, but OtpType does not (gotrue 2.21.0 exposes no
+    // whatsapp member). Phone codes verify identically however they were
+    // delivered, so this is not an SMS-only path despite the name.
     final response = await client.auth
         .verifyOTP(
           phone: phoneNumber.trim(),

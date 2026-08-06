@@ -17,28 +17,10 @@ class DiscoverFeedScreen extends ConsumerStatefulWidget {
 }
 
 class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
-  static const _anonymousPreviewOpinions = <({String status, String content})>[
-    (
-      status: 'Taken',
-      content:
-          'What has actually helped you repair after the same argument keeps coming back?',
-    ),
-    (
-      status: 'Single',
-      content:
-          'How do you tell the difference between healthy space and emotional distance?',
-    ),
-    (
-      status: 'Exploring',
-      content:
-          'What early signs make you feel calm with someone instead of hyper-alert?',
-    ),
-  ];
-
-  // Guests are shown a static local preview (below) and never a live feed —
-  // loadMore must not fire discoverFeedProvider's backend RPC for them. It is
-  // granted to `authenticated` only, so an anon call 42501s (this is what
-  // produced the "error while scrolling Discover" report for a guest).
+  // Paginates for guests too: get_discover_opinions is granted to `anon` as of
+  // 20260818120000_public_opinion_reads, so signed-out visitors read the same
+  // live feed rather than a hardcoded preview. (Before that grant an anon call
+  // 42501'd, which is why this used to be gated on being signed in.)
   //
   // This reads from the ScrollNotification bubbling through
   // NotificationListener below (metrics.pixels/maxScrollExtent), not a
@@ -49,9 +31,8 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
   // controller, so the outer AppBar/tab-bar header would never see the
   // feed's scroll and would stop collapsing/returning with it.
   bool _handleScrollNotification(ScrollNotification notification) {
-    if (ref.read(currentUserIdProvider) != null &&
-        notification.metrics.pixels >=
-            notification.metrics.maxScrollExtent - 200) {
+    if (notification.metrics.pixels >=
+        notification.metrics.maxScrollExtent - 200) {
       ref.read(discoverFeedProvider.notifier).loadMore();
     }
     return false;
@@ -59,15 +40,10 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final currentUserId = ref.watch(currentUserIdProvider);
-    final isAuthenticated = currentUserId != null;
-    // Only watch the live feed provider (and so only trigger its backend RPC)
-    // once authenticated. Watching it unconditionally previously fired
-    // get_discover_opinions for guests every build, well before the
-    // isAuthenticated branch below ever chose to render its result — the RPC is
-    // granted to `authenticated` only, so that call always 42501s for a guest.
-    final opinionsAsync =
-        isAuthenticated ? ref.watch(discoverFeedProvider) : null;
+    // Guests and signed-in users read the same live feed. The RPC personalises
+    // itself from auth.uid(), which is simply NULL for a guest — they get an
+    // unpersonalised (not unfiltered) feed, with the same moderation rules.
+    final opinionsAsync = ref.watch(discoverFeedProvider);
 
     return NotificationListener<UserScrollNotification>(
       onNotification:
@@ -77,18 +53,14 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
         onNotification: _handleScrollNotification,
         child: RefreshIndicator(
           onRefresh: () async {
-            if (!isAuthenticated) return;
             ref.invalidate(discoverFeedProvider);
             await ref.read(discoverFeedProvider.future);
           },
-          child:
-              !isAuthenticated || opinionsAsync == null
-                  ? _buildAnonymousPreviewSliver(context)
-                  : opinionsAsync.when(
-                    loading: () => const ListviewLoadingShimmer(),
-                    error: (error, stack) => ErrorStateWidget.from(error),
-                    data: (opinions) => _buildFeedSliver(context, opinions),
-                  ),
+          child: opinionsAsync.when(
+            loading: () => const ListviewLoadingShimmer(),
+            error: (error, stack) => ErrorStateWidget.from(error),
+            data: (opinions) => _buildFeedSliver(context, opinions),
+          ),
         ),
       ),
     );
@@ -243,72 +215,5 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
         ),
       ],
     );
-  }
-
-  Widget _buildAnonymousPreviewSliver(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-
-    return CustomScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      slivers: [
-        SliverOverlapInjector(
-          handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
-        ),
-        SliverPadding(
-          padding: EdgeInsets.only(bottom: Spacing.xl.h),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate((context, index) {
-              if (index == 0) {
-                return Padding(
-                  padding: EdgeInsets.all(Spacing.lg.w),
-                  child: SemanticContainerWidget(
-                    title: 'Read-only guest preview',
-                    content:
-                        'You can browse opinions before creating an account. Continue with phone number from Chat to post, reply, follow, or react.',
-                    icon: Icons.visibility_outlined,
-                    backgroundColor: Theme.of(
-                      context,
-                    ).colorScheme.primary.withValues(alpha: 0.1),
-                    borderColor: Theme.of(context).colorScheme.primary,
-                    iconColor: Theme.of(context).colorScheme.primary,
-                    textTheme: textTheme,
-                  ),
-                );
-              }
-              final opinion = _anonymousPreviewOpinions[index - 1];
-              return Padding(
-                padding: EdgeInsets.symmetric(horizontal: Spacing.lg.w),
-                child: OpinionCard(
-                  opinion: OpinionModel(
-                    id: opinion.content,
-                    authorHandle: '',
-                    isMine: false,
-                    content: opinion.content,
-                    relationshipStatus: _normalizePreviewStatus(opinion.status),
-                    likeCount: 0,
-                    dislikeCount: 0,
-                    commentCount: 0,
-                    createdAt: DateTime.now(),
-                  ),
-                  showFollowButton: false,
-                  onCommentTap:
-                      () => context.showInfoSnackbar(
-                        'Continue with phone number from Chat to join the conversation.',
-                      ),
-                ),
-              );
-            }, childCount: _anonymousPreviewOpinions.length + 1),
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _normalizePreviewStatus(String status) {
-    return switch (status) {
-      'Taken' => 'taken',
-      'Exploring' => 'figuring_it_out',
-      _ => 'single',
-    };
   }
 }

@@ -290,6 +290,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
     final commentsAsync = ref.watch(commentsProvider(widget.opinionId));
+    final isAuthenticated = ref.watch(currentUserIdProvider) != null;
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -408,93 +409,106 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
             // Floating input, overlaid on the list rather than stacked in
             // flow below it — comments keep scrolling visibly behind/through
             // it instead of being blocked by an opaque full-width bar.
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: SafeArea(
-                top: false,
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    Spacing.md.w,
-                    0,
-                    Spacing.md.w,
-                    0,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Reply indicator
-                      if (_replyToCommentId != null)
-                        AnimatedScaleFade(
-                          duration: const Duration(milliseconds: 600),
-                          curve: Curves.easeOutBack,
+            //
+            // Guests can read the whole thread but not reply: create_opinion_comment
+            // is authenticated-only, so showing the field would just produce a
+            // permission error on send. The entire block is dropped rather than
+            // only ChatTextField, so its padding and reply-preview chrome do not
+            // linger as dead space at the bottom of the screen.
+            if (isAuthenticated)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      Spacing.md.w,
+                      0,
+                      Spacing.md.w,
+                      0,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Reply indicator
+                        if (_replyToCommentId != null)
+                          AnimatedScaleFade(
+                            duration: const Duration(milliseconds: 600),
+                            curve: Curves.easeOutBack,
 
-                          child: CardInkWell(
-                            padding: const EdgeInsets.only(left: Spacing.md),
-                            margin: const EdgeInsets.all(0),
-                            child: Padding(
+                            child: CardInkWell(
                               padding: const EdgeInsets.only(left: Spacing.md),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: ShakeTransition(
-                                      duration: const Duration(
-                                        milliseconds: 800,
-                                      ),
-                                      curve: Curves.easeOutBack,
-                                      child: RichText(
-                                        text: TextSpan(
-                                          children: [
-                                            TextSpan(
-                                              text: 'Replying to',
-                                              style: textTheme.bodySmall
-                                                  ?.copyWith(
-                                                    color: colorScheme.primary,
-                                                  ),
-                                            ),
-                                            TextSpan(
-                                              text:
-                                                  '\n${_replyToQuotedText?.substring(0, (_replyToQuotedText!.length > 40) ? 40 : _replyToQuotedText!.length)}...',
-                                              style: textTheme.bodySmall
-                                                  ?.copyWith(
-                                                    color: colorScheme.onSurface
-                                                        .withValues(alpha: 0.8),
-                                                  ),
-                                            ),
-                                          ],
+                              margin: const EdgeInsets.all(0),
+                              child: Padding(
+                                padding: const EdgeInsets.only(
+                                  left: Spacing.md,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: ShakeTransition(
+                                        duration: const Duration(
+                                          milliseconds: 800,
                                         ),
-                                        textAlign: TextAlign.start,
+                                        curve: Curves.easeOutBack,
+                                        child: RichText(
+                                          text: TextSpan(
+                                            children: [
+                                              TextSpan(
+                                                text: 'Replying to',
+                                                style: textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      color:
+                                                          colorScheme.primary,
+                                                    ),
+                                              ),
+                                              TextSpan(
+                                                text:
+                                                    '\n${_replyToQuotedText?.substring(0, (_replyToQuotedText!.length > 40) ? 40 : _replyToQuotedText!.length)}...',
+                                                style: textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      color: colorScheme
+                                                          .onSurface
+                                                          .withValues(
+                                                            alpha: 0.8,
+                                                          ),
+                                                    ),
+                                              ),
+                                            ],
+                                          ),
+                                          textAlign: TextAlign.start,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  ShakeTransition(
-                                    offset: -140,
-                                    curve: Curves.easeOutBack,
-                                    child: IconButton(
-                                      icon: const Icon(Icons.close, size: 16),
-                                      onPressed: _clearReplyTarget,
+                                    ShakeTransition(
+                                      offset: -140,
+                                      curve: Curves.easeOutBack,
+                                      child: IconButton(
+                                        icon: const Icon(Icons.close, size: 16),
+                                        onPressed: _clearReplyTarget,
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),
+                        // Comment input, floating pill over the list instead
+                        // of a full-width opaque bar.
+                        ChatTextField(
+                          controller: _commentController,
+                          focusNode: _commentFocusNode,
+                          onSend: _postComment,
+                          enabled: !_isSubmitting,
+                          hintText: 'Add a comment...',
                         ),
-                      // Comment input, floating pill over the list instead
-                      // of a full-width opaque bar.
-                      ChatTextField(
-                        controller: _commentController,
-                        focusNode: _commentFocusNode,
-                        onSend: _postComment,
-                        enabled: !_isSubmitting,
-                        hintText: 'Add a comment...',
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ),
