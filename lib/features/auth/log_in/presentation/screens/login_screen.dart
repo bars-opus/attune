@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:attune/features/auth/data/eula_acceptance_service.dart';
 import 'package:attune/features/auth/data/passwordless_auth_service.dart';
+import 'package:attune/features/auth/presentation/eula_gate.dart';
 import 'package:attune/features/auth/log_in/domain/phone_country.dart';
 import 'package:attune/features/auth/log_in/presentation/state/phone_auth_providers.dart';
 import 'package:attune/features/auth/log_in/presentation/widgets/login_code_step.dart';
@@ -26,6 +28,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   final _otpFocusNode = FocusNode();
 
   late final PasswordlessAuthService _authService = PasswordlessAuthService();
+  late final EulaAcceptanceService _eulaService = EulaAcceptanceService();
 
   TabController? _tabController;
   StreamSubscription<AuthState>? _authSubscription;
@@ -272,7 +275,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     });
   }
 
-  void _goToOnboarding() {
+  Future<void> _goToOnboarding() async {
     if (!mounted || _hasLeftForOnboarding) return;
 
     // Three separate paths can reach here for a single sign-in: the
@@ -282,6 +285,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     // sheet AND then a real page below it, so this is latched: first caller
     // wins, the rest are no-ops.
     _hasLeftForOnboarding = true;
+
+    // Consent is gated here rather than before the phone step because whether
+    // this is a first-time user is only knowable once they're authenticated.
+    // Returning users who already accepted the current version pass straight
+    // through; a declining user is returned to the unauthenticated state
+    // rather than being let in without agreeing.
+    if (!await _ensureEulaAccepted()) {
+      _hasLeftForOnboarding = false;
+      return;
+    }
+    if (!mounted) return;
 
     // LoginScreen is presented BOTH as a route (/login) and inside a modal
     // bottom sheet (from LoginProfile). `context.go` swaps the page stack
@@ -296,5 +310,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     }
 
     context.go(RouteNames.onboarding);
+  }
+
+  /// Returns true when the user may proceed. On a decline the session is ended
+  /// — it is already valid at this point, so leaving it would let the next
+  /// launch skip the consent gate via the initState already-signed-in check.
+  Future<bool> _ensureEulaAccepted() async {
+    final accepted = await EulaGate.ensureAccepted(
+      context,
+      service: _eulaService,
+    );
+    if (!accepted) await _authService.signOut();
+    return accepted;
   }
 }

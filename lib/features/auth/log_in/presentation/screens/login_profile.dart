@@ -80,22 +80,16 @@ class LoginProfile extends StatelessWidget {
                     elevation: 0,
                     prefixIconColor: colorScheme.surface,
                     label: 'Continue with phone number',
+                    // The EULA is NOT shown here. Whether someone is new or
+                    // returning is only knowable after OTP verification, so
+                    // prompting first meant returning users re-accepted on
+                    // every sign-in (and nothing was ever recorded). Consent
+                    // now happens once, post-verification, in LoginScreen —
+                    // see EulaAcceptanceService.
                     onPressed: () {
                       BottomSheetUtils.showDocumentationBottomSheet(
                         context: context,
-                        document: LegalDocumentationData.eula(context),
-                        onAgree: () {
-                          Navigator.pop(context);
-                          BottomSheetUtils.showDocumentationBottomSheet(
-                            context: context,
-                            widget: LoginScreen(),
-                          );
-                        },
-                        onDecline: () {
-                          Navigator.pop(context);
-                        },
-                        agreeButtonText: loc.commonAccept,
-                        declineButtonText: loc.commonReject,
+                        widget: LoginScreen(),
                       );
                     },
                     iconData: Icons.phone_android_outlined,

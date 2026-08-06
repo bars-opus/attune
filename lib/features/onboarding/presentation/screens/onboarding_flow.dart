@@ -1,4 +1,5 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/auth/presentation/eula_gate.dart';
 import 'package:attune/features/auth/presentation/passwordless_auth_step.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_submission_service.dart';
@@ -220,6 +221,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     // item is set. Drop any nulls rather than fabricate a midpoint.
     final answers = _quizAnswers.whereType<int>().toList();
 
+    // Last gate before an account becomes real. LoginScreen already asks on
+    // the sign-in path, but PasswordlessAuthStep (the invite-acceptance route
+    // into this flow) verifies OTP without asking — so consent is enforced
+    // here too, at the one point every user must pass through. Already-
+    // accepted users are not re-prompted.
+    if (!await _ensureEulaAccepted()) return;
+
     try {
       await _submissionService.submit(
         mode: completedMode,
@@ -254,6 +262,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     await widget.store.complete(mode: completedMode, displayName: displayName);
     if (mounted) widget.onComplete();
   }
+
+  /// Consent gate before the account is written remotely. Unlike LoginScreen's
+  /// version this does not sign the user out on decline — they may have
+  /// arrived here mid-flow from an invite, and dropping the session would lose
+  /// the pending invite acceptance. They simply stay on this step.
+  Future<bool> _ensureEulaAccepted() => EulaGate.ensureAccepted(context);
 
   Future<void> _handleAuthVerified() async {
     final inviteCode = _pendingInviteCode;

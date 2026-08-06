@@ -87,6 +87,16 @@ class PasswordlessAuthService {
     return client?.auth.currentUser;
   }
 
+  /// Ends the current session. Used when a user declines the EULA after OTP
+  /// verification — the session is already valid at that point, so without
+  /// this they would be treated as signed in on the next launch and skip the
+  /// consent gate entirely.
+  Future<void> signOut() async {
+    final client = _safeClient;
+    if (client == null) return;
+    await client.auth.signOut().timeout(authTimeout);
+  }
+
   /// User-facing copy for an auth failure.
   ///
   /// Spec (AUTH_ONBOARDING_ENGINE §Failure Modes): "No UI error should expose
