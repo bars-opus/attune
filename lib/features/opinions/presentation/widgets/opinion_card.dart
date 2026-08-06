@@ -182,16 +182,22 @@ class OpinionCard extends ConsumerWidget {
                                 onTap: () => _toggleRepost(context, ref),
                               ),
                             ],
-                            // Save. No label at all: a save is private to the
-                            // saver, so unlike the reactions beside it there is
-                            // no public count to sit under the icon. Rendered
-                            // for your own posts too — bookmarking is a personal
-                            // filing action, not a public endorsement.
+                            // Save. The only button here with no number: a save
+                            // is private to the saver, so there is no public
+                            // count to show (see 20260727140000_opinion_saves
+                            // — there is deliberately no saved_count column).
+                            // Passes an empty label rather than null so it
+                            // still reserves the text line and stays on the
+                            // same baseline as the counted buttons beside it.
+                            // Rendered for your own posts too — bookmarking is
+                            // a personal filing action, not a public
+                            // endorsement.
                             Gap(Spacing.md.w),
                             _buildActionButton(
                               context: context,
                               icon: FontAwesomeIcons.bookmark,
                               activeIcon: FontAwesomeIcons.solidBookmark,
+                              label: '',
                               isActive: opinion.isSaved,
                               onTap: () => _toggleSave(context, ref),
                             ),
@@ -208,6 +214,7 @@ class OpinionCard extends ConsumerWidget {
                             _buildActionButton(
                               context: context,
                               icon: FontAwesomeIcons.quoteLeft,
+                              label: _countLabel(opinion.quoteCount),
                               onTap: () => _openQuoteComposer(context, ref),
                             ),
                             if (showCommentAction) ...[

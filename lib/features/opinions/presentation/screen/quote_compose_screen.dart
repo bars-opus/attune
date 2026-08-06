@@ -171,5 +171,4 @@ class _QuoteComposeScreenState extends ConsumerState<QuoteComposeScreen> {
       ),
     );
   }
-
 }

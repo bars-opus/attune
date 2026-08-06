@@ -36,30 +36,34 @@ class AuthorProfileSummary {
 // Author profile summary (status, follower count, own/following flags).
 final authorProfileProvider =
     FutureProvider.family<AuthorProfileSummary, String>((ref, handle) async {
-  final supabase = ref.read(supabaseClientProvider);
-  final rows = await supabase
-      .rpc('get_author_profile', params: {'p_author_handle': handle});
-  final list = rows as List;
-  if (list.isEmpty) return const AuthorProfileSummary();
-  final row = Map<String, dynamic>.from(list.first);
-  return AuthorProfileSummary(
-    relationshipStatus: row['relationship_status'] as String?,
-    followerCount: row['follower_count'] as int? ?? 0,
-    isMine: row['is_mine'] as bool? ?? false,
-    isFollowing: row['is_following'] as bool? ?? false,
-  );
-});
+      final supabase = ref.read(supabaseClientProvider);
+      final rows = await supabase.rpc(
+        'get_author_profile',
+        params: {'p_author_handle': handle},
+      );
+      final list = rows as List;
+      if (list.isEmpty) return const AuthorProfileSummary();
+      final row = Map<String, dynamic>.from(list.first);
+      return AuthorProfileSummary(
+        relationshipStatus: row['relationship_status'] as String?,
+        followerCount: row['follower_count'] as int? ?? 0,
+        isMine: row['is_mine'] as bool? ?? false,
+        isFollowing: row['is_following'] as bool? ?? false,
+      );
+    });
 
 // An author's opinions for the profile page (by handle).
 final profileOpinionsProvider =
     FutureProvider.family<List<OpinionModel>, String>((ref, handle) async {
-  final supabase = ref.read(supabaseClientProvider);
-  final rows = await supabase
-      .rpc('get_author_opinions', params: {'p_author_handle': handle});
-  return (rows as List)
-      .map((r) => OpinionModel.fromFeedRow(Map<String, dynamic>.from(r)))
-      .toList();
-});
+      final supabase = ref.read(supabaseClientProvider);
+      final rows = await supabase.rpc(
+        'get_author_opinions',
+        params: {'p_author_handle': handle},
+      );
+      return (rows as List)
+          .map((r) => OpinionModel.fromFeedRow(Map<String, dynamic>.from(r)))
+          .toList();
+    });
 
 /// An author's reposts for the profile page's Reposts tab (by handle).
 ///
@@ -70,12 +74,12 @@ final profileOpinionsProvider =
 /// does — never by reverse-resolving a handle to a user_id.
 final profileRepostedOpinionsProvider =
     FutureProvider.family<List<OpinionModel>, String>((ref, handle) async {
-  final supabase = ref.read(supabaseClientProvider);
-  final rows = await supabase.rpc(
-    'get_author_reposted_opinions',
-    params: {'p_author_handle': handle},
-  );
-  return (rows as List)
-      .map((r) => OpinionModel.fromFeedRow(Map<String, dynamic>.from(r)))
-      .toList();
-});
+      final supabase = ref.read(supabaseClientProvider);
+      final rows = await supabase.rpc(
+        'get_author_reposted_opinions',
+        params: {'p_author_handle': handle},
+      );
+      return (rows as List)
+          .map((r) => OpinionModel.fromFeedRow(Map<String, dynamic>.from(r)))
+          .toList();
+    });

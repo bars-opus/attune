@@ -46,6 +46,15 @@ class OpinionModel {
   /// viewer (LEFT JOIN opinion_reposts in the feed RPCs).
   final bool isRepostedByMe;
 
+  /// How many opinions quote this one. Public, like repostCount.
+  ///
+  /// Unlike the other counts this does NOT arrive on the feed row: it is
+  /// merged in afterwards by OpinionRepository.withQuoteCounts, one batched
+  /// get_quote_counts call per page. Defaults to 0, which is also what a
+  /// failed lookup leaves in place — the count is decoration on the card, so
+  /// it degrades to "no number" rather than failing the feed.
+  final int quoteCount;
+
   /// When non-null, this opinion is a *quote*: a full opinion of its own that
   /// also points at the opinion it quotes (ATTUNE_MASTER_SPEC.md §8.11
   /// "Quotes"). Set once at creation and never toggled, unlike [isSaved] /
@@ -99,6 +108,7 @@ class OpinionModel {
     this.isSaved = false,
     this.repostCount = 0,
     this.isRepostedByMe = false,
+    this.quoteCount = 0,
     this.quotedOpinionId,
     this.editedAt,
     this.tags = const [],
@@ -123,6 +133,7 @@ class OpinionModel {
     bool? isSaved,
     int? repostCount,
     bool? isRepostedByMe,
+    int? quoteCount,
     String? content,
     DateTime? editedAt,
     int? commentCount,
@@ -142,6 +153,11 @@ class OpinionModel {
       isSaved: isSaved ?? this.isSaved,
       repostCount: repostCount ?? this.repostCount,
       isRepostedByMe: isRepostedByMe ?? this.isRepostedByMe,
+      // Overridable so withQuoteCounts can merge a page's counts onto rows
+      // already parsed without them, and falls back to the current value for
+      // the same reason as editedAt below: an optimistic save/repost toggle
+      // must not reset an already-merged count back to zero.
+      quoteCount: quoteCount ?? this.quoteCount,
       // Carried through unconditionally rather than being an overridable
       // parameter: a quote's target is immutable, so there is nothing for a
       // caller to flip — but dropping it here would silently un-quote a card
@@ -176,6 +192,11 @@ class OpinionModel {
       // no reposts and is not reposted by the viewer.
       repostCount: json['repost_count'] as int? ?? 0,
       isRepostedByMe: json['is_reposted_by_me'] as bool? ?? false,
+      // No feed RPC returns this — it is merged in afterwards by
+      // withQuoteCounts (see 20260819120000_quote_counts.sql for why it is a
+      // separate batched call rather than a column). Parsed anyway so a row
+      // that does carry it (a cached toJson round-trip) keeps its value.
+      quoteCount: json['quote_count'] as int? ?? 0,
       // Null on the overwhelming majority of rows (most opinions are not
       // quotes), and absent entirely from RPCs predating opinion_quotes —
       // both mean the same thing here, so no defaulting is needed.
@@ -223,6 +244,10 @@ class OpinionModel {
       // it on every cache round-trip.
       'repost_count': repostCount,
       'is_reposted_by_me': isRepostedByMe,
+      // Same lockstep requirement: merged in per page rather than returned by
+      // the feed RPCs, so omitting it here would make a cached card come back
+      // with no quote count until the next merge.
+      'quote_count': quoteCount,
       // Same lockstep requirement as the fields above: omitted here, a cached
       // quote would come back out of the cache as a plain opinion and lose its
       // embedded original on every relaunch.

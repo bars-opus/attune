@@ -23,9 +23,7 @@ class OpinionThreadLoader extends ConsumerWidget {
         if (opinion == null) {
           return Scaffold(
             appBar: AppBar(),
-            body: const Center(
-              child: Text('This opinion is unavailable.'),
-            ),
+            body: const Center(child: Text('This opinion is unavailable.')),
           );
         }
 

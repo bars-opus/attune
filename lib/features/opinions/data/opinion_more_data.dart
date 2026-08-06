@@ -115,7 +115,9 @@ class OpinionMoreData {
             subtitle: '',
             icon: Icons.copy_outlined,
             type: SettingsItemType.action,
-            iconColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+            iconColor: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.6),
             onTap: () async {
               await Clipboard.setData(ClipboardData(text: opinion.content));
               if (context.mounted) {
@@ -158,38 +160,39 @@ class OpinionMoreData {
     ];
     showModalBottomSheet<void>(
       context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: EdgeInsets.all(Spacing.md.w),
-              child: Text(
-                'Report this opinion',
-                style: Theme.of(sheetContext).textTheme.titleMedium,
-              ),
+      builder:
+          (sheetContext) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: EdgeInsets.all(Spacing.md.w),
+                  child: Text(
+                    'Report this opinion',
+                    style: Theme.of(sheetContext).textTheme.titleMedium,
+                  ),
+                ),
+                for (final reason in reasons)
+                  ListTile(
+                    title: Text(reason),
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      await ref.read(
+                        reportOpinionProvider((
+                          opinionId: opinionId,
+                          reason: reason,
+                        )).future,
+                      );
+                      if (context.mounted) {
+                        context.showInfoSnackbar(
+                          'Thank you. We will review this within 24 hours.',
+                        );
+                      }
+                    },
+                  ),
+              ],
             ),
-            for (final reason in reasons)
-              ListTile(
-                title: Text(reason),
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-                  await ref.read(
-                    reportOpinionProvider((
-                      opinionId: opinionId,
-                      reason: reason,
-                    )).future,
-                  );
-                  if (context.mounted) {
-                    context.showInfoSnackbar(
-                      'Thank you. We will review this within 24 hours.',
-                    );
-                  }
-                },
-              ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 }

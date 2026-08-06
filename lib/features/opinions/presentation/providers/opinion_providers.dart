@@ -131,7 +131,7 @@ class DiscoverFeedNotifier extends AsyncNotifier<List<OpinionModel>> {
     // merges them onto the parsed rows (§8.11 "Tags"). Wrapping here rather
     // than at each caller covers the first load, the background refresh and
     // loadMore alike, since all three go through this one helper.
-    return await repository.withTags(
+    return await repository.withSideData(
       await repository.getDiscoverFeed(
         page: page,
         pageSize: _pageSize,
@@ -354,7 +354,7 @@ class FollowingFeedNotifier extends AsyncNotifier<List<OpinionModel>> {
     final currentUserId = ref.read(currentUserIdProvider);
     if (currentUserId == null) return [];
     // Same batched tag merge as the discover feed — see _loadPage there.
-    return await repository.withTags(
+    return await repository.withSideData(
       await repository.getFollowingFeed(page: 0, pageSize: _pageSize),
     );
   }
@@ -584,7 +584,7 @@ class SavedOpinionsNotifier extends AsyncNotifier<List<OpinionModel>> {
 
   Future<List<OpinionModel>> _loadPage(int page) async {
     final repository = ref.read(opinionRepositoryProvider);
-    return await repository.withTags(
+    return await repository.withSideData(
       await repository.getSavedFeed(page: page, pageSize: _pageSize),
     );
   }
@@ -746,7 +746,7 @@ class RepostedOpinionsNotifier extends AsyncNotifier<List<OpinionModel>> {
 
   Future<List<OpinionModel>> _loadPage(int page) async {
     final repository = ref.read(opinionRepositoryProvider);
-    return await repository.withTags(
+    return await repository.withSideData(
       await repository.getRepostedFeed(page: page, pageSize: _pageSize),
     );
   }
@@ -1359,7 +1359,7 @@ class OpinionsByTagNotifier
     final repository = ref.read(opinionRepositoryProvider);
     // Tag-browse rows come back in the discover shape, which carries no tags
     // — so they get the same batched merge every other feed page gets.
-    return repository.withTags(
+    return repository.withSideData(
       await repository.getOpinionsByTag(arg, page: page, pageSize: _pageSize),
     );
   }

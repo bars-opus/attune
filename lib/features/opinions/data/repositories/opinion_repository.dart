@@ -576,6 +576,28 @@ class OpinionRepository {
     return result;
   }
 
+  /// How many times each opinion in a feed page has been quoted, keyed by
+  /// opinion id.
+  ///
+  /// Batched for the same reason tags are: a page is 20-30 rows and a per-card
+  /// lookup would be N+1. Opinions nobody has quoted are absent from the map,
+  /// so callers must read a missing key as zero.
+  ///
+  /// Unlike like/repost/comment counts this is not carried on the feed row —
+  /// adding a column to the feed RPCs' result shape would mean DROPping and
+  /// recreating all eight of them (see 20260819120000_quote_counts.sql).
+  Future<Map<String, int>> getQuoteCounts(List<String> opinionIds) async {
+    if (opinionIds.isEmpty) return const {};
+    final rows = await _supabase.rpc(
+      'get_quote_counts',
+      params: {'p_opinion_ids': opinionIds},
+    );
+    return {
+      for (final row in (rows as List))
+        (row as Map)['opinion_id'] as String: (row)['quote_count'] as int,
+    };
+  }
+
   /// The full fixed vocabulary, for the composer's chip picker and the tag
   /// browse surface. Static server-side, so callers cache it rather than
   /// refetching per keystroke.
@@ -635,5 +657,54 @@ class OpinionRepository {
     } catch (_) {
       return opinions;
     }
+  }
+
+  /// Merges a batched quote-count lookup onto an already-parsed feed page.
+  ///
+  /// Same shape and same failure posture as [withTags]: the feed RPCs do not
+  /// carry quote_count, so every parsed row starts at 0 and this patches the
+  /// ones that have quotes. A lookup that throws leaves the page rendering
+  /// without quote numbers rather than failing the whole feed — the count is
+  /// decoration on the card, not the content.
+  Future<List<OpinionModel>> withQuoteCounts(
+    List<OpinionModel> opinions,
+  ) async {
+    if (opinions.isEmpty) return opinions;
+    try {
+      final byId = await getQuoteCounts([for (final o in opinions) o.id]);
+      if (byId.isEmpty) return opinions;
+      return [
+        for (final o in opinions)
+          byId.containsKey(o.id) ? o.copyWith(quoteCount: byId[o.id]) : o,
+      ];
+    } catch (_) {
+      return opinions;
+    }
+  }
+
+  /// Both per-page side-data merges ([withTags] and [withQuoteCounts]) in one
+  /// call, with the two lookups issued concurrently.
+  ///
+  /// Every feed provider wants both, and neither depends on the other, so
+  /// running them in sequence would add a needless round trip to each page
+  /// load. Each still fails independently: a tag outage cannot strip the quote
+  /// counts, and vice versa.
+  Future<List<OpinionModel>> withSideData(List<OpinionModel> opinions) async {
+    if (opinions.isEmpty) return opinions;
+    final ids = [for (final o in opinions) o.id];
+    final results = await Future.wait([
+      getTagsForOpinions(ids).catchError((_) => <String, List<String>>{}),
+      getQuoteCounts(ids).catchError((_) => <String, int>{}),
+    ]);
+    final tagsById = results[0] as Map<String, List<String>>;
+    final quotesById = results[1] as Map<String, int>;
+    if (tagsById.isEmpty && quotesById.isEmpty) return opinions;
+    return [
+      for (final o in opinions)
+        o.copyWith(
+          tags: tagsById[o.id] ?? o.tags,
+          quoteCount: quotesById[o.id] ?? o.quoteCount,
+        ),
+    ];
   }
 }

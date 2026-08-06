@@ -109,7 +109,6 @@ class QuotedOpinionPreview extends ConsumerWidget {
       },
     );
   }
-
 }
 
 /// The bordered, tinted container every preview state shares, so the card's
