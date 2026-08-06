@@ -226,6 +226,20 @@ class OpinionCard extends ConsumerWidget {
     );
   }
 
+  /// Blocks an action a guest cannot perform and tells them why.
+  ///
+  /// Every control on this card stays visible and tappable when signed out —
+  /// the affordance is real, the action just needs an account. Each of these
+  /// calls an authenticated-only RPC, so without this the tap would surface a
+  /// raw permission error instead of an explanation.
+  ///
+  /// Returns true when the caller should stop.
+  bool _blockedForGuest(BuildContext context, WidgetRef ref) {
+    if (ref.read(currentUserIdProvider) != null) return false;
+    context.showErrorSnackbar('Sign in to perform this action');
+    return true;
+  }
+
   Widget _buildMoreButton(BuildContext context, WidgetRef ref) {
     return GestureDetector(
       onTap: () => _showOpinionMenu(context, ref),
@@ -251,6 +265,10 @@ class OpinionCard extends ConsumerWidget {
           opinion: opinion,
           onReport: () {
             Navigator.pop(sheetContext);
+            // Guarded before the reason sheet rather than on submit: report_opinion
+            // is authenticated-only, so a guest would otherwise pick a reason and
+            // still be told "we will review this" after the call had failed.
+            if (_blockedForGuest(context, ref)) return;
             OpinionMoreData.showReportReasons(
               context: context,
               ref: ref,
@@ -301,12 +319,7 @@ class OpinionCard extends ConsumerWidget {
   /// content actions today, and hide is deliberately low-stakes and reversible
   /// server-side rather than something to guard with a countdown.
   Future<void> _hideOpinion(BuildContext context, WidgetRef ref) async {
-    if (ref.read(currentUserIdProvider) == null) {
-      context.showInfoSnackbar(
-        'Continue with phone number from Chat to hide opinions.',
-      );
-      return;
-    }
+    if (_blockedForGuest(context, ref)) return;
     try {
       await hideOpinionFromFeed(ref, opinionId: opinion.id);
       if (!context.mounted) return;
@@ -324,12 +337,7 @@ class OpinionCard extends ConsumerWidget {
   /// follows are already silent. Keyed on the opaque handle — the client has
   /// no user_id to mute with (FORUM.md §3).
   Future<void> _muteAuthor(BuildContext context, WidgetRef ref) async {
-    if (ref.read(currentUserIdProvider) == null) {
-      context.showInfoSnackbar(
-        'Continue with phone number from Chat to mute people.',
-      );
-      return;
-    }
+    if (_blockedForGuest(context, ref)) return;
     // Belt-and-braces: the menu item is not rendered when isMine, but muting
     // yourself would empty your own posts out of your feeds for no purpose.
     if (opinion.isMine) return;
@@ -414,12 +422,7 @@ class OpinionCard extends ConsumerWidget {
               : Icons.person_add_outlined,
       // label: isFollowing ? 'Following' : 'Follow',
       onPressed: () async {
-        if (ref.read(currentUserIdProvider) == null) {
-          context.showInfoSnackbar(
-            'Continue with phone number from Chat to follow people.',
-          );
-          return;
-        }
+        if (_blockedForGuest(context, ref)) return;
         if (isFollowing) {
           await ref.read(unfollowUserProvider(opinion.authorHandle).future);
         } else {
@@ -442,12 +445,7 @@ class OpinionCard extends ConsumerWidget {
 
     return GestureDetector(
       onTap: () async {
-        if (ref.read(currentUserIdProvider) == null) {
-          context.showInfoSnackbar(
-            'Continue with phone number from Chat to save opinions.',
-          );
-          return;
-        }
+        if (_blockedForGuest(context, ref)) return;
         try {
           // Optimistic: the provider flips the row before awaiting the RPC
           // and restores it if the call throws.
@@ -503,12 +501,7 @@ class OpinionCard extends ConsumerWidget {
     // "Participation gate"). Checked here as well as in the composer so an
     // anonymous tap gets told why instead of opening a screen it cannot
     // submit from.
-    if (ref.read(currentUserIdProvider) == null) {
-      context.showInfoSnackbar(
-        'Continue with phone number from Chat to quote opinions.',
-      );
-      return;
-    }
+    if (_blockedForGuest(context, ref)) return;
 
     final posted = await context.pushNamed<bool>(
       'quoteCompose',
@@ -530,12 +523,7 @@ class OpinionCard extends ConsumerWidget {
   /// the optimistic patch back on error — the user needs to be told why the
   /// icon they just filled went hollow again.
   Future<void> _toggleRepost(BuildContext context, WidgetRef ref) async {
-    if (ref.read(currentUserIdProvider) == null) {
-      context.showInfoSnackbar(
-        'Continue with phone number from Chat to repost opinions.',
-      );
-      return;
-    }
+    if (_blockedForGuest(context, ref)) return;
     // Belt-and-braces: the button is not rendered at all when isMine, and the
     // RPC raises cannot_repost_own_opinion regardless. This keeps the guard
     // true even if the button is ever shown in a new context.
@@ -563,12 +551,7 @@ class OpinionCard extends ConsumerWidget {
     WidgetRef ref,
     String newReaction,
   ) {
-    if (ref.read(currentUserIdProvider) == null) {
-      context.showInfoSnackbar(
-        'Continue with phone number from Chat to react to opinions.',
-      );
-      return;
-    }
+    if (_blockedForGuest(context, ref)) return;
     // FORUM.md: cannot like/dislike your own post — RLS
     // (opinion_reactions_insert_own) rejects this server-side too, but
     // without this gate the write silently failed with no feedback and

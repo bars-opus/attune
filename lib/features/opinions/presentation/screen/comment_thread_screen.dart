@@ -162,7 +162,20 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     super.dispose();
   }
 
+  /// Blocks an action a guest cannot perform and tells them why. Mirrors
+  /// OpinionCard._blockedForGuest — guests can read a whole thread, but every
+  /// action in it (like, reply, report) calls an authenticated-only RPC, so
+  /// the tap needs an explanation rather than a raw permission error.
+  ///
+  /// Returns true when the caller should stop.
+  bool _blockedForGuest() {
+    if (ref.read(currentUserIdProvider) != null) return false;
+    context.showErrorSnackbar('Sign in to perform this action');
+    return true;
+  }
+
   void _setReplyTarget(String? commentId, String? quotedText) {
+    if (_blockedForGuest()) return;
     setState(() {
       _replyToCommentId = commentId;
       _replyToQuotedText = quotedText;
@@ -244,6 +257,10 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
           opinion: widget.opinion,
           onReport: () {
             Navigator.pop(sheetContext);
+            // Guarded before the reason sheet: report_opinion is
+            // authenticated-only, so a guest would otherwise pick a reason and
+            // still be thanked after the call had already failed.
+            if (_blockedForGuest()) return;
             OpinionMoreData.showReportReasons(
               context: context,
               ref: ref,
@@ -903,6 +920,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                       count: comment.likeCount,
                       isActive: comment.likedByMe,
                       onTap: () async {
+                        if (_blockedForGuest()) return;
                         try {
                           await toggleCommentLiked(
                             ref,
@@ -1068,6 +1086,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     WidgetRef ref,
     String commentId,
   ) {
+    if (_blockedForGuest()) return;
     showDialog(
       context: context,
       builder:
