@@ -85,6 +85,7 @@ class OpinionCard extends ConsumerWidget {
                 child: InfoRowWidget(
                   title: '',
                   subtitle: opinion.content,
+                  subTitleFontSize: 12.h,
                   icon: statusIcon,
 
                   iconColor: colorScheme.background,
@@ -126,6 +127,13 @@ class OpinionCard extends ConsumerWidget {
                             (slug) =>
                                 context.pushNamed('tagBrowse', extra: slug),
                       ),
+
+                      Text(
+                        timeAgo,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurface.withValues(alpha: 0.5),
+                        ),
+                      ),
                       Padding(
                         padding: const EdgeInsets.only(
                           top: Spacing.md,
@@ -133,21 +141,21 @@ class OpinionCard extends ConsumerWidget {
                         ),
                         child: Row(
                           children: [
-                            _buildReactionButton(
+                            _buildActionButton(
                               context: context,
                               icon: FontAwesomeIcons.heart,
                               activeIcon: FontAwesomeIcons.solidHeart,
-                              count: opinion.likeCount,
+                              label: _countLabel(opinion.likeCount),
                               isActive: opinion.userReaction == 'like',
                               onTap:
                                   () => _toggleReaction(context, ref, 'like'),
                             ),
                             Gap(Spacing.md.w),
-                            _buildReactionButton(
+                            _buildActionButton(
                               context: context,
                               icon: Icons.thumb_down_outlined,
                               activeIcon: Icons.thumb_down,
-                              count: opinion.dislikeCount,
+                              label: _countLabel(opinion.dislikeCount),
                               isActive: opinion.userReaction == 'dislike',
                               onTap:
                                   () =>
@@ -160,57 +168,62 @@ class OpinionCard extends ConsumerWidget {
                             // the odd one out in this row.
                             if (!isOwnPost) ...[
                               Gap(Spacing.md.w),
-                              _buildReactionButton(
+                              _buildActionButton(
                                 context: context,
                                 // font_awesome_flutter's free tier ships `repeat`
                                 // as solid-only (there is no solidRepeat), so the
                                 // outline/solid swap the heart uses isn't
-                                // available — _buildReactionButton's primary-color
-                                // tint carries the active state instead.
+                                // available — omitting activeIcon falls back to
+                                // the same glyph, and the primary-color tint
+                                // carries the active state instead.
                                 icon: FontAwesomeIcons.repeat,
-                                activeIcon: FontAwesomeIcons.repeat,
-                                count: opinion.repostCount,
+                                label: _countLabel(opinion.repostCount),
                                 isActive: opinion.isRepostedByMe,
                                 onTap: () => _toggleRepost(context, ref),
                               ),
                             ],
+                            // Save. No label at all: a save is private to the
+                            // saver, so unlike the reactions beside it there is
+                            // no public count to sit under the icon. Rendered
+                            // for your own posts too — bookmarking is a personal
+                            // filing action, not a public endorsement.
                             Gap(Spacing.md.w),
-                            _buildSaveButton(context, ref),
+                            _buildActionButton(
+                              context: context,
+                              icon: FontAwesomeIcons.bookmark,
+                              activeIcon: FontAwesomeIcons.solidBookmark,
+                              isActive: opinion.isSaved,
+                              onTap: () => _toggleSave(context, ref),
+                            ),
                             // Quote. Unlike repost above, this is NOT hidden on
                             // your own post: quoting yourself to add a follow-up
                             // thought is an explicitly allowed, distinct action
                             // (§8.11 "Self-quote is allowed"), and the RPC has no
-                            // owner check to trip.
+                            // owner check to trip. Uses `quoteLeft` (a bare
+                            // open-quote glyph) rather than a filled speech
+                            // bubble: the row already spends a bubble-ish glyph
+                            // on comments, and a quotation mark is the one mark
+                            // readers already parse as "quoting."
                             Gap(Spacing.md.w),
-                            _buildQuoteButton(context, ref),
+                            _buildActionButton(
+                              context: context,
+                              icon: FontAwesomeIcons.quoteLeft,
+                              onTap: () => _openQuoteComposer(context, ref),
+                            ),
                             if (showCommentAction) ...[
                               Gap(Spacing.md.w),
                               _buildActionButton(
                                 context: context,
                                 icon: Icons.edit,
-                                label:
-                                    opinion.commentCount > 0
-                                        ? '${opinion.commentCount}'
-                                        : '',
+                                label: _countLabel(opinion.commentCount),
                                 onTap: onCommentTap ?? () {},
                               ),
                             ],
 
                             const Spacer(),
 
-                            Text(
-                              timeAgo,
-                              style: textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onSurface.withValues(
-                                  alpha: 0.5,
-                                ),
-                              ),
-                            ),
-                            Gap(Spacing.sm.w),
-
                             if (showFollowButton && !isOwnPost)
                               _buildFollowButton(context, ref),
-                            if (showMoreButton) _buildMoreButton(context, ref),
                           ],
                         ),
                       ),
@@ -351,61 +364,55 @@ class OpinionCard extends ConsumerWidget {
     }
   }
 
-  Widget _buildReactionButton({
+  /// Count as it appears under an action icon: blank at zero rather than a
+  /// literal "0", but still a non-null label so the Text below the icon keeps
+  /// reserving its line and the row's icons stay on one baseline.
+  String _countLabel(int count) => count > 0 ? '$count' : '';
+
+  /// The single control used by every button in the actions row — like,
+  /// dislike, repost, save, quote and comment. They differ only in whether
+  /// they can be active and whether they carry a count, so both are optional
+  /// rather than each button owning a near-identical builder.
+  ///
+  /// [activeIcon] defaults to [icon]: repost has no filled variant in
+  /// font_awesome_flutter's free tier (there is no solidRepeat), so its active
+  /// state is carried by the primary-color tint alone.
+  ///
+  /// [label] distinguishes two cases deliberately: null drops the text line
+  /// entirely (save and quote have nothing to count — a save is private, and a
+  /// quote creates a new opinion rather than incrementing anything here),
+  /// while an empty string keeps the line reserved so a zero-count button
+  /// still lines up with its neighbours instead of sitting higher in the row.
+  Widget _buildActionButton({
     required BuildContext context,
     required IconData icon,
-    required IconData activeIcon,
-    required int count,
-    required bool isActive,
     required VoidCallback onTap,
+    IconData? activeIcon,
+    String? label,
+    bool isActive = false,
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
     return GestureDetector(
       onTap: onTap,
-      child: Row(
+      child: Column(
         children: [
           Icon(
-            isActive ? activeIcon : icon,
-            size: 18.h,
+            isActive ? (activeIcon ?? icon) : icon,
+            size: 16.h,
             color: isActive ? colorScheme.primary : null,
           ),
-          Gap(Spacing.xs.w),
-          Text(
-            count > 0 ? '$count' : '',
-            style: textTheme.bodySmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurface.withValues(alpha: 0.8),
+          if (label != null) ...[
+            Gap(Spacing.xs.w),
+            Text(
+              label,
+              style: textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface.withValues(alpha: 0.8),
+              ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    required BuildContext context,
-  }) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
-    return GestureDetector(
-      onTap: onTap,
-      child: Row(
-        children: [
-          Icon(icon, size: 18),
-          Gap(Spacing.xs.w),
-          Text(
-            label,
-            style: textTheme.bodySmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurface.withValues(alpha: 0.8),
-            ),
-          ),
+          ],
         ],
       ),
     );
@@ -416,6 +423,7 @@ class OpinionCard extends ConsumerWidget {
     final isFollowing = followState.valueOrNull ?? false;
 
     return AppIconButton(
+      size: 18.h,
       icon:
           isFollowing
               ? Icons.person_remove_outlined
@@ -432,58 +440,28 @@ class OpinionCard extends ConsumerWidget {
     );
   }
 
-  /// Bookmark toggle. Uses the same bare-icon treatment as the reaction
-  /// buttons beside it (FontAwesome, 18.h, primary when active) rather than an
-  /// AppIconButton, so the actions row stays visually uniform.
+  /// Bookmark toggle.
   ///
-  /// A save is private to the saver, so there is no count to show and — unlike
-  /// reactions — saving your OWN opinion is allowed: bookmarking is a personal
-  /// filing action, not a public endorsement of yourself.
-  Widget _buildSaveButton(BuildContext context, WidgetRef ref) {
-    final colorScheme = Theme.of(context).colorScheme;
+  /// Unlike reactions, saving your OWN opinion is allowed: bookmarking is a
+  /// personal filing action, not a public endorsement of yourself — which is
+  /// why this has no isOwnPost gate.
+  Future<void> _toggleSave(BuildContext context, WidgetRef ref) async {
+    if (_blockedForGuest(context, ref)) return;
     final isSaved = opinion.isSaved;
-
-    return GestureDetector(
-      onTap: () async {
-        if (_blockedForGuest(context, ref)) return;
-        try {
-          // Optimistic: the provider flips the row before awaiting the RPC
-          // and restores it if the call throws.
-          await toggleOpinionSaved(
-            ref,
-            opinionId: opinion.id,
-            isCurrentlySaved: isSaved,
-          );
-        } catch (_) {
-          if (!context.mounted) return;
-          context.showInfoSnackbar(
-            isSaved ? 'Could not unsave that.' : 'Could not save that.',
-          );
-        }
-      },
-      child: Icon(
-        isSaved ? FontAwesomeIcons.solidBookmark : FontAwesomeIcons.bookmark,
-        size: 18.h,
-        color: isSaved ? colorScheme.primary : null,
-      ),
-    );
-  }
-
-  /// Quote entry point: opens the quote composer for this opinion.
-  ///
-  /// Not a toggle and carries no count — a quote is a new opinion of its own,
-  /// so there is nothing on THIS card to flip. Rendered for your own posts too
-  /// (§8.11 "Self-quote is allowed"), which is why it sits outside the
-  /// isOwnPost gate the repost button uses.
-  ///
-  /// Uses `quoteLeft` (a bare open-quote glyph) rather than a filled speech
-  /// bubble: the row already spends a bubble-ish glyph on comments, and a
-  /// quotation mark is the one mark readers already parse as "quoting."
-  Widget _buildQuoteButton(BuildContext context, WidgetRef ref) {
-    return GestureDetector(
-      onTap: () => _openQuoteComposer(context, ref),
-      child: Icon(FontAwesomeIcons.quoteLeft, size: 16.h),
-    );
+    try {
+      // Optimistic: the provider flips the row before awaiting the RPC
+      // and restores it if the call throws.
+      await toggleOpinionSaved(
+        ref,
+        opinionId: opinion.id,
+        isCurrentlySaved: isSaved,
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      context.showInfoSnackbar(
+        isSaved ? 'Could not unsave that.' : 'Could not save that.',
+      );
+    }
   }
 
   /// Opens the edit screen for this (own, in-window) opinion.
