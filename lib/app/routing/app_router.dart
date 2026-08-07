@@ -19,6 +19,7 @@ import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/comment_thread_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/edit_opinion_screen.dart';
+import 'package:attune/features/opinions/presentation/screen/opinion_engagement_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/quote_compose_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/tag_browse_screen.dart';
 import 'package:attune/features/opinions/presentation/screens/opinion_thread_loader.dart';
@@ -194,6 +195,7 @@ class RouteNames {
   static const String commentThread = '/commentThread';
   static const String editOpinion = '/editOpinion';
   static const String quoteCompose = '/quoteCompose';
+  static const String opinionEngagement = '/opinionEngagement';
   static const String tagBrowse = '/tagBrowse';
   static const String debateRoom = '/debateRoom';
   static const String sideSelection = '/sideSelection';
@@ -389,6 +391,24 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         },
       ),
       GoRoute(
+        path: RouteNames.opinionEngagement,
+        name: 'opinionEngagement',
+        builder: (context, state) {
+          // Record rather than a bare id: the screen needs to open on
+          // whichever count was tapped, so the tab index travels with it.
+          final args = state.extra as ({String opinionId, int initialTab})?;
+          if (args == null) {
+            return const Scaffold(
+              body: Center(child: Text('Opinion unavailable.')),
+            );
+          }
+          return OpinionEngagementScreen(
+            opinionId: args.opinionId,
+            initialTab: args.initialTab,
+          );
+        },
+      ),
+      GoRoute(
         path: RouteNames.tagBrowse,
         name: 'tagBrowse',
         builder: (context, state) {
@@ -453,15 +473,16 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.healingJourney,
         name: 'healingJourney',
-        builder: (context, state) => FeatureIntroFlowGate(
-          module: HealingDocs(),
-          briefParagraph:
-              'Healing Mode is private and self-paced. It\'s not therapy, it '
-              'doesn\'t diagnose you or your relationship, and your former '
-              'partner is never told you\'re using it.',
-          launchLabel: 'Enter Healing Mode',
-          buildFeature: () => const HealingJourneyScreen(),
-        ),
+        builder:
+            (context, state) => FeatureIntroFlowGate(
+              module: HealingDocs(),
+              briefParagraph:
+                  'Healing Mode is private and self-paced. It\'s not therapy, it '
+                  'doesn\'t diagnose you or your relationship, and your former '
+                  'partner is never told you\'re using it.',
+              launchLabel: 'Enter Healing Mode',
+              buildFeature: () => const HealingJourneyScreen(),
+            ),
       ),
       GoRoute(
         path: RouteNames.reflectionJournal,
@@ -1276,15 +1297,16 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.datingMode,
         name: 'datingMode',
-        builder: (context, state) => FeatureIntroFlowGate(
-          module: DatingModeDocs(),
-          briefParagraph:
-              'Dating Mode is separate from Healing Mode, and never automatic. '
-              'Before you can browse introductions, you\'ll go through a short, '
-              'explicit consent step — nothing here is enabled without your say-so.',
-          launchLabel: 'Continue to Dating Mode',
-          buildFeature: () => const DatingDashboardScreen(),
-        ),
+        builder:
+            (context, state) => FeatureIntroFlowGate(
+              module: DatingModeDocs(),
+              briefParagraph:
+                  'Dating Mode is separate from Healing Mode, and never automatic. '
+                  'Before you can browse introductions, you\'ll go through a short, '
+                  'explicit consent step — nothing here is enabled without your say-so.',
+              launchLabel: 'Continue to Dating Mode',
+              buildFeature: () => const DatingDashboardScreen(),
+            ),
       ),
       GoRoute(
         path: '/games/paint-ball/lobby/:relationshipId',

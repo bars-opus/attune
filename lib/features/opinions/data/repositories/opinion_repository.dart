@@ -576,6 +576,51 @@ class OpinionRepository {
     return result;
   }
 
+  /// The opinions that quote [opinionId], newest first.
+  ///
+  /// A quote is a full opinion, so these come back in the standard feed shape
+  /// and render as ordinary cards.
+  Future<List<OpinionModel>> getQuotesOfOpinion(
+    String opinionId, {
+    required int page,
+    required int pageSize,
+  }) async {
+    final rows = await _supabase.rpc(
+      'get_quotes_of_opinion',
+      params: {
+        'p_opinion_id': opinionId,
+        'p_limit': pageSize,
+        'p_offset': page * pageSize,
+      },
+    );
+    return (rows as List)
+        .map((r) => OpinionModel.fromFeedRow(Map<String, dynamic>.from(r)))
+        .toList();
+  }
+
+  /// Who reposted [opinionId], newest repost first.
+  ///
+  /// Each row is the ORIGINAL opinion carrying the reposter's handle — a
+  /// repost has no content of its own, so there is nothing else to show. Same
+  /// shape get_author_reposted_opinions uses on the profile screen.
+  Future<List<OpinionModel>> getRepostersOfOpinion(
+    String opinionId, {
+    required int page,
+    required int pageSize,
+  }) async {
+    final rows = await _supabase.rpc(
+      'get_reposters_of_opinion',
+      params: {
+        'p_opinion_id': opinionId,
+        'p_limit': pageSize,
+        'p_offset': page * pageSize,
+      },
+    );
+    return (rows as List)
+        .map((r) => OpinionModel.fromFeedRow(Map<String, dynamic>.from(r)))
+        .toList();
+  }
+
   /// How many times each opinion in a feed page has been quoted, keyed by
   /// opinion id.
   ///

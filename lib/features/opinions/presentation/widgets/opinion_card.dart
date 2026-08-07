@@ -180,6 +180,10 @@ class OpinionCard extends ConsumerWidget {
                                 label: _countLabel(opinion.repostCount),
                                 isActive: opinion.isRepostedByMe,
                                 onTap: () => _toggleRepost(context, ref),
+                                onLabelTap:
+                                    opinion.repostCount > 0
+                                        ? () => _openEngagement(context, 1)
+                                        : null,
                               ),
                             ],
                             // Save. The only button here with no number: a save
@@ -216,6 +220,10 @@ class OpinionCard extends ConsumerWidget {
                               icon: FontAwesomeIcons.quoteLeft,
                               label: _countLabel(opinion.quoteCount),
                               onTap: () => _openQuoteComposer(context, ref),
+                              onLabelTap:
+                                  opinion.quoteCount > 0
+                                      ? () => _openEngagement(context, 0)
+                                      : null,
                             ),
                             if (showCommentAction) ...[
                               Gap(Spacing.md.w),
@@ -371,6 +379,18 @@ class OpinionCard extends ConsumerWidget {
     }
   }
 
+  /// Opens the quotes/reposts list for this opinion, landing on whichever tab
+  /// the tapped count belongs to (0 = Quotes, 1 = Reposts).
+  ///
+  /// No guest guard: this is a read, and both RPCs behind it are granted to
+  /// anon like the feed itself.
+  void _openEngagement(BuildContext context, int initialTab) {
+    context.pushNamed(
+      'opinionEngagement',
+      extra: (opinionId: opinion.id, initialTab: initialTab),
+    );
+  }
+
   /// Count as it appears under an action icon: blank at zero rather than a
   /// literal "0", but still a non-null label so the Text below the icon keeps
   /// reserving its line and the row's icons stay on one baseline.
@@ -390,6 +410,12 @@ class OpinionCard extends ConsumerWidget {
   /// quote creates a new opinion rather than incrementing anything here),
   /// while an empty string keeps the line reserved so a zero-count button
   /// still lines up with its neighbours instead of sitting higher in the row.
+  /// [onLabelTap] makes the NUMBER its own tap target, separate from the icon:
+  /// tapping the repeat glyph reposts, tapping the count beside it opens the
+  /// list of who did. Without the split there would be no way to reach that
+  /// list without also toggling your own repost. Only wired where a list
+  /// exists to open, and only when the count is non-zero — a "0" that opens an
+  /// empty screen is worse than a "0" that does nothing.
   Widget _buildActionButton({
     required BuildContext context,
     required IconData icon,
@@ -397,10 +423,30 @@ class OpinionCard extends ConsumerWidget {
     IconData? activeIcon,
     String? label,
     bool isActive = false,
+    VoidCallback? onLabelTap,
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+
+    Widget labelText() {
+      final text = Text(
+        label!,
+        style: textTheme.bodySmall?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: colorScheme.onSurface.withValues(alpha: 0.8),
+        ),
+      );
+      if (onLabelTap == null) return text;
+      return GestureDetector(
+        onTap: onLabelTap,
+        // Opaque so the whole (small) number box is tappable, not just the
+        // glyph pixels — the counts are 1-2 characters wide.
+        behavior: HitTestBehavior.opaque,
+        child: text,
+      );
+    }
+
     return GestureDetector(
       onTap: onTap,
       child: Column(
@@ -410,16 +456,7 @@ class OpinionCard extends ConsumerWidget {
             size: 16.h,
             color: isActive ? colorScheme.primary : null,
           ),
-          if (label != null) ...[
-            Gap(Spacing.xs.w),
-            Text(
-              label,
-              style: textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: colorScheme.onSurface.withValues(alpha: 0.8),
-              ),
-            ),
-          ],
+          if (label != null) ...[Gap(Spacing.xs.w), labelText()],
         ],
       ),
     );

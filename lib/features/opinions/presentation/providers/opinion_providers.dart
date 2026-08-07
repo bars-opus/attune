@@ -1386,3 +1386,120 @@ class OpinionsByTagNotifier
 
   bool get hasMore => _hasMore;
 }
+
+/// The opinions quoting a given opinion — what the quote count on a card
+/// opens into. Keyed by the quoted opinion's id.
+final quotesOfOpinionProvider = AsyncNotifierProvider.family<
+  QuotesOfOpinionNotifier,
+  List<OpinionModel>,
+  String
+>(QuotesOfOpinionNotifier.new);
+
+class QuotesOfOpinionNotifier
+    extends FamilyAsyncNotifier<List<OpinionModel>, String> {
+  int _currentPage = 0;
+  bool _hasMore = true;
+  static const int _pageSize = 20;
+
+  @override
+  Future<List<OpinionModel>> build(String arg) async {
+    _currentPage = 0;
+    _hasMore = true;
+    final firstPage = await _loadPage(0);
+    // Same short-first-page guard as every other paginated list here: without
+    // it a list that fits on one page keeps hasMore true and renders a
+    // trailing spinner that never resolves.
+    if (firstPage.length < _pageSize) _hasMore = false;
+    return firstPage;
+  }
+
+  Future<List<OpinionModel>> _loadPage(int page) async {
+    final repository = ref.read(opinionRepositoryProvider);
+    // Quotes come back in the discover shape, which carries neither tags nor
+    // quote counts — so they get the same batched merge every feed page gets.
+    return repository.withSideData(
+      await repository.getQuotesOfOpinion(arg, page: page, pageSize: _pageSize),
+    );
+  }
+
+  Future<void> loadMore() async {
+    if (!_hasMore) return;
+    if (state is AsyncLoading) return;
+    final currentList = state.value ?? [];
+    _currentPage++;
+    final nextPage = await _loadPage(_currentPage);
+    if (nextPage.length < _pageSize) _hasMore = false;
+    state = AsyncData([...currentList, ...nextPage]);
+  }
+
+  Future<void> refresh() async {
+    _currentPage = 0;
+    _hasMore = true;
+    final fresh = await AsyncValue.guard(() => _loadPage(0));
+    if (fresh.valueOrNull != null && fresh.value!.length < _pageSize) {
+      _hasMore = false;
+    }
+    state = fresh;
+  }
+
+  bool get hasMore => _hasMore;
+}
+
+/// Who reposted a given opinion — what the repost count on a card opens into.
+/// Each row is the original opinion carrying a reposter's handle, so the list
+/// reads as "these people reposted this" rather than as distinct content.
+final repostersOfOpinionProvider = AsyncNotifierProvider.family<
+  RepostersOfOpinionNotifier,
+  List<OpinionModel>,
+  String
+>(RepostersOfOpinionNotifier.new);
+
+class RepostersOfOpinionNotifier
+    extends FamilyAsyncNotifier<List<OpinionModel>, String> {
+  int _currentPage = 0;
+  bool _hasMore = true;
+  static const int _pageSize = 20;
+
+  @override
+  Future<List<OpinionModel>> build(String arg) async {
+    _currentPage = 0;
+    _hasMore = true;
+    final firstPage = await _loadPage(0);
+    if (firstPage.length < _pageSize) _hasMore = false;
+    return firstPage;
+  }
+
+  Future<List<OpinionModel>> _loadPage(int page) async {
+    final repository = ref.read(opinionRepositoryProvider);
+    // No withSideData here: every row is the SAME opinion repeated per
+    // reposter, so a tag/quote-count merge would issue one lookup for a page
+    // of identical ids and patch the same values onto each row.
+    return repository.getRepostersOfOpinion(
+      arg,
+      page: page,
+      pageSize: _pageSize,
+    );
+  }
+
+  Future<void> loadMore() async {
+    if (!_hasMore) return;
+    if (state is AsyncLoading) return;
+    final currentList = state.value ?? [];
+    _currentPage++;
+    final nextPage = await _loadPage(_currentPage);
+    if (nextPage.length < _pageSize) _hasMore = false;
+    state = AsyncData([...currentList, ...nextPage]);
+  }
+
+  Future<void> refresh() async {
+    _currentPage = 0;
+    _hasMore = true;
+    final fresh = await AsyncValue.guard(() => _loadPage(0));
+    if (fresh.valueOrNull != null && fresh.value!.length < _pageSize) {
+      _hasMore = false;
+    }
+    state = fresh;
+  }
+
+  bool get hasMore => _hasMore;
+}
