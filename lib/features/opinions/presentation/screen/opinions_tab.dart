@@ -5,7 +5,6 @@ import 'package:attune/core/utils/relationship_status_display.dart';
 import 'package:attune/core/widgets/create_content_chooser.dart';
 import 'package:attune/core/widgets/profile_avatar.dart';
 import 'package:attune/features/auth/presentation/widgets/logout_action.dart';
-import 'package:attune/features/forums/presentation/screens/forum_screen.dart';
 import 'package:attune/features/forums/presentation/screens/forums_section.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/providers/profile_providers.dart';
@@ -65,9 +64,13 @@ class _OpinionsTabState extends ConsumerState<OpinionsTab>
                   outerTabController: _outerTabController,
                   isAuthenticated: isAuthenticated,
                 ),
-                isAuthenticated
-                    ? ForumsSection(outerTabController: _outerTabController)
-                    : const ForumScreen(),
+                // ForumsSection renders for guests too as of
+                // 20260821120000_public_forum_reads — Contributing/Explore/
+                // debate rooms are all real-data anon-readable now, the same
+                // way Discover already was. Guests can read; ForumsSection's
+                // own children gate posting, voting, liking, reporting and
+                // Forum Insight behind sign-in.
+                ForumsSection(outerTabController: _outerTabController),
               ],
             ),
       ),

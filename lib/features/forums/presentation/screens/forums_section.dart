@@ -68,9 +68,7 @@ class _ForumsSectionState extends ConsumerState<ForumsSection>
             label: 'Submit a topic',
             onPressed: () {
               if (!isAuthenticated) {
-                context.showInfoSnackbar(
-                  'Continue with phone number from Chat to submit a topic.',
-                );
+                context.showErrorSnackbar('Sign in to perform this action');
                 return;
               }
               CreateContentChooser.show(
@@ -94,9 +92,16 @@ class _ForumsSectionState extends ConsumerState<ForumsSection>
                   floating: true,
                   pinned: false,
                   snap: true,
+                  // This icon's only action is logging out, which has nothing
+                  // to do for a guest — no-op the tap here rather than let
+                  // LogoutAction show an unconditional "log out" confirmation
+                  // over a session that does not exist.
                   leading: AppIconButton(
                     icon: Icons.menu,
-                    onPressed: () => LogoutAction.confirmAndSignOut(context),
+                    onPressed:
+                        isAuthenticated
+                            ? () => LogoutAction.confirmAndSignOut(context)
+                            : null,
                   ),
                   title: SizedBox(
                     width: 30,

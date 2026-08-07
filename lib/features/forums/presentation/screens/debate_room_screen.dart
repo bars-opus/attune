@@ -359,6 +359,11 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
                                   Gap(Spacing.md),
                                   GestureDetector(
                                     onTap: () {
+                                      // Same guest gate as the AppBar menu's
+                                      // Forum Insight item — Forum Insight
+                                      // stays account-only even though the
+                                      // debate room itself is readable.
+                                      if (_blockedForGuest()) return;
                                       context.pushNamed(
                                         'forumInsight',
                                         extra: widget.topicId,
@@ -647,6 +652,19 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
     );
   }
 
+  /// Blocks an action a guest cannot perform and tells them why. Mirrors
+  /// OpinionCard._blockedForGuest / CommentThreadScreen._blockedForGuest.
+  /// widget.userSide == 'browse' is this screen's own guest signal (set by
+  /// ForumCard's onTap for a signed-out caller), reused here rather than
+  /// re-reading auth state a third way in the same file.
+  ///
+  /// Returns true when the caller should stop.
+  bool _blockedForGuest() {
+    if (widget.userSide != 'browse') return false;
+    context.showErrorSnackbar('Sign in to perform this action');
+    return true;
+  }
+
   // AppBar action — the single entry point (insight/report) for this topic,
   // matching CommentThreadScreen's one AppIconButton(more_vert_rounded)
   // opening everything secondary behind it rather than spreading actions
@@ -664,6 +682,11 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
                   title: const Text('Forum insight'),
                   onTap: () {
                     Navigator.pop(sheetContext);
+                    // Guests can read a debate room but Forum Insight stays
+                    // account-only — unlike the other guards in this file
+                    // this is a product decision, not a stand-in for a broken
+                    // RPC call: topicDetailsProvider itself is anon-readable.
+                    if (_blockedForGuest()) return;
                     context.pushNamed('forumInsight', extra: widget.topicId);
                   },
                 ),
@@ -672,6 +695,7 @@ class _DebateRoomScreenState extends ConsumerState<DebateRoomScreen> {
                   title: const Text('Report forum'),
                   onTap: () {
                     Navigator.pop(sheetContext);
+                    if (_blockedForGuest()) return;
                     _showReportDialog();
                   },
                 ),

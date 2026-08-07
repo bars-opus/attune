@@ -81,6 +81,14 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
 
   Future<void> _toggleLike() async {
     if (_isLiking) return;
+    // likeForumPostProvider/unlikeForumPostProvider already throw
+    // 'Not authenticated' for a guest, but unguarded that surfaces as the raw
+    // "Failed to like: Exception: Not authenticated" in the catch block below
+    // — this stops it before the call instead.
+    if (ref.read(supabaseClientProvider).auth.currentUser?.id == null) {
+      context.showErrorSnackbar('Sign in to perform this action');
+      return;
+    }
 
     setState(() => _isLiking = true);
 
@@ -550,6 +558,14 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
   }
 
   void _showReportDialog() {
+    // Guarded before the reason list opens, not on submit: report_forum_post
+    // is authenticated-only, so a guest would otherwise pick a reason and hit
+    // an unhandled exception from reportForumPostProvider's own
+    // 'Not authenticated' throw instead of an explanation.
+    if (ref.read(supabaseClientProvider).auth.currentUser?.id == null) {
+      context.showErrorSnackbar('Sign in to perform this action');
+      return;
+    }
     showDialog(
       context: context,
       builder:

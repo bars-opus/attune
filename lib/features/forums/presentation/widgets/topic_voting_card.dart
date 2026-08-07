@@ -45,9 +45,7 @@ class _TopicVotingCardState extends ConsumerState<TopicVotingCard> {
   Future<void> _castVote(String voteType) async {
     if (_isUpdating) return;
     if (ref.read(supabaseClientProvider).auth.currentUser?.id == null) {
-      context.showInfoSnackbar(
-        'Continue with phone number from Chat to vote on topics.',
-      );
+      context.showErrorSnackbar('Sign in to perform this action');
       return;
     }
 
@@ -300,5 +298,4 @@ class _TopicVotingCardState extends ConsumerState<TopicVotingCard> {
       ),
     );
   }
-
 }
