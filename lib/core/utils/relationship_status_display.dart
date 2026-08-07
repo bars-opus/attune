@@ -63,12 +63,12 @@ Color statusColorFor(String statusDisplay, ColorScheme colorScheme) {
     case 'Single':
       return colorScheme.info;
     case 'Taken':
-      return colorScheme.error;
+      return colorScheme.success;
     case 'Figuring it out':
       return colorScheme.warning;
     case 'Open':
       return colorScheme.neutral;
     default:
-      return colorScheme.error;
+      return Colors.grey;
   }
 }

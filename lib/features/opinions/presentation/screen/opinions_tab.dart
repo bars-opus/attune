@@ -200,13 +200,18 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
                   floating: true,
                   pinned: false,
                   snap: true,
-                  // Three children in the Row below: add-icon AppIconButton
+                  // Three children when signed in (add-icon AppIconButton
                   // (48.w min tap target) + gap + the 30.h avatar + gap +
-                  // notification AppIconButton (48.w) — leadingWidth must fit
-                  // all three or the Row overflows the fixed-width box AppBar
-                  // allocates for `leading`.
+                  // notification AppIconButton (48.w)), two for a guest — the
+                  // avatar opens MY OWN profile via get_my_author_handle,
+                  // which resolves auth.uid() server-side and has nothing to
+                  // resolve for a signed-out caller. leadingWidth must match
+                  // whichever set is actually shown or the Row overflows the
+                  // fixed-width box AppBar allocates for `leading`.
                   leadingWidth:
-                      48.w + Spacing.sm.w + 30.h + Spacing.sm.w + 48.w,
+                      widget.isAuthenticated
+                          ? 48.w + Spacing.sm.w + 30.h + Spacing.sm.w + 48.w
+                          : 48.w + Spacing.sm.w + 48.w,
                   leading: Row(
                     children: [
                       AppIconButton(
@@ -236,109 +241,48 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
                           }
                         },
                       ),
-                      Gap(Spacing.sm.w),
-                      Center(
-                        child: GestureDetector(
-                          // Same "My Profile" entry point the commented-out
-                          // AppIconButton below this used to offer:
-                          // get_my_author_handle resolves auth.uid() to the
-                          // caller's own anonymous handle server-side (see
-                          // myAuthorHandleProvider's doc — it takes no
-                          // parameter, so it can only ever resolve the
-                          // caller's own handle), same as tapping any other
-                          // author's avatar on an OpinionCard navigates to
-                          // RouteNames.anonymousProfile.
-                          onTap: () async {
-                            final handle = await ref.read(
-                              myAuthorHandleProvider.future,
-                            );
-                            if (handle == null || !context.mounted) return;
-                            context.pushNamed(
-                              'anonymousProfile',
-                              extra: handle,
-                            );
-                          },
-                          child: ProfileAvatar(
-                            avatarUrl: '',
+                      if (widget.isAuthenticated) ...[
+                        Gap(Spacing.sm.w),
+                        Center(
+                          child: GestureDetector(
+                            // Same "My Profile" entry point the commented-out
+                            // AppIconButton below this used to offer:
+                            // get_my_author_handle resolves auth.uid() to the
+                            // caller's own anonymous handle server-side (see
+                            // myAuthorHandleProvider's doc — it takes no
+                            // parameter, so it can only ever resolve the
+                            // caller's own handle), same as tapping any other
+                            // author's avatar on an OpinionCard navigates to
+                            // RouteNames.anonymousProfile.
+                            onTap: () async {
+                              final handle = await ref.read(
+                                myAuthorHandleProvider.future,
+                              );
+                              if (handle == null || !context.mounted) return;
+                              context.pushNamed(
+                                'anonymousProfile',
+                                extra: handle,
+                              );
+                            },
+                            child: ProfileAvatar(
+                              avatarUrl: '',
 
-                            currentUserId: currentUserId,
-                            size: 30.h,
-                            enableHero: false,
-                            icon: statusIconFor(myStatusDisplay),
-                            backgroundColor: statusColorFor(
-                              myStatusDisplay,
-                              colorScheme,
+                              currentUserId: currentUserId,
+                              size: 30.h,
+                              enableHero: false,
+                              icon: statusIconFor(myStatusDisplay),
+                              backgroundColor: statusColorFor(
+                                myStatusDisplay,
+                                colorScheme,
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
 
-                  // ProfileAvatar(
-                  //   avatarUrl: '',
-                  //   currentUserId: '',
-                  //   size: 25.h,
-                  //   enableHero: false,
-                  //   icon:
-                  //       widget.isAuthenticated
-                  //           ? statusIconFor(myStatusDisplay)
-                  //           : null,
-                  //   backgroundColor:
-                  //       widget.isAuthenticated
-                  //           ? statusColorFor(myStatusDisplay, colorScheme)
-                  //           : null,
-                  // ),
-                  //  AppIconButton(
-                  //   icon: Icons.menu,
-                  //   onPressed: () => LogoutAction.confirmAndSignOut(context),
-                  // ),
-                  // title: SizedBox(
-                  //   width: 30,
-                  //   height: 30,
-                  //   child: ClipRRect(
-                  //     borderRadius: BorderRadius.circular(
-                  //       BorderRadiusTokens.md,
-                  //     ),
-                  //     child: Image.asset(
-                  //       color: colorScheme.primary,
-                  //       'assets/images/attune_logo_white.png',
-                  //       fit: BoxFit.cover,
-                  //     ),
-                  //   ),
-                  // ),
                   actions: [
-                    // // "My Profile" — Opinions/Reposts/Bookmarks now live as
-                    // // tabs on AnonymousProfileScreen rather than as separate
-                    // // icons here, so this is the one entry point to all
-                    // // three. get_my_author_handle resolves auth.uid() to the
-                    // // caller's own handle server-side — it takes no
-                    // // parameter, so it can only ever return the caller's own
-                    // // handle, never anyone else's (see the migration's own
-                    // // comment on why this does not weaken the
-                    // // handle-mapping's one-directional guarantee).
-                    // // Authenticated-only: an anonymous browsing user has no
-                    // // handle of their own to view.
-                    // if (widget.isAuthenticated)
-                    //   AppIconButton(
-                    //     icon: Icons.person_outline,
-                    //     tooltip: 'My Profile',
-                    //     onPressed: () async {
-                    //       final handle = await ref.read(
-                    //         myAuthorHandleProvider.future,
-                    //       );
-                    //       if (handle == null || !context.mounted) return;
-                    //       Navigator.push(
-                    //         context,
-                    //         MaterialPageRoute(
-                    //           builder:
-                    //               (_) => AnonymousProfileScreen(
-                    //                 authorHandle: handle,
-                    //               ),
-                    //         ),
-                    //       );
-                    //     },
-                    //   ),
                     // Muted accounts now lives in Settings, alongside Block
                     // (they're distinct systems — block is real-identity,
                     // mute is anonymous-handle — but both belong under
