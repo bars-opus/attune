@@ -2,6 +2,7 @@
 
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/feedback/empty_state.dart';
+import 'package:attune/core/widgets/shop_listview_loading_shimmer.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
 import 'package:attune/features/forums/presentation/widgets/forum_card.dart';
 import 'package:attune/home/providers/nav_visibility_provider.dart';
@@ -34,7 +35,6 @@ class _ContributingForumsScreenState
   Widget build(BuildContext context) {
     final isAuthenticated =
         ref.watch(supabaseClientProvider).auth.currentUser?.id != null;
-    final textTheme = Theme.of(context).textTheme;
     final contributingAsync = ref.watch(contributingForumsProvider);
 
     if (!isAuthenticated) {
@@ -42,30 +42,12 @@ class _ContributingForumsScreenState
         onNotification:
             (notification) =>
                 NavVisibilityScrollHandler.handle(ref, notification),
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverOverlapInjector(
-              handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.all(Spacing.lg.w),
-                child: SemanticContainerWidget(
-                  title: 'Contributing is account-only',
-                  content:
-                      'Guest browsing stays in Explore. Continue with phone number from Chat to vote, join debates, and track your contributing forums.',
-                  icon: Icons.lock_outline,
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.primary.withValues(alpha: 0.1),
-                  borderColor: Theme.of(context).colorScheme.primary,
-                  iconColor: Theme.of(context).colorScheme.primary,
-                  textTheme: textTheme,
-                ),
-              ),
-            ),
-          ],
+        child: Center(
+          child: EmptyStateWidget(
+            icon: Icons.edit,
+            title: 'No Contributions',
+            subtitle: 'Login and start contributing in forums.',
+          ),
         ),
       );
     }
@@ -80,7 +62,7 @@ class _ContributingForumsScreenState
           await ref.read(contributingForumsProvider.future);
         },
         child: contributingAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
+          loading: () => const ListviewLoadingShimmer(),
           error: (error, stack) => ErrorStateWidget.from(error),
           data: (forums) {
             if (forums.isEmpty) {
