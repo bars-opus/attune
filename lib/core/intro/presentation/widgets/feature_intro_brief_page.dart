@@ -2,6 +2,7 @@
 
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart';
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/widgets/animated_circle.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:gap/gap.dart';
@@ -29,16 +30,25 @@ class FeatureIntroBriefPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Gap(Spacing.xxl.h),
-          Container(
-            width: 72.w,
-            height: 72.h,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: colorScheme.primary.withOpacity(0.4)),
-            ),
-            child: Icon(module.icon, size: 32.h, color: colorScheme.primary),
+          AnimatedCircle(
+            size: 30,
+            stroke: 2,
+            animateSize: true,
+            animateShape: true,
+            firstColor: Colors.transparent,
+            secondColor: Colors.transparent,
           ),
+          Icon(module.icon, size: 80.h, color: colorScheme.primary),
           Gap(Spacing.lg.h),
+          Text(
+            'Welcome\nTo ${module.getTitle(context)}',
+            style: textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: colorScheme.onSurface,
+              fontSize: FontSizeTokens.xxl,
+            ),
+            textAlign: TextAlign.center,
+          ),
           Text(
             module.getSubtitle(context),
             style: textTheme.bodyMedium?.copyWith(
@@ -46,11 +56,12 @@ class FeatureIntroBriefPage extends StatelessWidget {
             ),
             textAlign: TextAlign.center,
           ),
-          Gap(Spacing.xl.h),
+          Gap(Spacing.lg.h),
+          // Gap(Spacing.xl.h),
           Text(
             briefParagraph,
-            style: textTheme.bodyLarge,
-            textAlign: TextAlign.center,
+            style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface),
+            textAlign: TextAlign.start,
           ),
         ],
       ),

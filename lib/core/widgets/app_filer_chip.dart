@@ -5,6 +5,7 @@ import 'package:attune/core/utils/exports/export_packages.dart';
 class AppFilterChip extends StatelessWidget {
   final String label;
   final bool selected;
+
   /// Nullable like ChoiceChip's own onSelected: passing null (e.g. a
   /// TagPicker chip once the selection cap is reached) disables the chip —
   /// greyed out, not tappable — rather than requiring the parent to no-op.
@@ -43,7 +44,7 @@ class AppFilterChip extends StatelessWidget {
 
     final effectiveSelectedColor = selectedColor ?? colorScheme.primary;
     final effectiveBackgroundColor =
-        backgroundColor ?? colorScheme.surfaceContainerHighest;
+        backgroundColor ?? colorScheme.outline.withOpacity(.3);
     return ChoiceChip(
       avatar:
           avatarIcon == null
@@ -63,7 +64,7 @@ class AppFilterChip extends StatelessWidget {
               selected
                   ? (selectedLabelColor ?? colorScheme.onPrimary)
                   : (labelColor ?? colorScheme.onSurface),
-          fontSize: fontSize ?? FontSizeTokens.xxs,
+          fontSize: fontSize ?? FontSizeTokens.xs,
           fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
         ),
       ),
@@ -89,7 +90,12 @@ class AppFilterChip extends StatelessWidget {
       selectedColor: effectiveSelectedColor,
       shape: RoundedRectangleBorder(
         side: BorderSide(
-          color: selected ? colorScheme.primary : colorScheme.onSurface,
+          // onSurface is a content/text color, not a border one — in dark
+          // mode it's near-white (DarkColors.textPrimary), so an unselected
+          // chip got a near-white border. outline is the token every other
+          // bordered surface in this app already uses (app_theme.dart's
+          // dividerTheme/inputDecorationTheme) and is tuned per-brightness.
+          color: selected ? colorScheme.primary : colorScheme.outline,
           width: borderWidth?.w ?? .1,
         ),
         borderRadius:

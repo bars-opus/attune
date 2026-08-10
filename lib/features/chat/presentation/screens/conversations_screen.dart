@@ -11,12 +11,20 @@ class ConversationsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     final conversationsAsync = ref.watch(conversationsProvider);
     final filtered = ref.watch(filteredConversationsProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chat'),
+        title: Text(
+          'Chat',
+          style: textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface.withValues(alpha: 0.8),
+          ),
+        ),
         actions: [
           IconButton(
             onPressed: () => _openReflections(context),

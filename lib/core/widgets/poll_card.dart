@@ -6,6 +6,7 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/polls/data/models/poll_model.dart';
 import 'package:attune/core/polls/presentation/providers/poll_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Renders a poll attached to an opinion or a forum topic (§8.11).
 ///
@@ -19,13 +20,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 class PollCard extends ConsumerWidget {
   final PollTarget target;
 
-  /// Rendered inside a card that already pads its content.
+  /// Rendered inside a card that already pads its content on the left —
+  /// both call sites (OpinionCard, DebateRoomScreen's topic header) sit
+  /// inside a layout already indented past an avatar/leading element, so
+  /// only the right side gets its own padding here.
   final EdgeInsetsGeometry padding;
 
   const PollCard({
     super.key,
     required this.target,
-    this.padding = const EdgeInsets.symmetric(horizontal: Spacing.md),
+    this.padding = const EdgeInsets.only(right: Spacing.md),
   });
 
   @override
@@ -64,6 +68,14 @@ class _PollBodyState extends ConsumerState<_PollBody> {
 
   Future<void> _onOptionTap(PollOptionModel option) async {
     if (_busy) return;
+    // Guarded before the confirm-dialog/busy-state dance below, same as the
+    // other action buttons on OpinionCard/CommentThreadScreen/forum widgets
+    // — vote/retract are authenticated-only RPCs, so a guest tap should
+    // explain why rather than surface a raw error from deep in the call.
+    if (Supabase.instance.client.auth.currentUser == null) {
+      context.showErrorSnackbar('Sign in to perform this action');
+      return;
+    }
 
     final isCurrentChoice = widget.poll.myOptionId == option.id;
     // Changing an already-cast vote overwrites it, unlike the first vote (no

@@ -267,7 +267,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// version this does not sign the user out on decline — they may have
   /// arrived here mid-flow from an invite, and dropping the session would lose
   /// the pending invite acceptance. They simply stay on this step.
-  Future<bool> _ensureEulaAccepted() => EulaGate.ensureAccepted(context);
+  Future<bool> _ensureEulaAccepted() async =>
+      (await EulaGate.ensureAccepted(context)).mayProceed;
 
   Future<void> _handleAuthVerified() async {
     final inviteCode = _pendingInviteCode;

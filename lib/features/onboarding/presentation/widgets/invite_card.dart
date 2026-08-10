@@ -1,4 +1,5 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/onboarding/presentation/widgets/invite_qr_code.dart';
 import 'package:attune/features/relationships/data/relationship_invite_service.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -38,16 +39,9 @@ class _InviteQrSheet extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Gap(Spacing.lg.h),
-        Center(
-          child: QrImageView(
-            data: invite.deepLink,
-            version: QrVersions.auto,
-            size: 170.w,
-            backgroundColor: Colors.transparent,
-            foregroundColor: colorScheme.primary,
-          ),
-        ),
-        Gap(Spacing.xxl.h),
+        Gap(Spacing.md.h),
+        InviteQrCode(data: invite.deepLink),
+        Gap(Spacing.xl.h),
         Center(
           child: Text(
             'Partner invite',
@@ -57,6 +51,7 @@ class _InviteQrSheet extends StatelessWidget {
             ),
           ),
         ),
+       
         Gap(Spacing.xs.h),
         Center(
           child: SelectableText(

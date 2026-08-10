@@ -1,5 +1,6 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/auth/log_in/presentation/widgets/verification_code_countdown.dart';
+import 'package:attune/features/auth/log_in/presentation/widgets/verification_code_field.dart';
 
 class LoginCodeStep extends StatelessWidget {
   const LoginCodeStep({
@@ -30,36 +31,33 @@ class LoginCodeStep extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Gap(Spacing.lg.h),
-          AppTextFormField(
+          Gap(Spacing.md.h),
+
+          VerificationCodeField(
             controller: controller,
-            label: 'Verification code',
-            hintText: '123456',
-            prefixIcon: Icons.lock_outline,
-            keyboardType: TextInputType.number,
             focusNode: focusNode,
             enabled: enabled,
-            autofillHints: const [AutofillHints.oneTimeCode],
-            textInputAction: TextInputAction.done,
-            onFieldSubmitted: onSubmitted,
+            // Auto-verifies the instant all six boxes are filled — no
+            // separate submit action for the code step.
+            onCompleted: onSubmitted,
           ),
+          Gap(Spacing.lg.h),
           SemanticContainerWidget(
+            isSkeleton: true,
             title: 'Enter your code',
             content:
                 phoneNumber.isEmpty
                     ? 'Request a verification code first.'
                     : 'We sent a code to $phoneNumber. It expires in 60 seconds.',
             icon: Icons.sms_outlined,
-            backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
-            borderColor: colorScheme.primary,
-            iconColor: colorScheme.primary,
+            backgroundColor: colorScheme.onBackground.withValues(alpha: 0.1),
+            borderColor: colorScheme.onBackground,
+            iconColor: colorScheme.onBackground,
             textTheme: textTheme,
           ),
           Gap(Spacing.xxl.h),
           if (resendSecondsRemaining > 0)
-            VerificationCodeCountdown(
-              secondsRemaining: resendSecondsRemaining,
-            )
+            VerificationCodeCountdown(secondsRemaining: resendSecondsRemaining)
           else if (onResend != null)
             AppTextButton(
               alignment: Alignment.center,

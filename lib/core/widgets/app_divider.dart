@@ -35,7 +35,7 @@ class AppDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final dividerColor = color ?? colorScheme.outline.withOpacity(0.2);
+    final dividerColor = color ?? colorScheme.outline;
     final dividerThickness = thickness ?? 0.5;
     final dividerHeight = height ?? (direction == Axis.horizontal ? 1.h : 1.w);
 

@@ -194,6 +194,7 @@ class InfoRowWidget extends StatelessWidget {
   final double subTitleFontSize;
 
   final Color? titleFontColor;
+  final Color? subTitleFontColor;
 
   // NEW: Add support for toggle items
 
@@ -213,6 +214,16 @@ class InfoRowWidget extends StatelessWidget {
   /// of the toggle (checked/unchecked, on/off).
   final bool? toggleValue;
   final bool? pinAvatar;
+
+  /// Whether the leading icon/avatar gets the same top padding
+  /// (Spacing.md) the text column already starts with (its own leading
+  /// Gap(Spacing.xs.h) plus title line height). Default true keeps every
+  /// existing row unchanged. Pass false when [pinAvatar] already aligns the
+  /// row to CrossAxisAlignment.start and the avatar should sit flush with
+  /// the first line of text instead of getting a second, redundant nudge
+  /// down from that top padding — otherwise pinning to start only to then
+  /// pad the avatar back down largely cancels the pin out.
+  final bool padAvatarTop;
   final bool? isNotAvatarImage;
   final int? titleMaxLines;
   final int? subTitleMaxLines;
@@ -262,8 +273,10 @@ class InfoRowWidget extends StatelessWidget {
     this.titleFontSize = 14,
     this.subTitleFontSize = 12,
     this.titleFontColor,
+    this.subTitleFontColor,
     this.isNotAvatarImage = false,
     this.pinAvatar = false,
+    this.padAvatarTop = true,
     this.bottomWidget,
   }) : assert(
          // Either icon or imageUrl must be provided for visual identity
@@ -302,7 +315,13 @@ class InfoRowWidget extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // Leading icon/avatar with consistent spacing
-          _buildIconOrAvatar(context, colorScheme),
+          Padding(
+            padding:
+                padAvatarTop
+                    ? const EdgeInsets.only(top: Spacing.md)
+                    : EdgeInsets.zero,
+            child: _buildIconOrAvatar(context, colorScheme),
+          ),
           if (iconSize != 0) Gap(Spacing.md.w),
 
           // Text content area with flexible alignment.
@@ -315,47 +334,53 @@ class InfoRowWidget extends StatelessWidget {
           // without pretending to be scrollable.
           Expanded(
             child: ClipRect(
-              child: Column(
-                mainAxisAlignment: textMainAxisAlignment,
-                crossAxisAlignment: titleAlignment,
-                children: [
-                  // Small gap for visual separation
-                  Gap(Spacing.xs.h),
-                  // Primary title with line limiting
-                  if (title.isNotEmpty)
-                    Text(
-                      title,
-                      style:
-                          titleStyle ??
-                          textTheme.bodyMedium?.copyWith(
-                            color: titleFontColor ?? colorScheme.onBackground,
-                            fontSize: titleFontSize.sp,
-                            fontWeight: FontWeight.w500,
-                          ),
-                      maxLines: titleMaxLines ?? 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  // Small gap between title and subtitle
-                  if (subtitle.isNotEmpty) Gap(Spacing.xs.h),
-                  // Optional subtitle (only if non-empty)
-                  if (subtitle.isNotEmpty)
-                    Text(
-                      subtitle,
-                      style:
-                          subtitleStyle ??
-                          textTheme.bodySmall?.copyWith(
-                            fontSize: subTitleFontSize.sp,
-                            color: colorScheme.onBackground.withOpacity(
-                              OpacityTokens.medium,
+              child: SingleChildScrollView(
+                physics: NeverScrollableScrollPhysics(),
+                child: Column(
+                  mainAxisAlignment: textMainAxisAlignment,
+                  crossAxisAlignment: titleAlignment,
+                  children: [
+                    // Small gap for visual separation
+                    Gap(Spacing.xs.h),
+                    // Primary title with line limiting
+                    if (title.isNotEmpty)
+                      Text(
+                        title,
+                        style:
+                            titleStyle ??
+                            textTheme.titleSmall?.copyWith(
+                              color: titleFontColor ?? colorScheme.onBackground,
+                              fontSize: titleFontSize.sp,
+                              fontWeight: FontWeight.w500,
                             ),
-                          ),
-                      maxLines: subTitleMaxLines ?? 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  if (bottomWidget != null) bottomWidget!,
-                  // Optional divider below content
-                  if (showDivider) AppDivider(),
-                ],
+                        maxLines: titleMaxLines ?? 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    // Small gap between title and subtitle
+                    if (subtitle.isNotEmpty)
+                      if (title.isNotEmpty) Gap(Spacing.xs.h),
+                    // Optional subtitle (only if non-empty)
+                    if (subtitle.isNotEmpty)
+                      Text(
+                        subtitle,
+                        style:
+                            subtitleStyle ??
+                            textTheme.bodyMedium?.copyWith(
+                              // fontSize: subTitleFontSize.sp,
+                              color:
+                                  subTitleFontColor ??
+                                  colorScheme.onBackground.withOpacity(
+                                    OpacityTokens.medium,
+                                  ),
+                            ),
+                        maxLines: subTitleMaxLines ?? 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    if (bottomWidget != null) bottomWidget!,
+                    // Optional divider below content
+                    if (showDivider) AppDivider(),
+                  ],
+                ),
               ),
             ),
           ),

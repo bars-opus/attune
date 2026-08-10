@@ -24,6 +24,7 @@ OpinionModel _opinion(
   String? quotedOpinionId,
   DateTime? editedAt,
   List<String> tags = const [],
+  String? matchedTagSlug,
 }) {
   return OpinionModel(
     id: id,
@@ -42,6 +43,7 @@ OpinionModel _opinion(
     quotedOpinionId: quotedOpinionId,
     editedAt: editedAt,
     tags: tags,
+    matchedTagSlug: matchedTagSlug,
     createdAt: DateTime.utc(2026, 7, 25, 12),
   );
 }
@@ -325,6 +327,29 @@ void main() {
       ]);
       expect(restored.firstWhere((o) => o.id == 'untagged').tags, isEmpty);
     });
+
+    test('preserves matchedTagSlug through a cache round-trip', () async {
+      final (cache, _) = await _makeCache();
+
+      await cache.writeFeed(OpinionFeed.following, _userA, [
+        _opinion('tag-matched', matchedTagSlug: 'love'),
+        _opinion('author-matched'),
+      ]);
+      final restored = cache.readFeed(OpinionFeed.following, _userA);
+
+      // Only get_following_opinions ever sets this, and only the cache
+      // carries it across a relaunch — a value that survives in but not back
+      // out means the "followed" badge silently disappears from a cached
+      // Following page until the next live fetch.
+      expect(
+        restored.firstWhere((o) => o.id == 'tag-matched').matchedTagSlug,
+        'love',
+      );
+      expect(
+        restored.firstWhere((o) => o.id == 'author-matched').matchedTagSlug,
+        isNull,
+      );
+    });
   });
 
   group('OpinionModel feed-row mapping', () {
@@ -401,6 +426,41 @@ void main() {
             ..remove('quoted_opinion_id');
 
       expect(OpinionModel.fromFeedRow(row).quotedOpinionId, isNull);
+    });
+
+    test('round-trips matchedTagSlug in both directions', () {
+      for (final slug in [null, 'love']) {
+        final row = _opinion('a', matchedTagSlug: slug).toFeedRow();
+        expect(
+          row['matched_tag_slug'],
+          slug,
+          reason: 'toFeedRow must emit matched_tag_slug',
+        );
+        expect(OpinionModel.fromFeedRow(row).matchedTagSlug, slug);
+      }
+    });
+
+    test('defaults matchedTagSlug to null when the column is absent', () {
+      // Every feed RPC except get_following_opinions omits this column
+      // entirely — absent means the same thing null does.
+      final row =
+          _opinion('a', matchedTagSlug: 'love').toFeedRow()
+            ..remove('matched_tag_slug');
+
+      expect(OpinionModel.fromFeedRow(row).matchedTagSlug, isNull);
+    });
+
+    test('copyWith preserves matchedTagSlug across an optimistic toggle', () {
+      // Same trap as quotedOpinionId: an optimistic save/repost patch that
+      // dropped this would silently remove the "followed" badge from a
+      // Following card the instant the user reacted to it.
+      final original = _opinion('a', matchedTagSlug: 'love');
+
+      expect(original.copyWith(isSaved: true).matchedTagSlug, 'love');
+      expect(
+        original.copyWith(isRepostedByMe: true, repostCount: 6).matchedTagSlug,
+        'love',
+      );
     });
 
     test('round-trips tags in both directions', () {

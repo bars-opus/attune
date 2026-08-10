@@ -22,7 +22,18 @@ class TagChipRow extends StatelessWidget {
   /// Called with the tapped slug. Callers route this to TagBrowseScreen.
   final ValueChanged<String> onTagTap;
 
-  const TagChipRow({super.key, required this.tags, required this.onTagTap});
+  /// Defaults to bodySmall's own size (unset) so every existing caller is
+  /// unaffected. OpinionCard and ForumCard both pass 14.h, well below their
+  /// own content text (20.h, matching InfoRowWidget.subTitleFontSize), so
+  /// tags read as metadata under the text rather than competing with it.
+  final double? fontSize;
+
+  const TagChipRow({
+    super.key,
+    required this.tags,
+    required this.onTagTap,
+    this.fontSize,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +63,7 @@ class TagChipRow extends StatelessWidget {
                   // one chip rather than two loose words next to the body text.
                   '#$slug',
                   style: textTheme.bodySmall?.copyWith(
+                    fontSize: fontSize,
                     color: colorScheme.primary,
                     fontWeight: FontWeight.w500,
                   ),

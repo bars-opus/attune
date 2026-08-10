@@ -3,18 +3,14 @@
 import 'package:attune/app/documentations/user_manual/data/chat_docs.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/utils/relationship_status_display.dart';
-import 'package:attune/core/widgets/profile_avatar.dart';
-import 'package:attune/features/auth/intro/widgets/intro_guide_widget.dart';
 import 'package:attune/core/widgets/animated_circle.dart';
-
 import 'package:attune/features/onboarding/presentation/widgets/invite_card.dart';
-import 'package:attune/app/documentations/user_manual/data/manual_documentation_registry.dart';
-import 'package:attune/app/documentations/user_manual/models/documentation_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/relationships/data/relationship_invite_service.dart';
 import 'package:attune/features/healing/presentation/providers/healing_providers.dart';
 import 'package:attune/features/healing/presentation/widgets/healing_self_report_sheet.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/features/onboarding/presentation/widgets/invite_qr_code.dart';
 
 /// What a non-couples user sees on the Chat tab.
 ///
@@ -61,8 +57,6 @@ class ChatCouplesLockedScreen extends ConsumerStatefulWidget {
 class _ChatCouplesLockedScreenState
     extends ConsumerState<ChatCouplesLockedScreen> {
   final _inviteService = RelationshipInviteService();
-  late ScrollController _scrollController;
-  List<DocumentationModule> modules = [];
 
   RelationshipInvite? _invite;
   bool _isCreatingInvite = false;
@@ -71,26 +65,6 @@ class _ChatCouplesLockedScreenState
   @override
   void initState() {
     super.initState();
-    _scrollController = ScrollController();
-    DocumentationRegistry.initialize();
-    modules = DocumentationRegistry.getAllModules();
-    // Schedule the scroll after the first frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients && modules.length > 1) {
-        // Get the screen width
-        final screenWidth = MediaQuery.of(context).size.width;
-        final itemWidth = _getItemWidth();
-
-        // Calculate offset to center the second item (index 1)
-        // Formula: (itemWidth * index) - (screenWidth/2) + (itemWidth/2)
-        final offset = (itemWidth * 1) - (screenWidth / 2) + (itemWidth / 2);
-
-        // Ensure offset is not negative (for first items)
-        final clampedOffset = offset.clamp(0.0, double.infinity);
-
-        _scrollController.jumpTo(clampedOffset);
-      }
-    });
 
     // A returning couplesPending user (app restart, re-navigation) has no
     // locally-held invite — `_invite` only ever lived in this State object,
@@ -130,6 +104,7 @@ class _ChatCouplesLockedScreenState
   }
 
   Future<void> _onHealingEntryTap() async {
+    final colorScheme = Theme.of(context).colorScheme;
     final hasActiveSoloJourney = await ref.read(
       hasActiveSoloHealingJourneyProvider.future,
     );
@@ -142,22 +117,13 @@ class _ChatCouplesLockedScreenState
 
     final started = await BottomSheetUtils.showDocumentationBottomSheet<bool>(
       context: context,
+      backgroundColor: colorScheme.neutral,
       widget: const HealingSelfReportSheet(),
     );
     if (!mounted) return;
     if (started == true) {
       context.push(RouteNames.healingJourney);
     }
-  }
-
-  double _getItemWidth() {
-    return 250.w; // Your item width
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
   }
 
   Future<void> _createInvite() async {
@@ -193,73 +159,23 @@ class _ChatCouplesLockedScreenState
     return Scaffold(
       // No AppBar: TripleTapDetector's invisible quick-exit gesture zone is
       // centered at the very top of every screen (same region a centered
-      // AppBar title occupies), and it was winning the tap-gesture arena
-      // against the logo's own GestureDetector — a single tap on the logo
-      // never opened the sheet. Moving these three items into the body as a
-      // plain Row (below the top inset, not overlapping that zone) sidesteps
-      // the collision entirely instead of fighting over hit-test priority.
+      // AppBar title occupies). Keeping the title/menu row inside the body
+      // (below the top inset, not overlapping that zone) avoids fighting it
+      // for hit-test priority — see _AttuneLogoButton's own doc for why the
+      // logo itself moved further down into the column instead of living
+      // here too.
       body: SafeArea(
         child: ListView(
           padding: EdgeInsets.all(Spacing.md.h),
           children: [
-            Row(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: Spacing.sm),
-                  child: Text(
-                    'Chat',
-                    style: textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.onSurface.withValues(alpha: 0.8),
-                    ),
-                  ),
-                ),
-                const Spacer(),
-
-                GestureDetector(
-                  // Opaque so the whole 30x30 box is tappable, not just the
-                  // non-transparent pixels of the tinted logo PNG.
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    BottomSheetUtils.showDocumentationBottomSheet(
-                      context: context,
-                      // Info items are typically view-only (no agree/decline)
-                      showButtons: false,
-                      // maxHeight: 700,
-                      // Dynamic content: guide shows the documentation list,
-                      // others show legal docs. DocumentationList (not
-                      // DocumentationScreen) — the sheet already supplies its
-                      // own Scaffold, and a nested Scaffold inside it renders
-                      // blank instead of showing.
-                      widget: Padding(
-                        padding: const EdgeInsets.only(top: Spacing.md),
-                        child: const DocumentationList(),
-                      ),
-                    );
-                  },
-                  child: SizedBox(
-                    width: 30,
-                    height: 30,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(
-                        BorderRadiusTokens.md,
-                      ),
-                      child: Image.asset(
-                        color: colorScheme.primary,
-                        'assets/images/attune_logo_white.png',
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                AppIconButton(
-                  icon: Icons.menu,
-                  onPressed: () {
-                    context.pushNamed('settings');
-                  },
-                ),
-              ],
+            Align(
+              alignment: Alignment.topRight,
+              child: AppIconButton(
+                icon: Icons.menu,
+                onPressed: () {
+                  context.pushNamed('settings');
+                },
+              ),
             ),
             Gap(Spacing.md.h),
             // Real, functional — Personal mode's reflection journal is
@@ -269,27 +185,20 @@ class _ChatCouplesLockedScreenState
                 children: [
                   Gap(Spacing.md.h),
 
-                  // AnimatedCircle(
-                  //   size: 30,
-                  //   stroke: 2,
-                  //   animateSize: true,
-                  //   animateShape: true,
-                  //   firstColor: colorScheme.primary,
-                  //   secondColor: colorScheme.primary,
-                  // ),
                   // Gap(Spacing.lg.h),
                   // AppDivider(), Gap(Spacing.lg.h),
                   // Locked preview — same card language ConversationsScreen uses
                   // for a real conversation, so a personal-mode user sees the
                   // actual couples chat surface rather than reading about it.
-                  if (!widget.isPendingCouples)
-                    _LockedConversationPreview(colorScheme: colorScheme),
-                  Gap(Spacing.xl.h),
+                  // if (!widget.isPendingCouples)
+                  _WelcomEntryCard(isPendingCouples: widget.isPendingCouples),
+                  Gap(Spacing.md.h),
 
                   // Gap(Spacing.xl.h),
                   if (widget.isPendingCouples)
                     _PendingInviteSection(
                       invite: _invite,
+                      isPendingCouples: widget.isPendingCouples,
                       isCreating: _isCreatingInvite,
                       errorMessage: _errorMessage,
                       onRetry: _loadExistingInvite,
@@ -303,7 +212,7 @@ class _ChatCouplesLockedScreenState
                         ),
                       )
                     else if (_isCreatingInvite)
-                      const Center(child: CircularProgressIndicator())
+                      const Center(child: CircularLoadingIndicator())
                     else if (_invite != null)
                       InviteCard(invite: _invite!)
                     else ...[
@@ -317,10 +226,12 @@ class _ChatCouplesLockedScreenState
                         Gap(Spacing.sm.h),
                       ],
 
+                      Gap(Spacing.smMd.h),
                       AppButton(
                         height: 40.h,
                         elevation: 0,
                         animateButton: false,
+                        prefixIconColor: colorScheme.background,
                         size: ButtonSize.small,
                         label: 'Invite your partner',
                         prefixIcon: Icons.person_add_alt_outlined,
@@ -344,65 +255,137 @@ class _ChatCouplesLockedScreenState
                         size: ButtonSize.small,
                         label: 'Meet someone in Dating mode',
                         variant: ButtonVariant.outline,
+                        prefixIconColor: colorScheme.primary,
                         prefixIcon: Icons.favorite_border,
                         onPressed: () => context.push(RouteNames.datingMode),
                       ),
                     ],
+                    Gap(Spacing.xl.h),
                   ],
                   Gap(Spacing.md.h),
                 ],
               ),
             ),
 
-            _ReflectionEntryCard(
-              colorScheme: colorScheme,
-              isPendingCouples: widget.isPendingCouples,
-              onTap: () => context.pushNamed('reflectionJournal'),
+            // if (!widget.isPendingCouples)
+            CardInkWell(
+              child: Column(
+                children: [
+                  _LockedConversationPreview(
+                    colorScheme: colorScheme,
+                    isPendingCouples: widget.isPendingCouples,
+                  ),
+                  AppDivider(),
+                  _ReflectionEntryCard(
+                    colorScheme: colorScheme,
+                    isPendingCouples: widget.isPendingCouples,
+                    onTap: () => context.pushNamed('reflectionJournal'),
+                  ),
+
+                  if (!_isCreatingInvite)
+                    if (_invite == null) ...[
+                      AppDivider(),
+                      _HealingEntryCard(onTap: _onHealingEntryTap),
+                    ],
+                ],
+              ),
             ),
 
-            if (!_isCreatingInvite)
-              if (_invite == null) ...[
-                _HealingEntryCard(onTap: _onHealingEntryTap),
-                Gap(Spacing.md.h),
-                SizedBox(
-                  height: 250.h,
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    scrollDirection: Axis.horizontal,
-                    itemCount: modules.length,
-                    itemBuilder: (context, index) {
-                      final module = modules[index];
-                      return SizedBox(
-                        width: 250.w, // Make sure items have fixed width
-                        child: IntroGuideWidget(module: module),
-                      );
-                    },
-                  ),
-                ),
-                Gap(Spacing.xxl.h),
-                GestureDetector(
-                  onTap: () {
-                    BottomSheetUtils.showDocumentationBottomSheet(
-                      maxHeight: MediaQuery.of(context).size.height * 0.7,
-                      context: context,
-                      widget: AllLegalDocumentationsScreen(),
-                    );
-                  },
-                  child: Text(
-                    loc.authReadLegalities,
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colorScheme.primary,
-                      decoration: TextDecoration.underline,
-                      letterSpacing: 1.2,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ],
             Gap(Spacing.xxl.h * 3),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _WelcomEntryCard extends StatelessWidget {
+  final bool isPendingCouples;
+
+  const _WelcomEntryCard({required this.isPendingCouples});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final loc = AppLocalizations.of(context)!;
+    final overview =
+        isPendingCouples
+            ? 'Once your partner accepts and completes their own onboarding, A private private chat would open for the two of you to start atunning.'
+            : 'Welcome back to Attune. To start bonding with your partner, send them an invite. '
+                'If you\'re not in a relationship but ready to start dating, you can explore your '
+                'options by tapping "Meet someone in Dating mode."';
+
+    return Column(
+      children: [
+        Gap(Spacing.xl.h),
+
+        // Two bundled stand-in avatars (bitmale.png/bitfemale.png) — rather
+        // than the old abstract morphing shape, so this card visually
+        // previews the "you + them" pairing "Invite Partner" below is
+        // actually offering. Not real account photos: there is no partner
+        // yet, and this card only shows before an invite exists (see the
+        // !isPendingCouples gate this card is built under).
+        const _StackedInviteAvatars(),
+        Gap(Spacing.lg.h),
+        Center(
+          child: Text(
+            isPendingCouples
+                ? 'Your invite\nis pending'
+                : 'Invite\nYour Partner',
+            style: textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: colorScheme.onSurface,
+              fontSize: FontSizeTokens.xxl.sp,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        if (!isPendingCouples)
+          Text(
+            'A private space to build a more stronger bond.',
+            style: textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurface.withOpacity(0.7),
+            ),
+            textAlign: TextAlign.center,
+          ),
+        Gap(isPendingCouples ? Spacing.sm : Spacing.lg.h),
+        GestureDetector(
+          onTap: () {
+            BottomSheetUtils.showDocumentationBottomSheet(
+              context: context,
+              widget: ReadAll(body: overview),
+            );
+          },
+          child: Column(
+            crossAxisAlignment:
+                isPendingCouples
+                    ? CrossAxisAlignment.center
+                    : CrossAxisAlignment.start,
+            children: [
+              Text(
+                overview,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurface,
+                ),
+                maxLines: 4,
+                textAlign:
+                    isPendingCouples ? TextAlign.center : TextAlign.start,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                loc.commonLearnMore,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: FontSizeTokens.xs.sp,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Gap(Spacing.xl),
+      ],
     );
   }
 }
@@ -422,57 +405,19 @@ class _ReflectionEntryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final docs = ChatDocs();
-
-    return CardInkWell(
-      child: Column(
-        children: [
-          if (isPendingCouples) ...[
-            InfoRowWidget(
-              subtitle:
-                  'Once your partner accepts and completes their own onboarding, A private private chat would open for the two of you to start atunning.',
-              title: 'Your invite is pending',
-              icon: Icons.chat,
-              // iconColor: colorScheme.error,
-              // backgroundColor: colorScheme.error.withOpacity(0.1),
-              subTitleMaxLines: 5,
-              iconSize: 25.h,
-              showDivider: false,
-              onTap: () {
-                BottomSheetUtils.showDocumentationBottomSheet(
-                  context: context,
-                  showButtons: false,
-                  widget: DocumentationTabView(
-                    module: docs,
-                    showDocumentationFirst: true,
-                  ),
-                );
-              },
-              disableTrailing: false,
-              showAvatar: true,
-              showTrailingArrow: false,
-              trailing: Icon(Icons.lock, size: 25.h, color: colorScheme.error),
-            ),
-            Gap(Spacing.md),
-            AppDivider(),
-            Gap(Spacing.sm),
-          ],
-          InfoRowWidget(
-            subtitle:
-                'A private space for your own reflection work. This never sends messages to anyone, just reflections to heal after breakup or prepare for dating.',
-            title: 'Personal reflections',
-            icon: Icons.self_improvement_outlined,
-            subTitleMaxLines: 5,
-            iconSize: 25.h,
-            showDivider: false,
-            onTap: onTap,
-            disableTrailing: false,
-            showAvatar: true,
-            showTrailingArrow: false,
-            trailing: Icon(Icons.chevron_right_rounded, size: 25.h),
-          ),
-        ],
-      ),
+    return InfoRowWidget(
+      subtitle:
+          'A private space for your own reflection work. This never sends messages to anyone, just reflections to heal after breakup or prepare for dating.',
+      title: 'Personal reflections',
+      icon: Icons.self_improvement_outlined,
+      subTitleMaxLines: 5,
+      iconSize: 25.h,
+      showDivider: false,
+      onTap: onTap,
+      disableTrailing: false,
+      showAvatar: true,
+      showTrailingArrow: false,
+      trailing: Icon(Icons.chevron_right_rounded, size: 25.h),
     );
   }
 }
@@ -488,21 +433,19 @@ class _HealingEntryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CardInkWell(
-      child: InfoRowWidget(
-        subtitle:
-            'Start a private healing journey, even if it wasn\'t tracked in Attune.',
-        title: 'Healing from a breakup?',
-        icon: Icons.healing_outlined,
-        subTitleMaxLines: 5,
-        iconSize: 25.h,
-        showDivider: false,
-        onTap: onTap,
-        disableTrailing: false,
-        showAvatar: true,
-        showTrailingArrow: false,
-        trailing: Icon(Icons.chevron_right_rounded, size: 25.h),
-      ),
+    return InfoRowWidget(
+      subtitle:
+          'Start a private healing journey, even if it wasn\'t tracked in Attune.',
+      title: 'Healing from a breakup?',
+      icon: Icons.healing_outlined,
+      subTitleMaxLines: 5,
+      iconSize: 25.h,
+      showDivider: false,
+      onTap: onTap,
+      disableTrailing: false,
+      showAvatar: true,
+      showTrailingArrow: false,
+      trailing: Icon(Icons.chevron_right_rounded, size: 25.h),
     );
   }
 }
@@ -513,34 +456,44 @@ class _HealingEntryCard extends StatelessWidget {
 /// couples chat looks like without pretending there is a real conversation
 /// underneath it.
 class _LockedConversationPreview extends StatelessWidget {
-  // final bool isPendingCouples;
+  final bool isPendingCouples;
   const _LockedConversationPreview({
     required this.colorScheme,
-    // required this.isPendingCouples,
+    required this.isPendingCouples,
   });
 
   final ColorScheme colorScheme;
 
   @override
   Widget build(BuildContext context) {
+    final docs = ChatDocs();
+
     return InfoRowWidget(
       subtitle:
-          // isPendingCouples
-          //     ? 'Once your partner accepts and completes their own onboarding, this becomes your private chat.'
-          //     :
           'A shared chat opens once you and a partner are both connected. Invite your lover, or meet someone new in Dating mode.',
-      title:
-          // isPendingCouples ? 'Your invite is pending' :
-          'Chat is for couples',
-      icon: Icons.send,
+      title: 'Chat is for couples',
+      icon: Icons.chat_bubble_outline,
+      iconSize: 25.h,
+      showAvatar: true,
+      // iconColor: colorScheme.error,
+      // backgroundColor: colorScheme.error.withOpacity(0.1),
+      subTitleMaxLines: 5,
 
-      iconSize: 0.h,
       showDivider: false,
-      onTap: () {},
+      onTap: () {
+        BottomSheetUtils.showDocumentationBottomSheet(
+          context: context,
+          showButtons: false,
+          widget: DocumentationTabView(
+            module: docs,
+            showDocumentationFirst: true,
+          ),
+        );
+      },
       disableTrailing: false,
-      showAvatar: false,
+
       showTrailingArrow: false,
-      trailing: Icon(Icons.lock_outline, size: 25.h),
+      trailing: Icon(Icons.lock, size: 25.h, color: colorScheme.error),
     );
   }
 }
@@ -551,10 +504,12 @@ class _PendingInviteSection extends StatelessWidget {
     required this.isCreating,
     required this.errorMessage,
     required this.onRetry,
+    required this.isPendingCouples,
   });
 
   final RelationshipInvite? invite;
   final bool isCreating;
+  final bool isPendingCouples;
   final String? errorMessage;
   final VoidCallback onRetry;
 
@@ -577,5 +532,152 @@ class _PendingInviteSection extends StatelessWidget {
       );
     }
     return const SizedBox.shrink();
+  }
+}
+
+/// Tappable Attune logo that opens the documentation/guide sheet.
+///
+/// Only shown above the "Invite your partner" action — i.e. only while chat
+/// is genuinely locked with no invite in flight yet (not pending, not
+/// already accepted). Once an invite exists or is pending, this branch of
+/// the column isn't built at all, so the logo naturally disappears; it was
+/// previously pinned in the top bar on every state of this screen, which
+/// also fought TripleTapDetector's own top-of-screen gesture zone for the
+/// tap (see the comment that used to sit on Scaffold.body above — a plain
+/// Row below the top inset avoided that collision, and still does, from its
+/// new spot in the column below).
+class _AttuneLogoButton extends StatelessWidget {
+  final double? size;
+  const _AttuneLogoButton({this.size = 30});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return GestureDetector(
+      // Opaque so the whole 30x30 box is tappable, not just the
+      // non-transparent pixels of the tinted logo PNG.
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        BottomSheetUtils.showDocumentationBottomSheet(
+          context: context,
+          // Info items are typically view-only (no agree/decline)
+          showButtons: false,
+          // Dynamic content: guide shows the documentation list, others
+          // show legal docs. DocumentationList (not DocumentationScreen) —
+          // the sheet already supplies its own Scaffold, and a nested
+          // Scaffold inside it renders blank instead of showing.
+          widget: Padding(
+            padding: const EdgeInsets.only(top: Spacing.md),
+            child: const DocumentationList(),
+          ),
+        );
+      },
+      child: SizedBox(
+        width: size ?? 30.h,
+        height: size ?? 30.w,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(BorderRadiusTokens.md),
+          child: Image.asset(
+            color: colorScheme.primary,
+            'assets/images/attune_logo_white.png',
+            fit: BoxFit.cover,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Two overlapping circular avatars — "you" on the left, a blank
+/// placeholder for "them" on the right — both sitting on the same
+/// horizontal line, same overlap language ReplyAvatarStack uses for reply
+/// previews (core/widgets/reply_avatar_stack.dart): left-to-right only, no
+/// vertical stagger.
+///
+/// Both avatars go through ProfileAvatar, which already routes any
+/// avatarUrl starting with "http" through CachedNetworkImage internally
+/// (see its own doc) — so "mine" loads from the network when a photo
+/// exists, and "theirs" (an intentionally empty avatarUrl — there is no
+/// partner yet) falls back to ProfileAvatar's own generic person
+/// silhouette, with no separate placeholder widget needed.
+class _StackedInviteAvatars extends StatelessWidget {
+  const _StackedInviteAvatars();
+
+  static const double _avatarSize = 80;
+  static const double _xOffset = 60;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return SizedBox(
+      width: _avatarSize + _xOffset,
+      height: _avatarSize,
+      child: Stack(
+        children: [
+          // Right side, same top — the "them" placeholder. A bundled
+          // stand-in illustration (bitfemale.png), not a real avatarUrl —
+          // there is no partner yet — so this goes through the same
+          // circular-clip/border treatment ProfileAvatar gives a real photo
+          // rather than through ProfileAvatar itself, which only knows how
+          // to load a network or on-disk avatarUrl, not a bundled asset.
+          // Painted first (Stack paints later children on top), so yours
+          // (below) ends up in front of it.
+          Positioned(
+            left: _xOffset,
+            top: 0,
+            child: _AssetAvatar(
+              assetPath: 'assets/images/bitfemale.png',
+              size: _avatarSize,
+              color: Colors.grey.withOpacity(.3),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: 0,
+            child: _AssetAvatar(
+              assetPath: 'assets/images/bitmale.png',
+              size: _avatarSize,
+              color: Colors.grey[400] ?? Colors.grey,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A bundled asset image in the same circular-clip/bordered-circle shape
+/// ProfileAvatar gives a real avatarUrl — kept separate from ProfileAvatar
+/// itself rather than stretching it to accept a third image source, since
+/// ProfileAvatar's avatarUrl only ever means "network URL" or "on-disk file
+/// path," never a Flutter asset key.
+class _AssetAvatar extends StatelessWidget {
+  const _AssetAvatar({
+    required this.assetPath,
+    required this.size,
+    required this.color,
+  });
+
+  final String assetPath;
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      width: size,
+      height: size,
+      padding: const EdgeInsets.all(Spacing.sm),
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: colorScheme.surface, width: 3.w),
+      ),
+      child: ClipOval(child: Image.asset(assetPath, fit: BoxFit.cover)),
+    );
   }
 }

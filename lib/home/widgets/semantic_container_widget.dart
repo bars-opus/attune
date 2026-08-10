@@ -110,9 +110,6 @@ class SemanticContainerWidget extends StatelessWidget {
   final IconData? icon;
   final IconData? prefixIcon;
 
-
-  
-
   /// Title text displayed prominently at the top of the container.
   ///
   /// Should be short and descriptive (e.g., "Note", "Warning", "Documentation").
@@ -147,6 +144,7 @@ class SemanticContainerWidget extends StatelessWidget {
   final TextTheme textTheme;
 
   final Widget? child;
+  final bool isSkeleton;
 
   /// Creates a semantic content container with coordinated visual styling.
   ///
@@ -156,8 +154,9 @@ class SemanticContainerWidget extends StatelessWidget {
   const SemanticContainerWidget({
     super.key,
     required this.content,
-     this.icon,
-     this.prefixIcon,
+    this.icon,
+    this.isSkeleton = false,
+    this.prefixIcon,
     required this.title,
     required this.backgroundColor,
     required this.borderColor,
@@ -170,15 +169,15 @@ class SemanticContainerWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       // Internal padding using small spacing token
-      padding: EdgeInsets.all(Spacing.md.r),
+      padding: EdgeInsets.all(isSkeleton ? 0 : Spacing.md.r),
       // Container styling with coordinated colors
       decoration: BoxDecoration(
-        color: backgroundColor,
+        color: isSkeleton ? Colors.transparent : backgroundColor,
         // Medium border radius for balanced rounding
         borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
         // Thin border with semantic color for definition
         border: Border.all(
-          color: borderColor,
+          color: isSkeleton ? Colors.transparent : borderColor,
           width: BorderWidthTokens.hairline.h,
         ),
       ),
@@ -186,8 +185,7 @@ class SemanticContainerWidget extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.start,
         children: [
-          // Semantic icon with consistent sizing
-          if(icon != null)
+          //  Semantic icon if(icon != null)
           Icon(icon, size: IconSizes.md.r, color: iconColor),
           // Gap between icon and title
           // Gap(Spacing.sm.w),
@@ -220,8 +218,8 @@ class SemanticContainerWidget extends StatelessWidget {
             ),
           ),
 
-           if(prefixIcon != null)
-          Icon(prefixIcon, size: IconSizes.md.r, color: iconColor),
+          if (prefixIcon != null)
+            Icon(prefixIcon, size: IconSizes.md.r, color: iconColor),
         ],
       ),
     );

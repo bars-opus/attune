@@ -108,6 +108,20 @@ class AppTheme {
       // success snackbar's text unreadable. textPrimary (near-black) reads
       // correctly against any of the near-white foreground tones.
       onPrimaryContainer: LightColors.textPrimary,
+      // outline/outlineVariant left unset both fall back to onBackground
+      // (ColorScheme.outline's own getter: `_outline ?? onBackground`) —
+      // which is also never set here, so both silently inherited Material's
+      // ColorScheme.light default of near-black. That happened to look like
+      // a plausible thin border in light mode (AppFilterChip's unselected
+      // border, PollCard's unselected option border) but is the same
+      // content-color-as-border mistake onPrimaryContainer had above, just
+      // undetected here because light mode's fallback value was
+      // coincidentally reasonable. divider is this app's existing
+      // border/hairline token (already used by dividerTheme and
+      // inputDecorationTheme below) — outlineVariant reuses the same value
+      // since this palette has no separate fainter tone defined for it.
+      outline: LightColors.divider,
+      outlineVariant: LightColors.divider,
       surfaceDim: LightColors.background,
     ),
 
@@ -249,6 +263,13 @@ class AppTheme {
       // See onPrimaryContainer note in lightTheme — same fix, explicit
       // rather than relying on Material's default matching by luck.
       onPrimaryContainer: DarkColors.textPrimary,
+      // See outline/outlineVariant note in lightTheme. This is the one that
+      // was actually visible: dark mode's onBackground fallback defaults to
+      // Colors.white, so every unselected AppFilterChip and PollCard option
+      // border rendered near-white instead of a dark-mode-appropriate
+      // hairline.
+      outline: DarkColors.divider,
+      outlineVariant: DarkColors.divider,
       surfaceDim: DarkColors.background,
     ),
 

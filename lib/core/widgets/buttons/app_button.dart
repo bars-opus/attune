@@ -36,7 +36,7 @@ class AppButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.variant = ButtonVariant.primary,
-    this.size = ButtonSize.medium,
+    this.size = ButtonSize.small,
     this.isLoading = false,
     this.isDisabled = false,
     this.icon,

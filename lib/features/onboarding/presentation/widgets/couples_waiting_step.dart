@@ -92,7 +92,7 @@ class _CouplesWaitingStepState extends State<CouplesWaitingStep> {
               subtitle: 'Preparing a private invite code.',
             )
           else if (invite != null)
-            InviteCard(invite: invite)
+            InviteCard(invite: invite, )
           else
             OnboardingInfoTile(
               icon: Icons.error_outline,
