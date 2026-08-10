@@ -2,6 +2,7 @@
 
 import 'dart:async';
 
+import 'package:attune/core/realtime/count_broadcast_channel.dart';
 import 'package:attune/features/forums/data/cache/forum_feed_cache.dart';
 import 'package:attune/features/forums/data/models/forum_post_model.dart';
 import 'package:attune/features/forums/data/models/topic_model.dart';
@@ -620,3 +621,59 @@ class ForumTopicsByTagNotifier
 
   bool get hasMore => _hasMore;
 }
+
+// ============================================================
+// Live counts — cross-user, including guests, via Realtime Broadcast.
+// See 20260826120000_realtime_count_broadcasts.sql and
+// opinionLiveCountsProvider (opinion_providers.dart) for the full rationale
+// — same pattern, mirrored here for topic votes and forum post likes.
+// ============================================================
+
+class TopicLiveCounts {
+  const TopicLiveCounts({required this.upvoteCount, required this.downvoteCount});
+  final int upvoteCount;
+  final int downvoteCount;
+}
+
+final topicLiveCountsProvider =
+    StreamProvider.family<TopicLiveCounts, String>((ref, topicId) {
+      final supabase = ref.watch(supabaseClientProvider);
+      final controller = StreamController<TopicLiveCounts>();
+      final channel = CountBroadcastChannel(
+        supabase: supabase,
+        topic: 'topic-counts:$topicId',
+        onCounts: (payload) {
+          final up = payload['upvote_count'];
+          final down = payload['downvote_count'];
+          if (up is int && down is int) {
+            controller.add(
+              TopicLiveCounts(upvoteCount: up, downvoteCount: down),
+            );
+          }
+        },
+      );
+      ref.onDispose(() {
+        channel.dispose();
+        controller.close();
+      });
+      return controller.stream;
+    });
+
+final postLikeLiveCountProvider =
+    StreamProvider.family<int, String>((ref, postId) {
+      final supabase = ref.watch(supabaseClientProvider);
+      final controller = StreamController<int>();
+      final channel = CountBroadcastChannel(
+        supabase: supabase,
+        topic: 'post-counts:$postId',
+        onCounts: (payload) {
+          final like = payload['like_count'];
+          if (like is int) controller.add(like);
+        },
+      );
+      ref.onDispose(() {
+        channel.dispose();
+        controller.close();
+      });
+      return controller.stream;
+    });

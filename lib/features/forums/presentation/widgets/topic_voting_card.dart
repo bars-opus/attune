@@ -4,6 +4,7 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/utils/relationship_status_display.dart';
 import 'package:attune/features/forums/data/models/topic_model.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
+import 'package:attune/features/forums/presentation/widgets/mini_container_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -97,6 +98,25 @@ class _TopicVotingCardState extends ConsumerState<TopicVotingCard> {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
+    // Live cross-user vote counts (20260826120000_realtime_count_broadcasts.sql)
+    // — every viewer's card, including a guest's, ticks up the instant ANY
+    // viewer votes. Folded into the same _upvoteCount/_downvoteCount fields
+    // _castVote's optimistic update already owns (rather than a separate
+    // "effective count" read only at the button) so _activationPercentage
+    // stays in sync with what the vote buttons display — both read the same
+    // numbers. Skipped while _isUpdating: a broadcast landing mid-optimistic
+    // update would otherwise stomp the just-applied optimistic value with a
+    // (possibly stale, cross-request-ordering) server value before this
+    // card's own castTopicVoteProvider call has even returned.
+    ref.listen(topicLiveCountsProvider(widget.topic.id), (previous, next) {
+      final counts = next.valueOrNull;
+      if (counts == null || _isUpdating) return;
+      setState(() {
+        _upvoteCount = counts.upvoteCount;
+        _downvoteCount = counts.downvoteCount;
+      });
+    });
+
     final rawStatusDisplay = statusDisplayFor(widget.topic.submitterStatus);
     // 'Someone' here, not '' like statusDisplayFor's own default: this
     // string is read directly as "Submitted by: $statusDisplay" below, so an
@@ -107,134 +127,127 @@ class _TopicVotingCardState extends ConsumerState<TopicVotingCard> {
     final percentage = _activationPercentage;
     final needsMore = !_isAboveThreshold;
 
-    return Container(
-      padding: EdgeInsets.all(Spacing.md.w),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-        border: Border.all(
-          color: colorScheme.outline.withOpacity(0.1),
-          width: BorderWidthTokens.hairline,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Gap(Spacing.lg.h),
+        // Topic label
+        MiniContainerIndicator(
+          color: colorScheme.primary,
+          text: 'TOPIC UP FOR VOTE',
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Topic label
-          Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: Spacing.sm.w,
-              vertical: Spacing.xs.h,
+        Gap(Spacing.sm.h),
+        // Topic content
+        Text(
+          '"${widget.topic.content}"',
+          style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
+        ),
+        Gap(Spacing.sm.h),
+        // Submitter info
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              mainAxisAlignment: MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Submitted by: $statusDisplay',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Seen by ',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                    ),
+                    AnimatedRollingCounter(
+                      count: _seenCount,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                    ),
+                    Text(
+                      ' people',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  '${percentage.toStringAsFixed(0)}% upvote',
+                  style: textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color:
+                        _isAboveThreshold ? Colors.green : colorScheme.primary,
+                  ),
+                ),
+              ],
             ),
-            decoration: BoxDecoration(
-              color: colorScheme.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
+            Row(
+              children: [
+                // Upvote button
+                _buildVoteButton(
+                  icon: Icons.arrow_upward,
+                  label: 'FOR',
+                  count: _upvoteCount,
+                  isActive: _userVote == 'up',
+                  onTap: () => _castVote('up'),
+                ),
+                Gap(Spacing.md.w),
+                // Downvote button
+                _buildVoteButton(
+                  icon: Icons.arrow_downward,
+                  label: 'AGAINST',
+                  count: _downvoteCount,
+                  isActive: _userVote == 'down',
+                  onTap: () => _castVote('down'),
+                ),
+              ],
             ),
+          ],
+        ),
+
+        // Progress bar
+        ClipRRect(
+          borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
+          child: LinearProgressIndicator(
+            value: percentage / 100,
+            minHeight: 6,
+            backgroundColor: colorScheme.primary.withOpacity(.1),
+            color: _isAboveThreshold ? colorScheme.primary : colorScheme.info,
+          ),
+        ),
+        Text(
+          needsMore ? 'needs 50% to activate' : 'ACTIVATED!',
+          style: textTheme.bodySmall?.copyWith(
+            color:
+                _isAboveThreshold
+                    ? Colors.green
+                    : colorScheme.onSurface.withOpacity(0.5),
+          ),
+        ),
+
+        if (needsMore && _seenCount < 20)
+          Padding(
+            padding: EdgeInsets.only(top: Spacing.xs.h),
             child: Text(
-              'TOPIC UP FOR VOTE',
-              style: textTheme.labelSmall?.copyWith(
-                color: colorScheme.primary,
-                fontWeight: FontWeight.w600,
+              '${20 - _seenCount} more people need to see this before it can activate',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurface.withOpacity(0.5),
+                fontSize: 10,
               ),
             ),
           ),
-          Gap(Spacing.sm.h),
-          // Topic content
-          Text(
-            '"${widget.topic.content}"',
-            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
-          ),
-          Gap(Spacing.sm.h),
-          // Submitter info
-          Text(
-            'Submitted by: $statusDisplay',
-            style: textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurface.withOpacity(0.6),
-            ),
-          ),
-          Text(
-            'Seen by $_seenCount people',
-            style: textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurface.withOpacity(0.5),
-            ),
-          ),
-          Gap(Spacing.md.h),
-          // Vote buttons
-          Row(
-            children: [
-              // Upvote button
-              _buildVoteButton(
-                icon: Icons.arrow_upward,
-                label: 'Upvote (FOR)',
-                count: _upvoteCount,
-                isActive: _userVote == 'up',
-                onTap: () => _castVote('up'),
-              ),
-              Gap(Spacing.md.w),
-              // Downvote button
-              _buildVoteButton(
-                icon: Icons.arrow_downward,
-                label: 'Downvote (AGAINST)',
-                count: _downvoteCount,
-                isActive: _userVote == 'down',
-                onTap: () => _castVote('down'),
-              ),
-            ],
-          ),
-          Gap(Spacing.md.h),
-          // Progress bar
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '${percentage.toStringAsFixed(0)}% upvote',
-                    style: textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color:
-                          _isAboveThreshold
-                              ? Colors.green
-                              : colorScheme.primary,
-                    ),
-                  ),
-                  Text(
-                    needsMore ? 'needs 50% to activate' : 'ACTIVATED!',
-                    style: textTheme.bodySmall?.copyWith(
-                      color:
-                          _isAboveThreshold
-                              ? Colors.green
-                              : colorScheme.onSurface.withOpacity(0.5),
-                    ),
-                  ),
-                ],
-              ),
-              Gap(Spacing.xs.h),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
-                child: LinearProgressIndicator(
-                  value: percentage / 100,
-                  minHeight: 6,
-                  backgroundColor: colorScheme.surfaceContainerHighest,
-                  color: _isAboveThreshold ? Colors.green : colorScheme.primary,
-                ),
-              ),
-              if (needsMore && _seenCount < 20)
-                Padding(
-                  padding: EdgeInsets.only(top: Spacing.xs.h),
-                  child: Text(
-                    '${20 - _seenCount} more people need to see this before it can activate',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.5),
-                      fontSize: 10,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
+        Gap(Spacing.md),
+        AppDivider(),
+      ],
     );
   }
 
@@ -247,53 +260,46 @@ class _TopicVotingCardState extends ConsumerState<TopicVotingCard> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Expanded(
-      child: GestureDetector(
-        onTap: _isUpdating ? null : onTap,
-        child: Container(
-          padding: EdgeInsets.symmetric(vertical: Spacing.sm.h),
-          decoration: BoxDecoration(
-            color:
-                isActive
-                    ? colorScheme.primary.withOpacity(0.1)
-                    : colorScheme.surfaceContainerHighest.withOpacity(0.3),
-            borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-            border: Border.all(
-              color: isActive ? colorScheme.primary : Colors.transparent,
-              width: BorderWidthTokens.hairline,
+    return CardInkWell(
+      elevation: 0,
+      padding: const EdgeInsets.all(0),
+      onTap: _isUpdating ? null : onTap,
+      color:
+          isActive
+              ? colorScheme.primary.withOpacity(0.1)
+              : colorScheme.background,
+      child: SizedBox(
+        width: 80.w,
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              color:
+                  isActive
+                      ? colorScheme.primary
+                      : colorScheme.onSurface.withOpacity(0.6),
+              size: 24,
             ),
-          ),
-          child: Column(
-            children: [
-              Icon(
-                icon,
+            Gap(Spacing.xs.h),
+            AnimatedRollingCounter(
+              count: count,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: isActive ? colorScheme.primary : colorScheme.onSurface,
+              ),
+            ),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
                 color:
                     isActive
                         ? colorScheme.primary
                         : colorScheme.onSurface.withOpacity(0.6),
-                size: 24,
               ),
-              Gap(Spacing.xs.h),
-              Text(
-                count.toString(),
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: isActive ? colorScheme.primary : colorScheme.onSurface,
-                ),
-              ),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 10,
-                  color:
-                      isActive
-                          ? colorScheme.primary
-                          : colorScheme.onSurface.withOpacity(0.6),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

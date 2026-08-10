@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 class ForumCardSubDetails extends StatelessWidget {
   /// Distinct people who picked each side (user_forum_sides), not a count of
   /// posts — see TopicModel.forPeople/againstPeople.
-  final String forPeople;
-  final String againstPeople;
+  final int forPeople;
+  final int againstPeople;
   final String contributors;
 
   /// The viewer's own side on this topic — 'FOR', 'AGAINST', 'Browsing', or
@@ -33,7 +33,7 @@ class ForumCardSubDetails extends StatelessWidget {
     // a mirrored layout so the two read as opposing sides of one line
     // rather than two identical left-icon rows.
     Widget rowTexts(
-      String title,
+      int count,
       String subtitle,
       IconData icon, {
       required bool iconOnRight,
@@ -41,25 +41,26 @@ class ForumCardSubDetails extends StatelessWidget {
     }) {
       final color = tint ?? colorScheme.onBackground.withOpacity(.4);
       final iconWidget = Icon(icon, size: 20.h, color: color);
-      final textWidget = RichText(
-        text: TextSpan(
-          children: [
-            TextSpan(
-              text: title,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: tint ?? colorScheme.onBackground,
-                fontWeight: FontWeight.bold,
-              ),
+      final textWidget = Column(
+        crossAxisAlignment:
+            iconOnRight ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedRollingCounter(
+            count: count,
+            compact: true,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: tint ?? colorScheme.onBackground,
+              fontWeight: FontWeight.bold,
             ),
-            TextSpan(
-              text: '\n$subtitle',
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(color: colorScheme.onBackground),
-            ),
-          ],
-        ),
-        textAlign: iconOnRight ? TextAlign.right : TextAlign.left,
+          ),
+          Text(
+            subtitle,
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(color: colorScheme.onBackground),
+          ),
+        ],
       );
 
       return Row(

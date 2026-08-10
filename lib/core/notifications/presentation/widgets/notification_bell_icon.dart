@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/widgets/animated_rolling_counter.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/core/notifications/presentation/providers/notification_provider.dart';
 
@@ -64,23 +65,32 @@ class NotificationBellIcon extends ConsumerWidget {
                 ),
               ),
               constraints: BoxConstraints(minWidth: 16.w, minHeight: 16.h),
-              child: Text(
-                _formatCount(unreadCount),
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 10.sp,
-                  fontWeight: FontWeight.w600,
-                ),
-                textAlign: TextAlign.center,
-              ),
+              // Above the cap is a fixed "99+" display, not a real count to
+              // roll toward — AnimatedRollingCounter only takes over for the
+              // actual animated range (0-99); the badge falls back to plain
+              // Text once it's capped, same as the old _formatCount did.
+              child:
+                  unreadCount > 99
+                      ? Text(
+                        '99+',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10.sp,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
+                      )
+                      : AnimatedRollingCounter(
+                        count: unreadCount,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10.sp,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
             ),
           ),
       ],
     );
-  }
-
-  String _formatCount(int count) {
-    if (count > 99) return '99+';
-    return count.toString();
   }
 }

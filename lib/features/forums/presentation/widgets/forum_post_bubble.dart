@@ -116,6 +116,14 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
     final textTheme = Theme.of(context).textTheme;
 
     final post = widget.post;
+    // Live cross-user like count (20260826120000_realtime_count_broadcasts.sql
+    // — see opinionLiveCountsProvider's doc for the full rationale): every
+    // viewer's bubble, including a guest's, ticks up the instant ANY viewer
+    // likes this post, not just the one who tapped. Falls back to the post's
+    // own likeCount until a broadcast lands.
+    final effectiveLikeCount =
+        ref.watch(postLikeLiveCountProvider(post.id)).valueOrNull ??
+        post.likeCount;
     final isMine = post.isMine;
     final isForSide = post.side == 'for';
     final canReply = widget.userSide != 'browse';
@@ -431,10 +439,10 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
                                               : colorScheme.onSurface
                                                   .withOpacity(0.6),
                                     ),
-                                    if (post.likeCount > 0) ...[
+                                    if (effectiveLikeCount > 0) ...[
                                       Gap(Spacing.xs.w),
-                                      Text(
-                                        '${post.likeCount}',
+                                      AnimatedRollingCounter(
+                                        count: effectiveLikeCount,
                                         style: textTheme.bodySmall?.copyWith(
                                           color: colorScheme.onSurface
                                               .withOpacity(0.6),

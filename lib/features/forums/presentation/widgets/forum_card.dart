@@ -127,10 +127,14 @@ class ForumCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Topic content
+            // Topic content. Same size as OpinionCard's subtitle
+            // (InfoRowWidget.subTitleFontSize: 20.h) so a topic and an
+            // opinion read at the same weight wherever they sit side by
+            // side (Discover/Forums tabs, TagBrowseScreen's two tabs).
             Text(
               forum.content,
               style: textTheme.bodyMedium?.copyWith(
+                fontSize: 20.h,
                 fontWeight: FontWeight.normal,
                 color: colorScheme.onBackground,
               ),
@@ -140,6 +144,7 @@ class ForumCard extends ConsumerWidget {
             // topic is untagged (most are), so no gap is reserved.
             TagChipRow(
               tags: forum.tags,
+              fontSize: 14.h,
               onTagTap: (slug) => context.pushNamed('tagBrowse', extra: slug),
             ),
             Gap(Spacing.md.h),
@@ -155,8 +160,8 @@ class ForumCard extends ConsumerWidget {
                 if (!disableNavigation)
                   Expanded(
                     child: ForumCardSubDetails(
-                      forPeople: forum.forPeople.toString(),
-                      againstPeople: forum.againstPeople.toString(),
+                      forPeople: forum.forPeople,
+                      againstPeople: forum.againstPeople,
                       contributors:
                           '${forum.totalPosts > 0 ? (forum.totalPosts / 2).ceil() : 0}',
                       userSide: userSide,
