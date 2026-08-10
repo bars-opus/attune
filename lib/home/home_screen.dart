@@ -52,8 +52,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _syncService = OnboardingSyncService();
 
   StreamSubscription<AuthState>? _authSubscription;
-  late Future<OnboardingStore> _storeFuture;
+  late Future<_HomeGateData> _storeFuture;
   String? _scopeUserId;
+
+  /// Latches the one-shot redirect into onboarding — see its use in build().
+  bool _redirectingToOnboarding = false;
 
   @override
   void initState() {
@@ -74,7 +77,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _storeFuture = _loadStore();
       });
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncRelationshipMode());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _syncRelationshipMode(),
+    );
     relationshipModeResyncSignal.addListener(_syncRelationshipMode);
   }
 
@@ -101,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// docs/superpowers/specs/2026-08-02-relationship-lifecycle-sync-design.md
   /// §1.
   Future<void> _syncRelationshipMode() async {
-    final store = await _storeFuture;
+    final store = (await _storeFuture).store;
     // mode is null for a signed-in user who hasn't completed onboarding —
     // that's not a relationship-track state either, so it must short
     // circuit here too, not just the explicit `personal` case.
@@ -111,22 +116,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final userId = supabase.auth.currentUser?.id;
     if (userId == null) return;
 
-    final row = await supabase
-        .from('relationships')
-        .select('status')
-        .or('user_a.eq.$userId,user_b.eq.$userId')
-        .order('created_at', ascending: false)
-        .limit(1)
-        .maybeSingle();
+    final row =
+        await supabase
+            .from('relationships')
+            .select('status')
+            .or('user_a.eq.$userId,user_b.eq.$userId')
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
 
-    final resolved = resolveModeFromRelationshipStatus(row?['status'] as String?);
+    final resolved = resolveModeFromRelationshipStatus(
+      row?['status'] as String?,
+    );
     if (resolved != store.mode) {
       await store.syncModeFromServer(resolved);
       if (mounted) setState(() => _storeFuture = _loadStore());
     }
   }
 
-  Future<OnboardingStore> _loadStore() async {
+  Future<_HomeGateData> _loadStore() async {
     final prefs = await SharedPreferences.getInstance();
     final userId = _scopeUserId;
     final scope =
@@ -143,7 +151,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       unawaited(_syncService.flush(store));
     }
 
-    return store;
+    // Server-truth-first (see OnboardingStore.resolveIsComplete's doc): a
+    // local-only isComplete check bounced a returning, already-onboarded
+    // user (onboarded on a different device/install) into the onboarding
+    // redirect below, and separately showed LoginProfile instead of the
+    // real AuthenticatedChatWorkspace on the Chat tab.
+    final isComplete = await store.resolveIsComplete(userId);
+
+    return _HomeGateData(store: store, isComplete: isComplete);
   }
 
   /// Persists a personal-mode user's move onto the couplesPending track
@@ -154,7 +169,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// to _storeFuture itself — it lives several widgets below where the
   /// store is owned — so this is threaded down as a callback instead.
   Future<void> _onInviteSent() async {
-    final store = await _storeFuture;
+    final store = (await _storeFuture).store;
     await store.startCouplesInvite();
     if (!mounted) return;
     setState(() {
@@ -164,7 +179,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<OnboardingStore>(
+    return FutureBuilder<_HomeGateData>(
       future: _storeFuture,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
@@ -173,19 +188,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           );
         }
 
-        final store = snapshot.data!;
+        final store = snapshot.data!.store;
         final isAuthenticated = _authService.currentUser != null;
 
-        if (isAuthenticated && !store.isComplete) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (context.mounted) context.go(RouteNames.onboarding);
-          });
+        if (isAuthenticated && !snapshot.data!.isComplete) {
+          // Latched and route-guarded. Unlatched, this fired a fresh
+          // context.go on EVERY rebuild — and HomeScreen rebuilds while it
+          // is still buried under the login sheet, so a sign-in produced a
+          // storm of repeated /onboarding redirects that tore down the
+          // EULA sheet's own context mid-await. isCurrent keeps this from
+          // redirecting a route the user isn't even looking at; the latch
+          // keeps one redirect from becoming eighteen.
+          if (!_redirectingToOnboarding &&
+              (ModalRoute.of(context)?.isCurrent ?? false)) {
+            _redirectingToOnboarding = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) context.go(RouteNames.onboarding);
+            });
+          }
           return const Scaffold(
             body: Center(child: CircularLoadingIndicator()),
           );
         }
+        _redirectingToOnboarding = false;
 
-        final isOnboarded = isAuthenticated && store.isComplete;
+        final isOnboarded = isAuthenticated && snapshot.data!.isComplete;
         final mode = store.mode;
         final isActiveCouples = mode == OnboardingMode.couples;
         final isRelationshipTrack = mode?.isRelationshipTrack ?? false;
@@ -231,4 +258,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       },
     );
   }
+}
+
+class _HomeGateData {
+  const _HomeGateData({required this.store, required this.isComplete});
+
+  final OnboardingStore store;
+  final bool isComplete;
 }

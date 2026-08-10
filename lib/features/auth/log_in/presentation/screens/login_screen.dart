@@ -46,6 +46,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     super.initState();
     if (_authService.currentUser != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _goToOnboarding());
+    } else {
+      // Post-frame: LoginScreen is presented both as a route and inside a
+      // modal bottom sheet (see _goToOnboarding's note below), so the field
+      // needs to actually be laid out before it can take focus. Skipped
+      // entirely when already signed in — the screen navigates away above
+      // before anyone would see the keyboard anyway.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _phoneFocusNode.requestFocus();
+      });
     }
     _authSubscription = _authService.authStateChanges.listen((state) {
       if (state.session?.user != null && mounted) {
@@ -67,76 +76,94 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context)!;
     final isBusy = _isSending || _isVerifying;
     final selectedCountry = ref.watch(selectedPhoneCountryProvider);
 
-    return SafeArea(
-      child: GestureDetector(
-        onTap: () {
-          FocusScope.of(context).unfocus();
-        },
-        child: TabsWithContent(
-          showCloseIcon: true,
-          appBartext: loc.commonContinue,
-          appBarOnPressed: isBusy ? null : _handlePrimaryAction,
-          onControllerCreated: (controller) => _tabController = controller,
-          useNestedScrollMode: true,
-          enableSwipe: false,
-          scrollable: false,
-          onTabChangeRequest: (fromIndex, toIndex) {
-            if (toIndex == 1 && !_otpSent) {
-              _requestPhoneOtp();
-              return false;
-            }
-            return true;
+    return Material(
+      color: colorScheme.neutral,
+      child: SafeArea(
+        child: GestureDetector(
+          onTap: () {
+            FocusScope.of(context).unfocus();
           },
-          onTabChanged: (index) {
-            if (mounted) setState(() => _currentTabIndex = index);
-          },
-          tabs: [
-            AppTabItem(
-              label: 'Phone',
-              // icon:
-              //     _currentTabIndex == 0
-              //         ? Icons.phone_iphone
-              //         : Icons.phone_iphone_outlined,
-              content: LoginPhoneStep(
-                controller: _phoneController,
-                focusNode: _phoneFocusNode,
-                country: selectedCountry,
-                enabled: !isBusy,
-                authConfigured: _authService.isConfigured,
-                otpChannel: _otpChannel,
-                onCountryChanged:
-                    (country) =>
-                        ref.read(selectedPhoneCountryProvider.notifier).state =
-                            country,
-                onOtpChannelChanged: (channel) {
-                  setState(() => _otpChannel = channel);
-                },
-                onSubmitted: (_) => _requestPhoneOtp(),
+          child: TabsWithContent(
+            showCloseIcon: true,
+            appBartext: loc.commonContinue,
+            appBarOnPressed: isBusy ? null : _handlePrimaryAction,
+            onControllerCreated: (controller) => _tabController = controller,
+            useNestedScrollMode: true,
+            enableSwipe: false,
+            scrollable: false,
+            onTabChangeRequest: (fromIndex, toIndex) {
+              if (toIndex == 1 && !_otpSent) {
+                _requestPhoneOtp();
+                return false;
+              }
+              return true;
+            },
+            onTabChanged: (index) {
+              if (!mounted) return;
+              setState(() => _currentTabIndex = index);
+              // Fires on every arrival at the Code tab, not just the one
+              // right after requesting a code (see _requestPhoneOtp's own
+              // post-frame requestFocus below) — this also covers a manual
+              // swipe/tap back to an already-_otpSent Code tab, which
+              // onTabChangeRequest lets through with no focus call of its
+              // own. Post-frame for the same reason as everywhere else here:
+              // the tab's fields aren't laid out yet the instant this fires.
+              if (index == 1) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _otpFocusNode.requestFocus();
+                });
+              }
+            },
+            tabs: [
+              AppTabItem(
+                label: 'Phone',
+                // icon:
+                //     _currentTabIndex == 0
+                //         ? Icons.phone_iphone
+                //         : Icons.phone_iphone_outlined,
+                content: LoginPhoneStep(
+                  controller: _phoneController,
+                  focusNode: _phoneFocusNode,
+                  country: selectedCountry,
+                  enabled: !isBusy,
+                  authConfigured: _authService.isConfigured,
+                  otpChannel: _otpChannel,
+                  onCountryChanged:
+                      (country) =>
+                          ref
+                              .read(selectedPhoneCountryProvider.notifier)
+                              .state = country,
+                  onOtpChannelChanged: (channel) {
+                    setState(() => _otpChannel = channel);
+                  },
+                  onSubmitted: (_) => _requestPhoneOtp(),
+                ),
               ),
-            ),
-            AppTabItem(
-              label: 'Code',
-              // icon: _currentTabIndex == 1 ? Icons.sms : Icons.sms_outlined,
-              content: LoginCodeStep(
-                controller: _otpController,
-                focusNode: _otpFocusNode,
-                enabled: !isBusy && _otpSent,
-                phoneNumber: _normalizedPhoneNumber(selectedCountry),
-                resendSecondsRemaining: _resendSecondsRemaining,
-                onSubmitted: (_) => _verifyPhoneOtp(),
-                onResend:
-                    isBusy || _resendSecondsRemaining > 0
-                        ? null
-                        : _requestPhoneOtp,
+              AppTabItem(
+                label: 'Code',
+                // icon: _currentTabIndex == 1 ? Icons.sms : Icons.sms_outlined,
+                content: LoginCodeStep(
+                  controller: _otpController,
+                  focusNode: _otpFocusNode,
+                  enabled: !isBusy && _otpSent,
+                  phoneNumber: _normalizedPhoneNumber(selectedCountry),
+                  resendSecondsRemaining: _resendSecondsRemaining,
+                  onSubmitted: (_) => _verifyPhoneOtp(),
+                  onResend:
+                      isBusy || _resendSecondsRemaining > 0
+                          ? null
+                          : _requestPhoneOtp,
+                ),
               ),
-            ),
-          ],
-          initialIndex: 0,
-          showContent: true,
+            ],
+            initialIndex: 0,
+            showContent: true,
+          ),
         ),
       ),
     );
@@ -179,8 +206,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       if (!mounted) return;
       setState(() => _otpSent = true);
       _startOtpResendCountdown();
+      // animateTo triggers TabsWithContent's onTabChanged once the switch
+      // lands on index 1, which is what requests focus on the Code tab's
+      // fields — see that callback for why it's post-frame and why it's the
+      // one place this is handled rather than duplicated here too.
       _tabController?.animateTo(1);
-      _otpFocusNode.requestFocus();
       context.showSuccessSnackbar('Verification code sent to $phone.');
     } catch (error) {
       if (mounted) {
@@ -284,6 +314,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     // both fire on one successful OTP). Navigating more than once would pop the
     // sheet AND then a real page below it, so this is latched: first caller
     // wins, the rest are no-ops.
+    //
+    // The latch MUST stay set across the EULA await below. It previously
+    // reset to false on the not-accepted path, which turned a slow consent
+    // sheet into a re-entrancy hole: verifyOTP fires authStateChange(signedIn)
+    // while the sheet is still open, the listener above calls this again, and
+    // each pass re-triggered navigation — the observed storm of repeated
+    // "going to /onboarding" redirects that tore the sheet's own context down
+    // and made EulaGate return false (a synthetic "decline" nobody performed),
+    // which then signed the freshly-verified user straight back out.
     _hasLeftForOnboarding = true;
 
     // Consent is gated here rather than before the phone step because whether
@@ -292,7 +331,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     // through; a declining user is returned to the unauthenticated state
     // rather than being let in without agreeing.
     if (!await _ensureEulaAccepted()) {
-      _hasLeftForOnboarding = false;
+      // Only re-arm when this widget is still alive to retry. If it isn't,
+      // the "decline" was a teardown artifact, not a real answer, and
+      // re-arming would let a stale listener event restart the whole flow.
+      if (mounted) _hasLeftForOnboarding = false;
       return;
     }
     if (!mounted) return;
@@ -312,15 +354,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     context.go(RouteNames.onboarding);
   }
 
-  /// Returns true when the user may proceed. On a decline the session is ended
-  /// — it is already valid at this point, so leaving it would let the next
-  /// launch skip the consent gate via the initState already-signed-in check.
+  /// Returns true when the user may proceed. On an explicit DECLINE the
+  /// session is ended — it is already valid at this point, so leaving it
+  /// would let the next launch skip the consent gate via the initState
+  /// already-signed-in check.
+  ///
+  /// An [EulaOutcome.unavailable] result deliberately does NOT sign out: the
+  /// prompt never got a real answer (torn-down context, or a failed
+  /// acceptance write), and ending a freshly-verified session over that is
+  /// what previously dumped users back to a signed-out home screen straight
+  /// after a successful OTP. The session survives; the consent gate simply
+  /// runs again on the next attempt, which is the safe direction to fail.
   Future<bool> _ensureEulaAccepted() async {
-    final accepted = await EulaGate.ensureAccepted(
+    final outcome = await EulaGate.ensureAccepted(
       context,
       service: _eulaService,
     );
-    if (!accepted) await _authService.signOut();
-    return accepted;
+    if (outcome == EulaOutcome.declined) {
+      await _authService.signOut();
+    }
+    return outcome.mayProceed;
   }
 }

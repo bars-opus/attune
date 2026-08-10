@@ -16,11 +16,19 @@ class OnboardingGate extends StatefulWidget {
 
 class _OnboardingGateState extends State<OnboardingGate> {
   final _authService = PasswordlessAuthService();
-  late final Future<OnboardingStore> _storeFuture = _loadStore();
+  late final Future<_GateData> _gateDataFuture = _loadGateData();
 
-  Future<OnboardingStore> _loadStore() async {
+  Future<_GateData> _loadGateData() async {
     final prefs = await SharedPreferences.getInstance();
-    return OnboardingStore(prefs, scope: _storeScope);
+    final store = OnboardingStore(prefs, scope: _storeScope);
+    // Server-truth-first (see OnboardingStore.resolveIsComplete's doc): a
+    // local-only isComplete check sent a returning, already-onboarded user
+    // (onboarded on a different device/install) straight back into
+    // OnboardingFlow.
+    final isComplete = await store.resolveIsComplete(
+      _authService.currentUser?.id,
+    );
+    return _GateData(store: store, isComplete: isComplete);
   }
 
   String get _storeScope {
@@ -38,8 +46,8 @@ class _OnboardingGateState extends State<OnboardingGate> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<OnboardingStore>(
-      future: _storeFuture,
+    return FutureBuilder<_GateData>(
+      future: _gateDataFuture,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Scaffold(
@@ -47,7 +55,8 @@ class _OnboardingGateState extends State<OnboardingGate> {
           );
         }
 
-        final store = snapshot.data!;
+        final store = snapshot.data!.store;
+        final isComplete = snapshot.data!.isComplete;
         final isPreview = kDebugMode && widget.previewOnboarding;
         if (_authService.currentUser == null && !isPreview) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -58,7 +67,7 @@ class _OnboardingGateState extends State<OnboardingGate> {
           );
         }
 
-        if (store.isComplete) {
+        if (isComplete) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) context.go(RouteNames.home);
           });
@@ -78,4 +87,11 @@ class _OnboardingGateState extends State<OnboardingGate> {
       },
     );
   }
+}
+
+class _GateData {
+  const _GateData({required this.store, required this.isComplete});
+
+  final OnboardingStore store;
+  final bool isComplete;
 }

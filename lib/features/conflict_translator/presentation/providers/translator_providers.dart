@@ -1,5 +1,7 @@
 // lib/features/conflict_translator/presentation/providers/translator_providers.dart
 
+import 'package:attune/features/auth/providers/auth_provider.dart'
+    show authStateProvider;
 import 'package:attune/features/conflict_translator/data/models/translator_request.dart';
 import 'package:attune/features/conflict_translator/data/models/translator_response.dart';
 import 'package:attune/features/conflict_translator/data/repositories/translator_repository.dart';
@@ -16,9 +18,22 @@ final translatorRepositoryProvider = Provider<TranslatorRepository>((ref) {
   return TranslatorRepository(supabase);
 });
 
+// Current user ID — derives from authStateProvider (auth_provider.dart), NOT
+// an imperative supabase.auth.currentUser read: see opinion_providers.dart's
+// currentUserIdProvider for the full writeup of the caching bug this fixes.
+final currentUserIdProvider = Provider<String?>((ref) {
+  final authState = ref.watch(authStateProvider);
+  return authState.valueOrNull?.id;
+});
+
+// ref.watch here (not read) so a sign-in/sign-out correctly re-fetches which
+// relationship is active, instead of freezing at whatever was true the
+// first time this provider was ever evaluated — same class of bug as
+// currentUserIdProvider above, just on a FutureProvider instead of a
+// plain one.
 final currentRelationshipIdProvider = FutureProvider<String?>((ref) async {
   final supabase = ref.read(supabaseClientProvider);
-  final userId = supabase.auth.currentUser?.id;
+  final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return null;
 
   final response = await supabase
@@ -29,11 +44,6 @@ final currentRelationshipIdProvider = FutureProvider<String?>((ref) async {
       .maybeSingle();
 
   return response?['id'] as String?;
-});
-
-final currentUserIdProvider = Provider<String?>((ref) {
-  final supabase = ref.read(supabaseClientProvider);
-  return supabase.auth.currentUser?.id;
 });
 
 final translatorStateProvider = StateProvider<TranslatorState>((ref) {

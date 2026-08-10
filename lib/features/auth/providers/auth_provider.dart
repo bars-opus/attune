@@ -21,7 +21,23 @@ final authServiceProvider = Provider<AuthService>((ref) {
 
 final authStateProvider = StreamProvider<User?>((ref) {
   final authService = ref.watch(authServiceProvider);
-  return authService.authStateChanges.map((event) => event.session?.user);
+  // Seeds synchronously from the already-restored session before the first
+  // onAuthStateChange event lands, rather than only mapping the live
+  // stream. gotrue does replay the current session on subscribe
+  // (AuthChangeEvent.initialSession), so in practice this rarely mattered —
+  // but any consumer that reads .valueOrNull before that first event still
+  // saw a real null (not "unknown yet"), and currentUserIdProvider-style
+  // providers built on top of this stream would briefly compute against a
+  // signed-out user even on an already-signed-in cold start. Yielding the
+  // current session first removes that gap entirely instead of relying on
+  // event-ordering timing.
+  return Stream<User?>.multi((controller) {
+    controller.add(authService.currentUser);
+    final sub = authService.authStateChanges
+        .map((event) => event.session?.user)
+        .listen(controller.add, onError: controller.addError);
+    controller.onCancel = sub.cancel;
+  });
 });
 
 // Full auth state stream — exposes the event type (e.g. passwordRecovery).

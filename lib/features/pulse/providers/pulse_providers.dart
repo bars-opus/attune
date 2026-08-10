@@ -1,5 +1,7 @@
 // Add to lib/features/pulse/providers/pulse_providers.dart
 
+import 'package:attune/features/auth/providers/auth_provider.dart'
+    show authStateProvider;
 import 'package:attune/features/pulse/data/models/pulse_score.dart';
 import 'package:attune/features/pulse/data/repositories/pulse_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,16 +16,21 @@ final pulseRepositoryProvider = Provider<PulseRepository>((ref) {
   return PulseRepository(supabase);
 });
 
-// Current user ID
+// Current user ID — derives from authStateProvider (auth_provider.dart), NOT
+// an imperative supabase.auth.currentUser read: see opinion_providers.dart's
+// currentUserIdProvider for the full writeup of the caching bug this fixes.
 final currentUserIdProvider = Provider<String?>((ref) {
-  final supabase = ref.read(supabaseClientProvider);
-  return supabase.auth.currentUser?.id;
+  final authState = ref.watch(authStateProvider);
+  return authState.valueOrNull?.id;
 });
 
-// Current relationship ID
+// Current relationship ID. ref.watch on currentUserIdProvider (not read) so
+// a sign-in/sign-out correctly re-fetches which relationship is active,
+// instead of freezing at whatever was true the first time this was
+// evaluated.
 final currentRelationshipIdProvider = FutureProvider<String?>((ref) async {
   final supabase = ref.read(supabaseClientProvider);
-  final userId = supabase.auth.currentUser?.id;
+  final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return null;
 
   final response =

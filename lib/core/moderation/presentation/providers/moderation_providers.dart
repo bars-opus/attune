@@ -1,6 +1,8 @@
 // lib/features/moderation/presentation/providers/moderation_providers.dart
 
 import 'package:attune/core/moderation/data/repositories/moderation_repository.dart';
+import 'package:attune/features/auth/providers/auth_provider.dart'
+    show authStateProvider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -14,10 +16,15 @@ final moderationRepositoryProvider = Provider<ModerationRepository>((ref) {
   return ModerationRepository(supabase);
 });
 
-// Current user ID
+// Current user ID — derives from authStateProvider (auth_provider.dart), NOT
+// an imperative supabase.auth.currentUser read: a plain Provider<String?>
+// reading currentUser once has no dependency that changes on sign-in, so it
+// caches whatever it saw first (often null, from a signed-out screen)
+// forever. See opinion_providers.dart's currentUserIdProvider for the full
+// writeup of the bug this caused.
 final currentUserIdProvider = Provider<String?>((ref) {
-  final supabase = ref.watch(supabaseClientProvider);
-  return supabase.auth.currentUser?.id;
+  final authState = ref.watch(authStateProvider);
+  return authState.valueOrNull?.id;
 });
 
 // Block a user

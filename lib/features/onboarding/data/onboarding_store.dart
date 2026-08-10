@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// The payload of an onboarding submission that has not yet reached the server.
 ///
@@ -69,6 +70,48 @@ class OnboardingStore {
   static const pendingInviteCodeKey = 'attune.onboarding.pending_invite_code';
 
   bool get isComplete => _prefs.getBool(_key(_completedKey)) ?? false;
+
+  /// Server-truth-first version of [isComplete].
+  ///
+  /// [isComplete] alone only reflects onboarding completed ON THIS DEVICE
+  /// (it's a SharedPreferences flag) — an account that onboarded on a
+  /// different device/install, or after this device's app data was
+  /// cleared, reads as incomplete locally even though the server already
+  /// has its onboarding_profiles row. That sent returning, already-onboarded
+  /// users back into OnboardingFlow (via OnboardingGate) and, separately,
+  /// into HomeScreen's LoginProfile fallback instead of the real chat
+  /// workspace (both of which used to trust [isComplete] alone).
+  ///
+  /// onboarding_profiles.completed_at is written exactly once, by
+  /// OnboardingSubmissionService.submit at the end of a successful
+  /// onboarding, so its existence for [userId] is authoritative in a way
+  /// the local flag can't be. Checked first; backfills the local flag on a
+  /// positive result so later launches on this device are instant/offline
+  /// without repeating the network round trip. Falls back to the local flag
+  /// alone if the read fails (offline, transient RLS/network hiccup) rather
+  /// than blocking or stranding the caller on a failed network call.
+  Future<bool> resolveIsComplete(String? userId) async {
+    if (userId == null || userId.isEmpty) return isComplete;
+
+    try {
+      final row =
+          await Supabase.instance.client
+              .from('onboarding_profiles')
+              .select('completed_at')
+              .eq('user_id', userId)
+              .maybeSingle();
+      if (row != null) {
+        if (!isComplete) {
+          await complete(mode: mode ?? OnboardingMode.personal, displayName: displayName ?? '');
+        }
+        return true;
+      }
+    } catch (_) {
+      // Offline or transient failure — fall through to the local flag.
+    }
+
+    return isComplete;
+  }
 
   /// The submission still owed to the server, if the remote write failed.
   PendingOnboardingSubmission? get pendingSubmission {
