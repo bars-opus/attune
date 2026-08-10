@@ -100,6 +100,7 @@ class _DiscoverFeedScreenState extends ConsumerState<DiscoverFeedScreen> {
                     final isAllSelected = selected.isEmpty;
                     return AppFilterChip(
                       label: 'All',
+
                       selectedColor: colorScheme.primary.withOpacity(.8),
                       selected: isAllSelected,
                       onSelected: (_) {

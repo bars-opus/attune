@@ -161,6 +161,36 @@ class _AnonymousProfileScreenState extends ConsumerState<AnonymousProfileScreen>
     return (_headerContentHeight + _followButtonRowHeight + _tabBarHeight).h;
   }
 
+  /// Guarded the same way OpinionCard._toggleFollow is: follow_opinion_author/
+  /// unfollow_opinion_author are authenticated-only RPCs with no internal
+  /// guard, so an unguarded tap would either throw uncaught or (for a guest,
+  /// once get_author_profile became anon-readable) surface a raw permission
+  /// error instead of an explanation.
+  Future<void> _toggleFollow(
+    BuildContext context,
+    AuthorProfileSummary profile,
+  ) async {
+    if (ref.read(currentUserIdProvider) == null) {
+      context.showErrorSnackbar('Sign in to perform this action');
+      return;
+    }
+    try {
+      if (profile.isFollowing) {
+        await ref.read(unfollowUserProvider(widget.authorHandle).future);
+      } else {
+        await ref.read(followUserProvider(widget.authorHandle).future);
+        if (!context.mounted) return;
+        context.showSuccessSnackbar('Following.');
+      }
+      ref.invalidate(authorProfileProvider(widget.authorHandle));
+    } catch (_) {
+      if (!context.mounted) return;
+      context.showInfoSnackbar(
+        profile.isFollowing ? 'Could not unfollow.' : 'Could not follow.',
+      );
+    }
+  }
+
   Widget _buildProfileHeader(
     BuildContext context,
     AsyncValue<AuthorProfileSummary> profileAsync,
@@ -189,11 +219,23 @@ class _AnonymousProfileScreenState extends ConsumerState<AnonymousProfileScreen>
                   ),
                 ),
                 Gap(Spacing.xs.h),
-                Text(
-                  '$count follower${count != 1 ? 's' : ''}',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.6),
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedRollingCounter(
+                      count: count,
+                      compact: true,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    Text(
+                      ' follower${count != 1 ? 's' : ''}',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
                 ),
                 Gap(Spacing.xs.h),
                 // Always reserves its row height (Visibility.maintain), even
@@ -209,20 +251,7 @@ class _AnonymousProfileScreenState extends ConsumerState<AnonymousProfileScreen>
                     child: AppButton(
                       elevation: 0,
                       label: profile.isFollowing ? 'Unfollow' : 'Follow',
-                      onPressed: () async {
-                        if (profile.isFollowing) {
-                          await ref.read(
-                            unfollowUserProvider(widget.authorHandle).future,
-                          );
-                        } else {
-                          await ref.read(
-                            followUserProvider(widget.authorHandle).future,
-                          );
-                        }
-                        ref.invalidate(
-                          authorProfileProvider(widget.authorHandle),
-                        );
-                      },
+                      onPressed: () => _toggleFollow(context, profile),
                       size: ButtonSize.small,
                       customColor:
                           profile.isFollowing

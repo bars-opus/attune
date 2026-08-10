@@ -315,27 +315,39 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           automaticallyImplyLeading: true,
-          title: RichText(
-            text: TextSpan(
-              children: [
-                TextSpan(
-                  text: 'Opinion',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.onSurface.withValues(alpha: 0.8),
-                  ),
+          title: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Opinion',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface.withValues(alpha: 0.8),
                 ),
-                TextSpan(
-                  text:
-                      '\n${_formatCommentCount(commentsAsync.valueOrNull?.length ?? widget.opinion.commentCount)} Comments',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.onSurface.withOpacity(.4),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedRollingCounter(
+                    count:
+                        commentsAsync.valueOrNull?.length ??
+                        widget.opinion.commentCount,
+                    compact: true,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface.withOpacity(.4),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            textAlign: TextAlign.center,
+                  Text(
+                    ' Comments',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface.withOpacity(.4),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
           // Text(
           //   'Opinion',
@@ -603,11 +615,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
           GestureDetector(
             onTap: () => _collapseReplies(parentCommentId),
             behavior: HitTestBehavior.opaque,
-            child: Icon(
-              Icons.close,
-              size: 16,
-              color: colorScheme.onSurface.withValues(alpha: 0.5),
-            ),
+            child: Icon(Icons.close, size: 20.h, color: colorScheme.primary),
           ),
         ],
       ),
@@ -638,7 +646,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
         // available here (bottomWidget sizes to its own content).
         decoration: BoxDecoration(
           border: Border(
-            left: BorderSide(color: colorScheme.outlineVariant, width: .1),
+            left: BorderSide(color: colorScheme.outline, width: 0.5),
           ),
         ),
         padding: EdgeInsets.only(left: Spacing.sm.w),
@@ -892,6 +900,9 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
             icon: statusIcon,
             iconColor: colorScheme.background,
             backgroundColor: statusIconColor,
+            subTitleFontSize: 20.h,
+            subTitleFontColor: colorScheme.onBackground,
+
             // Replies keep the same avatar size they had stacked in the
             // collapsed row above, instead of jumping to the larger
             // top-level comment size once expanded.
@@ -1075,7 +1086,11 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
             color: isActive ? Colors.pink : Colors.grey,
           ),
           Gap(Spacing.xs.w),
-          if (count > 0) Text('$count', style: const TextStyle(fontSize: 11)),
+          if (count > 0)
+            AnimatedRollingCounter(
+              count: count,
+              style: const TextStyle(fontSize: 11),
+            ),
         ],
       ),
     );
@@ -1147,13 +1162,4 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     );
   }
 
-  String _formatCommentCount(int count) {
-    if (count >= 1000000) {
-      return '${(count / 1000000).toStringAsFixed(count % 1000000 == 0 ? 0 : 1)}M';
-    }
-    if (count >= 1000) {
-      return '${(count / 1000).toStringAsFixed(count % 1000 == 0 ? 0 : 1)}K';
-    }
-    return '$count';
-  }
 }

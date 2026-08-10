@@ -2,6 +2,7 @@
 
 import 'dart:async';
 
+import 'package:attune/core/realtime/count_broadcast_channel.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/opinions/data/cache/opinion_feed_cache.dart';
 import 'package:attune/features/opinions/data/models/comment_model.dart';
@@ -21,10 +22,21 @@ final opinionRepositoryProvider = Provider<OpinionRepository>((ref) {
   return OpinionRepository(supabase);
 });
 
-// Current user ID provider (from auth)
+// Current user ID provider (from auth).
+//
+// Derives from authStateProvider (a StreamProvider over onAuthStateChange)
+// rather than reading supabase.auth.currentUser imperatively — a plain
+// Provider<String?> that reads currentUser once has NO dependency that
+// changes on sign-in/sign-out, so Riverpod caches whatever it saw on first
+// evaluation forever. A guest who browses before signing in got this
+// permanently pinned to null: every widget reading it — OpinionsTab's
+// avatar/relationship-status/Following-gate, every ref.read(currentUserIdProvider)
+// below — kept rendering the signed-out UI even after a real, successful
+// sign-in. ref.watch(authStateProvider) here is what makes this recompute
+// the instant the auth stream emits a new user.
 final currentUserIdProvider = Provider<String?>((ref) {
-  final supabase = ref.watch(supabaseClientProvider);
-  return supabase.auth.currentUser?.id;
+  final authState = ref.watch(authStateProvider);
+  return authState.valueOrNull?.id;
 });
 
 // Current user's relationship status
@@ -522,6 +534,13 @@ final followUserProvider = FutureProvider.family<void, String>((
   await repository.followAuthor(authorHandle);
   ref.invalidate(followingFeedProvider);
   ref.invalidate(followStatusProvider(authorHandle));
+  // Refetches AnonymousProfileScreen's follower count so it ticks up right
+  // after the viewer follows, instead of only updating on next screen
+  // visit — there's no realtime channel behind this count (nothing in the
+  // app has one besides the notification badge), so a targeted invalidate
+  // is what makes it feel live for the one person actually watching it
+  // change: the viewer who just tapped follow.
+  ref.invalidate(authorProfileProvider(authorHandle));
 });
 
 // Unfollow author (by opaque handle)
@@ -533,6 +552,7 @@ final unfollowUserProvider = FutureProvider.family<void, String>((
   await repository.unfollowAuthor(authorHandle);
   ref.invalidate(followingFeedProvider);
   ref.invalidate(followStatusProvider(authorHandle));
+  ref.invalidate(authorProfileProvider(authorHandle));
 });
 
 // Follow status (by opaque handle)
@@ -542,6 +562,54 @@ final followStatusProvider = FutureProvider.family<bool, String>((
 ) async {
   final repository = ref.read(opinionRepositoryProvider);
   return await repository.isFollowingAuthor(authorHandle);
+});
+
+// ============================================================
+// Tag follows — see OpinionRepository's own "Tag follows" section for why
+// this is a whole-set fetch rather than a per-slug lookup like
+// followStatusProvider above: the vocabulary is fixed at ~21 entries, so one
+// call answers every is-this-tag-followed check on screen.
+// ============================================================
+
+/// The caller's whole followed-tags set, cached by Riverpod like any other
+/// FutureProvider — every TagBrowseScreen instance watching this shares one
+/// underlying fetch rather than issuing its own.
+final followedTagsProvider = FutureProvider<List<String>>((ref) async {
+  final repository = ref.read(opinionRepositoryProvider);
+  return await repository.getFollowedTags();
+});
+
+/// Derived per-slug lookup: true once followedTagsProvider's cached set
+/// contains this slug. A Provider, not a FutureProvider — reading it never
+/// issues its own network call, it only re-derives when the underlying set
+/// changes, which is what lets TagBrowseScreen ask "is THIS tag followed"
+/// without a bespoke per-tag RPC round trip.
+final isTagFollowedProvider = Provider.family<bool, String>((ref, tagSlug) {
+  final tags = ref.watch(followedTagsProvider).valueOrNull ?? const [];
+  return tags.contains(tagSlug);
+});
+
+final followTagProvider = FutureProvider.family<void, String>((
+  ref,
+  tagSlug,
+) async {
+  final repository = ref.read(opinionRepositoryProvider);
+  await repository.followTag(tagSlug);
+  ref.invalidate(followedTagsProvider);
+  // The Following feed's content set just changed — a followed tag's
+  // existing posts should appear without waiting for the feed's own next
+  // natural refresh.
+  ref.invalidate(followingFeedProvider);
+});
+
+final unfollowTagProvider = FutureProvider.family<void, String>((
+  ref,
+  tagSlug,
+) async {
+  final repository = ref.read(opinionRepositoryProvider);
+  await repository.unfollowTag(tagSlug);
+  ref.invalidate(followedTagsProvider);
+  ref.invalidate(followingFeedProvider);
 });
 
 // ============================================================
@@ -1503,3 +1571,48 @@ class RepostersOfOpinionNotifier
 
   bool get hasMore => _hasMore;
 }
+
+// ============================================================
+// Live counts — cross-user, including guests, via Realtime Broadcast.
+// See 20260826120000_realtime_count_broadcasts.sql: the increment/decrement
+// RPCs broadcast their fresh counts on 'opinion-counts:$opinionId' right
+// after every like/dislike, so every OpinionCard showing that opinion
+// updates instantly, not just the one the actor tapped.
+// ============================================================
+
+class OpinionLiveCounts {
+  const OpinionLiveCounts({required this.likeCount, required this.dislikeCount});
+  final int likeCount;
+  final int dislikeCount;
+}
+
+/// One subscription per opinion id — OpinionCard subscribes on build,
+/// Riverpod tears the channel down via ref.onDispose when the last watcher
+/// goes away, instead of the widget owning the channel directly. No
+/// cache/last-known-value: a card starts out showing the opinion's own
+/// likeCount/dislikeCount from its feed row, and only overrides once a
+/// broadcast actually lands — callers read .valueOrNull, not the bare
+/// .value, and fall back to the feed row's own counts until then.
+final opinionLiveCountsProvider =
+    StreamProvider.family<OpinionLiveCounts, String>((ref, opinionId) {
+      final supabase = ref.watch(supabaseClientProvider);
+      final controller = StreamController<OpinionLiveCounts>();
+      final channel = CountBroadcastChannel(
+        supabase: supabase,
+        topic: 'opinion-counts:$opinionId',
+        onCounts: (payload) {
+          final like = payload['like_count'];
+          final dislike = payload['dislike_count'];
+          if (like is int && dislike is int) {
+            controller.add(
+              OpinionLiveCounts(likeCount: like, dislikeCount: dislike),
+            );
+          }
+        },
+      );
+      ref.onDispose(() {
+        channel.dispose();
+        controller.close();
+      });
+      return controller.stream;
+    });

@@ -92,6 +92,16 @@ class OpinionModel {
   /// is no retag RPC, so nothing flips this after the fact.
   final List<String> tags;
 
+  /// Set only by get_following_opinions, and only when a followed TAG (not a
+  /// followed author) is the sole reason this opinion is in the Following
+  /// feed — see that RPC's own comment for the precedence rule. Null on
+  /// every other feed (Discover, an author's profile, tag browse, …) and
+  /// null on an opinion from a followed author even if it also carries a
+  /// followed tag, since the author-follow already explains its presence.
+  /// Drives the "#slug · followed" badge on OpinionCard so a stranger's post
+  /// showing up in Following never reads as a bug.
+  final String? matchedTagSlug;
+
   final DateTime createdAt;
 
   OpinionModel({
@@ -112,6 +122,7 @@ class OpinionModel {
     this.quotedOpinionId,
     this.editedAt,
     this.tags = const [],
+    this.matchedTagSlug,
     required this.createdAt,
   });
 
@@ -168,6 +179,12 @@ class OpinionModel {
       // already-edited card must not silently clear its "(edited)" marker.
       editedAt: editedAt ?? this.editedAt,
       tags: tags ?? this.tags,
+      // Carried through unconditionally, same reasoning as quotedOpinionId:
+      // this is server-computed feed-membership metadata, not a toggleable
+      // per-viewer flag, so no caller of copyWith has any business changing
+      // it — dropping it here would silently remove the "followed" badge on
+      // the next optimistic save/repost toggle.
+      matchedTagSlug: matchedTagSlug,
       createdAt: createdAt,
     );
   }
@@ -215,6 +232,11 @@ class OpinionModel {
       tags:
           (json['tags'] as List?)?.map((t) => t as String).toList() ??
           const <String>[],
+      // Absent from every feed RPC except get_following_opinions, which sets
+      // it only on a tag-matched row (see this field's own doc comment for
+      // the precedence rule). Absent means the same thing null does — no
+      // defaulting needed.
+      matchedTagSlug: json['matched_tag_slug'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -262,6 +284,11 @@ class OpinionModel {
       // untagged on every relaunch and stay that way until the next batch
       // tag fetch landed.
       'tags': tags,
+      // Same lockstep requirement as the fields above: only the Following
+      // feed cache ever holds a non-null value here, but omitting the key
+      // would still drop the "followed" badge from a cached Following page
+      // on every relaunch until the next live fetch.
+      'matched_tag_slug': matchedTagSlug,
       'created_at': createdAt.toIso8601String(),
     };
   }

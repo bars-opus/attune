@@ -51,6 +51,18 @@ class OpinionCard extends ConsumerWidget {
     // Server-computed: the real user_id never reaches the client (FORUM.md §3).
     final isOwnPost = opinion.isMine;
 
+    // Live cross-user counts (see opinionLiveCountsProvider + FORUM.md-safe
+    // 20260826120000_realtime_count_broadcasts.sql): every card showing this
+    // opinion, including a guest's, ticks up the instant ANY viewer reacts —
+    // not just the one who tapped. Falls back to the feed row's own counts
+    // until a broadcast actually lands (valueOrNull is null pre-first-event),
+    // and again whenever this card is rebuilt with a fresher opinion row
+    // (e.g. after a pull-to-refresh) — the broadcast is a live nudge on top
+    // of the feed data, not a replacement source of truth for it.
+    final liveCounts = ref.watch(opinionLiveCountsProvider(opinion.id)).valueOrNull;
+    final effectiveLikeCount = liveCounts?.likeCount ?? opinion.likeCount;
+    final effectiveDislikeCount = liveCounts?.dislikeCount ?? opinion.dislikeCount;
+
     final statusDisplay = statusDisplayFor(opinion.relationshipStatus);
     final statusIcon = statusIconFor(statusDisplay);
     final statusIconColor = statusColorFor(
@@ -64,9 +76,19 @@ class OpinionCard extends ConsumerWidget {
     // changed, so it belongs with the time, and appending it to the same
     // muted Text keeps it subtle instead of competing with the actions row.
     // The timestamp itself stays createdAt — an edit never changes it.
+    //
+    // matchedTagSlug rides the same line for the same reason: it explains
+    // WHY this card is on screen (see get_following_opinions' own comment
+    // for the precedence rule — set only when a followed tag, not a
+    // followed author, is the sole reason), which is exactly the kind of
+    // quiet provenance note this line already carries. Only ever non-null
+    // on a Following-tab card, so this is a no-op everywhere else.
     final timeAgo =
         formatTimeAgo(opinion.createdAt) +
-        (opinion.editedAt != null ? ' · edited' : '');
+        (opinion.editedAt != null ? ' · edited' : '') +
+        (opinion.matchedTagSlug != null
+            ? ' · #${opinion.matchedTagSlug} · followed'
+            : '');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -74,7 +96,12 @@ class OpinionCard extends ConsumerWidget {
         // Hero'd between the feed card and CommentThreadScreen's header —
         // the opinion itself transitions, not its actions row below.
         Padding(
-          padding: const EdgeInsets.all(Spacing.md),
+          padding: const EdgeInsets.fromLTRB(
+            Spacing.md,
+            Spacing.md,
+            Spacing.md,
+            0,
+          ),
           child: Hero(
             tag: _heroTag,
             child: Material(
@@ -85,7 +112,10 @@ class OpinionCard extends ConsumerWidget {
                 child: InfoRowWidget(
                   title: '',
                   subtitle: opinion.content,
-                  subTitleFontSize: 12.h,
+
+                  subTitleFontSize: 20.h,
+                  subTitleFontColor: colorScheme.onBackground,
+
                   icon: statusIcon,
 
                   iconColor: colorScheme.background,
@@ -95,6 +125,8 @@ class OpinionCard extends ConsumerWidget {
                   iconSize: 18.h,
                   onTap: onOpinionTap,
                   showDivider: false,
+                  pinAvatar: true,
+                  padAvatarTop: true,
                   onAvatarTap: onProfileTap,
                   disableTrailing: true,
                   showAvatar: true,
@@ -123,6 +155,7 @@ class OpinionCard extends ConsumerWidget {
                       // empty gap appears on the majority of cards.
                       TagChipRow(
                         tags: opinion.tags,
+                        fontSize: 14.h,
                         onTagTap:
                             (slug) =>
                                 context.pushNamed('tagBrowse', extra: slug),
@@ -135,17 +168,21 @@ class OpinionCard extends ConsumerWidget {
                         ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.only(
-                          top: Spacing.md,
-                          bottom: Spacing.sm,
-                        ),
+                        padding: const EdgeInsets.only(top: Spacing.md),
                         child: Row(
+                          // Defaults to center, which sat the bare-icon Follow
+                          // and More buttons visibly lower than the labeled
+                          // reaction buttons beside them (each of those is a
+                          // Column with its icon pinned at the very top, above
+                          // a label line — taller than a plain icon, so
+                          // centering the row let it sink below their tops).
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _buildActionButton(
                               context: context,
                               icon: FontAwesomeIcons.heart,
                               activeIcon: FontAwesomeIcons.solidHeart,
-                              label: _countLabel(opinion.likeCount),
+                              count: effectiveLikeCount,
                               isActive: opinion.userReaction == 'like',
                               onTap:
                                   () => _toggleReaction(context, ref, 'like'),
@@ -155,7 +192,7 @@ class OpinionCard extends ConsumerWidget {
                               context: context,
                               icon: Icons.thumb_down_outlined,
                               activeIcon: Icons.thumb_down,
-                              label: _countLabel(opinion.dislikeCount),
+                              count: effectiveDislikeCount,
                               isActive: opinion.userReaction == 'dislike',
                               onTap:
                                   () =>
@@ -177,7 +214,7 @@ class OpinionCard extends ConsumerWidget {
                                 // the same glyph, and the primary-color tint
                                 // carries the active state instead.
                                 icon: FontAwesomeIcons.repeat,
-                                label: _countLabel(opinion.repostCount),
+                                count: opinion.repostCount,
                                 isActive: opinion.isRepostedByMe,
                                 onTap: () => _toggleRepost(context, ref),
                                 onLabelTap:
@@ -201,7 +238,7 @@ class OpinionCard extends ConsumerWidget {
                               context: context,
                               icon: FontAwesomeIcons.bookmark,
                               activeIcon: FontAwesomeIcons.solidBookmark,
-                              label: '',
+                              showEmptyLabel: true,
                               isActive: opinion.isSaved,
                               onTap: () => _toggleSave(context, ref),
                             ),
@@ -218,7 +255,7 @@ class OpinionCard extends ConsumerWidget {
                             _buildActionButton(
                               context: context,
                               icon: FontAwesomeIcons.quoteLeft,
-                              label: _countLabel(opinion.quoteCount),
+                              count: opinion.quoteCount,
                               onTap: () => _openQuoteComposer(context, ref),
                               onLabelTap:
                                   opinion.quoteCount > 0
@@ -230,7 +267,7 @@ class OpinionCard extends ConsumerWidget {
                               _buildActionButton(
                                 context: context,
                                 icon: Icons.edit,
-                                label: _countLabel(opinion.commentCount),
+                                count: opinion.commentCount,
                                 onTap: onCommentTap ?? () {},
                               ),
                             ],
@@ -239,6 +276,11 @@ class OpinionCard extends ConsumerWidget {
 
                             if (showFollowButton && !isOwnPost)
                               _buildFollowButton(context, ref),
+                            Gap(Spacing.md.w),
+                            if (showMoreButton) ...[
+                              _buildMoreButton(context, ref),
+                              Gap(Spacing.md.w),
+                            ],
                           ],
                         ),
                       ),
@@ -274,7 +316,7 @@ class OpinionCard extends ConsumerWidget {
       child: Icon(
         Icons.more_horiz,
         size: 18.h,
-        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+        color: Theme.of(context).colorScheme.onSurface,
       ),
     );
   }
@@ -391,11 +433,6 @@ class OpinionCard extends ConsumerWidget {
     );
   }
 
-  /// Count as it appears under an action icon: blank at zero rather than a
-  /// literal "0", but still a non-null label so the Text below the icon keeps
-  /// reserving its line and the row's icons stay on one baseline.
-  String _countLabel(int count) => count > 0 ? '$count' : '';
-
   /// The single control used by every button in the actions row — like,
   /// dislike, repost, save, quote and comment. They differ only in whether
   /// they can be active and whether they carry a count, so both are optional
@@ -405,11 +442,14 @@ class OpinionCard extends ConsumerWidget {
   /// font_awesome_flutter's free tier (there is no solidRepeat), so its active
   /// state is carried by the primary-color tint alone.
   ///
-  /// [label] distinguishes two cases deliberately: null drops the text line
-  /// entirely (save and quote have nothing to count — a save is private, and a
-  /// quote creates a new opinion rather than incrementing anything here),
-  /// while an empty string keeps the line reserved so a zero-count button
-  /// still lines up with its neighbours instead of sitting higher in the row.
+  /// [count] distinguishes three cases deliberately: null with
+  /// [showEmptyLabel] false drops the text line entirely (nothing here has
+  /// this today, kept for completeness); null with [showEmptyLabel] true
+  /// keeps the line reserved so save (which has no public count — a save is
+  /// private to the saver) still lines up with its counted neighbours
+  /// instead of sitting higher in the row; a non-null count renders an
+  /// AnimatedRollingCounter that animates on change and blanks at zero the
+  /// same way the old literal-"0"-hiding label did.
   /// [onLabelTap] makes the NUMBER its own tap target, separate from the icon:
   /// tapping the repeat glyph reposts, tapping the count beside it opens the
   /// list of who did. Without the split there would be no way to reach that
@@ -421,22 +461,24 @@ class OpinionCard extends ConsumerWidget {
     required IconData icon,
     required VoidCallback onTap,
     IconData? activeIcon,
-    String? label,
+    int? count,
+    bool showEmptyLabel = false,
     bool isActive = false,
     VoidCallback? onLabelTap,
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+    final labelStyle = textTheme.bodySmall?.copyWith(
+      fontWeight: FontWeight.w600,
+      color: colorScheme.onSurface.withValues(alpha: 0.8),
+    );
 
     Widget labelText() {
-      final text = Text(
-        label!,
-        style: textTheme.bodySmall?.copyWith(
-          fontWeight: FontWeight.w600,
-          color: colorScheme.onSurface.withValues(alpha: 0.8),
-        ),
-      );
+      final text =
+          (count != null && count > 0)
+              ? AnimatedRollingCounter(count: count, style: labelStyle)
+              : Text('', style: labelStyle);
       if (onLabelTap == null) return text;
       return GestureDetector(
         onTap: onLabelTap,
@@ -447,6 +489,8 @@ class OpinionCard extends ConsumerWidget {
       );
     }
 
+    final showLabel = count != null || showEmptyLabel;
+
     return GestureDetector(
       onTap: onTap,
       child: Column(
@@ -456,7 +500,7 @@ class OpinionCard extends ConsumerWidget {
             size: 16.h,
             color: isActive ? colorScheme.primary : null,
           ),
-          if (label != null) ...[Gap(Spacing.xs.w), labelText()],
+          if (showLabel) ...[Gap(Spacing.xs.w), labelText()],
         ],
       ),
     );
@@ -467,21 +511,46 @@ class OpinionCard extends ConsumerWidget {
     final isFollowing = followState.valueOrNull ?? false;
 
     return AppIconButton(
-      size: 18.h,
+      iconSize: 20.h,
+      size: 14.h,
       icon:
           isFollowing
               ? Icons.person_remove_outlined
               : Icons.person_add_outlined,
       // label: isFollowing ? 'Following' : 'Follow',
-      onPressed: () async {
-        if (_blockedForGuest(context, ref)) return;
-        if (isFollowing) {
-          await ref.read(unfollowUserProvider(opinion.authorHandle).future);
-        } else {
-          await ref.read(followUserProvider(opinion.authorHandle).future);
-        }
-      },
+      onPressed: () => _toggleFollow(context, ref, isFollowing),
     );
+  }
+
+  /// Neither followUserProvider nor unfollowUserProvider catch their own
+  /// errors, unlike toggleOpinionSaved — wrapped here the same way
+  /// _toggleSave wraps its own RPC call, so a failure surfaces as a snackbar
+  /// instead of an uncaught exception.
+  ///
+  /// Only a NEW follow gets a success snackbar: the icon swap alone (person-
+  /// add to person-remove) is easy to miss, unlike a reaction/save/repost
+  /// count visibly changing right next to the tapped icon. Unfollowing stays
+  /// silent on success, matching every other toggle-off action on this card.
+  Future<void> _toggleFollow(
+    BuildContext context,
+    WidgetRef ref,
+    bool isFollowing,
+  ) async {
+    if (_blockedForGuest(context, ref)) return;
+    try {
+      if (isFollowing) {
+        await ref.read(unfollowUserProvider(opinion.authorHandle).future);
+      } else {
+        await ref.read(followUserProvider(opinion.authorHandle).future);
+        if (!context.mounted) return;
+        context.showSuccessSnackbar('Following.');
+      }
+    } catch (_) {
+      if (!context.mounted) return;
+      context.showInfoSnackbar(
+        isFollowing ? 'Could not unfollow.' : 'Could not follow.',
+      );
+    }
   }
 
   /// Bookmark toggle.

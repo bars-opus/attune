@@ -217,6 +217,31 @@ class OpinionRepository {
   }
 
   // ============================================================
+  // Tag follows — by slug, resolved to a tag_id server-side. Unlike author
+  // follows there is no handle to protect: a tag is public vocabulary, not a
+  // person, so following one narrows in on no one (see
+  // 20260825120000_tag_follows.sql for the full anonymity reasoning).
+  // ============================================================
+
+  Future<void> followTag(String tagSlug) async {
+    await _supabase.rpc('follow_tag', params: {'p_tag_slug': tagSlug});
+  }
+
+  Future<void> unfollowTag(String tagSlug) async {
+    await _supabase.rpc('unfollow_tag', params: {'p_tag_slug': tagSlug});
+  }
+
+  /// The caller's whole followed-tags set in one call, not a per-slug
+  /// boolean lookup — the vocabulary is fixed at ~21 entries, so one call
+  /// answers every is-this-tag-followed check on screen. See
+  /// get_followed_tags' own comment for why there is deliberately no
+  /// isTagFollowed(slug) singular sibling.
+  Future<List<String>> getFollowedTags() async {
+    final rows = await _supabase.rpc('get_followed_tags');
+    return (rows as List).map((r) => (r as Map)['slug'] as String).toList();
+  }
+
+  // ============================================================
   // Saves (bookmarks) — keyed on opinion_id, so unlike follows there is no
   // handle to resolve. A save is private to the saver; nothing exposes it to
   // the opinion's author.

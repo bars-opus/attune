@@ -57,32 +57,12 @@ class _FollowingFeedScreenState extends ConsumerState<FollowingFeedScreen>
   }
 
   Widget _buildUnauthenticatedSliver(BuildContext context) {
-    return CustomScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      slivers: [
-        SliverOverlapInjector(
-          handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
-        ),
-        SliverList(
-          delegate: SliverChildListDelegate([
-            Padding(
-              padding: EdgeInsets.all(Spacing.lg.h),
-              child: SemanticContainerWidget(
-                title: 'Following unlocks after verification',
-                content:
-                    'Guest browsing is available in Discover. Continue with phone number from Chat to follow voices and build a personal feed.',
-                icon: Icons.person_add_alt_1_outlined,
-                backgroundColor: Theme.of(
-                  context,
-                ).colorScheme.primary.withValues(alpha: 0.1),
-                borderColor: Theme.of(context).colorScheme.primary,
-                iconColor: Theme.of(context).colorScheme.primary,
-                textTheme: Theme.of(context).textTheme,
-              ),
-            ),
-          ]),
-        ),
-      ],
+    return Center(
+      child: EmptyStateWidget(
+        icon: Icons.person_add_outlined,
+        title: 'No Opinions',
+        subtitle: 'Login to show opinions of poeple you follow',
+      ),
     );
   }
 

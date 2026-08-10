@@ -3,8 +3,11 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/utils/relationship_status_display.dart';
 import 'package:attune/core/widgets/create_content_chooser.dart';
+import 'package:attune/core/widgets/create_content_fab.dart';
 import 'package:attune/core/widgets/profile_avatar.dart';
 import 'package:attune/features/auth/presentation/widgets/logout_action.dart';
+import 'package:attune/features/forums/presentation/providers/forum_providers.dart'
+    show votingTopicsProvider;
 import 'package:attune/features/forums/presentation/screens/forums_section.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/providers/profile_providers.dart';
@@ -52,8 +55,10 @@ class _OpinionsTabState extends ConsumerState<OpinionsTab>
   @override
   Widget build(BuildContext context) {
     final isAuthenticated = ref.watch(currentUserIdProvider) != null;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: colorScheme.onBackground,
       body: AnimatedBuilder(
         animation: _outerTabController,
         builder:
@@ -118,6 +123,22 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
     _innerTabController.addListener(_resetNavVisibilityOnSwitch);
   }
 
+  @override
+  void didUpdateWidget(_OpinionsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // _OpinionsSection is kept alive inside OpinionsTab's IndexedStack, so
+    // it is never re-constructed on sign-in — initState's isAuthenticated
+    // read above only ever ran once, while the guest was still signed out,
+    // and _innerTabController stayed pinned to Discover forever even after
+    // a real sign-in flipped widget.isAuthenticated to true (the same class
+    // of "computed once, never revisited" bug currentUserIdProvider had).
+    // A fresh sign-in mid-session jumps to Following once, the same landing
+    // spot a signed-in user gets from initState on a cold start.
+    if (!oldWidget.isAuthenticated && widget.isAuthenticated) {
+      _innerTabController.animateTo(0);
+    }
+  }
+
   void _resetNavVisibilityOnSwitch() {
     if (_innerTabController.indexIsChanging) {
       ref.read(navVisibilityProvider.notifier).state = true;
@@ -163,33 +184,23 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
     final currentUserId = ref.watch(currentUserIdProvider) ?? '';
 
     return Scaffold(
-      backgroundColor: colorScheme.neutral,
-      floatingActionButton:
-          widget.isAuthenticated
-              ? AppFab(
-                scrollAware: true,
-                heroTag: 'opinions-fab',
-                icon: Icons.add,
-                onPressed: () {
-                  CreateContentChooser.show(
-                    context: context,
-                    backgroundColor: colorScheme.neutral,
-                    onOpinionPosted: () async {
-                      if (_innerTabController.index == 0) {
-                        ref.invalidate(followingFeedProvider);
-                      } else {
-                        ref.invalidate(discoverFeedProvider);
-                      }
-                      // The feed RPCs already return newest-first — scroll
-                      // back to the top so the opinion just posted is
-                      // actually visible instead of existing off-screen
-                      // above wherever the user had scrolled to.
-                      await _scrollToTop();
-                    },
-                  );
-                },
-              )
-              : null,
+      backgroundColor: colorScheme.background,
+      floatingActionButton: CreateContentFab(
+        heroTag: 'opinions-fab',
+        isAuthenticated: widget.isAuthenticated,
+        onOpinionPosted: () async {
+          if (_innerTabController.index == 0) {
+            ref.invalidate(followingFeedProvider);
+          } else {
+            ref.invalidate(discoverFeedProvider);
+          }
+          // The feed RPCs already return newest-first — scroll back to the
+          // top so the opinion just posted is actually visible instead of
+          // existing off-screen above wherever the user had scrolled to.
+          await _scrollToTop();
+        },
+        onTopicSubmitted: () => ref.invalidate(votingTopicsProvider),
+      ),
       body: NestedScrollView(
         controller: _outerScrollController,
         headerSliverBuilder:
@@ -199,7 +210,7 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
                   context,
                 ),
                 sliver: SliverAppBar(
-                  backgroundColor: colorScheme.neutral,
+                  backgroundColor: colorScheme.background,
                   floating: true,
                   pinned: false,
                   snap: true,
@@ -335,22 +346,17 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
                 ),
               ),
               SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
-                  child: SimpleTabs(
-                    tabs: const [
-                      AppTabItem(label: 'Following'),
-                      AppTabItem(label: 'Discover'),
-                    ],
-                    controller: _innerTabController,
-                    scrollable: false,
-                    style: AppTabsStyle(
-                      indicatorColor: colorScheme.primary,
-                      activeColor: colorScheme.primary,
-                      inactiveColor: colorScheme.onSurface.withValues(
-                        alpha: 0.6,
-                      ),
-                    ),
+                child: SimpleTabs(
+                  tabs: const [
+                    AppTabItem(label: 'Following'),
+                    AppTabItem(label: 'Discover'),
+                  ],
+                  controller: _innerTabController,
+                  scrollable: false,
+                  style: AppTabsStyle(
+                    indicatorColor: colorScheme.primary,
+                    activeColor: colorScheme.primary,
+                    inactiveColor: colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
               ),
