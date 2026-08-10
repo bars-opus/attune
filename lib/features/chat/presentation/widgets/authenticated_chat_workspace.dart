@@ -30,7 +30,8 @@ class AuthenticatedChatWorkspace extends ConsumerWidget {
 
     if (!isCouples) {
       return ChatCouplesLockedScreen(
-        isPendingCouples: isPendingCouples,
+        isPendingCouples: false,
+        // isPendingCouples,
         onInviteSent: onInviteSent,
       );
     }
