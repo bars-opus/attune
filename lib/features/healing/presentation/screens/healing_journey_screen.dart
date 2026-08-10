@@ -1,5 +1,6 @@
 // lib/features/healing/presentation/screens/healing_journey_screen.dart
 
+import 'package:attune/app/documentations/user_manual/data/healing_docs.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/healing/data/models/healing_journey.dart';
 import 'package:attune/features/healing/presentation/providers/healing_providers.dart';
@@ -15,6 +16,7 @@ class HealingJourneyScreen extends ConsumerWidget {
     final textTheme = Theme.of(context).textTheme;
     final journeyAsync = ref.watch(healingJourneyProvider);
     final startContextAsync = ref.watch(healingStartContextProvider);
+    final docs = HealingDocs();
 
     return Scaffold(
       appBar: AppBar(
@@ -23,10 +25,26 @@ class HealingJourneyScreen extends ConsumerWidget {
           'Healing journey',
           style: textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w600,
-            color: colorScheme.onSurface.withValues(alpha: 0.8),
+            color: colorScheme.onSurface.withOpacity(0.8),
           ),
         ),
         centerTitle: true,
+        actions: [
+          AppIconButton(
+            icon: Icons.notes_rounded,
+            tooltip: 'Tags',
+            onPressed: () {
+              BottomSheetUtils.showDocumentationBottomSheet(
+                context: context,
+                showButtons: false,
+                widget: DocumentationTabView(
+                  module: docs,
+                  showDocumentationFirst: true,
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: journeyAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -48,16 +66,15 @@ class HealingJourneyScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Progress overview
-                Container(
-                  padding: EdgeInsets.all(Spacing.md.w),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest.withValues(
-                      alpha: 0.3,
-                    ),
-                    borderRadius: BorderRadius.circular(
-                      BorderRadiusTokens.md.r,
-                    ),
-                  ),
+                Text(
+                  journey.isFullyComplete
+                      ? '✨ Journey complete'
+                      : 'Stage ${journey.currentStage} of 5',
+                  style: textTheme.bodyMedium,
+                ),
+                Gap(Spacing.sm.h),
+                CardInkWell(
+                  borderRadius: BorderRadiusTokens.floatingNavAll,
                   child: Column(
                     children: [
                       Row(
@@ -69,40 +86,43 @@ class HealingJourneyScreen extends ConsumerWidget {
                               stage == currentStage && !isComplete;
                           return Column(
                             children: [
-                              Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color:
-                                      isComplete
-                                          ? colorScheme.primary
-                                          : isCurrent
-                                          ? colorScheme.primary.withValues(
-                                            alpha: 0.2,
-                                          )
-                                          : colorScheme.surfaceContainerHighest,
-                                  border: Border.all(
+                              AnimatedScaleFade(
+                                duration: const Duration(milliseconds: 500),
+                                curve: Curves.easeOutBack,
+
+                                child: Container(
+                                  width: isCurrent ? 50.w : 45.2,
+                                  height: isCurrent ? 50.h : 45.h,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
                                     color:
-                                        isCurrent
+                                        isComplete
                                             ? colorScheme.primary
-                                            : colorScheme.outline.withValues(
-                                              alpha: 0.2,
-                                            ),
-                                    width: isCurrent ? 2 : 1,
+                                            : isCurrent
+                                            ? colorScheme.primary
+                                            : Colors.grey.withOpacity(.1),
                                   ),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    isComplete ? '✓' : '$stage',
-                                    style: TextStyle(
-                                      color:
-                                          isComplete
-                                              ? colorScheme.onPrimary
-                                              : isCurrent
-                                              ? colorScheme.primary
-                                              : colorScheme.onSurface
-                                                  .withValues(alpha: 0.5),
+                                  child: Center(
+                                    child: Text(
+                                      isComplete ? '✓' : '$stage',
+                                      style: textTheme.titleLarge?.copyWith(
+                                        fontWeight:
+                                            isCurrent
+                                                ? FontWeight.w600
+                                                : FontWeight.w400,
+                                        color:
+                                            isComplete
+                                                ? colorScheme.onPrimary
+                                                : isCurrent
+                                                ? colorScheme.background
+                                                    .withOpacity(.8)
+                                                : colorScheme.onSurface
+                                                    .withValues(alpha: 0.5),
+                                        fontSize:
+                                            isCurrent
+                                                ? FontSizeTokens.xxl
+                                                : FontSizeTokens.xl,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -123,26 +143,22 @@ class HealingJourneyScreen extends ConsumerWidget {
                           );
                         }),
                       ),
-                      Gap(Spacing.md.h),
-                      Text(
-                        journey.isFullyComplete
-                            ? '✨ Journey complete'
-                            : 'Stage ${journey.currentStage} of 5',
-                        style: textTheme.bodyMedium,
-                      ),
                     ],
                   ),
                 ),
+
                 Gap(Spacing.xl.h),
 
                 // Stage description and action
                 Text(
                   _getStageTitle(journey.currentStage),
-                  style: textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
+                  style: textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: colorScheme.onSurface,
+                    fontSize: FontSizeTokens.xxl.sp,
                   ),
                 ),
-                Gap(Spacing.md.h),
+                // Gap(Spacing.md.h),
                 Text(
                   _getStageDescription(journey.currentStage),
                   style: textTheme.bodyMedium,
@@ -182,17 +198,10 @@ class HealingJourneyScreen extends ConsumerWidget {
                       ),
                     ),
                   Gap(Spacing.md.h),
-                  AppButton(
-                    label: 'Retake readiness check-in',
-                    onPressed: () {
-                      // Navigate to readiness quiz
-                    },
-                    size: ButtonSize.medium,
-                    customColor: colorScheme.surfaceContainerHighest,
-                    textColor: colorScheme.onSurface,
-                  ),
+                  _RetakeReadinessButton(journey: journey),
                 ] else ...[
                   AppButton(
+                    elevation: 0,
                     label: 'Continue →',
                     onPressed: () {
                       context.pushNamed(
@@ -200,8 +209,11 @@ class HealingJourneyScreen extends ConsumerWidget {
                         extra: (journey: journey, stage: journey.currentStage),
                       );
                     },
-                    size: ButtonSize.large,
+                    textColor: colorScheme.surface,
+                    size: ButtonSize.small,
                     width: double.infinity,
+                    padding: Spacing.horizontalMd,
+                    height: 40.h,
                   ),
                 ],
               ],
@@ -303,5 +315,72 @@ class HealingJourneyScreen extends ConsumerWidget {
       default:
         return '';
     }
+  }
+}
+
+/// Retake action for a finished journey. Kept as its own widget so the cooldown
+/// lookup does not put the whole dashboard back into a loading state.
+class _RetakeReadinessButton extends ConsumerWidget {
+  const _RetakeReadinessButton({required this.journey});
+
+  final HealingJourney journey;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final attemptAsync = ref.watch(latestReadinessAttemptProvider(journey.id));
+
+    final submittedAtRaw = attemptAsync.valueOrNull?['submitted_at'] as String?;
+    final lastAttemptAt =
+        submittedAtRaw == null ? null : DateTime.tryParse(submittedAtRaw);
+
+    // Until the attempt resolves we cannot know the cooldown, so hold the
+    // action rather than let a tap through and be bounced back.
+    final isResolving = attemptAsync.isLoading;
+    final remaining = journey.retakeAvailableIn(lastAttemptAt);
+    final canRetake = !isResolving && remaining == Duration.zero;
+
+    // Round up so a wait of 6d 2h reads "7 days", never "6 days" when the user
+    // would still be blocked tomorrow.
+    final daysRemaining = (remaining.inHours / 24).ceil();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppButton(
+          elevation: 0,
+          label: 'Retake readiness check-in',
+          onPressed:
+              canRetake
+                  ? () {
+                    context.pushNamed(
+                      'healingStage',
+                      extra: (journey: journey, stage: 5),
+                    );
+                  }
+                  : null,
+          textColor: colorScheme.surface,
+          size: ButtonSize.small,
+          isDisabled: !canRetake,
+          width: double.infinity,
+          padding: Spacing.horizontalMd,
+          height: 40.h,
+        ),
+
+        if (!canRetake && !isResolving) ...[
+          Gap(Spacing.sm.h),
+          Text(
+            daysRemaining == 1
+                ? 'You can retake this in 1 day.'
+                : 'You can retake this in $daysRemaining days.',
+            style: textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ],
+    );
   }
 }

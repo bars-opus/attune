@@ -141,10 +141,31 @@ class HealingJourney extends Equatable {
     return 5;
   }
 
-  bool get canRetakeReadiness {
-    // Check if 7 days have passed since last attempt
-    // This is handled server-side, but client can show hint
-    return true; // Will be validated server-side
+  /// Minimum spacing between readiness attempts. A readiness score is a
+  /// self-reflection check-in, not a test to grind — retaking it the same day
+  /// measures mood, not readiness.
+  static const Duration readinessRetakeCooldown = Duration(days: 7);
+
+  /// Whether a new readiness attempt is allowed, given the last attempt's
+  /// `submitted_at`. Pass null when no attempt has ever been submitted.
+  ///
+  /// Enforced client-side only: `submit_healing_readiness` deliberately accepts
+  /// every attempt so a legitimate retake is never lost to clock skew, and no
+  /// RPC checks the cooldown. This is a UX guardrail, not a security boundary —
+  /// bypassing it costs nothing but an extra row.
+  bool canRetakeReadinessAt(DateTime? lastAttemptAt, {DateTime? now}) {
+    if (lastAttemptAt == null) return true;
+    return retakeAvailableIn(lastAttemptAt, now: now) == Duration.zero;
+  }
+
+  /// Time remaining before another readiness attempt is allowed.
+  /// [Duration.zero] means a retake is available now.
+  Duration retakeAvailableIn(DateTime? lastAttemptAt, {DateTime? now}) {
+    if (lastAttemptAt == null) return Duration.zero;
+    final current = now ?? DateTime.now();
+    final elapsed = current.difference(lastAttemptAt.toLocal());
+    final remaining = readinessRetakeCooldown - elapsed;
+    return remaining.isNegative ? Duration.zero : remaining;
   }
 
   @override

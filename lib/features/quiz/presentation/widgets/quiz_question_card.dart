@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/quiz/presentation/widgets/number_badge.dart';
 import 'package:attune/features/quiz/presentation/widgets/quiz_likert_scale.dart';
 
 /// One quiz question, in two layouts that share a Hero flight.
@@ -86,7 +87,7 @@ class _QuizQuestionCardState extends State<QuizQuestionCard> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _NumberBadge(number: widget.questionNumber, tag: widget._tag),
+        NumberBadge(number: widget.questionNumber, tag: widget._tag),
         Gap(Spacing.md.h),
         const AppDivider(),
         Gap(Spacing.md.h),
@@ -245,7 +246,7 @@ class _QuizQuestionDetailState extends State<_QuizQuestionDetail> {
                         Gap(Spacing.lg.h),
                         Align(
                           alignment: Alignment.center,
-                          child: _NumberBadge(
+                          child: NumberBadge(
                             number: widget.questionNumber,
                             tag: widget.tag,
                           ),
@@ -311,34 +312,7 @@ class _QuizQuestionDetailState extends State<_QuizQuestionDetail> {
 }
 
 /// Shared between both layouts so it flies rather than cross-fades.
-class _NumberBadge extends StatelessWidget {
-  const _NumberBadge({required this.number, required this.tag});
 
-  final int number;
-  final Object tag;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Hero(
-      tag: 'badge-$tag',
-      child: Container(
-        padding: EdgeInsets.all(Spacing.sm.w),
-        decoration: BoxDecoration(
-          color: colorScheme.onSurface,
-          shape: BoxShape.circle,
-        ),
-        child: Text(
-          '$number',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w800,
-            color: colorScheme.surface,
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _Prompt extends StatelessWidget {
   const _Prompt({required this.prompt, required this.tag});

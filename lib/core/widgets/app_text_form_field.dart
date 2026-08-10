@@ -75,6 +75,13 @@ class AppTextFormField extends StatefulWidget {
   /// what information should be entered (e.g., "Email", "Password", "Search").
   final String label;
 
+  /// Overrides the label's font size, which otherwise defaults to
+  /// `isSmall ? 12.safeSp : 14.safeSp`. Null (the default) keeps that
+  /// default. Lets a caller using [label] to carry real content — e.g. a
+  /// full prompt/question rather than a short field name like "Email" —
+  /// size it up to read as a heading instead of a compact form label.
+  final double? labelFontSize;
+
   /// Example text displayed inside the field when it's empty.
   ///
   /// Provides additional guidance or formatting examples (e.g., "name@example.com").
@@ -265,6 +272,7 @@ class AppTextFormField extends StatefulWidget {
     super.key,
     this.controller,
     required this.label,
+    this.labelFontSize,
     this.hintText,
     this.prefixIcon,
     this.suffixIcon,
@@ -447,7 +455,9 @@ class _AppTextFormFieldState extends State<AppTextFormField> {
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w500,
                 color: colorScheme.onSurface,
-                fontSize: widget.isSmall ? 12.safeSp : 14.safeSp,
+                fontSize:
+                    widget.labelFontSize ??
+                    (widget.isSmall ? 12.safeSp : 14.safeSp),
               ),
             ),
             Gap(Spacing.xs.safeH),

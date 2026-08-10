@@ -1,7 +1,13 @@
 // lib/features/healing/presentation/widgets/healing_self_report_sheet.dart
 
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/widgets/buttons/app_button.dart';
+import 'package:attune/core/widgets/card_inkwell.dart';
+import 'package:attune/core/widgets/cupertino_date_time_sheet.dart';
+import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/features/healing/presentation/providers/healing_providers.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -34,18 +40,6 @@ class _HealingSelfReportSheetState
   bool _submitting = false;
   String? _errorText;
 
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate ?? DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-    );
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
-    }
-  }
-
   Future<void> _submit() async {
     final date = _selectedDate;
     if (date == null || _submitting) return;
@@ -56,7 +50,9 @@ class _HealingSelfReportSheetState
     });
 
     try {
-      await ref.read(healingRepositoryProvider).getOrCreateJourney(
+      await ref
+          .read(healingRepositoryProvider)
+          .getOrCreateJourney(
             relationshipId: null,
             breakupAt: date,
             breakupAtSource: 'user_reported',
@@ -78,13 +74,16 @@ class _HealingSelfReportSheetState
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ListView(
       children: [
+        Gap(Spacing.xxl.h),
         Text(
           'Healing from a breakup?',
-          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: colorScheme.onSurface,
+          ),
+          // style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         Gap(Spacing.sm.h),
         Text(
@@ -93,18 +92,25 @@ class _HealingSelfReportSheetState
             color: colorScheme.onSurface.withValues(alpha: 0.7),
           ),
         ),
-        Gap(Spacing.lg.h),
-        ListTile(
+        Gap(Spacing.xxl.h),
+
+        InfoRowWidget(
           key: const Key('healingSelfReportDateRow'),
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            _selectedDate == null
-                ? 'When did this happen?'
-                : DateFormat.yMMMd().format(_selectedDate!),
-            style: textTheme.bodyLarge,
-          ),
-          trailing: const Icon(Icons.calendar_today, size: 20),
-          onTap: _submitting ? null : _pickDate,
+          subtitle:
+              _selectedDate == null
+                  ? 'If you dont rememeber the exact date you can select any date in that month thats closer.'
+                  : 'Happened on:',
+          title:
+              _selectedDate == null
+                  ? 'When did this happen?'
+                  : DateFormat.yMMMd().format(_selectedDate!),
+          icon: Icons.calendar_month,
+          showDivider: false,
+          avatarRadius: 25.h,
+          onTap: () {},
+          disableTrailing: true,
+          showAvatar: false,
+          showTrailingArrow: false,
         ),
         if (_errorText != null) ...[
           Gap(Spacing.sm.h),
@@ -113,20 +119,38 @@ class _HealingSelfReportSheetState
             style: textTheme.bodySmall?.copyWith(color: colorScheme.error),
           ),
         ],
-        Gap(Spacing.lg.h),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: (_selectedDate == null || _submitting) ? null : _submit,
-            child: _submitting
-                ? SizedBox(
-                    width: 20.w,
-                    height: 20.w,
-                    child: const CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Start healing journey'),
+        Gap(Spacing.md.h),
+        CardInkWell(
+          borderRadius: BorderRadiusTokens.floatingNavAll,
+          child: SizedBox(
+            height: 250.h,
+            child: CupertinoDatePicker(
+              mode: CupertinoDatePickerMode.date,
+              initialDateTime: _selectedDate ?? DateTime.now(),
+              minimumDate: DateTime(2020),
+              maximumDate: DateTime.now(),
+              onDateTimeChanged:
+                  (value) => setState(() => _selectedDate = value),
+            ),
           ),
         ),
+        Gap(Spacing.md.h),
+        if (_selectedDate != null)
+          ShakeTransition(
+            axis: Axis.vertical,
+            duration: const Duration(milliseconds: 800),
+            curve: Curves.easeOutBack,
+            child: AppButton(
+              label: 'Start healing journey',
+              onPressed: _submit,
+              elevation: 0,
+              height: 40.h,
+              animateButton: false,
+              size: ButtonSize.small,
+              // isDisabled: _selectedDate == null,
+              isLoading: _submitting,
+            ),
+          ),
       ],
     );
   }
