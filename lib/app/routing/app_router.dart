@@ -279,6 +279,37 @@ class RouteNames {
 /// which is non-null any time the app has rendered at least one frame.
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
+/// Polls (short bounded intervals) until GoRouter has actually parked on a
+/// real, non-'/_invisible' route rather than still being mid-redirect from
+/// createAppRouter's own initialLocation/redirect chain. A route's builder
+/// only ever runs after redirect has resolved, so this is safe ground to
+/// issue another context.go from.
+///
+/// A single addPostFrameCallback (one painted frame) is NOT the same
+/// guarantee — it does not mean GoRouter's own boot sequence has fully
+/// settled, which matters most in the first few frames right after
+/// runApp when several .go() calls can be chained in quick succession
+/// (main.dart's deep-link handler landing on OnboardingGate, which then
+/// immediately issues its own follow-up .go()). Skipping this produced a
+/// transient "Page not found" GoException that then self-corrected once
+/// the chain finished — jarring even though it wasn't actually broken.
+/// Returns null (giving up) after ~3s so a genuinely stuck boot doesn't
+/// spin forever.
+Future<BuildContext?> waitForRouterSettled() async {
+  for (var attempt = 0; attempt < 30; attempt++) {
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    final context = appNavigatorKey.currentContext;
+    if (context == null || !context.mounted) continue;
+    final location =
+        GoRouter.of(context).routerDelegate.currentConfiguration.uri
+            .toString();
+    if (location.isNotEmpty && location != '/_invisible') {
+      return context;
+    }
+  }
+  return null;
+}
+
 GoRouter createAppRouter(RoutingNotifier routingNotifier) {
   return GoRouter(
     navigatorKey: appNavigatorKey,

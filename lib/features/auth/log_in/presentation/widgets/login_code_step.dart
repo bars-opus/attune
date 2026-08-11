@@ -57,7 +57,9 @@ class LoginCodeStep extends StatelessWidget {
           ),
           Gap(Spacing.xxl.h),
           if (resendSecondsRemaining > 0)
-            VerificationCodeCountdown(secondsRemaining: resendSecondsRemaining)
+            VerificationCodeCountdown(
+              fontSize: 20.h,
+              secondsRemaining: resendSecondsRemaining)
           else if (onResend != null)
             AppTextButton(
               alignment: Alignment.center,

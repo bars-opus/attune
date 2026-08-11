@@ -83,10 +83,7 @@ class _FeatureIntroFlowScreenState extends State<FeatureIntroFlowScreen> {
         ),
         centerTitle: false,
         actions: [
-          TextButton(
-            onPressed: widget.onComplete,
-            child: const Text('Skip intro'),
-          ),
+          AppTextButton(text: 'Skip intro', onPressed: widget.onComplete),
         ],
       ),
       body: Column(

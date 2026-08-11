@@ -81,88 +81,99 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     final isBusy = _isSending || _isVerifying;
     final selectedCountry = ref.watch(selectedPhoneCountryProvider);
 
-    return Material(
-      color: colorScheme.neutral,
-      child: SafeArea(
+    // A Scaffold (not just Material) so ScaffoldMessenger.showSnackBar has
+    // a descendant to attach to. Harmless as a modal-sheet child (a nested
+    // Scaffold works fine there), but required now that this screen is
+    // also reached as the bare /login route (see OnboardingGate) with no
+    // ancestor Scaffold of its own to fall back on — every showSuccess/
+    // ErrorSnackbar call below crashed with "no descendant Scaffolds"
+    // until this existed on that path.
+    return Scaffold(
+      backgroundColor: colorScheme.neutral,
+      body: SafeArea(
         child: GestureDetector(
           onTap: () {
             FocusScope.of(context).unfocus();
           },
-          child: TabsWithContent(
-            showCloseIcon: true,
-            appBartext: loc.commonContinue,
-            appBarOnPressed: isBusy ? null : _handlePrimaryAction,
-            onControllerCreated: (controller) => _tabController = controller,
-            useNestedScrollMode: true,
-            enableSwipe: false,
-            scrollable: false,
-            onTabChangeRequest: (fromIndex, toIndex) {
-              if (toIndex == 1 && !_otpSent) {
-                _requestPhoneOtp();
-                return false;
-              }
-              return true;
-            },
-            onTabChanged: (index) {
-              if (!mounted) return;
-              setState(() => _currentTabIndex = index);
-              // Fires on every arrival at the Code tab, not just the one
-              // right after requesting a code (see _requestPhoneOtp's own
-              // post-frame requestFocus below) — this also covers a manual
-              // swipe/tap back to an already-_otpSent Code tab, which
-              // onTabChangeRequest lets through with no focus call of its
-              // own. Post-frame for the same reason as everywhere else here:
-              // the tab's fields aren't laid out yet the instant this fires.
-              if (index == 1) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) _otpFocusNode.requestFocus();
-                });
-              }
-            },
-            tabs: [
-              AppTabItem(
-                label: 'Phone',
-                // icon:
-                //     _currentTabIndex == 0
-                //         ? Icons.phone_iphone
-                //         : Icons.phone_iphone_outlined,
-                content: LoginPhoneStep(
-                  controller: _phoneController,
-                  focusNode: _phoneFocusNode,
-                  country: selectedCountry,
-                  enabled: !isBusy,
-                  authConfigured: _authService.isConfigured,
-                  otpChannel: _otpChannel,
-                  onCountryChanged:
-                      (country) =>
-                          ref
-                              .read(selectedPhoneCountryProvider.notifier)
-                              .state = country,
-                  onOtpChannelChanged: (channel) {
-                    setState(() => _otpChannel = channel);
-                  },
-                  onSubmitted: (_) => _requestPhoneOtp(),
+          child: Padding(
+            padding: const EdgeInsets.all(Spacing.md),
+            child: TabsWithContent(
+              showCloseIcon: true,
+              onClosePressed: () => _handleClose(context),
+              appBartext: loc.commonContinue,
+              appBarOnPressed: isBusy ? null : _handlePrimaryAction,
+              onControllerCreated: (controller) => _tabController = controller,
+              useNestedScrollMode: true,
+              enableSwipe: false,
+              scrollable: false,
+              onTabChangeRequest: (fromIndex, toIndex) {
+                if (toIndex == 1 && !_otpSent) {
+                  _requestPhoneOtp();
+                  return false;
+                }
+                return true;
+              },
+              onTabChanged: (index) {
+                if (!mounted) return;
+                setState(() => _currentTabIndex = index);
+                // Fires on every arrival at the Code tab, not just the one
+                // right after requesting a code (see _requestPhoneOtp's own
+                // post-frame requestFocus below) — this also covers a manual
+                // swipe/tap back to an already-_otpSent Code tab, which
+                // onTabChangeRequest lets through with no focus call of its
+                // own. Post-frame for the same reason as everywhere else here:
+                // the tab's fields aren't laid out yet the instant this fires.
+                if (index == 1) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _otpFocusNode.requestFocus();
+                  });
+                }
+              },
+              tabs: [
+                AppTabItem(
+                  label: 'Phone',
+                  // icon:
+                  //     _currentTabIndex == 0
+                  //         ? Icons.phone_iphone
+                  //         : Icons.phone_iphone_outlined,
+                  content: LoginPhoneStep(
+                    controller: _phoneController,
+                    focusNode: _phoneFocusNode,
+                    country: selectedCountry,
+                    enabled: !isBusy,
+                    authConfigured: _authService.isConfigured,
+                    otpChannel: _otpChannel,
+                    onCountryChanged:
+                        (country) =>
+                            ref
+                                .read(selectedPhoneCountryProvider.notifier)
+                                .state = country,
+                    onOtpChannelChanged: (channel) {
+                      setState(() => _otpChannel = channel);
+                    },
+                    onSubmitted: (_) => _requestPhoneOtp(),
+                  ),
                 ),
-              ),
-              AppTabItem(
-                label: 'Code',
-                // icon: _currentTabIndex == 1 ? Icons.sms : Icons.sms_outlined,
-                content: LoginCodeStep(
-                  controller: _otpController,
-                  focusNode: _otpFocusNode,
-                  enabled: !isBusy && _otpSent,
-                  phoneNumber: _normalizedPhoneNumber(selectedCountry),
-                  resendSecondsRemaining: _resendSecondsRemaining,
-                  onSubmitted: (_) => _verifyPhoneOtp(),
-                  onResend:
-                      isBusy || _resendSecondsRemaining > 0
-                          ? null
-                          : _requestPhoneOtp,
+                AppTabItem(
+                  label: 'Code',
+                  // icon: _currentTabIndex == 1 ? Icons.sms : Icons.sms_outlined,
+                  content: LoginCodeStep(
+                    controller: _otpController,
+                    focusNode: _otpFocusNode,
+                    enabled: !isBusy && _otpSent,
+                    phoneNumber: _normalizedPhoneNumber(selectedCountry),
+                    resendSecondsRemaining: _resendSecondsRemaining,
+                    onSubmitted: (_) => _verifyPhoneOtp(),
+                    onResend:
+                        isBusy || _resendSecondsRemaining > 0
+                            ? null
+                            : _requestPhoneOtp,
+                  ),
                 ),
-              ),
-            ],
-            initialIndex: 0,
-            showContent: true,
+              ],
+              initialIndex: 0,
+              showContent: true,
+            ),
           ),
         ),
       ),
@@ -351,7 +362,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       Navigator.of(context).pop();
     }
 
+    // Any pending couples-invite code (stashed by main.dart's deep-link
+    // handler, or already sitting there from a prior session) is accepted
+    // by OnboardingGate itself once it sees an authenticated visitor with a
+    // pending code — see its _acceptPendingInvite. Nothing else to do here.
     context.go(RouteNames.onboarding);
+  }
+
+  /// Same PopupRoute distinction _goToOnboarding uses: as a modal sheet, a
+  /// plain pop correctly reveals whatever real screen was already showing
+  /// underneath. As the /login page (reached e.g. via OnboardingGate
+  /// routing an unauthenticated invitee here — see its own doc), that page
+  /// IS the base of the stack; GoRouter's earlier context.go(login) replaced
+  /// whatever was there, so a plain pop has nothing left to reveal and left
+  /// the invitee on an empty screen. Route home instead in that case.
+  void _handleClose(BuildContext context) {
+    final route = ModalRoute.of(context);
+    if (route is PopupRoute) {
+      Navigator.of(context).pop();
+    } else {
+      context.go(RouteNames.home);
+    }
   }
 
   /// Returns true when the user may proceed. On an explicit DECLINE the

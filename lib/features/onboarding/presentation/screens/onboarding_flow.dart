@@ -1,6 +1,5 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/auth/presentation/eula_gate.dart';
-import 'package:attune/features/auth/presentation/passwordless_auth_step.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_submission_service.dart';
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
@@ -10,7 +9,6 @@ import 'package:attune/features/onboarding/presentation/widgets/anchors_step.dar
 import 'package:attune/features/onboarding/presentation/widgets/attachment_quiz_step.dart';
 import 'package:attune/features/onboarding/presentation/widgets/couples_joined_step.dart';
 import 'package:attune/features/onboarding/presentation/widgets/couples_waiting_step.dart';
-import 'package:attune/features/onboarding/presentation/widgets/incoming_invite_step.dart';
 import 'package:attune/features/onboarding/presentation/widgets/onboarding_deck_card.dart';
 import 'package:attune/features/onboarding/presentation/widgets/onboarding_deck_scope.dart';
 import 'package:attune/features/onboarding/presentation/widgets/onboarding_mode_step.dart';
@@ -23,20 +21,35 @@ class OnboardingFlow extends StatefulWidget {
     super.key,
     required this.store,
     required this.onComplete,
-    this.requireAuth = true,
-    RelationshipInviteService? inviteService,
-  }) : _inviteService = inviteService;
+    this.acceptedPendingInvite = false,
+  });
 
   final OnboardingStore store;
   final VoidCallback onComplete;
-  final bool requireAuth;
-  final RelationshipInviteService? _inviteService;
+
+  /// Whether OnboardingGate already accepted a pending couples invite for
+  /// this user before mounting this flow (see its _acceptPendingInvite) —
+  /// distinguishes "picked couples mode with a partner already linked"
+  /// (completedMode: couples, active) from "picked couples mode but no
+  /// invite was ever accepted, still waiting for a partner"
+  /// (completedMode: couplesPending). Auth + invite acceptance both happen
+  /// before this widget exists now (see LoginScreen/OnboardingGate), so
+  /// this is the only way _finish can still tell the two apart.
+  final bool acceptedPendingInvite;
 
   @override
   State<OnboardingFlow> createState() => _OnboardingFlowState();
 }
 
 class _OnboardingFlowState extends State<OnboardingFlow> {
+  // Fixed now that auth (LoginScreen) and invite acceptance (OnboardingGate)
+  // both always happen before this widget ever mounts — OnboardingFlow no
+  // longer has its own auth step, so these no longer vary by requireAuth.
+  static const _profileStep = 0;
+  static const _modeStep = 1;
+  static const _quizStep = 2;
+  static const _anchorsStep = 3;
+
   final _nameController = TextEditingController();
   final _anchorControllers = List.generate(3, (_) => TextEditingController());
   // Nullable: an unanswered question must be distinguishable from a genuinely
@@ -45,16 +58,22 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   // fabricated all-neutral reflection to onboarding_profiles.
   final _quizAnswers = List<int?>.filled(attachmentQuestions.length, null);
   final _submissionService = OnboardingSubmissionService();
-  late final RelationshipInviteService _inviteService =
-      widget._inviteService ?? RelationshipInviteService();
+  final _inviteService = RelationshipInviteService();
 
   OnboardingMode? _mode;
   int _step = 0;
   int _questionIndex = 0;
-  bool _isAcceptingInvite = false;
-  bool _acceptedPendingInvite = false;
 
-  String? get _pendingInviteCode => widget.store.pendingInviteCode;
+  @override
+  void initState() {
+    super.initState();
+    // OnboardingGate already accepted this invite before mounting this
+    // flow, so mode is already decided — the profile step's onNext (below)
+    // skips straight past mode selection once this is set.
+    if (widget.acceptedPendingInvite) {
+      _mode = OnboardingMode.couples;
+    }
+  }
 
   @override
   void dispose() {
@@ -75,7 +94,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// anchors slots, not just increment once, since the switch below
   /// dispatches on _step's exact integer value matching quizStep/anchorsStep.
   void _skipToTerminalForCouples() {
-    final anchorsStep = widget.requireAuth ? 4 : 3;
+    const anchorsStep = 3;
     setState(() => _step = anchorsStep + 1);
   }
 
@@ -214,7 +233,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     final anchors =
         _anchorControllers.map((controller) => controller.text.trim()).toList();
     final completedMode =
-        mode == OnboardingMode.couples && !_acceptedPendingInvite
+        mode == OnboardingMode.couples && !widget.acceptedPendingInvite
             ? OnboardingMode.couplesPending
             : mode;
     // The quiz step gates Next on an answer, so by the time we finish every
@@ -222,10 +241,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     final answers = _quizAnswers.whereType<int>().toList();
 
     // Last gate before an account becomes real. LoginScreen already asks on
-    // the sign-in path, but PasswordlessAuthStep (the invite-acceptance route
-    // into this flow) verifies OTP without asking — so consent is enforced
-    // here too, at the one point every user must pass through. Already-
-    // accepted users are not re-prompted.
+    // the sign-in path this flow is always reached through now, but
+    // returning/already-accepted users are not re-prompted.
     if (!await _ensureEulaAccepted()) return;
 
     try {
@@ -263,91 +280,34 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     if (mounted) widget.onComplete();
   }
 
-  /// Consent gate before the account is written remotely. Unlike LoginScreen's
-  /// version this does not sign the user out on decline — they may have
-  /// arrived here mid-flow from an invite, and dropping the session would lose
-  /// the pending invite acceptance. They simply stay on this step.
+  /// Consent gate before the account is written remotely.
   Future<bool> _ensureEulaAccepted() async =>
       (await EulaGate.ensureAccepted(context)).mayProceed;
-
-  Future<void> _handleAuthVerified() async {
-    final inviteCode = _pendingInviteCode;
-    if (inviteCode == null || _acceptedPendingInvite) {
-      _next();
-      return;
-    }
-
-    if (_isAcceptingInvite) return;
-
-    setState(() => _isAcceptingInvite = true);
-
-    try {
-      await _inviteService.acceptInvite(inviteCode);
-      await widget.store.clearPendingInviteCode();
-      if (!mounted) return;
-      setState(() {
-        _acceptedPendingInvite = true;
-        _isAcceptingInvite = false;
-      });
-      _next();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _isAcceptingInvite = false);
-      final message =
-          error is RelationshipInviteException
-              ? error.message
-              : 'Could not accept this invite yet.';
-      context.showErrorSnackbar('$message Try verification again.');
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     final mode = _mode;
-    final pendingInviteCode = _pendingInviteCode;
-    final profileStep = widget.requireAuth ? 1 : 0;
-    final modeStep = widget.requireAuth ? 2 : 1;
-    final quizStep = widget.requireAuth ? 3 : 2;
-    final anchorsStep = widget.requireAuth ? 4 : 3;
 
     final screen = switch (_step) {
-      0 when widget.requireAuth => Stack(
-        children: [
-          PasswordlessAuthStep(onVerified: _handleAuthVerified),
-          if (_isAcceptingInvite)
-            Positioned.fill(
-              child: ColoredBox(
-                color: Colors.black.withValues(alpha: 0.4),
-                child: const Center(child: CircularLoadingIndicator()),
-              ),
-            ),
-        ],
-      ),
-      _ when _step == profileStep => ProfileSetupStep(
+      _ when _step == _profileStep => ProfileSetupStep(
         controller: _nameController,
-        onNext: _next,
+        // An already-accepted invite means mode is already decided
+        // (couples — see initState) — skip the mode-selection question
+        // instead of asking something whose answer is already known.
+        onNext: widget.acceptedPendingInvite ? _skipToTerminalForCouples : _next,
       ),
-      _ when _step == modeStep =>
-        pendingInviteCode == null
-            ? OnboardingModeStep(
-              selectedMode: mode,
-              onSelect: (value) {
-                setState(() => _mode = value);
-                if (value == OnboardingMode.personal) {
-                  _goToQuiz();
-                } else {
-                  _skipToTerminalForCouples();
-                }
-              },
-            )
-            : IncomingInviteStep(
-              inviteCode: pendingInviteCode,
-              onNext: () {
-                setState(() => _mode = OnboardingMode.couples);
-                _skipToTerminalForCouples();
-              },
-            ),
-      _ when _step == quizStep => AttachmentQuizStep(
+      _ when _step == _modeStep => OnboardingModeStep(
+        selectedMode: mode,
+        onSelect: (value) {
+          setState(() => _mode = value);
+          if (value == OnboardingMode.personal) {
+            _goToQuiz();
+          } else {
+            _skipToTerminalForCouples();
+          }
+        },
+      ),
+      _ when _step == _quizStep => AttachmentQuizStep(
         questionIndex: _questionIndex,
         answers: _quizAnswers,
         onChanged: (value) {
@@ -363,14 +323,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           }
         },
       ),
-      _ when _step == anchorsStep => AnchorsStep(
+      _ when _step == _anchorsStep => AnchorsStep(
         mode: mode ?? OnboardingMode.personal,
         controllers: _anchorControllers,
         onNext: _next,
       ),
       _ =>
         mode == OnboardingMode.couples
-            ? _acceptedPendingInvite
+            ? widget.acceptedPendingInvite
                 ? CouplesJoinedStep(onFinish: _finish)
                 : CouplesWaitingStep(
                   inviteService: _inviteService,
@@ -383,7 +343,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     // _step across all 26 questions, so its sub-index is folded in here too —
     // otherwise only the first quiz question would ever play the flip.
     final cardKey =
-        _step == quizStep ? quizStep * 1000 + _questionIndex : _step;
+        _step == _quizStep ? _quizStep * 1000 + _questionIndex : _step;
 
     final accent = switch (mode) {
       OnboardingMode.personal => OnboardingDeckAccent.single,
@@ -399,7 +359,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           accent: accent,
           // Only the attachment quiz gets the fanned card stack; name, mode
           // choice, anchors, and terminal steps render as plain cards.
-          enableDeck: _step == quizStep,
+          enableDeck: _step == _quizStep,
           child: screen,
         ),
       ),

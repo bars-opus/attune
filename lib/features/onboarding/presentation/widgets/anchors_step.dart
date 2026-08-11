@@ -56,8 +56,10 @@ class AnchorsStep extends StatelessWidget {
                     Padding(
                       padding: EdgeInsets.only(bottom: Spacing.sm.h),
                       child: AppTextFormField(
+                        fillColor: colorScheme.neutral,
+                        labelFontSize: 18.sp,
                         controller: controllers[index],
-                        label: prompts[index],
+                        label: '${prompts[index]}\n',
                         hintText: 'Type your answer',
                         maxLines: 4,
                         textInputAction:

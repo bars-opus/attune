@@ -1,7 +1,12 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 
 class VerificationCodeCountdown extends StatelessWidget {
-  const VerificationCodeCountdown({super.key, required this.secondsRemaining});
+  final double? fontSize;
+  const VerificationCodeCountdown({
+    super.key,
+    this.fontSize,
+    required this.secondsRemaining,
+  });
 
   final int secondsRemaining;
 
@@ -15,7 +20,8 @@ class VerificationCodeCountdown extends StatelessWidget {
         count: secondsRemaining,
         suffix: 's',
         style: textTheme.bodyLarge?.copyWith(
-          color: colorScheme.primary,
+          color: colorScheme.primary, 
+          fontSize: fontSize,
           fontWeight: FontWeight.w700,
         ),
       ),

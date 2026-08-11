@@ -25,6 +25,34 @@ Deno.serve(async (req) => {
 
     await ensureUserRow(supabase, user);
 
+    // A user already in an active relationship must never be able to mint
+    // a fresh pending invite alongside it. The DB's own
+    // trigger_single_active_relationship only fires on a row transitioning
+    // TO active, so it can't stop a brand-new PENDING row from being
+    // created here — and the client can hit this path in a real race: the
+    // Chat tab re-calls createInvite() on every ChatCouplesLockedScreen
+    // load while isPendingCouples is true, and that flag can still read
+    // stale-true for one frame right after a partner's acceptance flips
+    // this relationship to active but before the client's own
+    // HomeScreen._syncRelationshipMode catches up locally. Without this
+    // check that produced a second, still-pending relationship row for
+    // the same inviter, which then won ".order(created_at desc).limit(1)"
+    // on every later client-side resync and permanently reverted the UI
+    // back to the locked/invite screen even though the real relationship
+    // was active.
+    const { data: activeRelationship, error: activeCheckError } =
+      await supabase
+        .from("relationships")
+        .select("id")
+        .eq("status", "active")
+        .or(`user_a.eq.${user.id},user_b.eq.${user.id}`)
+        .limit(1)
+        .maybeSingle();
+    if (activeCheckError) throw activeCheckError;
+    if (activeRelationship) {
+      throw new HttpError("You already have an active relationship", 409);
+    }
+
     // force_new: true is the Day 7 pivot's "Invite someone else (doesn't
     // cancel existing invite)" option (ATTUNE_MASTER_SPEC.md). Default
     // (absent/false) is the normal "reusable until accepted or expired"

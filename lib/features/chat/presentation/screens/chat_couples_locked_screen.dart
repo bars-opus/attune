@@ -1,6 +1,8 @@
 // lib/features/chat/presentation/screens/chat_couples_locked_screen.dart
 
 import 'package:attune/app/documentations/user_manual/data/chat_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/healing_docs.dart';
+import 'package:attune/core/intro/presentation/screens/feature_intro_flow_screen.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/utils/relationship_status_display.dart';
 import 'package:attune/core/widgets/animated_circle.dart';
@@ -92,6 +94,19 @@ class _ChatCouplesLockedScreenState
       setState(() => _invite = invite);
     } catch (error) {
       if (!mounted) return;
+      // Reaching here means the server already considers this inviter's
+      // relationship active — widget.isPendingCouples was stale (a real
+      // race: HomeScreen's own local mode hasn't caught up yet to a
+      // partner's just-landed acceptance). Showing this as an error would
+      // be wrong AND get the user stuck, since nothing else prompts a
+      // resync from this screen. Trigger one directly instead — see
+      // relationshipModeResyncSignal's doc in home_screen.dart — so
+      // HomeScreen swaps this screen out for the real chat on its own.
+      if (error is RelationshipInviteException &&
+          error.alreadyActiveRelationship) {
+        relationshipModeResyncSignal.value++;
+        return;
+      }
       setState(() {
         _errorMessage =
             error is RelationshipInviteException
@@ -139,6 +154,14 @@ class _ChatCouplesLockedScreenState
       widget.onInviteSent();
     } catch (error) {
       if (!mounted) return;
+      // See _loadExistingInvite's identical check — local state claiming
+      // this user isn't coupled yet is stale if the server already has an
+      // active relationship for them; resync instead of showing an error.
+      if (error is RelationshipInviteException &&
+          error.alreadyActiveRelationship) {
+        relationshipModeResyncSignal.value++;
+        return;
+      }
       setState(() {
         _errorMessage =
             error is RelationshipInviteException
@@ -172,6 +195,13 @@ class _ChatCouplesLockedScreenState
               alignment: Alignment.topRight,
               child: AppIconButton(
                 icon: Icons.menu,
+                // TEMP preview hook: pushes FeatureIntroFlowScreen directly
+                // instead of RouteNames.healingJourney (FeatureIntroFlowGate
+                // + SeenFeatureIntroStore), so the intro shows every tap for
+                // UI iteration — the real route only shows it once per
+                // device, which made it invisible after the first visit.
+                // Same module/copy/launchLabel the real healingJourney route
+                // passes to FeatureIntroFlowGate — see app_router.dart.
                 onPressed: () {
                   context.pushNamed('settings');
                 },
@@ -326,7 +356,28 @@ class _WelcomEntryCard extends StatelessWidget {
         // actually offering. Not real account photos: there is no partner
         // yet, and this card only shows before an invite exists (see the
         // !isPendingCouples gate this card is built under).
-        const _StackedInviteAvatars(),
+        GestureDetector(
+          onTap: () {
+            // Navigator.of(context).push(
+            //   MaterialPageRoute(
+            //     builder:
+            //         (context) => FeatureIntroFlowScreen(
+            //           module: HealingDocs(),
+            //           briefParagraph:
+            //               'Healing Mode is private and self-paced. It\'s not therapy, it '
+            //               'doesn\'t diagnose you or your relationship, and your former '
+            //               'partner is never told you\'re using it.',
+            //           launchLabel: 'Enter Healing Mode',
+            //           onComplete: () {
+            //             Navigator.of(context).pop();
+            //             context.push(RouteNames.healingJourney);
+            //           },
+            //         ),
+            //   ),
+            // );
+          },
+          child: const _StackedInviteAvatars(),
+        ),
         Gap(Spacing.lg.h),
         Center(
           child: Text(
@@ -365,9 +416,14 @@ class _WelcomEntryCard extends StatelessWidget {
             children: [
               Text(
                 overview,
-                style: textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurface,
-                ),
+                style:
+                    isPendingCouples
+                        ? textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurface,
+                        )
+                        : textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurface,
+                        ),
                 maxLines: 4,
                 textAlign:
                     isPendingCouples ? TextAlign.center : TextAlign.start,
@@ -384,7 +440,6 @@ class _WelcomEntryCard extends StatelessWidget {
             ],
           ),
         ),
-        Gap(Spacing.xl),
       ],
     );
   }
@@ -523,7 +578,7 @@ class _PendingInviteSection extends StatelessWidget {
     // than minting a new one — so a returning user sees their real,
     // previously-sent code again, not just the waiting message.
     if (invite != null) return InviteCard(invite: invite!);
-    if (isCreating) return const Center(child: CircularProgressIndicator());
+    if (isCreating) return const Center(child: CircularLoadingIndicator());
     if (errorMessage != null) {
       return ErrorStateWidget(
         subtitle: errorMessage!,

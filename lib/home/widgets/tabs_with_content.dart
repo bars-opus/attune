@@ -17,6 +17,11 @@ class TabsWithContent extends StatefulWidget {
   // final VoidCallback? onDonePressed;
   final Color? scaffoldBackgroundColor;
   final bool showCloseIcon;
+  // Defaults to Navigator.pop(context) below when null. Callers presented
+  // both as a route push and inside a modal sheet (e.g. LoginScreen) need
+  // this to differ by context — a plain pop is only safe when something is
+  // actually underneath to reveal.
+  final VoidCallback? onClosePressed;
   final String? appBartext;
   final String? headertext;
 
@@ -37,6 +42,7 @@ class TabsWithContent extends StatefulWidget {
     this.backgroundColor,
     this.scrollable = true,
     this.showCloseIcon = false,
+    this.onClosePressed,
     this.contentSpacing = Spacing.lg,
     this.showContent = true,
     this.useNestedScrollMode = false,
@@ -187,7 +193,7 @@ class _TabsWithContentState extends State<TabsWithContent>
               if (widget.showCloseIcon)
                 AppIconButton(
                   icon: Icons.close,
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: widget.onClosePressed ?? () => Navigator.pop(context),
                 ),
               if (widget.appBartext != null || widget.appBarOnPressed != null)
                 AppTextButton(

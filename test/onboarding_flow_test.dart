@@ -17,7 +17,6 @@ void main() {
       _TestApp(
         child: OnboardingFlow(
           store: OnboardingStore(prefs, scope: OnboardingStore.previewScope),
-          requireAuth: false,
           onComplete: () {},
         ),
       ),
@@ -33,33 +32,36 @@ void main() {
     expect(find.text('In a relationship'), findsOneWidget);
   });
 
-  testWidgets('starts with partner invite when a deep link is pending', (
-    tester,
-  ) async {
-    SharedPreferences.setMockInitialValues({
-      OnboardingStore.pendingInviteCodeKey: 'ABC123',
-    });
-    final prefs = await SharedPreferences.getInstance();
+  testWidgets(
+    'skips mode selection straight to couples when OnboardingGate already '
+    'accepted a pending invite',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
 
-    await tester.pumpWidget(
-      _TestApp(
-        child: OnboardingFlow(
-          store: OnboardingStore(prefs, scope: OnboardingStore.previewScope),
-          requireAuth: false,
-          onComplete: () {},
+      await tester.pumpWidget(
+        _TestApp(
+          child: OnboardingFlow(
+            store: OnboardingStore(prefs, scope: OnboardingStore.previewScope),
+            acceptedPendingInvite: true,
+            onComplete: () {},
+          ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('What should Attune call you?'), findsOneWidget);
-    await tester.enterText(find.byType(TextFormField), 'Jordan');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pumpAndSettle();
+      expect(find.text('What should Attune call you?'), findsOneWidget);
+      await tester.enterText(find.byType(TextFormField), 'Jordan');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
 
-    expect(find.text('You have a partner invite'), findsOneWidget);
-    expect(find.text('ABC123'), findsOneWidget);
-    expect(find.text('Are you single or in a relationship?'), findsNothing);
-  });
+      // Mode is already decided (couples, invite already accepted by
+      // OnboardingGate before this widget mounted) — the mode-selection
+      // question and the inline quiz/anchors must never appear.
+      expect(find.text('Are you single or in a relationship?'), findsNothing);
+      expect(find.text('Relationship reflection quiz'), findsNothing);
+      expect(find.text('Anchor 1'), findsNothing);
+    },
+  );
 
   testWidgets(
     'couples mode skips the inline quiz and anchors after mode selection',
@@ -71,7 +73,6 @@ void main() {
         _TestApp(
           child: OnboardingFlow(
             store: OnboardingStore(prefs, scope: OnboardingStore.previewScope),
-            requireAuth: false,
             onComplete: () {},
           ),
         ),

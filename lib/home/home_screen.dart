@@ -9,6 +9,7 @@ import 'package:attune/features/onboarding/data/onboarding_sync_service.dart';
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
 import 'package:attune/features/onboarding/domain/relationship_mode_sync.dart';
 import 'package:attune/features/opinions/presentation/screen/opinions_tab.dart';
+import 'package:attune/features/relationships/data/relationship_invite_service.dart';
 import 'package:attune/features/safety/presentation/widgets/triple_tap_detector.dart';
 import 'package:attune/home/widgets/home_tab.dart';
 import 'package:attune/home/widgets/home_widget_responsive.dart';
@@ -50,6 +51,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _authService = PasswordlessAuthService();
   final _syncService = OnboardingSyncService();
+  final _inviteService = RelationshipInviteService();
 
   StreamSubscription<AuthState>? _authSubscription;
   late Future<_HomeGateData> _storeFuture;
@@ -106,31 +108,50 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// docs/superpowers/specs/2026-08-02-relationship-lifecycle-sync-design.md
   /// §1.
   Future<void> _syncRelationshipMode() async {
-    final store = (await _storeFuture).store;
-    // mode is null for a signed-in user who hasn't completed onboarding —
-    // that's not a relationship-track state either, so it must short
-    // circuit here too, not just the explicit `personal` case.
-    if (store.mode == null || store.mode == OnboardingMode.personal) return;
+    // Called from an unawaited addPostFrameCallback/lifecycle listener with
+    // no caller to report to — an uncaught exception here (network blip,
+    // timeout) previously vanished into an unhandled Future entirely,
+    // silently leaving the couples-locked screen showing forever with no
+    // visible error and no retry until the next resume/launch happened to
+    // succeed.
+    try {
+      final store = (await _storeFuture).store;
+      // Only a genuinely unset mode (signed in, onboarding not complete
+      // yet) has nothing to reconcile. `personal` used to short-circuit
+      // here too, but that made a bad cached `personal` — e.g. written by
+      // OnboardingStore.resolveIsComplete's own local backfill
+      // (`mode ?? OnboardingMode.personal`) when local `mode` was null but
+      // the server already considered onboarding complete — a permanent
+      // trap: the server query below never ran, so a real active
+      // relationship could never self-heal a stale `personal` cache no
+      // matter how many times the app relaunched. Querying every time for
+      // a genuinely personal-mode user costs one extra read per
+      // launch/resume, which is cheap next to "couples chat never
+      // unlocks."
+      if (store.mode == null) return;
 
-    final supabase = Supabase.instance.client;
-    final userId = supabase.auth.currentUser?.id;
-    if (userId == null) return;
+      final supabase = Supabase.instance.client;
+      final userId = supabase.auth.currentUser?.id;
+      if (userId == null) return;
 
-    final row =
-        await supabase
-            .from('relationships')
-            .select('status')
-            .or('user_a.eq.$userId,user_b.eq.$userId')
-            .order('created_at', ascending: false)
-            .limit(1)
-            .maybeSingle();
+      final row =
+          await supabase
+              .from('relationships')
+              .select('status')
+              .or('user_a.eq.$userId,user_b.eq.$userId')
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle();
 
-    final resolved = resolveModeFromRelationshipStatus(
-      row?['status'] as String?,
-    );
-    if (resolved != store.mode) {
-      await store.syncModeFromServer(resolved);
-      if (mounted) setState(() => _storeFuture = _loadStore());
+      final resolved = resolveModeFromRelationshipStatus(
+        row?['status'] as String?,
+      );
+      if (resolved != store.mode) {
+        await store.syncModeFromServer(resolved);
+        if (mounted) setState(() => _storeFuture = _loadStore());
+      }
+    } catch (error) {
+      debugPrint('[home] relationship mode sync failed: ${error.runtimeType}');
     }
   }
 
@@ -151,6 +172,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       unawaited(_syncService.flush(store));
     }
 
+    // A pending invite code can outlive the /onboarding visit that stashed
+    // it — e.g. the app was killed after main.dart's deep-link handler
+    // stored the code but before OnboardingGate/OnboardingFlow ever
+    // consumed it. Every real HomeScreen load (launch, resume, sign-in —
+    // see didChangeAppLifecycleState/_authSubscription above) is a chance
+    // to retry it here, the same way OnboardingGate does for a visitor who
+    // arrives already authenticated. Best-effort: a failure just leaves
+    // the code for the next load rather than blocking the shell.
+    if (userId != null &&
+        userId.isNotEmpty &&
+        store.pendingInviteCode != null) {
+      await _acceptPendingInvite(store);
+    }
+
     // Server-truth-first (see OnboardingStore.resolveIsComplete's doc): a
     // local-only isComplete check bounced a returning, already-onboarded
     // user (onboarded on a different device/install) into the onboarding
@@ -159,6 +194,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final isComplete = await store.resolveIsComplete(userId);
 
     return _HomeGateData(store: store, isComplete: isComplete);
+  }
+
+  /// Mirrors OnboardingGate's own _acceptPendingInvite — kept as a
+  /// duplicate rather than a shared helper since the two call sites own
+  /// their OnboardingStore instances independently and neither is in a
+  /// position to depend on the other's widget tree.
+  Future<void> _acceptPendingInvite(OnboardingStore store) async {
+    final code = store.pendingInviteCode;
+    if (code == null) return;
+    try {
+      await _inviteService.acceptInvite(code);
+      await store.clearPendingInviteCode();
+    } on RelationshipInviteException catch (error) {
+      // Deterministic rejections (expired/self/already-accepted/invalid)
+      // can never succeed on retry — drop the stale code so it doesn't
+      // resurface on every future launch/resume. Transient failures
+      // (retryable) keep the code so the next load tries again.
+      if (!error.retryable) await store.clearPendingInviteCode();
+    } catch (_) {
+      // Unreachable client/network failure — leave the code in place for
+      // a later retry rather than silently discarding a real invite.
+    }
   }
 
   /// Persists a personal-mode user's move onto the couplesPending track

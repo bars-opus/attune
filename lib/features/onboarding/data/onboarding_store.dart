@@ -102,7 +102,22 @@ class OnboardingStore {
               .maybeSingle();
       if (row != null) {
         if (!isComplete) {
-          await complete(mode: mode ?? OnboardingMode.personal, displayName: displayName ?? '');
+          // Backfill ONLY the completed flag — never invent a `mode`.
+          // complete() was previously reused here with
+          // `mode ?? OnboardingMode.personal`, which meant a device that
+          // never locally observed this user's real mode (fresh install,
+          // cleared prefs, or completed onboarding on a different device)
+          // got `personal` permanently written to this device's cache.
+          // HomeScreen._syncRelationshipMode treats a cached `personal` as
+          // nothing-to-reconcile and skips its own server check entirely
+          // — so a real active couples relationship could never self-heal
+          // a mode that was wrong from the moment it was first cached.
+          // Leaving `_modeKey` untouched here means mode stays null until
+          // something that actually knows the real value sets it —
+          // HomeScreen's relationship-status sync, or the local
+          // onboarding flow itself.
+          await _prefs.setString(_key(_displayNameKey), displayName ?? '');
+          await _prefs.setBool(_key(_completedKey), true);
         }
         return true;
       }

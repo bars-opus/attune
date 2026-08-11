@@ -90,8 +90,22 @@ class RelationshipInviteService {
       debugPrint('[relationship-invite] create failed: ${error.runtimeType}');
       if (error is RelationshipInviteException) rethrow;
       if (error is FunctionException && error.status == 409) {
-        throw const RelationshipInviteException(
-          'You already have the maximum number of pending invites.',
+        final details = error.details;
+        final message = details is Map ? details['error'] as String? : null;
+        // Two distinct 409s share this status: the spec's 3-concurrent-
+        // pending-invites cap, and the newer already-active-relationship
+        // guard (create-relationship-invite's own comment explains why
+        // that check exists — a stale isPendingCouples flag on this
+        // screen calling createInvite() right after a partner's
+        // acceptance flipped this relationship to active). Callers need
+        // to tell them apart: the cap is a real, showable error, but
+        // "already active" means local state is stale and the fix is a
+        // resync, not a message.
+        throw RelationshipInviteException(
+          message ?? 'You already have the maximum number of pending invites.',
+          alreadyActiveRelationship:
+              message?.toLowerCase().contains('already have an active') ??
+              false,
         );
       }
       throw const RelationshipInviteException('Could not create invite.');
@@ -122,7 +136,25 @@ class RelationshipInviteService {
     } catch (error) {
       debugPrint('[relationship-invite] accept failed: ${error.runtimeType}');
       if (error is RelationshipInviteException) rethrow;
-      throw const RelationshipInviteException('Could not accept invite.');
+      // accept-invite/index.ts's handleError always replies with
+      // {"error": "<message>"} plus a real status: 400 bad code, 404
+      // invalid, 409 self-accept/already-accepted-by-someone-else, 410
+      // expired. None of those are worth retrying with the same code, so
+      // callers need to be able to tell them apart from a transient
+      // network/timeout failure instead of showing "try again" for both.
+      if (error is FunctionException) {
+        final details = error.details;
+        final message =
+            details is Map ? details['error'] as String? : null;
+        throw RelationshipInviteException(
+          message ?? 'Could not accept invite.',
+          retryable: error.status >= 500,
+        );
+      }
+      throw const RelationshipInviteException(
+        'Could not accept invite.',
+        retryable: true,
+      );
     }
   }
 
@@ -134,9 +166,28 @@ class RelationshipInviteService {
 }
 
 class RelationshipInviteException implements Exception {
-  const RelationshipInviteException(this.message);
+  const RelationshipInviteException(
+    this.message, {
+    this.retryable = false,
+    this.alreadyActiveRelationship = false,
+  });
 
   final String message;
+
+  /// False for the server's deterministic rejections (bad/expired/
+  /// already-accepted/self-accept codes) — retrying acceptInvite with the
+  /// same code cannot succeed, so callers should move the user forward
+  /// instead of prompting them to try again. True for transient failures
+  /// (network/timeout/5xx) where a retry might work.
+  final bool retryable;
+
+  /// True only for createInvite's "you already have an active
+  /// relationship" 409 — see create-relationship-invite's own guard.
+  /// Reaching this means the CALLER's local mode/pendingCouples state is
+  /// stale (the relationship already went active server-side), not that
+  /// the user did anything wrong, so UI callers should trigger a resync
+  /// (relationshipModeResyncSignal) rather than show this as an error.
+  final bool alreadyActiveRelationship;
 
   @override
   String toString() => message;

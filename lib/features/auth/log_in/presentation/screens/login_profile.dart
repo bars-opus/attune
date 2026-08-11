@@ -147,6 +147,7 @@ class _LoginProfileState extends State<LoginProfile> {
                       onPressed: () {
                         BottomSheetUtils.showDocumentationBottomSheet(
                           context: context,
+                          padding: 0,
                           backgroundColor: colorScheme.neutral,
                           widget: LoginScreen(),
                         );

@@ -229,12 +229,12 @@ class _HealingReflectionScreenState
                       child: AppTextFormField(
                         fillColor: colorScheme.neutral,
                         controller: _controllers[index],
-                        label: _reflectionPrompts[index],
+                        label: "${_reflectionPrompts[index]}\n",
                         // The label carries the actual question text here
                         // (see AnchorsStep-matching layout above), not a
                         // short field name — sized up from the default
                         // 14sp so it reads as a heading over the field.
-                        labelFontSize: 16.sp,
+                        labelFontSize: 18.sp,
                         hintText: 'Type your answer',
                         maxLines: 4,
                         maxLength: 500,
@@ -296,27 +296,34 @@ class _HealingReflectionScreenState
             }),
           ],
         ),
-        bottomNavigationBar: Row(
-          children: [
-            Expanded(
-              child: AppButton(
-                label: 'Skip for now',
-                onPressed: () => Navigator.pop(context),
-                size: ButtonSize.medium,
-                customColor: colorScheme.surfaceContainerHighest,
-                textColor: colorScheme.onSurface,
-              ),
+        bottomNavigationBar: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(Spacing.md),
+            child: Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    label: 'Skip for now',
+                    onPressed: () => Navigator.pop(context),
+                    size: ButtonSize.small,
+                    height: 40.h,
+                    customColor: colorScheme.surfaceContainerHighest,
+                    textColor: colorScheme.onSurface,
+                  ),
+                ),
+                Gap(Spacing.md.w),
+                Expanded(
+                  child: AppButton(
+                    label: 'Complete reflection →',
+                    onPressed: _isSaving ? null : _completeStage,
+                    size: ButtonSize.small,
+                    height: 40.h,
+                    isLoading: _isSaving,
+                  ),
+                ),
+              ],
             ),
-            Gap(Spacing.md.w),
-            Expanded(
-              child: AppButton(
-                label: 'Complete reflection →',
-                onPressed: _isSaving ? null : _completeStage,
-                size: ButtonSize.medium,
-                isLoading: _isSaving,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

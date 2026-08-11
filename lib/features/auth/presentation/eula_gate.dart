@@ -22,8 +22,7 @@ enum EulaOutcome {
 /// Presents the EULA once per user and records the acceptance.
 ///
 /// Shared by the two paths that can create a real account: LoginScreen's
-/// sign-in flow, and OnboardingFlow's submission (reached via
-/// PasswordlessAuthStep when accepting a partner invite). Keeping the prompt
+/// sign-in flow, and OnboardingFlow's final submission. Keeping the prompt
 /// here rather than duplicating it means the two can't drift apart on which
 /// version they record or how a decline is handled.
 class EulaGate {
