@@ -41,7 +41,6 @@ import 'package:attune/features/reflection_journal/presentation/screens/reflecti
 import 'package:attune/features/pulse/presentation/screens/checkin_complete_screen.dart';
 import 'package:attune/features/pulse/presentation/screens/pulse_tab.dart';
 import 'package:attune/features/pulse/presentation/screens/weekly_checkin_screen.dart';
-import 'package:attune/features/reminders/presentation/screens/couples_calendar_screen.dart';
 import 'package:attune/features/reminders/presentation/screens/add_edit_reminder_screen.dart';
 import 'package:attune/features/reminders/presentation/screens/family_members_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/log_moment_details_screen.dart';
@@ -209,7 +208,6 @@ class RouteNames {
   static const String journalEntryCompose = '/journalEntryCompose';
   static const String journalEntryDetail = '/journalEntryDetail';
   static const String pulse = '/pulse';
-  static const String couplesCalendar = '/couples-calendar';
   static const String timeline = '/timeline';
   static const String opinionLoader = '/opinionLoader';
   static const String addEditReminder = '/couples-calendar/add';
@@ -544,11 +542,6 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.pulse,
         name: 'pulse',
         builder: (context, state) => const PulseTab(),
-      ),
-      GoRoute(
-        path: RouteNames.couplesCalendar,
-        name: 'couplesCalendar',
-        builder: (context, state) => const CouplesCalendarScreen(),
       ),
       GoRoute(
         path: RouteNames.timeline,

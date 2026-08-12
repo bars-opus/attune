@@ -191,12 +191,12 @@ NotificationConfig buildNanoEmbryoNotificationConfig() {
 
         case 'reminder_upcoming':
           // No reminder-specific deep-link route exists (no
-          // /couples-calendar/:reminderId) — reminder_id is delivered in
+          // /timeline/:reminderId) — reminder_id is delivered in
           // the payload (see the process-scheduled-notifications allowlist)
           // for potential future use, but today the screen itself has no
           // way to scroll-to/highlight a specific entry, so the correct
-          // destination is the plain calendar screen.
-          GoRouter.of(context).go(RouteNames.couplesCalendar);
+          // destination is the plain timeline screen.
+          GoRouter.of(context).go(RouteNames.timeline);
           return;
 
         default:

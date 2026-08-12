@@ -342,7 +342,7 @@ class _NextCalendarEventRow extends ConsumerWidget {
       showAvatar: false,
       disableTrailing: false,
       showTrailingArrow: true,
-      onTap: () => context.pushNamed('couplesCalendar'),
+      onTap: () => context.pushNamed('timeline'),
     );
   }
 }
