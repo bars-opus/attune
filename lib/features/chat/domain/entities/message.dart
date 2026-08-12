@@ -18,6 +18,8 @@ class Message {
   final DateTime? readAt;
   final MessageStatus status;
   final bool isMine;
+  final String? replyToMessageId;
+  final String? quotedText;
 
   const Message({
     required this.id,
@@ -36,6 +38,8 @@ class Message {
     this.source = 'native',
     this.deliveredAt,
     this.readAt,
+    this.replyToMessageId,
+    this.quotedText,
   });
 
   factory Message.fromRow(
@@ -66,6 +70,8 @@ class Message {
         deliveredAt: deliveredAt,
         readAt: readAt,
       ),
+      replyToMessageId: row['reply_to_message_id'] as String?,
+      quotedText: row['quoted_text'] as String?,
     );
   }
 
@@ -80,6 +86,8 @@ class Message {
     String? mediaType,
     String? mediaThumbnailKey,
     String? localMediaPath,
+    String? replyToMessageId,
+    String? quotedText,
   }) {
     return Message(
       id: id,
@@ -94,6 +102,8 @@ class Message {
       source: 'native',
       status: MessageStatus.sending,
       isMine: true,
+      replyToMessageId: replyToMessageId,
+      quotedText: quotedText,
     );
   }
 
@@ -114,6 +124,8 @@ class Message {
     DateTime? readAt,
     MessageStatus? status,
     bool? isMine,
+    String? replyToMessageId,
+    String? quotedText,
   }) {
     return Message(
       id: id ?? this.id,
@@ -132,6 +144,8 @@ class Message {
       readAt: readAt ?? this.readAt,
       status: status ?? this.status,
       isMine: isMine ?? this.isMine,
+      replyToMessageId: replyToMessageId ?? this.replyToMessageId,
+      quotedText: quotedText ?? this.quotedText,
     );
   }
 
@@ -151,6 +165,8 @@ class Message {
       'readAt': readAt?.toIso8601String(),
       'status': status.name,
       'isMine': isMine,
+      'replyToMessageId': replyToMessageId,
+      'quotedText': quotedText,
     };
   }
 
@@ -170,6 +186,8 @@ class Message {
       readAt: _parseDateTime(json['readAt']),
       status: MessageStatus.values.byName(json['status'] as String),
       isMine: json['isMine'] as bool,
+      replyToMessageId: json['replyToMessageId'] as String?,
+      quotedText: json['quotedText'] as String?,
     );
   }
 
