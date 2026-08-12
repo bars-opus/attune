@@ -39,7 +39,7 @@ import 'package:attune/features/reflection_journal/presentation/screens/journal_
 import 'package:attune/features/reflection_journal/presentation/screens/journal_entry_detail_screen.dart';
 import 'package:attune/features/reflection_journal/presentation/screens/reflection_journal_screen.dart';
 import 'package:attune/features/pulse/presentation/screens/checkin_complete_screen.dart';
-import 'package:attune/features/pulse/presentation/screens/pulse_screen.dart';
+import 'package:attune/features/pulse/presentation/screens/pulse_tab.dart';
 import 'package:attune/features/pulse/presentation/screens/weekly_checkin_screen.dart';
 import 'package:attune/features/reminders/presentation/screens/couples_calendar_screen.dart';
 import 'package:attune/features/reminders/presentation/screens/add_edit_reminder_screen.dart';
@@ -543,7 +543,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.pulse,
         name: 'pulse',
-        builder: (context, state) => const PulseScreen(),
+        builder: (context, state) => const PulseTab(),
       ),
       GoRoute(
         path: RouteNames.couplesCalendar,

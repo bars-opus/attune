@@ -1,109 +1,105 @@
 // lib/features/pulse/presentation/screens/pulse_tab.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/reminders/presentation/screens/couples_calendar_screen.dart';
+import 'package:attune/features/chat/presentation/screens/chat_settings_screen.dart';
+import 'package:attune/features/chat/presentation/state/chat_state.dart';
+import 'package:attune/features/pulse/providers/pulse_providers.dart';
 import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'pulse_screen.dart';
 
-class PulseTab extends ConsumerStatefulWidget {
+/// Hosts Pulse, Timeline, and Chat settings as sibling tabs using the app's
+/// shared AppTabItem/TabsWithContent — mirrors CouplesCalendarScreen's tab
+/// setup rather than the ad hoc pill switcher this file used before.
+class PulseTab extends ConsumerWidget {
   const PulseTab({super.key});
 
   @override
-  ConsumerState<PulseTab> createState() => _PulseTabState();
-}
-
-class _PulseTabState extends ConsumerState<PulseTab>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _tabController.addListener(() {
-      if (mounted) {
-        setState(() {});
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      body: Column(
-        children: [
-          // Pill switcher
-          Container(
-            margin: EdgeInsets.only(top: Spacing.md.h),
-            child: Center(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(BorderRadiusTokens.xl.r),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildPillOption('Pulse', 0),
-                    _buildPillOption('Timeline', 1),
-                    _buildPillOption('Calendar', 2),
-                  ],
-                ),
-              ),
-            ),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        title: Text(
+          'Chat Insight',
+          style: textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface.withOpacity(0.8),
           ),
-          // Tab bar view
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              physics: const PageScrollPhysics(),
-              children: const [PulseScreen(), TimelineScreen(), CouplesCalendarScreen()],
-            ),
+        ),
+      ),
+      body: TabsWithContent(
+        showContent: true,
+        initialIndex: 0,
+        scrollable: false,
+        tabs: [
+          const AppTabItem(
+            label: 'Pulse',
+            icon: Icons.monitor_heart_outlined,
+            content: PulseScreen(),
+          ),
+          const AppTabItem(
+            label: 'Timeline',
+            icon: Icons.timeline,
+            content: TimelineScreen(),
+          ),
+          AppTabItem(
+            label: 'Chat settings',
+            icon: Icons.settings_outlined,
+            content: Consumer(builder: (context, ref, _) => _ChatSettingsTab()),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildPillOption(String label, int index) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final isSelected = _tabController.index == index;
+/// Resolves the active relationship's Conversation before handing off to
+/// ChatSettingsScreen, which needs the full entity (name, avatar,
+/// relationshipId) — not just the bare relationship id this tab starts with.
+/// Mirrors ChatChannelLoader's relationshipId -> Conversation resolve.
+class _ChatSettingsTab extends ConsumerWidget {
+  const _ChatSettingsTab();
 
-    return GestureDetector(
-      onTap: () {
-        _tabController.animateTo(index);
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: EdgeInsets.symmetric(
-          horizontal: Spacing.lg.w,
-          vertical: Spacing.sm.h,
-        ),
-        decoration: BoxDecoration(
-          color: isSelected ? colorScheme.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(BorderRadiusTokens.xl.r),
-        ),
-        child: Text(
-          label,
-          style: textTheme.titleSmall?.copyWith(
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-            color:
-                isSelected
-                    ? colorScheme.onPrimary
-                    : colorScheme.onSurface.withOpacity(0.6),
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final relationshipIdAsync = ref.watch(currentRelationshipIdProvider);
+
+    return relationshipIdAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error:
+          (_, _) => const Center(
+            child: Text('Chat settings are unavailable right now.'),
           ),
-        ),
-      ),
+      data: (relationshipId) {
+        if (relationshipId == null) {
+          return const Center(
+            child: Text('Chat settings are unavailable right now.'),
+          );
+        }
+
+        return FutureBuilder(
+          future: ref
+              .read(chatRepositoryProvider)
+              .getConversation(relationshipId),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final conversation = snapshot.data;
+            if (conversation == null) {
+              return const Center(
+                child: Text('Chat settings are unavailable right now.'),
+              );
+            }
+
+            return ChatSettingsScreen(conversation: conversation);
+          },
+        );
+      },
     );
   }
 }

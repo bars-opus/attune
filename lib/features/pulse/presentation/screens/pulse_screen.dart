@@ -121,7 +121,9 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
                     loading:
                         () => const Center(child: CircularProgressIndicator()),
                     error:
-                        (error, stack) => Center(child: Text('Error: $error')),
+                        (error, stack) => Center(
+                          child: ErrorStateWidget(subtitle: 'Error: $error'),
+                        ),
                     data: (pulse) {
                       if (pulse == null) {
                         return _buildNoDataState();

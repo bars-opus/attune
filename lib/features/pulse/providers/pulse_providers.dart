@@ -120,17 +120,22 @@ final recomputePulseProvider = FutureProvider.family<bool, String>((
     }
   }
 
-  // Update last recompute time
-  ref.read(_lastRecomputeTimeProvider.notifier).state = {
-    ...lastRecomputeMap,
-    relationshipId: DateTime.now(),
-  };
-
   // Call edge function
   final response = await supabase.functions.invoke(
     'compute-pulse',
     body: {'relationship_id': relationshipId, 'force_recompute': true},
   );
+
+  // Update last recompute time. Deferred until after the await above —
+  // Riverpod treats a provider's synchronous pre-await code as still part
+  // of its own initialization, and mutating another provider's state in
+  // that window trips "Providers are not allowed to modify other providers
+  // during their initialization," even though this looks like ordinary
+  // rate-limit bookkeeping.
+  ref.read(_lastRecomputeTimeProvider.notifier).state = {
+    ...lastRecomputeMap,
+    relationshipId: DateTime.now(),
+  };
 
   // Invalidate pulse score providers
   ref.invalidate(currentPulseScoreProvider);
