@@ -2,63 +2,38 @@ import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-final searchQueryProvider = StateProvider<String>((ref) => '');
-
-enum SortCriteria {
-  recent('Most Recent'),
-  unread('Unread First'),
-  alphabetical('A-Z');
-
-  final String label;
-  const SortCriteria(this.label);
-}
-
-final sortCriteriaProvider = StateProvider<SortCriteria>(
-  (ref) => SortCriteria.recent,
-);
-
-final unreadOnlyProvider = StateProvider<bool>((ref) => false);
-
+/// The current, active relationship's conversation only (0 or 1 entries —
+/// see enforce_single_active_relationship in the schema). A user's chat
+/// list is for the one relationship they're in right now — history from an
+/// ended relationship is a distinct, deliberately separate surface (see
+/// [previousConversationsProvider]), not another entry in this list. No
+/// sort/search/unread-filter needed with at most one item to show.
 final filteredConversationsProvider = Provider<List<Conversation>>((ref) {
   final conversationsAsync = ref.watch(conversationsProvider);
-  final searchQuery = ref.watch(searchQueryProvider).trim().toLowerCase();
-  final sort = ref.watch(sortCriteriaProvider);
-  final unreadOnly = ref.watch(unreadOnlyProvider);
+
+  return conversationsAsync.maybeWhen(
+    data:
+        (conversations) =>
+            conversations.where((conversation) => conversation.canSend).toList(),
+    orElse: () => const [],
+  );
+});
+
+/// Read-only conversations from relationships that have ended — surfaced
+/// behind the "Previous relationships" card rather than mixed into the main
+/// list, so the current relationship is never confused with history. Sorted
+/// most-recently-active first; unaffected by unreadOnly/sort since read-only
+/// threads have no unread state that matters and there's rarely more than a
+/// couple of them.
+final previousConversationsProvider = Provider<List<Conversation>>((ref) {
+  final conversationsAsync = ref.watch(conversationsProvider);
 
   return conversationsAsync.maybeWhen(
     data: (conversations) {
-      var filtered =
-          conversations.where((conversation) {
-            if (unreadOnly && conversation.unreadCount == 0) return false;
-            if (searchQuery.isEmpty) return true;
-
-            final matchesName = conversation.name.toLowerCase().contains(
-              searchQuery,
-            );
-            final matchesPreview =
-                conversation.lastMessage?.content.toLowerCase().contains(
-                  searchQuery,
-                ) ??
-                false;
-            return matchesName || matchesPreview;
-          }).toList();
-
-      switch (sort) {
-        case SortCriteria.recent:
-          filtered.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-          break;
-        case SortCriteria.unread:
-          filtered.sort((a, b) {
-            final unreadRank = b.unreadCount.compareTo(a.unreadCount);
-            if (unreadRank != 0) return unreadRank;
-            return b.updatedAt.compareTo(a.updatedAt);
-          });
-          break;
-        case SortCriteria.alphabetical:
-          filtered.sort((a, b) => a.name.compareTo(b.name));
-          break;
-      }
-      return filtered;
+      final previous =
+          conversations.where((conversation) => !conversation.canSend).toList()
+            ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return previous;
     },
     orElse: () => const [],
   );

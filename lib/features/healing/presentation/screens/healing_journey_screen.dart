@@ -32,7 +32,7 @@ class HealingJourneyScreen extends ConsumerWidget {
         actions: [
           AppIconButton(
             icon: Icons.notes_rounded,
-            tooltip: 'Tags',
+            tooltip: 'Docs',
             onPressed: () {
               BottomSheetUtils.showDocumentationBottomSheet(
                 context: context,

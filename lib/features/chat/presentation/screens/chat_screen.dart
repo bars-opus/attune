@@ -355,6 +355,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _syncViewActive();
   }
 
+  Future<void> _openChatSettings() async {
+    _syncViewActive();
+    await context.pushNamed('chatSettings', extra: widget.conversation);
+    _syncViewActive();
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(chatControllerProvider(widget.conversation));
@@ -377,7 +383,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(conversation.name),
+        title: InkWell(
+          onTap: () => unawaited(_openChatSettings()),
+          child: Text(conversation.name),
+        ),
         actions: [
           if (historicalImportEnabled.valueOrNull == true)
             IconButton(

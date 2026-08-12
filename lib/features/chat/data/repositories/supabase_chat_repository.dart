@@ -48,7 +48,10 @@ class SupabaseChatRepository implements ChatRepository {
     final user = _currentUser;
     final relationships = await _supabase
         .from('relationships')
-        .select('id,user_a,user_b,status,chat_archived_at,created_at,ended_at')
+        .select(
+          'id,user_a,user_b,status,chat_archived_at,created_at,ended_at,'
+          'chat_name,chat_avatar_url,chat_avatar_thumbnail_url',
+        )
         .or('user_a.eq.${user.id},user_b.eq.${user.id}')
         .isFilter('chat_archived_at', null)
         .order('created_at', ascending: false);
@@ -87,13 +90,30 @@ class SupabaseChatRepository implements ChatRepository {
                   ? ConversationAvailability.active
                   : ConversationAvailability.readOnly);
 
+      // Couple-chosen identity wins once set (see spec's Read path /
+      // display section) — falls back to the partner's own profile until
+      // then, exactly matching pre-feature behavior. Prefer the thumbnail
+      // once the async job has produced one; the full-size key is still
+      // shown in the gap between "photo set" and "thumbnail ready" rather
+      // than nothing.
+      final chatAvatarKey =
+          (relationship['chat_avatar_thumbnail_url'] as String?) ??
+          (relationship['chat_avatar_url'] as String?);
+      final avatarUrl =
+          chatAvatarKey != null
+              ? await _createRelationshipAvatarSignedUrl(chatAvatarKey)
+              : partner?['avatar_url'] as String?;
+
       conversations.add(
         Conversation(
           id: relationshipId,
           relationshipId: relationshipId,
           partnerId: partnerId,
-          name: (partner?['display_name'] as String?) ?? 'Partner',
-          avatarUrl: partner?['avatar_url'] as String?,
+          name:
+              (relationship['chat_name'] as String?) ??
+              (partner?['display_name'] as String?) ??
+              'Partner',
+          avatarUrl: avatarUrl,
           lastMessage: lastMessage,
           unreadCount: unreadCount,
           updatedAt: lastMessage?.createdAt ?? DateTime.now(),
@@ -331,6 +351,90 @@ class SupabaseChatRepository implements ChatRepository {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Same cache/TTL as [createSignedMediaUrl] — storage keys are already
+  /// globally unique (`relationship-avatars/{relationshipId}/...` vs
+  /// `chat-media/...`), so sharing one cache map risks no collision.
+  Future<String?> _createRelationshipAvatarSignedUrl(String storageKey) async {
+    final cached = _signedUrlCache[storageKey];
+    if (cached != null && cached.expiresAt.isAfter(DateTime.now())) {
+      return cached.url;
+    }
+    try {
+      final url = await _supabase.storage
+          .from('relationship-avatars')
+          .createSignedUrl(storageKey, _signedUrlTtl.inSeconds);
+      _signedUrlCache[storageKey] = (
+        url: url,
+        expiresAt: DateTime.now().add(_signedUrlTtl - _signedUrlSafetyMargin),
+      );
+      return url;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> setRelationshipChatName({
+    required String relationshipId,
+    required String chatName,
+  }) async {
+    await _supabase.rpc(
+      'set_relationship_chat_name',
+      params: {'p_relationship_id': relationshipId, 'p_chat_name': chatName},
+    );
+  }
+
+  @override
+  Future<RelationshipAvatarUploadIntent> createRelationshipAvatarUploadIntent({
+    required String relationshipId,
+    required String mimeType,
+  }) async {
+    final response = await _supabase.rpc(
+      'create_relationship_avatar_upload_intent',
+      params: {'p_relationship_id': relationshipId, 'p_mime_type': mimeType},
+    );
+    final row =
+        response is List
+            ? Map<String, dynamic>.from(response.first as Map)
+            : Map<String, dynamic>.from(response as Map);
+
+    return RelationshipAvatarUploadIntent(
+      intentId: row['intent_id'] as String,
+      storageKey: row['storage_key'] as String,
+      expiresAt: DateTime.parse(row['expires_at'] as String).toLocal(),
+      bucket: row['bucket'] as String,
+    );
+  }
+
+  @override
+  Future<void> uploadRelationshipAvatarImage({
+    required RelationshipAvatarUploadIntent intent,
+    required String localPath,
+    required String mimeType,
+  }) async {
+    await _supabase.storage
+        .from(intent.bucket)
+        .upload(
+          intent.storageKey,
+          File(localPath),
+          fileOptions: FileOptions(upsert: false, contentType: mimeType),
+        );
+  }
+
+  @override
+  Future<void> applyRelationshipAvatar({
+    required String relationshipId,
+    required String intentId,
+  }) async {
+    await _supabase.rpc(
+      'set_relationship_avatar',
+      params: {
+        'p_relationship_id': relationshipId,
+        'p_intent_id': intentId,
+      },
+    );
   }
 
   /// Lazily creates and subscribes the single Realtime channel for

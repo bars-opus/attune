@@ -43,6 +43,37 @@ abstract class ChatRepository {
     required String mimeType,
   });
   Future<String?> createSignedMediaUrl(String mediaKey);
+
+  /// Sets this relationship's chat name (either partner may call this at
+  /// any time the relationship is active). Validated server-side (1-30
+  /// trimmed characters); see set_relationship_chat_name RPC.
+  Future<void> setRelationshipChatName({
+    required String relationshipId,
+    required String chatName,
+  });
+
+  /// Requests a one-time upload slot for a new relationship avatar photo —
+  /// mirrors [createImageUploadIntent]'s shape but scoped to the
+  /// relationship-avatars bucket via a separate RPC/table pipeline (see
+  /// docs/superpowers/specs/2026-08-11-couple-chat-identity-design.md).
+  Future<RelationshipAvatarUploadIntent> createRelationshipAvatarUploadIntent({
+    required String relationshipId,
+    required String mimeType,
+  });
+
+  Future<void> uploadRelationshipAvatarImage({
+    required RelationshipAvatarUploadIntent intent,
+    required String localPath,
+    required String mimeType,
+  });
+
+  /// Validates the uploaded object against [intentId] and applies it as the
+  /// relationship's chat_avatar_url, enqueuing async thumbnail generation.
+  Future<void> applyRelationshipAvatar({
+    required String relationshipId,
+    required String intentId,
+  });
+
   Stream<void> watchConversationEvents(String relationshipId);
   Future<void> markDelivered(List<String> messageIds);
   Future<void> markConversationRead(String relationshipId);
@@ -92,6 +123,20 @@ class ChatMediaUploadIntent {
   final String bucket;
 
   const ChatMediaUploadIntent({
+    required this.intentId,
+    required this.storageKey,
+    required this.expiresAt,
+    required this.bucket,
+  });
+}
+
+class RelationshipAvatarUploadIntent {
+  final String intentId;
+  final String storageKey;
+  final DateTime expiresAt;
+  final String bucket;
+
+  const RelationshipAvatarUploadIntent({
     required this.intentId,
     required this.storageKey,
     required this.expiresAt,

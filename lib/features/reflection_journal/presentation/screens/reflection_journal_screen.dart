@@ -167,7 +167,7 @@ class _PatternsTab extends ConsumerWidget {
       data: (patterns) {
         if (patterns.status == 'insufficient_evidence') {
           return EmptyStateWidget(
-            icon: Icons.insights_outlined,
+            icon: Icons.pattern,
             title: 'Not enough entries yet',
             subtitle:
                 'Once you\'ve written a few entries, patterns across them will show up here.',

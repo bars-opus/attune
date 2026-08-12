@@ -275,7 +275,7 @@ class InfoRowWidget extends StatelessWidget {
     this.titleFontColor,
     this.subTitleFontColor,
     this.isNotAvatarImage = false,
-    this.pinAvatar = false,
+    this.pinAvatar = true,
     this.padAvatarTop = true,
     this.bottomWidget,
   }) : assert(

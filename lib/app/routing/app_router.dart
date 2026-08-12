@@ -32,6 +32,8 @@ import 'package:attune/features/chat/presentation/screens/chat_channel_loader.da
 import 'package:attune/features/chat/presentation/screens/chat_import_screen.dart';
 import 'package:attune/features/chat/presentation/screens/chat_insights_screen.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
+import 'package:attune/features/chat/presentation/screens/chat_settings_screen.dart';
+import 'package:attune/features/chat/presentation/screens/previous_relationships_screen.dart';
 import 'package:attune/features/healing/presentation/screens/healing_journey_screen.dart';
 import 'package:attune/features/reflection_journal/presentation/screens/journal_entry_compose_screen.dart';
 import 'package:attune/features/reflection_journal/presentation/screens/journal_entry_detail_screen.dart';
@@ -131,6 +133,8 @@ class RouteNames {
   static const String search = '/search';
   static const String chatScreen = '/chatScreen';
   static const String chatChannel = '/chat-channel';
+  static const String previousRelationships = '/previous-relationships';
+  static const String chatSettings = '/chat-settings';
   static const String editScreen = '/editScreen';
   static const String createUsername = '/createUsername';
   static const String verifyEmail = '/verifyEmail';
@@ -1269,6 +1273,24 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
           final relationshipId =
               state.uri.queryParameters['relationshipId'] ?? '';
           return ChatChannelLoader(relationshipId: relationshipId);
+        },
+      ),
+      GoRoute(
+        path: RouteNames.previousRelationships,
+        name: 'previousRelationships',
+        builder: (context, state) => const PreviousRelationshipsScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.chatSettings,
+        name: 'chatSettings',
+        builder: (context, state) {
+          final conversation = state.extra as Conversation?;
+          if (conversation == null) {
+            return const Scaffold(
+              body: Center(child: Text('Conversation unavailable.')),
+            );
+          }
+          return ChatSettingsScreen(conversation: conversation);
         },
       ),
       GoRoute(
