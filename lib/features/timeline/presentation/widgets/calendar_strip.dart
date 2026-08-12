@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 class CalendarStrip extends StatelessWidget {
   final DateTime focusedMonth;
   final Map<DateTime, List<TimelineEventModel>> eventsByDate;
+  final Map<DateTime, List<dynamic>> remindersByDate;
   final Function(DateTime) onDaySelected;
   final Function(DateTime) onMonthChanged;
   final DateTime? selectedDate;
@@ -18,6 +19,7 @@ class CalendarStrip extends StatelessWidget {
     super.key,
     required this.focusedMonth,
     required this.eventsByDate,
+    this.remindersByDate = const {},
     required this.onDaySelected,
     required this.onMonthChanged,
     this.selectedDate,
@@ -110,11 +112,19 @@ class CalendarStrip extends StatelessWidget {
               final isToday = _isSameDay(date, DateTime.now());
               final isSelected = selectedDate != null && _isSameDay(date, selectedDate!);
               final eventsOnDate = eventsByDate[date] ?? [];
-              final hasEvents = eventsOnDate.isNotEmpty;
-              
+              final remindersOnDate = remindersByDate[date] ?? [];
+              final hasEvents = eventsOnDate.isNotEmpty || remindersOnDate.isNotEmpty;
+
               // Get unique event types for dots
               final eventTypes = eventsOnDate.map((e) => e.eventType).toSet().toList();
               final dotColors = eventTypes.map((type) => _getEventTypeColor(type, colorScheme)).toList();
+              // Upcoming-reminder dots use a hollow/outlined ring rather
+              // than a filled dot, so they read as "not yet happened"
+              // next to the filled moment-type dots — one shared color
+              // (colorScheme.secondary) regardless of reminder type, since
+              // "this date has something upcoming" is the only signal the
+              // strip needs to carry, not which reminder type it is.
+              final hasReminderDot = remindersOnDate.isNotEmpty;
               
               return GestureDetector(
                 onTap: () => onDaySelected(date),
@@ -152,17 +162,32 @@ class CalendarStrip extends StatelessWidget {
                           padding: EdgeInsets.only(top: 2),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
-                            children: dotColors.take(3).map((color) {
-                              return Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 1),
-                                width: 4,
-                                height: 4,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: color,
+                            children: [
+                              ...dotColors.take(3).map((color) {
+                                return Container(
+                                  margin: const EdgeInsets.symmetric(horizontal: 1),
+                                  width: 4,
+                                  height: 4,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: color,
+                                  ),
+                                );
+                              }),
+                              if (hasReminderDot)
+                                Container(
+                                  margin: const EdgeInsets.symmetric(horizontal: 1),
+                                  width: 4,
+                                  height: 4,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: colorScheme.secondary,
+                                      width: 1,
+                                    ),
+                                  ),
                                 ),
-                              );
-                            }).toList(),
+                            ],
                           ),
                         ),
                     ],
