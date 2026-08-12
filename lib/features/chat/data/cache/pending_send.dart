@@ -13,6 +13,8 @@ class PendingSend {
   final DateTime? nextAttemptAt;
   final String? lastErrorCategory;
   final PendingSendState state;
+  final String? replyToMessageId;
+  final String? quotedText;
 
   const PendingSend({
     required this.clientMessageId,
@@ -27,6 +29,8 @@ class PendingSend {
     this.nextAttemptAt,
     this.lastErrorCategory,
     this.state = PendingSendState.queued,
+    this.replyToMessageId,
+    this.quotedText,
   });
 
   PendingSend copyWith({
@@ -48,6 +52,8 @@ class PendingSend {
       nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
       lastErrorCategory: lastErrorCategory ?? this.lastErrorCategory,
       state: state ?? this.state,
+      replyToMessageId: replyToMessageId,
+      quotedText: quotedText,
     );
   }
 
@@ -65,6 +71,8 @@ class PendingSend {
       'nextAttemptAt': nextAttemptAt?.toIso8601String(),
       'lastErrorCategory': lastErrorCategory,
       'state': state.name,
+      'replyToMessageId': replyToMessageId,
+      'quotedText': quotedText,
     };
   }
 
@@ -85,6 +93,8 @@ class PendingSend {
               : DateTime.parse(json['nextAttemptAt'] as String),
       lastErrorCategory: json['lastErrorCategory'] as String?,
       state: PendingSendState.values.byName(json['state'] as String),
+      replyToMessageId: json['replyToMessageId'] as String?,
+      quotedText: json['quotedText'] as String?,
     );
   }
 }
