@@ -384,7 +384,11 @@ class ChatController extends StateNotifier<ChatState> {
     }
   }
 
-  Future<void> sendMessage(String content) async {
+  Future<void> sendMessage(
+    String content, {
+    String? replyToMessageId,
+    String? quotedText,
+  }) async {
     if (!Message.isValidContent(content) || !state.conversation.canSend) return;
 
     final user = ref.read(currentUserProvider);
@@ -399,6 +403,8 @@ class ChatController extends StateNotifier<ChatState> {
       senderId: user.id,
       text: content,
       createdAt: now,
+      replyToMessageId: replyToMessageId,
+      quotedText: quotedText,
     );
 
     await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
@@ -410,6 +416,8 @@ class ChatController extends StateNotifier<ChatState> {
       senderId: user.id,
       content: content,
       createdAt: now,
+      replyToMessageId: replyToMessageId,
+      quotedText: quotedText,
     );
 
     state = state.copyWith(
@@ -622,6 +630,8 @@ class ChatController extends StateNotifier<ChatState> {
         content: pending.text,
         mediaKey: mediaKey,
         mediaType: pending.mediaType,
+        replyToMessageId: pending.replyToMessageId,
+        quotedText: pending.quotedText,
       );
       await ref
           .read(chatCacheServiceProvider)
@@ -910,6 +920,8 @@ class ChatController extends StateNotifier<ChatState> {
         createdAt: pending.createdAt,
         mediaType: pending.mediaType,
         localMediaPath: pending.localMediaPath,
+        replyToMessageId: pending.replyToMessageId,
+        quotedText: pending.quotedText,
       ).copyWith(
         status: switch (pending.state) {
           PendingSendState.failedPermanent => MessageStatus.failed,

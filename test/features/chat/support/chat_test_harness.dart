@@ -93,6 +93,8 @@ class FakeChatRepository implements ChatRepository {
     required String content,
     String? mediaKey,
     String? mediaType,
+    String? replyToMessageId,
+    String? quotedText,
   }) async {
     sendCallCount++;
     if (sendDelay > Duration.zero) await Future<void>.delayed(sendDelay);
@@ -123,6 +125,8 @@ class FakeChatRepository implements ChatRepository {
       'media_url': mediaKey,
       'media_type': mediaType,
       'source': 'native',
+      'reply_to_message_id': replyToMessageId,
+      'quoted_text': quotedText,
     };
     final message = Message.fromRow(row, currentUserId: currentUserId);
     serverMessages[id] = message;
@@ -278,6 +282,33 @@ class FakeChatRepository implements ChatRepository {
   Future<String?> createSignedMediaUrl(String mediaKey) async => null;
   @override
   Future<int> fetchStreak(String relationshipId) async => streakValue;
+  @override
+  Future<void> setRelationshipChatName({
+    required String relationshipId,
+    required String chatName,
+  }) async {}
+  @override
+  Future<RelationshipAvatarUploadIntent> createRelationshipAvatarUploadIntent({
+    required String relationshipId,
+    required String mimeType,
+  }) async =>
+      RelationshipAvatarUploadIntent(
+        intentId: 'avatar-intent',
+        storageKey: 'relationship-avatars/test.jpg',
+        expiresAt: DateTime.now().add(const Duration(minutes: 15)),
+        bucket: 'relationship-avatars',
+      );
+  @override
+  Future<void> uploadRelationshipAvatarImage({
+    required RelationshipAvatarUploadIntent intent,
+    required String localPath,
+    required String mimeType,
+  }) async {}
+  @override
+  Future<void> applyRelationshipAvatar({
+    required String relationshipId,
+    required String intentId,
+  }) async {}
 }
 
 /// An in-memory cache backend for tests (no platform storage).
