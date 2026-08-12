@@ -14,7 +14,9 @@ import 'package:attune/features/timeline/presentation/widgets/upcoming_reminders
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class TimelineScreen extends ConsumerStatefulWidget {
-  const TimelineScreen({super.key});
+  const TimelineScreen({super.key, this.showAppBar = false});
+
+  final bool showAppBar;
 
   @override
   ConsumerState<TimelineScreen> createState() => _TimelineScreenState();
@@ -44,7 +46,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
     List<ReminderModel> reminders,
   ) {
     final Map<DateTime, List<ReminderModel>> grouped = {};
-    for (final reminder in reminders) {
+    for (final reminder in upcomingReminders(reminders)) {
       final occurrence = nextOccurrence(reminder);
       if (occurrence.month != _focusedMonth.month ||
           occurrence.year != _focusedMonth.year) {
@@ -72,16 +74,19 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
         }
 
         return Scaffold(
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            actions: [
-              AppIconButton(
-                icon: Icons.people_outline,
-                tooltip: 'Family',
-                onPressed: () => context.pushNamed('familyMembers'),
-              ),
-            ],
-          ),
+          appBar:
+              widget.showAppBar
+                  ? AppBar(
+                    backgroundColor: Colors.transparent,
+                    actions: [
+                      AppIconButton(
+                        icon: Icons.people_outline,
+                        tooltip: 'Family',
+                        onPressed: () => context.pushNamed('familyMembers'),
+                      ),
+                    ],
+                  )
+                  : null,
           floatingActionButton: AppFab(
             icon: Icons.add,
             onPressed: () async {
@@ -121,7 +126,9 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                 SliverToBoxAdapter(
                   child: remindersAsync.when(
                     data: (reminders) {
-                      if (reminders.isEmpty) return const SizedBox.shrink();
+                      if (upcomingReminders(reminders).isEmpty) {
+                        return const SizedBox.shrink();
+                      }
                       return Padding(
                         padding: EdgeInsets.symmetric(
                           horizontal: Spacing.md.w,

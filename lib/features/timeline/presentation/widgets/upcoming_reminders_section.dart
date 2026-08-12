@@ -16,6 +16,22 @@ DateTime nextOccurrence(ReminderModel reminder, {DateTime? now}) {
   return next;
 }
 
+/// Reminders whose next occurrence has not yet passed, i.e. what belongs in
+/// the Upcoming section — a one-off reminder from the past is excluded
+/// entirely rather than sorting to the top with a negative countdown.
+List<ReminderModel> upcomingReminders(
+  List<ReminderModel> reminders, {
+  DateTime? now,
+}) {
+  final today = now ?? DateTime.now();
+  final startOfToday = DateTime(today.year, today.month, today.day);
+  return reminders
+      .where(
+        (reminder) => !nextOccurrence(reminder, now: now).isBefore(startOfToday),
+      )
+      .toList();
+}
+
 String _countdownLabel(DateTime occurrence, {DateTime? now}) {
   final today = now ?? DateTime.now();
   final days = DateTime(occurrence.year, occurrence.month, occurrence.day)
@@ -56,9 +72,10 @@ class UpcomingRemindersSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (reminders.isEmpty) return const SizedBox.shrink();
+    final filtered = upcomingReminders(reminders);
+    if (filtered.isEmpty) return const SizedBox.shrink();
 
-    final sorted = [...reminders]
+    final sorted = [...filtered]
       ..sort(
         (a, b) => nextOccurrence(a).compareTo(nextOccurrence(b)),
       );

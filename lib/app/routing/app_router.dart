@@ -546,7 +546,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.timeline,
         name: 'timeline',
-        builder: (context, state) => const TimelineScreen(),
+        builder: (context, state) => const TimelineScreen(showAppBar: true),
       ),
       GoRoute(
         path: RouteNames.opinionLoader,

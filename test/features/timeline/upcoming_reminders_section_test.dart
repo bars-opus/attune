@@ -61,6 +61,46 @@ void main() {
     });
   });
 
+  group('upcomingReminders', () {
+    test('excludes a one-off reminder whose date has already passed', () {
+      final reminders = [
+        _reminder(id: 'r1', title: 'Past trip', remindAt: DateTime(2026, 7, 1)),
+        _reminder(
+          id: 'r2',
+          title: 'Future trip',
+          remindAt: DateTime(2026, 9, 15),
+        ),
+      ];
+      final result = upcomingReminders(reminders, now: DateTime(2026, 8, 28));
+      expect(result.map((r) => r.id), ['r2']);
+    });
+
+    test('includes a reminder occurring today', () {
+      final reminders = [
+        _reminder(id: 'r1', title: 'Today', remindAt: DateTime(2026, 8, 28)),
+      ];
+      final result = upcomingReminders(reminders, now: DateTime(2026, 8, 28));
+      expect(result.map((r) => r.id), ['r1']);
+    });
+
+    test('keeps a yearly reminder whose remindAt year is in the past, using rolled-forward date', () {
+      final reminders = [
+        _reminder(
+          id: 'r1',
+          title: 'Anniversary',
+          remindAt: DateTime(2020, 12, 25),
+          recurrence: 'yearly',
+        ),
+      ];
+      final result = upcomingReminders(reminders, now: DateTime(2026, 8, 28));
+      expect(result.map((r) => r.id), ['r1']);
+    });
+
+    test('empty input yields empty output', () {
+      expect(upcomingReminders(const [], now: DateTime(2026, 8, 28)), isEmpty);
+    });
+  });
+
   group('linkedTimelineEventIds', () {
     test('collects ids from reminders that have a linked timeline event', () {
       final reminders = [
@@ -174,5 +214,53 @@ void main() {
       final laterCenter = tester.getCenter(find.text('Later event'));
       expect(soonerCenter.dy, lessThan(laterCenter.dy));
     });
+
+    testWidgets(
+      'renders nothing when the only reminder is a past one-off',
+      (tester) async {
+        final pastReminder = _reminder(
+          id: 'r1',
+          title: 'Past one-off',
+          remindAt: DateTime.now().subtract(const Duration(days: 42)),
+        );
+        await pump(
+          tester,
+          UpcomingRemindersSection(
+            reminders: [pastReminder],
+            onReminderTap: null,
+          ),
+        );
+
+        expect(find.text('Past one-off'), findsNothing);
+        expect(find.byType(ListView), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'excludes a past one-off reminder while still showing a future one',
+      (tester) async {
+        final now = DateTime.now();
+        final pastReminder = _reminder(
+          id: 'r1',
+          title: 'Past one-off',
+          remindAt: now.subtract(const Duration(days: 42)),
+        );
+        final futureReminder = _reminder(
+          id: 'r2',
+          title: 'Future event',
+          remindAt: now.add(const Duration(days: 5)),
+        );
+        await pump(
+          tester,
+          UpcomingRemindersSection(
+            reminders: [pastReminder, futureReminder],
+            onReminderTap: null,
+          ),
+        );
+
+        expect(find.text('Past one-off'), findsNothing);
+        expect(find.text('Future event'), findsOneWidget);
+      },
+    );
   });
 }

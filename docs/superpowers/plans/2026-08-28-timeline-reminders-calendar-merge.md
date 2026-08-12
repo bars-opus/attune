@@ -929,6 +929,9 @@ Run the app and, in a relationship with at least one reminder and one logged mom
 4. After adding a new reminder via the sheet, confirm the Upcoming section refreshes to show it without a manual pull-to-refresh.
 5. Confirm the calendar strip shows a hollow ring on a date with only an upcoming reminder (no logged moment that day).
 6. Tap the Family icon in the AppBar — confirm it opens `FamilyMembersScreen`.
+7. With a one-off reminder whose date has already passed, confirm it does NOT appear in the Upcoming section and paints no ring on the calendar strip.
+8. Open Timeline via the Pulse tab's "Timeline" sub-tab (not the standalone /timeline route) and confirm exactly ONE AppBar is visible (no double app bar).
+9. With zero reminders for the relationship, confirm no "Upcoming" header or stray Divider renders above the calendar strip.
 
 Note the result of this manual check in the task's completion comment.
 
