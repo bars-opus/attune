@@ -7,9 +7,12 @@ import 'package:attune/core/ui/motion/motion_tokens.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/ui/presence/breathing_dots.dart';
+import 'package:attune/core/utils/animations/animated_scale_fade.dart';
+import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
+import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/domain/services/chat_image_preparer.dart';
 import 'package:attune/features/chat/presentation/providers/chat_experience_providers.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
@@ -50,6 +53,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   bool _headerExpanded = false;
   bool _isForeground = true;
 
+  /// Reply target set by swiping a message — mirrors
+  /// DebateRoomScreen._replyToPostId/_replyToQuotedText exactly. Null means
+  /// no reply is pending; the quoted-preview strip above the composer only
+  /// renders when this is non-null.
+  String? _replyToMessageId;
+  String? _replyToQuotedText;
+
+  /// One GlobalKey per message, registered fresh on every build (never
+  /// only-if-absent, so a key never survives past the message it was
+  /// created for) — mirrors DebateRoomScreen._postKeys, adapted from that
+  /// screen's SliverList to this screen's ListView.builder. Used by
+  /// _jumpToMessage to scroll a currently-built message into view.
+  final Map<String, GlobalKey> _messageKeys = {};
+
+  /// The message currently flashed as a jump target, and a timer to clear
+  /// the flash — mirrors DebateRoomScreen._highlightedPostId/_highlightTimer.
+  String? _highlightedMessageId;
+  Timer? _highlightTimer;
+
   @override
   void initState() {
     super.initState();
@@ -68,6 +90,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _controller.removeListener(_onDraftChanged);
     _controller.dispose();
     _scrollController.dispose();
+    _highlightTimer?.cancel();
     super.dispose();
   }
 
@@ -145,15 +168,91 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     await _sendDraftText(text);
   }
 
+  void _setReplyTarget(String messageId, String contentPreview) {
+    setState(() {
+      _replyToMessageId = messageId;
+      _replyToQuotedText =
+          contentPreview.length > 60
+              ? '${contentPreview.substring(0, 60)}...'
+              : contentPreview;
+    });
+  }
+
+  void _clearReplyTarget() {
+    setState(() {
+      _replyToMessageId = null;
+      _replyToQuotedText = null;
+    });
+  }
+
+  /// Scrolls to and flashes [messageId] if it's currently built (mounted
+  /// GlobalKey). Returns whether it found something to scroll to — the
+  /// caller falls back to an index-based estimate when this returns false.
+  /// Mirrors DebateRoomScreen._tryEnsureVisible exactly.
+  bool _tryEnsureMessageVisible(String messageId) {
+    final targetContext = _messageKeys[messageId]?.currentContext;
+    if (targetContext == null) return false;
+
+    Scrollable.ensureVisible(
+      targetContext,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+      alignment: 0.5,
+    );
+
+    _highlightTimer?.cancel();
+    setState(() => _highlightedMessageId = messageId);
+    _highlightTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (mounted) setState(() => _highlightedMessageId = null);
+    });
+    return true;
+  }
+
+  /// Jump to a reply's parent message — mirrors
+  /// DebateRoomScreen._jumpToPost exactly, adapted for this screen's
+  /// reversed ListView.builder (state.messages is already newest-first,
+  /// matching the reversed list's visual top-to-bottom order, so the same
+  /// index × averageExtent estimate applies with no sign flip needed).
+  Future<void> _jumpToMessage(
+    String messageId,
+    List<Message> currentMessages,
+  ) async {
+    if (_tryEnsureMessageVisible(messageId)) return;
+
+    final index = currentMessages.indexWhere((m) => m.id == messageId);
+    if (index == -1 || !_scrollController.hasClients) return;
+
+    final position = _scrollController.position;
+    final averageExtent =
+        position.viewportDimension /
+        (_messageKeys.isEmpty ? 8 : _messageKeys.length);
+    final estimatedOffset = index * averageExtent;
+
+    await _scrollController.animateTo(
+      estimatedOffset.clamp(0.0, position.maxScrollExtent),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOut,
+    );
+
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    if (!mounted) return;
+    _tryEnsureMessageVisible(messageId);
+  }
+
   Future<void> _sendDraftText(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
     await ref
         .read(chatControllerProvider(widget.conversation).notifier)
-        .sendMessage(text);
+        .sendMessage(
+          text,
+          replyToMessageId: _replyToMessageId,
+          quotedText: _replyToQuotedText,
+        );
     _controller.clear();
     await _clearDraft();
+    _clearReplyTarget();
     _scrollToLatest();
   }
 
@@ -432,6 +531,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               scrollController: _scrollController,
               firstBuildCutoff: _messageListCutoff,
               animatedMessageIds: _animatedMessageIds,
+              messageKeys: _messageKeys,
+              highlightedMessageId: _highlightedMessageId,
+              onReply: _setReplyTarget,
+              onJumpToParent: _jumpToMessage,
             ),
           ),
           Consumer(
@@ -459,6 +562,56 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               );
             },
           ),
+          if (conversation.canSend && _replyToMessageId != null)
+            AnimatedScaleFade(
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeOutBack,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: CardInkWell(
+                  padding: const EdgeInsets.only(left: 12),
+                  margin: EdgeInsets.zero,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: RichText(
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: 'Replying to',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context).colorScheme.primary,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: '\n${_replyToQuotedText ?? ''}',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withValues(alpha: 0.8),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            textAlign: TextAlign.start,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 16),
+                          onPressed: _clearReplyTarget,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (conversation.canSend)
             ChatTextField(
               controller: _controller,
@@ -875,6 +1028,10 @@ class _MessageList extends ConsumerWidget {
     required this.scrollController,
     required this.firstBuildCutoff,
     required this.animatedMessageIds,
+    required this.messageKeys,
+    required this.highlightedMessageId,
+    required this.onReply,
+    required this.onJumpToParent,
   });
 
   final ChatState state;
@@ -884,6 +1041,21 @@ class _MessageList extends ConsumerWidget {
   /// Owned by the screen State (survives list-item recycling); see its
   /// declaration for why a time-based cutoff alone is not enough.
   final Set<String> animatedMessageIds;
+
+  /// Owned by the screen State — see `_ChatScreenState._messageKeys` for why
+  /// keys are registered fresh on every build rather than only-if-absent.
+  final Map<String, GlobalKey> messageKeys;
+
+  /// The message currently flashed as a jump target, or null.
+  final String? highlightedMessageId;
+
+  /// Sets the screen's reply target to (messageId, contentPreview).
+  final void Function(String messageId, String contentPreview) onReply;
+
+  /// Jumps to and highlights a reply's parent message, given the current
+  /// message list for the index-based fallback estimate.
+  final Future<void> Function(String messageId, List<Message> currentMessages)
+  onJumpToParent;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -946,6 +1118,7 @@ class _MessageList extends ConsumerWidget {
           }
 
           final message = state.messages[index];
+          final messageKey = messageKeys[message.id] = GlobalKey();
           // A bubble is "first of its day" if its local date differs from the
           // next-older message's local date (list is newest-first). Only
           // genuinely-new first-of-day messages shimmer — cached history on
@@ -988,6 +1161,18 @@ class _MessageList extends ConsumerWidget {
                         )
                         .removeFailedMessage(message)
                     : null,
+            onReply:
+                state.conversation.canSend
+                    ? () => onReply(message.id, message.content)
+                    : null,
+            onJumpToParent:
+                message.replyToMessageId == null
+                    ? null
+                    : () => onJumpToParent(
+                      message.replyToMessageId!,
+                      state.messages,
+                    ),
+            isHighlighted: highlightedMessageId == message.id,
           );
           if (isFirstOfDay && shouldAnimate) {
             bubble = Shimmer(
@@ -1010,16 +1195,22 @@ class _MessageList extends ConsumerWidget {
                       Duration(milliseconds: stepMs * index.clamp(0, 6))
                   : kSettleDuration;
 
-          return SettleIn(
-            key: ValueKey(message.clientMessageId),
-            // Only animate a message the first time it is built after arriving
-            // live (cached history never replays on open, and recycled items
-            // never replay on scroll-back — Spec §2 play-once).
-            animate: shouldAnimate,
-            duration: staggeredDuration,
-            beginOffset:
-                message.isMine ? const Offset(0, 0.12) : const Offset(0, 0.10),
-            child: bubble,
+          return KeyedSubtree(
+            key: messageKey,
+            child: SettleIn(
+              key: ValueKey(message.clientMessageId),
+              // Only animate a message the first time it is built after
+              // arriving live (cached history never replays on open, and
+              // recycled items never replay on scroll-back — Spec §2
+              // play-once).
+              animate: shouldAnimate,
+              duration: staggeredDuration,
+              beginOffset:
+                  message.isMine
+                      ? const Offset(0, 0.12)
+                      : const Offset(0, 0.10),
+              child: bubble,
+            ),
           );
         },
       ),
