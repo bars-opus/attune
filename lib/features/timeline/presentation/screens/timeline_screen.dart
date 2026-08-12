@@ -1,10 +1,16 @@
 // lib/features/timeline/presentation/screens/timeline_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/reminders/data/models/reminder_model.dart';
+import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart'
+    as reminders_providers;
+import 'package:attune/features/reminders/presentation/screens/add_edit_reminder_screen.dart';
 import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart';
+import 'package:attune/features/timeline/presentation/widgets/add_moment_or_reminder_sheet.dart';
 import 'package:attune/features/timeline/presentation/widgets/calendar_strip.dart';
 import 'package:attune/features/timeline/presentation/widgets/moments_list.dart';
+import 'package:attune/features/timeline/presentation/widgets/upcoming_reminders_section.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class TimelineScreen extends ConsumerStatefulWidget {
@@ -34,11 +40,30 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
     // In a full implementation, you would scroll the list to the event
   }
 
+  Map<DateTime, List<ReminderModel>> _remindersByDate(
+    List<ReminderModel> reminders,
+  ) {
+    final Map<DateTime, List<ReminderModel>> grouped = {};
+    for (final reminder in reminders) {
+      final occurrence = nextOccurrence(reminder);
+      if (occurrence.month != _focusedMonth.month ||
+          occurrence.year != _focusedMonth.year) {
+        continue;
+      }
+      final date = DateTime(occurrence.year, occurrence.month, occurrence.day);
+      grouped.putIfAbsent(date, () => []).add(reminder);
+    }
+    return grouped;
+  }
+
   @override
   Widget build(BuildContext context) {
     final eventsAsync = ref.watch(timelineEventsProvider(_focusedMonth));
     final currentUserId = ref.watch(currentUserIdProvider);
     final relationshipIdAsync = ref.watch(currentRelationshipIdProvider);
+    final remindersAsync = ref.watch(
+      reminders_providers.remindersListProvider,
+    );
 
     return relationshipIdAsync.when(
       data: (relationshipId) {
@@ -47,14 +72,42 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
         }
 
         return Scaffold(
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            actions: [
+              AppIconButton(
+                icon: Icons.people_outline,
+                tooltip: 'Family',
+                onPressed: () => context.pushNamed('familyMembers'),
+              ),
+            ],
+          ),
           floatingActionButton: AppFab(
             icon: Icons.add,
-            onPressed: () {
-              context.pushNamed('logMomentType').then((refreshNeeded) {
-                if (refreshNeeded == true && mounted) {
-                  ref.invalidate(timelineEventsProvider(_focusedMonth));
-                }
-              });
+            onPressed: () async {
+              final choice = await AddMomentOrReminderSheet.show(context);
+              if (!mounted || choice == null) return;
+
+              switch (choice) {
+                case AddChoice.moment:
+                  if (!context.mounted) return;
+                  final refreshNeeded = await context.pushNamed(
+                    'logMomentType',
+                  );
+                  if (refreshNeeded == true && mounted) {
+                    ref.invalidate(timelineEventsProvider(_focusedMonth));
+                  }
+                case AddChoice.reminder:
+                  if (!context.mounted) return;
+                  await BottomSheetUtils.showDocumentationBottomSheet(
+                    context: context,
+                    backgroundColor: Theme.of(context).colorScheme.neutral,
+                    widget: const AddEditReminderScreen(),
+                  );
+                  if (mounted) {
+                    ref.invalidate(reminders_providers.remindersListProvider);
+                  }
+              }
             },
           ),
 
@@ -65,6 +118,37 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
             child: CustomScrollView(
               controller: _scrollController,
               slivers: [
+                SliverToBoxAdapter(
+                  child: remindersAsync.when(
+                    data: (reminders) {
+                      if (reminders.isEmpty) return const SizedBox.shrink();
+                      return Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: Spacing.md.w,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Gap(Spacing.md.h),
+                            Text(
+                              'Upcoming',
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                            Gap(Spacing.sm.h),
+                            UpcomingRemindersSection(
+                              reminders: reminders,
+                              onReminderTap: (reminder) {},
+                            ),
+                            const Divider(height: 32),
+                          ],
+                        ),
+                      );
+                    },
+                    loading: () => const SizedBox.shrink(),
+                    error: (error, stack) => const SizedBox.shrink(),
+                  ),
+                ),
                 // Calendar strip as SliverToBoxAdapter
                 SliverToBoxAdapter(
                   child: eventsAsync.when(
@@ -90,6 +174,9 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                           CalendarStrip(
                             focusedMonth: _focusedMonth,
                             eventsByDate: eventsByDate,
+                            remindersByDate: _remindersByDate(
+                              remindersAsync.valueOrNull ?? const [],
+                            ),
                             selectedDate: _selectedDate,
                             onDaySelected: (date) {
                               _scrollToDate(date);
@@ -128,10 +215,18 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                   padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
                   sliver: eventsAsync.when(
                     data: (events) {
-                      if (events.isEmpty) {
+                      final excludedIds = linkedTimelineEventIds(
+                        remindersAsync.valueOrNull ?? const [],
+                      );
+                      final visibleEvents =
+                          events
+                              .where((event) => !excludedIds.contains(event.id))
+                              .toList();
+
+                      if (visibleEvents.isEmpty) {
                         return SliverToBoxAdapter(
                           child: MomentsList(
-                            events: [],
+                            events: const [],
                             currentUserId: currentUserId ?? '',
                             currentMonth: _focusedMonth,
                             onDateSelected: (date) {},
@@ -140,7 +235,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                       }
                       return SliverToBoxAdapter(
                         child: MomentsList(
-                          events: events,
+                          events: visibleEvents,
                           currentUserId: currentUserId ?? '',
                           currentMonth: _focusedMonth,
                           onDateSelected: _scrollToDate,
