@@ -163,6 +163,16 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
       quotedText: post.quotedText,
       onJumpToParent: widget.onJumpToParent,
       isHighlighted: widget.isHighlighted,
+      // Restores the pre-refactor (UniversalBubble extraction) quote-block
+      // look exactly — UniversalBubble's own defaults are chat's newer
+      // styling, which is a visual regression for forums since forums had
+      // this exact quote-block appearance before the extraction.
+      quoteBackgroundColor: colorScheme.onBackground.withOpacity(0.5),
+      quoteForegroundColor: colorScheme.background,
+      quoteTextStyle: textTheme.bodySmall?.copyWith(
+        color: colorScheme.background,
+      ),
+      quoteIconSize: 30.h,
       // Highlight-flash ring uses sideColor (for/against), not bubbleColor —
       // a ring drawn in the bubble's own fill is invisible against that
       // fill. This is the same sideColor the pre-refactor AnimatedContainer

@@ -28,6 +28,10 @@ class UniversalBubble extends StatelessWidget {
     this.maxWidth = 320,
     this.slidableKey,
     this.groupTag,
+    this.quoteBackgroundColor,
+    this.quoteForegroundColor,
+    this.quoteTextStyle,
+    this.quoteIconSize = 20,
   });
 
   /// True puts the bubble on the right, false on the left.
@@ -99,6 +103,27 @@ class UniversalBubble extends StatelessWidget {
   /// only one bubble in a group has its action pane open at a time.
   final Object? groupTag;
 
+  /// Quote-block fill color. Falls back to `onBubbleColor.withValues(alpha:
+  /// 0.15)` (chat's look) when null. Forums passes
+  /// `colorScheme.onBackground.withOpacity(0.5)` to preserve its
+  /// pre-refactor appearance exactly.
+  final Color? quoteBackgroundColor;
+
+  /// Quote-block icon/fallback text color. Falls back to [onBubbleColor]
+  /// when null. Forums passes `colorScheme.background` to preserve its
+  /// pre-refactor appearance exactly.
+  final Color? quoteForegroundColor;
+
+  /// Quote-block text style. Falls back to a hardcoded
+  /// `TextStyle(color: quoteForegroundColor, fontSize: 12)` (chat's look)
+  /// when null. Forums passes `textTheme.bodySmall` (color-adjusted) to
+  /// preserve its pre-refactor appearance exactly.
+  final TextStyle? quoteTextStyle;
+
+  /// Quote-block leading icon size. Defaults to 20 (chat's look). Forums
+  /// passes `30.h` to preserve its pre-refactor appearance exactly.
+  final double quoteIconSize;
+
   @override
   Widget build(BuildContext context) {
     return Align(
@@ -166,9 +191,11 @@ class UniversalBubble extends StatelessWidget {
                                       child: Container(
                                         padding: const EdgeInsets.all(6),
                                         decoration: BoxDecoration(
-                                          color: onBubbleColor.withValues(
-                                            alpha: 0.15,
-                                          ),
+                                          color:
+                                              quoteBackgroundColor ??
+                                              onBubbleColor.withValues(
+                                                alpha: 0.15,
+                                              ),
                                           borderRadius: BorderRadius.circular(
                                             8,
                                           ),
@@ -180,17 +207,23 @@ class UniversalBubble extends StatelessWidget {
                                           children: [
                                             Icon(
                                               Icons.format_quote,
-                                              size: 20,
-                                              color: onBubbleColor,
+                                              size: quoteIconSize,
+                                              color:
+                                                  quoteForegroundColor ??
+                                                  onBubbleColor,
                                             ),
                                             const SizedBox(width: 4),
                                             Flexible(
                                               child: Text(
                                                 quotedText!,
-                                                style: TextStyle(
-                                                  color: onBubbleColor,
-                                                  fontSize: 12,
-                                                ),
+                                                style:
+                                                    quoteTextStyle ??
+                                                    TextStyle(
+                                                      color:
+                                                          quoteForegroundColor ??
+                                                          onBubbleColor,
+                                                      fontSize: 12,
+                                                    ),
                                               ),
                                             ),
                                           ],

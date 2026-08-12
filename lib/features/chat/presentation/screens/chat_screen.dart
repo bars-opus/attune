@@ -283,6 +283,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final caption = _controller.text;
     _controller.clear();
     await _clearDraft();
+    // sendImageMessage has no replyToMessageId/quotedText params (image
+    // replies are out of scope), so any pending reply target would silently
+    // survive this send and get attached to the NEXT text message instead —
+    // clear it here so the "Replying to..." strip never outlives the reply
+    // it was showing.
+    _clearReplyTarget();
     await ref
         .read(chatControllerProvider(widget.conversation).notifier)
         .sendImageMessage(
@@ -1090,6 +1096,15 @@ class _MessageList extends ConsumerWidget {
       );
     }
 
+    // Prune keys for messages no longer in state.messages (scrolled-out
+    // history that got dropped, or a pagination/reload replacing the list)
+    // — without this, messageKeys only ever grows across the screen's
+    // lifetime, leaking GlobalKeys and corrupting the jump-fallback's
+    // "messages currently on screen" estimate in _jumpToMessage, which
+    // divides the viewport by messageKeys.length.
+    final currentIds = state.messages.map((m) => m.id).toSet();
+    messageKeys.removeWhere((id, _) => !currentIds.contains(id));
+
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification.metrics.pixels >=
@@ -1162,7 +1177,8 @@ class _MessageList extends ConsumerWidget {
                         .removeFailedMessage(message)
                     : null,
             onReply:
-                state.conversation.canSend
+                state.conversation.canSend &&
+                        !message.id.startsWith('_local_')
                     ? () => onReply(message.id, message.content)
                     : null,
             onJumpToParent:
