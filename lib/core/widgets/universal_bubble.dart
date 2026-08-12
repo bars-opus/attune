@@ -24,7 +24,10 @@ class UniversalBubble extends StatelessWidget {
     this.quotedText,
     this.onJumpToParent,
     this.isHighlighted = false,
+    this.highlightColor,
     this.maxWidth = 320,
+    this.slidableKey,
+    this.groupTag,
   });
 
   /// True puts the bubble on the right, false on the left.
@@ -76,8 +79,25 @@ class UniversalBubble extends StatelessWidget {
   /// right bubble after a jump.
   final bool isHighlighted;
 
+  /// Color of the highlight-flash ring. Kept separate from [bubbleColor]
+  /// because a ring drawn in the bubble's own fill color sits directly
+  /// against that fill and is effectively invisible — forums passes a
+  /// distinct for/against side color here; callers without one (chat's
+  /// MessageBubble) can omit it and fall back to [bubbleColor].
+  final Color? highlightColor;
+
   /// Max bubble width in logical pixels before content wraps.
   final double maxWidth;
+
+  /// Forwarded to the inner [Slidable]'s `key` — needed so per-item
+  /// slide-open/closed state stays attached to the right item when this
+  /// widget is rendered in a rebuilt/reordered list (e.g. `ValueKey(id)`).
+  /// Null is fine for a single bubble with no list identity to preserve.
+  final Key? slidableKey;
+
+  /// Forwarded to the inner [Slidable]'s `groupTag` — lets a caller ensure
+  /// only one bubble in a group has its action pane open at a time.
+  final Object? groupTag;
 
   @override
   Widget build(BuildContext context) {
@@ -93,6 +113,8 @@ class UniversalBubble extends StatelessWidget {
         // this, which is where this fix was first discovered).
         child: IntrinsicWidth(
           child: Slidable(
+            key: slidableKey,
+            groupTag: groupTag,
             startActionPane: startActionPane,
             endActionPane: endActionPane,
             child: Row(
@@ -117,7 +139,7 @@ class UniversalBubble extends StatelessWidget {
                             border: Border.all(
                               color:
                                   isHighlighted
-                                      ? bubbleColor
+                                      ? (highlightColor ?? bubbleColor)
                                       : Colors.transparent,
                               width: 2,
                             ),
@@ -147,8 +169,9 @@ class UniversalBubble extends StatelessWidget {
                                           color: onBubbleColor.withValues(
                                             alpha: 0.15,
                                           ),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                         ),
                                         child: Row(
                                           crossAxisAlignment:
