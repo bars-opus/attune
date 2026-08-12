@@ -1,6 +1,8 @@
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
+import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
 
@@ -11,6 +13,9 @@ class MessageBubble extends StatelessWidget {
     this.onRetry,
     this.onRemove,
     this.showStatus = true,
+    this.onReply,
+    this.onJumpToParent,
+    this.isHighlighted = false,
   });
 
   final Message message;
@@ -18,70 +23,102 @@ class MessageBubble extends StatelessWidget {
   final VoidCallback? onRemove;
   final bool showStatus;
 
+  /// Swipe-to-reply target. Null (the default) disables the swipe gesture
+  /// entirely — e.g. a read-only/archived conversation has nothing
+  /// sensible to reply into.
+  final VoidCallback? onReply;
+
+  /// Tapping this message's quoted-parent preview (only rendered when
+  /// message.quotedText is non-null) calls this to scroll to and flash the
+  /// parent. Null means no tap affordance on the quote block.
+  final VoidCallback? onJumpToParent;
+
+  /// True while this is the current jump-to target — see UniversalBubble.
+  final bool isHighlighted;
+
   @override
   Widget build(BuildContext context) {
     final isMine = message.isMine;
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Align(
-      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        child: Column(
-          crossAxisAlignment:
-              isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          children: [
-            if (message.isImported)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Text(
-                  'Imported from WhatsApp',
-                  style: Theme.of(context).textTheme.labelSmall,
+    return UniversalBubble(
+      isMine: isMine,
+      bubbleColor:
+          isMine ? colorScheme.primary : colorScheme.surfaceContainerHighest,
+      onBubbleColor: isMine ? colorScheme.onPrimary : colorScheme.onSurface,
+      quotedText: message.quotedText,
+      onJumpToParent: message.quotedText == null ? null : onJumpToParent,
+      isHighlighted: isHighlighted,
+      slidableKey: ValueKey(message.clientMessageId),
+      startActionPane:
+          onReply == null
+              ? null
+              : ActionPane(
+                motion: const DrawerMotion(),
+                extentRatio: 0.25,
+                // Reply never removes the message from the list, so this
+                // must NEVER actually dismiss — same pattern
+                // ForumPostBubble/CommentThreadScreen use: fire onReply
+                // from confirmDismiss and veto (return false) to get the
+                // past-threshold full-swipe gesture without entering
+                // Slidable's resize/removal flow.
+                dismissible: DismissiblePane(
+                  confirmDismiss: () async {
+                    onReply!();
+                    return false;
+                  },
+                  onDismissed: () {},
+                  closeOnCancel: true,
                 ),
-              ),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 320),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color:
-                      isMine
-                          ? colorScheme.primary
-                          : colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
+                children: [
+                  SlidableAction(
+                    onPressed: (_) => onReply!(),
+                    backgroundColor:
+                        isMine
+                            ? colorScheme.primary
+                            : colorScheme.surfaceContainerHighest,
+                    foregroundColor:
+                        isMine ? colorScheme.onPrimary : colorScheme.onSurface,
+                    icon: Icons.reply,
+                    label: 'Reply',
                   ),
-                  child: _BubbleBody(message: message, isMine: isMine),
-                ),
+                ],
+              ),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (message.isImported)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Text(
+                'Imported from WhatsApp',
+                style: Theme.of(context).textTheme.labelSmall,
               ),
             ),
-            const SizedBox(height: 4),
-            Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                Semantics(
-                  label: _absoluteTimeLabel(context, message.createdAt),
-                  excludeSemantics: true,
-                  child: Text(
-                    _timeLabel(context, message.createdAt),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-                if (showStatus && isMine)
-                  _StatusChip(message: message, onRetry: onRetry),
-                if (message.isFailed && onRetry != null)
-                  TextButton(onPressed: onRetry, child: const Text('Retry')),
-                if (message.isFailed && onRemove != null)
-                  TextButton(onPressed: onRemove, child: const Text('Remove')),
-              ],
+          _BubbleBody(message: message, isMine: isMine),
+        ],
+      ),
+      footer: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 6,
+        runSpacing: 4,
+        children: [
+          Semantics(
+            label: _absoluteTimeLabel(context, message.createdAt),
+            excludeSemantics: true,
+            child: Text(
+              _timeLabel(context, message.createdAt),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
-          ],
-        ),
+          ),
+          if (showStatus && isMine)
+            _StatusChip(message: message, onRetry: onRetry),
+          if (message.isFailed && onRetry != null)
+            TextButton(onPressed: onRetry, child: const Text('Retry')),
+          if (message.isFailed && onRemove != null)
+            TextButton(onPressed: onRemove, child: const Text('Remove')),
+        ],
       ),
     );
   }
