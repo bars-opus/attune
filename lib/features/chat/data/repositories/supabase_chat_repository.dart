@@ -33,7 +33,8 @@ class SupabaseChatRepository implements ChatRepository {
 
   static const _messageColumns =
       'id,relationship_id,sender_id,client_message_id,content,created_at,'
-      'delivered_at,read_at,media_url,media_thumbnail_url,media_type,source';
+      'delivered_at,read_at,media_url,media_thumbnail_url,media_type,source,'
+      'reply_to_message_id,quoted_text';
 
   User get _currentUser {
     final user = _supabase.auth.currentUser;
@@ -253,6 +254,8 @@ class SupabaseChatRepository implements ChatRepository {
     required String content,
     String? mediaKey,
     String? mediaType,
+    String? replyToMessageId,
+    String? quotedText,
   }) async {
     final user = _currentUser;
     if (senderId != user.id) {
@@ -271,6 +274,8 @@ class SupabaseChatRepository implements ChatRepository {
               'content': content,
               'media_url': mediaKey,
               'media_type': mediaType,
+              'reply_to_message_id': replyToMessageId,
+              'quoted_text': quotedText,
             })
             .select(_messageColumns)
             .single();

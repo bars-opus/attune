@@ -28,6 +28,8 @@ abstract class ChatRepository {
     required String content,
     String? mediaKey,
     String? mediaType,
+    String? replyToMessageId,
+    String? quotedText,
   });
   Future<Message?> findMessageByClientId({
     required String senderId,
