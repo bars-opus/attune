@@ -454,12 +454,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _syncViewActive();
   }
 
-  Future<void> _openHistoricalImport() async {
-    _syncViewActive();
-    await context.pushNamed('chatImport', extra: widget.conversation);
-    _syncViewActive();
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(chatControllerProvider(widget.conversation));
@@ -472,9 +466,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final headerDrawerEnabled = ref.watch(
       chatExpandedHeaderDrawerEnabledProvider,
     );
-    final historicalImportEnabled = ref.watch(
-      chatHistoricalImportEnabledProvider,
-    );
     final isOnline = ref.watch(chatConnectivityProvider).valueOrNull ?? true;
     final headerSnapshot = ref.watch(
       chatHeaderSnapshotProvider(conversation.relationshipId),
@@ -484,25 +475,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       appBar: AppBar(
         title: InkWell(
           onTap: () => unawaited(_openPulse()),
-          child: Text(conversation.name),
-        ),
-        actions: [
-          if (historicalImportEnabled.valueOrNull == true)
-            IconButton(
-              onPressed: () => unawaited(_openHistoricalImport()),
-              tooltip: 'Import chat history',
-              icon: const Icon(Icons.history_rounded),
-            ),
-        ],
-      ),
-      body: Column(
-        children: [
-          _ConversationStateBanner(
-            conversation: conversation,
-            state: state,
-            isOnline: isOnline,
-          ),
-          _ConversationHeaderCard(
+          child: _ConversationHeaderCard(
             conversation: conversation,
             snapshot: headerSnapshot,
             isExpanded: _headerExpanded,
@@ -515,6 +488,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             isOnline: isOnline,
             lastSyncedAt: state.lastSyncedAt,
           ),
+        ),
+      ),
+      body: Column(
+        children: [
+          _ConversationStateBanner(
+            conversation: conversation,
+            state: state,
+            isOnline: isOnline,
+          ),
+
           if (state.error != null)
             MaterialBanner(
               content: Text(state.error!),
@@ -584,7 +567,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                   style: Theme.of(
                                     context,
                                   ).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context).colorScheme.primary,
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
                                   ),
                                 ),
                                 TextSpan(
@@ -592,9 +576,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                   style: Theme.of(
                                     context,
                                   ).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface.withValues(alpha: 0.8),
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.8),
                                   ),
                                 ),
                               ],
@@ -1171,8 +1156,7 @@ class _MessageList extends ConsumerWidget {
                         .removeFailedMessage(message)
                     : null,
             onReply:
-                state.conversation.canSend &&
-                        !message.id.startsWith('_local_')
+                state.conversation.canSend && !message.id.startsWith('_local_')
                     ? () => onReply(message.id, message.content)
                     : null,
             onJumpToParent:

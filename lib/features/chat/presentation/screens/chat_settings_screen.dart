@@ -1,11 +1,14 @@
 // lib/features/chat/presentation/screens/chat_settings_screen.dart
 
+import 'dart:async';
+
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/services/media/image_picker_service.dart';
 import 'package:attune/core/widgets/profile_avatar.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/services/chat_image_preparer.dart';
 import 'package:attune/features/chat/domain/services/relationship_chat_name_validator.dart';
+import 'package:attune/features/chat/presentation/providers/chat_experience_providers.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,10 +16,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// chat — e.g. "Perla" + "Javics" -> "Japerl34". See
 /// docs/superpowers/specs/2026-08-11-couple-chat-identity-design.md.
 ///
-/// Reached via the settings icon in ChatScreen's AppBar actions (the title
-/// itself opens Pulse instead). Not gated to "the person who set it" — either
+/// Reached via the settings icon inside the Pulse tab (Chat's AppBar title
+/// opens Pulse instead). Not gated to "the person who set it" — either
 /// partner may edit at any time the relationship is active, per the spec's
 /// explicit "no per-partner override" decision.
+///
+/// Also hosts the entry point to historical chat import
+/// (CHAT_SYSTEM_SPEC.md §11.4: "opens 'Import chat history' from chat
+/// settings"), shown only when chatHistoricalImportEnabledProvider is true
+/// (currently seeded false — Month 5 gate, §11.3 — so this row is invisible
+/// until that flag flips).
 class ChatSettingsScreen extends ConsumerStatefulWidget {
   const ChatSettingsScreen({super.key, required this.conversation});
 
@@ -129,11 +138,18 @@ class _ChatSettingsScreenState extends ConsumerState<ChatSettingsScreen> {
     }
   }
 
+  Future<void> _openHistoricalImport() async {
+    await context.pushNamed('chatImport', extra: widget.conversation);
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final isBusy = _isSavingName || _isUploadingPhoto;
+    final historicalImportEnabled = ref.watch(
+      chatHistoricalImportEnabledProvider,
+    );
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -202,6 +218,19 @@ class _ChatSettingsScreenState extends ConsumerState<ChatSettingsScreen> {
                 isLoading: _isSavingName,
                 onPressed: isBusy ? null : _saveName,
               ),
+              if (historicalImportEnabled.valueOrNull == true) ...[
+                Gap(Spacing.xl.h),
+                const AppDivider(),
+                Gap(Spacing.sm.h),
+                InfoRowWidget(
+                  title: 'Import chat history',
+                  subtitle: 'Bring in a previous conversation from WhatsApp',
+                  icon: Icons.history_rounded,
+                  showAvatar: false,
+                  showDivider: false,
+                  onTap: () => unawaited(_openHistoricalImport()),
+                ),
+              ],
             ],
           ),
         ),
