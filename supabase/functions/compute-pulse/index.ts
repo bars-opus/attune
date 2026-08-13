@@ -21,7 +21,7 @@ serve(async (req) => {
     )
 
     const { relationship_id, force_recompute } = await req.json().catch(() => ({}))
-    const weekEnding = _getWeekEnding(new Date())
+    const weekEnding = getWeekEnding(new Date())
 
     // Get all active relationships
     let relationships: any[]
@@ -151,12 +151,12 @@ async function _computePulseScore(
   // Conflict events affect communication
   const conflicts = timelineEvents?.filter(e => e.event_type === 'conflict') || []
   const conflictPenalty = conflicts.length * 3
-  communication = _clamp(communication - conflictPenalty, 0, 100)
+  communication = clamp(communication - conflictPenalty, 0, 100)
 
   // Resolved conflicts (mood_score >= 7) give bonus
   const resolvedConflicts = conflicts.filter(c => c.mood_score && c.mood_score >= 7)
   const resolutionBonus = resolvedConflicts.length * 5
-  communication = _clamp(communication + resolutionBonus, 0, 100)
+  communication = clamp(communication + resolutionBonus, 0, 100)
 
 
   // CONNECTION (22% weight)
@@ -166,13 +166,13 @@ async function _computePulseScore(
   const positiveEvents = timelineEvents?.filter(e => 
     e.event_type === 'milestone' || e.event_type === 'highlight'
   ) || []
-  connection = _clamp(50 + (positiveEvents.length * 8), 0, 100)
+  connection = clamp(50 + (positiveEvents.length * 8), 0, 100)
   if (positiveEvents.length > 0) connectionConfidence = 'medium'
 
   // Anniversary events
   const anniversaryEvents = timelineEvents?.filter(e => e.event_type === 'anniversary') || []
   if (anniversaryEvents.length > 0) {
-    connection = _clamp(connection + 15, 0, 100)
+    connection = clamp(connection + 15, 0, 100)
   }
 
   // Check-in contribution
@@ -214,7 +214,7 @@ async function _computePulseScore(
   let alignmentConfidence: 'none' | 'low' | 'medium' | 'high' = 'low'
 
   if (bothCompletedAttachment) {
-    alignment = _clamp(alignment + 20, 0, 100)
+    alignment = clamp(alignment + 20, 0, 100)
     alignmentConfidence = 'medium'
   }
 
@@ -256,14 +256,14 @@ async function _computePulseScore(
 
 
   // DATA CONFIDENCE (overall)
-  const confidences = [communicationConfidence, connectionConfidence, conflictHealthConfidence, alignmentConfidence, safetyConfidence]
-  const mediumCount = confidences.filter(c => c === 'medium').length
-  const lowCount = confidences.filter(c => c === 'low').length
-
-  let overallConfidence: 'none' | 'low' | 'medium' | 'high' = 'low'
-  if (mediumCount >= 3) overallConfidence = 'medium'
-  else if (lowCount >= 3) overallConfidence = 'low'
-  else overallConfidence = 'none'
+  const confidences: Confidence[] = [
+    communicationConfidence,
+    connectionConfidence,
+    conflictHealthConfidence,
+    alignmentConfidence,
+    safetyConfidence,
+  ]
+  const overallConfidence = rollupConfidence(confidences)
 
 
   // DELTAS vs previous week
@@ -301,12 +301,19 @@ async function _computePulseScore(
     delta_vs_previous: deltas,
   }
 
-  await supabase.from('pulse_scores').insert(pulseData)
+  const { error: upsertError } = await supabase
+    .from('pulse_scores')
+    .upsert(pulseData, { onConflict: 'relationship_id,week_ending' })
+
+  if (upsertError) {
+    console.error('Failed to save pulse score:', upsertError.message)
+    throw new Error(`Failed to save pulse score for relationship ${relationshipId}: ${upsertError.message}`)
+  }
 
   return pulseData
 }
 
-function _getWeekEnding(date: Date): Date {
+export function getWeekEnding(date: Date): Date {
   const result = new Date(date)
   const daysToSunday = 7 - result.getDay() // Sunday = 0 in JS
   result.setDate(result.getDate() + daysToSunday)
@@ -314,6 +321,27 @@ function _getWeekEnding(date: Date): Date {
   return result
 }
 
-function _clamp(value: number, min: number, max: number): number {
+export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
+}
+
+type Confidence = 'none' | 'low' | 'medium' | 'high'
+
+export function confidenceFrom(points: number, hasChatSignal: boolean): Confidence {
+  if (points < 2) return 'none'
+  if (points < 5) return 'low'
+  if (points < 9) return 'medium'
+  // 'high' requires chat signal per PULSE.md §7 ("requires chat AI
+  // pipeline") — a relationship with abundant timeline/check-in
+  // evidence but no chat caps at 'medium'.
+  return hasChatSignal ? 'high' : 'medium'
+}
+
+export function rollupConfidence(confidences: Confidence[]): Confidence {
+  const highCount = confidences.filter((c) => c === 'high').length
+  const mediumCount = confidences.filter((c) => c === 'medium').length
+  if (highCount >= 4) return 'high'
+  if (mediumCount >= 3) return 'medium'
+  if (mediumCount >= 1) return 'low'
+  return 'none'
 }
