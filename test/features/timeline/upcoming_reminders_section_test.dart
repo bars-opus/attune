@@ -88,7 +88,7 @@ void main() {
         _reminder(
           id: 'r1',
           title: 'Anniversary',
-          remindAt: DateTime(2020, 12, 25),
+          remindAt: DateTime(2020, 10, 25),
           recurrence: 'yearly',
         ),
       ];
@@ -98,6 +98,23 @@ void main() {
 
     test('empty input yields empty output', () {
       expect(upcomingReminders(const [], now: DateTime(2026, 8, 28)), isEmpty);
+    });
+
+    test('excludes a reminder more than 3 months out', () {
+      final reminders = [
+        _reminder(
+          id: 'r1',
+          title: 'Within window',
+          remindAt: DateTime(2026, 11, 20),
+        ),
+        _reminder(
+          id: 'r2',
+          title: 'Beyond window',
+          remindAt: DateTime(2026, 12, 1),
+        ),
+      ];
+      final result = upcomingReminders(reminders, now: DateTime(2026, 8, 28));
+      expect(result.map((r) => r.id), ['r1']);
     });
   });
 

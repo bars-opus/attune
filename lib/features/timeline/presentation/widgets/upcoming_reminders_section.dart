@@ -16,20 +16,22 @@ DateTime nextOccurrence(ReminderModel reminder, {DateTime? now}) {
   return next;
 }
 
-/// Reminders whose next occurrence has not yet passed, i.e. what belongs in
-/// the Upcoming section — a one-off reminder from the past is excluded
-/// entirely rather than sorting to the top with a negative countdown.
+/// Reminders whose next occurrence falls within the next 3 months, i.e.
+/// what belongs in the Upcoming section — a one-off reminder from the past
+/// is excluded entirely rather than sorting to the top with a negative
+/// countdown, and anything further out than 3 months is left off so the
+/// section stays a near-term glance rather than a full future log.
 List<ReminderModel> upcomingReminders(
   List<ReminderModel> reminders, {
   DateTime? now,
 }) {
   final today = now ?? DateTime.now();
   final startOfToday = DateTime(today.year, today.month, today.day);
-  return reminders
-      .where(
-        (reminder) => !nextOccurrence(reminder, now: now).isBefore(startOfToday),
-      )
-      .toList();
+  final horizon = DateTime(today.year, today.month + 3, today.day);
+  return reminders.where((reminder) {
+    final occurrence = nextOccurrence(reminder, now: now);
+    return !occurrence.isBefore(startOfToday) && occurrence.isBefore(horizon);
+  }).toList();
 }
 
 String _countdownLabel(DateTime occurrence, {DateTime? now}) {
