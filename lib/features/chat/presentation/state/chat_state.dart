@@ -159,6 +159,7 @@ class ChatController extends StateNotifier<ChatState> {
         ?.id;
     _hasSeededPartnerBaseline = true;
     await _refreshPinnedMessages();
+    await _refreshStarredMessageIds();
     _subscribeToRealtime();
     await _markPartnerMessagesDelivered();
     // Read is only recorded once the screen reports the conversation is
@@ -632,6 +633,24 @@ class ChatController extends StateNotifier<ChatState> {
       final pins = await _repository.getPinnedMessages(relationshipId);
       if (!mounted) return;
       state = state.copyWith(pinnedMessages: pins);
+    } catch (_) {
+      // Ignored by design — see doc comment.
+    }
+  }
+
+  /// Best-effort starred-messages seed. A failure only means Star/Unstar
+  /// labels may be momentarily wrong until the next successful call — it
+  /// must never block the rest of chat from loading. Unlike pins,
+  /// getStarredMessages() is not relationship-scoped (stars are a private,
+  /// cross-relationship bookmark list), so this seeds the full set of the
+  /// current user's starred message ids, not just this chat's.
+  Future<void> _refreshStarredMessageIds() async {
+    try {
+      final starred = await _repository.getStarredMessages();
+      if (!mounted) return;
+      state = state.copyWith(
+        starredMessageIds: starred.map((m) => m.id).toSet(),
+      );
     } catch (_) {
       // Ignored by design — see doc comment.
     }

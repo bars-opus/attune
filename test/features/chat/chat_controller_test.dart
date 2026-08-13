@@ -248,6 +248,26 @@ void main() {
       expect(b.state.starredMessageIds, isNot(contains(sent.id)));
     });
 
+    test(
+        'a message starred in a prior session is seeded as starred on chat open',
+        () async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      final priorStar = repo.seedIncoming(
+        id: 'msg-prior-star',
+        relationshipId: relId,
+        senderId: userId,
+        content: 'starred last session',
+        createdAt: DateTime.now().subtract(const Duration(days: 1)),
+      );
+      // Simulate a star recorded in a previous session, before this
+      // controller (and its in-memory starredMessageIds) ever existed.
+      repo.starredMessageIds.add(priorStar.id);
+
+      final b = await boot(repo);
+
+      expect(b.state.starredMessageIds, contains(priorStar.id));
+    });
+
     test('pinMessage and unpinMessage update pinnedMessages from the server',
         () async {
       final repo = FakeChatRepository(currentUserId: userId);
