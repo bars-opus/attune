@@ -34,7 +34,7 @@ class SupabaseChatRepository implements ChatRepository {
   static const _messageColumns =
       'id,relationship_id,sender_id,client_message_id,content,created_at,'
       'delivered_at,read_at,media_url,media_thumbnail_url,media_type,source,'
-      'reply_to_message_id,quoted_text';
+      'reply_to_message_id,quoted_text,deleted_at,edited_at';
 
   User get _currentUser {
     final user = _supabase.auth.currentUser;
@@ -486,6 +486,17 @@ class SupabaseChatRepository implements ChatRepository {
           ),
           callback: (_) => events.add(null),
         )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'message_pins',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'relationship_id',
+            value: relationshipId,
+          ),
+          callback: (_) => events.add(null),
+        )
         .onBroadcast(
           event: 'typing',
           callback: (payload) {
@@ -707,55 +718,141 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
-  Future<void> deleteMessage(String messageId) =>
-      throw UnimplementedError();
+  Future<void> deleteMessage(String messageId) async {
+    await _supabase.rpc('delete_message', params: {'p_message_id': messageId});
+  }
 
   @override
   Future<void> editMessage({
     required String messageId,
     required String newContent,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    await _supabase.rpc(
+      'edit_message',
+      params: {'p_message_id': messageId, 'p_new_content': newContent},
+    );
+  }
 
   @override
-  Future<List<MessageEditHistoryEntry>> getMessageEditHistory(String messageId) =>
-      throw UnimplementedError();
+  Future<List<MessageEditHistoryEntry>> getMessageEditHistory(
+    String messageId,
+  ) async {
+    final rows = await _supabase
+        .from('message_edit_history')
+        .select('previous_content,edited_at')
+        .eq('message_id', messageId)
+        .order('edited_at', ascending: true);
+
+    return rows
+        .map(
+          (row) => MessageEditHistoryEntry(
+            previousContent: row['previous_content'] as String,
+            editedAt: DateTime.parse(row['edited_at'] as String).toLocal(),
+          ),
+        )
+        .toList();
+  }
 
   @override
-  Future<void> starMessage(String messageId) =>
-      throw UnimplementedError();
+  Future<void> starMessage(String messageId) async {
+    final user = _currentUser;
+    await _supabase.from('message_stars').upsert({
+      'message_id': messageId,
+      'user_id': user.id,
+    });
+  }
 
   @override
-  Future<void> unstarMessage(String messageId) =>
-      throw UnimplementedError();
+  Future<void> unstarMessage(String messageId) async {
+    final user = _currentUser;
+    await _supabase
+        .from('message_stars')
+        .delete()
+        .eq('message_id', messageId)
+        .eq('user_id', user.id);
+  }
 
   @override
-  Future<List<Message>> getStarredMessages() =>
-      throw UnimplementedError();
+  Future<bool> isMessageStarred(String messageId) async {
+    final user = _currentUser;
+    final rows = await _supabase
+        .from('message_stars')
+        .select('message_id')
+        .eq('message_id', messageId)
+        .eq('user_id', user.id)
+        .limit(1);
+    return rows.isNotEmpty;
+  }
 
   @override
-  Future<bool> isMessageStarred(String messageId) =>
-      throw UnimplementedError();
+  Future<List<Message>> getStarredMessages() async {
+    final user = _currentUser;
+    final rows = await _supabase
+        .from('message_stars')
+        .select('starred_at,messages!inner($_messageColumns)')
+        .eq('user_id', user.id)
+        .order('starred_at', ascending: false);
+
+    return rows
+        .map(
+          (row) => Message.fromRow(
+            row['messages'] as Map<String, dynamic>,
+            currentUserId: user.id,
+          ),
+        )
+        .toList();
+  }
 
   @override
   Future<void> pinMessage({
     required String relationshipId,
     required String messageId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    await _supabase.rpc(
+      'pin_message',
+      params: {'p_relationship_id': relationshipId, 'p_message_id': messageId},
+    );
+  }
 
   @override
   Future<void> unpinMessage({
     required String relationshipId,
     required String messageId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    await _supabase
+        .from('message_pins')
+        .delete()
+        .eq('relationship_id', relationshipId)
+        .eq('message_id', messageId);
+  }
 
   @override
-  Future<List<Message>> getPinnedMessages(String relationshipId) =>
-      throw UnimplementedError();
+  Future<List<Message>> getPinnedMessages(String relationshipId) async {
+    final user = _currentUser;
+    final rows = await _supabase
+        .from('message_pins')
+        .select('pinned_at,messages!inner($_messageColumns)')
+        .eq('relationship_id', relationshipId)
+        .order('pinned_at', ascending: false);
+
+    return rows
+        .map(
+          (row) => Message.fromRow(
+            row['messages'] as Map<String, dynamic>,
+            currentUserId: user.id,
+          ),
+        )
+        .toList();
+  }
 
   @override
-  Stream<void> watchPinnedMessages(String relationshipId) =>
-      throw UnimplementedError();
+  Stream<void> watchPinnedMessages(String relationshipId) {
+    // Reuses the same shared per-relationship event stream as
+    // watchConversationEvents — message_pins changes are subscribed
+    // alongside messages/relationships inside _channelFor so callers get
+    // one unified invalidation signal per relationship, matching the
+    // existing pattern instead of opening a second channel.
+    _channelFor(relationshipId);
+    return _eventControllers[relationshipId]!.stream;
+  }
 }
