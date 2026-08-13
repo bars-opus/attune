@@ -96,22 +96,6 @@ class SettingsDataSource {
               iconColor: Colors.blue,
               order: 7,
             ),
-            // Relationship history, not a current-conversation feature — the
-            // Chat tab's conversation list only ever shows the active
-            // relationship (see CHAT_SYSTEM_SPEC.md §11.1); ended
-            // relationships' read-only threads live here instead, alongside
-            // the other relationship-lifecycle action (endRelationship,
-            // below in the danger section).
-            SettingsConfig(
-              id: 'previous_relationships',
-              title: 'Previous relationships',
-              subtitle: 'Read-only chat history from past relationships',
-              icon: Icons.history,
-              type: SettingsItemType.navigation,
-              routeName: '/previous-relationships',
-              iconColor: Colors.grey,
-              order: 8,
-            ),
           ],
         ),
       SettingsSection(

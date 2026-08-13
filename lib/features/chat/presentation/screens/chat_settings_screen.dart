@@ -21,11 +21,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// partner may edit at any time the relationship is active, per the spec's
 /// explicit "no per-partner override" decision.
 ///
-/// Also hosts the entry point to historical chat import
-/// (CHAT_SYSTEM_SPEC.md §11.4: "opens 'Import chat history' from chat
-/// settings"), shown only when chatHistoricalImportEnabledProvider is true
-/// (currently seeded false — Month 5 gate, §11.3 — so this row is invisible
-/// until that flag flips).
+/// Also hosts two other chat-content entry points, moved here from the
+/// general Settings screen because they're genuinely chat-scoped (not
+/// account/app-wide actions like endRelationship, which stays in Settings'
+/// danger section — ending a relationship is a whole-app lifecycle action
+/// with chat going read-only as only one of its side effects):
+/// - Previous relationships: read-only past-conversation threads, kept off
+///   the main Chat tab so an ex's thread is never confused with the active
+///   one (CHAT_SYSTEM_SPEC.md §11.1).
+/// - Historical chat import (CHAT_SYSTEM_SPEC.md §11.4: "opens 'Import chat
+///   history' from chat settings"), shown only when
+///   chatHistoricalImportEnabledProvider is true (currently seeded false —
+///   Month 5 gate, §11.3 — so this row is invisible until that flag flips).
 class ChatSettingsScreen extends ConsumerStatefulWidget {
   const ChatSettingsScreen({super.key, required this.conversation});
 
@@ -218,10 +225,18 @@ class _ChatSettingsScreenState extends ConsumerState<ChatSettingsScreen> {
                 isLoading: _isSavingName,
                 onPressed: isBusy ? null : _saveName,
               ),
-              if (historicalImportEnabled.valueOrNull == true) ...[
-                Gap(Spacing.xl.h),
-                const AppDivider(),
-                Gap(Spacing.sm.h),
+              Gap(Spacing.xl.h),
+              const AppDivider(),
+              Gap(Spacing.sm.h),
+              InfoRowWidget(
+                title: 'Previous relationships',
+                subtitle: 'Read-only chat history from past relationships',
+                icon: Icons.history,
+                showAvatar: false,
+                showDivider: false,
+                onTap: () => context.pushNamed('previousRelationships'),
+              ),
+              if (historicalImportEnabled.valueOrNull == true)
                 InfoRowWidget(
                   title: 'Import chat history',
                   subtitle: 'Bring in a previous conversation from WhatsApp',
@@ -230,7 +245,6 @@ class _ChatSettingsScreenState extends ConsumerState<ChatSettingsScreen> {
                   showDivider: false,
                   onTap: () => unawaited(_openHistoricalImport()),
                 ),
-              ],
             ],
           ),
         ),
