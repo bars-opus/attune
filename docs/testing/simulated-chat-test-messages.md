@@ -1,34 +1,69 @@
 # Simulated Chat Conversation — For Testing Message Analysis & Pulse
 
 Date: 2026-08-14
+**Updated 2026-08-13: chat → Pulse is now connected.** See the update note
+below before relying on anything in the original "disconnected pipelines"
+section, which is kept for its still-accurate Track A mechanics.
 
-## Read this first: two separate, currently-disconnected pipelines
+## Update (2026-08-13): chat now feeds Pulse — with conditions
+
+The `chat-pulse-integration` feature (commits `a54e6621`..`2255acaa`) shipped
+and merged to `main`. The framing below this note — "chat messages do NOT
+currently feed the Pulse score" — **is no longer true as written**. What
+changed and what still gates it:
+
+- `compute-pulse` now reads a 30-day chat signal aggregate (tone, NVC
+  violations, bids, escalation, repair attempts/landed, stonewalling,
+  pursue-withdraw) via a new RPC and blends it into Communication,
+  Connection, Conflict Health, and Emotional Safety. **Alignment is
+  deliberately untouched by chat** — it only moves via check-ins and the
+  attachment quiz, same as before.
+- Chat's influence ramps in gradually, not on/off: `chatWeight` is 0 below
+  ~7.5 days of coverage since the first analysed message, ramping linearly
+  to full weight at ~22.5 days. **A single day of test messages will not
+  move the score by chat alone** — the same real-time delay applies as
+  before, just via a different mechanism (coverage ramp instead of "not
+  built").
+- Even at full weight, chat is a *secondary* signal on Conflict Health
+  specifically — it's blended at 0.8 weight, subordinate to mood/check-in
+  data at weight 1.0, not a replacement for it.
+- **This requires the migration to be applied to the live Supabase project
+  first** (`supabase/migrations/20260830120000_chat_pulse_signals.sql`,
+  applied via `supabase db push --linked`) and the `analyse-session-sweep`
+  cron actually registered and firing — both still unverified against the
+  live project as of this writing (sandboxed dev environment has no live
+  DB access). If you haven't confirmed that migration is live, treat this
+  doc's original framing as still operationally true for now: assume chat
+  won't move Pulse until someone confirms the migration is applied.
+
+Given the ramp, **Track A below is still the right tool for "does message
+analysis work correctly right now"** (tone/NVC/bid/escalation detection,
+visible within seconds to 30+ minutes). It is no longer the right tool for
+"does chat move Pulse today" — that requires ~1-3 weeks of real message
+history post-migration, not a single simulated conversation. Track B
+remains the fastest way to move Pulse in one sitting.
+
+## Original framing (2026-08-14, kept for Track A mechanics — see update above)
 
 Before sending anything, the important finding from checking the actual
 code (`analyse-message`, `analyse-session`, `compute-pulse` edge
-functions):
+functions), **as of before the update above**:
 
-**Chat messages do NOT currently feed the Pulse score.** `compute-pulse`
-only reads `timeline_events`, `weekly_checkins`, and attachment-quiz
-completion — it has zero references to `messages`, `analysis_sessions`,
-or `patterns`. `PULSE.md`'s own "AVAILABLE WHEN CHAT AI PIPELINE IS BUILT
-(future)" list is stale in one sense (the pipeline is now built and runs
-automatically) but accurate in the sense that matters — **the hook from
-chat analysis into Pulse was never added.** So:
-
-- If your goal is **"see the Pulse score move,"** chat messages alone —
-  however realistic — will not do it. You need Timeline events (a logged
-  `conflict`/`milestone`/`highlight`) and/or a submitted weekly check-in.
-  See Track B below.
+- If your goal is **"see the Pulse score move today, in one sitting,"**
+  chat messages alone — however realistic — still will not do it (the
+  coverage ramp requires real elapsed time). You need Timeline events (a
+  logged `conflict`/`milestone`/`highlight`) and/or a submitted weekly
+  check-in. See Track B below.
 - If your goal is **"exercise the AI message/session analysis pipeline
   and see it correctly detect tone, NVC violations, bids, escalation,
   repair attempts,"** chat messages are exactly the right lever — that
   pipeline is real, runs automatically on every message you send, and
   writes detectable results to the database. See Track A below.
 
-Do both if you want the full picture. They're independent — sending the
-Track A conversation will not touch Pulse; submitting Track B's
-check-in/timeline entries will not touch chat analysis.
+Do both if you want the full picture. Track A's detection results feed
+Pulse eventually (over the coverage ramp, once the migration is live);
+Track B's check-in/timeline entries move Pulse immediately and don't
+touch chat analysis at all.
 
 ---
 
