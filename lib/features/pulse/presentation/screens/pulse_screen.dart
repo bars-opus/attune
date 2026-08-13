@@ -371,7 +371,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
                   const Padding(
                     padding: EdgeInsets.only(top: 8),
                     child: Text(
-                      'Limited data — this will improve with more check-ins and logged moments.',
+                      'Limited data — this will improve with more check-ins, logged moments, and time as we learn from your conversations.',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
