@@ -1,5 +1,8 @@
 // lib/features/timeline/presentation/screens/log_moment_details_screen.dart
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/reminders/data/models/reminder_model.dart';
+import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
+import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +20,12 @@ class LogMomentDetailsScreen extends ConsumerStatefulWidget {
     this.editEventId,
     this.initialData,
   });
+
+  /// Only anniversary and milestone moments read as something worth
+  /// re-celebrating on a fixed yearly date — conflict/highlight/first
+  /// don't fit a recurring nudge the same way.
+  bool get isEligibleForReminderOffer =>
+      eventType == 'anniversary' || eventType == 'milestone';
 
   @override
   ConsumerState<LogMomentDetailsScreen> createState() =>
@@ -109,7 +118,7 @@ class _LogMomentDetailsScreenState
         );
       } else {
         // Create new event
-        await ref.read(
+        final createdEvent = await ref.read(
           createTimelineEventProvider((
             eventType: widget.eventType,
             title: _titleController.text.trim(),
@@ -121,6 +130,10 @@ class _LogMomentDetailsScreenState
             moodScore: _moodScore,
           )).future,
         );
+
+        if (widget.isEligibleForReminderOffer && mounted) {
+          await _offerYearlyReminder(createdEvent);
+        }
       }
 
       if (mounted) {
@@ -134,6 +147,60 @@ class _LogMomentDetailsScreenState
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _offerYearlyReminder(TimelineEventModel createdEvent) async {
+    final shouldAdd = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Remind us to revisit this next year?'),
+            content: const Text(
+              "We'll nudge you both around this date each year.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Not now'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Add it'),
+              ),
+            ],
+          ),
+    );
+    if (shouldAdd != true || !mounted) return;
+
+    ReminderModel reminder;
+    try {
+      reminder = await ref.read(
+        createReminderProvider((
+          reminderType: 'anniversary',
+          title: createdEvent.title,
+          note: null,
+          remindAt: createdEvent.occurredAt,
+          recurrence: 'yearly',
+          familyMemberId: null,
+        )).future,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      context.showErrorSnackbar("Couldn't add that reminder — try again from Calendar.");
+      return;
+    }
+
+    try {
+      await ref
+          .read(remindersRepositoryProvider)
+          .linkReminderToTimelineEvent(
+            reminderId: reminder.id,
+            timelineEventId: createdEvent.id,
+          );
+    } catch (_) {
+      if (!mounted) return;
+      context.showErrorSnackbar("Couldn't add that reminder — try again from Calendar.");
     }
   }
 
