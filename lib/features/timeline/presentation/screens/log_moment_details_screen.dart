@@ -246,8 +246,15 @@ class _LogMomentDetailsScreenState
               //       required currentLength,
               //       required isFocused,
               //       maxLength,
-              //     }) => null, 
-                  
+              //     }) => null,
+              // Without this, _isValid (read from _titleController.text at
+              // build time) never gets a chance to re-evaluate: nothing else
+              // triggers a parent rebuild as the user types, so the Save
+              // button stays permanently disabled from the initial (empty)
+              // build unless some unrelated setState (e.g. the mood slider)
+              // happens to fire first.
+              onChanged: (_) => setState(() {}),
+
                   label: '',
             ),
             Gap(Spacing.lg.h),
