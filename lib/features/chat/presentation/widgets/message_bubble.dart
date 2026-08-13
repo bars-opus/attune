@@ -1,6 +1,7 @@
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
+import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:intl/intl.dart';
@@ -16,6 +17,18 @@ class MessageBubble extends StatelessWidget {
     this.onReply,
     this.onJumpToParent,
     this.isHighlighted = false,
+    this.parentDeleted = false,
+    this.currentUserId,
+    this.isStarred = false,
+    this.isPinned = false,
+    this.onCopy,
+    this.onStar,
+    this.onUnstar,
+    this.onPin,
+    this.onUnpin,
+    this.onEdit,
+    this.onDelete,
+    this.onShowEditHistory,
   });
 
   final Message message;
@@ -36,20 +49,66 @@ class MessageBubble extends StatelessWidget {
   /// True while this is the current jump-to target — see UniversalBubble.
   final bool isHighlighted;
 
+  /// True when this message's replied-to parent has been deleted (Task 8
+  /// looks this up from ChatScreen's loaded message list by
+  /// message.replyToMessageId). Only meaningful when message.quotedText
+  /// is non-null. Defaults to false — an off-screen/unloaded parent is
+  /// assumed not deleted rather than guessed at.
+  final bool parentDeleted;
+
+  /// Needed to compute Message.canEditOrDelete inside the long-press
+  /// sheet. Null disables the long-press menu entirely (e.g. a read-only
+  /// archived conversation has nothing sensible to act on) — matches the
+  /// existing null-disables-gesture convention onReply already uses.
+  final String? currentUserId;
+  final bool isStarred;
+  final bool isPinned;
+  final VoidCallback? onCopy;
+  final VoidCallback? onStar;
+  final VoidCallback? onUnstar;
+  final VoidCallback? onPin;
+  final VoidCallback? onUnpin;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  /// Tapping the "edited" label calls this with the message, to open a
+  /// history view. Null disables the tap affordance (label still renders,
+  /// just not interactive) — matches this file's existing null-disables
+  /// convention.
+  final void Function(Message)? onShowEditHistory;
+
   @override
   Widget build(BuildContext context) {
     final isMine = message.isMine;
     final colorScheme = Theme.of(context).colorScheme;
+    final canOpenActions = currentUserId != null && !message.isDeleted;
 
     return UniversalBubble(
       isMine: isMine,
       bubbleColor:
           isMine ? colorScheme.primary : colorScheme.surfaceContainerHighest,
       onBubbleColor: isMine ? colorScheme.onPrimary : colorScheme.onSurface,
-      quotedText: message.quotedText,
+      quotedText: parentDeleted ? 'Original message deleted' : message.quotedText,
       onJumpToParent: message.quotedText == null ? null : onJumpToParent,
       isHighlighted: isHighlighted,
       slidableKey: ValueKey(message.clientMessageId),
+      onLongPress: canOpenActions
+          ? () => showMessageActionsSheet(
+                context: context,
+                message: message,
+                currentUserId: currentUserId!,
+                isStarred: isStarred,
+                isPinned: isPinned,
+                onReply: onReply ?? () {},
+                onCopy: onCopy ?? () {},
+                onStar: onStar ?? () {},
+                onUnstar: onUnstar ?? () {},
+                onPin: onPin ?? () {},
+                onUnpin: onUnpin ?? () {},
+                onEdit: onEdit ?? () {},
+                onDelete: onDelete ?? () {},
+              )
+          : null,
       startActionPane:
           onReply == null
               ? null
@@ -112,6 +171,20 @@ class MessageBubble extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
+          if (message.editedAt != null && !message.isDeleted)
+            GestureDetector(
+              onTap: onShowEditHistory == null
+                  ? null
+                  : () => onShowEditHistory!(message),
+              child: Text(
+                'edited',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontStyle: FontStyle.italic,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
           if (showStatus && isMine)
             _StatusChip(message: message, onRetry: onRetry),
           if (message.isFailed && onRetry != null)
@@ -150,6 +223,13 @@ class _BubbleBody extends StatelessWidget {
         isMine
             ? Theme.of(context).colorScheme.onPrimary
             : Theme.of(context).colorScheme.onSurface;
+
+    if (message.isDeleted) {
+      return Text(
+        'This message was deleted',
+        style: TextStyle(color: color, fontStyle: FontStyle.italic),
+      );
+    }
 
     final children = <Widget>[];
     if (message.hasImage) {
