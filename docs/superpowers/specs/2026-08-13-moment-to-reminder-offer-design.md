@@ -94,6 +94,41 @@ this flow produces exactly the same linked-pair shape the dedup logic
 was already built to handle, just created from the opposite starting
 point.
 
+## Failure handling (two-step write)
+
+`createReminder` then `linkReminderToTimelineEvent` are two independent
+Supabase calls, not one DB transaction — so a network drop between them
+can leave a reminder that exists but isn't linked to its originating
+moment. This is handled explicitly, not left as a silent gap:
+
+- Both calls happen inside the offer's own try/catch, isolated from
+  `_saveMoment`'s own try/catch (the moment is already saved and the
+  screen's overall success path must not be affected by what happens
+  after — accepting the offer is best-effort on top of an already-
+  successful save, matching `AddEditReminderScreen._offerTimelineLink`'s
+  own fire-and-forget-with-catch shape).
+- If `createReminder` itself throws: show
+  `context.showErrorSnackbar("Couldn't add that reminder — try again from Calendar.")`
+  (mirrors the generic, no-internal-detail error copy already used
+  throughout this codebase, e.g. `ChatSettingsScreen._saveName`'s catch
+  block) and stop — no orphaned row, nothing to link.
+- If `createReminder` succeeds but `linkReminderToTimelineEvent` throws:
+  the reminder still exists (correctly reachable/editable from Calendar
+  on its own) but is unlinked from the moment — meaning the dedup logic
+  won't suppress it and it'll appear as its own independent entry once
+  upcoming. Show the same generic error snackbar (the two failure modes
+  aren't worth distinguishing to the user — "try again from Calendar"
+  covers both, since the user can always find and manage the reminder
+  from there regardless of which step failed). This is a display
+  inconvenience (a moment briefly duplicated across sections), not a
+  data-loss bug — nothing is silently dropped, and the ledger the user
+  can act on (delete/edit from Calendar) is unaffected.
+- Both write calls, plus this error handling, live in one small
+  extracted method (e.g. `_offerYearlyReminder`, mirroring
+  `_offerTimelineLink`'s own naming) — kept separate from the dialog's
+  own widget-building code, so the two-call sequence and its failure
+  path are unit-testable without mounting the dialog.
+
 ## Why `reminderType: 'anniversary'` for a `milestone` moment
 
 `reminders.reminder_type` is constrained to
@@ -124,6 +159,38 @@ existing bucket.
   untouched — the offer only appears after `LogMomentDetailsScreen`'s
   save, not before.
 
+## Algorithm Quality Review Checklist v3.1 — scoping and gate
+
+Scope tags: `[MOBILE]` `[UI]` `[MUTATION]`. Not `[SERVICE]`/`[ASYNC]`/
+`[BATCH]`/`[FIN]`/`[UI-WEB]` — no service/API of our own, no background
+job or webhook, no money involved. `[SERVICE]`-only and CI/infra-level
+checks (7.1–7.3, 7.5, 4.6–4.13, 3.x load/backpressure checks, 8.x
+deployment checks) are N/A and skipped with that justification.
+
+Checks that DO apply and how this spec satisfies them:
+
+- **1.10 (P1) Compensating transaction for multi-step failure** — see
+  "Failure handling" above: the two-step write's partial-failure case is
+  explicitly defined (reminder exists but unlinked; user told, nothing
+  silently lost).
+- **1.11 (P1) Data privacy** — the only new data is the reminder's title
+  (copied verbatim from the moment's own title, already user-entered and
+  already stored) and its date. No new PII category introduced.
+- **2.17 (P2) Side effects isolated** — the two-write sequence is one
+  extracted method, testable independent of the dialog's widget tree.
+- **4.4 (P0-U) No PII in logs** — the implementation must not log the
+  moment/reminder title or note content; only non-PII identifiers
+  (reminder id, event type) if any logging is added at all.
+- **5.1/5.5 (P2/P0-U) Actionable, non-leaking error UI** — the generic
+  snackbar copy in "Failure handling" contains no internal error detail,
+  stack trace, or ID.
+- **6.1 (P1) Edge cases** — covered in the test list below: ineligible
+  event types, edit-path (no re-offer), decline, and a moment backdated
+  or postdated relative to today.
+- **6.4 (P1) Negative test** — "linkReminderToTimelineEvent failing still
+  leaves the reminder created" is an explicit test below, proving no
+  silent data loss on partial failure.
+
 ## Testing
 
 - A widget test confirming the dialog appears only for `eventType ==
@@ -135,6 +202,17 @@ existing bucket.
 - A test confirming "Add it" creates a `reminders` row with
   `recurrence: 'yearly'`, `remindAt` equal to the moment's `occurredAt`,
   and `linked_timeline_event_id` pointing at the newly created moment.
+- A test confirming a moment logged with a future `occurredAt` (a
+  postdated entry) still produces a correctly-linked yearly reminder —
+  `nextOccurrence`/`upcomingReminders` already handle a future `remindAt`
+  correctly with no special-casing needed, this test just proves it.
+- A negative test: `createReminder` succeeds but
+  `linkReminderToTimelineEvent` throws — assert the reminder row still
+  exists (no rollback/deletion of the successful first write) and the
+  error snackbar fires, proving the partial-failure path neither loses
+  data nor fails silently.
+- A test confirming `createReminder` itself throwing shows the error
+  snackbar and creates no `reminders` row at all.
 - Manual verification (no live device/backend in a sandboxed dev
   environment): logging a milestone, accepting the offer, and confirming
   the resulting reminder appears in Timeline's Upcoming section next time
