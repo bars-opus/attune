@@ -1191,12 +1191,19 @@ class _MessageList extends ConsumerWidget {
                       state.messages,
                     ),
             isHighlighted: highlightedMessageId == message.id,
-            // Actions are only offered on server-backed messages: a local
-            // optimistic row has no server id to delete/edit/star/pin.
+            // Actions are only offered on server-backed messages in an
+            // active, sendable conversation: a local optimistic row has no
+            // server id to delete/edit/star/pin, and a read-only
+            // conversation (e.g. an ended relationship viewed via Previous
+            // Relationships) must not offer mutating actions the RPCs will
+            // now correctly reject server-side — this client gate is a
+            // UX correction, not the security boundary (the RPCs are
+            // authoritative; see fix round 1's migration change).
             currentUserId:
-                message.id.startsWith('_local_')
-                    ? null
-                    : ref.read(currentUserProvider)?.id,
+                state.conversation.canSend &&
+                        !message.id.startsWith('_local_')
+                    ? ref.read(currentUserProvider)?.id
+                    : null,
             isStarred: state.starredMessageIds.contains(message.id),
             isPinned: state.pinnedMessages.any((p) => p.id == message.id),
             parentDeleted: parentDeleted,

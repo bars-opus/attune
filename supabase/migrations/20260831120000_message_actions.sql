@@ -235,6 +235,17 @@ BEGIN
     AND sender_id = v_uid
     AND deleted_at IS NULL
     AND created_at > now() - interval '5 minutes'
+    -- Same "active, not archived" condition pin_message enforces below (and
+    -- messages_insert_sender_active requires to SEND): deleting is a write
+    -- into a live conversation, so it must not be possible in a
+    -- paused/ended/archived chat — reachable via the read-only "Previous
+    -- relationships" view, which reuses ChatScreen.
+    AND EXISTS (
+      SELECT 1 FROM public.relationships r
+      WHERE r.id = messages.relationship_id
+        AND r.status = 'active'
+        AND r.chat_archived_at IS NULL
+    )
   RETURNING id INTO v_updated_id;
 
   -- One error for "not found", "already deleted", "not yours", and
@@ -270,6 +281,7 @@ DECLARE
   v_created_at timestamptz;
   v_deleted_at timestamptz;
   v_current_content text;
+  v_relationship_id uuid;
 BEGIN
   IF v_uid IS NULL THEN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '42501';
@@ -289,18 +301,29 @@ BEGIN
   -- "v_current_content IS NULL means not editable" shortcut would both
   -- misreport a media message as not-editable and, worse, mask a NOT NULL
   -- violation on message_edit_history.previous_content.
-  SELECT sender_id, created_at, deleted_at, content
-    INTO v_sender_id, v_created_at, v_deleted_at, v_current_content
+  SELECT sender_id, created_at, deleted_at, content, relationship_id
+    INTO v_sender_id, v_created_at, v_deleted_at, v_current_content,
+         v_relationship_id
   FROM public.messages
   WHERE id = p_message_id
   FOR UPDATE;
 
   -- Single error for every failure mode, same rationale as delete_message.
+  -- The final NOT EXISTS disjunct is the same "active, not archived"
+  -- condition pin_message enforces: editing is a write into a live
+  -- conversation, so a paused/ended/archived chat (reachable via the
+  -- read-only "Previous relationships" view) must reject it.
   IF v_sender_id IS NULL
      OR v_sender_id <> v_uid
      OR v_deleted_at IS NOT NULL
      OR v_created_at <= now() - interval '5 minutes'
-     OR v_current_content IS NULL THEN
+     OR v_current_content IS NULL
+     OR NOT EXISTS (
+       SELECT 1 FROM public.relationships r
+       WHERE r.id = v_relationship_id
+         AND r.status = 'active'
+         AND r.chat_archived_at IS NULL
+     ) THEN
     RAISE EXCEPTION 'not_editable' USING ERRCODE = '42501';
   END IF;
 

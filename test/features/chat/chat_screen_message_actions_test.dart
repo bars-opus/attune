@@ -1,3 +1,4 @@
+import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,8 +12,9 @@ void main() {
   /// Boots ChatScreen against [repo] and settles the initial load.
   Future<ProviderContainer> pumpChat(
     WidgetTester tester,
-    FakeChatRepository repo,
-  ) async {
+    FakeChatRepository repo, {
+    Conversation? conversation,
+  }) async {
     // The actions sheet lists up to six tiles; the default 800x600 surface
     // pushes Edit/Delete below the fold and off the hit-test area.
     tester.view.physicalSize = const Size(800, 1400);
@@ -20,7 +22,7 @@ void main() {
     addTearDown(tester.view.reset);
 
     final container = buildChatContainer(repository: repo, userId: 'user-a');
-    final convo = activeConversation('rel-1');
+    final convo = conversation ?? activeConversation('rel-1');
     repo.conversationOverride = convo;
 
     await tester.pumpWidget(
@@ -207,6 +209,40 @@ void main() {
 
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
+    await tearDownChat(tester, container);
+  });
+
+  // Fix round 1: an ended relationship opened through "Previous relationships"
+  // reuses this same ChatScreen. The whole action surface is gated on
+  // canSend, so long-press must not offer mutating actions the RPCs now
+  // correctly reject server-side.
+  testWidgets('read-only conversation offers no actions on long-press', (
+    tester,
+  ) async {
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    repo.seedIncoming(
+      id: 'm1',
+      relationshipId: 'rel-1',
+      senderId: 'user-a',
+      content: 'just sent this',
+      createdAt: DateTime.now(),
+    );
+    final container = await pumpChat(
+      tester,
+      repo,
+      conversation: readOnlyConversation('rel-1'),
+    );
+
+    await tester.longPress(find.text('just sent this'));
+    await tester.pumpAndSettle();
+
+    // No sheet at all — not merely Edit/Delete withheld.
+    expect(find.text('Copy'), findsNothing);
+    expect(find.text('Star'), findsNothing);
+    expect(find.text('Pin'), findsNothing);
+    expect(find.text('Edit'), findsNothing);
+    expect(find.text('Delete'), findsNothing);
+
     await tearDownChat(tester, container);
   });
 }
