@@ -98,6 +98,7 @@ CREATE POLICY message_edit_history_select ON public.message_edit_history
       JOIN public.relationships r ON r.id = m.relationship_id
       WHERE m.id = message_edit_history.message_id
         AND (r.user_a = auth.uid() OR r.user_b = auth.uid())
+        AND r.chat_archived_at IS NULL
     )
   );
 
@@ -148,15 +149,27 @@ CREATE TABLE IF NOT EXISTS public.message_pins (
 CREATE INDEX IF NOT EXISTS idx_message_pins_relationship
   ON public.message_pins (relationship_id, pinned_at DESC);
 
+-- The UNIQUE (relationship_id, message_id) index leads with relationship_id,
+-- so it cannot serve a lookup by message_id alone. Without this, the
+-- ON DELETE CASCADE from messages sequentially scans message_pins.
+CREATE INDEX IF NOT EXISTS idx_message_pins_message
+  ON public.message_pins (message_id);
+
 ALTER TABLE public.message_pins ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS message_pins_select ON public.message_pins;
+-- Archived-chat guard matches messages_select_members
+-- (20260705120000_chat_system_v1_2.sql:239-250) exactly: once a chat is
+-- archived neither partner can read the underlying messages, so pins over
+-- them must disappear too rather than leaving a readable/deletable shadow
+-- of an archived conversation.
 CREATE POLICY message_pins_select ON public.message_pins
   FOR SELECT TO authenticated USING (
     EXISTS (
       SELECT 1 FROM public.relationships r
       WHERE r.id = message_pins.relationship_id
         AND (r.user_a = auth.uid() OR r.user_b = auth.uid())
+        AND r.chat_archived_at IS NULL
     )
   );
 
@@ -167,6 +180,7 @@ CREATE POLICY message_pins_delete ON public.message_pins
       SELECT 1 FROM public.relationships r
       WHERE r.id = message_pins.relationship_id
         AND (r.user_a = auth.uid() OR r.user_b = auth.uid())
+        AND r.chat_archived_at IS NULL
     )
   );
 
@@ -323,10 +337,17 @@ BEGIN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '42501';
   END IF;
 
+  -- Same "active, not archived" condition messages_insert_sender_active
+  -- (20260705120000_chat_system_v1_2.sql:252-265) requires to SEND a message:
+  -- creating a pin is a write into a live conversation, so it must not be
+  -- possible in a paused/ended/archived chat. This also covers a pending
+  -- relationship, where user_b is still NULL and the invite is unaccepted.
   IF NOT EXISTS (
     SELECT 1 FROM public.relationships r
     WHERE r.id = p_relationship_id
       AND (r.user_a = v_uid OR r.user_b = v_uid)
+      AND r.status = 'active'
+      AND r.chat_archived_at IS NULL
   ) THEN
     RAISE EXCEPTION 'not_authorized' USING ERRCODE = '42501';
   END IF;
@@ -358,7 +379,10 @@ BEGIN
     SELECT count(*) FROM public.message_pins
     WHERE relationship_id = p_relationship_id
   ) >= 3 THEN
-    RAISE EXCEPTION 'pin_limit_reached' USING ERRCODE = '23505';
+    -- P0001 (raise_exception), not 23505: nothing violated a uniqueness
+    -- constraint here — this is a business-rule cap, and reusing 23505 would
+    -- be indistinguishable from a genuine ON CONFLICT duplicate below.
+    RAISE EXCEPTION 'pin_limit_reached' USING ERRCODE = 'P0001';
   END IF;
 
   -- ON CONFLICT DO NOTHING is the belt to the check above's braces: it also
