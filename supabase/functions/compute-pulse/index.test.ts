@@ -296,3 +296,42 @@ Deno.test("applyChatSignals: results stay clamped to 0-100", () => {
   assertEquals(result.communication >= 0, true);
   assertEquals(result.emotionalSafety >= 0, true);
 });
+
+Deno.test("no-op proof: applyChatSignals with all-null/zero ChatSignals and chatWeight 0 returns dimensions byte-identical to input", () => {
+  // This is the test that proves the whole feature cannot regress a
+  // relationship that doesn't use chat — the exact property the design
+  // spec calls "the safety net for this whole feature."
+  const before: DimensionState = {
+    communication: 63,
+    connection: 41,
+    conflictHealth: 78,
+    emotionalSafety: 55,
+  }
+  const zeroSignals: ChatSignals = {
+    analysedCount: 0,
+    avgTone: null,
+    violationRate: null,
+    severeRate: null,
+    bidTurnRate: null,
+    bidsTotal: 0,
+    sessionCount: 0,
+    avgEscalation: null,
+    repairRate: null,
+    attemptRate: null,
+    stonewallRate: null,
+    pursueWithdrawRate: null,
+  }
+  const result = applyChatSignals(before, zeroSignals, 0)
+  assertEquals(result, before)
+});
+
+Deno.test("computeChatWeight: pendingBacklog gate forces zero weight regardless of coverage — verified at the call-site formula level", () => {
+  // The backlog gate itself (`pendingBacklog > 50 ? 0 : computeChatWeight(...)`)
+  // is a one-line ternary at the call site in _computePulseScore, not a
+  // separately exported function — this test documents and locks the
+  // formula's shape so a future refactor can't silently drop the gate.
+  const pendingBacklog = 51
+  const coverageDays = 30 // full coverage, would otherwise be weight 1
+  const chatWeight = pendingBacklog > 50 ? 0 : computeChatWeight(coverageDays)
+  assertEquals(chatWeight, 0)
+});

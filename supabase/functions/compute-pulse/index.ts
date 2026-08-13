@@ -391,6 +391,26 @@ async function _computePulseScore(
     throw new Error(`Failed to save pulse score for relationship ${relationshipId}: ${upsertError.message}`)
   }
 
+  // Diagnostics: raw chat aggregates for tuning/observability, written to
+  // a service-role-only table never exposed to clients (see Task 1's
+  // pulse_score_diagnostics — no RLS policy for `authenticated`).
+  // Best-effort: a failure here must not fail the pulse computation
+  // itself, since this is observability, not correctness.
+  const { error: diagnosticsError } = await supabase
+    .from('pulse_score_diagnostics')
+    .upsert(
+      {
+        relationship_id: relationshipId,
+        week_ending: weekEnding.toISOString().split('T')[0],
+        chat_weight: chatWeight,
+        raw_signals: chatSignals,
+      },
+      { onConflict: 'relationship_id,week_ending' }
+    )
+  if (diagnosticsError) {
+    console.error('Failed to write pulse score diagnostics (non-fatal):', diagnosticsError.message)
+  }
+
   return pulseData
 }
 
