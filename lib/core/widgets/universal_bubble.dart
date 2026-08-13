@@ -28,6 +28,7 @@ class UniversalBubble extends StatelessWidget {
     this.maxWidth = 320,
     this.slidableKey,
     this.groupTag,
+    this.onLongPress,
     this.quoteBackgroundColor,
     this.quoteForegroundColor,
     this.quoteTextStyle,
@@ -103,6 +104,12 @@ class UniversalBubble extends StatelessWidget {
   /// only one bubble in a group has its action pane open at a time.
   final Object? groupTag;
 
+  /// Long-press handler on the bubble's fill (not the quote block, which
+  /// has its own tap-to-jump gesture). Null (the default) means no
+  /// long-press behavior — ForumPostBubble, this widget's other caller,
+  /// does not pass this and must see zero behavior change.
+  final VoidCallback? onLongPress;
+
   /// Quote-block fill color. Falls back to `onBubbleColor.withValues(alpha:
   /// 0.15)` (chat's look) when null. Forums passes
   /// `colorScheme.onBackground.withOpacity(0.5)` to preserve its
@@ -170,70 +177,73 @@ class UniversalBubble extends StatelessWidget {
                             ),
                           ),
                           padding: const EdgeInsets.all(2),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: bubbleColor,
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
+                          child: GestureDetector(
+                            onLongPress: onLongPress,
+                            behavior: HitTestBehavior.opaque,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: bubbleColor,
+                                borderRadius: BorderRadius.circular(18),
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (quotedText != null) ...[
-                                    GestureDetector(
-                                      onTap: onJumpToParent,
-                                      behavior: HitTestBehavior.opaque,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color:
-                                              quoteBackgroundColor ??
-                                              onBubbleColor.withValues(
-                                                alpha: 0.15,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (quotedText != null) ...[
+                                      GestureDetector(
+                                        onTap: onJumpToParent,
+                                        behavior: HitTestBehavior.opaque,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: BoxDecoration(
+                                            color:
+                                                quoteBackgroundColor ??
+                                                onBubbleColor.withValues(
+                                                  alpha: 0.15,
+                                                ),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                Icons.format_quote,
+                                                size: quoteIconSize,
+                                                color:
+                                                    quoteForegroundColor ??
+                                                    onBubbleColor,
                                               ),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
+                                              const SizedBox(width: 4),
+                                              Flexible(
+                                                child: Text(
+                                                  quotedText!,
+                                                  style:
+                                                      quoteTextStyle ??
+                                                      TextStyle(
+                                                        color:
+                                                            quoteForegroundColor ??
+                                                            onBubbleColor,
+                                                        fontSize: 12,
+                                                      ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                        child: Row(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              Icons.format_quote,
-                                              size: quoteIconSize,
-                                              color:
-                                                  quoteForegroundColor ??
-                                                  onBubbleColor,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Flexible(
-                                              child: Text(
-                                                quotedText!,
-                                                style:
-                                                    quoteTextStyle ??
-                                                    TextStyle(
-                                                      color:
-                                                          quoteForegroundColor ??
-                                                          onBubbleColor,
-                                                      fontSize: 12,
-                                                    ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 4),
+                                      const SizedBox(height: 4),
+                                    ],
+                                    content,
                                   ],
-                                  content,
-                                ],
+                                ),
                               ),
                             ),
                           ),

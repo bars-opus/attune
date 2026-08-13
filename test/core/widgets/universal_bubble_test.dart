@@ -135,4 +135,46 @@ void main() {
     expect(slidable.startActionPane, isNull);
     expect(slidable.endActionPane, isNull);
   });
+
+  testWidgets('onLongPress fires when the bubble is long-pressed', (tester) async {
+    var longPressed = false;
+    await _pump(
+      tester,
+      UniversalBubble(
+        isMine: true,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: const Text('hello'),
+        footer: const SizedBox.shrink(),
+        onLongPress: () => longPressed = true,
+      ),
+    );
+
+    await tester.longPress(find.text('hello'));
+    await tester.pumpAndSettle();
+
+    expect(longPressed, isTrue);
+  });
+
+  testWidgets('omitting onLongPress renders with no long-press handler',
+      (tester) async {
+    // Regression guard for ForumPostBubble, the other UniversalBubble
+    // caller, which does not pass onLongPress — must keep rendering with
+    // zero behavior change when the param is omitted.
+    await _pump(
+      tester,
+      UniversalBubble(
+        isMine: true,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: const Text('hello'),
+        footer: const SizedBox.shrink(),
+      ),
+    );
+
+    await tester.longPress(find.text('hello'));
+    await tester.pumpAndSettle();
+    // No assertion needed beyond "did not throw" — absence of a handler
+    // must be a true no-op, not an error.
+  });
 }
