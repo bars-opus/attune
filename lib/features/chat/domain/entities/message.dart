@@ -20,6 +20,8 @@ class Message {
   final bool isMine;
   final String? replyToMessageId;
   final String? quotedText;
+  final DateTime? deletedAt;
+  final DateTime? editedAt;
 
   const Message({
     required this.id,
@@ -40,6 +42,8 @@ class Message {
     this.readAt,
     this.replyToMessageId,
     this.quotedText,
+    this.deletedAt,
+    this.editedAt,
   });
 
   factory Message.fromRow(
@@ -72,6 +76,8 @@ class Message {
       ),
       replyToMessageId: row['reply_to_message_id'] as String?,
       quotedText: row['quoted_text'] as String?,
+      deletedAt: _parseDateTime(row['deleted_at']),
+      editedAt: _parseDateTime(row['edited_at']),
     );
   }
 
@@ -126,6 +132,8 @@ class Message {
     bool? isMine,
     String? replyToMessageId,
     String? quotedText,
+    DateTime? deletedAt,
+    DateTime? editedAt,
   }) {
     return Message(
       id: id ?? this.id,
@@ -146,6 +154,8 @@ class Message {
       isMine: isMine ?? this.isMine,
       replyToMessageId: replyToMessageId ?? this.replyToMessageId,
       quotedText: quotedText ?? this.quotedText,
+      deletedAt: deletedAt ?? this.deletedAt,
+      editedAt: editedAt ?? this.editedAt,
     );
   }
 
@@ -163,6 +173,8 @@ class Message {
       'source': source,
       'deliveredAt': deliveredAt?.toIso8601String(),
       'readAt': readAt?.toIso8601String(),
+      'deletedAt': deletedAt?.toIso8601String(),
+      'editedAt': editedAt?.toIso8601String(),
       'status': status.name,
       'isMine': isMine,
       'replyToMessageId': replyToMessageId,
@@ -184,6 +196,8 @@ class Message {
       source: (json['source'] as String?) ?? 'native',
       deliveredAt: _parseDateTime(json['deliveredAt']),
       readAt: _parseDateTime(json['readAt']),
+      deletedAt: _parseDateTime(json['deletedAt']),
+      editedAt: _parseDateTime(json['editedAt']),
       status: MessageStatus.values.byName(json['status'] as String),
       isMine: json['isMine'] as bool,
       replyToMessageId: json['replyToMessageId'] as String?,
@@ -200,6 +214,17 @@ class Message {
   bool get isRead => status == MessageStatus.read;
   bool get isDelivered => status == MessageStatus.delivered;
   bool get isImported => source.startsWith('import:');
+
+  bool get isDeleted => deletedAt != null;
+
+  /// True only for the sender's own message, not yet deleted, sent within
+  /// the last 5 minutes. [now] is injectable for testing; callers pass
+  /// DateTime.now() in production.
+  bool canEditOrDelete({required String currentUserId, required DateTime now}) {
+    if (senderId != currentUserId) return false;
+    if (isDeleted) return false;
+    return now.difference(createdAt) < const Duration(minutes: 5);
+  }
 
   static bool isValidContent(String value, {bool hasMedia = false}) {
     if (!hasMedia && value.trim().isEmpty) return false;

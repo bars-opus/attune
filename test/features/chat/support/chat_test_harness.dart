@@ -309,6 +309,59 @@ class FakeChatRepository implements ChatRepository {
     required String relationshipId,
     required String intentId,
   }) async {}
+
+  @override
+  Future<void> deleteMessage(String messageId) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> editMessage({
+    required String messageId,
+    required String newContent,
+  }) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<List<MessageEditHistoryEntry>> getMessageEditHistory(String messageId) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> starMessage(String messageId) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> unstarMessage(String messageId) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<List<Message>> getStarredMessages() async =>
+      throw UnimplementedError();
+
+  @override
+  Future<bool> isMessageStarred(String messageId) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> pinMessage({
+    required String relationshipId,
+    required String messageId,
+  }) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> unpinMessage({
+    required String relationshipId,
+    required String messageId,
+  }) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<List<Message>> getPinnedMessages(String relationshipId) async =>
+      throw UnimplementedError();
+
+  @override
+  Stream<void> watchPinnedMessages(String relationshipId) =>
+      throw UnimplementedError();
 }
 
 /// An in-memory cache backend for tests (no platform storage).

@@ -54,6 +54,54 @@ abstract class ChatRepository {
     required String chatName,
   });
 
+  /// Soft-deletes a message (server enforces sender-only, 5-minute window
+  /// — see delete_message RPC). Throws on any rejection (not found, not
+  /// yours, already deleted, window expired — the server intentionally
+  /// does not distinguish which).
+  Future<void> deleteMessage(String messageId);
+
+  /// Edits a message's content, appending the prior content to
+  /// message_edit_history (server enforces sender-only, 5-minute window —
+  /// see edit_message RPC). Throws on any rejection.
+  Future<void> editMessage({
+    required String messageId,
+    required String newContent,
+  });
+
+  /// Prior versions of this message's content, oldest first. Does not
+  /// include the current (latest) content — callers already have that via
+  /// Message.content.
+  Future<List<MessageEditHistoryEntry>> getMessageEditHistory(String messageId);
+
+  Future<void> starMessage(String messageId);
+  Future<void> unstarMessage(String messageId);
+
+  /// This user's starred messages across all their relationships,
+  /// newest-starred first.
+  Future<List<Message>> getStarredMessages();
+
+  /// True if the current user has starred this message.
+  Future<bool> isMessageStarred(String messageId);
+
+  /// Pins a message to the top of the relationship's chat (server enforces
+  /// the 3-pin cap — see pin_message RPC). Throws 'pin_limit_reached' when
+  /// full.
+  Future<void> pinMessage({
+    required String relationshipId,
+    required String messageId,
+  });
+  Future<void> unpinMessage({
+    required String relationshipId,
+    required String messageId,
+  });
+
+  /// Currently pinned messages for this relationship, newest-pinned first
+  /// (max 3, enforced server-side).
+  Future<List<Message>> getPinnedMessages(String relationshipId);
+
+  /// Live updates when a pin is added/removed for this relationship.
+  Stream<void> watchPinnedMessages(String relationshipId);
+
   /// Requests a one-time upload slot for a new relationship avatar photo —
   /// mirrors [createImageUploadIntent]'s shape but scoped to the
   /// relationship-avatars bucket via a separate RPC/table pipeline (see
@@ -143,5 +191,15 @@ class RelationshipAvatarUploadIntent {
     required this.storageKey,
     required this.expiresAt,
     required this.bucket,
+  });
+}
+
+class MessageEditHistoryEntry {
+  final String previousContent;
+  final DateTime editedAt;
+
+  const MessageEditHistoryEntry({
+    required this.previousContent,
+    required this.editedAt,
   });
 }

@@ -705,4 +705,57 @@ class SupabaseChatRepository implements ChatRepository {
       }),
     );
   }
+
+  @override
+  Future<void> deleteMessage(String messageId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> editMessage({
+    required String messageId,
+    required String newContent,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<List<MessageEditHistoryEntry>> getMessageEditHistory(String messageId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> starMessage(String messageId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> unstarMessage(String messageId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<List<Message>> getStarredMessages() =>
+      throw UnimplementedError();
+
+  @override
+  Future<bool> isMessageStarred(String messageId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> pinMessage({
+    required String relationshipId,
+    required String messageId,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> unpinMessage({
+    required String relationshipId,
+    required String messageId,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<List<Message>> getPinnedMessages(String relationshipId) =>
+      throw UnimplementedError();
+
+  @override
+  Stream<void> watchPinnedMessages(String relationshipId) =>
+      throw UnimplementedError();
 }
