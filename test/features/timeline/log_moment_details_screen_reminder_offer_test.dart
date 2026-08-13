@@ -80,7 +80,9 @@ void main() {
 
   group('LogMomentDetailsScreen _offerYearlyReminder write path', () {
     late List<TimelineEventModel> createdEvents;
-    late List<({String reminderType, String title, DateTime remindAt})> createdReminders;
+    late List<({String reminderType, String title, DateTime remindAt, String recurrence})>
+    createdReminders;
+    late _FakeRemindersRepository fakeRepo;
 
     Future<void> pumpScreen(
       WidgetTester tester, {
@@ -90,7 +92,7 @@ void main() {
     }) async {
       createdEvents = [];
       createdReminders = [];
-      final fakeRepo = _FakeRemindersRepository(linkShouldThrow: linkShouldThrow);
+      fakeRepo = _FakeRemindersRepository(linkShouldThrow: linkShouldThrow);
 
       // The Save button sits below the fold at the default 800x600 test
       // viewport, so a plain tap misses it. Widen the view instead of
@@ -124,6 +126,7 @@ void main() {
                 reminderType: params.reminderType,
                 title: params.title,
                 remindAt: params.remindAt,
+                recurrence: params.recurrence,
               ));
               return _reminder();
             }),
@@ -165,7 +168,82 @@ void main() {
       expect(createdReminders, hasLength(1));
       expect(createdReminders.first.reminderType, 'anniversary');
       expect(createdReminders.first.title, 'First trip together');
+      expect(createdReminders.first.recurrence, 'yearly');
+
+      expect(fakeRepo.linkCalls, hasLength(1));
+      expect(fakeRepo.linkCalls.first.reminderId, _reminder().id);
+      expect(
+        fakeRepo.linkCalls.first.timelineEventId,
+        createdEvents.first.id,
+      );
     });
+
+    testWidgets(
+      'edit path never shows the offer dialog, even for an eligible event type',
+      (tester) async {
+        createdEvents = [];
+        createdReminders = [];
+        fakeRepo = _FakeRemindersRepository();
+
+        tester.view.physicalSize = const Size(1200, 4000);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              updateTimelineEventProvider.overrideWith((ref, params) async {
+                return TimelineEventModel(
+                  id: params.eventId,
+                  relationshipId: 'rel-1',
+                  loggedBy: 'user-1',
+                  eventType: params.eventType ?? 'milestone',
+                  title: params.title ?? '',
+                  occurredAt: params.occurredAt ?? DateTime.now(),
+                  createdAt: DateTime.now(),
+                );
+              }),
+              createReminderProvider.overrideWith((ref, params) async {
+                createdReminders.add((
+                  reminderType: params.reminderType,
+                  title: params.title,
+                  remindAt: params.remindAt,
+                  recurrence: params.recurrence,
+                ));
+                return _reminder();
+              }),
+              remindersRepositoryProvider.overrideWithValue(fakeRepo),
+            ],
+            child: MaterialApp(
+              home: ScreenUtilInit(
+                designSize: const Size(390, 844),
+                builder:
+                    (_, __) => const LogMomentDetailsScreen(
+                      eventType: 'milestone',
+                      editEventId: 'evt-existing',
+                    ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byType(TextFormField).first,
+          'Updated title',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Save changes'));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Remind us to revisit this next year?'),
+          findsNothing,
+        );
+        expect(createdReminders, isEmpty);
+      },
+    );
 
     testWidgets('declining the offer creates no reminder', (tester) async {
       await pumpScreen(tester, eventType: 'anniversary');
@@ -281,6 +359,7 @@ void main() {
                   reminderType: params.reminderType,
                   title: params.title,
                   remindAt: params.remindAt,
+                  recurrence: params.recurrence,
                 ));
                 return _reminder();
               }),

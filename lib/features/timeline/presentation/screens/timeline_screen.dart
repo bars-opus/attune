@@ -223,7 +223,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                   sliver: eventsAsync.when(
                     data: (events) {
                       final excludedIds = linkedTimelineEventIds(
-                        remindersAsync.valueOrNull ?? const [],
+                        upcomingReminders(remindersAsync.valueOrNull ?? const []),
                       );
                       final visibleEvents =
                           events

@@ -34,6 +34,9 @@ class LogMomentDetailsScreen extends ConsumerStatefulWidget {
 
 class _LogMomentDetailsScreenState
     extends ConsumerState<LogMomentDetailsScreen> {
+  static const String _reminderErrorMessage =
+      "Couldn't add that reminder — try again from Calendar.";
+
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
@@ -187,7 +190,7 @@ class _LogMomentDetailsScreenState
       );
     } catch (_) {
       if (!mounted) return;
-      context.showErrorSnackbar("Couldn't add that reminder — try again from Calendar.");
+      context.showErrorSnackbar(_reminderErrorMessage);
       return;
     }
 
@@ -200,7 +203,7 @@ class _LogMomentDetailsScreenState
           );
     } catch (_) {
       if (!mounted) return;
-      context.showErrorSnackbar("Couldn't add that reminder — try again from Calendar.");
+      context.showErrorSnackbar(_reminderErrorMessage);
     }
   }
 
