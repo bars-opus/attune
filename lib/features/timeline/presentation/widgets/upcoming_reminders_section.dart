@@ -2,16 +2,35 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+/// The last valid day of [month] in [year] — Dart's DateTime constructor
+/// silently rolls an out-of-range day into the next month instead of
+/// clamping (e.g. DateTime(2026, 2, 29) becomes March 1st, 2026, since 2026
+/// isn't a leap year), which would otherwise make a Feb 29th reminder fire
+/// a day late and on the wrong month in every non-leap year. Mirrors
+/// REMINDERS.md's server-side generator, which explicitly specifies firing
+/// on Feb 28 in non-leap years rather than skipping the reminder.
+int _lastDayOfMonth(int year, int month) {
+  return DateTime(year, month + 1, 0).day;
+}
+
 /// The reminder's next real-world occurrence — itself for a one-off, or
 /// this year's (or next year's, if this year's has already passed)
-/// month/day for a yearly-recurring reminder. Ported from
+/// month/day for a yearly-recurring reminder, with the day clamped to the
+/// target month's actual length. Ported from
 /// CouplesCalendarScreen._nextOccurrence.
 DateTime nextOccurrence(ReminderModel reminder, {DateTime? now}) {
   if (!reminder.isRecurring) return reminder.remindAt;
   final today = now ?? DateTime.now();
-  var next = DateTime(today.year, reminder.remindAt.month, reminder.remindAt.day);
+
+  DateTime occurrenceInYear(int year) {
+    final month = reminder.remindAt.month;
+    final day = reminder.remindAt.day.clamp(1, _lastDayOfMonth(year, month));
+    return DateTime(year, month, day);
+  }
+
+  var next = occurrenceInYear(today.year);
   if (next.isBefore(DateTime(today.year, today.month, today.day))) {
-    next = DateTime(today.year + 1, reminder.remindAt.month, reminder.remindAt.day);
+    next = occurrenceInYear(today.year + 1);
   }
   return next;
 }

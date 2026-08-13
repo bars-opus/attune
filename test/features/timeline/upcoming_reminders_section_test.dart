@@ -59,6 +59,39 @@ void main() {
       final result = nextOccurrence(reminder, now: DateTime(2026, 8, 28));
       expect(result, DateTime(2027, 3, 1));
     });
+
+    test(
+      'a Feb 29 yearly reminder clamps to Feb 28 in a non-leap year, not March 1',
+      () {
+        // Algorithm Quality Review Checklist v3.1, item 6.1 (boundary
+        // values): DateTime(2026, 2, 29) silently rolls to March 1st since
+        // 2026 isn't a leap year — this reminder must fire on Feb 28, not
+        // skip to March, matching REMINDERS.md's server-side generator
+        // behavior for the same edge case.
+        final reminder = _reminder(
+          id: 'r4',
+          title: 'Leap day anniversary',
+          remindAt: DateTime(2024, 2, 29), // 2024 is a leap year
+          recurrence: 'yearly',
+        );
+        final result = nextOccurrence(reminder, now: DateTime(2026, 1, 1));
+        expect(result, DateTime(2026, 2, 28));
+      },
+    );
+
+    test(
+      'a Feb 29 yearly reminder fires on Feb 29 in a leap year',
+      () {
+        final reminder = _reminder(
+          id: 'r5',
+          title: 'Leap day anniversary',
+          remindAt: DateTime(2024, 2, 29),
+          recurrence: 'yearly',
+        );
+        final result = nextOccurrence(reminder, now: DateTime(2028, 1, 1));
+        expect(result, DateTime(2028, 2, 29)); // 2028 is a leap year
+      },
+    );
   });
 
   group('upcomingReminders', () {
