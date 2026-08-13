@@ -545,6 +545,77 @@ class ChatController extends StateNotifier<ChatState> {
     );
   }
 
+  Future<void> deleteMessage(Message message) async {
+    await _repository.deleteMessage(message.id);
+    if (!mounted) return;
+    state = state.copyWith(
+      messages: state.messages
+          .map(
+            (entry) => entry.id == message.id
+                ? entry.copyWith(deletedAt: DateTime.now(), content: '')
+                : entry,
+          )
+          .toList(),
+    );
+  }
+
+  Future<void> editMessage(Message message, String newContent) async {
+    await _repository.editMessage(
+      messageId: message.id,
+      newContent: newContent,
+    );
+    if (!mounted) return;
+    state = state.copyWith(
+      messages: state.messages
+          .map(
+            (entry) => entry.id == message.id
+                ? entry.copyWith(content: newContent, editedAt: DateTime.now())
+                : entry,
+          )
+          .toList(),
+    );
+  }
+
+  Future<void> starMessage(String messageId) async {
+    await _repository.starMessage(messageId);
+    if (!mounted) return;
+    state = state.copyWith(
+      starredMessageIds: {...state.starredMessageIds, messageId},
+    );
+  }
+
+  Future<void> unstarMessage(String messageId) async {
+    await _repository.unstarMessage(messageId);
+    if (!mounted) return;
+    state = state.copyWith(
+      starredMessageIds: state.starredMessageIds
+          .where((id) => id != messageId)
+          .toSet(),
+    );
+  }
+
+  Future<void> pinMessage(Message message) async {
+    await _repository.pinMessage(
+      relationshipId: message.relationshipId,
+      messageId: message.id,
+    );
+    if (!mounted) return;
+    final pins = await _repository.getPinnedMessages(message.relationshipId);
+    if (!mounted) return;
+    state = state.copyWith(pinnedMessages: pins);
+  }
+
+  Future<void> unpinMessage(Message message) async {
+    await _repository.unpinMessage(
+      relationshipId: message.relationshipId,
+      messageId: message.id,
+    );
+    if (!mounted) return;
+    final pins = await _repository.getPinnedMessages(message.relationshipId);
+    if (!mounted) return;
+    state = state.copyWith(pinnedMessages: pins);
+  }
+
   Future<void> flushOutbox() async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
@@ -1011,6 +1082,8 @@ class ChatState {
   final List<Message> messages;
   final String? error;
   final DateTime? lastSyncedAt;
+  final Set<String> starredMessageIds;
+  final List<Message> pinnedMessages;
 
   const ChatState({
     required this.conversation,
@@ -1021,6 +1094,8 @@ class ChatState {
     required this.messages,
     this.error,
     this.lastSyncedAt,
+    this.starredMessageIds = const {},
+    this.pinnedMessages = const [],
   });
 
   factory ChatState.initial(Conversation conversation) {
@@ -1032,6 +1107,8 @@ class ChatState {
       hasMore: false,
       messages: const [],
       lastSyncedAt: null,
+      starredMessageIds: const {},
+      pinnedMessages: const [],
     );
   }
 
@@ -1044,6 +1121,8 @@ class ChatState {
     List<Message>? messages,
     String? error,
     DateTime? lastSyncedAt,
+    Set<String>? starredMessageIds,
+    List<Message>? pinnedMessages,
   }) {
     return ChatState(
       conversation: conversation ?? this.conversation,
@@ -1054,6 +1133,8 @@ class ChatState {
       messages: messages ?? this.messages,
       error: error,
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
+      starredMessageIds: starredMessageIds ?? this.starredMessageIds,
+      pinnedMessages: pinnedMessages ?? this.pinnedMessages,
     );
   }
 }

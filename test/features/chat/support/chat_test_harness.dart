@@ -251,6 +251,7 @@ class FakeChatRepository implements ChatRepository {
   Future<void> dispose() async {
     await _events.close();
     await _typingController.close();
+    await _pinnedController.close();
   }
 
   // --- Unused-by-M1 surface: minimal implementations. ---
@@ -310,58 +311,96 @@ class FakeChatRepository implements ChatRepository {
     required String intentId,
   }) async {}
 
+  /// Recorded calls for assertions on the star/pin/delete/edit surface.
+  final List<String> deleteMessageCalls = [];
+  final List<({String messageId, String newContent})> editMessageCalls = [];
+  final Set<String> starredMessageIds = {};
+  final Set<String> pinnedMessageIds = {};
+  final _pinnedController = StreamController<void>.broadcast();
+
   @override
-  Future<void> deleteMessage(String messageId) async =>
-      throw UnimplementedError();
+  Future<void> deleteMessage(String messageId) async {
+    deleteMessageCalls.add(messageId);
+    final existing = serverMessages[messageId];
+    if (existing != null) {
+      serverMessages[messageId] = existing.copyWith(
+        deletedAt: DateTime.now(),
+        content: '',
+      );
+    }
+  }
 
   @override
   Future<void> editMessage({
     required String messageId,
     required String newContent,
-  }) async =>
-      throw UnimplementedError();
+  }) async {
+    editMessageCalls.add((messageId: messageId, newContent: newContent));
+    final existing = serverMessages[messageId];
+    if (existing != null) {
+      serverMessages[messageId] = existing.copyWith(
+        content: newContent,
+        editedAt: DateTime.now(),
+      );
+    }
+  }
 
   @override
-  Future<List<MessageEditHistoryEntry>> getMessageEditHistory(String messageId) async =>
-      throw UnimplementedError();
+  Future<List<MessageEditHistoryEntry>> getMessageEditHistory(
+    String messageId,
+  ) async =>
+      const [];
 
   @override
-  Future<void> starMessage(String messageId) async =>
-      throw UnimplementedError();
+  Future<void> starMessage(String messageId) async {
+    starredMessageIds.add(messageId);
+  }
 
   @override
-  Future<void> unstarMessage(String messageId) async =>
-      throw UnimplementedError();
+  Future<void> unstarMessage(String messageId) async {
+    starredMessageIds.remove(messageId);
+  }
 
   @override
-  Future<List<Message>> getStarredMessages() async =>
-      throw UnimplementedError();
+  Future<List<Message>> getStarredMessages() async => serverMessages.values
+      .where((m) => starredMessageIds.contains(m.id))
+      .toList();
 
   @override
   Future<bool> isMessageStarred(String messageId) async =>
-      throw UnimplementedError();
+      starredMessageIds.contains(messageId);
 
   @override
   Future<void> pinMessage({
     required String relationshipId,
     required String messageId,
-  }) async =>
-      throw UnimplementedError();
+  }) async {
+    pinnedMessageIds.add(messageId);
+    _pinnedController.add(null);
+  }
 
   @override
   Future<void> unpinMessage({
     required String relationshipId,
     required String messageId,
-  }) async =>
-      throw UnimplementedError();
+  }) async {
+    pinnedMessageIds.remove(messageId);
+    _pinnedController.add(null);
+  }
 
   @override
   Future<List<Message>> getPinnedMessages(String relationshipId) async =>
-      throw UnimplementedError();
+      serverMessages.values
+          .where(
+            (m) =>
+                m.relationshipId == relationshipId &&
+                pinnedMessageIds.contains(m.id),
+          )
+          .toList();
 
   @override
   Stream<void> watchPinnedMessages(String relationshipId) =>
-      throw UnimplementedError();
+      _pinnedController.stream;
 }
 
 /// An in-memory cache backend for tests (no platform storage).

@@ -200,4 +200,68 @@ void main() {
       expect(repo.presenceCalls.last, isNull);
     });
   });
+
+  group('message actions', () {
+    test('deleteMessage removes the message content from state optimistically',
+        () async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      final b = await boot(repo);
+
+      await b.controller.sendMessage('to be deleted');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final sent = b.state.messages.single;
+
+      await b.controller.deleteMessage(sent);
+
+      final updated = b.state.messages.firstWhere((m) => m.id == sent.id);
+      expect(updated.isDeleted, isTrue);
+      expect(repo.deleteMessageCalls, contains(sent.id));
+    });
+
+    test('editMessage updates content and sets editedAt', () async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      final b = await boot(repo);
+
+      await b.controller.sendMessage('original');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final sent = b.state.messages.single;
+
+      await b.controller.editMessage(sent, 'edited content');
+
+      final updated = b.state.messages.firstWhere((m) => m.id == sent.id);
+      expect(updated.content, 'edited content');
+      expect(updated.editedAt, isNotNull);
+    });
+
+    test('starMessage and unstarMessage toggle starredMessageIds', () async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      final b = await boot(repo);
+
+      await b.controller.sendMessage('star me');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final sent = b.state.messages.single;
+
+      await b.controller.starMessage(sent.id);
+      expect(b.state.starredMessageIds, contains(sent.id));
+
+      await b.controller.unstarMessage(sent.id);
+      expect(b.state.starredMessageIds, isNot(contains(sent.id)));
+    });
+
+    test('pinMessage and unpinMessage update pinnedMessages from the server',
+        () async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      final b = await boot(repo);
+
+      await b.controller.sendMessage('pin me');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final sent = b.state.messages.single;
+
+      await b.controller.pinMessage(sent);
+      expect(b.state.pinnedMessages.map((m) => m.id), contains(sent.id));
+
+      await b.controller.unpinMessage(sent);
+      expect(b.state.pinnedMessages.map((m) => m.id), isNot(contains(sent.id)));
+    });
+  });
 }
