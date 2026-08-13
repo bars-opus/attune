@@ -151,6 +151,7 @@ async function _computePulseScore(
     bidTurnRate: chatRow?.bid_turn_rate ?? null,
     bidsTotal: chatRow?.bids_total ?? 0,
     sessionCount: chatRow?.session_count ?? 0,
+    conflictSessionCount: chatRow?.conflict_session_count ?? 0,
     avgEscalation: chatRow?.avg_escalation ?? null,
     repairRate: chatRow?.repair_rate ?? null,
     attemptRate: chatRow?.attempt_rate ?? null,
@@ -216,25 +217,50 @@ async function _computePulseScore(
 
 
   // CONFLICT HEALTH (20% weight)
-  let conflictHealth = 70 // optimistic baseline
+  //
+  // An explicit weighted blend of every available source, replacing the
+  // former overwrite-then-average chain (mood overwrote the 70 baseline;
+  // check-in then averaged against whatever mood produced; a chat term
+  // appended on top would have depended on evaluation order in a way
+  // nobody could reason about). Sources are ABSOLUTE anchors, not deltas,
+  // and chat sources sit at 0.8 weight — deliberately subordinate to the
+  // human-reported sources at 1.0.
+  //
+  // Note this is the one dimension whose chat signal is NOT applied by
+  // applyChatSignals below: the blend needs all four source candidates in
+  // scope simultaneously, which only holds here.
+  const conflictMoods = conflicts.filter(c => c.mood_score).map(c => c.mood_score)
+  const avgConflictMood = conflictMoods.length
+    ? conflictMoods.reduce((a: number, b: number) => a + b, 0) / conflictMoods.length
+    : null
+  const validConflictCheckins = (checkins ?? []).filter(
+    c => !c.conflict_health_na && c.conflict_health_rating
+  )
+  const conflictCheckinScore = validConflictCheckins.length
+    ? (validConflictCheckins.reduce((sum: number, c: any) => sum + (c.conflict_health_rating || 0), 0) /
+        validConflictCheckins.length) * 10
+    : null
 
-  if (conflicts.length > 0) {
-    const validMoods = conflicts.filter(c => c.mood_score).map(c => c.mood_score)
-    if (validMoods.length > 0) {
-      const avgMood = validMoods.reduce((a, b) => a + b, 0) / validMoods.length
-      conflictHealth = Math.round(avgMood * 10)
-    }
+  const conflictSources: { v: number; w: number }[] = []
+  if (avgConflictMood != null) conflictSources.push({ v: avgConflictMood * 10, w: 1.0 })
+  if (conflictCheckinScore != null) conflictSources.push({ v: conflictCheckinScore, w: 1.0 })
+  if (
+    chatSignals.repairRate != null &&
+    chatSignals.attemptRate != null &&
+    chatSignals.conflictSessionCount >= 2
+  ) {
+    const repairBonus =
+      chatSignals.repairRate * 12 + (chatSignals.attemptRate - chatSignals.repairRate) * 3
+    conflictSources.push({ v: 70 + repairBonus, w: 0.8 * chatWeight })
   }
-
-  // Check-in contribution
-  if (checkins && checkins.length > 0) {
-    const validCheckins = checkins.filter(c => !c.conflict_health_na && c.conflict_health_rating)
-    if (validCheckins.length > 0) {
-      const avgRating = validCheckins.reduce((sum, c) => sum + (c.conflict_health_rating || 0), 0) / validCheckins.length
-      const checkinScore = avgRating * 10
-      conflictHealth = Math.round((conflictHealth + checkinScore) / 2)
-    }
+  if (chatSignals.avgEscalation != null && chatSignals.sessionCount >= 3) {
+    // Centered at 0.4, not 0 — some escalation is normal; Conflict Health
+    // measures repair quality, not conflict absence (PULSE.md §4.1).
+    conflictSources.push({ v: 70 - (chatSignals.avgEscalation - 0.4) * 50, w: 0.8 * chatWeight })
   }
+  const conflictHealth = conflictSources.length
+    ? clamp(Math.round(weightedMean(conflictSources)), 0, 100)
+    : 70 // optimistic baseline
 
 
   // ALIGNMENT (18% weight)
@@ -270,15 +296,15 @@ async function _computePulseScore(
   // ──────────────────────────────────────────────────────────
   // APPLY CHAT SIGNAL ADJUSTMENTS (coverage-ramped)
   // — Alignment has no chat signal; not touched here.
+  // — Conflict Health already blended its chat sources above.
   // ──────────────────────────────────────────────────────────
   const chatAdjusted = applyChatSignals(
-    { communication, connection, conflictHealth, emotionalSafety },
+    { communication, connection, emotionalSafety },
     chatSignals,
     chatWeight
   )
   communication = chatAdjusted.communication
   connection = chatAdjusted.connection
-  conflictHealth = chatAdjusted.conflictHealth
   emotionalSafety = chatAdjusted.emotionalSafety
 
 
@@ -426,6 +452,24 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
+/**
+ * Weighted mean of independent score sources, each `{ v: value, w: weight }`.
+ *
+ * Zero-weight sources fall out of numerator AND denominator naturally, so a
+ * source at `w: 0` (e.g. a chat source when `chatWeight` is 0) contributes
+ * nothing rather than skewing the blend — this is what makes the chat
+ * no-op guarantee hold structurally rather than by an explicit guard.
+ *
+ * Returns the 70 optimistic baseline when total weight is zero (every
+ * source present but all zero-weighted), matching the caller's
+ * `sources.length ? … : 70` fallback for the no-sources case.
+ */
+export function weightedMean(sources: { v: number; w: number }[]): number {
+  const totalWeight = sources.reduce((sum, s) => sum + s.w, 0)
+  if (totalWeight === 0) return 70
+  return sources.reduce((sum, s) => sum + s.v * s.w, 0) / totalWeight
+}
+
 export function computeChatWeight(coverageDays: number): number {
   const coverage = Math.min(coverageDays, 30) / 30
   if (coverage < 0.25) return 0
@@ -440,6 +484,9 @@ export interface ChatSignals {
   bidTurnRate: number | null
   bidsTotal: number
   sessionCount: number
+  // Sessions with escalation_score >= 0.5 — the population repairRate and
+  // attemptRate are computed over. A strict subset of sessionCount.
+  conflictSessionCount: number
   avgEscalation: number | null
   repairRate: number | null
   attemptRate: number | null
@@ -447,10 +494,17 @@ export interface ChatSignals {
   pursueWithdrawRate: number | null
 }
 
+/**
+ * The dimensions adjusted by chat signal as *relative deltas on top of an
+ * already-computed baseline*. Conflict Health is deliberately absent: the
+ * spec computes it as a weighted blend of independent absolute sources
+ * (mood, check-in, chat-repair, chat-escalation) rather than as a delta
+ * chain, so it is computed inline in `_computePulseScore` via
+ * `weightedMean` instead of being mutated here.
+ */
 export interface DimensionState {
   communication: number
   connection: number
-  conflictHealth: number
   emotionalSafety: number
 }
 
@@ -459,7 +513,7 @@ export function applyChatSignals(
   signals: ChatSignals,
   chatWeight: number
 ): DimensionState {
-  let { communication, connection, conflictHealth, emotionalSafety } = dimensions
+  let { communication, connection, emotionalSafety } = dimensions
 
   if (chatWeight > 0) {
     // COMMUNICATION
@@ -479,16 +533,8 @@ export function applyChatSignals(
       connection = clamp(connection + (signals.bidTurnRate - 0.5) * 24 * chatWeight, 0, 100)
     }
 
-    // CONFLICT HEALTH
-    if (signals.repairRate != null && signals.attemptRate != null && signals.sessionCount >= 3) {
-      const repairBonus = signals.repairRate * 12 + (signals.attemptRate - signals.repairRate) * 3
-      conflictHealth = clamp(conflictHealth + repairBonus * chatWeight, 0, 100)
-    }
-    if (signals.avgEscalation != null && signals.sessionCount >= 3) {
-      // Centered at 0.4, not 0 — some escalation is normal; Conflict
-      // Health measures repair quality, not conflict absence.
-      conflictHealth = clamp(conflictHealth - (signals.avgEscalation - 0.4) * 20 * chatWeight, 0, 100)
-    }
+    // CONFLICT HEALTH is not adjusted here — see DimensionState's note;
+    // it is a weighted blend computed inline in _computePulseScore.
 
     // EMOTIONAL SAFETY
     if (signals.severeRate != null && signals.analysedCount >= 10) {
@@ -502,7 +548,7 @@ export function applyChatSignals(
     }
   }
 
-  return { communication, connection, conflictHealth, emotionalSafety }
+  return { communication, connection, emotionalSafety }
 }
 
 type Confidence = 'none' | 'low' | 'medium' | 'high'

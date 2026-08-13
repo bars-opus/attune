@@ -3,7 +3,7 @@ import {
   assertEquals,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { clamp, getWeekEnding, confidenceFrom, rollupConfidence } from "./index.ts";
-import { computeChatWeight, applyChatSignals, type DimensionState, type ChatSignals } from "./index.ts";
+import { computeChatWeight, applyChatSignals, weightedMean, type DimensionState, type ChatSignals } from "./index.ts";
 
 Deno.test("clamp: clamps below min", () => {
   assertEquals(clamp(-5, 0, 100), 0);
@@ -109,6 +109,208 @@ Deno.test("computeChatWeight: 100% coverage (30 days) stays at full weight", () 
   assertEquals(computeChatWeight(30), 1);
 });
 
+// ── weightedMean + the Conflict Health blend it powers ──────────────
+//
+// Conflict Health is computed inline in _computePulseScore (it needs
+// mood/check-in locals in scope), so its correctness is pinned here: the
+// pure blending function directly, plus the exact source-shapes the spec
+// specifies applied through it.
+
+Deno.test("weightedMean: no sources falls back to the 70 optimistic baseline", () => {
+  assertEquals(weightedMean([]), 70);
+});
+
+Deno.test("weightedMean: a single source is that source's value, whatever its weight", () => {
+  assertEquals(weightedMean([{ v: 82, w: 1.0 }]), 82);
+  assertEquals(weightedMean([{ v: 82, w: 0.8 }]), 82);
+});
+
+Deno.test("weightedMean: equal weights give the plain average", () => {
+  assertEquals(weightedMean([{ v: 60, w: 1.0 }, { v: 80, w: 1.0 }]), 70);
+});
+
+Deno.test("weightedMean: unequal weights pull toward the heavier source", () => {
+  // 90 at w=1.0, 40 at w=0.8 → (90 + 32) / 1.8 = 67.78, above the plain
+  // average of 65 — the heavier human source dominates.
+  const result = weightedMean([{ v: 90, w: 1.0 }, { v: 40, w: 0.8 }]);
+  assertEquals(Math.round(result * 100) / 100, 67.78);
+  assertEquals(result > 65, true);
+});
+
+Deno.test("weightedMean: a 0.8-weight chat source moves the blend only PARTIALLY toward itself", () => {
+  // This is the exact property the spec's "weighted below human sources"
+  // comment protects: a disagreeing chat source must shift, not capture.
+  const humanOnly = weightedMean([{ v: 90, w: 1.0 }]);
+  const blended = weightedMean([{ v: 90, w: 1.0 }, { v: 50, w: 0.8 }]);
+  assertEquals(blended < humanOnly, true); // it did move
+  assertEquals(blended > 50, true); // but did not reach the chat value
+  // And it stays on the human side of the midpoint (70), proving the
+  // subordination is real and not just a plain two-way average.
+  assertEquals(blended > 70, true);
+});
+
+Deno.test("weightedMean: two human sources outvote one chat source that disagrees with both", () => {
+  const blended = weightedMean([
+    { v: 90, w: 1.0 },
+    { v: 90, w: 1.0 },
+    { v: 40, w: 0.8 },
+  ]);
+  assertEquals(blended > 75, true); // (180 + 32) / 2.8 = 75.7
+});
+
+Deno.test("weightedMean: a zero-weight source does not skew the result at all", () => {
+  // The structural no-op guarantee: when chatWeight is 0, both chat
+  // sources carry w = 0.8 * 0 = 0 and must vanish from the blend rather
+  // than dragging it toward their values.
+  const withoutChat = weightedMean([{ v: 85, w: 1.0 }]);
+  const withZeroWeightChat = weightedMean([
+    { v: 85, w: 1.0 },
+    { v: 20, w: 0.8 * 0 },
+    { v: 10, w: 0.8 * 0 },
+  ]);
+  assertEquals(withZeroWeightChat, withoutChat);
+});
+
+Deno.test("weightedMean: only zero-weight sources falls back to 70 rather than dividing by zero", () => {
+  // Chat data exists but chatWeight is 0 and there are no human sources —
+  // total weight collapses to 0. Must not produce NaN.
+  const result = weightedMean([{ v: 20, w: 0 }, { v: 95, w: 0 }]);
+  assertEquals(result, 70);
+  assertEquals(Number.isNaN(result), false);
+});
+
+// Helper mirroring the spec's Conflict Health source construction, so the
+// blend's shape (coefficients, centering, weights) is asserted directly.
+function conflictSources(opts: {
+  avgMood?: number;
+  checkinScore?: number;
+  repairRate?: number;
+  attemptRate?: number;
+  conflictSessionCount?: number;
+  avgEscalation?: number;
+  sessionCount?: number;
+  chatWeight: number;
+}): { v: number; w: number }[] {
+  const sources: { v: number; w: number }[] = [];
+  if (opts.avgMood != null) sources.push({ v: opts.avgMood * 10, w: 1.0 });
+  if (opts.checkinScore != null) sources.push({ v: opts.checkinScore, w: 1.0 });
+  if (opts.repairRate != null && opts.attemptRate != null && (opts.conflictSessionCount ?? 0) >= 2) {
+    const repairBonus = opts.repairRate * 12 + (opts.attemptRate - opts.repairRate) * 3;
+    sources.push({ v: 70 + repairBonus, w: 0.8 * opts.chatWeight });
+  }
+  if (opts.avgEscalation != null && (opts.sessionCount ?? 0) >= 3) {
+    sources.push({ v: 70 - (opts.avgEscalation - 0.4) * 50, w: 0.8 * opts.chatWeight });
+  }
+  return sources;
+}
+
+Deno.test("conflict blend: no sources at all is the 70 baseline", () => {
+  const sources = conflictSources({ chatWeight: 1 });
+  assertEquals(sources.length, 0);
+  assertEquals(weightedMean(sources), 70);
+});
+
+Deno.test("conflict blend: perfect repair over exactly 2 conflict sessions earns the bonus", () => {
+  // The case the old `sessionCount >= 3` guard silently dropped: two
+  // high-escalation sessions, both repaired, is a well-defined repairRate.
+  const sources = conflictSources({
+    repairRate: 1,
+    attemptRate: 1,
+    conflictSessionCount: 2,
+    chatWeight: 1,
+  });
+  assertEquals(sources.length, 1);
+  assertEquals(sources[0].v, 82); // 70 + (1*12 + 0*3)
+  assertEquals(weightedMean(sources), 82);
+});
+
+Deno.test("conflict blend: repair bonus is gated on CONFLICT sessions, not total sessions", () => {
+  // Only 1 high-escalation session — no repair source, even though the
+  // relationship has plenty of analysed sessions overall.
+  const sources = conflictSources({
+    repairRate: 1,
+    attemptRate: 1,
+    conflictSessionCount: 1,
+    sessionCount: 10,
+    chatWeight: 1,
+  });
+  assertEquals(sources.length, 0);
+});
+
+Deno.test("conflict blend: attempted-but-not-landed repair earns less than landed repair", () => {
+  const landed = conflictSources({
+    repairRate: 1, attemptRate: 1, conflictSessionCount: 2, chatWeight: 1,
+  })[0].v;
+  const attemptedOnly = conflictSources({
+    repairRate: 0, attemptRate: 1, conflictSessionCount: 2, chatWeight: 1,
+  })[0].v;
+  assertEquals(landed, 82); // 70 + 12
+  assertEquals(attemptedOnly, 73); // 70 + 0 + (1-0)*3
+  assertEquals(landed > attemptedOnly, true);
+});
+
+Deno.test("conflict blend: escalation is centered at 0.4 with a coefficient of 50", () => {
+  // At exactly 0.4 the escalation source is neutral (70) — some conflict
+  // is normal. Above it penalises, below it rewards, at 50 per unit.
+  const neutral = conflictSources({ avgEscalation: 0.4, sessionCount: 3, chatWeight: 1 })[0].v;
+  const hot = conflictSources({ avgEscalation: 0.9, sessionCount: 3, chatWeight: 1 })[0].v;
+  const calm = conflictSources({ avgEscalation: 0.2, sessionCount: 3, chatWeight: 1 })[0].v;
+  assertEquals(neutral, 70);
+  assertEquals(hot, 45); // 70 - 0.5 * 50
+  assertEquals(calm, 80); // 70 + 0.2 * 50
+});
+
+Deno.test("conflict blend: escalation source still requires 3 analysed sessions", () => {
+  assertEquals(
+    conflictSources({ avgEscalation: 0.9, sessionCount: 2, chatWeight: 1 }).length,
+    0,
+  );
+});
+
+Deno.test("conflict blend: chat sources are subordinate to human mood/check-in sources", () => {
+  // Humans report healthy conflict (mood 9, check-in 90); chat disagrees
+  // sharply (max escalation). Result must land nearer the humans.
+  const sources = conflictSources({
+    avgMood: 9,
+    checkinScore: 90,
+    avgEscalation: 1.0,
+    sessionCount: 3,
+    chatWeight: 1,
+  });
+  const blended = weightedMean(sources);
+  assertEquals(blended > 70, true);
+  assertEquals(blended < 90, true); // chat did register
+});
+
+Deno.test("conflict blend: with chatWeight 0, chat sources leave the human result untouched", () => {
+  // The no-op guarantee at the Conflict Health level specifically.
+  const humanOnly = weightedMean(conflictSources({
+    avgMood: 6, checkinScore: 80, chatWeight: 0,
+  }));
+  const withMutedChat = weightedMean(conflictSources({
+    avgMood: 6,
+    checkinScore: 80,
+    repairRate: 0,
+    attemptRate: 0,
+    conflictSessionCount: 5,
+    avgEscalation: 1.0,
+    sessionCount: 9,
+    chatWeight: 0,
+  }));
+  assertEquals(withMutedChat, humanOnly);
+  assertEquals(Math.round(humanOnly), 70); // (60 + 80) / 2
+});
+
+Deno.test("conflict blend: is order-independent (the property the additive chain lacked)", () => {
+  // The whole reason the spec restructured this dimension: the result
+  // must not depend on which source was evaluated first.
+  const forward = conflictSources({
+    avgMood: 4, checkinScore: 85, avgEscalation: 0.8, sessionCount: 3, chatWeight: 1,
+  });
+  const reversed = [...forward].reverse();
+  assertEquals(weightedMean(reversed), weightedMean(forward));
+});
+
 function emptyChatSignals(): ChatSignals {
   return {
     analysedCount: 0,
@@ -118,6 +320,7 @@ function emptyChatSignals(): ChatSignals {
     bidTurnRate: null,
     bidsTotal: 0,
     sessionCount: 0,
+    conflictSessionCount: 0,
     avgEscalation: null,
     repairRate: null,
     attemptRate: null,
@@ -130,7 +333,6 @@ function baseDimensions(): DimensionState {
   return {
     communication: 50,
     connection: 50,
-    conflictHealth: 70,
     emotionalSafety: 50,
   };
 }
@@ -210,32 +412,6 @@ Deno.test("applyChatSignals: bidTurnRate is null (below the bidsTotal floor of 5
   assertEquals(result.connection, before.connection);
 });
 
-Deno.test("applyChatSignals: repairRate raises conflictHealth when sessionCount floor is met", () => {
-  const before = baseDimensions();
-  const signals: ChatSignals = {
-    ...emptyChatSignals(),
-    sessionCount: 3,
-    repairRate: 1,
-    attemptRate: 1,
-  };
-  const result = applyChatSignals(before, signals, 1);
-  assertEquals(result.conflictHealth > before.conflictHealth, true);
-});
-
-Deno.test("applyChatSignals: avgEscalation above 0.4 lowers conflictHealth", () => {
-  const before = baseDimensions();
-  const signals: ChatSignals = { ...emptyChatSignals(), sessionCount: 3, avgEscalation: 0.9 };
-  const result = applyChatSignals(before, signals, 1);
-  assertEquals(result.conflictHealth < before.conflictHealth, true);
-});
-
-Deno.test("applyChatSignals: avgEscalation below 0.4 (healthy, normal escalation) does not penalize", () => {
-  const before = baseDimensions();
-  const signals: ChatSignals = { ...emptyChatSignals(), sessionCount: 3, avgEscalation: 0.1 };
-  const result = applyChatSignals(before, signals, 1);
-  assertEquals(result.conflictHealth >= before.conflictHealth, true);
-});
-
 Deno.test("applyChatSignals: stonewallRate lowers communication", () => {
   const before = baseDimensions();
   const signals: ChatSignals = { ...emptyChatSignals(), sessionCount: 3, stonewallRate: 1 };
@@ -260,7 +436,6 @@ Deno.test("applyChatSignals: sessionCount below the floor of 3 has no session-le
     pursueWithdrawRate: 1,
   };
   const result = applyChatSignals(before, signals, 1);
-  assertEquals(result.conflictHealth, before.conflictHealth);
   assertEquals(result.communication, before.communication);
   assertEquals(result.emotionalSafety, before.emotionalSafety);
 });
@@ -278,11 +453,10 @@ Deno.test("applyChatSignals: mid-analysis state — messages analysed, zero sess
   };
   const result = applyChatSignals(before, signals, 1);
   assertEquals(result.communication > before.communication, true);
-  assertEquals(result.conflictHealth, before.conflictHealth); // no session data yet
 });
 
 Deno.test("applyChatSignals: results stay clamped to 0-100", () => {
-  const before: DimensionState = { communication: 5, connection: 5, conflictHealth: 5, emotionalSafety: 5 };
+  const before: DimensionState = { communication: 5, connection: 5, emotionalSafety: 5 };
   const signals: ChatSignals = {
     ...emptyChatSignals(),
     analysedCount: 10,
@@ -304,7 +478,6 @@ Deno.test("no-op proof: applyChatSignals with all-null/zero ChatSignals and chat
   const before: DimensionState = {
     communication: 63,
     connection: 41,
-    conflictHealth: 78,
     emotionalSafety: 55,
   }
   const zeroSignals: ChatSignals = {
@@ -315,6 +488,7 @@ Deno.test("no-op proof: applyChatSignals with all-null/zero ChatSignals and chat
     bidTurnRate: null,
     bidsTotal: 0,
     sessionCount: 0,
+    conflictSessionCount: 0,
     avgEscalation: null,
     repairRate: null,
     attemptRate: null,

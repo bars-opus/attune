@@ -59,6 +59,7 @@ RETURNS TABLE (
   bid_turn_rate double precision,
   bids_total int,
   session_count int,
+  conflict_session_count int,
   avg_escalation double precision,
   repair_rate double precision,
   attempt_rate double precision,
@@ -107,6 +108,10 @@ BEGIN
       ), 0) AS total_severe,
       count(*) FILTER (WHERE bid_type IS NOT NULL) AS bids_total_val,
       count(*) FILTER (WHERE bid_type = 'toward') AS bids_toward_val,
+      -- Deliberate reading of an ambiguous spec formula (not an oversight):
+      -- the spec gates coverage on toned messages existing but describes
+      -- measuring from the first of all messages. First *toned* message is
+      -- the coherent reading — coverage measures analysed history.
       min(created_at) FILTER (WHERE tone_score IS NOT NULL) AS first_toned_at
     FROM msgs
   ),
@@ -148,6 +153,10 @@ BEGIN
     CASE WHEN vc.bids_total_val >= 5 THEN vc.bids_toward_val::double precision / vc.bids_total_val ELSE NULL END,
     vc.bids_total_val::int,
     sc.session_count_val::int,
+    -- Conflict Health's repair-bonus source is gated on the count of
+    -- high-escalation sessions (a smaller population than session_count),
+    -- so the edge function needs this figure, not just the rates.
+    sc.conflict_session_count::int,
     sc.avg_escalation_val,
     CASE WHEN sc.conflict_session_count >= 2 THEN sc.landed_count::double precision / sc.conflict_session_count ELSE NULL END,
     CASE WHEN sc.conflict_session_count >= 2 THEN sc.attempted_count::double precision / sc.conflict_session_count ELSE NULL END,
