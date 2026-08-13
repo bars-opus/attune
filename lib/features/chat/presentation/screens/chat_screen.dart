@@ -26,9 +26,13 @@ import 'package:attune/features/conflict_translator/presentation/screens/transla
 import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/core/services/media/image_picker_service.dart';
+import 'package:attune/core/widgets/feedback/export_extensions.dart';
+import 'package:attune/features/chat/data/repositories/chat_repository.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key, required this.conversation});
@@ -507,6 +511,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                   child: const Text('Retry'),
                 ),
               ],
+            ),
+          if (state.pinnedMessages.isNotEmpty)
+            _PinnedMessagesBanner(
+              pinnedMessages: state.pinnedMessages,
+              onTap:
+                  (message) =>
+                      unawaited(_jumpToMessage(message.id, state.messages)),
             ),
           Expanded(
             child: _MessageList(
@@ -1137,6 +1148,19 @@ class _MessageList extends ConsumerWidget {
             animatedMessageIds.add(message.clientMessageId);
           }
 
+          // A reply's parent is only known to be deleted if it is actually
+          // in the currently-loaded window; an unloaded parent stays false
+          // (MessageBubble documents that assumption).
+          var parentDeleted = false;
+          if (message.replyToMessageId != null) {
+            for (final candidate in state.messages) {
+              if (candidate.id == message.replyToMessageId) {
+                parentDeleted = candidate.isDeleted;
+                break;
+              }
+            }
+          }
+
           Widget bubble = MessageBubble(
             message: message,
             onRetry:
@@ -1167,6 +1191,81 @@ class _MessageList extends ConsumerWidget {
                       state.messages,
                     ),
             isHighlighted: highlightedMessageId == message.id,
+            // Actions are only offered on server-backed messages: a local
+            // optimistic row has no server id to delete/edit/star/pin.
+            currentUserId:
+                message.id.startsWith('_local_')
+                    ? null
+                    : ref.read(currentUserProvider)?.id,
+            isStarred: state.starredMessageIds.contains(message.id),
+            isPinned: state.pinnedMessages.any((p) => p.id == message.id),
+            parentDeleted: parentDeleted,
+            onCopy: () {
+              Clipboard.setData(ClipboardData(text: message.content));
+              context.showSuccessSnackbar('Copied to clipboard');
+            },
+            // Star/unstar/unpin are all fire-and-forget from the menu, but
+            // each awaits a network call that can throw — swallowing the
+            // failure silently would leave an unhandled async error, so each
+            // reports it the same way onPin does.
+            onStar: () async {
+              try {
+                await ref
+                    .read(chatControllerProvider(state.conversation).notifier)
+                    .starMessage(message.id);
+              } catch (_) {
+                if (context.mounted) {
+                  context.showErrorSnackbar("Couldn't star — try again.");
+                }
+              }
+            },
+            onUnstar: () async {
+              try {
+                await ref
+                    .read(chatControllerProvider(state.conversation).notifier)
+                    .unstarMessage(message.id);
+              } catch (_) {
+                if (context.mounted) {
+                  context.showErrorSnackbar("Couldn't unstar — try again.");
+                }
+              }
+            },
+            onPin: () async {
+              try {
+                await ref
+                    .read(chatControllerProvider(state.conversation).notifier)
+                    .pinMessage(message);
+              } catch (_) {
+                if (context.mounted) {
+                  context.showErrorSnackbar(
+                    "Couldn't pin — you may already have 3 pinned messages.",
+                  );
+                }
+              }
+            },
+            onUnpin: () async {
+              try {
+                await ref
+                    .read(chatControllerProvider(state.conversation).notifier)
+                    .unpinMessage(message);
+              } catch (_) {
+                if (context.mounted) {
+                  context.showErrorSnackbar("Couldn't unpin — try again.");
+                }
+              }
+            },
+            onEdit:
+                () =>
+                    _showEditDialog(context, ref, state.conversation, message),
+            onDelete:
+                () => _confirmAndDelete(
+                  context,
+                  ref,
+                  state.conversation,
+                  message,
+                ),
+            onShowEditHistory:
+                (target) => _showEditHistorySheet(context, ref, target),
           );
           if (isFirstOfDay && shouldAnimate) {
             bubble = Shimmer(
@@ -1207,6 +1306,232 @@ class _MessageList extends ConsumerWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Confirms then soft-deletes [message]. Deletion is irreversible for both
+/// members, so it always goes through an explicit confirm step.
+Future<void> _confirmAndDelete(
+  BuildContext context,
+  WidgetRef ref,
+  Conversation conversation,
+  Message message,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder:
+        (dialogContext) => AlertDialog(
+          title: const Text('Delete message?'),
+          content: const Text('This cannot be undone.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(
+                'Delete',
+                style: TextStyle(
+                  color: Theme.of(dialogContext).colorScheme.error,
+                ),
+              ),
+            ),
+          ],
+        ),
+  );
+  if (confirmed != true) return;
+
+  try {
+    await ref
+        .read(chatControllerProvider(conversation).notifier)
+        .deleteMessage(message);
+  } catch (_) {
+    if (context.mounted) {
+      context.showErrorSnackbar("Couldn't delete — try again.");
+    }
+  }
+}
+
+/// Edits [message] in place. The server enforces the sender-only, 5-minute
+/// edit window; a rejection surfaces as a generic retry snackbar rather than
+/// leaking the reason.
+Future<void> _showEditDialog(
+  BuildContext context,
+  WidgetRef ref,
+  Conversation conversation,
+  Message message,
+) async {
+  final controller = TextEditingController(text: message.content);
+  final newContent = await showDialog<String>(
+    context: context,
+    builder:
+        (dialogContext) => AlertDialog(
+          title: const Text('Edit message'),
+          content: TextField(
+            controller: controller,
+            maxLines: null,
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed:
+                  () => Navigator.of(dialogContext).pop(controller.text.trim()),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+  );
+  // showDialog's future completes the moment pop() is called, but the route's
+  // dismiss transition keeps rebuilding the TextField for a few more frames —
+  // disposing here synchronously would throw "used after being disposed".
+  // Hand the dispose to the next frame, once the route is gone.
+  WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
+
+  if (newContent == null ||
+      newContent.isEmpty ||
+      newContent == message.content) {
+    return;
+  }
+
+  try {
+    await ref
+        .read(chatControllerProvider(conversation).notifier)
+        .editMessage(message, newContent);
+  } catch (_) {
+    if (context.mounted) {
+      context.showErrorSnackbar("Couldn't save edit — try again.");
+    }
+  }
+}
+
+/// Prior versions of [message], oldest first, with the current content last.
+/// Opened by tapping the bubble's "edited" label.
+Future<void> _showEditHistorySheet(
+  BuildContext context,
+  WidgetRef ref,
+  Message message,
+) async {
+  final repository = ref.read(chatRepositoryProvider);
+  final future = repository.getMessageEditHistory(message.id);
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) {
+      return SafeArea(
+        child: FutureBuilder<List<MessageEditHistoryEntry>>(
+          future: future,
+          builder: (builderContext, snapshot) {
+            if (snapshot.hasError) {
+              return const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(
+                  child: Text("Couldn't load edit history right now."),
+                ),
+              );
+            }
+            if (!snapshot.hasData) {
+              return const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final entries = snapshot.data!;
+            return ListView(
+              shrinkWrap: true,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'Edit history',
+                    style: Theme.of(
+                      builderContext,
+                    ).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                ...entries.map(
+                  (entry) => ListTile(
+                    title: Text(entry.previousContent),
+                    subtitle: Text(
+                      DateFormat.yMMMd(
+                        Localizations.localeOf(builderContext).toString(),
+                      ).add_jm().format(entry.editedAt),
+                    ),
+                  ),
+                ),
+                ListTile(
+                  title: Text(message.content),
+                  subtitle: const Text('Current'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    },
+  );
+}
+
+/// Horizontal strip of the relationship's pinned messages (max 3, enforced
+/// server-side). Tapping one reuses the existing reply-jump mechanism to
+/// scroll to and flash it in the list.
+class _PinnedMessagesBanner extends StatelessWidget {
+  const _PinnedMessagesBanner({
+    required this.pinnedMessages,
+    required this.onTap,
+  });
+
+  final List<Message> pinnedMessages;
+  final void Function(Message) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      color: colorScheme.surfaceContainerHighest,
+      child: SizedBox(
+        height: 40,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          itemCount: pinnedMessages.length,
+          itemBuilder: (context, index) {
+            final message = pinnedMessages[index];
+            return InkWell(
+              onTap: () => onTap(message),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.push_pin, size: 16, color: colorScheme.primary),
+                    const SizedBox(width: 6),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 200),
+                      child: Text(
+                        message.isDeleted
+                            ? 'This message was deleted'
+                            : message.content,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

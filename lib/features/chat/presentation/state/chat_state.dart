@@ -158,6 +158,7 @@ class ChatController extends StateNotifier<ChatState> {
         )
         ?.id;
     _hasSeededPartnerBaseline = true;
+    await _refreshPinnedMessages();
     _subscribeToRealtime();
     await _markPartnerMessagesDelivered();
     // Read is only recorded once the screen reports the conversation is
@@ -228,6 +229,10 @@ class ChatController extends StateNotifier<ChatState> {
               await _catchUpFromCursor();
               await loadMessages(silent: true);
               await _markPartnerMessagesDelivered();
+              // Pin INSERT/DELETEs share this conversation-events stream
+              // (same underlying channel), so the banner stays live when the
+              // partner pins or unpins.
+              await _refreshPinnedMessages();
               // If the user is actively viewing this conversation, newly
               // arrived partner messages are seen immediately (Spec 6.4).
               if (_isViewActive) markAsReadDebounced();
@@ -614,6 +619,22 @@ class ChatController extends StateNotifier<ChatState> {
     final pins = await _repository.getPinnedMessages(message.relationshipId);
     if (!mounted) return;
     state = state.copyWith(pinnedMessages: pins);
+  }
+
+  /// Best-effort pinned-messages refresh. A failure only means the pinned
+  /// banner keeps its last known contents — it must never block the rest of
+  /// chat from loading or from processing a realtime event.
+  Future<void> _refreshPinnedMessages() async {
+    if (state.conversation.availability == ConversationAvailability.archived) {
+      return;
+    }
+    try {
+      final pins = await _repository.getPinnedMessages(relationshipId);
+      if (!mounted) return;
+      state = state.copyWith(pinnedMessages: pins);
+    } catch (_) {
+      // Ignored by design — see doc comment.
+    }
   }
 
   Future<void> flushOutbox() async {
