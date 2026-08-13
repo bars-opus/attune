@@ -103,9 +103,16 @@ psychological claims.
 - Chat is not a social, group, dating, or anonymous messaging system.
 - Dating chat is excluded until separately approved by the Dating Chat Safety Plan.
 - Personal reflections are not represented as messages.
-- Message editing, deletion, reactions, voice, video, and link previews are not
-  launch behavior.
+- Message reactions, voice, video, and link previews are not launch behavior.
 - The client never invokes Safety detection or normal AI analysis directly.
+
+Message editing and deletion shipped under the retention/audit contract in
+`docs/superpowers/specs/2026-08-13-message-actions-design.md` — soft delete
+with a visible tombstone, kept edit history, a 5-minute edit/delete window,
+and no retroactive analysis retraction (deleting or editing a message never
+touches its already-computed `tone_score`/`nvc_violations`/`bid_type` or any
+downstream Pulse data). Reactions, voice, video, and link previews remain
+out of scope.
 
 ### 1.4 Scope by release phase
 
@@ -113,7 +120,7 @@ psychological claims.
 |---|---|
 | Month 1 | Text messages, optimistic UI, realtime sync, Drift cache, offline queue, new-message push, delivery/read receipts |
 | Month 2 | Private image sharing, Conflict Translator composer entry, expanded chat-header drawer |
-| Month 4 | Voice messages, reactions, message editing/deletion after a separate retention and audit contract |
+| Month 4 | Voice messages, reactions |
 | Month 5 | Video sharing and link previews after separate moderation/security review; historical chat import (Section 11) after its own dual-consent, Safety, and cultural gates |
 
 Feature flags must prevent later-phase surfaces and backend mutations from
@@ -1190,7 +1197,7 @@ No unchecked gate may be represented as completed without review evidence.
 | Ended relationship | Read-only until archive |
 | Archived relationship | Inaccessible; local data purged |
 | Personal reflections | Separate self-only domain |
-| Message edit/delete | Month 4 under a separate contract |
+| Message edit/delete | Shipped — see docs/superpowers/specs/2026-08-13-message-actions-design.md |
 | Historical chat import | Month 5, dual-consent-only; neither partner can import unilaterally |
 | Import source at launch | WhatsApp text export only; media not imported; iMessage has no bulk-export path |
 | Import safety handling | Historical matches run through the same Safety System; recipient-only, generic, non-current-implying notification |
