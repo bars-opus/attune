@@ -34,6 +34,7 @@ import 'package:attune/features/chat/presentation/screens/chat_insights_screen.d
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
 import 'package:attune/features/chat/presentation/screens/chat_settings_screen.dart';
 import 'package:attune/features/chat/presentation/screens/previous_relationships_screen.dart';
+import 'package:attune/features/chat/presentation/screens/starred_messages_screen.dart';
 import 'package:attune/features/healing/presentation/screens/healing_journey_screen.dart';
 import 'package:attune/features/reflection_journal/presentation/screens/journal_entry_compose_screen.dart';
 import 'package:attune/features/reflection_journal/presentation/screens/journal_entry_detail_screen.dart';
@@ -133,6 +134,7 @@ class RouteNames {
   static const String chatScreen = '/chatScreen';
   static const String chatChannel = '/chat-channel';
   static const String previousRelationships = '/previous-relationships';
+  static const String starredMessages = '/starred-messages';
   static const String chatSettings = '/chat-settings';
   static const String editScreen = '/editScreen';
   static const String createUsername = '/createUsername';
@@ -1272,6 +1274,11 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.previousRelationships,
         name: 'previousRelationships',
         builder: (context, state) => const PreviousRelationshipsScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.starredMessages,
+        name: 'starredMessages',
+        builder: (context, state) => const StarredMessagesScreen(),
       ),
       GoRoute(
         path: RouteNames.chatSettings,

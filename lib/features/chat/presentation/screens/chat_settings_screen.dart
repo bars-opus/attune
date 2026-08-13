@@ -236,6 +236,14 @@ class _ChatSettingsScreenState extends ConsumerState<ChatSettingsScreen> {
                 showDivider: false,
                 onTap: () => context.pushNamed('previousRelationships'),
               ),
+              InfoRowWidget(
+                title: 'Starred messages',
+                subtitle: 'Messages you\'ve starred, just for you',
+                icon: Icons.star_border,
+                showAvatar: false,
+                showDivider: false,
+                onTap: () => context.pushNamed('starredMessages'),
+              ),
               if (historicalImportEnabled.valueOrNull == true)
                 InfoRowWidget(
                   title: 'Import chat history',
