@@ -215,19 +215,22 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
       // own) — tap-only, never fire-on-swipe: Delete is destructive, so a
       // full swipe just reveals the buttons instead of auto-firing, matching
       // CommentThreadScreen's end pane after the same interchange. Delete
-      // confirms first either way. Task 3 restyles these into the final
-      // action chips; this is the direct port off the removed
-      // SlidableAction pane.
+      // confirms first either way. Rendered as _EndPaneButton chips (icon +
+      // label on a colored fill), matching the removed SlidableAction pane's
+      // original appearance.
       endActions: [
         if (!isMine)
-          IconButton(
-            onPressed: _showReportDialog,
-            icon: const Icon(Icons.flag_outlined),
+          _EndPaneButton(
+            icon: Icons.flag_outlined,
+            label: 'Report',
             color: colorScheme.error,
-            tooltip: 'Report',
+            onPressed: _showReportDialog,
           ),
         if (isMine)
-          IconButton(
+          _EndPaneButton(
+            icon: Icons.delete_outline,
+            label: 'Delete',
+            color: colorScheme.error,
             onPressed: () async {
               if (await _confirmDeletePost(context)) {
                 await deleteForumPost(
@@ -238,9 +241,6 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
                 );
               }
             },
-            icon: const Icon(Icons.delete_outline),
-            color: colorScheme.error,
-            tooltip: 'Delete',
           ),
       ],
       content: Text(
@@ -464,6 +464,54 @@ class _SideBadge extends StatelessWidget {
         height: 10.h,
         width: 10.h,
         decoration: BoxDecoration(color: sideColor, shape: BoxShape.circle),
+      ),
+    );
+  }
+}
+
+/// A single revealed end-pane action (Report or Delete) — a colored
+/// background chip with a centered icon + text label, restoring the visual
+/// appearance the removed `SlidableAction` gave `ForumPostBubble`'s end
+/// pane before the migration to [UniversalBubble]'s custom swipe gesture.
+/// `endActions` takes raw widgets, so this replaces the bare `IconButton`
+/// Task 2's compile-preserving port used.
+class _EndPaneButton extends StatelessWidget {
+  const _EndPaneButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 72,
+      child: Material(
+        color: color,
+        child: InkWell(
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: colorScheme.onError, size: 20),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: TextStyle(color: colorScheme.onError, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
