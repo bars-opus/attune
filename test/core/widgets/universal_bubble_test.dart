@@ -6,6 +6,27 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(MaterialApp(home: Scaffold(body: child)));
 }
 
+/// The press-feedback Transform.scale is the CLOSEST Transform ancestor of
+/// the bubble's own content — the swipe system's Transform.translate sits
+/// further out, above the whole bubble Row.
+///
+/// Reads `storage[0]` (the matrix's x-scale term) rather than the widget's
+/// `scale` constructor argument, so what these tests observe is the value
+/// actually committed to the widget tree on the frame under inspection —
+/// which is the whole point of the mid-transition assertions below.
+///
+/// Deliberately NOT getMaxScaleOnAxis(): Transform.scale builds its matrix
+/// around an alignment origin, and the resulting translation terms make
+/// getMaxScaleOnAxis() report 1.0 even while the real x-scale is 0.97.
+/// That accessor silently passes every assertion here regardless of what
+/// the animation does, which would make this whole suite vacuous.
+double _pressScaleOf(WidgetTester tester, Finder content) {
+  final transform = tester.widget<Transform>(
+    find.ancestor(of: content, matching: find.byType(Transform)).first,
+  );
+  return transform.transform.storage[0];
+}
+
 void main() {
   testWidgets('isMine=true aligns bubble to the right', (tester) async {
     await _pump(
@@ -624,5 +645,274 @@ void main() {
       find.ancestor(of: find.text('bubble B'), matching: find.byType(Transform)).first,
     );
     expect(transformB.transform.getTranslation().x, 0);
+  });
+
+  group('press-down feedback', () {
+    UniversalBubble pressableBubble({
+      bool withLongPress = true,
+      String text = 'pressable',
+    }) {
+      return UniversalBubble(
+        isMine: true,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: Text(text),
+        footer: const SizedBox.shrink(),
+        onLongPress: withLongPress ? (rect, snapshot) {} : null,
+      );
+    }
+
+    testWidgets('rests at scale 1.0 with no pointer down', (tester) async {
+      await _pump(tester, pressableBubble());
+
+      expect(_pressScaleOf(tester, find.text('pressable')), 1.0);
+    });
+
+    testWidgets('a pointer landing on the bubble scales it down toward 0.97',
+        (tester) async {
+      await _pump(tester, pressableBubble());
+
+      final gesture =
+          await tester.startGesture(tester.getCenter(find.text('pressable')));
+      addTearDown(() => gesture.up());
+
+      // Mid-transition, NOT settled: 60ms into a 120ms press-in the scale
+      // must be strictly between rest and full press. A frozen value (the
+      // AnimatedBuilder-less bug class) would still read exactly 1.0 here,
+      // and a value that only jumped at the end would too — so the strict
+      // inequalities on BOTH sides are what make this test able to fail.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+
+      final midScale = _pressScaleOf(tester, find.text('pressable'));
+      expect(midScale, lessThan(1.0));
+      expect(midScale, greaterThan(0.97));
+
+      // ...and it reaches full press once the 120ms has elapsed.
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(
+        _pressScaleOf(tester, find.text('pressable')),
+        closeTo(0.97, 0.0001),
+      );
+    });
+
+    testWidgets(
+        'the press scale advances across successive frames, not in one jump',
+        (tester) async {
+      // The strongest guard against a frozen controller value: sample the
+      // rendered scale at three points inside the press-in window and
+      // require it to be strictly monotonically decreasing. A value read
+      // outside an AnimatedBuilder re-renders only on unrelated rebuilds,
+      // so it would produce three IDENTICAL samples and fail here.
+      await _pump(tester, pressableBubble());
+
+      final gesture =
+          await tester.startGesture(tester.getCenter(find.text('pressable')));
+      addTearDown(() => gesture.up());
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 30));
+      final first = _pressScaleOf(tester, find.text('pressable'));
+      await tester.pump(const Duration(milliseconds: 30));
+      final second = _pressScaleOf(tester, find.text('pressable'));
+      await tester.pump(const Duration(milliseconds: 30));
+      final third = _pressScaleOf(tester, find.text('pressable'));
+
+      expect(first, lessThan(1.0));
+      expect(second, lessThan(first));
+      expect(third, lessThan(second));
+      expect(third, greaterThanOrEqualTo(0.97));
+    });
+
+    testWidgets('lifting before the long-press threshold reverses the scale',
+        (tester) async {
+      await _pump(tester, pressableBubble());
+
+      final gesture =
+          await tester.startGesture(tester.getCenter(find.text('pressable')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(
+        _pressScaleOf(tester, find.text('pressable')),
+        closeTo(0.97, 0.0001),
+      );
+
+      // Lift well before the long-press timer (500ms) would fire.
+      await gesture.up();
+
+      // Mid-reverse: 75ms into a 150ms reverse the scale must be strictly
+      // between full press and rest — proving it animates back rather than
+      // snapping (or staying stuck at 0.97).
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 75));
+      final midScale = _pressScaleOf(tester, find.text('pressable'));
+      expect(midScale, greaterThan(0.97));
+      expect(midScale, lessThan(1.0));
+
+      await tester.pumpAndSettle();
+      expect(_pressScaleOf(tester, find.text('pressable')), 1.0);
+    });
+
+    testWidgets('a drag that cancels the tap also reverses the press scale',
+        (tester) async {
+      // onTapCancel path: the pointer moves past the tap's slop tolerance,
+      // so the TapGestureRecognizer gives up and the bubble must relax back
+      // to rest rather than staying visually pressed for the rest of the
+      // drag.
+      await _pump(tester, pressableBubble());
+
+      final gesture =
+          await tester.startGesture(tester.getCenter(find.text('pressable')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(
+        _pressScaleOf(tester, find.text('pressable')),
+        closeTo(0.97, 0.0001),
+      );
+
+      await gesture.moveBy(const Offset(40, 0));
+
+      // Mid-reverse assertion again — a cancel that merely reset the value
+      // to 1.0 instantly would skip this window entirely.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 75));
+      final midScale = _pressScaleOf(tester, find.text('pressable'));
+      expect(midScale, greaterThan(0.97));
+      expect(midScale, lessThan(1.0));
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(_pressScaleOf(tester, find.text('pressable')), 1.0);
+    });
+
+    testWidgets('a long press leaves the bubble back at rest scale',
+        (tester) async {
+      // When the LongPressGestureRecognizer wins the arena the losing tap
+      // recognizer fires onTapCancel (not onTapUp), so the same reverse
+      // path applies and the real bubble is at rest while the focused-menu
+      // overlay animates on its own captured snapshot.
+      Rect? capturedRect;
+      await _pump(
+        tester,
+        UniversalBubble(
+          isMine: true,
+          bubbleColor: Colors.blue,
+          onBubbleColor: Colors.white,
+          content: const Text('pressable'),
+          footer: const SizedBox.shrink(),
+          onLongPress: (rect, snapshot) => capturedRect = rect,
+        ),
+      );
+
+      await tester.longPress(find.text('pressable'));
+      await tester.pumpAndSettle();
+
+      expect(capturedRect, isNotNull);
+      expect(_pressScaleOf(tester, find.text('pressable')), 1.0);
+    });
+
+    testWidgets('onLongPress null means no press feedback at all',
+        (tester) async {
+      // Gated identically to onLongPress — ForumPostBubble and read-only
+      // conversations must see zero scale change.
+      await _pump(tester, pressableBubble(withLongPress: false));
+
+      final gesture =
+          await tester.startGesture(tester.getCenter(find.text('pressable')));
+      addTearDown(() => gesture.up());
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(_pressScaleOf(tester, find.text('pressable')), 1.0);
+
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(_pressScaleOf(tester, find.text('pressable')), 1.0);
+    });
+
+    testWidgets(
+        'press feedback leaves swipe-to-reply untouched on a swipeable bubble',
+        (tester) async {
+      // The press controller and the swipe controller are separate, so
+      // adding press feedback must not change swipe behavior on the bubbles
+      // that actually have a swipe: chat's MessageBubble passes onReply,
+      // and (per the pre-existing interaction documented in the test below)
+      // a swipeable bubble is one WITHOUT onLongPress.
+      var replied = false;
+      await _pump(
+        tester,
+        UniversalBubble(
+          isMine: false,
+          bubbleColor: Colors.blue,
+          onBubbleColor: Colors.white,
+          content: const Text('swipeable'),
+          footer: const SizedBox.shrink(),
+          onReply: () => replied = true,
+        ),
+      );
+
+      // Hold briefly before dragging — the window in which press feedback
+      // would be running if it were wired on this bubble.
+      final gesture =
+          await tester.startGesture(tester.getCenter(find.text('swipeable')));
+      await tester.pump(const Duration(milliseconds: 40));
+      await gesture.moveBy(const Offset(70, 0));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(replied, isTrue);
+      expect(_pressScaleOf(tester, find.text('swipeable')), 1.0);
+    });
+
+    testWidgets(
+        'a bubble with onLongPress does not also swipe-to-reply (pre-existing)',
+        (tester) async {
+      // Characterization test, NOT a new behavior: an inner long-press
+      // recognizer beats the outer horizontal-drag recognizer in the arena,
+      // so a bubble carrying both onLongPress and onReply has never fired
+      // the reply on a swipe. Verified against the unmodified pre-press-
+      // feedback code, which produces exactly this same result — the press
+      // controller neither caused nor fixed it.
+      //
+      // Pinned here so that if the arena wiring is ever revisited, this
+      // test fails loudly and the decision is made deliberately rather than
+      // discovered as a surprise.
+      var replied = false;
+      await _pump(
+        tester,
+        UniversalBubble(
+          isMine: false,
+          bubbleColor: Colors.blue,
+          onBubbleColor: Colors.white,
+          content: const Text('swipe and press'),
+          footer: const SizedBox.shrink(),
+          onReply: () => replied = true,
+          onLongPress: (rect, snapshot) {},
+        ),
+      );
+
+      final gesture = await tester
+          .startGesture(tester.getCenter(find.text('swipe and press')));
+      await gesture.moveBy(const Offset(70, 0));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(replied, isFalse);
+      // Whatever the arena decided, the bubble must still settle back to
+      // rest scale — no press left visually stuck on.
+      expect(_pressScaleOf(tester, find.text('swipe and press')), 1.0);
+    });
+
+    testWidgets('a bubble that is never pressed disposes cleanly',
+        (tester) async {
+      // Guards the eager-creation requirement: a `late final` controller
+      // whose first touch is dispose() would call createTicker on an
+      // already-deactivated element and throw "Looking up a deactivated
+      // widget's ancestor is unsafe".
+      await _pump(tester, pressableBubble());
+      await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+    });
   });
 }
