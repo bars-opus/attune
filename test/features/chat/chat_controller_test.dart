@@ -339,5 +339,39 @@ void main() {
       final cleared = container.read(chatControllerProvider(conversation)).messages.first;
       expect(cleared.reactions['👍'] ?? {}, isNot(contains('user-a')));
     });
+
+    test('switching to a different emoji removes the caller from the old bucket, not just adds to the new one', () async {
+      // Regression guard: the one-reaction-per-person invariant (enforced
+      // server-side by message_reactions' PRIMARY KEY (message_id, user_id))
+      // requires _withReaction to clear every OTHER bucket for this user
+      // before adding to the new one. A regression that only added to the
+      // new bucket (skipping the _withoutReaction step) would leave the
+      // caller as a phantom reactor under BOTH emoji simultaneously — this
+      // test fails red against that exact shape.
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      final conversation = activeConversation('rel-1');
+      repo.conversationOverride = conversation;
+      repo.seedIncoming(
+        id: 'm1',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'hello',
+        createdAt: DateTime.now(),
+      );
+      final container = buildChatContainer(repository: repo, userId: 'user-a');
+      addTearDown(container.dispose);
+      final notifier = container.read(chatControllerProvider(conversation).notifier);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await notifier.loadMessages();
+
+      final message = container.read(chatControllerProvider(conversation)).messages.first;
+      await notifier.reactToMessage(message, '❤️');
+      final firstReaction = container.read(chatControllerProvider(conversation)).messages.first;
+      await notifier.reactToMessage(firstReaction, '👍');
+
+      final switched = container.read(chatControllerProvider(conversation)).messages.first;
+      expect(switched.reactions['❤️'] ?? {}, isNot(contains('user-a')));
+      expect(switched.reactions['👍'], contains('user-a'));
+    });
   });
 }
