@@ -1258,7 +1258,10 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
               body: Center(child: Text('Conversation unavailable.')),
             );
           }
-          return ChatScreen(conversation: conversation);
+          return ChatScreen(
+            conversation: conversation,
+            initialJumpToMessageId: state.uri.queryParameters['jumpTo'],
+          );
         },
       ),
       GoRoute(
@@ -1278,7 +1281,15 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.starredMessages,
         name: 'starredMessages',
-        builder: (context, state) => const StarredMessagesScreen(),
+        builder: (context, state) {
+          final conversation = state.extra as Conversation?;
+          if (conversation == null) {
+            return const Scaffold(
+              body: Center(child: Text('Conversation unavailable.')),
+            );
+          }
+          return StarredMessagesScreen(conversation: conversation);
+        },
       ),
       GoRoute(
         path: RouteNames.chatSettings,

@@ -1,7 +1,10 @@
+import 'package:attune/app/routing/app_router.dart';
+import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 final starredMessagesProvider = FutureProvider<List<Message>>((ref) async {
@@ -13,7 +16,9 @@ final starredMessagesProvider = FutureProvider<List<Message>>((ref) async {
 /// (message_stars RLS is owner-only; see
 /// docs/superpowers/specs/2026-08-13-message-actions-design.md decision 5).
 class StarredMessagesScreen extends ConsumerWidget {
-  const StarredMessagesScreen({super.key});
+  const StarredMessagesScreen({super.key, required this.conversation});
+
+  final Conversation conversation;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -51,6 +56,13 @@ class StarredMessagesScreen extends ConsumerWidget {
               final message = messages[index];
               return ListTile(
                 leading: Icon(Icons.star, color: colorScheme.primary),
+                onTap:
+                    message.isDeleted
+                        ? null
+                        : () => context.push(
+                          '${RouteNames.chatScreen}?jumpTo=${message.id}',
+                          extra: conversation,
+                        ),
                 title: Text(
                   message.isDeleted
                       ? 'This message was deleted'

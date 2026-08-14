@@ -25,6 +25,54 @@ void main() {
     expect(find.text('This message was deleted'), findsOneWidget);
   });
 
+  testWidgets('shows a star icon in the footer when the message is starred', (tester) async {
+    final message = Message.fromRow(
+      {
+        'id': 'm-star',
+        'client_message_id': 'c-star',
+        'relationship_id': 'r1',
+        'sender_id': 'u1',
+        'content': 'hello',
+        'created_at': DateTime.now().toIso8601String(),
+      },
+      currentUserId: 'u1',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(message: message, isStarred: true),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.star), findsOneWidget);
+  });
+
+  testWidgets('does not show a star icon when the message is not starred', (tester) async {
+    final message = Message.fromRow(
+      {
+        'id': 'm-unstarred',
+        'client_message_id': 'c-unstarred',
+        'relationship_id': 'r1',
+        'sender_id': 'u1',
+        'content': 'hello',
+        'created_at': DateTime.now().toIso8601String(),
+      },
+      currentUserId: 'u1',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(message: message, isStarred: false),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.star), findsNothing);
+  });
+
   testWidgets('renders edited label when message has been edited', (tester) async {
     final edited = Message.fromRow(
       {

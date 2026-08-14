@@ -35,9 +35,16 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key, required this.conversation});
+  const ChatScreen({super.key, required this.conversation, this.initialJumpToMessageId});
 
   final Conversation conversation;
+
+  /// Set when arriving from a screen that points at one specific message
+  /// (e.g. Starred messages) — scrolled to and flashed once the message
+  /// list has loaded, paging further back via loadMoreMessages if the
+  /// message isn't in the initially-loaded page. Null means no jump, the
+  /// normal "open at the latest message" behavior.
+  final String? initialJumpToMessageId;
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -75,6 +82,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   /// the flash — mirrors DebateRoomScreen._highlightedPostId/_highlightTimer.
   String? _highlightedMessageId;
   Timer? _highlightTimer;
+
+  /// True once the initial jump (widget.initialJumpToMessageId) has been
+  /// attempted, so it fires exactly once per screen lifetime rather than
+  /// re-triggering on every rebuild while state.messages is still loading.
+  bool _didAttemptInitialJump = false;
 
   @override
   void initState() {
@@ -241,6 +253,39 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     await Future<void>.delayed(const Duration(milliseconds: 50));
     if (!mounted) return;
     _tryEnsureMessageVisible(messageId);
+  }
+
+  /// Like _jumpToMessage, but for a target that may be further back than
+  /// the initially-loaded page — used for widget.initialJumpToMessageId
+  /// (e.g. arriving from Starred messages), where the target could be
+  /// arbitrarily old. Pages backward via loadMoreMessages until the
+  /// message is found or the conversation is exhausted (state.hasMore ==
+  /// false), then delegates to the normal same-page jump. A capped
+  /// iteration count guards against loadMoreMessages returning pages that
+  /// never actually reduce hasMore to false (defensive; getMessages'
+  /// contract already sets hasMore false on receiving a partial page).
+  Future<void> _jumpToMessageAcrossPages(String messageId) async {
+    final notifier = ref.read(
+      chatControllerProvider(widget.conversation).notifier,
+    );
+
+    for (var attempt = 0; attempt < 50; attempt++) {
+      final state = ref.read(chatControllerProvider(widget.conversation));
+      if (state.messages.any((m) => m.id == messageId)) break;
+      if (!state.hasMore || state.isLoadingMore) {
+        if (!state.hasMore) break;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        continue;
+      }
+      await notifier.loadMoreMessages();
+      if (!mounted) return;
+    }
+
+    if (!mounted) return;
+    final currentMessages = ref.read(
+      chatControllerProvider(widget.conversation),
+    ).messages;
+    await _jumpToMessage(messageId, currentMessages);
   }
 
   Future<void> _sendDraftText(String text) async {
@@ -474,6 +519,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final headerSnapshot = ref.watch(
       chatHeaderSnapshotProvider(conversation.relationshipId),
     );
+
+    final initialJumpId = widget.initialJumpToMessageId;
+    if (initialJumpId != null &&
+        !_didAttemptInitialJump &&
+        !state.isLoading &&
+        state.messages.isNotEmpty) {
+      _didAttemptInitialJump = true;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => unawaited(_jumpToMessageAcrossPages(initialJumpId)),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(

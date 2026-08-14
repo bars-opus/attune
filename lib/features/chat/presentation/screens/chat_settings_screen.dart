@@ -242,7 +242,11 @@ class _ChatSettingsScreenState extends ConsumerState<ChatSettingsScreen> {
                 icon: Icons.star_border,
                 showAvatar: false,
                 showDivider: false,
-                onTap: () => context.pushNamed('starredMessages'),
+                onTap:
+                    () => context.pushNamed(
+                      'starredMessages',
+                      extra: widget.conversation,
+                    ),
               ),
               if (historicalImportEnabled.valueOrNull == true)
                 InfoRowWidget(

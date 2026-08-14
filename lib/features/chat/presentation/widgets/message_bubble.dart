@@ -135,6 +135,16 @@ class MessageBubble extends StatelessWidget {
         spacing: 6,
         runSpacing: 4,
         children: [
+          if (isStarred)
+            Semantics(
+              label: 'Starred',
+              excludeSemantics: true,
+              child: Icon(
+                Icons.star,
+                size: 12,
+                color: isMine ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+              ),
+            ),
           Semantics(
             label: _absoluteTimeLabel(context, message.createdAt),
             excludeSemantics: true,
