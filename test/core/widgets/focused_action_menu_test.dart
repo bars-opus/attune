@@ -155,4 +155,62 @@ void main() {
     // own top, not below its bottom.
     expect(actionATop, lessThan(anchorTop));
   });
+
+  testWidgets(
+      'the bubble scale animates mid-transition, not just at rest and settled',
+      (tester) async {
+    // Regression guard: showGeneralDialog's pageBuilder runs once per
+    // route, not once per animation frame — a widget that reads
+    // animation.value directly in a plain build() method (rather than
+    // inside an AnimatedBuilder or similar) would silently freeze at
+    // whatever value animation.value happened to be on that single
+    // build, with every other test in this file (which all use
+    // pumpAndSettle and only assert the FINAL state) unable to tell the
+    // difference. Pumping a partial frame is the only way to prove the
+    // animated properties actually move during the transition, not just
+    // that they land on the right value once it's over.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showFocusedActionMenu(
+                context: context,
+                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                anchorSnapshot: const Text('bubble snapshot'),
+                actions: [
+                  ListTile(title: const Text('Action A'), onTap: () {}),
+                ],
+              ),
+              child: const Text('trigger'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('trigger'));
+    // First pump starts the route transition; a second pump partway
+    // through the 220ms duration samples an in-flight frame.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 110));
+
+    final transform = tester.widget<Transform>(
+      find
+          .ancestor(
+            of: find.text('bubble snapshot'),
+            matching: find.byType(Transform),
+          )
+          .first,
+    );
+    // storage[0] is the X-scale component of the transform matrix — 1.0
+    // at rest, moving toward 1.05 as the transition progresses. Anything
+    // greater than 1.0 here proves the animation is genuinely ticking,
+    // not frozen at its initial (pre-animation) value.
+    expect(transform.transform.storage[0], greaterThan(1.0));
+
+    // Let the transition finish so the test doesn't leave a pending
+    // timer/animation behind.
+    await tester.pumpAndSettle();
+  });
 }
