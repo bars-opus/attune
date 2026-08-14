@@ -143,6 +143,7 @@ class ConversationsScreen extends ConsumerWidget {
   String _previewText(Conversation conversation) {
     final message = conversation.lastMessage;
     if (message == null) return 'No messages yet';
+    if (message.isDeleted) return 'This message was deleted';
     if (message.mediaType == 'image' && message.content.trim().isEmpty) {
       return 'Photo';
     }

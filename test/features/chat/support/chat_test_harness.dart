@@ -367,10 +367,6 @@ class FakeChatRepository implements ChatRepository {
       .toList();
 
   @override
-  Future<bool> isMessageStarred(String messageId) async =>
-      starredMessageIds.contains(messageId);
-
-  @override
   Future<void> pinMessage({
     required String relationshipId,
     required String messageId,
@@ -397,10 +393,6 @@ class FakeChatRepository implements ChatRepository {
                 pinnedMessageIds.contains(m.id),
           )
           .toList();
-
-  @override
-  Stream<void> watchPinnedMessages(String relationshipId) =>
-      _pinnedController.stream;
 }
 
 /// An in-memory cache backend for tests (no platform storage).

@@ -80,9 +80,6 @@ abstract class ChatRepository {
   /// newest-starred first.
   Future<List<Message>> getStarredMessages();
 
-  /// True if the current user has starred this message.
-  Future<bool> isMessageStarred(String messageId);
-
   /// Pins a message to the top of the relationship's chat (server enforces
   /// the 3-pin cap — see pin_message RPC). Throws 'pin_limit_reached' when
   /// full.
@@ -96,11 +93,11 @@ abstract class ChatRepository {
   });
 
   /// Currently pinned messages for this relationship, newest-pinned first
-  /// (max 3, enforced server-side).
+  /// (max 3, enforced server-side). Live pin updates arrive via
+  /// [watchConversationEvents] — message_pins changes are subscribed on the
+  /// same shared per-relationship channel, so callers refetch this method
+  /// on that stream's events rather than a dedicated pin-only stream.
   Future<List<Message>> getPinnedMessages(String relationshipId);
-
-  /// Live updates when a pin is added/removed for this relationship.
-  Stream<void> watchPinnedMessages(String relationshipId);
 
   /// Requests a one-time upload slot for a new relationship avatar photo —
   /// mirrors [createImageUploadIntent]'s shape but scoped to the

@@ -773,18 +773,6 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
-  Future<bool> isMessageStarred(String messageId) async {
-    final user = _currentUser;
-    final rows = await _supabase
-        .from('message_stars')
-        .select('message_id')
-        .eq('message_id', messageId)
-        .eq('user_id', user.id)
-        .limit(1);
-    return rows.isNotEmpty;
-  }
-
-  @override
   Future<List<Message>> getStarredMessages() async {
     final user = _currentUser;
     final rows = await _supabase
@@ -843,16 +831,5 @@ class SupabaseChatRepository implements ChatRepository {
           ),
         )
         .toList();
-  }
-
-  @override
-  Stream<void> watchPinnedMessages(String relationshipId) {
-    // Reuses the same shared per-relationship event stream as
-    // watchConversationEvents — message_pins changes are subscribed
-    // alongside messages/relationships inside _channelFor so callers get
-    // one unified invalidation signal per relationship, matching the
-    // existing pattern instead of opening a second channel.
-    _channelFor(relationshipId);
-    return _eventControllers[relationshipId]!.stream;
   }
 }
