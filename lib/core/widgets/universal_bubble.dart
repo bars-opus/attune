@@ -1,5 +1,3 @@
-import 'package:flutter/gestures.dart'
-    show LongPressDownDetails, LongPressEndDetails;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 
@@ -190,23 +188,10 @@ class UniversalBubble extends StatefulWidget {
 }
 
 class _UniversalBubbleState extends State<UniversalBubble>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   static const double _fireThreshold = 60;
   static const double _maxDrag = 75;
   static const Duration _springBackDuration = Duration(milliseconds: 200);
-
-  /// Press-down feedback timings. Forward (finger lands) is quicker than
-  /// reverse (finger lifts / long-press wins the arena) so the press reads
-  /// as instant and the release as a soft settle rather than a snap.
-  static const Duration _pressInDuration = Duration(milliseconds: 120);
-  static const Duration _pressOutDuration = Duration(milliseconds: 150);
-
-  /// How far the bubble shrinks at full press: 1.0 - _pressScaleDepth.
-  /// 6% rather than iMessage's own subtler ~3%: at 3% the shrink was too
-  /// close to imperceptible to confirm the feedback was even running on a
-  /// real device, especially with the larger focused-menu scale-up
-  /// following right behind it.
-  static const double _pressScaleDepth = 0.06;
 
   /// Matches the old ActionPane's extentRatio: 0.25.
   static const double _endPaneRevealRatio = 0.25;
@@ -220,21 +205,6 @@ class _UniversalBubbleState extends State<UniversalBubble>
   late final AnimationController _springController;
   Animation<double>? _springAnimation;
 
-  /// Drives the press-down scale: 0 at rest, 1 while held. Created eagerly
-  /// in [initState] for the exact same reason as [_springController] above —
-  /// most bubbles are never pressed, and a `late final` initializer would
-  /// defer `createTicker` (and its TickerMode inherited-widget lookup) to
-  /// whatever touched it first, which for an untouched bubble is [dispose],
-  /// on an already-deactivated element.
-  ///
-  /// Deliberately a SECOND controller rather than a reuse of
-  /// [_springController]: that one is owned by the horizontal-drag
-  /// spring-back and is stopped/restarted per drag gesture, so sharing it
-  /// would make a press cancel an in-flight swipe bounce and vice versa.
-  /// Hosting two tickers is why this State uses [TickerProviderStateMixin]
-  /// rather than [SingleTickerProviderStateMixin].
-  late final AnimationController _pressController;
-
   @override
   void initState() {
     super.initState();
@@ -242,53 +212,6 @@ class _UniversalBubbleState extends State<UniversalBubble>
       vsync: this,
       duration: _springBackDuration,
     );
-    _pressController = AnimationController(
-      vsync: this,
-      duration: _pressInDuration,
-      reverseDuration: _pressOutDuration,
-      lowerBound: 0.0,
-      upperBound: 1.0,
-    );
-  }
-
-  /// Rest is 1.0, full press is 1.0 - [_pressScaleDepth]. Only ever read
-  /// from inside the [AnimatedBuilder] that listens to [_pressController] —
-  /// see the comment at that builder in [build].
-  double get _pressScale => 1.0 - _pressScaleDepth * _pressController.value;
-
-  /// Driven by the LONG-PRESS recognizer's own onLongPressDown, not by the
-  /// tap recognizer's onTapDown.
-  ///
-  /// The distinction is load-bearing here and was verified empirically
-  /// against Flutter's source rather than assumed. This bubble's fill sits
-  /// inside the outer horizontal-drag GestureDetector, so a pointer-down
-  /// puts the tap, long-press AND drag recognizers in the same arena
-  /// together. TapGestureRecognizer DEFERS onTapDown while the arena is
-  /// contested — it only fires once the tap wins — so with a drag
-  /// recognizer above, onTapDown never arrives while the finger is merely
-  /// resting, and the press feedback never appeared at all.
-  /// LongPressGestureRecognizer instead calls _checkLongPressDown straight
-  /// from its PointerDownEvent handler, unconditionally and before any
-  /// arena resolution, which is exactly the "scales down the instant a
-  /// finger touches it" semantics this feature needs.
-  void _handlePressDown(LongPressDownDetails details) {
-    _pressController.forward();
-  }
-
-  /// Fires when the long-press recognizer gives up the gesture — the finger
-  /// lifted before the threshold, moved outside the slop, or another
-  /// recognizer (the horizontal drag) won the arena. All three mean "no
-  /// longer pressed," so the bubble settles back to rest.
-  void _handlePressCancel() {
-    _pressController.reverse();
-  }
-
-  /// Fires after a SUCCESSFUL long press, once the finger lifts. By then
-  /// _handleLongPress has already opened the focused-menu overlay on its own
-  /// captured snapshot, so relaxing the real bubble underneath is invisible
-  /// and simply leaves it at rest for when the overlay closes.
-  void _handlePressEnd(LongPressEndDetails details) {
-    _pressController.reverse();
   }
 
   /// Current horizontal drag offset in logical pixels. Positive = dragged
@@ -475,7 +398,6 @@ class _UniversalBubbleState extends State<UniversalBubble>
       _EndPaneGroupRegistry.notifyClosed(widget.groupTag!, _closeEndPane);
     }
     _springController.dispose();
-    _pressController.dispose();
     super.dispose();
   }
 
@@ -827,142 +749,88 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                         widget.onLongPress == null
                                             ? null
                                             : _handleLongPress,
-                                    // All three gated identically to
-                                    // onLongPress: a bubble with no long-press
-                                    // affordance (read-only conversation,
-                                    // ForumPostBubble) gets no press feedback
-                                    // either, matching this widget's
-                                    // null-disables-gesture convention.
-                                    //
-                                    // These are the LONG-PRESS recognizer's
-                                    // own lifecycle callbacks, deliberately
-                                    // not onTapDown/onTapUp/onTapCancel — see
-                                    // _handlePressDown for why the tap
-                                    // recognizer's down event never arrives
-                                    // underneath the outer drag detector.
-                                    // Together they cover every path: down on
-                                    // contact, cancel if the press is
-                                    // abandoned or lost to the drag, end after
-                                    // a press that actually fired.
-                                    onLongPressDown:
-                                        widget.onLongPress == null
-                                            ? null
-                                            : _handlePressDown,
-                                    onLongPressCancel:
-                                        widget.onLongPress == null
-                                            ? null
-                                            : _handlePressCancel,
-                                    onLongPressEnd:
-                                        widget.onLongPress == null
-                                            ? null
-                                            : _handlePressEnd,
                                     behavior: HitTestBehavior.opaque,
-                                    // AnimatedBuilder, NOT a bare read of
-                                    // _pressController.value in build(): a
-                                    // plain read only re-renders when some
-                                    // UNRELATED rebuild happens to run,
-                                    // freezing the scale at whatever value the
-                                    // last such build saw. This is the exact
-                                    // bug focused_action_menu.dart hit with
-                                    // showGeneralDialog's once-per-route
-                                    // pageBuilder. The child: argument holds
-                                    // the whole bubble subtree so it is built
-                                    // once and merely re-positioned each tick,
-                                    // rather than rebuilt 120ms worth of
-                                    // frames in a row.
-                                    child: AnimatedBuilder(
-                                      animation: _pressController,
-                                      builder:
-                                          (context, child) => Transform.scale(
-                                            scale: _pressScale,
-                                            child: child,
-                                          ),
-                                      child: DecoratedBox(
-                                        key: _bubbleFillKey,
-                                        decoration: BoxDecoration(
-                                          color: widget.bubbleColor,
-                                          borderRadius: BorderRadius.circular(
-                                            18,
-                                          ),
+                                    child: DecoratedBox(
+                                      key: _bubbleFillKey,
+                                      decoration: BoxDecoration(
+                                        color: widget.bubbleColor,
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 10,
                                         ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 14,
-                                            vertical: 10,
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              if (widget.quotedText !=
-                                                  null) ...[
-                                                GestureDetector(
-                                                  onTap: widget.onJumpToParent,
-                                                  behavior:
-                                                      HitTestBehavior.opaque,
-                                                  child: Container(
-                                                    padding:
-                                                        const EdgeInsets.all(6),
-                                                    decoration: BoxDecoration(
-                                                      color:
-                                                          widget
-                                                              .quoteBackgroundColor ??
-                                                          widget.onBubbleColor
-                                                              .withValues(
-                                                                alpha: 0.15,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (widget.quotedText != null) ...[
+                                              GestureDetector(
+                                                onTap: widget.onJumpToParent,
+                                                behavior:
+                                                    HitTestBehavior.opaque,
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(
+                                                    6,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color:
+                                                        widget
+                                                            .quoteBackgroundColor ??
+                                                        widget.onBubbleColor
+                                                            .withValues(
+                                                              alpha: 0.15,
+                                                            ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                  ),
+                                                  child: Row(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      Icon(
+                                                        Icons.format_quote,
+                                                        size:
+                                                            widget
+                                                                .quoteIconSize,
+                                                        color:
+                                                            widget
+                                                                .quoteForegroundColor ??
+                                                            widget
+                                                                .onBubbleColor,
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Flexible(
+                                                        child: Text(
+                                                          widget.quotedText!,
+                                                          style:
+                                                              widget
+                                                                  .quoteTextStyle ??
+                                                              TextStyle(
+                                                                color:
+                                                                    widget
+                                                                        .quoteForegroundColor ??
+                                                                    widget
+                                                                        .onBubbleColor,
+                                                                fontSize: 12,
                                                               ),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            8,
-                                                          ),
-                                                    ),
-                                                    child: Row(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .start,
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                        Icon(
-                                                          Icons.format_quote,
-                                                          size:
-                                                              widget
-                                                                  .quoteIconSize,
-                                                          color:
-                                                              widget
-                                                                  .quoteForegroundColor ??
-                                                              widget
-                                                                  .onBubbleColor,
                                                         ),
-                                                        const SizedBox(
-                                                          width: 4,
-                                                        ),
-                                                        Flexible(
-                                                          child: Text(
-                                                            widget.quotedText!,
-                                                            style:
-                                                                widget
-                                                                    .quoteTextStyle ??
-                                                                TextStyle(
-                                                                  color:
-                                                                      widget
-                                                                          .quoteForegroundColor ??
-                                                                      widget
-                                                                          .onBubbleColor,
-                                                                  fontSize: 12,
-                                                                ),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
+                                                      ),
+                                                    ],
                                                   ),
                                                 ),
-                                                const SizedBox(height: 4),
-                                              ],
-                                              widget.content,
+                                              ),
+                                              const SizedBox(height: 4),
                                             ],
-                                          ),
+                                            widget.content,
+                                          ],
                                         ),
                                       ),
                                     ),
