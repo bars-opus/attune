@@ -183,8 +183,10 @@ void main() {
     expect(replied, isFalse);
   });
 
-  testWidgets('onLongPress fires when the bubble is long-pressed', (tester) async {
-    var longPressed = false;
+  testWidgets('onLongPress fires with the bubble\'s captured Rect and a snapshot widget',
+      (tester) async {
+    Rect? capturedRect;
+    Widget? capturedSnapshot;
     await _pump(
       tester,
       UniversalBubble(
@@ -193,14 +195,21 @@ void main() {
         onBubbleColor: Colors.white,
         content: const Text('hello'),
         footer: const SizedBox.shrink(),
-        onLongPress: () => longPressed = true,
+        onLongPress: (rect, snapshot) {
+          capturedRect = rect;
+          capturedSnapshot = snapshot;
+        },
       ),
     );
 
     await tester.longPress(find.text('hello'));
     await tester.pumpAndSettle();
 
-    expect(longPressed, isTrue);
+    expect(capturedRect, isNotNull);
+    // A real, non-degenerate on-screen rect — not a zero-size default.
+    expect(capturedRect!.width, greaterThan(0));
+    expect(capturedRect!.height, greaterThan(0));
+    expect(capturedSnapshot, isNotNull);
   });
 
   testWidgets('omitting onLongPress renders with no long-press handler',

@@ -153,10 +153,14 @@ class UniversalBubble extends StatefulWidget {
   final Object? groupTag;
 
   /// Long-press handler on the bubble's fill (not the quote block, which
-  /// has its own tap-to-jump gesture). Null (the default) means no
-  /// long-press behavior — ForumPostBubble, this widget's other caller,
-  /// does not pass this and must see zero behavior change.
-  final VoidCallback? onLongPress;
+  /// has its own tap-to-jump gesture). Receives the bubble's captured
+  /// on-screen Rect and a duplicate of its visual content, for a caller
+  /// to render into a focused-menu overlay (see
+  /// docs/superpowers/specs/2026-08-14-focused-message-menu-design.md).
+  /// Null (the default) means no long-press behavior — ForumPostBubble,
+  /// this widget's other caller, does not pass this and must see zero
+  /// behavior change.
+  final void Function(Rect bubbleRect, Widget bubbleSnapshot)? onLongPress;
 
   /// Quote-block fill color. Falls back to `onBubbleColor.withValues(alpha:
   /// 0.15)` (chat's look) when null. Forums passes
@@ -249,6 +253,40 @@ class _UniversalBubbleState extends State<UniversalBubble>
   /// smaller than a single IconButton's 48px minimum tap target, making
   /// Report/Delete physically untappable on short posts.
   final GlobalKey _endActionsRowKey = GlobalKey();
+
+  /// Keys the actual bubble-fill DecoratedBox (not the outer Row/Padding
+  /// wrappers) so onLongPress can read its exact on-screen Rect at the
+  /// moment of a long-press — safe to call here specifically because
+  /// onLongPress only fires after the widget has already been laid out
+  /// and painted at least once, unlike the reveal-width measurement
+  /// elsewhere in this file, which has to avoid reading size during
+  /// build().
+  final GlobalKey _bubbleFillKey = GlobalKey();
+
+  void _handleLongPress() {
+    final onLongPress = widget.onLongPress;
+    if (onLongPress == null) return;
+    final renderBox =
+        _bubbleFillKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.attached) return;
+    final rect = renderBox.localToGlobal(Offset.zero) & renderBox.size;
+    // Reconstructs the SAME visual bubble fill — same decoration, same
+    // padding, same content — as a fresh widget subtree to paint into the
+    // overlay, rather than an async RepaintBoundary.toImage() capture
+    // (avoids the pixel-ratio/async round-trip that would introduce for a
+    // menu that needs to open instantly).
+    final snapshot = DecoratedBox(
+      decoration: BoxDecoration(
+        color: widget.bubbleColor,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: widget.content,
+      ),
+    );
+    onLongPress(rect, snapshot);
+  }
 
   /// A quarter of the bubble's own rendered width (matching the old
   /// ActionPane's extentRatio: 0.25), floored at the actions' own measured
@@ -647,9 +685,12 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                   ),
                                   padding: const EdgeInsets.all(2),
                                   child: GestureDetector(
-                                    onLongPress: widget.onLongPress,
+                                    onLongPress: widget.onLongPress == null
+                                        ? null
+                                        : _handleLongPress,
                                     behavior: HitTestBehavior.opaque,
                                     child: DecoratedBox(
+                                      key: _bubbleFillKey,
                                       decoration: BoxDecoration(
                                         color: widget.bubbleColor,
                                         borderRadius: BorderRadius.circular(18),
