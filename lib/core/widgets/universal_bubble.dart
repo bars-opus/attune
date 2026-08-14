@@ -231,14 +231,25 @@ class _UniversalBubbleState extends State<UniversalBubble>
   /// old ActionPane's extentRatio: 0.25 did.
   final GlobalKey _bubbleRowKey = GlobalKey();
 
-  /// A quarter of the bubble's own rendered width, matching the old
-  /// ActionPane's extentRatio: 0.25. Safe to call from gesture handlers
-  /// only.
+  /// Measures the revealed actions' own intrinsic width, so the reveal
+  /// never collapses narrower than what the actions themselves need to be
+  /// tappable — a short bubble's 25%-of-width reveal can otherwise be
+  /// smaller than a single IconButton's 48px minimum tap target, making
+  /// Report/Delete physically untappable on short posts.
+  final GlobalKey _endActionsRowKey = GlobalKey();
+
+  /// A quarter of the bubble's own rendered width (matching the old
+  /// ActionPane's extentRatio: 0.25), floored at the actions' own measured
+  /// width so they always fit. Safe to call from gesture handlers only —
+  /// reading a render object's size during build asserts.
   void _measureEndPaneRevealWidth() {
-    final width = _bubbleRowKey.currentContext?.size?.width;
-    if (width != null && width > 0) {
-      _endPaneRevealWidth = width * _endPaneRevealRatio;
-    }
+    final bubbleWidth = _bubbleRowKey.currentContext?.size?.width;
+    final actionsWidth = _endActionsRowKey.currentContext?.size?.width;
+    if (bubbleWidth == null || bubbleWidth <= 0) return;
+    final proportional = bubbleWidth * _endPaneRevealRatio;
+    _endPaneRevealWidth = (actionsWidth != null && actionsWidth > proportional)
+        ? actionsWidth
+        : proportional;
   }
 
   @override
@@ -317,14 +328,21 @@ class _UniversalBubbleState extends State<UniversalBubble>
   }
 
   void _closeEndPane() {
+    // Deregister BEFORE the early return, never conditionally after it:
+    // _onHorizontalDragStart already clears _endPaneOpen at the start of
+    // every new gesture, so a later _closeEndPane can find _endPaneOpen
+    // false while a group registration is still live — returning early
+    // first would leave that stale entry in the registry. notifyClosed only
+    // removes an entry that matches this bubble's own callback, so calling
+    // it unconditionally is idempotent.
+    if (widget.groupTag != null) {
+      _EndPaneGroupRegistry.notifyClosed(widget.groupTag!, _closeEndPane);
+    }
     if (!_endPaneOpen && _dragOffset == 0) return;
     setState(() {
       _endPaneOpen = false;
     });
     _animateSpringBackFrom(_dragOffset);
-    if (widget.groupTag != null) {
-      _EndPaneGroupRegistry.notifyClosed(widget.groupTag!, _closeEndPane);
-    }
   }
 
   void _onReplyDragUpdate(DragUpdateDetails details) {
@@ -432,7 +450,17 @@ class _UniversalBubbleState extends State<UniversalBubble>
               // while OverflowBox keeps the children laid out at their full
               // intrinsic width, so they are never squeezed and the ClipRect
               // just wipes them into view.
-              if (_dragOffset > 0)
+              // Gated on endActions, NOT on `_dragOffset > 0`: the reveal
+              // width is floored at the actions' own measured width, and
+              // that measurement needs the actions Row to have been laid
+              // out at least once. Gating on the offset made this circular
+              // — the pane only rendered once dragged, so at drag start
+              // _endActionsRowKey had no RenderBox, the floor never
+              // applied, and a short bubble stayed stuck at its unusable
+              // 25%-of-width reveal. At rest the SizedBox below is 0 wide
+              // and the ClipRect paints nothing, so rendering it always is
+              // visually identical.
+              if (widget.endActions != null)
                 Positioned(
                   left: 0,
                   top: 0,
@@ -468,6 +496,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
                           maxWidth: double.infinity,
                           alignment: Alignment.centerLeft,
                           child: Row(
+                            key: _endActionsRowKey,
                             mainAxisSize: MainAxisSize.min,
                             children: widget.endActions ?? const [],
                           ),

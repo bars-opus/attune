@@ -320,6 +320,38 @@ void main() {
     expect(transform.transform.getTranslation().x, 0);
   });
 
+  testWidgets('a revealed end action stays tappable even on a short bubble',
+      (tester) async {
+    var fired = false;
+    await _pump(
+      tester,
+      UniversalBubble(
+        isMine: false,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: const Text('Yes'),
+        footer: const SizedBox.shrink(),
+        endActions: [
+          IconButton(
+            icon: const Icon(Icons.delete),
+            onPressed: () => fired = true,
+          ),
+        ],
+      ),
+    );
+
+    final center = tester.getCenter(find.text('Yes'));
+    final gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(60, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.delete));
+    await tester.pumpAndSettle();
+
+    expect(fired, isTrue);
+  });
+
   testWidgets('endActions null disables the end-direction drag entirely', (tester) async {
     await _pump(
       tester,
