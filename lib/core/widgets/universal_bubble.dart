@@ -202,7 +202,11 @@ class _UniversalBubbleState extends State<UniversalBubble>
   static const Duration _pressOutDuration = Duration(milliseconds: 150);
 
   /// How far the bubble shrinks at full press: 1.0 - _pressScaleDepth.
-  static const double _pressScaleDepth = 0.03;
+  /// 6% rather than iMessage's own subtler ~3%: at 3% the shrink was too
+  /// close to imperceptible to confirm the feedback was even running on a
+  /// real device, especially with the larger focused-menu scale-up
+  /// following right behind it.
+  static const double _pressScaleDepth = 0.06;
 
   /// Matches the old ActionPane's extentRatio: 0.25.
   static const double _endPaneRevealRatio = 0.25;

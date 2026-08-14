@@ -230,6 +230,70 @@ void main() {
   });
 
   testWidgets(
+      'the menu scales in alongside the fade, not just fades at a fixed size',
+      (tester) async {
+    // Regression guard: a plain FadeTransition with no accompanying scale
+    // reads as flat/barely-there on a real device, especially next to the
+    // more prominent blur+bubble-scale happening at the same time. This
+    // asserts the menu's own scale genuinely animates mid-transition (same
+    // "not just at rest and settled" discipline as the bubble-scale test
+    // above) — a value read outside an AnimatedBuilder, or a scale that
+    // never changes, would freeze this at exactly 1.0 the whole time.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showFocusedActionMenu(
+                context: context,
+                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                anchorSnapshot: const Text('bubble snapshot'),
+                actions: [
+                  ListTile(title: const Text('Action A'), onTap: () {}),
+                ],
+                quickReactions: const [],
+                onReact: (_) {},
+                onOpenFullPicker: () {},
+              ),
+              child: const Text('trigger'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('trigger'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 110));
+
+    final menuTransform = tester.widget<Transform>(
+      find
+          .ancestor(
+            of: find.text('Action A'),
+            matching: find.byType(Transform),
+          )
+          .first,
+    );
+    // 0.85 at the start of the transition, growing toward 1.0 — anything
+    // strictly between those two values proves it is genuinely animating,
+    // not frozen at either endpoint.
+    expect(menuTransform.transform.storage[0], greaterThan(0.85));
+    expect(menuTransform.transform.storage[0], lessThan(1.0));
+
+    await tester.pumpAndSettle();
+
+    final settledTransform = tester.widget<Transform>(
+      find
+          .ancestor(
+            of: find.text('Action A'),
+            matching: find.byType(Transform),
+          )
+          .first,
+    );
+    expect(settledTransform.transform.storage[0], 1.0);
+  });
+
+  testWidgets(
       'the anchor snapshot inherits normal text styling, not the no-Material debug fallback',
       (tester) async {
     // Regression guard: a Text with no Material ancestor falls back to

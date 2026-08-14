@@ -17,7 +17,7 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 ///
 /// Deliberately NOT getMaxScaleOnAxis(): Transform.scale builds its matrix
 /// around an alignment origin, and the resulting translation terms make
-/// getMaxScaleOnAxis() report 1.0 even while the real x-scale is 0.97.
+/// getMaxScaleOnAxis() report 1.0 even while the real x-scale is 0.94.
 /// That accessor silently passes every assertion here regardless of what
 /// the animation does, which would make this whole suite vacuous.
 double _pressScaleOf(WidgetTester tester, Finder content) {
@@ -668,7 +668,7 @@ void main() {
       expect(_pressScaleOf(tester, find.text('pressable')), 1.0);
     });
 
-    testWidgets('a pointer landing on the bubble scales it down toward 0.97',
+    testWidgets('a pointer landing on the bubble scales it down toward 0.94',
         (tester) async {
       await _pump(tester, pressableBubble());
 
@@ -686,13 +686,13 @@ void main() {
 
       final midScale = _pressScaleOf(tester, find.text('pressable'));
       expect(midScale, lessThan(1.0));
-      expect(midScale, greaterThan(0.97));
+      expect(midScale, greaterThan(0.94));
 
       // ...and it reaches full press once the 120ms has elapsed.
       await tester.pump(const Duration(milliseconds: 120));
       expect(
         _pressScaleOf(tester, find.text('pressable')),
-        closeTo(0.97, 0.0001),
+        closeTo(0.94, 0.0001),
       );
     });
 
@@ -721,7 +721,7 @@ void main() {
       expect(first, lessThan(1.0));
       expect(second, lessThan(first));
       expect(third, lessThan(second));
-      expect(third, greaterThanOrEqualTo(0.97));
+      expect(third, greaterThanOrEqualTo(0.94));
     });
 
     testWidgets('lifting before the long-press threshold reverses the scale',
@@ -734,7 +734,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 120));
       expect(
         _pressScaleOf(tester, find.text('pressable')),
-        closeTo(0.97, 0.0001),
+        closeTo(0.94, 0.0001),
       );
 
       // Lift well before the long-press timer (500ms) would fire.
@@ -742,11 +742,11 @@ void main() {
 
       // Mid-reverse: 75ms into a 150ms reverse the scale must be strictly
       // between full press and rest — proving it animates back rather than
-      // snapping (or staying stuck at 0.97).
+      // snapping (or staying stuck at 0.94).
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 75));
       final midScale = _pressScaleOf(tester, find.text('pressable'));
-      expect(midScale, greaterThan(0.97));
+      expect(midScale, greaterThan(0.94));
       expect(midScale, lessThan(1.0));
 
       await tester.pumpAndSettle();
@@ -767,7 +767,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 120));
       expect(
         _pressScaleOf(tester, find.text('pressable')),
-        closeTo(0.97, 0.0001),
+        closeTo(0.94, 0.0001),
       );
 
       await gesture.moveBy(const Offset(40, 0));
@@ -777,7 +777,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 75));
       final midScale = _pressScaleOf(tester, find.text('pressable'));
-      expect(midScale, greaterThan(0.97));
+      expect(midScale, greaterThan(0.94));
       expect(midScale, lessThan(1.0));
 
       await gesture.up();

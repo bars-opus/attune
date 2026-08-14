@@ -230,31 +230,47 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                     : screenSize.height - anchorRect.top + _gap,
                 child: FadeTransition(
                   opacity: animation,
-                  child: GestureDetector(
-                    // Swallow taps on the menu itself so they don't fall
-                    // through to the scrim's dismiss-on-tap-outside handler —
-                    // individual action ListTiles still handle their own
-                    // onTap and pop the route themselves.
-                    onTap: () {},
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        reactionRow,
-                        const SizedBox(height: _gap),
-                        Material(
-                          borderRadius: BorderRadius.circular(14),
-                          elevation: 8,
-                          clipBehavior: Clip.antiAlias,
-                          child: SizedBox(
-                            width: menuWidth,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: actions,
+                  child: Transform.scale(
+                    // Grows from ~0.85x to 1.0x alongside the fade — a plain
+                    // fade with no scale read as flat/absent on a real
+                    // device, especially next to the more prominent
+                    // blur+bubble-scale happening at the same time. Anchored
+                    // toward the corner nearest the bubble (top-left when the
+                    // menu sits below it, bottom-left when flipped above) so
+                    // it visually grows OUT of the bubble rather than
+                    // expanding symmetrically from its own center — matches
+                    // how iOS/WhatsApp context menus emerge from their
+                    // anchor point, not from mid-air.
+                    scale: 0.85 + 0.15 * animation.value,
+                    alignment: fitsBelow
+                        ? Alignment.topLeft
+                        : Alignment.bottomLeft,
+                    child: GestureDetector(
+                      // Swallow taps on the menu itself so they don't fall
+                      // through to the scrim's dismiss-on-tap-outside handler
+                      // — individual action ListTiles still handle their own
+                      // onTap and pop the route themselves.
+                      onTap: () {},
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          reactionRow,
+                          const SizedBox(height: _gap),
+                          Material(
+                            borderRadius: BorderRadius.circular(14),
+                            elevation: 8,
+                            clipBehavior: Clip.antiAlias,
+                            child: SizedBox(
+                              width: menuWidth,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: actions,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
