@@ -271,10 +271,27 @@ class _UniversalBubbleState extends State<UniversalBubble>
   ///
   /// Tracks the live reveal width (which _measureEndPaneRevealWidth updates
   /// per gesture) rather than a constant, so the reserve is exactly the
-  /// bubble's maximum possible rightward travel and never more. Zero when
-  /// endActions is null, which keeps MessageBubble's layout unchanged.
+  /// bubble's maximum possible rightward travel and never more.
+  ///
+  /// Gated on `_dragOffset > 0`, NOT on `endActions != null`: the reserve is
+  /// real layout width, so applying it whenever endActions exists permanently
+  /// narrowed and shifted every forums bubble AT REST — and because
+  /// _endPaneRevealWidth is only measured on the first gesture, that resting
+  /// geometry silently jumped the first time a bubble was ever touched.
+  /// `_dragOffset > 0` is exactly the "reserve is needed" condition:
+  ///  - At rest with the pane closed it is 0, so the bubble lays out at its
+  ///    natural width, as it did before this feature existed.
+  ///  - _openEndPane sets _dragOffset = _endPaneRevealWidth, so the reserve is
+  ///    present for as long as the pane stays open — including at the start of
+  ///    the drag that closes it, which is what keeps a short bubble's hit
+  ///    region reachable.
+  ///  - A reply-direction drag drives _dragOffset negative, and that direction
+  ///    needs no reserve (see the build() comment at the consuming Padding).
+  /// Deliberately not gated on _endPaneOpen: _onHorizontalDragStart clears
+  /// that flag at the start of every gesture, including the closing one, which
+  /// would drop the reserve at the exact moment it is needed.
   double get _endPaneTranslationReserve =>
-      widget.endActions == null ? 0 : _endPaneRevealWidth;
+      _dragOffset > 0 ? _endPaneRevealWidth : 0;
 
   @override
   void dispose() {
@@ -569,7 +586,9 @@ class _UniversalBubbleState extends State<UniversalBubble>
               // from running past the viewport, since the reserve is real
               // layout width that Align now accounts for.
               //
-              // Right-side only, and only when endActions is set:
+              // Right-side only, and only while the bubble is actually
+              // translated right (_dragOffset > 0 — see
+              // _endPaneTranslationReserve):
               //  - The reply direction translates LEFT but always springs
               //    back within the same gesture, and a gesture that starts at
               //    rest (bubble inside the box) keeps receiving its moves via
@@ -578,8 +597,9 @@ class _UniversalBubbleState extends State<UniversalBubble>
               //  - The end pane is the only direction with a persistent open
               //    state, hence the only one needing a hit region that
               //    survives the translation.
-              //  - endActions == null (chat's MessageBubble) reserves nothing
-              //    and sees byte-for-byte the previous layout.
+              //  - At rest (and for endActions == null, chat's MessageBubble,
+              //    which can never reach a positive _dragOffset) nothing is
+              //    reserved and the layout is byte-for-byte the previous one.
               Padding(
                 padding: EdgeInsets.only(right: _endPaneTranslationReserve),
                 child: Transform.translate(

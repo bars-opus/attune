@@ -446,6 +446,48 @@ void main() {
     expect(transform.transform.getTranslation().x, 0);
   });
 
+  testWidgets(
+      'a forums-shaped bubble returns to its exact original position after opening and closing the end pane',
+      (tester) async {
+    // The end-pane translation reserve is real layout width. If it is applied
+    // unconditionally (rather than only while the pane is open or being
+    // dragged), the bubble is permanently narrowed at rest — and because the
+    // reserve tracks the measured reveal width, which is only measured on the
+    // first gesture, the resting geometry silently jumps the first time the
+    // bubble is ever touched.
+    await _pump(
+      tester,
+      UniversalBubble(
+        isMine: true,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: const Text('forums bubble'),
+        footer: const SizedBox.shrink(),
+        endActions: [
+          IconButton(icon: const Icon(Icons.delete), onPressed: () {}),
+        ],
+      ),
+    );
+
+    final beforeRect = tester.getRect(find.text('forums bubble'));
+
+    // Open then close the end pane.
+    var center = tester.getCenter(find.text('forums bubble'));
+    var gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(60, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    center = tester.getCenter(find.text('forums bubble'));
+    gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(-60, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    final afterRect = tester.getRect(find.text('forums bubble'));
+    expect(afterRect, equals(beforeRect));
+  });
+
   testWidgets('opening bubble A closes bubble B in the same groupTag', (tester) async {
     await _pump(
       tester,
