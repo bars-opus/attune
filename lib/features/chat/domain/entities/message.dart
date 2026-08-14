@@ -22,6 +22,7 @@ class Message {
   final String? quotedText;
   final DateTime? deletedAt;
   final DateTime? editedAt;
+  final Map<String, Set<String>> reactions;
 
   const Message({
     required this.id,
@@ -44,6 +45,7 @@ class Message {
     this.quotedText,
     this.deletedAt,
     this.editedAt,
+    this.reactions = const {},
   });
 
   factory Message.fromRow(
@@ -134,6 +136,7 @@ class Message {
     String? quotedText,
     DateTime? deletedAt,
     DateTime? editedAt,
+    Map<String, Set<String>>? reactions,
   }) {
     return Message(
       id: id ?? this.id,
@@ -156,6 +159,7 @@ class Message {
       quotedText: quotedText ?? this.quotedText,
       deletedAt: deletedAt ?? this.deletedAt,
       editedAt: editedAt ?? this.editedAt,
+      reactions: reactions ?? this.reactions,
     );
   }
 
@@ -179,6 +183,7 @@ class Message {
       'isMine': isMine,
       'replyToMessageId': replyToMessageId,
       'quotedText': quotedText,
+      'reactions': reactions.map((emoji, ids) => MapEntry(emoji, ids.toList())),
     };
   }
 
@@ -202,6 +207,13 @@ class Message {
       isMine: json['isMine'] as bool,
       replyToMessageId: json['replyToMessageId'] as String?,
       quotedText: json['quotedText'] as String?,
+      reactions: (json['reactions'] as Map<String, dynamic>?)?.map(
+            (emoji, ids) => MapEntry(
+              emoji,
+              (ids as List<dynamic>).map((e) => e as String).toSet(),
+            ),
+          ) ??
+          const {},
     );
   }
 

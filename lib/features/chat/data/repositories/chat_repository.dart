@@ -99,6 +99,21 @@ abstract class ChatRepository {
   /// on that stream's events rather than a dedicated pin-only stream.
   Future<List<Message>> getPinnedMessages(String relationshipId);
 
+  /// Reacts to [messageId] with [emoji] (server enforces active
+  /// relationship + message-not-deleted — see react_to_message RPC).
+  /// Reacting again with a different emoji overwrites the caller's prior
+  /// reaction on this message; it never adds a second row. Throws on any
+  /// rejection.
+  Future<void> addReaction({
+    required String relationshipId,
+    required String messageId,
+    required String emoji,
+  });
+
+  /// Removes the caller's own reaction from [messageId], if any. A no-op
+  /// (does not throw) if the caller had no reaction on this message.
+  Future<void> removeReaction(String messageId);
+
   /// Requests a one-time upload slot for a new relationship avatar photo —
   /// mirrors [createImageUploadIntent]'s shape but scoped to the
   /// relationship-avatars bucket via a separate RPC/table pipeline (see

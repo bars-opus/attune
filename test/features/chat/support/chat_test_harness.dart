@@ -326,6 +326,11 @@ class FakeChatRepository implements ChatRepository {
   final Set<String> pinnedMessageIds = {};
   final _pinnedController = StreamController<void>.broadcast();
 
+  /// messageId -> (userId -> emoji). Mirrors the real schema's
+  /// PRIMARY KEY (message_id, user_id) shape: at most one emoji per user
+  /// per message.
+  final Map<String, Map<String, String>> reactionsByMessage = {};
+
   @override
   Future<void> deleteMessage(String messageId) async {
     deleteMessageCalls.add(messageId);
@@ -367,6 +372,42 @@ class FakeChatRepository implements ChatRepository {
   @override
   Future<void> unstarMessage(String messageId) async {
     starredMessageIds.remove(messageId);
+  }
+
+  @override
+  Future<void> addReaction({
+    required String relationshipId,
+    required String messageId,
+    required String emoji,
+  }) async {
+    final byUser = reactionsByMessage.putIfAbsent(messageId, () => {});
+    byUser[currentUserId] = emoji;
+    final existing = serverMessages[messageId];
+    if (existing != null) {
+      serverMessages[messageId] = existing.copyWith(
+        reactions: _reactionsMapFor(messageId),
+      );
+    }
+  }
+
+  @override
+  Future<void> removeReaction(String messageId) async {
+    reactionsByMessage[messageId]?.remove(currentUserId);
+    final existing = serverMessages[messageId];
+    if (existing != null) {
+      serverMessages[messageId] = existing.copyWith(
+        reactions: _reactionsMapFor(messageId),
+      );
+    }
+  }
+
+  Map<String, Set<String>> _reactionsMapFor(String messageId) {
+    final byUser = reactionsByMessage[messageId] ?? const {};
+    final byEmoji = <String, Set<String>>{};
+    for (final entry in byUser.entries) {
+      byEmoji.putIfAbsent(entry.value, () => {}).add(entry.key);
+    }
+    return byEmoji;
   }
 
   @override

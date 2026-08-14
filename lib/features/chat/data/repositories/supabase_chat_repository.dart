@@ -497,6 +497,17 @@ class SupabaseChatRepository implements ChatRepository {
           ),
           callback: (_) => events.add(null),
         )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'message_reactions',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'relationship_id',
+            value: relationshipId,
+          ),
+          callback: (_) => events.add(null),
+        )
         .onBroadcast(
           event: 'typing',
           callback: (payload) {
@@ -703,9 +714,16 @@ class SupabaseChatRepository implements ChatRepository {
     List<Map<String, dynamic>> rows,
     String currentUserId,
   ) async {
+    final messageIds = rows.map((row) => row['id'] as String).toList();
+    final reactionsByMessageId = await _fetchReactionsFor(messageIds);
+
     return Future.wait(
       rows.map((row) async {
-        final base = Message.fromRow(row, currentUserId: currentUserId);
+        var base = Message.fromRow(row, currentUserId: currentUserId);
+        final reactions = reactionsByMessageId[base.id];
+        if (reactions != null) {
+          base = base.copyWith(reactions: reactions);
+        }
         if (base.mediaKey == null || base.mediaType != 'image') {
           return base;
         }
@@ -715,6 +733,31 @@ class SupabaseChatRepository implements ChatRepository {
         return base.copyWith(signedMediaUrl: signedUrl);
       }),
     );
+  }
+
+  /// Batch-fetches reactions for a page of messages in ONE query (an `IN`
+  /// filter over [messageIds]) rather than one query per message — a page
+  /// is capped at chatConfigProvider's messagePageSize (50 by default), so
+  /// this is a single round trip per page, not N.
+  Future<Map<String, Map<String, Set<String>>>> _fetchReactionsFor(
+    List<String> messageIds,
+  ) async {
+    if (messageIds.isEmpty) return const {};
+
+    final rows = await _supabase
+        .from('message_reactions')
+        .select('message_id,user_id,emoji')
+        .inFilter('message_id', messageIds);
+
+    final result = <String, Map<String, Set<String>>>{};
+    for (final row in rows) {
+      final messageId = row['message_id'] as String;
+      final userId = row['user_id'] as String;
+      final emoji = row['emoji'] as String;
+      final byEmoji = result.putIfAbsent(messageId, () => {});
+      byEmoji.putIfAbsent(emoji, () => {}).add(userId);
+    }
+    return result;
   }
 
   @override
@@ -831,5 +874,29 @@ class SupabaseChatRepository implements ChatRepository {
           ),
         )
         .toList();
+  }
+
+  @override
+  Future<void> addReaction({
+    required String relationshipId,
+    required String messageId,
+    required String emoji,
+  }) async {
+    await _supabase.rpc(
+      'react_to_message',
+      params: {
+        'p_relationship_id': relationshipId,
+        'p_message_id': messageId,
+        'p_emoji': emoji,
+      },
+    );
+  }
+
+  @override
+  Future<void> removeReaction(String messageId) async {
+    await _supabase.rpc(
+      'remove_reaction',
+      params: {'p_message_id': messageId},
+    );
   }
 }
