@@ -1331,6 +1331,30 @@ class _MessageList extends ConsumerWidget {
                 }
               }
             },
+            onReact: (emoji) async {
+              try {
+                await ref
+                    .read(chatControllerProvider(conversation).notifier)
+                    .reactToMessage(message, emoji);
+              } catch (e, st) {
+                debugPrint('reactToMessage failed: $e\n$st');
+                if (context.mounted) {
+                  context.showErrorSnackbar("Couldn't react — try again.");
+                }
+              }
+            },
+            onRemoveReaction: () async {
+              try {
+                await ref
+                    .read(chatControllerProvider(conversation).notifier)
+                    .removeReactionFrom(message);
+              } catch (e, st) {
+                debugPrint('removeReactionFrom failed: $e\n$st');
+                if (context.mounted) {
+                  context.showErrorSnackbar("Couldn't remove reaction — try again.");
+                }
+              }
+            },
             onEdit:
                 () => _showEditDialog(context, ref, conversation, message),
             onDelete:

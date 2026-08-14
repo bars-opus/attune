@@ -245,4 +245,44 @@ void main() {
 
     await tearDownChat(tester, container);
   });
+
+  testWidgets('tapping a quick reaction in the focused menu reaches the repository', (tester) async {
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    repo.seedIncoming(
+      id: 'm1',
+      relationshipId: 'rel-1',
+      senderId: 'partner',
+      content: 'hello there',
+      createdAt: DateTime.now(),
+    );
+    final container = await pumpChat(tester, repo);
+
+    await tester.longPress(find.text('hello there'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('❤️'));
+    await tester.pumpAndSettle();
+
+    expect(repo.reactionsByMessage['m1']?['user-a'], '❤️');
+    await tearDownChat(tester, container);
+  });
+
+  testWidgets('reacted message shows the pill immediately (no restart needed)', (tester) async {
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    repo.seedIncoming(
+      id: 'm1',
+      relationshipId: 'rel-1',
+      senderId: 'partner',
+      content: 'hello there',
+      createdAt: DateTime.now(),
+    );
+    final container = await pumpChat(tester, repo);
+
+    await tester.longPress(find.text('hello there'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('👍'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('👍'), findsOneWidget);
+    await tearDownChat(tester, container);
+  });
 }
