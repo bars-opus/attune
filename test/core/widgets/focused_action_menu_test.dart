@@ -375,6 +375,49 @@ void main() {
     expect(find.text('Action A'), findsNothing);
   });
 
+  testWidgets('each quick-reaction tap target meets the 44x44 accessibility minimum',
+      (tester) async {
+    // Algorithm Quality Review Checklist 5.6 (accessibility): a touch
+    // target smaller than 44x44 logical pixels fails the minimum
+    // tap-target size guideline. Found during Task 8's checklist
+    // verification — the original 22px glyph + 6px padding sizing
+    // measured ~34px, below the minimum.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showFocusedActionMenu(
+                context: context,
+                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                anchorSnapshot: const Text('bubble snapshot'),
+                actions: [ListTile(title: const Text('Action A'), onTap: () {})],
+                quickReactions: const [
+                  ReactionQuickOption(emoji: '❤️'),
+                  ReactionQuickOption(emoji: '👍'),
+                ],
+                onReact: (_) {},
+                onOpenFullPicker: () {},
+              ),
+              child: const Text('trigger'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('trigger'));
+    await tester.pumpAndSettle();
+
+    for (final target in [find.text('❤️'), find.text('👍'), find.byIcon(Icons.add)]) {
+      final size = tester.getSize(
+        find.ancestor(of: target, matching: find.byType(InkWell)),
+      );
+      expect(size.width, greaterThanOrEqualTo(44));
+      expect(size.height, greaterThanOrEqualTo(44));
+    }
+  });
+
   testWidgets('tapping the "+" calls onOpenFullPicker and dismisses',
       (tester) async {
     var openedPicker = false;

@@ -86,11 +86,10 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
   // height that must fit on screen alongside the actions.
   static const double _reactionRowHeight = 48;
 
-  // Per-emoji width of the reaction row (22px glyph + 6px padding each side),
-  // plus the row's own 8px horizontal padding each side. Measured empirically
-  // at ~34.5px per item; rounded up so the clamp errs toward keeping the card
-  // on screen rather than off it.
-  static const double _reactionItemWidth = 35;
+  // Each item is a fixed 44x44 tap target (accessibility minimum touch
+  // target size), so this is exact — not an estimate — plus the row's own
+  // 8px horizontal padding each side.
+  static const double _reactionItemWidth = 44;
   static const double _reactionRowPadding = 16;
 
   double get _estimatedReactionRowWidth =>
@@ -151,12 +150,15 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                       Navigator.of(context).pop();
                       onReact(option.emoji);
                     },
-                    borderRadius: BorderRadius.circular(20),
-                    child: Padding(
-                      padding: const EdgeInsets.all(6),
-                      child: Text(
-                        option.emoji,
-                        style: const TextStyle(fontSize: 22),
+                    borderRadius: BorderRadius.circular(22),
+                    child: SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: Center(
+                        child: Text(
+                          option.emoji,
+                          style: const TextStyle(fontSize: 22),
+                        ),
                       ),
                     ),
                   ),
@@ -165,10 +167,11 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                     Navigator.of(context).pop();
                     onOpenFullPicker();
                   },
-                  borderRadius: BorderRadius.circular(20),
-                  child: const Padding(
-                    padding: EdgeInsets.all(6),
-                    child: Icon(Icons.add, size: 22),
+                  borderRadius: BorderRadius.circular(22),
+                  child: const SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Center(child: Icon(Icons.add, size: 22)),
                   ),
                 ),
               ],
