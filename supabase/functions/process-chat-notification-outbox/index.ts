@@ -6,6 +6,7 @@ const DEFAULT_LIMIT = 20;
 const MAX_ATTEMPTS = 5;
 const CHAT_PUSH_TITLE = "New message in Attune";
 const CHAT_PUSH_BODY = "Open Attune to read it.";
+const REACTION_PUSH_TITLE = "New reaction";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -187,9 +188,12 @@ async function processJob(
       if (!viewingError && viewing === true) suppressPush = true;
     }
 
+    const isReaction = job.notification_type === "message_reaction";
     const previewEnabled = settings?.chat_message_preview_enabled === true;
-    const title = CHAT_PUSH_TITLE;
-    const body = previewEnabled ? previewBody(message) : CHAT_PUSH_BODY;
+    const title = isReaction ? REACTION_PUSH_TITLE : CHAT_PUSH_TITLE;
+    const body = isReaction
+      ? reactionBody(job, previewEnabled ? previewBody(message) : null)
+      : (previewEnabled ? previewBody(message) : CHAT_PUSH_BODY);
     const now = new Date().toISOString();
 
     const inAppResult = await supabase
@@ -199,7 +203,7 @@ async function processJob(
         title,
         body,
         data: {
-          type: "new_message",
+          type: isReaction ? "message_reaction" : "new_message",
           relationship_id: relationship.id,
           outbox_id: outboxId,
         },
@@ -225,7 +229,7 @@ async function processJob(
         metadata: {
           title,
           body,
-          type: "new_message",
+          type: isReaction ? "message_reaction" : "new_message",
           relationship_id: relationship.id,
           outbox_id: outboxId,
         },
@@ -276,6 +280,14 @@ function previewBody(message: Record<string, unknown>) {
     return "Photo";
   }
   return CHAT_PUSH_BODY;
+}
+
+function reactionBody(job: Record<string, unknown>, messagePreview: string | null) {
+  const emoji = typeof job.reaction_emoji === "string" ? job.reaction_emoji : "❤️";
+  if (messagePreview) {
+    return `${emoji} reacted to "${messagePreview.slice(0, 60)}"`;
+  }
+  return `${emoji} reacted to your message`;
 }
 
 function unwrapRelationship(value: unknown) {
