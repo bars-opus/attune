@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:attune/core/utils/animations/animated_scale_fade.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 
@@ -36,14 +37,15 @@ Future<void> showFocusedActionMenu({
     barrierDismissible: true,
     barrierColor: Colors.transparent,
     barrierLabel: 'Message actions',
-    // 350ms total, staged internally (see _FocusedActionMenuOverlay's
-    // _menuInterval/_reactionRowInterval/_reactionItemStagger) so the
-    // action menu, then the reaction row, then each emoji within it can
-    // each read as a distinct step rather than one blurred-together pop.
-    // Checklist 5.2's 200ms target is about time-to-FIRST-feedback (the
-    // haptic + backdrop + bubble scale all start at t=0, satisfying that),
-    // not that the whole entrance animation must finish within 200ms.
-    transitionDuration: const Duration(milliseconds: 350),
+    // This governs only the backdrop blur/dim and the bubble snapshot's
+    // own scale-up below — the menu, reaction row, and per-emoji ripple
+    // each run their own independent AnimatedScaleFade with its own
+    // duration/stagger (see _FocusedActionMenuOverlay's _entranceDuration/
+    // _staggerDelay). Checklist 5.2's 200ms target is about
+    // time-to-FIRST-feedback (the haptic + backdrop + bubble scale all
+    // start at t=0, satisfying that), not that the whole entrance must
+    // finish within 200ms.
+    transitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (dialogContext, animation, secondaryAnimation) {
       return _FocusedActionMenuOverlay(
         anchorRect: anchorRect,
@@ -102,48 +104,34 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
       (quickReactions.length + 1) * _reactionItemWidth + _reactionRowPadding;
 
   // Staged entrance, matching the real iMessage sequence: the action menu
-  // (Reply/Copy/...) animates in first, THEN the reaction row's own
-  // container animates in starting partway through the menu's animation
-  // (not simultaneously, not fully sequential either — a slight overlap
-  // reads as one continuous motion rather than two disconnected pops),
-  // and once the row itself is animating, each emoji inside it staggers in
-  // left-to-right as a quick ripple. All three intervals share the SAME
-  // underlying `animation` (the dialog route's own transition, still no
-  // separate AnimationController — see the file-level doc comment on
-  // showFocusedActionMenu) via Interval/CurvedAnimation, so reversing the
-  // route (dismiss) automatically plays every stage backwards in the
-  // correct reverse order: whatever finished animating in LAST is the
-  // first to disappear.
-  static const Interval _menuInterval = Interval(0.0, 0.55, curve: Curves.easeOut);
-  static const Interval _reactionRowInterval = Interval(0.35, 0.75, curve: Curves.easeOut);
+  // (Reply/Copy/...) scales+fades in first, THEN the reaction row's own
+  // container, THEN — once the row itself is in — each emoji inside it in
+  // turn, left-to-right, as a quick ripple. Built with this codebase's own
+  // AnimatedScaleFade (already used for chat's reply-preview strip and
+  // forums' equivalent — see chat_screen.dart/debate_room_screen.dart) via
+  // its staggerIndex/staggerDelay, rather than hand-rolled Interval-slicing
+  // of the dialog route's shared `animation`: each stage below is its own
+  // independent, self-contained AnimatedScaleFade instance (own
+  // AnimationController, autoStart on mount), which is simpler to reason
+  // about than threading N different Interval windows through one shared
+  // animation, at the cost of no longer riding the SAME animation as the
+  // backdrop blur/bubble scale below (those two still do, unchanged) and
+  // no reverse-on-dismiss stagger (dismiss just uses the dialog route's
+  // own default close, matching this feature's the-open-animation-is-what-
+  // matters scope).
+  //
+  // staggerDelay is per-INDEX, not per-stage — the whole sequence (menu,
+  // then row, then each emoji) is one continuous stagger sharing one
+  // duration, indices 0..N in visual order.
+  static const Duration _entranceDuration = Duration(milliseconds: 500);
+  static const double _staggerDelay = 0.12;
+  static const int _menuStaggerIndex = 0;
+  static const int _reactionRowStaggerIndex = 1;
 
-  // The per-emoji ripple lives inside the row's own [0.75, 1.0] tail —
-  // after the row container itself has finished scaling in — so each
-  // emoji's individual pop is layered on top of an already-settled row,
-  // not fighting the row's own still-growing size.
-  static const double _staggerStart = 0.75;
-  static const double _staggerEnd = 1.0;
-
-  /// The Nth item's own [start, end] window within [_staggerStart,
-  /// _staggerEnd], evenly spaced so the ripple reads as one continuous
-  /// left-to-right wave rather than N independent pops. [itemCount]
-  /// includes the trailing "+" button, so a 6-emoji row staggers 7 items.
-  Interval _staggerFor(int index, int itemCount) {
-    if (itemCount <= 1) {
-      return const Interval(_staggerStart, _staggerEnd, curve: Curves.easeOut);
-    }
-    // Each item's window overlaps its neighbors' by half — a pure
-    // back-to-back split (window width = totalSpan / itemCount) would make
-    // a 7-item row's ripple imperceptibly fast within a 250ms tail; the
-    // overlap keeps each item's own motion long enough to read while still
-    // finishing in order.
-    final totalSpan = _staggerEnd - _staggerStart;
-    final step = totalSpan / itemCount;
-    final windowWidth = step * 1.5;
-    final start = _staggerStart + step * index;
-    final end = (start + windowWidth).clamp(start, _staggerEnd);
-    return Interval(start, end, curve: Curves.easeOut);
-  }
+  // Each emoji's own index starts right after the row's, so the ripple
+  // continues the same stagger sequence rather than restarting at 0.
+  int _emojiStaggerIndex(int emojiPosition) =>
+      _reactionRowStaggerIndex + 1 + emojiPosition;
 
   @override
   Widget build(BuildContext context) {
@@ -180,10 +168,6 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
     // dialog route's context, obtained fresh on every build — not a context
     // captured from the call site outside the route. Same reasoning as the
     // scrim's onTap below.
-    //
-    // itemCount includes the trailing "+" button, so the ripple staggers
-    // across quickReactions.length + 1 items total.
-    final itemCount = quickReactions.length + 1;
     final reactionRow = Material(
       borderRadius: BorderRadius.circular(24),
       elevation: 8,
@@ -198,10 +182,12 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 for (var i = 0; i < quickReactions.length; i++)
-                  _StaggeredScaleFade(
-                    interval: _staggerFor(i, itemCount),
-                    animation: animation,
-                    scaleFrom: 0.6,
+                  AnimatedScaleFade(
+                    duration: _entranceDuration,
+                    curve: Curves.easeOutBack,
+                    beginScale: 0.4,
+                    staggerIndex: _emojiStaggerIndex(i),
+                    staggerDelay: _staggerDelay,
                     child: InkWell(
                       onTap: () {
                         Navigator.of(context).pop();
@@ -220,10 +206,12 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                       ),
                     ),
                   ),
-                _StaggeredScaleFade(
-                  interval: _staggerFor(quickReactions.length, itemCount),
-                  animation: animation,
-                  scaleFrom: 0.6,
+                AnimatedScaleFade(
+                  duration: _entranceDuration,
+                  curve: Curves.easeOutBack,
+                  beginScale: 0.4,
+                  staggerIndex: _emojiStaggerIndex(quickReactions.length),
+                  staggerDelay: _staggerDelay,
                   child: InkWell(
                     onTap: () {
                       Navigator.of(context).pop();
@@ -300,30 +288,28 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // The reaction row animates on its OWN interval
-                      // (_reactionRowInterval), staged to start after the
-                      // action menu below has begun animating — matching
-                      // the real sequence: menu first, then the row,
-                      // then (inside the row) each emoji in turn. Anchored
-                      // to the same corner as the menu below so both grow
-                      // out of the bubble rather than their own centers.
-                      _StaggeredScaleFade(
-                        interval: _reactionRowInterval,
-                        animation: animation,
-                        alignment:
-                            fitsBelow ? Alignment.topLeft : Alignment.bottomLeft,
+                      // The reaction row animates in on its own stagger
+                      // index (_reactionRowStaggerIndex), starting after
+                      // the action menu below has begun — matching the
+                      // real sequence: menu first, then the row, then
+                      // (inside the row) each emoji in turn.
+                      AnimatedScaleFade(
+                        duration: _entranceDuration,
+                        curve: Curves.easeOutBack,
+                        staggerIndex: _reactionRowStaggerIndex,
+                        staggerDelay: _staggerDelay,
                         child: reactionRow,
                       ),
                       const SizedBox(height: _gap),
                       // The action menu (Reply/Copy/...) is the FIRST stage
-                      // to animate in, on _menuInterval — everything else
+                      // to animate in (staggerIndex 0) — everything else
                       // (the reaction row and its own per-emoji ripple)
                       // follows this rather than running alongside it.
-                      _StaggeredScaleFade(
-                        interval: _menuInterval,
-                        animation: animation,
-                        alignment:
-                            fitsBelow ? Alignment.topLeft : Alignment.bottomLeft,
+                      AnimatedScaleFade(
+                        duration: _entranceDuration,
+                        curve: Curves.easeOutBack,
+                        staggerIndex: _menuStaggerIndex,
+                        staggerDelay: _staggerDelay,
                         child: Material(
                           borderRadius: BorderRadius.circular(14),
                           elevation: 8,
@@ -344,56 +330,6 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
             ],
           );
         },
-      ),
-    );
-  }
-}
-
-/// Fades and scales [child] in across its own [interval] of the shared
-/// [animation], driving [CurvedAnimation]/[Interval] rather than a separate
-/// [AnimationController] per stage/item — up to 9 of these can exist at
-/// once (the menu, the reaction row, and up to 7 items inside it), and a
-/// controller each would mean 9 extra tickers for something the single
-/// route-owned animation already drives cleanly via interval slicing.
-/// [Interval] clamps its input to the interval's own [0, 1] range outside
-/// that window (Flutter's own documented behavior), so this needs no extra
-/// clamping here — before the interval starts the child is fully
-/// transparent/at [scaleFrom], after it ends the child is fully
-/// opaque/at rest (scale 1.0).
-///
-/// Used both for the menu/reaction-row's own entrance (wider scale range,
-/// alignment anchored toward the bubble) and the per-emoji ripple inside
-/// the reaction row (tighter range, no meaningful alignment since each
-/// item is small and centered in its own 44x44 box — [alignment] defaults
-/// to [Alignment.center] for that case).
-class _StaggeredScaleFade extends StatelessWidget {
-  const _StaggeredScaleFade({
-    required this.interval,
-    required this.animation,
-    required this.child,
-    this.alignment = Alignment.center,
-    this.scaleFrom = 0.85,
-  });
-
-  final Interval interval;
-  final Animation<double> animation;
-  final Widget child;
-  final Alignment alignment;
-  final double scaleFrom;
-
-  @override
-  Widget build(BuildContext context) {
-    final staggered = CurvedAnimation(parent: animation, curve: interval);
-    return FadeTransition(
-      opacity: staggered,
-      child: AnimatedBuilder(
-        animation: staggered,
-        builder: (context, builtChild) => Transform.scale(
-          scale: scaleFrom + (1.0 - scaleFrom) * staggered.value,
-          alignment: alignment,
-          child: builtChild,
-        ),
-        child: child,
       ),
     );
   }

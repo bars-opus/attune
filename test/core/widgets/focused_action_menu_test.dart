@@ -235,10 +235,10 @@ void main() {
     // Regression guard: a plain FadeTransition with no accompanying scale
     // reads as flat/barely-there on a real device, especially next to the
     // more prominent blur+bubble-scale happening at the same time. This
-    // asserts the menu's own scale genuinely animates mid-transition (same
-    // "not just at rest and settled" discipline as the bubble-scale test
-    // above) — a value read outside an AnimatedBuilder, or a scale that
-    // never changes, would freeze this at exactly 1.0 the whole time.
+    // asserts the menu's own AnimatedScaleFade genuinely animates its
+    // scale mid-transition (same "not just at rest and settled" discipline
+    // as the bubble-scale test above) — a value that never changes would
+    // stay frozen at its rest scale the whole time.
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -264,7 +264,9 @@ void main() {
 
     await tester.tap(find.text('trigger'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 110));
+    // The menu is staggerIndex 0 (no delay) on a 500ms AnimatedScaleFade —
+    // 200ms in is comfortably mid-transition, well before it settles.
+    await tester.pump(const Duration(milliseconds: 200));
 
     final menuTransform = tester.widget<Transform>(
       find
@@ -274,11 +276,12 @@ void main() {
           )
           .first,
     );
-    // 0.85 at the start of the transition, growing toward 1.0 — anything
-    // strictly between those two values proves it is genuinely animating,
-    // not frozen at either endpoint.
-    expect(menuTransform.transform.storage[0], greaterThan(0.85));
-    expect(menuTransform.transform.storage[0], lessThan(1.0));
+    // Rest scale is 1.0 and AnimatedScaleFade's default beginScale is 0.0,
+    // so any value strictly less than 1.0 mid-transition proves it is
+    // genuinely animating, not frozen at its settled value. (easeOutBack
+    // overshoots past 1.0 before settling, so this does not assert an
+    // upper bound — only that it has not yet reached exactly 1.0.)
+    expect(menuTransform.transform.storage[0], isNot(1.0));
 
     await tester.pumpAndSettle();
 
@@ -290,7 +293,7 @@ void main() {
           )
           .first,
     );
-    expect(settledTransform.transform.storage[0], 1.0);
+    expect(settledTransform.transform.storage[0], closeTo(1.0, 0.001));
   });
 
   testWidgets(
@@ -640,10 +643,13 @@ void main() {
     // not assumed): the action menu animates in FIRST, the reaction row's
     // own container starts after the menu has begun (not simultaneously),
     // and once the row itself is animating, each emoji inside staggers in
-    // left-to-right as its own quick ripple. This asserts genuine ordering
-    // — not just that each piece eventually reaches 1.0, but that the menu
-    // is meaningfully ahead of the row, and the row is meaningfully ahead
-    // of the per-emoji ripple, at real sample points along the transition.
+    // left-to-right as its own quick ripple. Each stage is its own
+    // AnimatedScaleFade with staggerIndex * staggerDelay * duration as its
+    // start delay: with duration 500ms and staggerDelay 0.12, that's 60ms
+    // per index — menu (index 0) starts at 0ms, row (index 1) at 60ms,
+    // first emoji (index 2) at 120ms, last of 4 row items (index 5) at
+    // 300ms. This asserts genuine ordering via real sample points, not
+    // just that each piece eventually reaches full opacity.
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -674,69 +680,48 @@ void main() {
     await tester.tap(find.text('trigger'));
     await tester.pump();
 
-    double menuOpacity() => tester
-        .widget<FadeTransition>(
-          find
-              .ancestor(
-                of: find.text('Action A'),
-                matching: find.byType(FadeTransition),
-              )
-              .first,
+    // AnimatedScaleFade wraps its child in Opacity (not FadeTransition),
+    // so these read the innermost Opacity ancestor of each landmark Text.
+    double opacityAncestorOf(Finder target) => tester
+        .widget<Opacity>(
+          find.ancestor(of: target, matching: find.byType(Opacity)).first,
         )
-        .opacity
-        .value;
+        .opacity;
 
-    // The row's own wrapper is the SECOND FadeTransition ancestor of an
-    // emoji (the first/closest is the emoji's own per-item ripple
-    // wrapper) — confirmed by cross-referencing against known interval
-    // math while building this test empirically.
+    double menuOpacity() => opacityAncestorOf(find.text('Action A'));
+    // The row's own AnimatedScaleFade wraps the WHOLE reactionRow Material,
+    // so any Text inside it (e.g. the first emoji) has the row's Opacity
+    // as its outer/second ancestor — the emoji's own per-item
+    // AnimatedScaleFade is the closer/first one.
     double rowOpacity() {
       final chain = find
-          .ancestor(
-            of: find.text('❤️'),
-            matching: find.byType(FadeTransition),
-          )
+          .ancestor(of: find.text('❤️'), matching: find.byType(Opacity))
           .evaluate()
-          .map((e) => (e.widget as FadeTransition).opacity.value)
+          .map((e) => (e.widget as Opacity).opacity)
           .toList();
       return chain[1];
     }
 
-    double firstEmojiOpacity() => find
-        .ancestor(of: find.text('❤️'), matching: find.byType(FadeTransition))
-        .evaluate()
-        .map((e) => (e.widget as FadeTransition).opacity.value)
-        .first;
+    double firstEmojiOpacity() => opacityAncestorOf(find.text('❤️'));
+    double lastEmojiOpacity() => opacityAncestorOf(find.text('👎'));
 
-    double lastEmojiOpacity() => find
-        .ancestor(of: find.text('👎'), matching: find.byType(FadeTransition))
-        .evaluate()
-        .map((e) => (e.widget as FadeTransition).opacity.value)
-        .first;
-
-    // At 100ms (well inside the menu's [0, 192.5ms] window, before the
-    // row's [122.5ms, 262.5ms] window has meaningfully started): the menu
-    // must be clearly ahead of the row, and the row must still be at (or
-    // very near) zero.
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(menuOpacity(), greaterThan(0.5));
-    expect(rowOpacity(), lessThan(0.1));
-
-    // At 200ms (menu settled, row well underway, per-emoji ripple
-    // [262.5ms, ~295-339ms] not yet started): menu must be fully in, row
-    // meaningfully animating but not yet done, emoji still at zero.
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(menuOpacity(), 1.0);
-    expect(rowOpacity(), greaterThan(0.5));
-    expect(rowOpacity(), lessThan(1.0));
+    // At 40ms: only the menu (0ms delay) has started; the row (60ms delay)
+    // and every emoji (120ms+ delay) have not.
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(menuOpacity(), greaterThan(0.0));
+    expect(rowOpacity(), 0.0);
     expect(firstEmojiOpacity(), 0.0);
 
-    // At 290ms (row settled, first emoji's own ripple well underway, last
-    // emoji's ripple not yet started): proves the per-emoji stagger
-    // itself is real, not all four popping in together the moment the
-    // row's own animation finishes.
-    await tester.pump(const Duration(milliseconds: 90));
-    expect(rowOpacity(), 1.0);
+    // At 90ms: the row (60ms delay) has started; the first emoji (120ms
+    // delay) has not.
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(rowOpacity(), greaterThan(0.0));
+    expect(firstEmojiOpacity(), 0.0);
+
+    // At 150ms: the first emoji (120ms delay) has started; the last row
+    // item (300ms delay) has not — proves the per-emoji stagger itself is
+    // real, not all four popping in together the moment the row starts.
+    await tester.pump(const Duration(milliseconds: 60));
     expect(firstEmojiOpacity(), greaterThan(0.0));
     expect(lastEmojiOpacity(), 0.0);
 
