@@ -1,5 +1,6 @@
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -152,6 +153,49 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Delete'), findsOneWidget);
+  });
+
+  testWidgets('tapping the "+" opens the full emoji picker with no exception', (tester) async {
+    // Regression guard: the focused menu's "+" button popped its own
+    // dialog route and then called onOpenFullPicker synchronously in the
+    // same tap handler — showModalBottomSheet raced the route removal and
+    // threw "Null check operator used on a null value" from inside
+    // Overlay's internals. Fixed by deferring to the next frame
+    // (addPostFrameCallback) and guarding with context.mounted in
+    // _openFullEmojiPicker. This test exercises the real long-press ->
+    // "+" tap path end to end, not a fake onOpenFullPicker callback.
+    final message = Message.optimistic(
+      id: 'm-emoji',
+      clientMessageId: 'c-emoji',
+      relationshipId: 'r1',
+      senderId: 'u1',
+      content: 'hi',
+      createdAt: DateTime.now(),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            message: message,
+            currentUserId: 'u1',
+            onReact: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.longPress(find.text('hi'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.add));
+    // Flush the deferred addPostFrameCallback that opens the sheet, then
+    // let the bottom sheet's own entrance animation settle.
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(EmojiPicker), findsOneWidget);
   });
 
   testWidgets('long-press does nothing for a deleted message (no menu, nothing to act on)', (tester) async {

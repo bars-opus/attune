@@ -165,8 +165,24 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                   ),
                 InkWell(
                   onTap: () {
+                    // onOpenFullPicker (in practice, MessageBubble's
+                    // _openFullEmojiPicker) opens a NEW UI surface
+                    // (showModalBottomSheet) rather than just running a
+                    // callback — calling it synchronously in the same tap
+                    // as the pop below raced the dialog route's removal:
+                    // the bottom sheet tried to push using a context whose
+                    // element was mid-deactivation, throwing "Null check
+                    // operator used on a null value" from inside Overlay's
+                    // internals. Deferring to the next frame, after the pop
+                    // has fully settled, avoids the race — this widget's
+                    // own `context` (the dialog route's, still valid for
+                    // one more frame here) is used only to reach the
+                    // enclosing Navigator, not passed into onOpenFullPicker
+                    // itself.
                     Navigator.of(context).pop();
-                    onOpenFullPicker();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      onOpenFullPicker();
+                    });
                   },
                   borderRadius: BorderRadius.circular(22),
                   child: const SizedBox(
