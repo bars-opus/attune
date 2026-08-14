@@ -3,6 +3,12 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 
+/// One emoji in the focused menu's quick-reaction row.
+class ReactionQuickOption {
+  const ReactionQuickOption({required this.emoji});
+  final String emoji;
+}
+
 /// iMessage-style long-press action menu: the anchor (a duplicate of the
 /// long-pressed bubble, painted at its real screen position) scales up
 /// slightly as the backdrop blurs and dims behind it, and the given
@@ -16,6 +22,9 @@ Future<void> showFocusedActionMenu({
   required Rect anchorRect,
   required Widget anchorSnapshot,
   required List<Widget> actions,
+  required List<ReactionQuickOption> quickReactions,
+  required void Function(String emoji) onReact,
+  required VoidCallback onOpenFullPicker,
 }) {
   // Fires synchronously, before the route even opens — matches "the
   // instant the menu opens," not deferred to an animation-complete
@@ -36,6 +45,9 @@ Future<void> showFocusedActionMenu({
         anchorRect: anchorRect,
         anchorSnapshot: anchorSnapshot,
         actions: actions,
+        quickReactions: quickReactions,
+        onReact: onReact,
+        onOpenFullPicker: onOpenFullPicker,
         animation: animation,
       );
     },
@@ -47,12 +59,18 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
     required this.anchorRect,
     required this.anchorSnapshot,
     required this.actions,
+    required this.quickReactions,
+    required this.onReact,
+    required this.onOpenFullPicker,
     required this.animation,
   });
 
   final Rect anchorRect;
   final Widget anchorSnapshot;
   final List<Widget> actions;
+  final List<ReactionQuickOption> quickReactions;
+  final void Function(String emoji) onReact;
+  final VoidCallback onOpenFullPicker;
   final Animation<double> animation;
 
   // Rough per-item height estimate for the flip-above/below decision —
@@ -63,18 +81,102 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
   static const double _estimatedItemHeight = 56;
   static const double _gap = 8;
 
+  // The quick-reaction row's own height, budgeted into the flip-above/below
+  // decision below: the row is docked ABOVE the action list, so it adds real
+  // height that must fit on screen alongside the actions.
+  static const double _reactionRowHeight = 48;
+
+  // Per-emoji width of the reaction row (22px glyph + 6px padding each side),
+  // plus the row's own 8px horizontal padding each side. Measured empirically
+  // at ~34.5px per item; rounded up so the clamp errs toward keeping the card
+  // on screen rather than off it.
+  static const double _reactionItemWidth = 35;
+  static const double _reactionRowPadding = 16;
+
+  double get _estimatedReactionRowWidth =>
+      // +1 for the trailing "+" button, which is always present.
+      (quickReactions.length + 1) * _reactionItemWidth + _reactionRowPadding;
+
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final safeAreaBottom = MediaQuery.of(context).padding.bottom;
-    final estimatedMenuHeight = actions.length * _estimatedItemHeight;
+    final estimatedMenuHeight =
+        actions.length * _estimatedItemHeight + _reactionRowHeight + _gap;
 
     final fitsBelow = anchorRect.bottom + _gap + estimatedMenuHeight <=
         screenSize.height - safeAreaBottom;
 
     final menuWidth = 240.0;
-    final maxLeft = (screenSize.width - menuWidth - 8.0).clamp(8.0, double.infinity);
+    // The reaction row is a SEPARATE card from the 240px action list and is
+    // sized by its own content, so with a realistic tapback set (6 emoji plus
+    // the "+") it measures wider than menuWidth. Clamping only against
+    // menuWidth would leave the wider card hanging off the right edge — the
+    // same overflow class already fixed once for the action list. Budget the
+    // widest card for the clamp, and cap the row itself to the usable width so
+    // an unusually long emoji list scrolls instead of overflowing.
+    final maxCardWidth = (screenSize.width - 16.0).clamp(0.0, double.infinity);
+    final reactionRowMaxWidth = maxCardWidth;
+    // clamp's lower bound must not exceed its upper bound, which it would on a
+    // viewport narrower than menuWidth — take the min explicitly instead.
+    final widestCardWidth = _estimatedReactionRowWidth > menuWidth
+        ? (_estimatedReactionRowWidth < maxCardWidth
+            ? _estimatedReactionRowWidth
+            : maxCardWidth)
+        : menuWidth;
+    final maxLeft =
+        (screenSize.width - widestCardWidth - 8.0).clamp(8.0, double.infinity);
     final clampedLeft = anchorRect.left.clamp(8.0, maxLeft);
+
+    // Navigator.of(context) here reads THIS widget's own build context — the
+    // dialog route's context, obtained fresh on every build — not a context
+    // captured from the call site outside the route. Same reasoning as the
+    // scrim's onTap below.
+    final reactionRow = Material(
+      borderRadius: BorderRadius.circular(24),
+      elevation: 8,
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: reactionRowMaxWidth),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final option in quickReactions)
+                  InkWell(
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onReact(option.emoji);
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Text(
+                        option.emoji,
+                        style: const TextStyle(fontSize: 22),
+                      ),
+                    ),
+                  ),
+                InkWell(
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    onOpenFullPicker();
+                  },
+                  borderRadius: BorderRadius.circular(20),
+                  child: const Padding(
+                    padding: EdgeInsets.all(6),
+                    child: Icon(Icons.add, size: 22),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
 
     return GestureDetector(
       onTap: () => Navigator.of(context).pop(),
@@ -130,17 +232,25 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                     // individual action ListTiles still handle their own
                     // onTap and pop the route themselves.
                     onTap: () {},
-                    child: Material(
-                      borderRadius: BorderRadius.circular(14),
-                      elevation: 8,
-                      clipBehavior: Clip.antiAlias,
-                      child: SizedBox(
-                        width: menuWidth,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: actions,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        reactionRow,
+                        const SizedBox(height: _gap),
+                        Material(
+                          borderRadius: BorderRadius.circular(14),
+                          elevation: 8,
+                          clipBehavior: Clip.antiAlias,
+                          child: SizedBox(
+                            width: menuWidth,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: actions,
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
                 ),

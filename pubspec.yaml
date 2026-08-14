@@ -101,6 +101,7 @@ dependencies:
   gap: ^3.0.0
   flutter_screenutil: ^5.9.0
   flutter_slidable: ^4.0.3
+  emoji_picker_flutter: ^4.4.0
 
 dependency_overrides:
   web:

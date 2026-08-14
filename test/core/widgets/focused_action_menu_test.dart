@@ -17,6 +17,9 @@ void main() {
                 actions: [
                   ListTile(title: const Text('Action A'), onTap: () {}),
                 ],
+                quickReactions: const [],
+                onReact: (_) {},
+                onOpenFullPicker: () {},
               ),
               child: const Text('trigger'),
             ),
@@ -46,6 +49,9 @@ void main() {
                 actions: [
                   ListTile(title: const Text('Action A'), onTap: () => fired = true),
                 ],
+                quickReactions: const [],
+                onReact: (_) {},
+                onOpenFullPicker: () {},
               ),
               child: const Text('trigger'),
             ),
@@ -98,6 +104,9 @@ void main() {
                     ),
                   ),
                 ],
+                quickReactions: const [],
+                onReact: (_) {},
+                onOpenFullPicker: () {},
               ),
               child: const Text('trigger'),
             ),
@@ -138,6 +147,9 @@ void main() {
                   ListTile(title: const Text('Action B'), onTap: () {}),
                   ListTile(title: const Text('Action C'), onTap: () {}),
                 ],
+                quickReactions: const [],
+                onReact: (_) {},
+                onOpenFullPicker: () {},
               ),
               child: const Text('trigger'),
             ),
@@ -181,6 +193,9 @@ void main() {
                 actions: [
                   ListTile(title: const Text('Action A'), onTap: () {}),
                 ],
+                quickReactions: const [],
+                onReact: (_) {},
+                onOpenFullPicker: () {},
               ),
               child: const Text('trigger'),
             ),
@@ -239,6 +254,9 @@ void main() {
                 actions: [
                   ListTile(title: const Text('Action A'), onTap: () {}),
                 ],
+                quickReactions: const [],
+                onReact: (_) {},
+                onOpenFullPicker: () {},
               ),
               child: const Text('trigger'),
             ),
@@ -292,6 +310,9 @@ void main() {
                 actions: [
                   ListTile(title: const Text('Action A'), onTap: () {}),
                 ],
+                quickReactions: const [],
+                onReact: (_) {},
+                onOpenFullPicker: () {},
               ),
               child: const Text('trigger'),
             ),
@@ -314,5 +335,194 @@ void main() {
     // shape (anchorRect.left + 240 > 390) rather than accidentally fitting
     // on its own — if this fails, the fixture no longer exercises the bug.
     expect(244.0 + 240.0, greaterThan(390.0));
+  });
+
+  testWidgets('tapping a quick reaction calls onReact with that emoji and dismisses',
+      (tester) async {
+    String? reacted;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showFocusedActionMenu(
+                context: context,
+                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                anchorSnapshot: const Text('bubble snapshot'),
+                actions: [ListTile(title: const Text('Action A'), onTap: () {})],
+                quickReactions: const [
+                  ReactionQuickOption(emoji: '❤️'),
+                  ReactionQuickOption(emoji: '👍'),
+                ],
+                onReact: (emoji) => reacted = emoji,
+                onOpenFullPicker: () {},
+              ),
+              child: const Text('trigger'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('trigger'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('❤️'));
+    await tester.pumpAndSettle();
+
+    expect(reacted, '❤️');
+    // Dismissed: the action list from this call is no longer in the tree.
+    expect(find.text('Action A'), findsNothing);
+  });
+
+  testWidgets('tapping the "+" calls onOpenFullPicker and dismisses',
+      (tester) async {
+    var openedPicker = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showFocusedActionMenu(
+                context: context,
+                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                anchorSnapshot: const Text('bubble snapshot'),
+                actions: [ListTile(title: const Text('Action A'), onTap: () {})],
+                quickReactions: const [ReactionQuickOption(emoji: '❤️')],
+                onReact: (_) {},
+                onOpenFullPicker: () => openedPicker = true,
+              ),
+              child: const Text('trigger'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('trigger'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+
+    expect(openedPicker, isTrue);
+  });
+
+  testWidgets(
+      'a full tapback row stays within the screen width near the right edge',
+      (tester) async {
+    // Regression guard: the reaction row is a SEPARATE card from the 240px
+    // action list and is sized by its own content, so a realistic six-emoji
+    // tapback set measures ~257px — wider than menuWidth. Clamping the
+    // menu's left edge against menuWidth alone let the wider row hang ~8px
+    // off the right edge of a 390-wide phone. The pre-existing right-edge
+    // test above cannot catch this: it asserts on the 240px SizedBox (the
+    // action list), not on the reaction row.
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showFocusedActionMenu(
+                context: context,
+                anchorRect: const Rect.fromLTWH(244, 372, 100, 40),
+                anchorSnapshot: const Text('ok'),
+                actions: [ListTile(title: const Text('Action A'), onTap: () {})],
+                quickReactions: const [
+                  ReactionQuickOption(emoji: '❤️'),
+                  ReactionQuickOption(emoji: '👍'),
+                  ReactionQuickOption(emoji: '😂'),
+                  ReactionQuickOption(emoji: '😮'),
+                  ReactionQuickOption(emoji: '😢'),
+                  ReactionQuickOption(emoji: '🙏'),
+                ],
+                onReact: (_) {},
+                onOpenFullPicker: () {},
+              ),
+              child: const Text('trigger'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('trigger'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+
+    final rowBox = tester.renderObject<RenderBox>(
+      find
+          .ancestor(
+            of: find.byIcon(Icons.add),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    final rowRect = rowBox.localToGlobal(Offset.zero) & rowBox.size;
+
+    expect(rowRect.left, greaterThanOrEqualTo(0));
+    expect(rowRect.right, lessThanOrEqualTo(390));
+    // Sanity: prove the fixture reproduces the overflow shape — the row is
+    // genuinely wider than the 240px action list it is clamped alongside.
+    expect(rowRect.width, greaterThan(240));
+  });
+
+  testWidgets('an over-long reaction row scrolls instead of overflowing',
+      (tester) async {
+    // The row's width is unbounded in its own right, so a caller passing an
+    // unusually long emoji list must not paint off-screen or throw a layout
+    // overflow — it is capped to the usable width and scrolls horizontally.
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showFocusedActionMenu(
+                context: context,
+                anchorRect: const Rect.fromLTWH(200, 300, 100, 40),
+                anchorSnapshot: const Text('ok'),
+                actions: [ListTile(title: const Text('Action A'), onTap: () {})],
+                quickReactions: List.generate(
+                  20,
+                  (_) => const ReactionQuickOption(emoji: '❤️'),
+                ),
+                onReact: (_) {},
+                onOpenFullPicker: () {},
+              ),
+              child: const Text('trigger'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('trigger'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+
+    final rowBox = tester.renderObject<RenderBox>(
+      find
+          .ancestor(
+            of: find.byType(SingleChildScrollView),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    final rowRect = rowBox.localToGlobal(Offset.zero) & rowBox.size;
+
+    expect(rowRect.left, greaterThanOrEqualTo(0));
+    expect(rowRect.right, lessThanOrEqualTo(320));
   });
 }

@@ -112,6 +112,15 @@ class MessageBubble extends StatelessWidget {
                   onEdit: onEdit ?? () {},
                   onDelete: onDelete ?? () {},
                 ),
+                // Placeholder wiring: the quick-reaction row is built but not
+                // yet connected to reactToMessage/removeReactionFrom or the
+                // emoji_picker_flutter sheet. An empty list renders just the
+                // "+" affordance and the no-op callbacks keep behaviour
+                // identical to before. Replaced with the real callbacks when
+                // MessageBubble gains its reaction wiring.
+                quickReactions: const [],
+                onReact: (_) {},
+                onOpenFullPicker: () {},
               )
           : null,
       onReply: onReply,
