@@ -985,10 +985,31 @@ class ChatController extends StateNotifier<ChatState> {
     return b.id.compareTo(a.id);
   }
 
+  /// Merges freshly-fetched server rows into the current view.
+  ///
+  /// On an id collision the INCOMING row wins. Both callers ([loadMessages]
+  /// and [_catchUpFromCursor]) pass server-canonical, fully-hydrated rows, so
+  /// they carry server-owned state — reactions, edits, deletions — that the
+  /// copy already in memory may predate. Letting the existing entry win
+  /// instead silently discarded all of it: on cold start `_init` seeds state
+  /// from the on-disk cache, so every cached row shadowed its hydrated
+  /// counterpart and reactions never survived a restart — then the stripped
+  /// list was written straight back to the cache, re-persisting the loss.
+  ///
+  /// [Message.localMediaPath] is the one field the server cannot know (it
+  /// points at the sender's on-device file), so it is carried forward from
+  /// the existing entry rather than being nulled out by the incoming row.
   List<Message> _mergeMessages(List<Message> incoming) {
     final byId = <String, Message>{};
-    for (final message in [...incoming, ...state.messages]) {
+    for (final message in state.messages) {
       byId[message.id] = message;
+    }
+    for (final message in incoming) {
+      final existing = byId[message.id];
+      byId[message.id] = existing?.localMediaPath != null &&
+              message.localMediaPath == null
+          ? message.copyWith(localMediaPath: existing!.localMediaPath)
+          : message;
     }
 
     final merged = byId.values.toList()..sort(_byCreatedThenId);

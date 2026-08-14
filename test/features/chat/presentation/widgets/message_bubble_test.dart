@@ -216,6 +216,71 @@ void main() {
     expect(find.byType(EmojiCell), findsWidgets);
   });
 
+  testWidgets(
+      'the "+" still opens the picker when the list recycles the bubble while the menu is open',
+      (tester) async {
+    // THE regression guard for "tapping + does nothing", which the test above
+    // could never catch: it renders a bare MessageBubble whose element is
+    // never recycled, so the captured context stays mounted and the bug is
+    // invisible.
+    //
+    // In production MessageBubble is built lazily inside ChatScreen's
+    // ListView.builder. Its element is therefore recyclable, and the focused
+    // menu route covers the list while it is open — so a list rebuild
+    // underneath (realtime merge, reaction patch, scrolling past the cache
+    // extent) can deactivate the bubble's element before "+" is tapped.
+    // _openFullEmojiPicker used to receive that element's context and bail on
+    // `!context.mounted`, silently doing nothing with no exception raised.
+    // Capturing the NavigatorState at long-press time fixes it; against the
+    // old context-based version this test fails with zero EmojiPicker found.
+    SharedPreferences.setMockInitialValues({});
+
+    var itemCount = 3;
+    late StateSetter setOuter;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              setOuter = setState;
+              return ListView.builder(
+                itemCount: itemCount,
+                itemBuilder: (context, index) => MessageBubble(
+                  message: Message.optimistic(
+                    id: 'm$index',
+                    clientMessageId: 'c$index',
+                    relationshipId: 'r1',
+                    senderId: 'u1',
+                    content: 'msg $index',
+                    createdAt: DateTime.now(),
+                  ),
+                  currentUserId: 'u1',
+                  onReact: (_) {},
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.longPress(find.text('msg 0'));
+    await tester.pumpAndSettle();
+
+    // The list rebuilds without the long-pressed message, unmounting that
+    // bubble's element while the focused menu route is still up.
+    setOuter(() => itemCount = 0);
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(EmojiPicker), findsOneWidget);
+    expect(find.byType(EmojiCell), findsWidgets);
+  });
+
   testWidgets('long-press does nothing for a deleted message (no menu, nothing to act on)', (tester) async {
     final deleted = Message.fromRow(
       {

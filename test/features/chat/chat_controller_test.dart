@@ -373,5 +373,46 @@ void main() {
       expect(switched.reactions['❤️'] ?? {}, isNot(contains('user-a')));
       expect(switched.reactions['👍'], contains('user-a'));
     });
+
+    test('a reload re-applies server reactions over a stale reaction-less copy already in state', () async {
+      // Regression guard for the "reactions vanish after an app restart" bug.
+      // On cold start _init() seeds state from the on-disk cache (written
+      // before the reaction existed, so reactions is empty) and THEN calls
+      // loadMessages(), whose server rows do carry the reaction. If
+      // _mergeMessages lets the pre-existing state entry win the id collision,
+      // the freshly-hydrated reaction is discarded — and the stripped result
+      // is written straight back to the cache, so the loss re-persists on
+      // every subsequent launch.
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      final conversation = activeConversation('rel-1');
+      repo.conversationOverride = conversation;
+      repo.seedIncoming(
+        id: 'm1',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'hello',
+        createdAt: DateTime.now(),
+      );
+      final container = buildChatContainer(repository: repo, userId: 'user-a');
+      addTearDown(container.dispose);
+      final notifier = container.read(chatControllerProvider(conversation).notifier);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await notifier.loadMessages();
+
+      // The reaction exists server-side (as it would after a previous session
+      // wrote it), but the copy sitting in state has no reactions on it —
+      // exactly the shape a restore-from-cache produces.
+      await repo.addReaction(
+        relationshipId: 'rel-1',
+        messageId: 'm1',
+        emoji: '❤️',
+      );
+
+      await notifier.loadMessages();
+
+      final reloaded = container.read(chatControllerProvider(conversation)).messages
+          .firstWhere((m) => m.id == 'm1');
+      expect(reloaded.reactions['❤️'], contains('user-a'));
+    });
   });
 }

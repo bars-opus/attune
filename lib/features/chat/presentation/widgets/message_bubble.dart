@@ -124,7 +124,12 @@ class MessageBubble extends StatelessWidget {
                       ReactionQuickOption(emoji: '❓'),
                     ],
                     onReact: (emoji) => onReact?.call(emoji),
-                    onOpenFullPicker: () => _openFullEmojiPicker(context, onReact),
+                    // Resolve the Navigator NOW, while this bubble's element
+                    // is definitely still mounted (we are inside its
+                    // long-press handler). Looking it up later, after the
+                    // menu route pops, can fail because the list may have
+                    // recycled this element away by then.
+                    onOpenFullPicker: _buildFullPickerOpener(context, onReact),
                     actions: buildMessageActionItems(
                       context: context,
                       message: message,
@@ -276,16 +281,39 @@ Widget? _buildReactionPills(BuildContext context, Message message) {
 /// method on MessageBubble) since it needs no widget state — mirrors
 /// `_showEditDialog`'s free-function shape in chat_screen.dart.
 ///
-/// [context] is MessageBubble's own build context, captured at long-press
-/// time and invoked once the focused menu's dialog route has popped — by
-/// then this bubble's element could in principle have been deactivated by
-/// ChatScreen's ListView recycling it, the same hazard documented in
-/// message_actions_sheet.dart. The `mounted` guard makes that failure mode
-/// a silent no-op (the "+" tap does nothing) instead of a crash.
-void _openFullEmojiPicker(BuildContext context, void Function(String emoji)? onReact) {
-  if (!context.mounted) return;
+/// Resolves the [NavigatorState] eagerly — while [context] is guaranteed
+/// mounted, inside the long-press handler — and returns a callback that opens
+/// the picker through it. The lookup must not be deferred into the returned
+/// closure: by the time that closure runs, the menu route has popped and this
+/// bubble's element may have been recycled, which is exactly what broke the
+/// "+" button (see [_openFullEmojiPicker]).
+VoidCallback _buildFullPickerOpener(
+  BuildContext context,
+  void Function(String emoji)? onReact,
+) {
+  final navigator = Navigator.of(context, rootNavigator: true);
+  return () => _openFullEmojiPicker(navigator, onReact);
+}
+
+/// Takes the [NavigatorState] captured at long-press time rather than
+/// MessageBubble's own build context.
+///
+/// This is what actually broke the "+" button. MessageBubble is a
+/// StatelessWidget built lazily inside ChatScreen's ListView.builder, so its
+/// element is recyclable: by the time the focused menu's route has popped and
+/// this runs, that element may already have been deactivated (the list
+/// rebuilding under the menu — a realtime merge, a reaction patch, a scroll
+/// past the cache extent — is enough). Routing the sheet through that context
+/// meant `context.mounted` was false and the call returned early, so tapping
+/// "+" silently did nothing, with no exception to surface the failure.
+///
+/// A NavigatorState is owned by the Navigator far above the list, so it
+/// outlives any individual bubble element and stays valid regardless of
+/// recycling.
+void _openFullEmojiPicker(NavigatorState navigator, void Function(String emoji)? onReact) {
+  if (!navigator.mounted) return;
   showModalBottomSheet<void>(
-    context: context,
+    context: navigator.context,
     isScrollControlled: true,
     builder: (sheetContext) => SizedBox(
       height: 320,
