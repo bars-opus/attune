@@ -3,7 +3,6 @@ import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
 
@@ -109,40 +108,7 @@ class MessageBubble extends StatelessWidget {
                 onDelete: onDelete ?? () {},
               )
           : null,
-      startActionPane:
-          onReply == null
-              ? null
-              : ActionPane(
-                motion: const DrawerMotion(),
-                extentRatio: 0.25,
-                // Reply never removes the message from the list, so this
-                // must NEVER actually dismiss — same pattern
-                // ForumPostBubble/CommentThreadScreen use: fire onReply
-                // from confirmDismiss and veto (return false) to get the
-                // past-threshold full-swipe gesture without entering
-                // Slidable's resize/removal flow.
-                dismissible: DismissiblePane(
-                  confirmDismiss: () async {
-                    onReply!();
-                    return false;
-                  },
-                  onDismissed: () {},
-                  closeOnCancel: true,
-                ),
-                children: [
-                  SlidableAction(
-                    onPressed: (_) => onReply!(),
-                    backgroundColor:
-                        isMine
-                            ? colorScheme.primary
-                            : colorScheme.surfaceContainerHighest,
-                    foregroundColor:
-                        isMine ? colorScheme.onPrimary : colorScheme.onSurface,
-                    icon: Icons.reply,
-                    label: 'Reply',
-                  ),
-                ],
-              ),
+      onReply: onReply,
       content: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,

@@ -199,51 +199,24 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
                   color: colorScheme.background,
                 ),
               ),
-      // Swipe right-to-left reveals Reply (only when canReply — browse mode
-      // has nothing to reply with, so there is no pane at all). A FULL swipe
-      // past the threshold fires Reply directly (DismissiblePane) instead of
-      // requiring a tap once revealed — same interchange
-      // CommentThreadScreen's cards just got: Reply is non-destructive, so
-      // it's safe on release.
-      startActionPane:
-          !canReply
-              ? null
-              : ActionPane(
-                motion: const DrawerMotion(),
-                extentRatio: 0.25,
-                // Reply doesn't remove the post from the feed, so this must
-                // NEVER actually dismiss — see
-                // CommentThreadScreen._buildCommentCard's identical pattern
-                // for why: firing widget.onReply from confirmDismiss and
-                // vetoing (returning false) gets DismissiblePane's
-                // past-threshold drag detection without entering its
-                // resize/removal flow, which would otherwise throw "A
-                // dismissed Slidable widget is still part of the tree" once
-                // the post survives to the next build.
-                dismissible: DismissiblePane(
-                  confirmDismiss: () async {
-                    widget.onReply();
-                    return false;
-                  },
-                  onDismissed: () {},
-                  // closeOnCancel defaults to false, which leaves a vetoed
-                  // dismiss wherever the drag ended instead of snapping the
-                  // pane shut — explicit true so the full-swipe-to-reply
-                  // gesture always closes afterward, matching
-                  // CommentThreadScreen.
-                  closeOnCancel: true,
-                ),
-                children: [
-                  SlidableAction(
-                    onPressed: (_) => widget.onReply(),
-                    backgroundColor: sideColor,
-                    foregroundColor:
-                        isForSide ? colorScheme.onPrimary : colorScheme.onAgainst,
-                    icon: Icons.reply,
-                    label: 'Reply',
-                  ),
-                ],
-              ),
+      // Swipe right-to-left to reply (only when canReply — browse mode has
+      // nothing to reply with, so the gesture is disabled entirely). A drag
+      // past the threshold fires Reply directly on release instead of
+      // requiring a tap once revealed: Reply is non-destructive, so it's
+      // safe on release. Previously a flutter_slidable startActionPane with
+      // a self-vetoing DismissiblePane; now UniversalBubble's custom drag
+      // gesture, which gives the same fire-on-full-swipe behavior without
+      // the package's resize/removal flow.
+      //
+      // KNOWN GAP until Task 2: because this bubble still passes an
+      // endActionPane, UniversalBubble keeps its inner Slidable enabled, and
+      // that Slidable's own HorizontalDragGestureRecognizer claims the whole
+      // horizontal axis — so this reply drag does not fire here yet (chat,
+      // which passes no endActionPane, works today). Task 2 replaces the end
+      // pane with the custom endActions reveal and drops the Slidable
+      // entirely, at which point this reply gesture activates for forums too.
+      // Forums' Reply button in the footer is unaffected and still works.
+      onReply: !canReply ? null : widget.onReply,
       // Swipe left-to-right reveals Report (others' posts) or Delete (your
       // own) — tap-only, no DismissiblePane: Delete is destructive, so a
       // full swipe just reveals the pane instead of auto-firing, matching

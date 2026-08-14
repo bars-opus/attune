@@ -1,6 +1,5 @@
 import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Future<void> _pump(WidgetTester tester, Widget child) async {
@@ -92,7 +91,9 @@ void main() {
     expect(find.byIcon(Icons.format_quote), findsNothing);
   });
 
-  testWidgets('startActionPane is wired into the Slidable', (tester) async {
+  testWidgets('dragging past the fire threshold and releasing calls onReply',
+      (tester) async {
+    var replied = false;
     await _pump(
       tester,
       UniversalBubble(
@@ -101,39 +102,85 @@ void main() {
         onBubbleColor: Colors.white,
         content: const Text('swipeable'),
         footer: const SizedBox.shrink(),
-        startActionPane: ActionPane(
-          motion: const DrawerMotion(),
-          children: [
-            SlidableAction(
-              onPressed: (_) {},
-              icon: Icons.reply,
-              label: 'Reply',
-            ),
-          ],
-        ),
+        onReply: () => replied = true,
       ),
     );
 
-    final slidable = tester.widget<Slidable>(find.byType(Slidable));
-    expect(slidable.startActionPane, isNotNull);
+    final center = tester.getCenter(find.text('swipeable'));
+    final gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(-70, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(replied, isTrue);
   });
 
-  testWidgets('no action panes means Slidable still renders with null panes',
+  testWidgets('dragging below the fire threshold and releasing does not call onReply',
       (tester) async {
+    var replied = false;
     await _pump(
       tester,
       UniversalBubble(
         isMine: false,
         bubbleColor: Colors.blue,
         onBubbleColor: Colors.white,
-        content: const Text('no gestures'),
+        content: const Text('swipeable'),
+        footer: const SizedBox.shrink(),
+        onReply: () => replied = true,
+      ),
+    );
+
+    final center = tester.getCenter(find.text('swipeable'));
+    final gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(-40, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(replied, isFalse);
+  });
+
+  testWidgets('onReply null disables the swipe gesture entirely', (tester) async {
+    await _pump(
+      tester,
+      UniversalBubble(
+        isMine: false,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: const Text('no gesture'),
         footer: const SizedBox.shrink(),
       ),
     );
 
-    final slidable = tester.widget<Slidable>(find.byType(Slidable));
-    expect(slidable.startActionPane, isNull);
-    expect(slidable.endActionPane, isNull);
+    final center = tester.getCenter(find.text('no gesture'));
+    final gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(-70, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    // No assertion beyond "did not throw" — omitting onReply must be a
+    // true no-op, matching this widget's existing null-disables convention.
+  });
+
+  testWidgets('a vertical drag does not trigger onReply', (tester) async {
+    var replied = false;
+    await _pump(
+      tester,
+      UniversalBubble(
+        isMine: false,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: const Text('vertical drag'),
+        footer: const SizedBox.shrink(),
+        onReply: () => replied = true,
+      ),
+    );
+
+    final center = tester.getCenter(find.text('vertical drag'));
+    final gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(0, -70));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(replied, isFalse);
   });
 
   testWidgets('onLongPress fires when the bubble is long-pressed', (tester) async {
