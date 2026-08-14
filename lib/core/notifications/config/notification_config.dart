@@ -95,6 +95,7 @@ NotificationConfig buildNanoEmbryoNotificationConfig() {
 
         case 'review_request':
         case 'new_message':
+        case 'message_reaction':
         case 'invite_accepted':
           final relationshipId =
               notification.data?['relationship_id'] as String?;

@@ -83,8 +83,9 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
 
   // The quick-reaction row's own height, budgeted into the flip-above/below
   // decision below: the row is docked ABOVE the action list, so it adds real
-  // height that must fit on screen alongside the actions.
-  static const double _reactionRowHeight = 48;
+  // height that must fit on screen alongside the actions. Exact: the 44px
+  // tap target plus the row's own 6px top + 6px bottom padding.
+  static const double _reactionRowHeight = 56;
 
   // Each item is a fixed 44x44 tap target (accessibility minimum touch
   // target size), so this is exact — not an estimate — plus the row's own
