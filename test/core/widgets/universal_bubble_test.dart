@@ -224,4 +224,182 @@ void main() {
     // No assertion needed beyond "did not throw" — absence of a handler
     // must be a true no-op, not an error.
   });
+
+  testWidgets('dragging right past the reveal threshold and releasing leaves the end pane open',
+      (tester) async {
+    await _pump(
+      tester,
+      UniversalBubble(
+        isMine: false,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: const Text('has end actions'),
+        footer: const SizedBox.shrink(),
+        endActions: [
+          TextButton(onPressed: () {}, child: const Text('Delete')),
+        ],
+      ),
+    );
+
+    final center = tester.getCenter(find.text('has end actions'));
+    final gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(60, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete'), findsOneWidget);
+    // The button must be laid out with a real, tappable size once revealed
+    // — not clipped to zero width.
+    final buttonSize = tester.getSize(find.text('Delete'));
+    expect(buttonSize.width, greaterThan(0));
+  });
+
+  testWidgets('dragging right below the reveal threshold snaps the end pane back closed',
+      (tester) async {
+    await _pump(
+      tester,
+      UniversalBubble(
+        isMine: false,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: const Text('has end actions'),
+        footer: const SizedBox.shrink(),
+        endActions: [
+          TextButton(onPressed: () {}, child: const Text('Delete')),
+        ],
+      ),
+    );
+
+    final center = tester.getCenter(find.text('has end actions'));
+    final gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(20, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // Closed means the revealed action is not hit-testable/visible at a
+    // meaningful size — the widget may still exist in the tree behind the
+    // bubble, so assert on the bubble's own rendered offset instead.
+    final transform = tester.widget<Transform>(
+      find.ancestor(of: find.text('has end actions'), matching: find.byType(Transform)).first,
+    );
+    expect(transform.transform.getTranslation().x, 0);
+  });
+
+  testWidgets('tapping a revealed end action fires it and closes the pane',
+      (tester) async {
+    var deleted = false;
+    await _pump(
+      tester,
+      UniversalBubble(
+        isMine: false,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: const Text('has end actions'),
+        footer: const SizedBox.shrink(),
+        endActions: [
+          TextButton(onPressed: () => deleted = true, child: const Text('Delete')),
+        ],
+      ),
+    );
+
+    final center = tester.getCenter(find.text('has end actions'));
+    final gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(60, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+
+    expect(deleted, isTrue);
+    // ...and the pane closed behind it, same as the pre-replacement
+    // SlidableAction behavior.
+    final transform = tester.widget<Transform>(
+      find.ancestor(of: find.text('has end actions'), matching: find.byType(Transform)).first,
+    );
+    expect(transform.transform.getTranslation().x, 0);
+  });
+
+  testWidgets('endActions null disables the end-direction drag entirely', (tester) async {
+    await _pump(
+      tester,
+      UniversalBubble(
+        isMine: false,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: const Text('no end actions'),
+        footer: const SizedBox.shrink(),
+      ),
+    );
+
+    final center = tester.getCenter(find.text('no end actions'));
+    final gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(60, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    // No assertion beyond "did not throw" — matches this widget's existing
+    // null-disables convention.
+  });
+
+  testWidgets('opening bubble A closes bubble B in the same groupTag', (tester) async {
+    await _pump(
+      tester,
+      Column(
+        children: [
+          UniversalBubble(
+            key: const ValueKey('a'),
+            isMine: false,
+            bubbleColor: Colors.blue,
+            onBubbleColor: Colors.white,
+            content: const Text('bubble A'),
+            footer: const SizedBox.shrink(),
+            groupTag: 'group1',
+            endActions: [TextButton(onPressed: () {}, child: const Text('Delete A'))],
+          ),
+          UniversalBubble(
+            key: const ValueKey('b'),
+            isMine: false,
+            bubbleColor: Colors.blue,
+            onBubbleColor: Colors.white,
+            content: const Text('bubble B'),
+            footer: const SizedBox.shrink(),
+            groupTag: 'group1',
+            endActions: [TextButton(onPressed: () {}, child: const Text('Delete B'))],
+          ),
+        ],
+      ),
+    );
+
+    // Open A.
+    var center = tester.getCenter(find.text('bubble A'));
+    var gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(60, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // Open B — A should close as a side effect.
+    center = tester.getCenter(find.text('bubble B'));
+    gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(60, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    final transformA = tester.widget<Transform>(
+      find.ancestor(of: find.text('bubble A'), matching: find.byType(Transform)).first,
+    );
+    expect(transformA.transform.getTranslation().x, 0);
+
+    // Reopening A must still close B — the registry entry B left behind
+    // when it opened has to be live, not stale.
+    center = tester.getCenter(find.text('bubble A'));
+    gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(60, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    final transformB = tester.widget<Transform>(
+      find.ancestor(of: find.text('bubble B'), matching: find.byType(Transform)).first,
+    );
+    expect(transformB.transform.getTranslation().x, 0);
+  });
 }

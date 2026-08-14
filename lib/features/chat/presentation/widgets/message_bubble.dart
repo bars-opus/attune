@@ -90,7 +90,7 @@ class MessageBubble extends StatelessWidget {
       quotedText: parentDeleted ? 'Original message deleted' : message.quotedText,
       onJumpToParent: message.quotedText == null ? null : onJumpToParent,
       isHighlighted: isHighlighted,
-      slidableKey: ValueKey(message.clientMessageId),
+      bubbleKey: ValueKey(message.clientMessageId),
       onLongPress: canOpenActions
           ? () => showMessageActionsSheet(
                 context: context,

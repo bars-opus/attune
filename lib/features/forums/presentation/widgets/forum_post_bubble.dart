@@ -10,7 +10,6 @@ import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:attune/features/forums/data/models/forum_post_model.dart';
 import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_slidable/flutter_slidable.dart';
 
 /// A single forum post rendered as a chat bubble in the debate room's one
 /// chronological feed.
@@ -180,7 +179,7 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
       highlightColor: sideColor,
       // Preserves per-post slide-open/closed identity in the chronological
       // feed list, same as the pre-refactor Slidable's own key.
-      slidableKey: ValueKey(post.id),
+      bubbleKey: ValueKey(post.id),
       // Status avatar — same statusIcon/statusColorFor pairing InfoRowWidget
       // uses for a comment's leading avatar in CommentThreadScreen. Only
       // shown for other contributors: your own bubble is already picked out
@@ -208,51 +207,42 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
       // gesture, which gives the same fire-on-full-swipe behavior without
       // the package's resize/removal flow.
       //
-      // KNOWN GAP until Task 2: because this bubble still passes an
-      // endActionPane, UniversalBubble keeps its inner Slidable enabled, and
-      // that Slidable's own HorizontalDragGestureRecognizer claims the whole
-      // horizontal axis — so this reply drag does not fire here yet (chat,
-      // which passes no endActionPane, works today). Task 2 replaces the end
-      // pane with the custom endActions reveal and drops the Slidable
-      // entirely, at which point this reply gesture activates for forums too.
-      // Forums' Reply button in the footer is unaffected and still works.
+      // Now that UniversalBubble owns the whole horizontal axis with one
+      // custom recognizer (no nested Slidable competing for it), this reply
+      // drag fires for forums too.
       onReply: !canReply ? null : widget.onReply,
       // Swipe left-to-right reveals Report (others' posts) or Delete (your
-      // own) — tap-only, no DismissiblePane: Delete is destructive, so a
-      // full swipe just reveals the pane instead of auto-firing, matching
+      // own) — tap-only, never fire-on-swipe: Delete is destructive, so a
+      // full swipe just reveals the buttons instead of auto-firing, matching
       // CommentThreadScreen's end pane after the same interchange. Delete
-      // confirms first either way.
-      endActionPane: ActionPane(
-        motion: const DrawerMotion(),
-        extentRatio: 0.25,
-        children: [
-          if (!isMine)
-            SlidableAction(
-              onPressed: (_) => _showReportDialog(),
-              backgroundColor: colorScheme.error,
-              foregroundColor: colorScheme.onError,
-              icon: Icons.flag_outlined,
-              label: 'Report',
-            ),
-          if (isMine)
-            SlidableAction(
-              onPressed: (_) async {
-                if (await _confirmDeletePost(context)) {
-                  await deleteForumPost(
-                    ref,
-                    postId: post.id,
-                    topicId: post.topicId,
-                    side: post.side,
-                  );
-                }
-              },
-              backgroundColor: colorScheme.error,
-              foregroundColor: colorScheme.onError,
-              icon: Icons.delete_outline,
-              label: 'Delete',
-            ),
-        ],
-      ),
+      // confirms first either way. Task 3 restyles these into the final
+      // action chips; this is the direct port off the removed
+      // SlidableAction pane.
+      endActions: [
+        if (!isMine)
+          IconButton(
+            onPressed: _showReportDialog,
+            icon: const Icon(Icons.flag_outlined),
+            color: colorScheme.error,
+            tooltip: 'Report',
+          ),
+        if (isMine)
+          IconButton(
+            onPressed: () async {
+              if (await _confirmDeletePost(context)) {
+                await deleteForumPost(
+                  ref,
+                  postId: post.id,
+                  topicId: post.topicId,
+                  side: post.side,
+                );
+              }
+            },
+            icon: const Icon(Icons.delete_outline),
+            color: colorScheme.error,
+            tooltip: 'Delete',
+          ),
+      ],
       content: Text(
         post.content,
         style: textTheme.bodyMedium?.copyWith(color: onBubbleColor),

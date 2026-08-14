@@ -1,6 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
-import 'package:flutter_slidable/flutter_slidable.dart';
+
+/// Which direction the in-flight horizontal drag committed to. Locked once
+/// per gesture at the first update with non-trivial movement, then every
+/// later update in that same gesture routes through it — a per-event sign
+/// check on `details.delta.dx` is NOT safe, since a real drag isn't
+/// monotonic and one frame of jitter the other way (common right at the
+/// start, before the gesture has committed) would misroute that frame.
+enum _DragMode { reply, endPane }
+
+/// Replaces flutter_slidable's groupTag "close my siblings" mechanism.
+/// One registry entry per active groupTag; each open UniversalBubble
+/// registers a close callback under its tag, overwriting any prior
+/// registrant — opening a new bubble in the same group therefore only
+/// needs to invoke whatever callback was registered before it, then
+/// register its own. Scoped to process lifetime (a static field), which
+/// is fine here since the only state is "how do I close myself," not
+/// anything that needs disposal beyond what each bubble's own dispose()
+/// already does (removing its registration).
+class _EndPaneGroupRegistry {
+  static final Map<Object, VoidCallback> _openCallbacks = {};
+
+  static void notifyOpening(Object groupTag, VoidCallback closeSelf) {
+    final previous = _openCallbacks[groupTag];
+    if (previous != null && previous != closeSelf) {
+      previous();
+    }
+    _openCallbacks[groupTag] = closeSelf;
+  }
+
+  static void notifyClosed(Object groupTag, VoidCallback closeSelf) {
+    if (_openCallbacks[groupTag] == closeSelf) {
+      _openCallbacks.remove(groupTag);
+    }
+  }
+}
 
 /// The shared bubble shell behind both MessageBubble (1:1 chat) and
 /// ForumPostBubble (debate room) — alignment, fill color, swipe gestures,
@@ -22,13 +56,13 @@ class UniversalBubble extends StatefulWidget {
     required this.footer,
     this.leading,
     this.onReply,
-    this.endActionPane,
+    this.endActions,
     this.quotedText,
     this.onJumpToParent,
     this.isHighlighted = false,
     this.highlightColor,
     this.maxWidth = 320,
-    this.slidableKey,
+    this.bubbleKey,
     this.groupTag,
     this.onLongPress,
     this.quoteBackgroundColor,
@@ -68,10 +102,11 @@ class UniversalBubble extends StatefulWidget {
   /// WhatsApp's swipe-to-reply.
   final VoidCallback? onReply;
 
-  /// Swipe-left-to-right action pane (e.g. Report/Delete). Null disables
-  /// that swipe direction entirely. Still flutter_slidable-backed as of
-  /// this task — Task 2 replaces it with the custom endActions pane.
-  final ActionPane? endActionPane;
+  /// Widgets revealed by a left-to-right drag (e.g. Report/Delete buttons).
+  /// Null disables that swipe direction entirely. Stays open once past the
+  /// reveal threshold until a revealed action is tapped, the bubble is
+  /// dragged back closed, or another bubble sharing [groupTag] opens.
+  final List<Widget>? endActions;
 
   /// The quoted parent-message preview text, shown above [content] inside
   /// the bubble when this message/post IS a reply. Null means this isn't a
@@ -100,14 +135,14 @@ class UniversalBubble extends StatefulWidget {
   /// Max bubble width in logical pixels before content wraps.
   final double maxWidth;
 
-  /// Forwarded to the inner [Slidable]'s `key` — needed so per-item
-  /// slide-open/closed state stays attached to the right item when this
-  /// widget is rendered in a rebuilt/reordered list (e.g. `ValueKey(id)`).
-  /// Null is fine for a single bubble with no list identity to preserve.
-  final Key? slidableKey;
+  /// Key on the bubble's own row — needed so per-item drag/open state stays
+  /// attached to the right item when this widget is rendered in a
+  /// rebuilt/reordered list (e.g. `ValueKey(id)`). Null is fine for a
+  /// single bubble with no list identity to preserve.
+  final Key? bubbleKey;
 
-  /// Forwarded to the inner [Slidable]'s `groupTag` — lets a caller ensure
-  /// only one bubble in a group has its action pane open at a time.
+  /// Groups bubbles so only one in the group has its [endActions] pane open
+  /// at a time — opening one closes any sibling sharing this tag.
   final Object? groupTag;
 
   /// Long-press handler on the bubble's fill (not the quote block, which
@@ -147,6 +182,9 @@ class _UniversalBubbleState extends State<UniversalBubble>
   static const double _maxDrag = 75;
   static const Duration _springBackDuration = Duration(milliseconds: 200);
 
+  /// Matches the old ActionPane's extentRatio: 0.25.
+  static const double _endPaneRevealRatio = 0.25;
+
   /// Created eagerly in [initState], NOT via a `late final` initializer: a
   /// lazily-created controller whose first touch is [dispose] would call
   /// `createTicker` on an already-deactivated element, and
@@ -166,29 +204,135 @@ class _UniversalBubbleState extends State<UniversalBubble>
   }
 
   /// Current horizontal drag offset in logical pixels. Negative = dragged
-  /// left (reply direction). 0 at rest. Rubber-banded to _maxDrag once the
-  /// raw drag exceeds _fireThreshold.
+  /// left (reply direction), positive = dragged right (end pane). 0 at
+  /// rest. Rubber-banded to _maxDrag once a leftward drag exceeds
+  /// _fireThreshold; clamped to the reveal width rightward.
   double _dragOffset = 0;
   bool _hapticFired = false;
 
+  /// True while the end pane is held open at its full reveal width.
+  bool _endPaneOpen = false;
+
+  /// The direction this gesture committed to, locked at the first
+  /// meaningful update. Null between gestures.
+  _DragMode? _activeDragMode;
+
+  /// The reveal width measured at the start of the current gesture, kept so
+  /// build() can lay the pane out without touching `context.size` — reading
+  /// a render object's size during build asserts ("Cannot get size during
+  /// build"), and it is only legal from paint callbacks and interaction
+  /// event handlers, which is exactly where [_measureEndPaneRevealWidth]
+  /// runs. Seeded with the same fallback used before first layout.
+  double _endPaneRevealWidth = 200 * _endPaneRevealRatio;
+
+  /// Measures the bubble row itself, not this State's own context: the
+  /// State's render object is the full-width Align, so measuring it would
+  /// scale the reveal to the screen rather than to the bubble the way the
+  /// old ActionPane's extentRatio: 0.25 did.
+  final GlobalKey _bubbleRowKey = GlobalKey();
+
+  /// A quarter of the bubble's own rendered width, matching the old
+  /// ActionPane's extentRatio: 0.25. Safe to call from gesture handlers
+  /// only.
+  void _measureEndPaneRevealWidth() {
+    final width = _bubbleRowKey.currentContext?.size?.width;
+    if (width != null && width > 0) {
+      _endPaneRevealWidth = width * _endPaneRevealRatio;
+    }
+  }
+
   @override
   void dispose() {
+    if (widget.groupTag != null && _endPaneOpen) {
+      _EndPaneGroupRegistry.notifyClosed(widget.groupTag!, _closeEndPane);
+    }
     _springController.dispose();
     super.dispose();
   }
 
   void _onHorizontalDragStart(DragStartDetails details) {
-    if (widget.onReply == null) return;
     _springController.stop();
     _hapticFired = false;
+    _activeDragMode = null;
+    _measureEndPaneRevealWidth();
+    // Any new drag on an open pane is a fresh interaction with it: drop the
+    // open flag and the group registration up front so the pane can't stay
+    // registered as "the open one in this group" after being dragged shut
+    // in either direction.
+    if (_endPaneOpen) {
+      _endPaneOpen = false;
+      if (widget.groupTag != null) {
+        _EndPaneGroupRegistry.notifyClosed(widget.groupTag!, _closeEndPane);
+      }
+    }
   }
 
   void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    _activeDragMode ??=
+        details.delta.dx < 0 ? _DragMode.reply : _DragMode.endPane;
+    if (_activeDragMode == _DragMode.reply && widget.onReply != null) {
+      _onReplyDragUpdate(details);
+    } else if (_activeDragMode == _DragMode.endPane &&
+        widget.endActions != null) {
+      _onEndPaneDragUpdate(details);
+    }
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    if (_activeDragMode == _DragMode.reply) {
+      _onReplyDragEnd(details);
+    } else if (_activeDragMode == _DragMode.endPane) {
+      _onEndPaneDragEnd(details);
+    }
+    _activeDragMode = null;
+  }
+
+  void _onEndPaneDragUpdate(DragUpdateDetails details) {
+    if (widget.endActions == null) return;
+    final rawOffset = _dragOffset + details.delta.dx;
+    final clamped = rawOffset < 0 ? 0.0 : rawOffset;
+    setState(() {
+      _dragOffset = clamped.clamp(0.0, _endPaneRevealWidth);
+    });
+  }
+
+  void _onEndPaneDragEnd(DragEndDetails details) {
+    if (widget.endActions == null) return;
+    final shouldOpen = _dragOffset >= _endPaneRevealWidth / 2;
+    if (shouldOpen) {
+      _openEndPane();
+    } else {
+      _closeEndPane();
+    }
+  }
+
+  void _openEndPane() {
+    setState(() {
+      _dragOffset = _endPaneRevealWidth;
+      _endPaneOpen = true;
+    });
+    if (widget.groupTag != null) {
+      _EndPaneGroupRegistry.notifyOpening(widget.groupTag!, _closeEndPane);
+    }
+  }
+
+  void _closeEndPane() {
+    if (!_endPaneOpen && _dragOffset == 0) return;
+    setState(() {
+      _endPaneOpen = false;
+    });
+    _animateSpringBackFrom(_dragOffset);
+    if (widget.groupTag != null) {
+      _EndPaneGroupRegistry.notifyClosed(widget.groupTag!, _closeEndPane);
+    }
+  }
+
+  void _onReplyDragUpdate(DragUpdateDetails details) {
     if (widget.onReply == null) return;
     final rawOffset = _dragOffset + details.delta.dx;
-    // Only leftward (negative) drag matters for reply in this task —
-    // clamp at 0 so a rightward drag has no visual effect (Task 2 adds
-    // rightward behavior for endActions).
+    // Only leftward (negative) drag matters for reply — clamp at 0 so a
+    // rightward jitter inside a committed reply drag has no visual effect
+    // (the rightward direction is _onEndPaneDragUpdate's business).
     final clamped = rawOffset > 0 ? 0.0 : rawOffset;
     final magnitude = clamped.abs();
     setState(() {
@@ -210,23 +354,31 @@ class _UniversalBubbleState extends State<UniversalBubble>
     }
   }
 
-  void _onHorizontalDragEnd(DragEndDetails details) {
+  void _onReplyDragEnd(DragEndDetails details) {
     if (widget.onReply == null) return;
     final shouldFire = _dragOffset.abs() >= _fireThreshold;
-    _animateSpringBack();
+    _animateSpringBackFrom(_dragOffset);
     if (shouldFire) {
       widget.onReply!();
     }
   }
 
-  void _animateSpringBack() {
-    final start = _dragOffset;
+  /// Shared by the reply bounce-back and the end-pane close — both animate
+  /// [start] back to rest (0) over [_springBackDuration].
+  void _animateSpringBackFrom(double start) {
+    // Drop the previous animation's listener before replacing it: the
+    // controller is reused across gestures, and a stale listener left
+    // attached would keep writing its own (now-dead) tween's value into
+    // _dragOffset on every tick of the next animation.
+    _springAnimation?.removeListener(_onSpringTick);
     _springAnimation = Tween<double>(begin: start, end: 0).animate(
       CurvedAnimation(parent: _springController, curve: Curves.easeOut),
-    )..addListener(() {
-      setState(() => _dragOffset = _springAnimation!.value);
-    });
+    )..addListener(_onSpringTick);
     _springController.forward(from: 0);
+  }
+
+  void _onSpringTick() {
+    setState(() => _dragOffset = _springAnimation!.value);
   }
 
   @override
@@ -235,13 +387,15 @@ class _UniversalBubbleState extends State<UniversalBubble>
       alignment: widget.isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        // Wired unconditionally: each direction has its own null-check
+        // inside its handler (onReply for leftward, endActions for
+        // rightward), so gating the recognizer on onReply alone would
+        // silently kill the end-pane direction for a caller that sets
+        // endActions but no onReply.
         child: GestureDetector(
-          onHorizontalDragStart:
-              widget.onReply == null ? null : _onHorizontalDragStart,
-          onHorizontalDragUpdate:
-              widget.onReply == null ? null : _onHorizontalDragUpdate,
-          onHorizontalDragEnd:
-              widget.onReply == null ? null : _onHorizontalDragEnd,
+          onHorizontalDragStart: _onHorizontalDragStart,
+          onHorizontalDragUpdate: _onHorizontalDragUpdate,
+          onHorizontalDragEnd: _onHorizontalDragEnd,
           behavior: HitTestBehavior.opaque,
           child: Stack(
             alignment: Alignment.centerRight,
@@ -272,49 +426,80 @@ class _UniversalBubbleState extends State<UniversalBubble>
                     ),
                   ),
                 ),
+              // End-pane actions, revealed behind the bubble on the LEFT as
+              // it is dragged right. Mirrors the reply icon's Positioned
+              // layer above. The SizedBox width tracks the live drag offset
+              // while OverflowBox keeps the children laid out at their full
+              // intrinsic width, so they are never squeezed and the ClipRect
+              // just wipes them into view.
+              if (_dragOffset > 0)
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  // top/bottom anchor the pane to the bubble's own height:
+                  // a Positioned with only `left` set inherits the Stack's
+                  // unbounded height, and OverflowBox/ClipRect below both
+                  // try to fill it, which asserts at layout.
+                  child: Listener(
+                    // Tapping a revealed action fires it AND closes the pane
+                    // (the pre-replacement SlidableAction behavior). A
+                    // Listener rather than a wrapping GestureDetector: it
+                    // observes the pointer without entering the arena, so the
+                    // caller's own button still wins its tap. Closing is
+                    // deferred to the end of the frame so the action's
+                    // onPressed — which may open a dialog — runs first.
+                    onPointerUp: (_) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) _closeEndPane();
+                      });
+                    },
+                    child: SizedBox(
+                      width: _dragOffset,
+                      child: ClipRect(
+                        child: OverflowBox(
+                          // minWidth: 0 with an unbounded max lets the
+                          // actions lay out at their own intrinsic width and
+                          // stay put while the SizedBox above narrows to the
+                          // live drag offset — the ClipRect then wipes them
+                          // into view instead of the Row being squeezed (and
+                          // overflowing) at every intermediate offset.
+                          minWidth: 0,
+                          maxWidth: double.infinity,
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: widget.endActions ?? const [],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               Transform.translate(
                 offset: Offset(_dragOffset, 0),
-                // IntrinsicWidth: Slidable internally builds a Stack for its
-                // action panes, which expands to fill whatever width it's
-                // handed regardless of its child's own size — without this
-                // every bubble renders full-width and Align's left/right
-                // positioning above is silently defeated.
+                // IntrinsicWidth: the enclosing Stack expands to fill
+                // whatever width it is handed regardless of this child's own
+                // size — without this every bubble renders full-width and
+                // Align's left/right positioning above is silently defeated.
                 child: IntrinsicWidth(
-                  child: Slidable(
-                    key: widget.slidableKey,
-                    groupTag: widget.groupTag,
-                    // Slidable installs ONE HorizontalDragGestureRecognizer
-                    // for the whole widget whenever `enabled` is true — gated
-                    // on that flag alone, NOT on whether the pane for a given
-                    // direction is null (see flutter_slidable 4.0.3's
-                    // gesture_detector.dart: `canDragHorizontally =
-                    // directionIsXAxis && widget.enabled`). Left enabled it
-                    // wins the arena over the outer reply recognizer above —
-                    // two same-type recognizers on identical bounds — and the
-                    // reply swipe never fires at all. Disabling it when there
-                    // is no end pane hands the whole horizontal axis to the
-                    // custom gesture. Chat never sets endActionPane, so chat
-                    // gets the reply swipe; forums still sets it, so its
-                    // Report/Delete pane keeps working exactly as today until
-                    // Task 2 replaces this Slidable outright.
-                    enabled: widget.endActionPane != null,
-                    startActionPane: null,
-                    endActionPane: widget.endActionPane,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        if (widget.leading != null) ...[
-                          widget.leading!,
-                          const SizedBox(width: 4),
-                        ],
-                        Flexible(
-                          child: Column(
-                            crossAxisAlignment:
-                                widget.isMine
-                                    ? CrossAxisAlignment.end
-                                    : CrossAxisAlignment.start,
-                            children: [
+                  key: _bubbleRowKey,
+                  child: Row(
+                    key: widget.bubbleKey,
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (widget.leading != null) ...[
+                        widget.leading!,
+                        const SizedBox(width: 4),
+                      ],
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment:
+                              widget.isMine
+                                  ? CrossAxisAlignment.end
+                                  : CrossAxisAlignment.start,
+                          children: [
                               ConstrainedBox(
                                 constraints: BoxConstraints(
                                   maxWidth: widget.maxWidth,
@@ -425,11 +610,10 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                 ),
                                 child: widget.footer,
                               ),
-                            ],
-                          ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
