@@ -277,9 +277,9 @@ Widget? _buildReactionPills(BuildContext context, Message message) {
 /// `_showEditDialog`'s free-function shape in chat_screen.dart.
 ///
 /// [context] is MessageBubble's own build context, captured at long-press
-/// time and invoked a frame later (after the focused menu's dialog route
-/// has popped) — by then this bubble's element may have been deactivated
-/// by ChatScreen's ListView recycling it, the same hazard documented in
+/// time and invoked once the focused menu's dialog route has popped — by
+/// then this bubble's element could in principle have been deactivated by
+/// ChatScreen's ListView recycling it, the same hazard documented in
 /// message_actions_sheet.dart. The `mounted` guard makes that failure mode
 /// a silent no-op (the "+" tap does nothing) instead of a crash.
 void _openFullEmojiPicker(BuildContext context, void Function(String emoji)? onReact) {
@@ -290,18 +290,32 @@ void _openFullEmojiPicker(BuildContext context, void Function(String emoji)? onR
     builder: (sheetContext) => SizedBox(
       height: 320,
       child: EmojiPicker(
-        // checkPlatformCompatibility (default true) makes emoji_picker_flutter
-        // invoke a 'getSupportedEmojis' platform-channel call on Android to
-        // filter unsupported glyphs — its own internal implementation
-        // force-unwraps that call's result with `!` with no null check
-        // (emoji_picker_internal_utils.dart), which throws "Null check
-        // operator used on a null value" when no native handler answers the
-        // channel (reproduced on-device: tapping "+" crashed every time).
-        // We don't need platform-level filtering here — false skips the
-        // channel call entirely, matching the package's own documented
-        // escape hatch for exactly this situation (its emojiTextStyle doc
-        // comment recommends the same flag for a related concern).
-        config: const Config(checkPlatformCompatibility: false),
+        config: const Config(
+          // checkPlatformCompatibility (default true) makes
+          // emoji_picker_flutter invoke a 'getSupportedEmojis'
+          // platform-channel call on Android to filter unsupported glyphs
+          // — its own internal implementation force-unwraps that call's
+          // result with `!` with no null check
+          // (emoji_picker_internal_utils.dart), which throws "Null check
+          // operator used on a null value" when no native handler answers
+          // the channel (reproduced on-device: tapping "+" crashed every
+          // time on Android). We don't need platform-level filtering
+          // here — false skips the channel call entirely, matching the
+          // package's own documented escape hatch for exactly this
+          // situation (its emojiTextStyle doc comment recommends the same
+          // flag for a related concern).
+          checkPlatformCompatibility: false,
+          categoryViewConfig: CategoryViewConfig(
+            // The package's own default (Category.RECENT) opens the sheet
+            // on the "recently used" tab, which is EMPTY on first use
+            // (SharedPreferences has no 'recent' key yet) — the sheet
+            // opens with no crash but looks completely empty, since
+            // nothing has ever been picked before. SMILEYS is always
+            // populated and matches iMessage/WhatsApp's own default
+            // landing category.
+            initCategory: Category.SMILEYS,
+          ),
+        ),
         onEmojiSelected: (category, emoji) {
           onReact?.call(emoji.emoji);
           Navigator.of(sheetContext).pop();

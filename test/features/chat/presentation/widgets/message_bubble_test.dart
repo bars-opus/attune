@@ -3,6 +3,7 @@ import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('renders tombstone text when message is deleted', (tester) async {
@@ -155,15 +156,32 @@ void main() {
     expect(find.text('Delete'), findsOneWidget);
   });
 
-  testWidgets('tapping the "+" opens the full emoji picker with no exception', (tester) async {
-    // Regression guard: the focused menu's "+" button popped its own
-    // dialog route and then called onOpenFullPicker synchronously in the
-    // same tap handler — showModalBottomSheet raced the route removal and
-    // threw "Null check operator used on a null value" from inside
-    // Overlay's internals. Fixed by deferring to the next frame
-    // (addPostFrameCallback) and guarding with context.mounted in
-    // _openFullEmojiPicker. This test exercises the real long-press ->
-    // "+" tap path end to end, not a fake onOpenFullPicker callback.
+  testWidgets(
+      'tapping the "+" opens the full emoji picker on a populated category, no exception',
+      (tester) async {
+    // Regression guard, two bugs found on real devices (neither reachable
+    // via this widget-test harness on its own, so both are guarded here as
+    // precisely as flutter test allows):
+    // (1) emoji_picker_flutter's checkPlatformCompatibility (default true)
+    //     force-unwraps a platform-channel call with no null check, which
+    //     crashed on a real Android device with no native handler
+    //     registered. checkPlatformCompatibility is now false. This path is
+    //     gated behind Platform.isAndroid inside the package itself, so it
+    //     never runs under flutter test's VM target — not exercised here,
+    //     just guarded by keeping the config flag in place.
+    // (2) The package's default initCategory is Category.RECENT, which is
+    //     EMPTY on first use (nothing has ever been picked before) —
+    //     confirmed on a real iOS Simulator: the sheet opened with no
+    //     crash but showed no emoji at all. THIS bug IS reachable here:
+    //     asserting EmojiCell actually renders is what would have caught
+    //     it — the pre-fix version opens the sheet and finds zero cells.
+    //
+    // emoji_picker_flutter reads SharedPreferences on init regardless of
+    // initCategory (recentTabBehavior still defaults to reading recents),
+    // so this needs the same mock every other SharedPreferences-touching
+    // test file in this suite uses.
+    SharedPreferences.setMockInitialValues({});
+
     final message = Message.optimistic(
       id: 'm-emoji',
       clientMessageId: 'c-emoji',
@@ -189,13 +207,13 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.byIcon(Icons.add));
-    // Flush the deferred addPostFrameCallback that opens the sheet, then
-    // let the bottom sheet's own entrance animation settle.
-    await tester.pump();
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
     expect(find.byType(EmojiPicker), findsOneWidget);
+    // The real content check: at least one emoji is actually rendered,
+    // proving the sheet did not land on the empty first-use Recent tab.
+    expect(find.byType(EmojiCell), findsWidgets);
   });
 
   testWidgets('long-press does nothing for a deleted message (no menu, nothing to act on)', (tester) async {
