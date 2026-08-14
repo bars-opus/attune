@@ -1220,7 +1220,8 @@ class _MessageList extends ConsumerWidget {
                 await ref
                     .read(chatControllerProvider(state.conversation).notifier)
                     .starMessage(message.id);
-              } catch (_) {
+              } catch (e, st) {
+                debugPrint('starMessage failed: $e\n$st');
                 if (context.mounted) {
                   context.showErrorSnackbar("Couldn't star — try again.");
                 }
@@ -1231,7 +1232,8 @@ class _MessageList extends ConsumerWidget {
                 await ref
                     .read(chatControllerProvider(state.conversation).notifier)
                     .unstarMessage(message.id);
-              } catch (_) {
+              } catch (e, st) {
+                debugPrint('unstarMessage failed: $e\n$st');
                 if (context.mounted) {
                   context.showErrorSnackbar("Couldn't unstar — try again.");
                 }
@@ -1242,7 +1244,8 @@ class _MessageList extends ConsumerWidget {
                 await ref
                     .read(chatControllerProvider(state.conversation).notifier)
                     .pinMessage(message);
-              } catch (_) {
+              } catch (e, st) {
+                debugPrint('pinMessage failed: $e\n$st');
                 if (context.mounted) {
                   context.showErrorSnackbar(
                     "Couldn't pin — you may already have 3 pinned messages.",
@@ -1255,7 +1258,8 @@ class _MessageList extends ConsumerWidget {
                 await ref
                     .read(chatControllerProvider(state.conversation).notifier)
                     .unpinMessage(message);
-              } catch (_) {
+              } catch (e, st) {
+                debugPrint('unpinMessage failed: $e\n$st');
                 if (context.mounted) {
                   context.showErrorSnackbar("Couldn't unpin — try again.");
                 }
