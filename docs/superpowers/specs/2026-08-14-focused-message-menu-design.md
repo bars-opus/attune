@@ -158,6 +158,22 @@ changes from "call `showMessageActionsSheet` directly" to "call
 - Android back button / system back gesture → dismiss (default
   `showGeneralDialog` behavior, no extra wiring needed).
 
+**Correction (found during implementation, Task 3):** each action tile's
+`onTap` must call `Navigator.pop` using a `BuildContext` obtained from a
+`Builder` placed inside the tile itself — NOT `MessageBubble`'s own
+context (the long-press call site). `Navigator.of(context)` genuinely
+does resolve against the live tree at call time, but it first asserts the
+STARTING element is still active; `MessageBubble`'s element sits inside
+`ChatScreen`'s `ListView`, which can rebuild and deactivate that specific
+element while the overlay is still open (e.g. a new message arriving
+mid-long-press), throwing "Looking up a deactivated widget's ancestor is
+unsafe." A `Builder`-scoped context sits inside the dialog route's own
+subtree and is guaranteed active for as long as the tile itself is
+mounted and tappable. `buildMessageActionItems`
+(`message_actions_sheet.dart`) implements this correctly; the earlier
+draft of this section's "safe because Navigator.of walks the live tree"
+reasoning was incomplete and should not be reintroduced.
+
 ## What does NOT change
 
 - The actual six actions, their icons, labels, colors, and
