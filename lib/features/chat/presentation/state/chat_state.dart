@@ -622,6 +622,67 @@ class ChatController extends StateNotifier<ChatState> {
     state = state.copyWith(pinnedMessages: pins);
   }
 
+  Future<void> reactToMessage(Message message, String emoji) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    await _repository.addReaction(
+      relationshipId: message.relationshipId,
+      messageId: message.id,
+      emoji: emoji,
+    );
+    if (!mounted) return;
+    state = state.copyWith(
+      messages: state.messages
+          .map((entry) => entry.id == message.id
+              ? entry.copyWith(reactions: _withReaction(entry.reactions, user.id, emoji))
+              : entry)
+          .toList(),
+    );
+  }
+
+  Future<void> removeReactionFrom(Message message) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    await _repository.removeReaction(message.id);
+    if (!mounted) return;
+    state = state.copyWith(
+      messages: state.messages
+          .map((entry) => entry.id == message.id
+              ? entry.copyWith(reactions: _withoutReaction(entry.reactions, user.id))
+              : entry)
+          .toList(),
+    );
+  }
+
+  /// Removes [userId] from every emoji bucket first (a reaction is
+  /// one-per-user, so switching emoji must clear the old bucket, not just
+  /// add to the new one), then adds it to [emoji]'s bucket. Empty buckets
+  /// are dropped so a pill never renders with a zero count.
+  Map<String, Set<String>> _withReaction(
+    Map<String, Set<String>> reactions,
+    String userId,
+    String emoji,
+  ) {
+    final next = _withoutReaction(reactions, userId);
+    final updated = Map<String, Set<String>>.from(next);
+    updated[emoji] = {...(updated[emoji] ?? {}), userId};
+    return updated;
+  }
+
+  Map<String, Set<String>> _withoutReaction(
+    Map<String, Set<String>> reactions,
+    String userId,
+  ) {
+    final updated = <String, Set<String>>{};
+    for (final entry in reactions.entries) {
+      final without = entry.value.where((id) => id != userId).toSet();
+      if (without.isNotEmpty) updated[entry.key] = without;
+    }
+    return updated;
+  }
+
   /// Best-effort pinned-messages refresh. A failure only means the pinned
   /// banner keeps its last known contents — it must never block the rest of
   /// chat from loading or from processing a realtime event.

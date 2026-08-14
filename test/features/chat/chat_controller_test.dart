@@ -284,4 +284,60 @@ void main() {
       expect(b.state.pinnedMessages.map((m) => m.id), isNot(contains(sent.id)));
     });
   });
+
+  group('reactions', () {
+    test('reactToMessage patches the message in state with the new reaction', () async {
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      final conversation = activeConversation('rel-1');
+      repo.conversationOverride = conversation;
+      repo.seedIncoming(
+        id: 'm1',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'hello',
+        createdAt: DateTime.now(),
+      );
+      final container = buildChatContainer(repository: repo, userId: 'user-a');
+      addTearDown(container.dispose);
+      final notifier = container.read(chatControllerProvider(conversation).notifier);
+      // Let _init() (cache read, refresh, load, subscribe) settle before the
+      // test's own loadMessages() call, same as boot() above.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await notifier.loadMessages();
+
+      final message = container.read(chatControllerProvider(conversation)).messages.first;
+      await notifier.reactToMessage(message, '❤️');
+
+      final updated = container.read(chatControllerProvider(conversation)).messages.first;
+      expect(updated.reactions['❤️'], contains('user-a'));
+    });
+
+    test('removeReactionFrom clears the caller\'s reaction from state', () async {
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      final conversation = activeConversation('rel-1');
+      repo.conversationOverride = conversation;
+      repo.seedIncoming(
+        id: 'm1',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'hello',
+        createdAt: DateTime.now(),
+      );
+      final container = buildChatContainer(repository: repo, userId: 'user-a');
+      addTearDown(container.dispose);
+      final notifier = container.read(chatControllerProvider(conversation).notifier);
+      // Let _init() (cache read, refresh, load, subscribe) settle before the
+      // test's own loadMessages() call, same as boot() above.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await notifier.loadMessages();
+
+      final message = container.read(chatControllerProvider(conversation)).messages.first;
+      await notifier.reactToMessage(message, '👍');
+      final reacted = container.read(chatControllerProvider(conversation)).messages.first;
+      await notifier.removeReactionFrom(reacted);
+
+      final cleared = container.read(chatControllerProvider(conversation)).messages.first;
+      expect(cleared.reactions['👍'] ?? {}, isNot(contains('user-a')));
+    });
+  });
 }
