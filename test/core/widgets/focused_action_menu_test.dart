@@ -265,4 +265,54 @@ void main() {
     expect(resolvedStyle.fontFamily, isNot('monospace'));
     expect(resolvedStyle.fontSize ?? 14, lessThan(30));
   });
+
+  testWidgets(
+      'the menu stays within the screen width when the bubble sits near the right edge',
+      (tester) async {
+    // Regression guard: Positioned(left: anchorRect.left, ...) with no
+    // clamping, combined with the menu's fixed 240px width, rendered up to
+    // 94px (39%) off the right edge of a realistic 390-wide phone for a
+    // short own-message bubble — the single most common message shape.
+    // This anchorRect approximates that case: a short bubble's rect sitting
+    // near the right edge of a 390-wide screen.
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showFocusedActionMenu(
+                context: context,
+                anchorRect: const Rect.fromLTWH(244, 372, 100, 40),
+                anchorSnapshot: const Text('ok'),
+                actions: [
+                  ListTile(title: const Text('Action A'), onTap: () {}),
+                ],
+              ),
+              child: const Text('trigger'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('trigger'));
+    await tester.pumpAndSettle();
+
+    final menuRenderBox = tester.renderObject<RenderBox>(
+      find.byWidgetPredicate((w) => w is SizedBox && w.width == 240),
+    );
+    final menuRect = menuRenderBox.localToGlobal(Offset.zero) & menuRenderBox.size;
+
+    expect(menuRect.left, greaterThanOrEqualTo(0));
+    expect(menuRect.right, lessThanOrEqualTo(390));
+    // Sanity: prove the fixture actually reproduces the pre-fix overflow
+    // shape (anchorRect.left + 240 > 390) rather than accidentally fitting
+    // on its own — if this fails, the fixture no longer exercises the bug.
+    expect(244.0 + 240.0, greaterThan(390.0));
+  });
 }

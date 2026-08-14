@@ -72,6 +72,10 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
     final fitsBelow = anchorRect.bottom + _gap + estimatedMenuHeight <=
         screenSize.height - safeAreaBottom;
 
+    final menuWidth = 240.0;
+    final maxLeft = (screenSize.width - menuWidth - 8.0).clamp(8.0, double.infinity);
+    final clampedLeft = anchorRect.left.clamp(8.0, maxLeft);
+
     return GestureDetector(
       onTap: () => Navigator.of(context).pop(),
       behavior: HitTestBehavior.opaque,
@@ -113,7 +117,7 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                 ),
               ),
               Positioned(
-                left: anchorRect.left,
+                left: clampedLeft,
                 top: fitsBelow ? anchorRect.bottom + _gap : null,
                 bottom: fitsBelow
                     ? null
@@ -131,7 +135,7 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                       elevation: 8,
                       clipBehavior: Clip.antiAlias,
                       child: SizedBox(
-                        width: 240,
+                        width: menuWidth,
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: actions,
