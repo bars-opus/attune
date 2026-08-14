@@ -213,4 +213,56 @@ void main() {
     // timer/animation behind.
     await tester.pumpAndSettle();
   });
+
+  testWidgets(
+      'the anchor snapshot inherits normal text styling, not the no-Material debug fallback',
+      (tester) async {
+    // Regression guard: a Text with no Material ancestor falls back to
+    // Flutter's debug-only style (fontFamily: 'monospace', fontSize: 48)
+    // — tall enough to overflow a realistically-sized bubble rect. This
+    // bug shipped undetected in this file's other four tests because none
+    // of them asserted on the snapshot's rendered style, only its
+    // presence (findsOneWidget) — and the hardcoded 60px-tall anchorRect
+    // used elsewhere in this file happened to be generous enough to hide
+    // the overflow. This test uses a REALISTIC bubble height (20px, a
+    // single line of normal body text) specifically so the debug
+    // fallback's 48px would overflow it if the Material wrapper regressed.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showFocusedActionMenu(
+                context: context,
+                anchorRect: const Rect.fromLTWH(20, 100, 200, 20),
+                anchorSnapshot: const Text('bubble snapshot'),
+                actions: [
+                  ListTile(title: const Text('Action A'), onTap: () {}),
+                ],
+              ),
+              child: const Text('trigger'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('trigger'));
+    await tester.pumpAndSettle();
+
+    // No overflow exception — the debug fallback's 48px text would
+    // overflow this 20px-tall rect and throw during layout.
+    expect(tester.takeException(), isNull);
+
+    final textWidget = tester.widget<Text>(find.text('bubble snapshot'));
+    final resolvedStyle = DefaultTextStyle.of(
+      tester.element(find.text('bubble snapshot')),
+    ).style.merge(textWidget.style);
+
+    // The debug fallback is specifically 48.0/monospace — anything
+    // meaningfully smaller and non-monospace proves real DefaultTextStyle
+    // inheritance is active, not the no-Material fallback.
+    expect(resolvedStyle.fontFamily, isNot('monospace'));
+    expect(resolvedStyle.fontSize ?? 14, lessThan(30));
+  });
 }
