@@ -210,10 +210,10 @@ class _UniversalBubbleState extends State<UniversalBubble>
     );
   }
 
-  /// Current horizontal drag offset in logical pixels. Negative = dragged
-  /// left (reply direction), positive = dragged right (end pane). 0 at
-  /// rest. Rubber-banded to _maxDrag once a leftward drag exceeds
-  /// _fireThreshold; clamped to the reveal width rightward.
+  /// Current horizontal drag offset in logical pixels. Positive = dragged
+  /// right (reply direction), negative = dragged left (end pane). 0 at
+  /// rest. Rubber-banded to _maxDrag once a rightward drag exceeds
+  /// _fireThreshold; clamped to the reveal width leftward.
   double _dragOffset = 0;
   bool _hapticFired = false;
 
@@ -264,34 +264,35 @@ class _UniversalBubbleState extends State<UniversalBubble>
         : proportional;
   }
 
-  /// Extra layout width reserved to the right of the bubble so the Stack —
+  /// Extra layout width reserved to the left of the bubble so the Stack —
   /// and with it the outer GestureDetector's hit-test rectangle — still
-  /// contains the bubble once the end pane translates it right. See the
+  /// contains the bubble once the end pane translates it left. See the
   /// build() comment at the Padding that consumes this.
   ///
   /// Tracks the live reveal width (which _measureEndPaneRevealWidth updates
   /// per gesture) rather than a constant, so the reserve is exactly the
-  /// bubble's maximum possible rightward travel and never more.
+  /// bubble's maximum possible leftward travel and never more.
   ///
-  /// Gated on `_dragOffset > 0`, NOT on `endActions != null`: the reserve is
+  /// Gated on `_dragOffset < 0`, NOT on `endActions != null`: the reserve is
   /// real layout width, so applying it whenever endActions exists permanently
   /// narrowed and shifted every forums bubble AT REST — and because
   /// _endPaneRevealWidth is only measured on the first gesture, that resting
   /// geometry silently jumped the first time a bubble was ever touched.
-  /// `_dragOffset > 0` is exactly the "reserve is needed" condition:
+  /// `_dragOffset < 0` is exactly the "reserve is needed" condition:
   ///  - At rest with the pane closed it is 0, so the bubble lays out at its
   ///    natural width, as it did before this feature existed.
-  ///  - _openEndPane sets _dragOffset = _endPaneRevealWidth, so the reserve is
-  ///    present for as long as the pane stays open — including at the start of
-  ///    the drag that closes it, which is what keeps a short bubble's hit
-  ///    region reachable.
-  ///  - A reply-direction drag drives _dragOffset negative, and that direction
-  ///    needs no reserve (see the build() comment at the consuming Padding).
+  ///  - _openEndPane sets _dragOffset = -_endPaneRevealWidth, so the reserve
+  ///    is present for as long as the pane stays open — including at the
+  ///    start of the drag that closes it, which is what keeps a short
+  ///    bubble's hit region reachable.
+  ///  - A reply-direction drag drives _dragOffset positive, and that
+  ///    direction needs no reserve (see the build() comment at the
+  ///    consuming Padding).
   /// Deliberately not gated on _endPaneOpen: _onHorizontalDragStart clears
   /// that flag at the start of every gesture, including the closing one, which
   /// would drop the reserve at the exact moment it is needed.
   double get _endPaneTranslationReserve =>
-      _dragOffset > 0 ? _endPaneRevealWidth : 0;
+      _dragOffset < 0 ? _endPaneRevealWidth : 0;
 
   @override
   void dispose() {
@@ -323,8 +324,8 @@ class _UniversalBubbleState extends State<UniversalBubble>
   void _onHorizontalDragUpdate(DragUpdateDetails details) {
     // Direction alone only decides the mode from REST. A gesture that starts
     // with the end pane already revealed belongs to the end pane whichever
-    // way it moves — dragging an open pane left is "close it" (the design
-    // spec's "dragging the bubble back left past the reveal threshold closes
+    // way it moves — dragging an open pane right is "close it" (the design
+    // spec's "dragging the bubble back right past the reveal threshold closes
     // it without firing anything"), not the start of a reply swipe. Seeding
     // the lock from the open state rather than the first delta's sign is what
     // makes that closing drag reachable at all on a bubble that also has
@@ -332,7 +333,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
     _activeDragMode ??=
         _startedFromOpenEndPane
             ? _DragMode.endPane
-            : (details.delta.dx < 0 ? _DragMode.reply : _DragMode.endPane);
+            : (details.delta.dx > 0 ? _DragMode.reply : _DragMode.endPane);
     if (_activeDragMode == _DragMode.reply && widget.onReply != null) {
       _onReplyDragUpdate(details);
     } else if (_activeDragMode == _DragMode.endPane &&
@@ -353,15 +354,15 @@ class _UniversalBubbleState extends State<UniversalBubble>
   void _onEndPaneDragUpdate(DragUpdateDetails details) {
     if (widget.endActions == null) return;
     final rawOffset = _dragOffset + details.delta.dx;
-    final clamped = rawOffset < 0 ? 0.0 : rawOffset;
+    final clamped = rawOffset > 0 ? 0.0 : rawOffset;
     setState(() {
-      _dragOffset = clamped.clamp(0.0, _endPaneRevealWidth);
+      _dragOffset = clamped.clamp(-_endPaneRevealWidth, 0.0);
     });
   }
 
   void _onEndPaneDragEnd(DragEndDetails details) {
     if (widget.endActions == null) return;
-    final shouldOpen = _dragOffset >= _endPaneRevealWidth / 2;
+    final shouldOpen = _dragOffset.abs() >= _endPaneRevealWidth / 2;
     if (shouldOpen) {
       _openEndPane();
     } else {
@@ -371,7 +372,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
 
   void _openEndPane() {
     setState(() {
-      _dragOffset = _endPaneRevealWidth;
+      _dragOffset = -_endPaneRevealWidth;
       _endPaneOpen = true;
     });
     if (widget.groupTag != null) {
@@ -400,10 +401,10 @@ class _UniversalBubbleState extends State<UniversalBubble>
   void _onReplyDragUpdate(DragUpdateDetails details) {
     if (widget.onReply == null) return;
     final rawOffset = _dragOffset + details.delta.dx;
-    // Only leftward (negative) drag matters for reply — clamp at 0 so a
-    // rightward jitter inside a committed reply drag has no visual effect
-    // (the rightward direction is _onEndPaneDragUpdate's business).
-    final clamped = rawOffset > 0 ? 0.0 : rawOffset;
+    // Only rightward (positive) drag matters for reply — clamp at 0 so a
+    // leftward jitter inside a committed reply drag has no visual effect
+    // (the leftward direction is _onEndPaneDragUpdate's business).
+    final clamped = rawOffset < 0 ? 0.0 : rawOffset;
     final magnitude = clamped.abs();
     setState(() {
       if (magnitude <= _fireThreshold) {
@@ -415,7 +416,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
         final compressed =
             _fireThreshold +
             (excess / (excess + 40)) * (_maxDrag - _fireThreshold);
-        _dragOffset = -compressed;
+        _dragOffset = compressed;
       }
     });
     if (!_hapticFired && _dragOffset.abs() >= _fireThreshold) {
@@ -458,8 +459,8 @@ class _UniversalBubbleState extends State<UniversalBubble>
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         // Wired unconditionally: each direction has its own null-check
-        // inside its handler (onReply for leftward, endActions for
-        // rightward), so gating the recognizer on onReply alone would
+        // inside its handler (onReply for rightward, endActions for
+        // leftward), so gating the recognizer on onReply alone would
         // silently kill the end-pane direction for a caller that sets
         // endActions but no onReply.
         child: GestureDetector(
@@ -468,14 +469,14 @@ class _UniversalBubbleState extends State<UniversalBubble>
           onHorizontalDragEnd: _onHorizontalDragEnd,
           behavior: HitTestBehavior.opaque,
           child: Stack(
-            alignment: Alignment.centerRight,
+            alignment: Alignment.centerLeft,
             children: [
-              if (_dragOffset < 0)
+              if (_dragOffset > 0)
                 Positioned(
                   // Offset by the reserved translation slot (see
                   // _endPaneTranslationReserve) so the icon still sits at the
-                  // bubble's own right edge, not the widened Stack's.
-                  right: _endPaneTranslationReserve,
+                  // bubble's own left edge, not the widened Stack's.
+                  left: _endPaneTranslationReserve,
                   child: Opacity(
                     opacity: (_dragOffset.abs() / _fireThreshold).clamp(
                       0.0,
@@ -500,13 +501,13 @@ class _UniversalBubbleState extends State<UniversalBubble>
                     ),
                   ),
                 ),
-              // End-pane actions, revealed behind the bubble on the LEFT as
-              // it is dragged right. Mirrors the reply icon's Positioned
+              // End-pane actions, revealed behind the bubble on the RIGHT as
+              // it is dragged left. Mirrors the reply icon's Positioned
               // layer above. The SizedBox width tracks the live drag offset
               // while OverflowBox keeps the children laid out at their full
               // intrinsic width, so they are never squeezed and the ClipRect
               // just wipes them into view.
-              // Gated on endActions, NOT on `_dragOffset > 0`: the reveal
+              // Gated on endActions, NOT on `_dragOffset < 0`: the reveal
               // width is floored at the actions' own measured width, and
               // that measurement needs the actions Row to have been laid
               // out at least once. Gating on the offset made this circular
@@ -518,7 +519,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
               // visually identical.
               if (widget.endActions != null)
                 Positioned(
-                  left: 0,
+                  right: 0,
                   top: 0,
                   bottom: 0,
                   // top/bottom anchor the pane to the bubble's own height:
@@ -544,13 +545,13 @@ class _UniversalBubbleState extends State<UniversalBubble>
                       // Row can be measured on the very first gesture), which
                       // includes bubbles that ALSO have onReply — and a
                       // reply-direction drag on one of those drives
-                      // _dragOffset negative. A negative width here throws
+                      // _dragOffset positive. A negative width here throws
                       // "BoxConstraints has a negative minimum width" and
                       // cascades into an infinite-size assert. Zero is also
                       // the visually correct width mid-reply-swipe: the end
                       // pane has no business showing while the user is
                       // dragging the other way.
-                      width: _dragOffset > 0 ? _dragOffset : 0,
+                      width: _dragOffset < 0 ? -_dragOffset : 0,
                       child: ClipRect(
                         child: OverflowBox(
                           // minWidth: 0 with an unbounded max lets the
@@ -561,7 +562,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
                           // overflowing) at every intermediate offset.
                           minWidth: 0,
                           maxWidth: double.infinity,
-                          alignment: Alignment.centerLeft,
+                          alignment: Alignment.centerRight,
                           child: Row(
                             key: _endActionsRowKey,
                             mainAxisSize: MainAxisSize.min,
@@ -572,7 +573,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
                     ),
                   ),
                 ),
-              // Reserved layout space on the right, so the Stack's own box
+              // Reserved layout space on the left, so the Stack's own box
               // (and therefore the GestureDetector's hit-test rectangle above
               // it) always contains the bubble at its most-open position.
               // Transform.translate moves PAINT only — layout and hit-testing
@@ -582,14 +583,14 @@ class _UniversalBubbleState extends State<UniversalBubble>
               // short bubble left the painted bubble almost entirely outside
               // the detector, so a drag-to-close gesture started on the
               // visible bubble missed the recognizer and the pane was stuck
-              // open. It also kept an isMine bubble's translated right edge
+              // open. It also kept an isMine bubble's translated left edge
               // from running past the viewport, since the reserve is real
               // layout width that Align now accounts for.
               //
-              // Right-side only, and only while the bubble is actually
-              // translated right (_dragOffset > 0 — see
+              // Left-side only, and only while the bubble is actually
+              // translated left (_dragOffset < 0 — see
               // _endPaneTranslationReserve):
-              //  - The reply direction translates LEFT but always springs
+              //  - The reply direction translates RIGHT but always springs
               //    back within the same gesture, and a gesture that starts at
               //    rest (bubble inside the box) keeps receiving its moves via
               //    the arena regardless of later hit-testing — so it needs no
@@ -598,10 +599,10 @@ class _UniversalBubbleState extends State<UniversalBubble>
               //    state, hence the only one needing a hit region that
               //    survives the translation.
               //  - At rest (and for endActions == null, chat's MessageBubble,
-              //    which can never reach a positive _dragOffset) nothing is
+              //    which can never reach a negative _dragOffset) nothing is
               //    reserved and the layout is byte-for-byte the previous one.
               Padding(
-                padding: EdgeInsets.only(right: _endPaneTranslationReserve),
+                padding: EdgeInsets.only(left: _endPaneTranslationReserve),
                 child: Transform.translate(
                   offset: Offset(_dragOffset, 0),
                   // IntrinsicWidth: the enclosing Stack expands to fill

@@ -204,7 +204,7 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
                   color: colorScheme.background,
                 ),
               ),
-      // Swipe right-to-left to reply (only when canReply — browse mode has
+      // Swipe left-to-right to reply (only when canReply — browse mode has
       // nothing to reply with, so the gesture is disabled entirely). A drag
       // past the threshold fires Reply directly on release instead of
       // requiring a tap once revealed: Reply is non-destructive, so it's
@@ -217,7 +217,7 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
       // custom recognizer (no nested Slidable competing for it), this reply
       // drag fires for forums too.
       onReply: !canReply ? null : widget.onReply,
-      // Swipe left-to-right reveals Report (others' posts) or Delete (your
+      // Swipe right-to-left reveals Report (others' posts) or Delete (your
       // own) — tap-only, never fire-on-swipe: Delete is destructive, so a
       // full swipe just reveals the buttons instead of auto-firing, matching
       // CommentThreadScreen's end pane after the same interchange. Delete

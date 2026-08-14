@@ -108,7 +108,7 @@ void main() {
 
     final center = tester.getCenter(find.text('swipeable'));
     final gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(-70, 0));
+    await gesture.moveBy(const Offset(70, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -132,7 +132,7 @@ void main() {
 
     final center = tester.getCenter(find.text('swipeable'));
     final gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(-40, 0));
+    await gesture.moveBy(const Offset(40, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -153,7 +153,7 @@ void main() {
 
     final center = tester.getCenter(find.text('no gesture'));
     final gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(-70, 0));
+    await gesture.moveBy(const Offset(70, 0));
     await gesture.up();
     await tester.pumpAndSettle();
     // No assertion beyond "did not throw" — omitting onReply must be a
@@ -225,7 +225,7 @@ void main() {
     // must be a true no-op, not an error.
   });
 
-  testWidgets('dragging right past the reveal threshold and releasing leaves the end pane open',
+  testWidgets('dragging left past the reveal threshold and releasing leaves the end pane open',
       (tester) async {
     await _pump(
       tester,
@@ -243,7 +243,7 @@ void main() {
 
     final center = tester.getCenter(find.text('has end actions'));
     final gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(60, 0));
+    await gesture.moveBy(const Offset(-60, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -254,7 +254,7 @@ void main() {
     expect(buttonSize.width, greaterThan(0));
   });
 
-  testWidgets('dragging right below the reveal threshold snaps the end pane back closed',
+  testWidgets('dragging left below the reveal threshold snaps the end pane back closed',
       (tester) async {
     await _pump(
       tester,
@@ -272,7 +272,7 @@ void main() {
 
     final center = tester.getCenter(find.text('has end actions'));
     final gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(20, 0));
+    await gesture.moveBy(const Offset(-20, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -304,7 +304,7 @@ void main() {
 
     final center = tester.getCenter(find.text('has end actions'));
     final gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(60, 0));
+    await gesture.moveBy(const Offset(-60, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -342,7 +342,7 @@ void main() {
 
     final center = tester.getCenter(find.text('Yes'));
     final gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(60, 0));
+    await gesture.moveBy(const Offset(-60, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -366,7 +366,7 @@ void main() {
 
     final center = tester.getCenter(find.text('no end actions'));
     final gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(60, 0));
+    await gesture.moveBy(const Offset(-60, 0));
     await gesture.up();
     await tester.pumpAndSettle();
     // No assertion beyond "did not throw" — matches this widget's existing
@@ -397,7 +397,7 @@ void main() {
 
     final center = tester.getCenter(find.text('forums-shaped bubble'));
     final gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(-70, 0));
+    await gesture.moveBy(const Offset(70, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -406,9 +406,9 @@ void main() {
   });
 
   testWidgets(
-      'a short bubble with endActions: opening then dragging left closes the pane',
+      'a short bubble with endActions: opening then dragging right closes the pane',
       (tester) async {
-    // The bubble is translated right by Transform when the pane is open, but
+    // The bubble is translated left by Transform when the pane is open, but
     // Transform moves paint only — the gesture detector's hit region has to
     // be reserved in layout or a drag started on the visible bubble misses
     // it entirely and the pane can never be dragged shut.
@@ -429,14 +429,14 @@ void main() {
     // Open the pane.
     var center = tester.getCenter(find.text('Yes'));
     var gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(60, 0));
+    await gesture.moveBy(const Offset(-60, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 
-    // Now drag left on the CURRENTLY VISIBLE (translated) bubble to close it.
+    // Now drag right on the CURRENTLY VISIBLE (translated) bubble to close it.
     center = tester.getCenter(find.text('Yes'));
     gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(-60, 0));
+    await gesture.moveBy(const Offset(60, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -474,13 +474,13 @@ void main() {
     // Open then close the end pane.
     var center = tester.getCenter(find.text('forums bubble'));
     var gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(60, 0));
+    await gesture.moveBy(const Offset(-60, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 
     center = tester.getCenter(find.text('forums bubble'));
     gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(-60, 0));
+    await gesture.moveBy(const Offset(60, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -520,14 +520,14 @@ void main() {
     // Open A.
     var center = tester.getCenter(find.text('bubble A'));
     var gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(60, 0));
+    await gesture.moveBy(const Offset(-60, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 
     // Open B — A should close as a side effect.
     center = tester.getCenter(find.text('bubble B'));
     gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(60, 0));
+    await gesture.moveBy(const Offset(-60, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -540,7 +540,7 @@ void main() {
     // when it opened has to be live, not stale.
     center = tester.getCenter(find.text('bubble A'));
     gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(60, 0));
+    await gesture.moveBy(const Offset(-60, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 
