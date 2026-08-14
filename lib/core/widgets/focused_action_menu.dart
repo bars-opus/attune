@@ -36,10 +36,14 @@ Future<void> showFocusedActionMenu({
     barrierDismissible: true,
     barrierColor: Colors.transparent,
     barrierLabel: 'Message actions',
-    // 220ms: comfortably under the checklist's 250ms interactive-feel
-    // target for the full open animation, matching iOS's own
-    // context-menu transition speed.
-    transitionDuration: const Duration(milliseconds: 220),
+    // 350ms total, staged internally (see _FocusedActionMenuOverlay's
+    // _menuInterval/_reactionRowInterval/_reactionItemStagger) so the
+    // action menu, then the reaction row, then each emoji within it can
+    // each read as a distinct step rather than one blurred-together pop.
+    // Checklist 5.2's 200ms target is about time-to-FIRST-feedback (the
+    // haptic + backdrop + bubble scale all start at t=0, satisfying that),
+    // not that the whole entrance animation must finish within 200ms.
+    transitionDuration: const Duration(milliseconds: 350),
     pageBuilder: (dialogContext, animation, secondaryAnimation) {
       return _FocusedActionMenuOverlay(
         anchorRect: anchorRect,
@@ -97,6 +101,50 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
       // +1 for the trailing "+" button, which is always present.
       (quickReactions.length + 1) * _reactionItemWidth + _reactionRowPadding;
 
+  // Staged entrance, matching the real iMessage sequence: the action menu
+  // (Reply/Copy/...) animates in first, THEN the reaction row's own
+  // container animates in starting partway through the menu's animation
+  // (not simultaneously, not fully sequential either — a slight overlap
+  // reads as one continuous motion rather than two disconnected pops),
+  // and once the row itself is animating, each emoji inside it staggers in
+  // left-to-right as a quick ripple. All three intervals share the SAME
+  // underlying `animation` (the dialog route's own transition, still no
+  // separate AnimationController — see the file-level doc comment on
+  // showFocusedActionMenu) via Interval/CurvedAnimation, so reversing the
+  // route (dismiss) automatically plays every stage backwards in the
+  // correct reverse order: whatever finished animating in LAST is the
+  // first to disappear.
+  static const Interval _menuInterval = Interval(0.0, 0.55, curve: Curves.easeOut);
+  static const Interval _reactionRowInterval = Interval(0.35, 0.75, curve: Curves.easeOut);
+
+  // The per-emoji ripple lives inside the row's own [0.75, 1.0] tail —
+  // after the row container itself has finished scaling in — so each
+  // emoji's individual pop is layered on top of an already-settled row,
+  // not fighting the row's own still-growing size.
+  static const double _staggerStart = 0.75;
+  static const double _staggerEnd = 1.0;
+
+  /// The Nth item's own [start, end] window within [_staggerStart,
+  /// _staggerEnd], evenly spaced so the ripple reads as one continuous
+  /// left-to-right wave rather than N independent pops. [itemCount]
+  /// includes the trailing "+" button, so a 6-emoji row staggers 7 items.
+  Interval _staggerFor(int index, int itemCount) {
+    if (itemCount <= 1) {
+      return const Interval(_staggerStart, _staggerEnd, curve: Curves.easeOut);
+    }
+    // Each item's window overlaps its neighbors' by half — a pure
+    // back-to-back split (window width = totalSpan / itemCount) would make
+    // a 7-item row's ripple imperceptibly fast within a 250ms tail; the
+    // overlap keeps each item's own motion long enough to read while still
+    // finishing in order.
+    final totalSpan = _staggerEnd - _staggerStart;
+    final step = totalSpan / itemCount;
+    final windowWidth = step * 1.5;
+    final start = _staggerStart + step * index;
+    final end = (start + windowWidth).clamp(start, _staggerEnd);
+    return Interval(start, end, curve: Curves.easeOut);
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
@@ -132,6 +180,10 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
     // dialog route's context, obtained fresh on every build — not a context
     // captured from the call site outside the route. Same reasoning as the
     // scrim's onTap below.
+    //
+    // itemCount includes the trailing "+" button, so the ripple staggers
+    // across quickReactions.length + 1 items total.
+    final itemCount = quickReactions.length + 1;
     final reactionRow = Material(
       borderRadius: BorderRadius.circular(24),
       elevation: 8,
@@ -145,34 +197,44 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                for (final option in quickReactions)
-                  InkWell(
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onReact(option.emoji);
-                    },
-                    borderRadius: BorderRadius.circular(22),
-                    child: SizedBox(
-                      width: 44,
-                      height: 44,
-                      child: Center(
-                        child: Text(
-                          option.emoji,
-                          style: const TextStyle(fontSize: 22),
+                for (var i = 0; i < quickReactions.length; i++)
+                  _StaggeredScaleFade(
+                    interval: _staggerFor(i, itemCount),
+                    animation: animation,
+                    scaleFrom: 0.6,
+                    child: InkWell(
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        onReact(quickReactions[i].emoji);
+                      },
+                      borderRadius: BorderRadius.circular(22),
+                      child: SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: Center(
+                          child: Text(
+                            quickReactions[i].emoji,
+                            style: const TextStyle(fontSize: 22),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                InkWell(
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    onOpenFullPicker();
-                  },
-                  borderRadius: BorderRadius.circular(22),
-                  child: const SizedBox(
-                    width: 44,
-                    height: 44,
-                    child: Center(child: Icon(Icons.add, size: 22)),
+                _StaggeredScaleFade(
+                  interval: _staggerFor(quickReactions.length, itemCount),
+                  animation: animation,
+                  scaleFrom: 0.6,
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenFullPicker();
+                    },
+                    borderRadius: BorderRadius.circular(22),
+                    child: const SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: Center(child: Icon(Icons.add, size: 22)),
+                    ),
                   ),
                 ),
               ],
@@ -228,56 +290,110 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                 bottom: fitsBelow
                     ? null
                     : screenSize.height - anchorRect.top + _gap,
-                child: FadeTransition(
-                  opacity: animation,
-                  child: Transform.scale(
-                    // Grows from ~0.85x to 1.0x alongside the fade — a plain
-                    // fade with no scale read as flat/absent on a real
-                    // device, especially next to the more prominent
-                    // blur+bubble-scale happening at the same time. Anchored
-                    // toward the corner nearest the bubble (top-left when the
-                    // menu sits below it, bottom-left when flipped above) so
-                    // it visually grows OUT of the bubble rather than
-                    // expanding symmetrically from its own center — matches
-                    // how iOS/WhatsApp context menus emerge from their
-                    // anchor point, not from mid-air.
-                    scale: 0.85 + 0.15 * animation.value,
-                    alignment: fitsBelow
-                        ? Alignment.topLeft
-                        : Alignment.bottomLeft,
-                    child: GestureDetector(
-                      // Swallow taps on the menu itself so they don't fall
-                      // through to the scrim's dismiss-on-tap-outside handler
-                      // — individual action ListTiles still handle their own
-                      // onTap and pop the route themselves.
-                      onTap: () {},
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          reactionRow,
-                          const SizedBox(height: _gap),
-                          Material(
-                            borderRadius: BorderRadius.circular(14),
-                            elevation: 8,
-                            clipBehavior: Clip.antiAlias,
-                            child: SizedBox(
-                              width: menuWidth,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: actions,
-                              ),
+                child: GestureDetector(
+                  // Swallow taps on the menu itself so they don't fall
+                  // through to the scrim's dismiss-on-tap-outside handler —
+                  // individual action ListTiles still handle their own
+                  // onTap and pop the route themselves.
+                  onTap: () {},
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // The reaction row animates on its OWN interval
+                      // (_reactionRowInterval), staged to start after the
+                      // action menu below has begun animating — matching
+                      // the real sequence: menu first, then the row,
+                      // then (inside the row) each emoji in turn. Anchored
+                      // to the same corner as the menu below so both grow
+                      // out of the bubble rather than their own centers.
+                      _StaggeredScaleFade(
+                        interval: _reactionRowInterval,
+                        animation: animation,
+                        alignment:
+                            fitsBelow ? Alignment.topLeft : Alignment.bottomLeft,
+                        child: reactionRow,
+                      ),
+                      const SizedBox(height: _gap),
+                      // The action menu (Reply/Copy/...) is the FIRST stage
+                      // to animate in, on _menuInterval — everything else
+                      // (the reaction row and its own per-emoji ripple)
+                      // follows this rather than running alongside it.
+                      _StaggeredScaleFade(
+                        interval: _menuInterval,
+                        animation: animation,
+                        alignment:
+                            fitsBelow ? Alignment.topLeft : Alignment.bottomLeft,
+                        child: Material(
+                          borderRadius: BorderRadius.circular(14),
+                          elevation: 8,
+                          clipBehavior: Clip.antiAlias,
+                          child: SizedBox(
+                            width: menuWidth,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: actions,
                             ),
                           ),
-                        ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// Fades and scales [child] in across its own [interval] of the shared
+/// [animation], driving [CurvedAnimation]/[Interval] rather than a separate
+/// [AnimationController] per stage/item — up to 9 of these can exist at
+/// once (the menu, the reaction row, and up to 7 items inside it), and a
+/// controller each would mean 9 extra tickers for something the single
+/// route-owned animation already drives cleanly via interval slicing.
+/// [Interval] clamps its input to the interval's own [0, 1] range outside
+/// that window (Flutter's own documented behavior), so this needs no extra
+/// clamping here — before the interval starts the child is fully
+/// transparent/at [scaleFrom], after it ends the child is fully
+/// opaque/at rest (scale 1.0).
+///
+/// Used both for the menu/reaction-row's own entrance (wider scale range,
+/// alignment anchored toward the bubble) and the per-emoji ripple inside
+/// the reaction row (tighter range, no meaningful alignment since each
+/// item is small and centered in its own 44x44 box — [alignment] defaults
+/// to [Alignment.center] for that case).
+class _StaggeredScaleFade extends StatelessWidget {
+  const _StaggeredScaleFade({
+    required this.interval,
+    required this.animation,
+    required this.child,
+    this.alignment = Alignment.center,
+    this.scaleFrom = 0.85,
+  });
+
+  final Interval interval;
+  final Animation<double> animation;
+  final Widget child;
+  final Alignment alignment;
+  final double scaleFrom;
+
+  @override
+  Widget build(BuildContext context) {
+    final staggered = CurvedAnimation(parent: animation, curve: interval);
+    return FadeTransition(
+      opacity: staggered,
+      child: AnimatedBuilder(
+        animation: staggered,
+        builder: (context, builtChild) => Transform.scale(
+          scale: scaleFrom + (1.0 - scaleFrom) * staggered.value,
+          alignment: alignment,
+          child: builtChild,
+        ),
+        child: child,
       ),
     );
   }

@@ -632,4 +632,118 @@ void main() {
     expect(rowRect.left, greaterThanOrEqualTo(0));
     expect(rowRect.right, lessThanOrEqualTo(320));
   });
+
+  testWidgets(
+      'the menu, then the reaction row, then each emoji in turn — staged, not simultaneous',
+      (tester) async {
+    // Matches the real iMessage sequence (confirmed by direct observation,
+    // not assumed): the action menu animates in FIRST, the reaction row's
+    // own container starts after the menu has begun (not simultaneously),
+    // and once the row itself is animating, each emoji inside staggers in
+    // left-to-right as its own quick ripple. This asserts genuine ordering
+    // — not just that each piece eventually reaches 1.0, but that the menu
+    // is meaningfully ahead of the row, and the row is meaningfully ahead
+    // of the per-emoji ripple, at real sample points along the transition.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showFocusedActionMenu(
+                context: context,
+                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                anchorSnapshot: const Text('bubble snapshot'),
+                actions: [
+                  ListTile(title: const Text('Action A'), onTap: () {}),
+                ],
+                quickReactions: const [
+                  ReactionQuickOption(emoji: '❤️'),
+                  ReactionQuickOption(emoji: '👍'),
+                  ReactionQuickOption(emoji: '👎'),
+                ],
+                onReact: (_) {},
+                onOpenFullPicker: () {},
+              ),
+              child: const Text('trigger'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('trigger'));
+    await tester.pump();
+
+    double menuOpacity() => tester
+        .widget<FadeTransition>(
+          find
+              .ancestor(
+                of: find.text('Action A'),
+                matching: find.byType(FadeTransition),
+              )
+              .first,
+        )
+        .opacity
+        .value;
+
+    // The row's own wrapper is the SECOND FadeTransition ancestor of an
+    // emoji (the first/closest is the emoji's own per-item ripple
+    // wrapper) — confirmed by cross-referencing against known interval
+    // math while building this test empirically.
+    double rowOpacity() {
+      final chain = find
+          .ancestor(
+            of: find.text('❤️'),
+            matching: find.byType(FadeTransition),
+          )
+          .evaluate()
+          .map((e) => (e.widget as FadeTransition).opacity.value)
+          .toList();
+      return chain[1];
+    }
+
+    double firstEmojiOpacity() => find
+        .ancestor(of: find.text('❤️'), matching: find.byType(FadeTransition))
+        .evaluate()
+        .map((e) => (e.widget as FadeTransition).opacity.value)
+        .first;
+
+    double lastEmojiOpacity() => find
+        .ancestor(of: find.text('👎'), matching: find.byType(FadeTransition))
+        .evaluate()
+        .map((e) => (e.widget as FadeTransition).opacity.value)
+        .first;
+
+    // At 100ms (well inside the menu's [0, 192.5ms] window, before the
+    // row's [122.5ms, 262.5ms] window has meaningfully started): the menu
+    // must be clearly ahead of the row, and the row must still be at (or
+    // very near) zero.
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(menuOpacity(), greaterThan(0.5));
+    expect(rowOpacity(), lessThan(0.1));
+
+    // At 200ms (menu settled, row well underway, per-emoji ripple
+    // [262.5ms, ~295-339ms] not yet started): menu must be fully in, row
+    // meaningfully animating but not yet done, emoji still at zero.
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(menuOpacity(), 1.0);
+    expect(rowOpacity(), greaterThan(0.5));
+    expect(rowOpacity(), lessThan(1.0));
+    expect(firstEmojiOpacity(), 0.0);
+
+    // At 290ms (row settled, first emoji's own ripple well underway, last
+    // emoji's ripple not yet started): proves the per-emoji stagger
+    // itself is real, not all four popping in together the moment the
+    // row's own animation finishes.
+    await tester.pump(const Duration(milliseconds: 90));
+    expect(rowOpacity(), 1.0);
+    expect(firstEmojiOpacity(), greaterThan(0.0));
+    expect(lastEmojiOpacity(), 0.0);
+
+    await tester.pumpAndSettle();
+    expect(menuOpacity(), 1.0);
+    expect(rowOpacity(), 1.0);
+    expect(firstEmojiOpacity(), 1.0);
+    expect(lastEmojiOpacity(), 1.0);
+  });
 }
