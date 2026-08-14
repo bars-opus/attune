@@ -577,6 +577,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             ),
           Expanded(
             child: _MessageList(
+              conversation: widget.conversation,
               state: state,
               scrollController: _scrollController,
               firstBuildCutoff: _messageListCutoff,
@@ -1076,6 +1077,7 @@ class _DrawerCard extends StatelessWidget {
 
 class _MessageList extends ConsumerWidget {
   const _MessageList({
+    required this.conversation,
     required this.state,
     required this.scrollController,
     required this.firstBuildCutoff,
@@ -1086,6 +1088,18 @@ class _MessageList extends ConsumerWidget {
     required this.onJumpToParent,
   });
 
+  /// The screen's own widget.conversation — NOT state.conversation.
+  /// chatControllerProvider is a .family<..., Conversation> keyed by
+  /// object identity (Conversation has no == override), and
+  /// state.conversation gets replaced with a freshly-fetched instance by
+  /// _refreshConversation() almost immediately after the screen opens. Any
+  /// lookup keyed on state.conversation after that point resolves to a
+  /// second, orphaned controller instance that nothing else watches —
+  /// every message action (star/unstar/pin/unpin/edit/delete) silently
+  /// wrote to that orphan instead of the one actually being watched and
+  /// rendered, until an app restart re-fetched from the DB. Always key
+  /// chatControllerProvider off this field, never off state.conversation.
+  final Conversation conversation;
   final ChatState state;
   final ScrollController scrollController;
   final DateTime firstBuildCutoff;
@@ -1156,12 +1170,12 @@ class _MessageList extends ConsumerWidget {
         if (notification.metrics.pixels >=
             notification.metrics.maxScrollExtent - 200) {
           ref
-              .read(chatControllerProvider(state.conversation).notifier)
+              .read(chatControllerProvider(conversation).notifier)
               .loadMoreMessages();
         }
         if (notification.metrics.pixels <= 120) {
           ref
-              .read(chatControllerProvider(state.conversation).notifier)
+              .read(chatControllerProvider(conversation).notifier)
               .markAsReadDebounced();
         }
         return false;
@@ -1222,17 +1236,13 @@ class _MessageList extends ConsumerWidget {
             onRetry:
                 message.isFailed
                     ? () => ref
-                        .read(
-                          chatControllerProvider(state.conversation).notifier,
-                        )
+                        .read(chatControllerProvider(conversation).notifier)
                         .retryMessage(message)
                     : null,
             onRemove:
                 message.isFailed
                     ? () => ref
-                        .read(
-                          chatControllerProvider(state.conversation).notifier,
-                        )
+                        .read(chatControllerProvider(conversation).notifier)
                         .removeFailedMessage(message)
                     : null,
             onReply:
@@ -1274,7 +1284,7 @@ class _MessageList extends ConsumerWidget {
             onStar: () async {
               try {
                 await ref
-                    .read(chatControllerProvider(state.conversation).notifier)
+                    .read(chatControllerProvider(conversation).notifier)
                     .starMessage(message.id);
               } catch (e, st) {
                 debugPrint('starMessage failed: $e\n$st');
@@ -1286,7 +1296,7 @@ class _MessageList extends ConsumerWidget {
             onUnstar: () async {
               try {
                 await ref
-                    .read(chatControllerProvider(state.conversation).notifier)
+                    .read(chatControllerProvider(conversation).notifier)
                     .unstarMessage(message.id);
               } catch (e, st) {
                 debugPrint('unstarMessage failed: $e\n$st');
@@ -1298,7 +1308,7 @@ class _MessageList extends ConsumerWidget {
             onPin: () async {
               try {
                 await ref
-                    .read(chatControllerProvider(state.conversation).notifier)
+                    .read(chatControllerProvider(conversation).notifier)
                     .pinMessage(message);
               } catch (e, st) {
                 debugPrint('pinMessage failed: $e\n$st');
@@ -1312,7 +1322,7 @@ class _MessageList extends ConsumerWidget {
             onUnpin: () async {
               try {
                 await ref
-                    .read(chatControllerProvider(state.conversation).notifier)
+                    .read(chatControllerProvider(conversation).notifier)
                     .unpinMessage(message);
               } catch (e, st) {
                 debugPrint('unpinMessage failed: $e\n$st');
@@ -1322,15 +1332,9 @@ class _MessageList extends ConsumerWidget {
               }
             },
             onEdit:
-                () =>
-                    _showEditDialog(context, ref, state.conversation, message),
+                () => _showEditDialog(context, ref, conversation, message),
             onDelete:
-                () => _confirmAndDelete(
-                  context,
-                  ref,
-                  state.conversation,
-                  message,
-                ),
+                () => _confirmAndDelete(context, ref, conversation, message),
             onShowEditHistory:
                 (target) => _showEditHistorySheet(context, ref, target),
           );
@@ -1415,7 +1419,8 @@ Future<void> _confirmAndDelete(
     await ref
         .read(chatControllerProvider(conversation).notifier)
         .deleteMessage(message);
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('deleteMessage failed: $e\n$st');
     if (context.mounted) {
       context.showErrorSnackbar("Couldn't delete — try again.");
     }
@@ -1471,7 +1476,8 @@ Future<void> _showEditDialog(
     await ref
         .read(chatControllerProvider(conversation).notifier)
         .editMessage(message, newContent);
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('editMessage failed: $e\n$st');
     if (context.mounted) {
       context.showErrorSnackbar("Couldn't save edit — try again.");
     }

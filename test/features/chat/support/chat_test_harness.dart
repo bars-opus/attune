@@ -235,7 +235,15 @@ class FakeChatRepository implements ChatRepository {
 
   @override
   Future<Conversation?> getConversation(String relationshipId) async {
-    return conversationOverride ?? activeConversation(relationshipId);
+    // Always hand back a freshly-constructed instance (copyWith, never the
+    // caller's own object) — the real SupabaseChatRepository.getConversation
+    // always builds a new Conversation from a fresh row fetch, so returning
+    // the caller's exact instance here would mask any bug that assumes
+    // state.conversation stays identical() to the widget's original
+    // conversation (chatControllerProvider is a .family keyed by object
+    // identity, since Conversation has no == override).
+    final base = conversationOverride ?? activeConversation(relationshipId);
+    return base.copyWith();
   }
 
   @override
