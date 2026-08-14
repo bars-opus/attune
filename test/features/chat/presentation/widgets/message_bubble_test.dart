@@ -133,4 +133,55 @@ void main() {
 
     expect(find.text('Delete'), findsNothing);
   });
+
+  testWidgets('long-press renders the bubble snapshot at the real bubble\'s size, no overflow',
+      (tester) async {
+    final message = Message.optimistic(
+      id: 'm5',
+      clientMessageId: 'c5',
+      relationshipId: 'r1',
+      senderId: 'u1',
+      content: 'hi',
+      createdAt: DateTime.now(),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            message: message,
+            currentUserId: 'u1',
+            onDelete: () {},
+          ),
+        ),
+      ),
+    );
+
+    // Size of the real bubble's text before the overlay opens.
+    final realSize = tester.getSize(find.text('hi'));
+
+    await tester.longPress(find.text('hi'));
+    await tester.pumpAndSettle();
+
+    // No layout overflow from the snapshot being re-rendered under the
+    // dialog route (regression: without a Material ancestor the snapshot's
+    // text fell back to Flutter's 48px debug style and overflowed).
+    expect(tester.takeException(), isNull);
+
+    // Two 'hi' Texts now exist: the real bubble and the overlay snapshot.
+    // The snapshot must lay out at exactly the real bubble's size.
+    final hiTexts = find.text('hi');
+    expect(hiTexts, findsNWidgets(2));
+    for (var i = 0; i < 2; i++) {
+      expect(tester.getSize(hiTexts.at(i)), realSize);
+    }
+  });
+
+  // NOTE: the "pop via the tile's own live context, not MessageBubble's"
+  // behavior in buildMessageActionItems is covered by
+  // test/features/chat/chat_screen_message_actions_test.dart, which drives
+  // the real ChatScreen/ListView where the bubble's element actually does
+  // get deactivated while the menu is open (6 of its tests fail if that
+  // fix is reverted). A synthetic single-bubble rebuild here does not
+  // reproduce the deactivation, so no local test is added for it.
 }

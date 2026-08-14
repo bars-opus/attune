@@ -94,7 +94,21 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                 child: IgnorePointer(
                   child: Transform.scale(
                     scale: 1.0 + 0.05 * animation.value,
-                    child: anchorSnapshot,
+                    // The snapshot is a bare widget subtree lifted out of
+                    // the page below and re-rendered under this dialog
+                    // route, where there is no enclosing Material. Text
+                    // with no Material ancestor falls back to Flutter's
+                    // 48px red-on-yellow "consider putting your text in a
+                    // Material" debug style — which is both visibly wrong
+                    // and, at that size, wraps and overflows the tight
+                    // anchorRect box it is pinned into. A transparent
+                    // Material restores the normal DefaultTextStyle
+                    // inheritance so the snapshot re-derives exactly the
+                    // layout the real bubble already has.
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: anchorSnapshot,
+                    ),
                   ),
                 ),
               ),

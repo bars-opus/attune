@@ -1,4 +1,5 @@
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
+import 'package:attune/core/widgets/focused_action_menu.dart';
 import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.dart';
@@ -92,20 +93,25 @@ class MessageBubble extends StatelessWidget {
       isHighlighted: isHighlighted,
       bubbleKey: ValueKey(message.clientMessageId),
       onLongPress: canOpenActions
-          ? () => showMessageActionsSheet(
+          ? (bubbleRect, bubbleSnapshot) => showFocusedActionMenu(
                 context: context,
-                message: message,
-                currentUserId: currentUserId!,
-                isStarred: isStarred,
-                isPinned: isPinned,
-                onReply: onReply ?? () {},
-                onCopy: onCopy ?? () {},
-                onStar: onStar ?? () {},
-                onUnstar: onUnstar ?? () {},
-                onPin: onPin ?? () {},
-                onUnpin: onUnpin ?? () {},
-                onEdit: onEdit ?? () {},
-                onDelete: onDelete ?? () {},
+                anchorRect: bubbleRect,
+                anchorSnapshot: bubbleSnapshot,
+                actions: buildMessageActionItems(
+                  context: context,
+                  message: message,
+                  currentUserId: currentUserId!,
+                  isStarred: isStarred,
+                  isPinned: isPinned,
+                  onReply: onReply ?? () {},
+                  onCopy: onCopy ?? () {},
+                  onStar: onStar ?? () {},
+                  onUnstar: onUnstar ?? () {},
+                  onPin: onPin ?? () {},
+                  onUnpin: onUnpin ?? () {},
+                  onEdit: onEdit ?? () {},
+                  onDelete: onDelete ?? () {},
+                ),
               )
           : null,
       onReply: onReply,
