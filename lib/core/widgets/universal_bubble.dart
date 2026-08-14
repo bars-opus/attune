@@ -271,10 +271,23 @@ class _UniversalBubbleState extends State<UniversalBubble>
     if (renderBox == null || !renderBox.attached) return;
     final rect = renderBox.localToGlobal(Offset.zero) & renderBox.size;
     // Reconstructs the SAME visual bubble fill — same decoration, same
-    // padding, same content — as a fresh widget subtree to paint into the
-    // overlay, rather than an async RepaintBoundary.toImage() capture
-    // (avoids the pixel-ratio/async round-trip that would introduce for a
-    // menu that needs to open instantly).
+    // padding, same quote block, same content — as a fresh widget subtree
+    // to paint into the overlay, rather than an async
+    // RepaintBoundary.toImage() capture (avoids the pixel-ratio/async
+    // round-trip that would introduce for a menu that needs to open
+    // instantly).
+    //
+    // The quote block has to be reproduced here, not just widget.content:
+    // `rect` above is the real bubble fill's on-screen rectangle, whose
+    // height already includes the quote block whenever quotedText != null.
+    // A snapshot of content alone would paint shorter than the rect it is
+    // given, leaving visible empty space under a reply's bubble in the
+    // overlay. Kept in sync with the quote block in build() below — same
+    // padding, same decoration fallback chain, same icon and text styling
+    // — since any divergence moves the visual bug rather than fixing it.
+    // The one deliberate difference: the real block is a GestureDetector
+    // wired to onJumpToParent, while this static copy is wrapped in
+    // IgnorePointer so tapping the overlay's quote does nothing.
     final snapshot = DecoratedBox(
       decoration: BoxDecoration(
         color: widget.bubbleColor,
@@ -282,7 +295,50 @@ class _UniversalBubbleState extends State<UniversalBubble>
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: widget.content,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.quotedText != null) ...[
+              IgnorePointer(
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: widget.quoteBackgroundColor ??
+                        widget.onBubbleColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.format_quote,
+                        size: widget.quoteIconSize,
+                        color:
+                            widget.quoteForegroundColor ?? widget.onBubbleColor,
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          widget.quotedText!,
+                          style: widget.quoteTextStyle ??
+                              TextStyle(
+                                color: widget.quoteForegroundColor ??
+                                    widget.onBubbleColor,
+                                fontSize: 12,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+            ],
+            widget.content,
+          ],
+        ),
       ),
     );
     onLongPress(rect, snapshot);

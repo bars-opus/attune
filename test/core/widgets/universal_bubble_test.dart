@@ -212,6 +212,73 @@ void main() {
     expect(capturedSnapshot, isNotNull);
   });
 
+  testWidgets(
+      'onLongPress snapshot includes the quoted-text preview when the bubble has one',
+      (tester) async {
+    // The captured Rect is the real bubble fill's height, which INCLUDES
+    // the quote block for a reply. A snapshot of content alone would be
+    // painted shorter than its own reserved space in the overlay.
+    Widget? capturedSnapshot;
+    await _pump(
+      tester,
+      UniversalBubble(
+        isMine: true,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: const Text('the reply body'),
+        footer: const SizedBox.shrink(),
+        quotedText: 'the original message',
+        onLongPress: (rect, snapshot) => capturedSnapshot = snapshot,
+      ),
+    );
+
+    await tester.longPress(find.text('the reply body'));
+    await tester.pumpAndSettle();
+
+    expect(capturedSnapshot, isNotNull);
+
+    // Render the captured snapshot in isolation and confirm the quoted
+    // text is actually present in it, not just in the live bubble behind
+    // it.
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: capturedSnapshot!)),
+    );
+
+    expect(find.text('the original message'), findsOneWidget);
+    expect(find.text('the reply body'), findsOneWidget);
+  });
+
+  testWidgets(
+      'onLongPress snapshot has no quote block when the bubble has no quotedText',
+      (tester) async {
+    // The non-reply case must stay a true no-op: the same snapshot Task 2
+    // already produced, with no quote chrome introduced by this fix.
+    Widget? capturedSnapshot;
+    await _pump(
+      tester,
+      UniversalBubble(
+        isMine: true,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: const Text('a plain message'),
+        footer: const SizedBox.shrink(),
+        onLongPress: (rect, snapshot) => capturedSnapshot = snapshot,
+      ),
+    );
+
+    await tester.longPress(find.text('a plain message'));
+    await tester.pumpAndSettle();
+
+    expect(capturedSnapshot, isNotNull);
+
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: capturedSnapshot!)),
+    );
+
+    expect(find.text('a plain message'), findsOneWidget);
+    expect(find.byIcon(Icons.format_quote), findsNothing);
+  });
+
   testWidgets('omitting onLongPress renders with no long-press handler',
       (tester) async {
     // Regression guard for ForumPostBubble, the other UniversalBubble
