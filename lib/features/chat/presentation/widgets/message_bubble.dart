@@ -3,6 +3,7 @@ import 'package:attune/core/widgets/focused_action_menu.dart';
 import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.dart';
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
@@ -29,6 +30,8 @@ class MessageBubble extends StatelessWidget {
     this.onEdit,
     this.onDelete,
     this.onShowEditHistory,
+    this.onReact,
+    this.onRemoveReaction,
   });
 
   final Message message;
@@ -77,113 +80,138 @@ class MessageBubble extends StatelessWidget {
   /// convention.
   final void Function(Message)? onShowEditHistory;
 
+  /// Called with the selected emoji when the user picks a quick reaction or
+  /// an emoji from the full picker. Null disables the reaction affordance
+  /// entirely — matches this file's existing null-disables-gesture
+  /// convention (`onReply`/`onLongPress`).
+  final void Function(String emoji)? onReact;
+
+  /// Reserved for a future "tap your own pill to remove" affordance. Not
+  /// yet wired to any gesture in this task — see _buildReactionPills.
+  final VoidCallback? onRemoveReaction;
+
   @override
   Widget build(BuildContext context) {
     final isMine = message.isMine;
     final colorScheme = Theme.of(context).colorScheme;
     final canOpenActions = currentUserId != null && !message.isDeleted;
 
-    return UniversalBubble(
-      isMine: isMine,
-      bubbleColor:
-          isMine ? colorScheme.primary : colorScheme.surfaceContainerHighest,
-      onBubbleColor: isMine ? colorScheme.onPrimary : colorScheme.onSurface,
-      quotedText: parentDeleted ? 'Original message deleted' : message.quotedText,
-      onJumpToParent: message.quotedText == null ? null : onJumpToParent,
-      isHighlighted: isHighlighted,
-      bubbleKey: ValueKey(message.clientMessageId),
-      onLongPress: canOpenActions
-          ? (bubbleRect, bubbleSnapshot) => showFocusedActionMenu(
-                context: context,
-                anchorRect: bubbleRect,
-                anchorSnapshot: bubbleSnapshot,
-                actions: buildMessageActionItems(
-                  context: context,
-                  message: message,
-                  currentUserId: currentUserId!,
-                  isStarred: isStarred,
-                  isPinned: isPinned,
-                  onReply: onReply ?? () {},
-                  onCopy: onCopy ?? () {},
-                  onStar: onStar ?? () {},
-                  onUnstar: onUnstar ?? () {},
-                  onPin: onPin ?? () {},
-                  onUnpin: onUnpin ?? () {},
-                  onEdit: onEdit ?? () {},
-                  onDelete: onDelete ?? () {},
+    final reactionPills = _buildReactionPills(context, message);
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        UniversalBubble(
+          isMine: isMine,
+          bubbleColor:
+              isMine ? colorScheme.primary : colorScheme.surfaceContainerHighest,
+          onBubbleColor: isMine ? colorScheme.onPrimary : colorScheme.onSurface,
+          quotedText: parentDeleted ? 'Original message deleted' : message.quotedText,
+          onJumpToParent: message.quotedText == null ? null : onJumpToParent,
+          isHighlighted: isHighlighted,
+          bubbleKey: ValueKey(message.clientMessageId),
+          onLongPress: canOpenActions
+              ? (bubbleRect, bubbleSnapshot) => showFocusedActionMenu(
+                    context: context,
+                    anchorRect: bubbleRect,
+                    anchorSnapshot: bubbleSnapshot,
+                    quickReactions: const [
+                      ReactionQuickOption(emoji: '❤️'),
+                      ReactionQuickOption(emoji: '👍'),
+                      ReactionQuickOption(emoji: '👎'),
+                      ReactionQuickOption(emoji: '😂'),
+                      ReactionQuickOption(emoji: '‼️'),
+                      ReactionQuickOption(emoji: '❓'),
+                    ],
+                    onReact: (emoji) => onReact?.call(emoji),
+                    onOpenFullPicker: () => _openFullEmojiPicker(context, onReact),
+                    actions: buildMessageActionItems(
+                      context: context,
+                      message: message,
+                      currentUserId: currentUserId!,
+                      isStarred: isStarred,
+                      isPinned: isPinned,
+                      onReply: onReply ?? () {},
+                      onCopy: onCopy ?? () {},
+                      onStar: onStar ?? () {},
+                      onUnstar: onUnstar ?? () {},
+                      onPin: onPin ?? () {},
+                      onUnpin: onUnpin ?? () {},
+                      onEdit: onEdit ?? () {},
+                      onDelete: onDelete ?? () {},
+                    ),
+                  )
+              : null,
+          onReply: onReply,
+          content: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (message.isImported)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(
+                    'Imported from WhatsApp',
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
                 ),
-                // Placeholder wiring: the quick-reaction row is built but not
-                // yet connected to reactToMessage/removeReactionFrom or the
-                // emoji_picker_flutter sheet. An empty list renders just the
-                // "+" affordance and the no-op callbacks keep behaviour
-                // identical to before. Replaced with the real callbacks when
-                // MessageBubble gains its reaction wiring.
-                quickReactions: const [],
-                onReact: (_) {},
-                onOpenFullPicker: () {},
-              )
-          : null,
-      onReply: onReply,
-      content: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (message.isImported)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Text(
-                'Imported from WhatsApp',
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
-            ),
-          _BubbleBody(message: message, isMine: isMine),
-        ],
-      ),
-      footer: Wrap(
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 6,
-        runSpacing: 4,
-        children: [
-          if (isStarred)
-            Semantics(
-              label: 'Starred',
-              excludeSemantics: true,
-              child: Icon(
-                Icons.star,
-                size: 12,
-                color: isMine ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
-              ),
-            ),
-          Semantics(
-            label: _absoluteTimeLabel(context, message.createdAt),
-            excludeSemantics: true,
-            child: Text(
-              _timeLabel(context, message.createdAt),
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+              _BubbleBody(message: message, isMine: isMine),
+            ],
           ),
-          if (message.editedAt != null && !message.isDeleted)
-            GestureDetector(
-              onTap: onShowEditHistory == null
-                  ? null
-                  : () => onShowEditHistory!(message),
-              child: Text(
-                'edited',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontStyle: FontStyle.italic,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  decoration: TextDecoration.underline,
+          footer: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              if (isStarred)
+                Semantics(
+                  label: 'Starred',
+                  excludeSemantics: true,
+                  child: Icon(
+                    Icons.star,
+                    size: 12,
+                    color: isMine ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              Semantics(
+                label: _absoluteTimeLabel(context, message.createdAt),
+                excludeSemantics: true,
+                child: Text(
+                  _timeLabel(context, message.createdAt),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
-            ),
-          if (showStatus && isMine)
-            _StatusChip(message: message, onRetry: onRetry),
-          if (message.isFailed && onRetry != null)
-            TextButton(onPressed: onRetry, child: const Text('Retry')),
-          if (message.isFailed && onRemove != null)
-            TextButton(onPressed: onRemove, child: const Text('Remove')),
-        ],
-      ),
+              if (message.editedAt != null && !message.isDeleted)
+                GestureDetector(
+                  onTap: onShowEditHistory == null
+                      ? null
+                      : () => onShowEditHistory!(message),
+                  child: Text(
+                    'edited',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontStyle: FontStyle.italic,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              if (showStatus && isMine)
+                _StatusChip(message: message, onRetry: onRetry),
+              if (message.isFailed && onRetry != null)
+                TextButton(onPressed: onRetry, child: const Text('Retry')),
+              if (message.isFailed && onRemove != null)
+                TextButton(onPressed: onRemove, child: const Text('Remove')),
+            ],
+          ),
+        ),
+        if (reactionPills != null)
+          Positioned(
+            bottom: -10,
+            left: isMine ? null : 12,
+            right: isMine ? 12 : null,
+            child: reactionPills,
+          ),
+      ],
     );
   }
 
@@ -200,6 +228,67 @@ class MessageBubble extends StatelessWidget {
     final locale = Localizations.localeOf(context).toString();
     return DateFormat.yMMMMEEEEd(locale).add_jm().format(time);
   }
+}
+
+/// One small pill per distinct emoji on [message], or null if there are
+/// none. Same emoji from multiple reactors collapses into ONE pill with a
+/// small count badge (never multiple pills for the same emoji). Display
+/// only — tapping a pill to toggle your own reaction is explicitly out of
+/// scope for this plan (see Task 6's manual smoke-test note).
+Widget? _buildReactionPills(BuildContext context, Message message) {
+  if (message.reactions.isEmpty) return null;
+  final colorScheme = Theme.of(context).colorScheme;
+
+  return Wrap(
+    spacing: 4,
+    children: [
+      for (final entry in message.reactions.entries)
+        if (entry.value.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: colorScheme.outlineVariant),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(entry.key, style: const TextStyle(fontSize: 13)),
+                if (entry.value.length > 1) ...[
+                  const SizedBox(width: 2),
+                  Text(
+                    '${entry.value.length}',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+    ],
+  );
+}
+
+/// Opens the full `emoji_picker_flutter` sheet so the user can react with
+/// any emoji, not just the 6 quick-reaction options. Free function (not a
+/// method on MessageBubble) since it needs no widget state — mirrors
+/// `_showEditDialog`'s free-function shape in chat_screen.dart.
+void _openFullEmojiPicker(BuildContext context, void Function(String emoji)? onReact) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (sheetContext) => SizedBox(
+      height: 320,
+      child: EmojiPicker(
+        onEmojiSelected: (category, emoji) {
+          onReact?.call(emoji.emoji);
+          Navigator.of(sheetContext).pop();
+        },
+      ),
+    ),
+  );
 }
 
 class _BubbleBody extends StatelessWidget {

@@ -232,4 +232,85 @@ void main() {
   // get deactivated while the menu is open (6 of its tests fail if that
   // fix is reverted). A synthetic single-bubble rebuild here does not
   // reproduce the deactivation, so no local test is added for it.
+
+  testWidgets('shows a reaction pill with the emoji and count when the message has reactions',
+      (tester) async {
+    final message = Message.fromRow(
+      {
+        'id': 'm-react',
+        'client_message_id': 'c-react',
+        'relationship_id': 'r1',
+        'sender_id': 'u1',
+        'content': 'hello',
+        'created_at': DateTime.now().toIso8601String(),
+      },
+      currentUserId: 'u1',
+    ).copyWith(
+      reactions: {
+        '❤️': {'u1', 'u2'},
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MessageBubble(message: message, currentUserId: 'u1')),
+      ),
+    );
+
+    expect(find.text('❤️'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
+  });
+
+  testWidgets('shows one pill per distinct emoji, no count badge when only one reactor',
+      (tester) async {
+    final message = Message.fromRow(
+      {
+        'id': 'm-react2',
+        'client_message_id': 'c-react2',
+        'relationship_id': 'r1',
+        'sender_id': 'u1',
+        'content': 'hello',
+        'created_at': DateTime.now().toIso8601String(),
+      },
+      currentUserId: 'u1',
+    ).copyWith(
+      reactions: {
+        '❤️': {'u1'},
+        '👍': {'u2'},
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MessageBubble(message: message, currentUserId: 'u1')),
+      ),
+    );
+
+    expect(find.text('❤️'), findsOneWidget);
+    expect(find.text('👍'), findsOneWidget);
+    expect(find.text('1'), findsNothing);
+  });
+
+  testWidgets('no reaction pill renders when the message has no reactions',
+      (tester) async {
+    final message = Message.fromRow(
+      {
+        'id': 'm-noreact',
+        'client_message_id': 'c-noreact',
+        'relationship_id': 'r1',
+        'sender_id': 'u1',
+        'content': 'hello',
+        'created_at': DateTime.now().toIso8601String(),
+      },
+      currentUserId: 'u1',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MessageBubble(message: message, currentUserId: 'u1')),
+      ),
+    );
+
+    expect(find.textContaining('❤'), findsNothing);
+  });
 }
