@@ -177,6 +177,12 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
       // fill. This is the same sideColor the pre-refactor AnimatedContainer
       // border used directly.
       highlightColor: sideColor,
+      // Reply icon revealed by the swipe uses the for/against sideColor —
+      // the design spec's "Reply icon reveal" mechanics call for forums'
+      // icon to carry the same side color the removed SlidableAction's
+      // backgroundColor did. UniversalBubble's own default (chat's look) is
+      // derived from the bubble fill and would read as flat here.
+      replyIconColor: sideColor,
       // Preserves per-post slide-open/closed identity in the chronological
       // feed list, same as the pre-refactor Slidable's own key.
       bubbleKey: ValueKey(post.id),

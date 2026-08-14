@@ -60,6 +60,7 @@ class UniversalBubble extends StatefulWidget {
     this.quotedText,
     this.onJumpToParent,
     this.isHighlighted = false,
+    this.replyIconColor,
     this.highlightColor,
     this.maxWidth = 320,
     this.bubbleKey,
@@ -124,6 +125,12 @@ class UniversalBubble extends StatefulWidget {
   /// colored border ring that fades back out, so the eye lands on the
   /// right bubble after a jump.
   final bool isHighlighted;
+
+  /// Color of the reply icon revealed during a reply-direction drag. Falls
+  /// back to `isMine ? bubbleColor : onBubbleColor` when null — chat's
+  /// look. Forums passes its for/against sideColor to match the design
+  /// spec's "Reply icon reveal" requirement.
+  final Color? replyIconColor;
 
   /// Color of the highlight-flash ring. Kept separate from [bubbleColor]
   /// because a ring drawn in the bubble's own fill color sits directly
@@ -213,6 +220,11 @@ class _UniversalBubbleState extends State<UniversalBubble>
   /// True while the end pane is held open at its full reveal width.
   bool _endPaneOpen = false;
 
+  /// Whether the current gesture began with the end pane already open —
+  /// captured in [_onHorizontalDragStart] before [_endPaneOpen] is cleared,
+  /// and read once by [_onHorizontalDragUpdate] to seed [_activeDragMode].
+  bool _startedFromOpenEndPane = false;
+
   /// The direction this gesture committed to, locked at the first
   /// meaningful update. Null between gestures.
   _DragMode? _activeDragMode;
@@ -252,6 +264,18 @@ class _UniversalBubbleState extends State<UniversalBubble>
         : proportional;
   }
 
+  /// Extra layout width reserved to the right of the bubble so the Stack —
+  /// and with it the outer GestureDetector's hit-test rectangle — still
+  /// contains the bubble once the end pane translates it right. See the
+  /// build() comment at the Padding that consumes this.
+  ///
+  /// Tracks the live reveal width (which _measureEndPaneRevealWidth updates
+  /// per gesture) rather than a constant, so the reserve is exactly the
+  /// bubble's maximum possible rightward travel and never more. Zero when
+  /// endActions is null, which keeps MessageBubble's layout unchanged.
+  double get _endPaneTranslationReserve =>
+      widget.endActions == null ? 0 : _endPaneRevealWidth;
+
   @override
   void dispose() {
     if (widget.groupTag != null && _endPaneOpen) {
@@ -270,6 +294,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
     // open flag and the group registration up front so the pane can't stay
     // registered as "the open one in this group" after being dragged shut
     // in either direction.
+    _startedFromOpenEndPane = _endPaneOpen;
     if (_endPaneOpen) {
       _endPaneOpen = false;
       if (widget.groupTag != null) {
@@ -279,8 +304,18 @@ class _UniversalBubbleState extends State<UniversalBubble>
   }
 
   void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    // Direction alone only decides the mode from REST. A gesture that starts
+    // with the end pane already revealed belongs to the end pane whichever
+    // way it moves — dragging an open pane left is "close it" (the design
+    // spec's "dragging the bubble back left past the reveal threshold closes
+    // it without firing anything"), not the start of a reply swipe. Seeding
+    // the lock from the open state rather than the first delta's sign is what
+    // makes that closing drag reachable at all on a bubble that also has
+    // onReply, where the reply branch would otherwise swallow it.
     _activeDragMode ??=
-        details.delta.dx < 0 ? _DragMode.reply : _DragMode.endPane;
+        _startedFromOpenEndPane
+            ? _DragMode.endPane
+            : (details.delta.dx < 0 ? _DragMode.reply : _DragMode.endPane);
     if (_activeDragMode == _DragMode.reply && widget.onReply != null) {
       _onReplyDragUpdate(details);
     } else if (_activeDragMode == _DragMode.endPane &&
@@ -420,7 +455,10 @@ class _UniversalBubbleState extends State<UniversalBubble>
             children: [
               if (_dragOffset < 0)
                 Positioned(
-                  right: 0,
+                  // Offset by the reserved translation slot (see
+                  // _endPaneTranslationReserve) so the icon still sits at the
+                  // bubble's own right edge, not the widened Stack's.
+                  right: _endPaneTranslationReserve,
                   child: Opacity(
                     opacity: (_dragOffset.abs() / _fireThreshold).clamp(
                       0.0,
@@ -437,9 +475,10 @@ class _UniversalBubbleState extends State<UniversalBubble>
                       child: Icon(
                         Icons.reply,
                         color:
-                            widget.isMine
+                            widget.replyIconColor ??
+                            (widget.isMine
                                 ? widget.bubbleColor
-                                : widget.onBubbleColor,
+                                : widget.onBubbleColor),
                       ),
                     ),
                   ),
@@ -483,7 +522,18 @@ class _UniversalBubbleState extends State<UniversalBubble>
                       });
                     },
                     child: SizedBox(
-                      width: _dragOffset,
+                      // Clamped, never the raw signed offset: this pane is
+                      // mounted whenever endActions != null (so the actions
+                      // Row can be measured on the very first gesture), which
+                      // includes bubbles that ALSO have onReply — and a
+                      // reply-direction drag on one of those drives
+                      // _dragOffset negative. A negative width here throws
+                      // "BoxConstraints has a negative minimum width" and
+                      // cascades into an infinite-size assert. Zero is also
+                      // the visually correct width mid-reply-swipe: the end
+                      // pane has no business showing while the user is
+                      // dragging the other way.
+                      width: _dragOffset > 0 ? _dragOffset : 0,
                       child: ClipRect(
                         child: OverflowBox(
                           // minWidth: 0 with an unbounded max lets the
@@ -505,15 +555,42 @@ class _UniversalBubbleState extends State<UniversalBubble>
                     ),
                   ),
                 ),
-              Transform.translate(
-                offset: Offset(_dragOffset, 0),
-                // IntrinsicWidth: the enclosing Stack expands to fill
-                // whatever width it is handed regardless of this child's own
-                // size — without this every bubble renders full-width and
-                // Align's left/right positioning above is silently defeated.
-                child: IntrinsicWidth(
-                  key: _bubbleRowKey,
-                  child: Row(
+              // Reserved layout space on the right, so the Stack's own box
+              // (and therefore the GestureDetector's hit-test rectangle above
+              // it) always contains the bubble at its most-open position.
+              // Transform.translate moves PAINT only — layout and hit-testing
+              // stay at the untranslated position, and RenderBox.hitTest
+              // rejects any pointer outside its own size before it ever
+              // reaches a child. Without this reserve, an open end pane on a
+              // short bubble left the painted bubble almost entirely outside
+              // the detector, so a drag-to-close gesture started on the
+              // visible bubble missed the recognizer and the pane was stuck
+              // open. It also kept an isMine bubble's translated right edge
+              // from running past the viewport, since the reserve is real
+              // layout width that Align now accounts for.
+              //
+              // Right-side only, and only when endActions is set:
+              //  - The reply direction translates LEFT but always springs
+              //    back within the same gesture, and a gesture that starts at
+              //    rest (bubble inside the box) keeps receiving its moves via
+              //    the arena regardless of later hit-testing — so it needs no
+              //    reserve.
+              //  - The end pane is the only direction with a persistent open
+              //    state, hence the only one needing a hit region that
+              //    survives the translation.
+              //  - endActions == null (chat's MessageBubble) reserves nothing
+              //    and sees byte-for-byte the previous layout.
+              Padding(
+                padding: EdgeInsets.only(right: _endPaneTranslationReserve),
+                child: Transform.translate(
+                  offset: Offset(_dragOffset, 0),
+                  // IntrinsicWidth: the enclosing Stack expands to fill
+                  // whatever width it is handed regardless of this child's own
+                  // size — without this every bubble renders full-width and
+                  // Align's left/right positioning above is silently defeated.
+                  child: IntrinsicWidth(
+                    key: _bubbleRowKey,
+                    child: Row(
                     key: widget.bubbleKey,
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -643,6 +720,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
                         ),
                       ),
                     ],
+                  ),
                   ),
                 ),
               ),

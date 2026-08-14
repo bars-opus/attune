@@ -373,6 +373,79 @@ void main() {
     // null-disables convention.
   });
 
+  testWidgets(
+      'a bubble with both onReply and endActions set: reply swipe does not throw and fires correctly',
+      (tester) async {
+    // ForumPostBubble's REAL production shape — every other test in this
+    // file sets one or the other, never both, which is exactly why the
+    // negative-width SizedBox in the end pane survived four reviews.
+    var replied = false;
+    await _pump(
+      tester,
+      UniversalBubble(
+        isMine: false,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: const Text('forums-shaped bubble'),
+        footer: const SizedBox.shrink(),
+        onReply: () => replied = true,
+        endActions: [
+          IconButton(icon: const Icon(Icons.flag), onPressed: () {}),
+        ],
+      ),
+    );
+
+    final center = tester.getCenter(find.text('forums-shaped bubble'));
+    final gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(-70, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(replied, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'a short bubble with endActions: opening then dragging left closes the pane',
+      (tester) async {
+    // The bubble is translated right by Transform when the pane is open, but
+    // Transform moves paint only — the gesture detector's hit region has to
+    // be reserved in layout or a drag started on the visible bubble misses
+    // it entirely and the pane can never be dragged shut.
+    await _pump(
+      tester,
+      UniversalBubble(
+        isMine: false,
+        bubbleColor: Colors.blue,
+        onBubbleColor: Colors.white,
+        content: const Text('Yes'),
+        footer: const SizedBox.shrink(),
+        endActions: [
+          IconButton(icon: const Icon(Icons.delete), onPressed: () {}),
+        ],
+      ),
+    );
+
+    // Open the pane.
+    var center = tester.getCenter(find.text('Yes'));
+    var gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(60, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // Now drag left on the CURRENTLY VISIBLE (translated) bubble to close it.
+    center = tester.getCenter(find.text('Yes'));
+    gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(-60, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    final transform = tester.widget<Transform>(
+      find.ancestor(of: find.text('Yes'), matching: find.byType(Transform)).first,
+    );
+    expect(transform.transform.getTranslation().x, 0);
+  });
+
   testWidgets('opening bubble A closes bubble B in the same groupTag', (tester) async {
     await _pump(
       tester,
