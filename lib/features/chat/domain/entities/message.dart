@@ -13,6 +13,8 @@ class Message {
   final String? mediaThumbnailKey;
   final String? signedMediaUrl;
   final String? localMediaPath;
+  final int? mediaDurationMs;
+  final List<int>? waveform;
   final String source;
   final DateTime? deliveredAt;
   final DateTime? readAt;
@@ -38,6 +40,8 @@ class Message {
     this.mediaThumbnailKey,
     this.signedMediaUrl,
     this.localMediaPath,
+    this.mediaDurationMs,
+    this.waveform,
     this.source = 'native',
     this.deliveredAt,
     this.readAt,
@@ -127,6 +131,8 @@ class Message {
     String? mediaThumbnailKey,
     String? signedMediaUrl,
     String? localMediaPath,
+    int? mediaDurationMs,
+    List<int>? waveform,
     String? source,
     DateTime? deliveredAt,
     DateTime? readAt,
@@ -150,6 +156,8 @@ class Message {
       mediaThumbnailKey: mediaThumbnailKey ?? this.mediaThumbnailKey,
       signedMediaUrl: signedMediaUrl ?? this.signedMediaUrl,
       localMediaPath: localMediaPath ?? this.localMediaPath,
+      mediaDurationMs: mediaDurationMs ?? this.mediaDurationMs,
+      waveform: waveform ?? this.waveform,
       source: source ?? this.source,
       deliveredAt: deliveredAt ?? this.deliveredAt,
       readAt: readAt ?? this.readAt,
@@ -174,6 +182,8 @@ class Message {
       'mediaKey': mediaKey,
       'mediaType': mediaType,
       'mediaThumbnailKey': mediaThumbnailKey,
+      'mediaDurationMs': mediaDurationMs,
+      'waveform': waveform,
       'source': source,
       'deliveredAt': deliveredAt?.toIso8601String(),
       'readAt': readAt?.toIso8601String(),
@@ -198,6 +208,10 @@ class Message {
       mediaKey: json['mediaKey'] as String?,
       mediaType: json['mediaType'] as String?,
       mediaThumbnailKey: json['mediaThumbnailKey'] as String?,
+      mediaDurationMs: (json['mediaDurationMs'] as num?)?.toInt(),
+      waveform: (json['waveform'] as List<dynamic>?)
+          ?.map((e) => (e as num).toInt())
+          .toList(),
       source: (json['source'] as String?) ?? 'native',
       deliveredAt: _parseDateTime(json['deliveredAt']),
       readAt: _parseDateTime(json['readAt']),
@@ -219,6 +233,9 @@ class Message {
 
   bool get hasImage =>
       mediaType == 'image' &&
+      (signedMediaUrl != null || localMediaPath != null);
+  bool get hasAudio =>
+      mediaType == 'audio' &&
       (signedMediaUrl != null || localMediaPath != null);
   bool get isQueued => status == MessageStatus.queued;
   bool get isSending => status == MessageStatus.sending;
