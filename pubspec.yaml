@@ -76,6 +76,7 @@ dependencies:
   flutter_animate: ^4.5.0
   vibration: ^1.8.4
   audioplayers: ^6.1.0
+  record: ^5.1.0
   vector_graphics: ^1.1.10
   vector_graphics_compiler: ^1.1.10
   http: ^0.13.6
