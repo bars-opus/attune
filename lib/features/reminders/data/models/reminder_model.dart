@@ -47,6 +47,24 @@ class ReminderModel {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'relationship_id': relationshipId,
+      'created_by': createdBy,
+      'reminder_type': reminderType,
+      'title': title,
+      'note': note,
+      'remind_at': remindAt.toIso8601String(),
+      'recurrence': recurrence,
+      'sent': sent,
+      'family_member_id': familyMemberId,
+      'linked_timeline_event_id': linkedTimelineEventId,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+    };
+  }
+
   bool get isRecurring => recurrence == 'yearly';
   bool get isBirthday => reminderType == 'birthday';
   bool get isAnniversary => reminderType == 'anniversary';

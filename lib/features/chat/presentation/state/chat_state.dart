@@ -33,24 +33,69 @@ final chatImageSharingEnabledProvider = FutureProvider<bool>((ref) {
   );
 });
 
-final conversationsProvider = FutureProvider<List<Conversation>>((ref) async {
-  ref.watch(conversationsRefreshProvider);
-  final repository = ref.watch(chatRepositoryProvider);
-  final user = ref.watch(currentUserProvider);
-  if (user == null) return const [];
-
-  try {
-    final conversations = await repository.getConversations();
-    unawaited(
-      ref
-          .read(chatCacheServiceProvider)
-          .writeConversations(user.id, conversations),
+final conversationsProvider =
+    AsyncNotifierProvider<ConversationsNotifier, List<Conversation>>(
+      ConversationsNotifier.new,
     );
-    return conversations;
-  } catch (_) {
-    return await ref.read(chatCacheServiceProvider).readConversations(user.id);
+
+/// Cache-then-refresh: paints the last-known conversation list (including
+/// each conversation's unreadCount, which arrives baked into the same rows)
+/// immediately on a cold start, so ConversationsScreen isn't blank while the
+/// fetch runs, then swaps in fresh data when it lands. Mirrors forums'
+/// _CachedTopicsNotifier (forum_providers.dart) — reuses ChatCacheService
+/// (encrypted SQLite) rather than a second, plaintext cache, since this is
+/// the same conversation/message data chat's own cache already protects.
+///
+/// _servedCache is static so it survives this notifier being recreated by
+/// invalidate/refresh — a manual pull-to-refresh (conversationsRefreshProvider)
+/// or a user switch must always re-fetch live, never replay the cache.
+class ConversationsNotifier extends AsyncNotifier<List<Conversation>> {
+  static bool _servedCache = false;
+
+  @override
+  Future<List<Conversation>> build() async {
+    ref.watch(conversationsRefreshProvider);
+    final repository = ref.watch(chatRepositoryProvider);
+    final user = ref.watch(currentUserProvider);
+    if (user == null) return const [];
+
+    final cache = ref.read(chatCacheServiceProvider);
+
+    if (!_servedCache) {
+      _servedCache = true;
+      final cached = await cache.readConversations(user.id);
+      if (cached.isNotEmpty) {
+        _refreshInBackground(repository, cache, user.id);
+        return cached;
+      }
+    }
+
+    try {
+      final conversations = await repository.getConversations();
+      unawaited(cache.writeConversations(user.id, conversations));
+      return conversations;
+    } catch (_) {
+      return await cache.readConversations(user.id);
+    }
   }
-});
+
+  /// Fetches behind an already-painted cached list. Never surfaces an
+  /// AsyncLoading (that would flash the cache away) and swallows failure —
+  /// the user keeps reading the cached list until a later refresh succeeds.
+  Future<void> _refreshInBackground(
+    ChatRepository repository,
+    ChatCacheService cache,
+    String userId,
+  ) async {
+    try {
+      final conversations = await repository.getConversations();
+      state = AsyncData(conversations);
+      unawaited(cache.writeConversations(userId, conversations));
+    } catch (error) {
+      ChatLog.e('conversations background refresh failed', error);
+    }
+  }
+}
 
 final primaryConversationProvider = FutureProvider<Conversation?>((ref) async {
   final conversations = await ref.watch(conversationsProvider.future);

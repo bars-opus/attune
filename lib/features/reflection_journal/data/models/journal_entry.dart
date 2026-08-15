@@ -31,6 +31,18 @@ class JournalEntry extends Equatable {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'user_id': userId,
+      'content': content,
+      'prompt_used': promptUsed,
+      'tone': tone,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+    };
+  }
+
   @override
   List<Object?> get props => [id, userId, content, tone, createdAt, updatedAt];
 }

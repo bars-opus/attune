@@ -7,6 +7,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// journalEntriesProvider is an AsyncNotifierProvider (cache-then-refresh —
+/// see JournalEntriesNotifier), so overriding it in tests means supplying a
+/// fake notifier rather than a plain async callback.
+class _FakeJournalEntriesNotifier extends JournalEntriesNotifier {
+  _FakeJournalEntriesNotifier(this._entries);
+  final List<JournalEntry> _entries;
+
+  @override
+  Future<List<JournalEntry>> build() async => _entries;
+}
+
 void main() {
   Widget wrap(List<Override> overrides) {
     return ProviderScope(
@@ -23,7 +34,9 @@ void main() {
   testWidgets('shows empty state when there are no entries', (tester) async {
     await tester.pumpWidget(
       wrap([
-        journalEntriesProvider.overrideWith((ref) async => []),
+        journalEntriesProvider.overrideWith(
+          () => _FakeJournalEntriesNotifier(const []),
+        ),
         journalPatternsProvider.overrideWith(
           (ref) async => (status: 'insufficient_evidence', summary: null, entryCount: 0),
         ),
@@ -38,7 +51,9 @@ void main() {
     final entry = JournalEntryFixture.one();
     await tester.pumpWidget(
       wrap([
-        journalEntriesProvider.overrideWith((ref) async => [entry]),
+        journalEntriesProvider.overrideWith(
+          () => _FakeJournalEntriesNotifier([entry]),
+        ),
         journalPatternsProvider.overrideWith(
           (ref) async => (status: 'insufficient_evidence', summary: null, entryCount: 1),
         ),
@@ -54,7 +69,9 @@ void main() {
   ) async {
     await tester.pumpWidget(
       wrap([
-        journalEntriesProvider.overrideWith((ref) async => []),
+        journalEntriesProvider.overrideWith(
+          () => _FakeJournalEntriesNotifier(const []),
+        ),
         journalPatternsProvider.overrideWith(
           (ref) async => (status: 'insufficient_evidence', summary: null, entryCount: 1),
         ),

@@ -1,8 +1,12 @@
 // lib/features/reminders/presentation/providers/reminders_providers.dart
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:attune/features/timeline/data/repositories/timeline_repository.dart';
+import '../../data/cache/reminders_cache.dart';
 import '../../data/models/family_member_model.dart';
 import '../../data/models/reminder_model.dart';
 import '../../data/repositories/reminders_repository.dart';
@@ -34,11 +38,62 @@ final currentRelationshipIdProvider = FutureProvider<String?>((ref) async {
   return response?['id'] as String?;
 });
 
-final remindersListProvider = FutureProvider<List<ReminderModel>>((ref) async {
-  final relationshipId = await ref.read(currentRelationshipIdProvider.future);
-  if (relationshipId == null) return const [];
-  return ref.read(remindersRepositoryProvider).listReminders(relationshipId);
-});
+final remindersListProvider =
+    AsyncNotifierProvider<RemindersListNotifier, List<ReminderModel>>(
+      RemindersListNotifier.new,
+    );
+
+/// Cache-then-refresh: paints the last-known reminders immediately on a
+/// cold start so ConversationsScreen's calendar row isn't showing "No
+/// upcoming events" while the fetch runs, then swaps in fresh data when it
+/// lands. Mirrors forums' _CachedTopicsNotifier (forum_providers.dart).
+///
+/// _servedCache is static so it survives this notifier being recreated by
+/// invalidate() — after creating/deleting a reminder, serving cache first
+/// would briefly re-show the pre-change list.
+class RemindersListNotifier extends AsyncNotifier<List<ReminderModel>> {
+  static bool _servedCache = false;
+
+  @override
+  Future<List<ReminderModel>> build() async {
+    final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
+    final cache = ref.read(remindersCacheProvider);
+
+    if (!_servedCache && userId != null) {
+      _servedCache = true;
+      final cached = cache.readReminders(userId);
+      if (cached.isNotEmpty) {
+        _refreshInBackground(cache, userId);
+        return cached;
+      }
+    }
+
+    final reminders = await _fetch();
+    if (userId != null) {
+      unawaited(cache.writeReminders(userId, reminders));
+    }
+    return reminders;
+  }
+
+  Future<List<ReminderModel>> _fetch() async {
+    final relationshipId = await ref.read(currentRelationshipIdProvider.future);
+    if (relationshipId == null) return const [];
+    return ref.read(remindersRepositoryProvider).listReminders(relationshipId);
+  }
+
+  /// Fetches behind an already-painted cached list. Never surfaces an
+  /// AsyncLoading (that would flash the cache away) and swallows failure —
+  /// the user keeps reading the cached list until a later refresh succeeds.
+  Future<void> _refreshInBackground(RemindersCache cache, String userId) async {
+    try {
+      final reminders = await _fetch();
+      state = AsyncData(reminders);
+      unawaited(cache.writeReminders(userId, reminders));
+    } catch (error) {
+      debugPrint('[reminders] background refresh failed: ${error.runtimeType}');
+    }
+  }
+}
 
 final familyMembersListProvider = FutureProvider<List<FamilyMemberModel>>((ref) async {
   final relationshipId = await ref.read(currentRelationshipIdProvider.future);
