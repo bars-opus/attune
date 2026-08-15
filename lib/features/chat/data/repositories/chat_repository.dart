@@ -35,11 +35,17 @@ abstract class ChatRepository {
     required String senderId,
     required String clientMessageId,
   });
-  Future<ChatMediaUploadIntent> createImageUploadIntent({
+  /// Requests a one-time upload slot in the shared message-media bucket for
+  /// either an image or an audio (voice message) attachment. [mediaType]
+  /// must be 'image' or 'audio' — the server independently enforces both
+  /// the MIME allowlist and the per-type feature flag regardless of what
+  /// the client sends (see create_chat_media_upload_intent RPC).
+  Future<ChatMediaUploadIntent> createMediaUploadIntent({
     required String relationshipId,
     required String mimeType,
+    required String mediaType,
   });
-  Future<void> uploadChatImage({
+  Future<void> uploadChatMedia({
     required ChatMediaUploadIntent intent,
     required String localPath,
     required String mimeType,
@@ -115,7 +121,7 @@ abstract class ChatRepository {
   Future<void> removeReaction(String messageId);
 
   /// Requests a one-time upload slot for a new relationship avatar photo —
-  /// mirrors [createImageUploadIntent]'s shape but scoped to the
+  /// mirrors [createMediaUploadIntent]'s shape but scoped to the
   /// relationship-avatars bucket via a separate RPC/table pipeline (see
   /// docs/superpowers/specs/2026-08-11-couple-chat-identity-design.md).
   Future<RelationshipAvatarUploadIntent> createRelationshipAvatarUploadIntent({

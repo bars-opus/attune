@@ -271,9 +271,10 @@ class FakeChatRepository implements ChatRepository {
   Future<String?> getRelationshipIdForPartner(String partnerUserId) async =>
       null;
   @override
-  Future<ChatMediaUploadIntent> createImageUploadIntent({
+  Future<ChatMediaUploadIntent> createMediaUploadIntent({
     required String relationshipId,
     required String mimeType,
+    required String mediaType,
   }) async =>
       ChatMediaUploadIntent(
         intentId: 'intent',
@@ -282,7 +283,7 @@ class FakeChatRepository implements ChatRepository {
         bucket: 'message-media',
       );
   @override
-  Future<void> uploadChatImage({
+  Future<void> uploadChatMedia({
     required ChatMediaUploadIntent intent,
     required String localPath,
     required String mimeType,

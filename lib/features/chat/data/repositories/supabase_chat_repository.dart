@@ -302,13 +302,18 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
-  Future<ChatMediaUploadIntent> createImageUploadIntent({
+  Future<ChatMediaUploadIntent> createMediaUploadIntent({
     required String relationshipId,
     required String mimeType,
+    required String mediaType,
   }) async {
     final response = await _supabase.rpc(
       'create_chat_media_upload_intent',
-      params: {'p_relationship_id': relationshipId, 'p_mime_type': mimeType},
+      params: {
+        'p_relationship_id': relationshipId,
+        'p_mime_type': mimeType,
+        'p_media_type': mediaType,
+      },
     );
     final row =
         response is List
@@ -324,7 +329,7 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
-  Future<void> uploadChatImage({
+  Future<void> uploadChatMedia({
     required ChatMediaUploadIntent intent,
     required String localPath,
     required String mimeType,
