@@ -63,6 +63,15 @@ class VoiceRecorderService {
   String? _currentPath;
   DateTime? _startedAt;
 
+  /// Set once the max-duration timer's auto-stop finishes. The user is
+  /// typically still physically holding the record gesture when this
+  /// fires, so a later, user-driven call to [stop] must not try to stop
+  /// the (already-stopped) recorder plugin a second time — that either
+  /// throws, or recomputes a wall-clock duration that now exceeds
+  /// [maxDuration] and gets rejected downstream as "too long to send".
+  /// Reset to null at the start of every new recording in [start].
+  VoiceRecording? _completedRecording;
+
   // Incremental downsampling state: rather than buffering every raw
   // amplitude reading and processing them in one pass at stop() (which
   // would mean unbounded memory growth for a long recording and a single
@@ -83,6 +92,7 @@ class VoiceRecorderService {
     _bucketPeaks.fillRange(0, waveformPointCount, 0.0);
     _readingCount = 0;
     _startedAt = DateTime.now();
+    _completedRecording = null;
 
     final dir = await getTemporaryDirectory();
     _currentPath = p.join(
@@ -113,8 +123,49 @@ class VoiceRecorderService {
       // press when this fires, so it learns the recording ended via
       // whatever UI-facing signal Task 6 wires up (e.g. re-checking
       // isRecording after the timer fires), not via this Future's result.
-      unawaited(stop());
+      // Goes through _performStop() (not stop()) and latches the result
+      // into _completedRecording, so the eventual user-driven stop() call
+      // (once they release the still-held gesture) returns this same
+      // already-captured recording instead of stopping an already-stopped
+      // recorder a second time and recomputing a now-too-long duration.
+      unawaited(_autoStop());
     });
+  }
+
+  Future<void> _autoStop() async {
+    try {
+      _completedRecording = await _performStop();
+    } on VoiceRecordingException {
+      // Best-effort — if the auto-stop itself fails, leave
+      // _completedRecording unset so the eventual stop() call surfaces
+      // the failure normally via its own _performStop() attempt.
+    }
+  }
+
+  /// Test seam: simulates the max-duration timer firing and running its
+  /// auto-stop path, without waiting the real 5 minutes. Exercises the
+  /// exact same _autoStop()/_performStop() path the real Timer callback
+  /// in [start] uses.
+  @visibleForTesting
+  Future<void> debugTriggerMaxDurationAutoStop() => _autoStop();
+
+  /// Test seam: seeds the "a fresh recording just started" state that
+  /// [start] itself sets up ([_currentPath], [_startedAt], the waveform
+  /// buckets, and — critically — resetting [_completedRecording] to null
+  /// so a stale latched result from a previous session isn't inherited),
+  /// without going through [start] itself — [start] touches the real
+  /// platform recorder plugin (path_provider, permission_handler, record),
+  /// which isn't available in a pure Dart test host. Lets tests exercise
+  /// [stop] / [debugTriggerMaxDurationAutoStop] against a
+  /// constructor-injected fake [AudioRecorder] as if a real recording were
+  /// underway.
+  @visibleForTesting
+  void debugSeedActiveRecording({required String path, required DateTime startedAt}) {
+    _bucketPeaks.fillRange(0, waveformPointCount, 0.0);
+    _readingCount = 0;
+    _completedRecording = null;
+    _currentPath = path;
+    _startedAt = startedAt;
   }
 
   void _onAmplitude(Amplitude amplitude) {
@@ -127,12 +178,16 @@ class VoiceRecorderService {
   /// _onAmplitude — production and test code share this exact path.
   @visibleForTesting
   void debugFeedAmplitude(double raw) {
-    // record's amplitude stream reports dBFS (negative, 0 = loudest) on
-    // some platforms and linear-ish values on others depending on
-    // implementation; normalize defensively to a non-negative 0-255 byte
-    // range regardless of the raw scale, rather than assuming one
-    // particular unit convention.
-    final normalized = raw.abs().clamp(0.0, 255.0);
+    // record's Amplitude.current is dBFS: 0 = loudest possible, and
+    // increasingly NEGATIVE as audio gets quieter (roughly -50 to -60 dBFS
+    // near silence, down to a theoretical -160 floor). A linear mapping
+    // from [-50, 0] dBFS to [0, 255] preserves perceptual ordering — loud
+    // (near 0 dBFS) maps to a tall bar, quiet/silent (<= -50 dBFS) maps to
+    // 0. Using .abs() here would invert that (loud -> small number, quiet
+    // -> large number), which is exactly the bug this replaced.
+    const minDb = -50.0;
+    final db = raw.clamp(minDb, 0.0);
+    final normalized = ((db - minDb) / -minDb * 255).clamp(0.0, 255.0);
 
     final bucketIndex =
         (_readingCount * waveformPointCount ~/ _expectedTotalReadings)
@@ -165,6 +220,27 @@ class VoiceRecorderService {
       _bucketPeaks.map((v) => v.round().clamp(0, 255)).toList();
 
   Future<VoiceRecording> stop() async {
+    final alreadyCompleted = _completedRecording;
+    if (alreadyCompleted != null) {
+      // The max-duration timer already auto-stopped this recording (the
+      // user was still holding the gesture when it fired). Return the
+      // already-captured result idempotently instead of calling into the
+      // recorder plugin a second time — that would either throw (recorder
+      // already stopped) or recompute a wall-clock duration that now
+      // exceeds maxDuration.
+      return alreadyCompleted;
+    }
+
+    final recording = await _performStop();
+    _completedRecording = recording;
+    return recording;
+  }
+
+  /// Does the actual work of stopping the recorder plugin and building the
+  /// [VoiceRecording] result. Shared by the public [stop] and the internal
+  /// max-duration auto-stop path — callers are responsible for latching
+  /// the result into [_completedRecording] as appropriate.
+  Future<VoiceRecording> _performStop() async {
     _maxDurationTimer?.cancel();
     _maxDurationTimer = null;
     await _amplitudeSubscription?.cancel();
