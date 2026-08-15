@@ -60,7 +60,7 @@ Future<void> showFocusedActionMenu({
   );
 }
 
-class _FocusedActionMenuOverlay extends StatelessWidget {
+class _FocusedActionMenuOverlay extends StatefulWidget {
   const _FocusedActionMenuOverlay({
     required this.anchorRect,
     required this.anchorSnapshot,
@@ -78,6 +78,52 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
   final void Function(String emoji) onReact;
   final VoidCallback onOpenFullPicker;
   final Animation<double> animation;
+
+  @override
+  State<_FocusedActionMenuOverlay> createState() =>
+      _FocusedActionMenuOverlayState();
+}
+
+class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
+  // Set once dismissal starts (scrim tap, back gesture, or an action/
+  // reaction firing — anything that pops this route) so every
+  // AnimatedScaleFade below flips to reverse and plays the SAME stagger
+  // backwards. See the Interval-reverses-in-place reasoning on
+  // AnimatedScaleFade.reverse: reusing each item's existing staggerIndex
+  // under reverse:true naturally gives last-in-first-out — row+emoji
+  // (entered last) exit first, menu (entered first) exits last — with no
+  // index inversion needed.
+  //
+  // This is driven by PopScope rather than a _dismiss() method the menu
+  // calls directly: individual action tiles (buildMessageActionItems)
+  // pop via their OWN tile-local BuildContext for deactivated-context
+  // safety (see that file's doc comment) and are not routed through this
+  // widget at all, so intercepting every dismiss path uniformly means
+  // intercepting the pop itself, not the many call sites that trigger it.
+  bool _dismissing = false;
+
+  // Captured in didChangeDependencies (below) — the standard place to
+  // safely read ModalRoute.of(context) for a State — rather than at pop
+  // time: onOpenFullPicker (fired eagerly, before the 500ms reverse delay
+  // in _handlePop below) pushes its own route, the full picker's bottom
+  // sheet, on top of this one, and a bare Navigator.of(context).pop() at
+  // that point closes whichever route is topmost. Without capturing THIS
+  // route up front, the delayed pop below closes the picker sheet instead
+  // of this menu — it opens, then silently vanishes 500ms later.
+  ModalRoute<void>? _ownRoute;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _ownRoute ??= ModalRoute.of(context);
+  }
+
+  Future<bool> _handlePop() async {
+    if (_dismissing) return true;
+    setState(() => _dismissing = true);
+    await Future.delayed(_entranceDuration);
+    return true;
+  }
 
   // Rough per-item height estimate for the flip-above/below decision —
   // ListTile's default dense-false height is 56, plus a little breathing
@@ -101,7 +147,8 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
 
   double get _estimatedReactionRowWidth =>
       // +1 for the trailing "+" button, which is always present.
-      (quickReactions.length + 1) * _reactionItemWidth + _reactionRowPadding;
+      (widget.quickReactions.length + 1) * _reactionItemWidth +
+      _reactionRowPadding;
 
   // Staged entrance, matching the real iMessage sequence: the action menu
   // (Reply/Copy/...) scales+fades in first, THEN the reaction row's own
@@ -137,11 +184,13 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final safeAreaBottom = MediaQuery.of(context).padding.bottom;
-    final estimatedMenuHeight =
-        actions.length * _estimatedItemHeight + _reactionRowHeight + _gap;
+    final estimatedMenuHeight = widget.actions.length * _estimatedItemHeight +
+        _reactionRowHeight +
+        _gap;
 
-    final fitsBelow = anchorRect.bottom + _gap + estimatedMenuHeight <=
-        screenSize.height - safeAreaBottom;
+    final fitsBelow =
+        widget.anchorRect.bottom + _gap + estimatedMenuHeight <=
+            screenSize.height - safeAreaBottom;
 
     final menuWidth = 240.0;
     // The reaction row is a SEPARATE card from the 240px action list and is
@@ -162,12 +211,13 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
         : menuWidth;
     final maxLeft =
         (screenSize.width - widestCardWidth - 8.0).clamp(8.0, double.infinity);
-    final clampedLeft = anchorRect.left.clamp(8.0, maxLeft);
+    final clampedLeft = widget.anchorRect.left.clamp(8.0, maxLeft);
 
-    // Navigator.of(context) here reads THIS widget's own build context — the
-    // dialog route's context, obtained fresh on every build — not a context
-    // captured from the call site outside the route. Same reasoning as the
-    // scrim's onTap below.
+    // Every staged AnimatedScaleFade below reads this so a single flag
+    // flip (via PopScope's onPopInvokedWithResult, see _handlePop) sends
+    // the whole entrance sequence into reverse together.
+    final reversing = _dismissing;
+
     final reactionRow = Material(
       borderRadius: BorderRadius.circular(24),
       elevation: 8,
@@ -181,17 +231,20 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                for (var i = 0; i < quickReactions.length; i++)
+                for (var i = 0; i < widget.quickReactions.length; i++)
                   AnimatedScaleFade(
                     duration: _entranceDuration,
                     curve: Curves.easeOutBack,
                     beginScale: 0.4,
                     staggerIndex: _emojiStaggerIndex(i),
                     staggerDelay: _staggerDelay,
+                    reverse: reversing,
                     child: InkWell(
                       onTap: () {
-                        Navigator.of(context).pop();
-                        onReact(quickReactions[i].emoji);
+                        final emoji = widget.quickReactions[i].emoji;
+                        Navigator.of(context).maybePop().then((_) {
+                          widget.onReact(emoji);
+                        });
                       },
                       borderRadius: BorderRadius.circular(22),
                       child: SizedBox(
@@ -199,7 +252,7 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                         height: 44,
                         child: Center(
                           child: Text(
-                            quickReactions[i].emoji,
+                            widget.quickReactions[i].emoji,
                             style: const TextStyle(fontSize: 22),
                           ),
                         ),
@@ -210,12 +263,15 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                   duration: _entranceDuration,
                   curve: Curves.easeOutBack,
                   beginScale: 0.4,
-                  staggerIndex: _emojiStaggerIndex(quickReactions.length),
+                  staggerIndex:
+                      _emojiStaggerIndex(widget.quickReactions.length),
                   staggerDelay: _staggerDelay,
+                  reverse: reversing,
                   child: InkWell(
                     onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenFullPicker();
+                      Navigator.of(context).maybePop().then((_) {
+                        widget.onOpenFullPicker();
+                      });
                     },
                     borderRadius: BorderRadius.circular(22),
                     child: const SizedBox(
@@ -232,104 +288,120 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
       ),
     );
 
-    return GestureDetector(
-      onTap: () => Navigator.of(context).pop(),
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedBuilder(
-        animation: animation,
-        builder: (context, child) {
-          return Stack(
-            children: [
-              ClipRect(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                  child: Container(
-                    color: Colors.black
-                        .withValues(alpha: 0.3 * animation.value),
-                  ),
-                ),
-              ),
-              Positioned.fromRect(
-                rect: anchorRect,
-                child: IgnorePointer(
-                  child: Transform.scale(
-                    scale: 1.0 + 0.05 * animation.value,
-                    // The snapshot is a bare widget subtree lifted out of
-                    // the page below and re-rendered under this dialog
-                    // route, where there is no enclosing Material. Text
-                    // with no Material ancestor falls back to Flutter's
-                    // 48px red-on-yellow "consider putting your text in a
-                    // Material" debug style — which is both visibly wrong
-                    // and, at that size, wraps and overflows the tight
-                    // anchorRect box it is pinned into. A transparent
-                    // Material restores the normal DefaultTextStyle
-                    // inheritance so the snapshot re-derives exactly the
-                    // layout the real bubble already has.
-                    child: Material(
-                      type: MaterialType.transparency,
-                      child: anchorSnapshot,
+    return PopScope(
+      canPop: _dismissing,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _handlePop().then((_) {
+          final route = _ownRoute;
+          if (route != null && route.isActive) {
+            route.navigator?.removeRoute(route);
+          }
+        });
+      },
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).maybePop(),
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedBuilder(
+          animation: widget.animation,
+          builder: (context, child) {
+            return Stack(
+              children: [
+                ClipRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                    child: Container(
+                      color: Colors.black
+                          .withValues(alpha: 0.3 * widget.animation.value),
                     ),
                   ),
                 ),
-              ),
-              Positioned(
-                left: clampedLeft,
-                top: fitsBelow ? anchorRect.bottom + _gap : null,
-                bottom: fitsBelow
-                    ? null
-                    : screenSize.height - anchorRect.top + _gap,
-                child: GestureDetector(
-                  // Swallow taps on the menu itself so they don't fall
-                  // through to the scrim's dismiss-on-tap-outside handler —
-                  // individual action ListTiles still handle their own
-                  // onTap and pop the route themselves.
-                  onTap: () {},
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // The reaction row animates in on its own stagger
-                      // index (_reactionRowStaggerIndex), starting after
-                      // the action menu below has begun — matching the
-                      // real sequence: menu first, then the row, then
-                      // (inside the row) each emoji in turn.
-                      AnimatedScaleFade(
-                        duration: _entranceDuration,
-                        curve: Curves.easeOutBack,
-                        staggerIndex: _reactionRowStaggerIndex,
-                        staggerDelay: _staggerDelay,
-                        child: reactionRow,
+                Positioned.fromRect(
+                  rect: widget.anchorRect,
+                  child: IgnorePointer(
+                    child: Transform.scale(
+                      scale: 1.0 + 0.05 * widget.animation.value,
+                      // The snapshot is a bare widget subtree lifted out of
+                      // the page below and re-rendered under this dialog
+                      // route, where there is no enclosing Material. Text
+                      // with no Material ancestor falls back to Flutter's
+                      // 48px red-on-yellow "consider putting your text in a
+                      // Material" debug style — which is both visibly wrong
+                      // and, at that size, wraps and overflows the tight
+                      // anchorRect box it is pinned into. A transparent
+                      // Material restores the normal DefaultTextStyle
+                      // inheritance so the snapshot re-derives exactly the
+                      // layout the real bubble already has.
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: widget.anchorSnapshot,
                       ),
-                      const SizedBox(height: _gap),
-                      // The action menu (Reply/Copy/...) is the FIRST stage
-                      // to animate in (staggerIndex 0) — everything else
-                      // (the reaction row and its own per-emoji ripple)
-                      // follows this rather than running alongside it.
-                      AnimatedScaleFade(
-                        duration: _entranceDuration,
-                        curve: Curves.easeOutBack,
-                        staggerIndex: _menuStaggerIndex,
-                        staggerDelay: _staggerDelay,
-                        child: Material(
-                          borderRadius: BorderRadius.circular(14),
-                          elevation: 8,
-                          clipBehavior: Clip.antiAlias,
-                          child: SizedBox(
-                            width: menuWidth,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: actions,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: clampedLeft,
+                  top: fitsBelow ? widget.anchorRect.bottom + _gap : null,
+                  bottom: fitsBelow
+                      ? null
+                      : screenSize.height - widget.anchorRect.top + _gap,
+                  child: GestureDetector(
+                    // Swallow taps on the menu itself so they don't fall
+                    // through to the scrim's dismiss-on-tap-outside handler —
+                    // individual action ListTiles still handle their own
+                    // onTap and pop the route themselves.
+                    onTap: () {},
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // The reaction row animates in on its own stagger
+                        // index (_reactionRowStaggerIndex), starting after
+                        // the action menu below has begun — matching the
+                        // real sequence: menu first, then the row, then
+                        // (inside the row) each emoji in turn. On dismiss
+                        // (reversing) this same index makes it exit FIRST.
+                        AnimatedScaleFade(
+                          duration: _entranceDuration,
+                          curve: Curves.easeOutBack,
+                          staggerIndex: _reactionRowStaggerIndex,
+                          staggerDelay: _staggerDelay,
+                          reverse: reversing,
+                          child: reactionRow,
+                        ),
+                        const SizedBox(height: _gap),
+                        // The action menu (Reply/Copy/...) is the FIRST stage
+                        // to animate in (staggerIndex 0) — everything else
+                        // (the reaction row and its own per-emoji ripple)
+                        // follows this rather than running alongside it. On
+                        // dismiss this same index makes it exit LAST.
+                        AnimatedScaleFade(
+                          duration: _entranceDuration,
+                          curve: Curves.easeOutBack,
+                          staggerIndex: _menuStaggerIndex,
+                          staggerDelay: _staggerDelay,
+                          reverse: reversing,
+                          child: Material(
+                            borderRadius: BorderRadius.circular(14),
+                            elevation: 8,
+                            clipBehavior: Clip.antiAlias,
+                            child: SizedBox(
+                              width: menuWidth,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: widget.actions,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }

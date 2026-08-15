@@ -13,6 +13,12 @@ class AnimatedScaleFade extends StatefulWidget {
   final bool fadeIn;
   final double beginOpacity;
   final double endOpacity;
+  // When true, the controller runs in reverse (end state -> begin state)
+  // instead of forward, and onAnimationComplete fires on AnimationStatus
+  // .dismissed instead of .completed. Toggling this on an already-mounted
+  // instance (via didUpdateWidget) reverses in place from wherever the
+  // animation currently sits — it does not restart from the end.
+  final bool reverse;
 
   const AnimatedScaleFade({
     super.key,
@@ -28,6 +34,7 @@ class AnimatedScaleFade extends StatefulWidget {
     this.fadeIn = true,
     this.beginOpacity = 0.0,
     this.endOpacity = 1.0,
+    this.reverse = false,
   });
 
   @override
@@ -49,7 +56,9 @@ class _AnimatedScaleFadeState extends State<AnimatedScaleFade>
     );
     _buildAnimations();
     _controller.addStatusListener(_onStatus);
-    if (widget.autoStart) _controller.forward();
+    if (widget.autoStart) {
+      widget.reverse ? _controller.reverse(from: 1.0) : _controller.forward();
+    }
   }
 
   @override
@@ -69,6 +78,10 @@ class _AnimatedScaleFadeState extends State<AnimatedScaleFade>
         widget.staggerIndex != oldWidget.staggerIndex ||
         widget.staggerDelay != oldWidget.staggerDelay) {
       _buildAnimations();
+    }
+
+    if (widget.reverse != oldWidget.reverse) {
+      widget.reverse ? _controller.reverse() : _controller.forward();
     }
   }
 
@@ -96,7 +109,10 @@ class _AnimatedScaleFadeState extends State<AnimatedScaleFade>
   }
 
   void _onStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed) {
+    final done = widget.reverse
+        ? status == AnimationStatus.dismissed
+        : status == AnimationStatus.completed;
+    if (done) {
       widget.onAnimationComplete?.call();
     }
   }

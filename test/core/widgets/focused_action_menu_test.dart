@@ -731,4 +731,90 @@ void main() {
     expect(firstEmojiOpacity(), 1.0);
     expect(lastEmojiOpacity(), 1.0);
   });
+
+  testWidgets(
+      'dismissing plays the same stagger in reverse — row and emoji exit before the menu',
+      (tester) async {
+    // Matches the real iMessage sequence in reverse: whatever animated in
+    // LAST (the reaction row, and the emoji inside it) animates OUT
+    // first, and whatever animated in FIRST (the action menu) animates
+    // out last. Each AnimatedScaleFade reuses its own entrance
+    // staggerIndex under reverse:true — with the SAME Interval mapping
+    // run backwards, the item with the largest delay (the row, then each
+    // emoji) reaches opacity 0 soonest, and the item with delay 0 (the
+    // menu) is the last to reach 0.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showFocusedActionMenu(
+                context: context,
+                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                anchorSnapshot: const Text('bubble snapshot'),
+                actions: [
+                  ListTile(title: const Text('Action A'), onTap: () {}),
+                ],
+                quickReactions: const [
+                  ReactionQuickOption(emoji: '❤️'),
+                  ReactionQuickOption(emoji: '👍'),
+                ],
+                onReact: (_) {},
+                onOpenFullPicker: () {},
+              ),
+              child: const Text('trigger'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('trigger'));
+    await tester.pumpAndSettle();
+
+    double opacityAncestorOf(Finder target) => tester
+        .widget<Opacity>(
+          find.ancestor(of: target, matching: find.byType(Opacity)).first,
+        )
+        .opacity;
+
+    double menuOpacity() => opacityAncestorOf(find.text('Action A'));
+    double rowOpacity() {
+      final chain = find
+          .ancestor(of: find.text('❤️'), matching: find.byType(Opacity))
+          .evaluate()
+          .map((e) => (e.widget as Opacity).opacity)
+          .toList();
+      return chain[1];
+    }
+
+    double emojiOpacity() => opacityAncestorOf(find.text('❤️'));
+
+    // Fully settled in before dismissing.
+    expect(menuOpacity(), 1.0);
+    expect(rowOpacity(), 1.0);
+    expect(emojiOpacity(), 1.0);
+
+    // Tap the scrim to dismiss — this now goes through PopScope's
+    // onPopInvokedWithResult rather than popping immediately.
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pump();
+
+    // With duration 500ms and staggerDelay 0.12 (60ms/index): menu index
+    // 0, row index 1 (60ms), first emoji index 2 (120ms). Reversing the
+    // SAME Interval means the emoji (largest delay) unwinds fastest and
+    // the menu (delay 0) unwinds slowest. At 100ms in: the emoji and row
+    // should already be visibly fading (opacity dropping below 1.0)
+    // while the menu — animating out last — is still at or very close to
+    // full opacity.
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(emojiOpacity(), lessThan(1.0));
+    expect(rowOpacity(), lessThan(1.0));
+    expect(menuOpacity(), greaterThanOrEqualTo(rowOpacity()));
+
+    // Let the reverse stagger and the delayed pop finish.
+    await tester.pumpAndSettle();
+    expect(find.text('Action A'), findsNothing);
+    expect(find.text('bubble snapshot'), findsNothing);
+  });
 }
