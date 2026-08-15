@@ -73,65 +73,73 @@ class ConversationsScreen extends ConsumerWidget {
         ],
       ),
       body: SafeArea(
-        child: conversationsAsync.when(
-          data: (_) {
-            return ListView(
-              padding: const EdgeInsets.all(Spacing.md),
-              children: [
-                // The current relationship's chat, or the empty-state
-                // prompt to start one — one card, since there's at most one
-                // active conversation to show (see filteredConversationsProvider).
-                CardInkWell(
-                  borderRadius: BorderRadiusTokens.floatingNavAll,
-                  child:
-                      filtered.isEmpty
-                          ? const Padding(
-                            padding: EdgeInsets.all(24),
-                            child: Center(
-                              child: Text(
-                                'No relationship chat is available yet.',
-                                textAlign: TextAlign.center,
+        // conversationsAsync.value (not .when's data/loading split) so a
+        // background refresh — including the one that follows an instant
+        // cache paint, see ConversationsNotifier — never blanks this screen
+        // back to a spinner. ChatCacheService's read is SQLite-backed and
+        // therefore always async, unlike forums' SharedPreferences cache, so
+        // the provider legitimately passes through AsyncLoading on every
+        // build() even on a warm-cache hit; only the very first launch ever
+        // (no cache written yet) has no value to fall back to here.
+        child:
+            conversationsAsync.hasValue
+                ? ListView(
+                  padding: const EdgeInsets.all(Spacing.md),
+                  children: [
+                    // The current relationship's chat, or the empty-state
+                    // prompt to start one — one card, since there's at most one
+                    // active conversation to show (see filteredConversationsProvider).
+                    CardInkWell(
+                      borderRadius: BorderRadiusTokens.floatingNavAll,
+                      child:
+                          filtered.isEmpty
+                              ? const Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Center(
+                                  child: Text(
+                                    'No relationship chat is available yet.',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              )
+                              : _ConversationCard(
+                                conversation: filtered.first,
+                                previewText: _previewText(filtered.first),
+                                onTap:
+                                    () => _openConversation(
+                                      context,
+                                      filtered.first,
+                                    ),
                               ),
-                            ),
-                          )
-                          : _ConversationCard(
-                            conversation: filtered.first,
-                            previewText: _previewText(filtered.first),
-                            onTap:
-                                () =>
-                                    _openConversation(context, filtered.first),
-                          ),
-                ),
-                CardInkWell(
-                  borderRadius: BorderRadiusTokens.floatingNavAll,
-                  child: Column(
-                    children: [
-                      Gap(Spacing.sm.h),
-                      const _LatestReflectionRow(),
-                      Gap(Spacing.sm.h),
-                      AppDivider(),
-                      Gap(Spacing.sm.h),
-                      const _NextCalendarEventRow(),
-                      Gap(Spacing.sm.h),
-                    ],
+                    ),
+                    CardInkWell(
+                      borderRadius: BorderRadiusTokens.floatingNavAll,
+                      child: Column(
+                        children: [
+                          Gap(Spacing.sm.h),
+                          const _LatestReflectionRow(),
+                          Gap(Spacing.sm.h),
+                          AppDivider(),
+                          Gap(Spacing.sm.h),
+                          const _NextCalendarEventRow(),
+                          Gap(Spacing.sm.h),
+                        ],
+                      ),
+                    ),
+                  ],
+                )
+                : conversationsAsync.hasError
+                ? Center(
+                  child: TextButton(
+                    onPressed:
+                        () =>
+                            ref
+                                .read(conversationsRefreshProvider.notifier)
+                                .state++,
+                    child: const Text('Reload chat'),
                   ),
-                ),
-              ],
-            );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error:
-              (_, __) => Center(
-                child: TextButton(
-                  onPressed:
-                      () =>
-                          ref
-                              .read(conversationsRefreshProvider.notifier)
-                              .state++,
-                  child: const Text('Reload chat'),
-                ),
-              ),
-        ),
+                )
+                : const Center(child: CircularProgressIndicator()),
       ),
     );
   }

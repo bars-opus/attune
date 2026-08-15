@@ -11,12 +11,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 final filteredConversationsProvider = Provider<List<Conversation>>((ref) {
   final conversationsAsync = ref.watch(conversationsProvider);
 
-  return conversationsAsync.maybeWhen(
-    data:
-        (conversations) =>
-            conversations.where((conversation) => conversation.canSend).toList(),
-    orElse: () => const [],
-  );
+  // valueOrNull (not maybeWhen's data-only branch) so a background refresh
+  // — including the one right behind conversationsProvider's own cache-then-
+  // refresh instant paint — keeps showing the last-known list instead of
+  // flashing to empty: AsyncLoading-with-a-previous-value has no `data`
+  // case for maybeWhen to match, so it fell through to orElse's [] on every
+  // refresh, even a cache hit.
+  final conversations = conversationsAsync.valueOrNull ?? const [];
+  return conversations.where((conversation) => conversation.canSend).toList();
 });
 
 /// Read-only conversations from relationships that have ended — surfaced
@@ -28,13 +30,11 @@ final filteredConversationsProvider = Provider<List<Conversation>>((ref) {
 final previousConversationsProvider = Provider<List<Conversation>>((ref) {
   final conversationsAsync = ref.watch(conversationsProvider);
 
-  return conversationsAsync.maybeWhen(
-    data: (conversations) {
-      final previous =
-          conversations.where((conversation) => !conversation.canSend).toList()
-            ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      return previous;
-    },
-    orElse: () => const [],
-  );
+  // valueOrNull, not maybeWhen — see filteredConversationsProvider above for
+  // why: a background refresh must not flash this list to empty.
+  final conversations = conversationsAsync.valueOrNull ?? const [];
+  final previous =
+      conversations.where((conversation) => !conversation.canSend).toList()
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  return previous;
 });
