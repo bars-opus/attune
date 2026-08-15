@@ -67,12 +67,14 @@ void main() {
             body: Column(
               children: [
                 VoiceMessagePlayer(
+                  key: const ValueKey('m1'),
                   messageId: 'm1',
                   audioUrl: 'https://example.com/a.m4a',
                   durationMs: 1000,
                   waveform: List.filled(100, 50),
                 ),
                 VoiceMessagePlayer(
+                  key: const ValueKey('m2'),
                   messageId: 'm2',
                   audioUrl: 'https://example.com/b.m4a',
                   durationMs: 1000,
@@ -85,20 +87,28 @@ void main() {
       ),
     );
 
-    final playButtons = find.byIcon(Icons.play_arrow_rounded);
-    await tester.tap(playButtons.first);
+    // Each bubble is keyed by its messageId so its play button can be found
+    // unambiguously, independent of icon state — audioplayers' play() never
+    // resolves in the flutter test VM host (no importable test-fake exists),
+    // so bubble 1's icon never visibly flips to pause here. This test only
+    // asserts the provider write, which happens synchronously in
+    // _togglePlayback before the await, so it's provably correct regardless
+    // of whether play() ever completes.
+    final bubble1PlayButton = find.descendant(
+      of: find.byKey(const ValueKey('m1')),
+      matching: find.byIcon(Icons.play_arrow_rounded),
+    );
+    final bubble2PlayButton = find.descendant(
+      of: find.byKey(const ValueKey('m2')),
+      matching: find.byIcon(Icons.play_arrow_rounded),
+    );
+
+    await tester.tap(bubble1PlayButton);
     await tester.pump();
     expect(container.read(currentlyPlayingVoiceMessageIdProvider), 'm1');
 
-    await tester.tap(find.byIcon(Icons.play_arrow_rounded).first);
+    await tester.tap(bubble2PlayButton);
     await tester.pump();
-    // After tapping the second bubble's (still-visible, since m1 became
-    // pause icon) play button — re-query since m1's icon changed to pause.
-    final remainingPlayButton = find.byIcon(Icons.play_arrow_rounded);
-    if (remainingPlayButton.evaluate().isNotEmpty) {
-      await tester.tap(remainingPlayButton.first);
-      await tester.pump();
-    }
     expect(container.read(currentlyPlayingVoiceMessageIdProvider), 'm2');
   });
 
