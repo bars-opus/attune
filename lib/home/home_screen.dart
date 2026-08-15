@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/auth/log_in/presentation/screens/login_profile.dart';
 import 'package:attune/features/auth/data/passwordless_auth_service.dart';
@@ -13,7 +14,7 @@ import 'package:attune/features/relationships/data/relationship_invite_service.d
 import 'package:attune/features/safety/presentation/widgets/triple_tap_detector.dart';
 import 'package:attune/home/widgets/home_tab.dart';
 import 'package:attune/home/widgets/home_widget_responsive.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Bumped whenever code outside HomeScreen's own subtree needs to force an
@@ -22,11 +23,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// Settings (not a descendant of HomeScreen's build method the way
 /// AuthenticatedChatWorkspace/_onInviteSent is) immediately after ending a
 /// relationship. A plain SharedPreferences write is NOT sufficient on its
-/// own: HomeScreen's FutureBuilder watches an already-resolved future
-/// (Future of OnboardingStore) that doesn't re-invoke its builder just
-/// because an ancestor route rebuilds on a Navigator pop, so a caller with no
-/// reference to _HomeScreenState needs an explicit signal, not just a
-/// shared-storage write. See docs/superpowers/specs/
+/// own: HomeScreen's build() reads _gateData, a plain field that only
+/// changes via setState — an ancestor route rebuilding on a Navigator pop
+/// does not itself trigger that setState, so a caller with no reference to
+/// _HomeScreenState needs an explicit signal, not just a shared-storage
+/// write. See docs/superpowers/specs/
 /// 2026-08-02-relationship-lifecycle-sync-design.md §1/§3.
 final relationshipModeResyncSignal = ValueNotifier<int>(0);
 
@@ -38,23 +39,33 @@ final relationshipModeResyncSignal = ValueNotifier<int>(0);
 ///
 /// Stateful (not Stateless) on purpose: the onboarding store must be loaded
 /// ONCE per auth identity, and the shell must REBUILD when auth flips. A
-/// stateless build that read `currentUser` inline both re-created its
-/// FutureBuilder future on every rebuild (re-flashing a spinner) and never
-/// rebuilt on sign-in/sign-out at all.
-class HomeScreen extends StatefulWidget {
+/// stateless build that read `currentUser` inline both re-derived its gate
+/// data on every rebuild and never rebuilt on sign-in/sign-out at all.
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with WidgetsBindingObserver {
   final _authService = PasswordlessAuthService();
   final _syncService = OnboardingSyncService();
   final _inviteService = RelationshipInviteService();
 
   StreamSubscription<AuthState>? _authSubscription;
-  late Future<_HomeGateData> _storeFuture;
+
+  /// The gate's current, always-renderable data — seeded synchronously from
+  /// local SharedPreferences on every load (see _loadGateDataSync), then
+  /// upgraded in place once the background server reconcile
+  /// (resolveIsComplete) resolves. Never null after the first frame: unlike
+  /// the old FutureBuilder<_HomeGateData> gate, there is no "waiting on the
+  /// network" state for build() to render a spinner for — the local flag is
+  /// always immediately available, so this shell paints on the same frame
+  /// as any other screen instead of blocking behind a Supabase round trip
+  /// on every cold launch and every sign-in/out remount.
+  late _HomeGateData _gateData;
   String? _scopeUserId;
 
   /// Latches the one-shot redirect into onboarding — see its use in build().
@@ -65,7 +76,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scopeUserId = _authService.currentUser?.id;
-    _storeFuture = _loadStore();
+    _gateData = _loadGateDataSync();
+    _reconcileGateData();
 
     // Rebuild (and re-scope the onboarding store) when the user signs in or
     // out, so the shell swaps between the guest and authenticated surfaces
@@ -76,8 +88,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (userId == _scopeUserId) return;
       setState(() {
         _scopeUserId = userId;
-        _storeFuture = _loadStore();
+        _gateData = _loadGateDataSync();
       });
+      _reconcileGateData();
     });
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _syncRelationshipMode(),
@@ -115,7 +128,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // visible error and no retry until the next resume/launch happened to
     // succeed.
     try {
-      final store = (await _storeFuture).store;
+      final store = _gateData.store;
       // Only a genuinely unset mode (signed in, onboarding not complete
       // yet) has nothing to reconcile. `personal` used to short-circuit
       // here too, but that made a bad cached `personal` — e.g. written by
@@ -148,29 +161,54 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
       if (resolved != store.mode) {
         await store.syncModeFromServer(resolved);
-        if (mounted) setState(() => _storeFuture = _loadStore());
+        // store.mode is a live SharedPreferences read, not a field cached on
+        // _gateData — the write above is already visible on the next read,
+        // this setState just forces build() to run that read again.
+        if (mounted) setState(() {});
       }
     } catch (error) {
       debugPrint('[home] relationship mode sync failed: ${error.runtimeType}');
     }
   }
 
-  Future<_HomeGateData> _loadStore() async {
-    final prefs = await SharedPreferences.getInstance();
+  /// Synchronous, local-only gate data — no network, no await, safe to call
+  /// straight out of initState/setState so the very first frame renders the
+  /// real shell instead of a spinner. `isComplete` here is OnboardingStore's
+  /// bare local flag, which resolveIsComplete's doc explains can be wrong in
+  /// exactly one direction: false when the server would say true (onboarded
+  /// on another device/install). It can never be wrong the other way — a
+  /// local `true` is written only by this device's own completed flow or a
+  /// prior server confirmation, so it's always safe to trust immediately.
+  /// _reconcileGateData below is what upgrades a false into a true.
+  _HomeGateData _loadGateDataSync() {
+    final prefs = ref.read(sharedPreferencesProvider);
     final userId = _scopeUserId;
     final scope =
         userId == null || userId.isEmpty
             ? OnboardingStore.anonymousScope
             : '${OnboardingStore.userScopePrefix}.$userId';
     final store = OnboardingStore(prefs, scope: scope);
+    return _HomeGateData(store: store, isComplete: store.isComplete);
+  }
 
-    // Pay off any onboarding submission that never reached the server (the
-    // "we will sync when your connection is stable" promise). Fire-and-forget:
-    // the shell must render immediately, and a failed flush keeps the payload
-    // for the next launch.
-    if (userId != null && userId.isNotEmpty) {
-      unawaited(_syncService.flush(store));
-    }
+  /// Background upgrade of the synchronously-seeded _gateData: pays off any
+  /// pending onboarding submission, retries a stashed invite code, and —
+  /// only when the local flag says NOT complete — asks the server whether
+  /// this account actually finished onboarding elsewhere (resolveIsComplete
+  /// beats the local read: see its own doc for why "false" is the one
+  /// direction that can't be trusted). A locally-complete flag is already
+  /// maximally trusted (see _loadGateDataSync) and skips the network call
+  /// entirely — nothing about the shell can regress from true to false, so
+  /// there's nothing to reconcile.
+  Future<void> _reconcileGateData() async {
+    final store = _gateData.store;
+    final userId = _scopeUserId;
+
+    if (userId == null || userId.isEmpty) return;
+
+    // Fire-and-forget: the shell has already rendered, and a failed flush
+    // keeps the payload for the next launch.
+    unawaited(_syncService.flush(store));
 
     // A pending invite code can outlive the /onboarding visit that stashed
     // it — e.g. the app was killed after main.dart's deep-link handler
@@ -178,22 +216,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // consumed it. Every real HomeScreen load (launch, resume, sign-in —
     // see didChangeAppLifecycleState/_authSubscription above) is a chance
     // to retry it here, the same way OnboardingGate does for a visitor who
-    // arrives already authenticated. Best-effort: a failure just leaves
-    // the code for the next load rather than blocking the shell.
-    if (userId != null &&
-        userId.isNotEmpty &&
-        store.pendingInviteCode != null) {
+    // arrives already authenticated. Best-effort: a failure just leaves the
+    // code for the next load rather than blocking the shell — already not
+    // blocking the first paint now that this runs after render, not before.
+    if (store.pendingInviteCode != null) {
       await _acceptPendingInvite(store);
     }
 
-    // Server-truth-first (see OnboardingStore.resolveIsComplete's doc): a
-    // local-only isComplete check bounced a returning, already-onboarded
-    // user (onboarded on a different device/install) into the onboarding
-    // redirect below, and separately showed LoginProfile instead of the
-    // real AuthenticatedChatWorkspace on the Chat tab.
-    final isComplete = await store.resolveIsComplete(userId);
+    if (_gateData.isComplete) return;
 
-    return _HomeGateData(store: store, isComplete: isComplete);
+    final resolved = await store.resolveIsComplete(userId);
+    if (resolved && mounted && _scopeUserId == userId) {
+      setState(() {
+        _gateData = _HomeGateData(store: store, isComplete: true);
+      });
+    }
   }
 
   /// Mirrors OnboardingGate's own _acceptPendingInvite — kept as a
@@ -220,100 +257,93 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// Persists a personal-mode user's move onto the couplesPending track
   /// (see OnboardingStore.startCouplesInvite's doc) after they generate a
-  /// partner invite from ChatCouplesLockedScreen, then reloads the store so
-  /// this shell re-reads `mode` and swaps the Chat tab over to the pending
-  /// state on the next build. The screen that triggers this has no access
-  /// to _storeFuture itself — it lives several widgets below where the
-  /// store is owned — so this is threaded down as a callback instead.
+  /// partner invite from ChatCouplesLockedScreen, then triggers a rebuild so
+  /// this shell re-reads `mode` (a live SharedPreferences getter — see
+  /// _syncRelationshipMode's own setState) and swaps the Chat tab over to
+  /// the pending state. The screen that triggers this has no access to
+  /// _gateData itself — it lives several widgets below where the store is
+  /// owned — so this is threaded down as a callback instead.
   Future<void> _onInviteSent() async {
-    final store = (await _storeFuture).store;
-    await store.startCouplesInvite();
+    await _gateData.store.startCouplesInvite();
     if (!mounted) return;
-    setState(() {
-      _storeFuture = _loadStore();
-    });
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<_HomeGateData>(
-      future: _storeFuture,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Scaffold(
-            body: Center(child: CircularLoadingIndicator()),
-          );
-        }
+    final store = _gateData.store;
+    final isAuthenticated = _authService.currentUser != null;
 
-        final store = snapshot.data!.store;
-        final isAuthenticated = _authService.currentUser != null;
+    if (isAuthenticated && !_gateData.isComplete) {
+      // _gateData.isComplete starts as the LOCAL flag (_loadGateDataSync)
+      // and only flips true once _reconcileGateData's server-truth check
+      // (resolveIsComplete) confirms it — so this still genuinely waits on
+      // the network for exactly the one case that can be wrong (a returning
+      // user onboarded on another device/install), while every other case
+      // (anonymous, or already locally complete) skips this branch and
+      // paints the real shell on the very first frame.
+      //
+      // Latched and route-guarded. Unlatched, this fired a fresh
+      // context.go on EVERY rebuild — and HomeScreen rebuilds while it
+      // is still buried under the login sheet, so a sign-in produced a
+      // storm of repeated /onboarding redirects that tore down the
+      // EULA sheet's own context mid-await. isCurrent keeps this from
+      // redirecting a route the user isn't even looking at; the latch
+      // keeps one redirect from becoming eighteen.
+      if (!_redirectingToOnboarding &&
+          (ModalRoute.of(context)?.isCurrent ?? false)) {
+        _redirectingToOnboarding = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (context.mounted) context.go(RouteNames.onboarding);
+        });
+      }
+      return const Scaffold(body: Center(child: CircularLoadingIndicator()));
+    }
+    _redirectingToOnboarding = false;
 
-        if (isAuthenticated && !snapshot.data!.isComplete) {
-          // Latched and route-guarded. Unlatched, this fired a fresh
-          // context.go on EVERY rebuild — and HomeScreen rebuilds while it
-          // is still buried under the login sheet, so a sign-in produced a
-          // storm of repeated /onboarding redirects that tore down the
-          // EULA sheet's own context mid-await. isCurrent keeps this from
-          // redirecting a route the user isn't even looking at; the latch
-          // keeps one redirect from becoming eighteen.
-          if (!_redirectingToOnboarding &&
-              (ModalRoute.of(context)?.isCurrent ?? false)) {
-            _redirectingToOnboarding = true;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) context.go(RouteNames.onboarding);
-            });
-          }
-          return const Scaffold(
-            body: Center(child: CircularLoadingIndicator()),
-          );
-        }
-        _redirectingToOnboarding = false;
+    final isOnboarded = isAuthenticated && _gateData.isComplete;
+    final mode = store.mode;
+    final isActiveCouples = mode == OnboardingMode.couples;
+    final isRelationshipTrack = mode?.isRelationshipTrack ?? false;
 
-        final isOnboarded = isAuthenticated && snapshot.data!.isComplete;
-        final mode = store.mode;
-        final isActiveCouples = mode == OnboardingMode.couples;
-        final isRelationshipTrack = mode?.isRelationshipTrack ?? false;
+    // Default tab: Opinions (0) for single/personal, Chat (1) for active couples
+    final initialTabIndex = isOnboarded && isActiveCouples ? 1 : 0;
 
-        // Default tab: Opinions (0) for single/personal, Chat (1) for active couples
-        final initialTabIndex = isOnboarded && isActiveCouples ? 1 : 0;
+    final tabs = [
+      const HomeTab(
+        id: 'opinions',
+        label: 'Opinions',
+        icon: Icons.forum_outlined,
+        activeIcon: Icons.forum,
+        screen: OpinionsTab(),
+      ),
+      HomeTab(
+        id: 'chat',
+        label: 'Chat',
+        icon: Icons.chat_bubble_outline,
+        activeIcon: Icons.chat_bubble,
+        screen:
+            isOnboarded
+                ? AuthenticatedChatWorkspace(
+                  isCouples: isActiveCouples,
+                  isPendingCouples: isRelationshipTrack && !isActiveCouples,
+                  onInviteSent: _onInviteSent,
+                )
+                : const LoginProfile(),
+      ),
+    ];
 
-        final tabs = [
-          const HomeTab(
-            id: 'opinions',
-            label: 'Opinions',
-            icon: Icons.forum_outlined,
-            activeIcon: Icons.forum,
-            screen: OpinionsTab(),
-          ),
-          HomeTab(
-            id: 'chat',
-            label: 'Chat',
-            icon: Icons.chat_bubble_outline,
-            activeIcon: Icons.chat_bubble,
-            screen:
-                isOnboarded
-                    ? AuthenticatedChatWorkspace(
-                      isCouples: isActiveCouples,
-                      isPendingCouples: isRelationshipTrack && !isActiveCouples,
-                      onInviteSent: _onInviteSent,
-                    )
-                    : const LoginProfile(),
-          ),
-        ];
-
-        final home = HomeWidgetResponsive.adaptive(
-          context: context,
-          tabs: tabs,
-          initialTabIndex: initialTabIndex,
-        );
-
-        if (!isAuthenticated) {
-          return home;
-        }
-
-        return TripleTapDetector(child: home);
-      },
+    final home = HomeWidgetResponsive.adaptive(
+      context: context,
+      tabs: tabs,
+      initialTabIndex: initialTabIndex,
     );
+
+    if (!isAuthenticated) {
+      return home;
+    }
+
+    return TripleTapDetector(child: home);
   }
 }
 

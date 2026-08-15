@@ -1,3 +1,4 @@
+import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/home/home_screen.dart';
@@ -23,10 +24,14 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [currentUserIdProvider.overrideWithValue(null)],
+        overrides: [
+          currentUserIdProvider.overrideWithValue(null),
+          sharedPreferencesProvider.overrideWithValue(prefs),
+        ],
         child: ScreenUtilConfig.builder(
           builder:
               (_) => const MaterialApp(

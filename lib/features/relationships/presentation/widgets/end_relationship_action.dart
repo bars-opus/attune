@@ -34,11 +34,11 @@ class EndRelationshipAction {
             // and shouldn't have to background the app to stop seeing a
             // stale Chat tab underneath the Healing Mode screen this
             // pushes to next. A plain SharedPreferences write alone is
-            // NOT sufficient here: HomeScreen's FutureBuilder watches an
-            // already-resolved Future<OnboardingStore> that doesn't
-            // re-invoke its builder just because this route stack pops
-            // back to it, so an explicit signal is required, not just
-            // shared storage (see relationshipModeResyncSignal's doc in
+            // NOT sufficient here: HomeScreen's build() reads _gateData, a
+            // plain field that only changes via setState, so it doesn't
+            // re-derive anything just because this route stack pops back
+            // to it — an explicit signal is required, not just shared
+            // storage (see relationshipModeResyncSignal's doc in
             // home_screen.dart). _syncRelationshipMode re-derives mode
             // from the server itself, so no local write happens here.
             relationshipModeResyncSignal.value++;
