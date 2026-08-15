@@ -3,6 +3,7 @@ import 'package:attune/core/widgets/focused_action_menu.dart';
 import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.dart';
+import 'package:attune/features/chat/presentation/widgets/voice_message_player.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -390,6 +391,19 @@ class _BubbleBody extends StatelessWidget {
           ),
         ),
       );
+    }
+    if (message.hasAudio) {
+      final audioUrl = message.localMediaPath ?? message.signedMediaUrl;
+      if (audioUrl != null) {
+        children.add(
+          VoiceMessagePlayer(
+            messageId: message.id,
+            audioUrl: audioUrl,
+            durationMs: message.mediaDurationMs ?? 0,
+            waveform: message.waveform ?? const [],
+          ),
+        );
+      }
     }
     if (message.content.trim().isNotEmpty) {
       if (children.isNotEmpty) {
