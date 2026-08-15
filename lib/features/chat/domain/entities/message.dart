@@ -15,6 +15,7 @@ class Message {
   final String? localMediaPath;
   final int? mediaDurationMs;
   final List<int>? waveform;
+  final String? signedThumbnailUrl;
   final String source;
   final DateTime? deliveredAt;
   final DateTime? readAt;
@@ -42,6 +43,7 @@ class Message {
     this.localMediaPath,
     this.mediaDurationMs,
     this.waveform,
+    this.signedThumbnailUrl,
     this.source = 'native',
     this.deliveredAt,
     this.readAt,
@@ -141,6 +143,7 @@ class Message {
     String? localMediaPath,
     int? mediaDurationMs,
     List<int>? waveform,
+    String? signedThumbnailUrl,
     String? source,
     DateTime? deliveredAt,
     DateTime? readAt,
@@ -166,6 +169,7 @@ class Message {
       localMediaPath: localMediaPath ?? this.localMediaPath,
       mediaDurationMs: mediaDurationMs ?? this.mediaDurationMs,
       waveform: waveform ?? this.waveform,
+      signedThumbnailUrl: signedThumbnailUrl ?? this.signedThumbnailUrl,
       source: source ?? this.source,
       deliveredAt: deliveredAt ?? this.deliveredAt,
       readAt: readAt ?? this.readAt,
@@ -244,6 +248,9 @@ class Message {
       (signedMediaUrl != null || localMediaPath != null);
   bool get hasAudio =>
       mediaType == 'audio' &&
+      (signedMediaUrl != null || localMediaPath != null);
+  bool get hasVideo =>
+      mediaType == 'video' &&
       (signedMediaUrl != null || localMediaPath != null);
   bool get isQueued => status == MessageStatus.queued;
   bool get isSending => status == MessageStatus.sending;

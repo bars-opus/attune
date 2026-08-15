@@ -106,4 +106,88 @@ void main() {
       expect(copied.waveform, [5, 10, 15]);
     });
   });
+
+  group('video message fields', () {
+    test('hasVideo is true only when mediaType is video and media is available', () {
+      final withLocal = Message(
+        id: 'm1',
+        clientMessageId: 'c1',
+        relationshipId: 'r1',
+        senderId: 's1',
+        content: '',
+        createdAt: DateTime(2026, 8, 15),
+        status: MessageStatus.sending,
+        isMine: true,
+        mediaType: 'video',
+        localMediaPath: '/tmp/clip.mp4',
+      );
+      expect(withLocal.hasVideo, isTrue);
+
+      final noMedia = Message(
+        id: 'm2',
+        clientMessageId: 'c2',
+        relationshipId: 'r1',
+        senderId: 's1',
+        content: 'text only',
+        createdAt: DateTime(2026, 8, 15),
+        status: MessageStatus.sent,
+        isMine: true,
+      );
+      expect(noMedia.hasVideo, isFalse);
+
+      final audioMessage = Message(
+        id: 'm3',
+        clientMessageId: 'c3',
+        relationshipId: 'r1',
+        senderId: 's1',
+        content: '',
+        createdAt: DateTime(2026, 8, 15),
+        status: MessageStatus.sent,
+        isMine: true,
+        mediaType: 'audio',
+        signedMediaUrl: 'https://example.com/voice.m4a',
+      );
+      expect(audioMessage.hasVideo, isFalse);
+    });
+
+    test('signedThumbnailUrl is NOT persisted via toJson/fromJson', () {
+      final original = Message(
+        id: 'm1',
+        clientMessageId: 'c1',
+        relationshipId: 'r1',
+        senderId: 's1',
+        content: '',
+        createdAt: DateTime(2026, 8, 15, 9),
+        status: MessageStatus.sent,
+        isMine: true,
+        mediaType: 'video',
+        mediaKey: 'chat-media/abc.mp4',
+        signedMediaUrl: 'https://example.com/abc.mp4',
+        signedThumbnailUrl: 'https://example.com/abc.jpg',
+      );
+
+      final json = original.toJson();
+      expect(json.containsKey('signedThumbnailUrl'), isFalse);
+
+      final restored = Message.fromJson(json);
+      expect(restored.signedThumbnailUrl, isNull);
+    });
+
+    test('copyWith preserves signedThumbnailUrl when not overridden', () {
+      final original = Message(
+        id: 'm1',
+        clientMessageId: 'c1',
+        relationshipId: 'r1',
+        senderId: 's1',
+        content: '',
+        createdAt: DateTime(2026, 8, 15),
+        status: MessageStatus.sending,
+        isMine: true,
+        mediaType: 'video',
+        signedThumbnailUrl: 'https://example.com/poster.jpg',
+      );
+      final copied = original.copyWith(status: MessageStatus.sent);
+      expect(copied.signedThumbnailUrl, 'https://example.com/poster.jpg');
+    });
+  });
 }
