@@ -206,7 +206,7 @@ void main() {
 
     await tester.tap(find.text('trigger'));
     // First pump starts the route transition; a second pump partway
-    // through the 400ms duration samples an in-flight frame.
+    // through the 220ms duration samples an in-flight frame.
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 110));
 
@@ -264,7 +264,7 @@ void main() {
 
     await tester.tap(find.text('trigger'));
     await tester.pump();
-    // The menu is staggerIndex 0 (no delay) on a 700ms AnimatedScaleFade —
+    // The menu is staggerIndex 0 (no delay) on a 500ms AnimatedScaleFade —
     // 200ms in is comfortably mid-transition, well before it settles.
     await tester.pump(const Duration(milliseconds: 200));
 
@@ -645,10 +645,10 @@ void main() {
     // and once the row itself is animating, each emoji inside staggers in
     // left-to-right as its own quick ripple. Each stage is its own
     // AnimatedScaleFade with staggerIndex * staggerDelay * duration as its
-    // start delay: with duration 700ms and staggerDelay 0.1, that's 70ms
-    // per index — menu (index 0) starts at 0ms, row (index 1) at 70ms,
-    // first emoji (index 2) at 140ms, last of 4 row items (index 5) at
-    // 350ms. This asserts genuine ordering via real sample points, not
+    // start delay: with duration 500ms and staggerDelay 0.12, that's 60ms
+    // per index — menu (index 0) starts at 0ms, row (index 1) at 60ms,
+    // first emoji (index 2) at 120ms, last of 4 row items (index 5) at
+    // 300ms. This asserts genuine ordering via real sample points, not
     // just that each piece eventually reaches full opacity.
     await tester.pumpWidget(
       MaterialApp(
@@ -705,23 +705,23 @@ void main() {
     double firstEmojiOpacity() => opacityAncestorOf(find.text('❤️'));
     double lastEmojiOpacity() => opacityAncestorOf(find.text('👎'));
 
-    // At 50ms: only the menu (0ms delay) has started; the row (70ms delay)
-    // and every emoji (140ms+ delay) have not.
-    await tester.pump(const Duration(milliseconds: 50));
+    // At 40ms: only the menu (0ms delay) has started; the row (60ms delay)
+    // and every emoji (120ms+ delay) have not.
+    await tester.pump(const Duration(milliseconds: 40));
     expect(menuOpacity(), greaterThan(0.0));
     expect(rowOpacity(), 0.0);
     expect(firstEmojiOpacity(), 0.0);
 
-    // At 100ms: the row (70ms delay) has started; the first emoji (140ms
+    // At 90ms: the row (60ms delay) has started; the first emoji (120ms
     // delay) has not.
     await tester.pump(const Duration(milliseconds: 50));
     expect(rowOpacity(), greaterThan(0.0));
     expect(firstEmojiOpacity(), 0.0);
 
-    // At 170ms: the first emoji (140ms delay) has started; the last row
-    // item (350ms delay) has not — proves the per-emoji stagger itself is
+    // At 150ms: the first emoji (120ms delay) has started; the last row
+    // item (300ms delay) has not — proves the per-emoji stagger itself is
     // real, not all four popping in together the moment the row starts.
-    await tester.pump(const Duration(milliseconds: 70));
+    await tester.pump(const Duration(milliseconds: 60));
     expect(firstEmojiOpacity(), greaterThan(0.0));
     expect(lastEmojiOpacity(), 0.0);
 

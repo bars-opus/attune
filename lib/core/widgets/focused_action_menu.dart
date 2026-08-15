@@ -41,14 +41,11 @@ Future<void> showFocusedActionMenu({
     // own scale-up below — the menu, reaction row, and per-emoji ripple
     // each run their own independent AnimatedScaleFade with its own
     // duration/stagger (see _FocusedActionMenuOverlay's _entranceDuration/
-    // _staggerDelay). 400ms rather than a snappier ~200ms so the blur/dim
-    // and bubble scale-up read as a clear, deliberate motion instead of an
-    // instant snap (per direct user feedback asking for a slower, more
-    // dramatic entrance). Checklist 5.2's 200ms target is about
+    // _staggerDelay). Checklist 5.2's 200ms target is about
     // time-to-FIRST-feedback (the haptic + backdrop + bubble scale all
     // start at t=0, satisfying that), not that the whole entrance must
     // finish within 200ms.
-    transitionDuration: const Duration(milliseconds: 400),
+    transitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (dialogContext, animation, secondaryAnimation) {
       return _FocusedActionMenuOverlay(
         anchorRect: anchorRect,
@@ -125,14 +122,9 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
   //
   // staggerDelay is per-INDEX, not per-stage — the whole sequence (menu,
   // then row, then each emoji) is one continuous stagger sharing one
-  // duration, indices 0..N in visual order. Slower/more spaced-out than
-  // the original 500ms/0.12 (60ms per index) per user feedback asking for
-  // a clearer, more dramatic entrance — 700ms total with 0.1 per-index
-  // delay is ~70ms per index, keeping the tail (a 6-emoji row's last item,
-  // staggerIndex 7) from stretching too far past the menu/row's own
-  // completion.
-  static const Duration _entranceDuration = Duration(milliseconds: 700);
-  static const double _staggerDelay = 0.1;
+  // duration, indices 0..N in visual order.
+  static const Duration _entranceDuration = Duration(milliseconds: 500);
+  static const double _staggerDelay = 0.12;
   static const int _menuStaggerIndex = 0;
   static const int _reactionRowStaggerIndex = 1;
 
@@ -189,13 +181,11 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // beginScale 0.2 (was 0.4) — a bigger pop per-emoji, same
-                // reasoning as the entrance duration/stagger above.
                 for (var i = 0; i < quickReactions.length; i++)
                   AnimatedScaleFade(
                     duration: _entranceDuration,
                     curve: Curves.easeOutBack,
-                    beginScale: 0.2,
+                    beginScale: 0.4,
                     staggerIndex: _emojiStaggerIndex(i),
                     staggerDelay: _staggerDelay,
                     child: InkWell(
@@ -219,7 +209,7 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                 AnimatedScaleFade(
                   duration: _entranceDuration,
                   curve: Curves.easeOutBack,
-                  beginScale: 0.2,
+                  beginScale: 0.4,
                   staggerIndex: _emojiStaggerIndex(quickReactions.length),
                   staggerDelay: _staggerDelay,
                   child: InkWell(
@@ -263,11 +253,7 @@ class _FocusedActionMenuOverlay extends StatelessWidget {
                 rect: anchorRect,
                 child: IgnorePointer(
                   child: Transform.scale(
-                    // 10% growth rather than the previous 5% — more
-                    // visible without the bubble looking like it's
-                    // overflowing its own space (per user feedback
-                    // requesting a more dramatic entrance).
-                    scale: 1.0 + 0.1 * animation.value,
+                    scale: 1.0 + 0.05 * animation.value,
                     // The snapshot is a bare widget subtree lifted out of
                     // the page below and re-rendered under this dialog
                     // route, where there is no enclosing Material. Text
