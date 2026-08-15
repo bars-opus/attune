@@ -26,6 +26,7 @@ import 'package:attune/features/conflict_translator/presentation/screens/transla
 import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/core/services/media/image_picker_service.dart';
+import 'package:attune/core/services/media/voice_recorder_service.dart';
 import 'package:attune/core/widgets/feedback/export_extensions.dart';
 import 'package:attune/features/chat/data/repositories/chat_repository.dart';
 import 'package:flutter/material.dart';
@@ -348,6 +349,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _scrollToLatest();
   }
 
+  Future<void> _onVoiceMessageRecorded(VoiceRecording recording) async {
+    await ref
+        .read(chatControllerProvider(widget.conversation).notifier)
+        .sendVoiceMessage(
+          localPath: recording.localPath,
+          durationMs: recording.durationMs,
+          waveform: recording.waveform,
+        );
+    _scrollToLatest();
+  }
+
   String _imageRejectionMessage(String code) {
     switch (code) {
       case 'media_type_unsupported':
@@ -511,6 +523,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
     final conversation = state.conversation;
     final imageSharingEnabled = ref.watch(chatImageSharingEnabledProvider);
+    final voiceMessagesEnabled = ref.watch(chatVoiceMessagesEnabledProvider);
     final translatorEnabled = ref.watch(chatTranslatorEntryEnabledProvider);
     final headerDrawerEnabled = ref.watch(
       chatExpandedHeaderDrawerEnabledProvider,
@@ -685,6 +698,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                       : null,
               showAttachImage: imageSharingEnabled.valueOrNull == true,
               showTranslator: translatorEnabled.valueOrNull == true,
+              showVoiceMessage: voiceMessagesEnabled.valueOrNull == true,
+              onVoiceMessageRecorded:
+                  voiceMessagesEnabled.valueOrNull == true
+                      ? (recording) {
+                        unawaited(_onVoiceMessageRecorded(recording));
+                      }
+                      : null,
               enabled: !state.isSending,
             )
           else

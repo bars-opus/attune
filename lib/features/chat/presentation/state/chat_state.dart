@@ -34,6 +34,13 @@ final chatImageSharingEnabledProvider = FutureProvider<bool>((ref) {
   );
 });
 
+final chatVoiceMessagesEnabledProvider = FutureProvider<bool>((ref) {
+  return ChatFeatureFlags.isEnabled(
+    ref.watch(supabaseClientProvider),
+    ChatFeatureFlags.voiceMessages,
+  );
+});
+
 final conversationsProvider =
     AsyncNotifierProvider<ConversationsNotifier, List<Conversation>>(
       ConversationsNotifier.new,
