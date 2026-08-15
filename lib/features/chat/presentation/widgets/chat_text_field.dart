@@ -1,6 +1,12 @@
+import 'dart:async';
+
+import 'package:attune/core/services/media/voice_recorder_service.dart';
+import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/core/ui/motion/scale_pop.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
+
+import 'voice_recording_bar.dart';
 
 class ChatTextField extends StatefulWidget {
   const ChatTextField({
@@ -9,8 +15,10 @@ class ChatTextField extends StatefulWidget {
     required this.onSend,
     this.onAttachImage,
     this.onOpenTranslator,
+    this.onVoiceMessageRecorded,
     this.showAttachImage = false,
     this.showTranslator = false,
+    this.showVoiceMessage = false,
     this.enabled = true,
     this.hintText = 'Type a message...',
     this.focusNode,
@@ -22,8 +30,16 @@ class ChatTextField extends StatefulWidget {
   final VoidCallback onSend;
   final VoidCallback? onAttachImage;
   final VoidCallback? onOpenTranslator;
+
+  /// Called once a press-and-hold recording completes with a valid
+  /// (>= VoiceRecorderService.minDuration) recording. Not called at all for
+  /// a slide-to-cancel or a too-short tap — those are silently discarded
+  /// per the design spec.
+  final void Function(VoiceRecording recording)? onVoiceMessageRecorded;
+
   final bool showAttachImage;
   final bool showTranslator;
+  final bool showVoiceMessage;
   final bool enabled;
   final String hintText;
 
@@ -54,6 +70,17 @@ class ChatTextField extends StatefulWidget {
 
 class _ChatTextFieldState extends State<ChatTextField> {
   int _sendPulse = 0;
+  VoiceRecorderService? _recorder;
+  bool _isRecording = false;
+  bool _isCancelling = false;
+  Duration _elapsed = Duration.zero;
+  Timer? _elapsedTicker;
+  DateTime? _recordingStartedAt;
+
+  // Drag-up-to-cancel threshold, in logical pixels from the initial press
+  // point. Chosen to be comfortably beyond an accidental small finger
+  // wobble during a normal hold, but well within a deliberate upward drag.
+  static const double _cancelDragThreshold = 80.0;
 
   bool get _hasText => widget.controller.text.trim().isNotEmpty;
 
@@ -66,6 +93,8 @@ class _ChatTextFieldState extends State<ChatTextField> {
   @override
   void dispose() {
     widget.controller.removeListener(_onChanged);
+    _elapsedTicker?.cancel();
+    _recorder?.dispose();
     super.dispose();
   }
 
@@ -79,6 +108,107 @@ class _ChatTextFieldState extends State<ChatTextField> {
     if (!(widget.enabled && _hasText)) return;
     setState(() => _sendPulse++);
     widget.onSend();
+  }
+
+  Future<void> _startRecording() async {
+    if (!widget.enabled || _isRecording) return;
+
+    final recorder = VoiceRecorderService();
+    final granted = await recorder.requestPermission();
+    if (!granted) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Attune needs microphone access to send voice messages',
+          ),
+          action: SnackBarAction(
+            label: 'Settings',
+            onPressed: () {
+              openAppSettings();
+            },
+          ),
+        ),
+      );
+      return;
+    }
+
+    try {
+      await recorder.start();
+    } on VoiceRecordingException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not start recording. Please try again.'),
+        ),
+      );
+      return;
+    }
+
+    _recordingStartedAt = DateTime.now();
+    _elapsedTicker = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      if (!mounted) return;
+      setState(() {
+        _elapsed = DateTime.now().difference(_recordingStartedAt!);
+      });
+    });
+
+    setState(() {
+      _recorder = recorder;
+      _isRecording = true;
+      _isCancelling = false;
+      _elapsed = Duration.zero;
+    });
+  }
+
+  void _onLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
+    if (!_isRecording) return;
+    final isCancelling = -details.offsetFromOrigin.dy > _cancelDragThreshold;
+    if (isCancelling != _isCancelling) {
+      setState(() => _isCancelling = isCancelling);
+    }
+  }
+
+  Future<void> _onLongPressEnd(LongPressEndDetails details) async {
+    if (!_isRecording) return;
+    final recorder = _recorder;
+    final wasCancelling = _isCancelling;
+    _elapsedTicker?.cancel();
+    _elapsedTicker = null;
+
+    setState(() {
+      _isRecording = false;
+      _isCancelling = false;
+    });
+
+    if (recorder == null) return;
+
+    if (wasCancelling) {
+      await recorder.cancel();
+      recorder.dispose();
+      _recorder = null;
+      return;
+    }
+
+    try {
+      final recording = await recorder.stop();
+      if (recording.durationMs >= VoiceRecorderService.minDuration.inMilliseconds) {
+        widget.onVoiceMessageRecorded?.call(recording);
+      }
+      // A too-short recording is silently discarded per the design spec —
+      // no callback, no error.
+    } on VoiceRecordingException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('That recording could not be sent. Please try again.'),
+          ),
+        );
+      }
+    } finally {
+      recorder.dispose();
+      _recorder = null;
+    }
   }
 
   @override
@@ -101,60 +231,92 @@ class _ChatTextFieldState extends State<ChatTextField> {
               tooltip: 'Help me say this',
             ),
           Expanded(
-            // No entrance animation here: this composer is persistent, and it
-            // rebuilds on every keystroke (_hasText drives the translator and
-            // send affordances). A ShakeTransition re-ran its 900ms slide on
-            // each rebuild, shifting the field — and the send button's hit
-            // target — sideways while the user typed.
-            child: CardInkWell(
-              // Plain token rather than `20.r`: the .r extension reads
-              // ScreenUtil.screenWidth, which throws in widget tests that
-              // render this field without initialising ScreenUtil.
-              borderRadius: BorderRadius.circular(BorderRadiusTokens.xl),
-              padding: const EdgeInsets.all(0),
-              margin: const EdgeInsets.all(0),
-              elevation: ElevationTokens.sm,
-
-              // AppTextFormField's fill paints square corners when
-              // showBorder is false (InputBorder.none doesn't clip the
-              // fill) — clip explicitly so the visible shape stays rounded
-              // to match the shadow's outline.
-              child: AppTextFormField(
-                controller: widget.controller,
-                focusNode: widget.focusNode,
-                hintText: widget.hintText,
-                minLines: 1,
-                maxLines: 5,
-                showBorder: true,
-                focusedBorderColor: widget.sendButtonColor,
-                // prefixIcon: const Icon(Icons.search, size: 20),
-                onFieldSubmitted: (_) => _handleSend(),
-                label: '',
-              ),
-            ),
+            child: _isRecording
+                ? VoiceRecordingBar(
+                    elapsed: _elapsed,
+                    // Live per-frame amplitude isn't wired to this bar in
+                    // this task — VoiceRecorderService exposes the final
+                    // downsampled waveform via stop(), not a live stream
+                    // consumable outside the service. A constant mid-level
+                    // fill keeps the bar visually alive without
+                    // overengineering a live-amplitude plumbing path that
+                    // the design spec didn't require for the recording BAR
+                    // specifically (only the SENT bubble's waveform must
+                    // reflect real amplitude data).
+                    amplitude: 0.5,
+                    isCancelling: _isCancelling,
+                  )
+                : CardInkWell(
+                    borderRadius: BorderRadius.circular(BorderRadiusTokens.xl),
+                    padding: const EdgeInsets.all(0),
+                    margin: const EdgeInsets.all(0),
+                    elevation: ElevationTokens.sm,
+                    child: AppTextFormField(
+                      controller: widget.controller,
+                      focusNode: widget.focusNode,
+                      hintText: widget.hintText,
+                      minLines: 1,
+                      maxLines: 5,
+                      showBorder: true,
+                      focusedBorderColor: widget.sendButtonColor,
+                      onFieldSubmitted: (_) => _handleSend(),
+                      label: '',
+                    ),
+                  ),
           ),
           const SizedBox(width: 8),
-          // Not wrapped in an entrance animation: AnimatedScaleFade starts at
-          // scale 0 and takes 800ms to reach full size, and it restarts on
-          // every rebuild of this composer (each keystroke). That left the
-          // send button scaled down — and effectively untappable — for most of
-          // a second after the user finished typing. ScalePop below still
-          // gives the button its press feedback.
-          IconButton.filled(
-            onPressed: widget.enabled && _hasText ? _handleSend : null,
-            tooltip: 'Send message',
-            style:
-                widget.sendButtonColor == null
-                    ? null
-                    : IconButton.styleFrom(
+          if (widget.showVoiceMessage && !_hasText)
+            Semantics(
+              button: true,
+              label: 'Hold to record a voice message',
+              child: GestureDetector(
+                onLongPressStart: (_) => unawaited(_startRecording()),
+                onLongPressMoveUpdate: _onLongPressMoveUpdate,
+                onLongPressEnd: (details) =>
+                    unawaited(_onLongPressEnd(details)),
+                // No `tooltip:` here deliberately — IconButton's tooltip
+                // wraps its child in its own long-press-to-show
+                // GestureDetector, which wins the gesture arena against
+                // this widget's own onLongPressStart and silently eats the
+                // hold-to-record gesture (confirmed empirically: with
+                // `tooltip` set, onLongPressStart never fires). The
+                // Semantics label above covers the accessibility purpose
+                // the tooltip would have served.
+                child: IconButton.filled(
+                  onPressed: widget.enabled ? () {} : null,
+                  style: widget.sendButtonColor == null
+                      ? null
+                      : IconButton.styleFrom(
+                          backgroundColor: widget.sendButtonColor,
+                          foregroundColor: widget.onSendButtonColor,
+                        ),
+                  icon: IconCrossfade(
+                    child: Icon(
+                      Icons.mic_none_rounded,
+                      key: ValueKey(_isRecording),
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else
+            IconButton.filled(
+              onPressed: widget.enabled && _hasText ? _handleSend : null,
+              tooltip: 'Send message',
+              style: widget.sendButtonColor == null
+                  ? null
+                  : IconButton.styleFrom(
                       backgroundColor: widget.sendButtonColor,
                       foregroundColor: widget.onSendButtonColor,
                     ),
-            icon: ScalePop(
-              trigger: _sendPulse,
-              child: const Icon(Icons.send_rounded),
+              icon: IconCrossfade(
+                child: ScalePop(
+                  key: const ValueKey('send'),
+                  trigger: _sendPulse,
+                  child: const Icon(Icons.send_rounded),
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );

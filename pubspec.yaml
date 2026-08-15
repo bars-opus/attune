@@ -150,6 +150,16 @@ dev_dependencies:
   freezed: ^2.4.8
   json_serializable: ^6.7.1
   flutter_launcher_icons: ^0.14.1
+
+  # Direct test-time deps: chat_text_field_test.dart fakes these plugins'
+  # platform-interface singletons so the press-and-hold voice recording
+  # gesture's permission/record calls resolve under `flutter test` instead
+  # of throwing MissingPluginException (no real platform channel in a
+  # widget-test host). Already present transitively via permission_handler
+  # and record; declared directly here only to satisfy
+  # depend_on_referenced_packages.
+  permission_handler_platform_interface: ^4.3.0
+  record_platform_interface: ^1.6.0
   flutter_native_splash: ^2.3.6
   path_provider_platform_interface: ^2.1.2
   plugin_platform_interface: ^2.1.8
