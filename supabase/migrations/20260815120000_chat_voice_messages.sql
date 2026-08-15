@@ -63,6 +63,14 @@ ON CONFLICT (key) DO NOTHING;
 --    is enforced by the storage object re-validation in
 --    validate_message_media_before_insert below, not at intent-creation
 --    time — intent creation has no file to measure yet).
+-- The old two-argument signature is superseded — drop it BEFORE creating the
+-- new three-argument signature below. PostgreSQL treats different-arity
+-- functions as distinct overloads, so CREATE OR REPLACE on the new
+-- 3-argument signature would NOT replace this old 2-argument one; dropping
+-- it first avoids ever having two overloads (one with stale hard-coded
+-- 'image' behavior) coexist, even momentarily.
+DROP FUNCTION IF EXISTS public.create_chat_media_upload_intent(uuid, text);
+
 CREATE OR REPLACE FUNCTION public.create_chat_media_upload_intent(
   p_relationship_id uuid,
   p_mime_type text,
@@ -169,11 +177,6 @@ $$;
 
 REVOKE ALL ON FUNCTION public.create_chat_media_upload_intent(uuid, text, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.create_chat_media_upload_intent(uuid, text, text) TO authenticated;
-
--- The old two-argument signature is superseded — drop it so there isn't a
--- second, stale overload with the old hard-coded 'image' behavior sitting
--- alongside the new one.
-DROP FUNCTION IF EXISTS public.create_chat_media_upload_intent(uuid, text);
 
 -- 5. Widen validate_message_media_before_insert: accept 'audio' as well as
 --    'image', and make the post-upload size ceiling type-aware — audio's
