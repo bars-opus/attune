@@ -70,6 +70,10 @@ class Message {
       mediaKey: row['media_url'] as String?,
       mediaType: row['media_type'] as String?,
       mediaThumbnailKey: row['media_thumbnail_url'] as String?,
+      mediaDurationMs: (row['media_duration_ms'] as num?)?.toInt(),
+      waveform: (row['media_waveform'] as List<dynamic>?)
+          ?.map((e) => (e as num).toInt())
+          .toList(),
       source: (row['source'] as String?) ?? 'native',
       deliveredAt: deliveredAt,
       readAt: readAt,
@@ -98,6 +102,8 @@ class Message {
     String? mediaType,
     String? mediaThumbnailKey,
     String? localMediaPath,
+    int? mediaDurationMs,
+    List<int>? waveform,
     String? replyToMessageId,
     String? quotedText,
   }) {
@@ -111,6 +117,8 @@ class Message {
       mediaKey: mediaKey,
       mediaType: mediaType,
       localMediaPath: localMediaPath,
+      mediaDurationMs: mediaDurationMs,
+      waveform: waveform,
       source: 'native',
       status: MessageStatus.sending,
       isMine: true,

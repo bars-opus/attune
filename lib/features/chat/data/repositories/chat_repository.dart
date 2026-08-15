@@ -28,6 +28,8 @@ abstract class ChatRepository {
     required String content,
     String? mediaKey,
     String? mediaType,
+    int? mediaDurationMs,
+    List<int>? waveform,
     String? replyToMessageId,
     String? quotedText,
   });

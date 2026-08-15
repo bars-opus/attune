@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'package:attune/core/services/media/voice_recorder_service.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
@@ -543,6 +544,83 @@ class ChatController extends StateNotifier<ChatState> {
     await _attemptSend(pending);
   }
 
+  /// Sends a voice message, mirroring sendImageMessage's exact shape:
+  /// duration-bounds check (mirrors sendImageMessage's byte-size check),
+  /// optimistic Message + outbox write, flush through the shared retry
+  /// path. See design spec's "Sending" section.
+  Future<void> sendVoiceMessage({
+    required String localPath,
+    required int durationMs,
+    required List<int> waveform,
+  }) async {
+    if (!state.conversation.canSend) return;
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    final file = File(localPath);
+    if (!await file.exists()) {
+      if (mounted) {
+        state = state.copyWith(
+          error: 'That voice message is no longer available.',
+        );
+      }
+      return;
+    }
+
+    // Belt-and-suspenders duration check mirroring VoiceRecorderService's
+    // own maxDuration cap — a stale/modified local file or a future
+    // caller bypassing the recorder service should not be able to queue
+    // an oversized send.
+    if (durationMs > VoiceRecorderService.maxDuration.inMilliseconds) {
+      if (mounted) {
+        state = state.copyWith(
+          error: 'That voice message is too long to send.',
+        );
+      }
+      return;
+    }
+    if (durationMs < VoiceRecorderService.minDuration.inMilliseconds) {
+      return;
+    }
+
+    final clientMessageId = const Uuid().v4();
+    final optimisticId = '_local_$clientMessageId';
+    final now = DateTime.now();
+    final pending = PendingSend(
+      clientMessageId: clientMessageId,
+      relationshipId: relationshipId,
+      senderId: user.id,
+      text: '',
+      localMediaPath: localPath,
+      mediaMimeType: 'audio/mp4',
+      mediaType: 'audio',
+      mediaDurationMs: durationMs,
+      waveform: waveform,
+      createdAt: now,
+    );
+    await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
+
+    final optimistic = Message.optimistic(
+      id: optimisticId,
+      clientMessageId: clientMessageId,
+      relationshipId: relationshipId,
+      senderId: user.id,
+      content: '',
+      createdAt: now,
+      mediaType: 'audio',
+      localMediaPath: localPath,
+      mediaDurationMs: durationMs,
+      waveform: waveform,
+    );
+    state = state.copyWith(
+      isSending: true,
+      error: null,
+      messages: [optimistic, ...state.messages],
+    );
+
+    await _attemptSend(pending);
+  }
+
   Future<void> retryMessage(Message message) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
@@ -826,14 +904,17 @@ class ChatController extends StateNotifier<ChatState> {
 
       final repository = ref.read(chatRepositoryProvider);
       String? mediaKey;
-      if (pending.mediaType == 'image' &&
+      final isMediaSend = (pending.mediaType == 'image' ||
+              pending.mediaType == 'audio') &&
           pending.localMediaPath != null &&
-          pending.mediaMimeType != null) {
-        final intent = await repository.createImageUploadIntent(
+          pending.mediaMimeType != null;
+      if (isMediaSend) {
+        final intent = await repository.createMediaUploadIntent(
           relationshipId: pending.relationshipId,
           mimeType: pending.mediaMimeType!,
+          mediaType: pending.mediaType!,
         );
-        await repository.uploadChatImage(
+        await repository.uploadChatMedia(
           intent: intent,
           localPath: pending.localMediaPath!,
           mimeType: pending.mediaMimeType!,
@@ -847,6 +928,8 @@ class ChatController extends StateNotifier<ChatState> {
         content: pending.text,
         mediaKey: mediaKey,
         mediaType: pending.mediaType,
+        mediaDurationMs: pending.mediaDurationMs,
+        waveform: pending.waveform,
         replyToMessageId: pending.replyToMessageId,
         quotedText: pending.quotedText,
       );

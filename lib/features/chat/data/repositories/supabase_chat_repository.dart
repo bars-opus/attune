@@ -33,7 +33,8 @@ class SupabaseChatRepository implements ChatRepository {
 
   static const _messageColumns =
       'id,relationship_id,sender_id,client_message_id,content,created_at,'
-      'delivered_at,read_at,media_url,media_thumbnail_url,media_type,source,'
+      'delivered_at,read_at,media_url,media_thumbnail_url,media_type,'
+      'media_duration_ms,media_waveform,source,'
       'reply_to_message_id,quoted_text,deleted_at,edited_at';
 
   User get _currentUser {
@@ -254,6 +255,8 @@ class SupabaseChatRepository implements ChatRepository {
     required String content,
     String? mediaKey,
     String? mediaType,
+    int? mediaDurationMs,
+    List<int>? waveform,
     String? replyToMessageId,
     String? quotedText,
   }) async {
@@ -274,6 +277,8 @@ class SupabaseChatRepository implements ChatRepository {
               'content': content,
               'media_url': mediaKey,
               'media_type': mediaType,
+              'media_duration_ms': mediaDurationMs,
+              'media_waveform': waveform,
               'reply_to_message_id': replyToMessageId,
               'quoted_text': quotedText,
             })
@@ -729,7 +734,8 @@ class SupabaseChatRepository implements ChatRepository {
         if (reactions != null) {
           base = base.copyWith(reactions: reactions);
         }
-        if (base.mediaKey == null || base.mediaType != 'image') {
+        if (base.mediaKey == null ||
+            (base.mediaType != 'image' && base.mediaType != 'audio')) {
           return base;
         }
         final signedUrl = await createSignedMediaUrl(

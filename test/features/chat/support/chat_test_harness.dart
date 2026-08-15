@@ -93,6 +93,8 @@ class FakeChatRepository implements ChatRepository {
     required String content,
     String? mediaKey,
     String? mediaType,
+    int? mediaDurationMs,
+    List<int>? waveform,
     String? replyToMessageId,
     String? quotedText,
   }) async {
@@ -124,6 +126,8 @@ class FakeChatRepository implements ChatRepository {
       'read_at': null,
       'media_url': mediaKey,
       'media_type': mediaType,
+      'media_duration_ms': mediaDurationMs,
+      'media_waveform': waveform,
       'source': 'native',
       'reply_to_message_id': replyToMessageId,
       'quoted_text': quotedText,
