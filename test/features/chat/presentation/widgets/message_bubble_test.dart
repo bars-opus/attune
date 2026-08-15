@@ -1,7 +1,9 @@
 import 'package:attune/features/chat/domain/entities/message.dart';
+import 'package:attune/features/chat/presentation/providers/voice_playback_provider.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -416,6 +418,150 @@ void main() {
     expect(find.text('❤️'), findsOneWidget);
     expect(find.text('👍'), findsOneWidget);
     expect(find.text('1'), findsNothing);
+  });
+
+  testWidgets(
+      'playing your own voice message survives the optimistic-to-canonical id '
+      'swap instead of self-pausing (I3 regression guard)', (tester) async {
+    // The optimistic (pre-upload) message has a synthetic id like
+    // '_local_<clientMessageId>'. Once the server confirms the send,
+    // ChatController swaps it for the canonical row, which has a real UUID
+    // as `id` but the SAME clientMessageId throughout.
+    //
+    // VoiceMessagePlayer enforces one-at-a-time playback by writing its own
+    // `messageId` into currentlyPlayingVoiceMessageIdProvider on play, and
+    // pausing itself via a ref.listen whenever the provider's value stops
+    // matching `widget.messageId`. If MessageBubble sourced that messageId
+    // from the unstable `message.id` instead of the stable
+    // `clientMessageId`, then on the optimistic-to-canonical rebuild:
+    // `widget.messageId` changes to the new id, but the provider still
+    // holds the OLD id (nothing re-triggered play) — so the very next
+    // ref.listen invocation sees `next != widget.messageId` and pauses
+    // itself, even though no other bubble ever started playing. This test
+    // starts playback under the optimistic identity, performs the swap,
+    // and asserts the provider is untouched and the player has not
+    // self-paused.
+    const clientMessageId = 'c-voice-1';
+    final createdAt = DateTime.now();
+
+    final optimistic = Message.optimistic(
+      id: '_local_$clientMessageId',
+      clientMessageId: clientMessageId,
+      relationshipId: 'r1',
+      senderId: 'u1',
+      content: '',
+      createdAt: createdAt,
+      mediaType: 'audio',
+      localMediaPath: '/tmp/voice.m4a',
+      mediaDurationMs: 4200,
+      waveform: List.filled(100, 50),
+    );
+
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(home: Scaffold(body: MessageBubble(message: optimistic))),
+      ),
+    );
+
+    // Start playback — this synchronously writes widget.messageId into the
+    // provider inside _togglePlayback, before the (never-resolving in this
+    // test VM host) `await _player.play(source)`.
+    await tester.tap(find.byIcon(Icons.play_arrow_rounded));
+    await tester.pump();
+
+    final messageIdWhilePlaying = container.read(currentlyPlayingVoiceMessageIdProvider);
+    expect(messageIdWhilePlaying, isNotNull);
+
+    // Canonical row lands: different `id` (real UUID), same
+    // clientMessageId, media now served from signedMediaUrl instead of
+    // localMediaPath (post-upload) — the shape of the real swap.
+    final canonical = optimistic.copyWith(
+      id: 'server-generated-uuid',
+      signedMediaUrl: 'https://example.com/voice.m4a',
+      status: MessageStatus.sent,
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(home: Scaffold(body: MessageBubble(message: canonical))),
+      ),
+    );
+    await tester.pump();
+
+    // A second, unrelated bubble starts playing — this is the real-world
+    // trigger for the one-at-a-time enforcement's ref.listen to fire on
+    // THIS (post-swap) bubble.
+    final other = Message.optimistic(
+      id: 'm-other',
+      clientMessageId: 'c-other',
+      relationshipId: 'r1',
+      senderId: 'u1',
+      content: '',
+      createdAt: DateTime.now(),
+      mediaType: 'audio',
+      localMediaPath: '/tmp/other.m4a',
+      mediaDurationMs: 1000,
+      waveform: List.filled(100, 50),
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                MessageBubble(message: canonical),
+                MessageBubble(message: other),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // The provider is still exactly the value this bubble itself wrote
+    // when play started (messageIdWhilePlaying) — the second bubble hasn't
+    // been tapped, so nothing should have changed it yet. This establishes
+    // the baseline before the real assertion below.
+    expect(container.read(currentlyPlayingVoiceMessageIdProvider), messageIdWhilePlaying);
+
+    // Tapping play on THIS (post-swap) bubble again is the direct
+    // observable check: _togglePlayback writes `widget.messageId` (the
+    // CURRENT widget's messageId) into the provider. If MessageBubble
+    // sourced it from the unstable message.id, this write now uses the
+    // canonical id — a DIFFERENT value than messageIdWhilePlaying (the
+    // optimistic id used for the original write) — even though, from the
+    // user's perspective, it's the exact same voice message bubble they
+    // were already listening to. The fix (clientMessageId) makes this
+    // write produce the SAME value both times, proving stable identity
+    // across the swap.
+    final firstBubblePlayButtons = find.descendant(
+      of: find.byType(MessageBubble).first,
+      matching: find.byIcon(Icons.play_arrow_rounded),
+    );
+    // _isPlaying never actually flips true in this harness (play() never
+    // resolves), so the icon is still play_arrow — tapping it re-enters
+    // the "start playback" branch of _togglePlayback, which is exactly
+    // the write we want to observe.
+    await tester.tap(firstBubblePlayButtons);
+    await tester.pump();
+
+    expect(
+      container.read(currentlyPlayingVoiceMessageIdProvider),
+      messageIdWhilePlaying,
+      reason:
+          'the messageId this bubble writes into the provider must stay '
+          'stable across the optimistic-to-canonical swap — if this fails, '
+          'VoiceMessagePlayer is being identified by the unstable '
+          'message.id instead of the stable message.clientMessageId',
+    );
   });
 
   testWidgets('no reaction pill renders when the message has no reactions',

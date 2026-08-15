@@ -397,7 +397,18 @@ class _BubbleBody extends StatelessWidget {
       if (audioUrl != null) {
         children.add(
           VoiceMessagePlayer(
-            messageId: message.id,
+            // clientMessageId (not message.id) — it's the one identifier
+            // that's stable across the optimistic-to-canonical swap. The
+            // optimistic (pre-upload) message has a synthetic id like
+            // '_local_<clientMessageId>'; once the server confirms the
+            // send, ChatController replaces it with the canonical row,
+            // which has a real UUID as `id` but the SAME clientMessageId.
+            // Using message.id here would change out from under this
+            // widget mid-playback, tripping the one-at-a-time-enforcement
+            // ref.listen and pausing/tearing down the player for the
+            // single most common case: listening to what you just sent.
+            key: ValueKey(message.clientMessageId),
+            messageId: message.clientMessageId,
             audioUrl: audioUrl,
             durationMs: message.mediaDurationMs ?? 0,
             waveform: message.waveform ?? const [],
