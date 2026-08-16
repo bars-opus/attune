@@ -385,6 +385,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
     if (window == null || !mounted) return; // user backed out
 
+    // Invariant: no `await` may be inserted between the `!mounted` check
+    // above and this dialog call without re-checking `mounted` again —
+    // there's currently nothing async in between, which is what makes using
+    // `context` here safe.
     final PreparedChatVideo prepared;
     try {
       prepared = await VideoPrepareProgressDialog.show(
@@ -615,6 +619,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final conversation = state.conversation;
     final imageSharingEnabled = ref.watch(chatImageSharingEnabledProvider);
     final videoSharingEnabled = ref.watch(chatVideoSharingEnabledProvider);
+    // create_chat_media_upload_intent (see the 20260815130000 migration)
+    // requires BOTH chat_video_sharing AND chat_image_sharing to be enabled
+    // for a video upload intent to succeed — every video send also uploads
+    // its thumbnail through the image intent path. Gating on
+    // videoSharingEnabled alone would let a user pick/trim/transcode a clip
+    // only to have the send fail after the expensive part is done. Inlined
+    // here (rather than a separate derived provider) since it's a single
+    // call site and the migration comment is the source of truth to keep in
+    // sync with.
+    final videoAttachEnabled =
+        videoSharingEnabled.valueOrNull == true &&
+        imageSharingEnabled.valueOrNull == true;
     final voiceMessagesEnabled = ref.watch(chatVoiceMessagesEnabledProvider);
     final translatorEnabled = ref.watch(chatTranslatorEntryEnabledProvider);
     final headerDrawerEnabled = ref.watch(
@@ -783,7 +799,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                       }
                       : null,
               onAttachVideo:
-                  videoSharingEnabled.valueOrNull == true
+                  videoAttachEnabled
                       ? () {
                         unawaited(_attachVideo());
                       }
@@ -795,7 +811,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                       }
                       : null,
               showAttachImage: imageSharingEnabled.valueOrNull == true,
-              showAttachVideo: videoSharingEnabled.valueOrNull == true,
+              showAttachVideo: videoAttachEnabled,
               showTranslator: translatorEnabled.valueOrNull == true,
               showVoiceMessage: voiceMessagesEnabled.valueOrNull == true,
               onVoiceMessageRecorded:

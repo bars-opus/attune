@@ -129,6 +129,21 @@ class ChatVideoPreparer {
     final sourceLength = await source.length();
     if (sourceLength <= 0) throw const ChatVideoRejected('media_empty');
 
+    // Early, cheap absolute-size guard: reject a source file that's already
+    // bigger than the pre-transcode ceiling outright, before paying for a
+    // MIME sniff, getMediaInfo probe, or (further down) any decode work.
+    // This is deliberately independent of the trim window — VideoTrimScreen
+    // clamps the *selected* window to <=3 minutes before prepare() ever
+    // runs, which means the window-estimate guard below (windowEstimate >
+    // maxSourceBytes) can in practice only trip within a narrow high-bitrate
+    // band once the window is bounded. An absurdly large full source (e.g. a
+    // multi-GB 4K/60 file the user only trims a few seconds from) deserves
+    // to be rejected before any expensive probing, independent of what
+    // window they eventually pick.
+    if (sourceLength > maxSourceBytes) {
+      throw const ChatVideoRejected('media_too_large');
+    }
+
     final headerBytes = await source.openRead(0, 128).first;
     final sniffedMime = debugSniffMime(headerBytes);
     if (sniffedMime == null) {
@@ -151,13 +166,13 @@ class ChatVideoPreparer {
     final effectiveEnd = trimEnd ?? sourceDuration;
     final effectiveDuration = effectiveEnd - effectiveStart;
 
-    if (effectiveDuration < minDuration) {
-      throw const ChatVideoRejected('media_too_short');
-    }
-    if (effectiveDuration > maxDuration) {
-      throw const ChatVideoRejected('media_too_long');
-    }
-
+    // Window-estimate size guard runs BEFORE the duration-bounds check
+    // (rather than after, as a naive top-to-bottom reading of the flow might
+    // suggest) so it can fire independently of the UI's <=3-minute trim
+    // clamp. If it ran after the duration check, it would only ever be
+    // reachable within an already-<=3-minute window — collapsing its
+    // practical range to a narrow ~13Mbit/s+-sustained-bitrate band instead
+    // of providing broad protection against oversized/high-bitrate sources.
     final windowEstimate = debugEstimateWindowBytes(
       sourceBytes: sourceLength,
       sourceDuration: sourceDuration,
@@ -165,6 +180,13 @@ class ChatVideoPreparer {
     );
     if (windowEstimate > maxSourceBytes) {
       throw const ChatVideoRejected('media_too_large');
+    }
+
+    if (effectiveDuration < minDuration) {
+      throw const ChatVideoRejected('media_too_short');
+    }
+    if (effectiveDuration > maxDuration) {
+      throw const ChatVideoRejected('media_too_long');
     }
 
     // NOTE on quality targets: video_compress's method channel only accepts
@@ -183,6 +205,18 @@ class ChatVideoPreparer {
     // against oversized output — resolution/quality-enum choice is a
     // best-effort input to staying under that ceiling, not a guarantee.
     final MediaInfo? compressed;
+    // video_compress reports progress (0-100) on a broadcast-style
+    // ObservableBuilder<double> (VideoCompress.compressProgress$), separate
+    // from the compressVideo() future itself — subscribe around the call and
+    // forward each value through onProgress, unsubscribing in `finally` so
+    // the subscription can't outlive this call or fire after prepare()
+    // returns/throws (compressProgress$ is a singleton on the plugin
+    // instance, shared across calls).
+    final progressSubscription = onProgress == null
+        ? null
+        : VideoCompress.compressProgress$.subscribe((value) {
+            onProgress(value);
+          });
     try {
       compressed = await VideoCompress.compressVideo(
         localPath,
@@ -194,6 +228,8 @@ class ChatVideoPreparer {
       );
     } catch (_) {
       throw const ChatVideoRejected('media_compress_failed');
+    } finally {
+      progressSubscription?.unsubscribe();
     }
     if (compressed?.file == null) {
       throw const ChatVideoRejected('media_compress_failed');

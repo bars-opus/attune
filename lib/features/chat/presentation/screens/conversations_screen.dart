@@ -158,6 +158,12 @@ class ConversationsScreen extends ConsumerWidget {
     if (message.mediaType == 'image' && message.content.trim().isNotEmpty) {
       return 'Photo: ${message.content}';
     }
+    if (message.mediaType == 'video' && message.content.trim().isEmpty) {
+      return 'Video';
+    }
+    if (message.mediaType == 'video' && message.content.trim().isNotEmpty) {
+      return 'Video: ${message.content}';
+    }
     return message.content;
   }
 }

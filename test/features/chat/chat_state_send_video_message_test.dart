@@ -193,18 +193,88 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 250));
 
       // Video's two-intent upload (video + thumbnail) both go through
-      // createMediaUploadIntent/uploadChatMedia on the fake repository —
-      // FakeChatRepository doesn't track call counts for those beyond the
-      // default no-op stub, so the thumbnail-upload-failure-is-non-fatal
-      // distinction from _attemptSend's two-intent branch is NOT covered by
-      // this harness: FakeChatRepository's createMediaUploadIntent/
-      // uploadChatMedia stubs always succeed unconditionally and have no
-      // "fail on second call" seam. Exercising that branch would require
-      // extending the fake with a scriptable per-call failure, which is out
-      // of scope for this task's minimum coverage. The canonical message
-      // sends successfully here, which at minimum proves the two-intent
-      // path doesn't throw or block a normal send.
+      // createMediaUploadIntent/uploadChatMedia on the fake repository. The
+      // canonical message sends successfully here, which at minimum proves
+      // the two-intent path doesn't throw or block a normal send. The
+      // thumbnail-upload-failure-is-non-fatal distinction from
+      // _attemptSend's two-intent branch, and the inverse (a video-upload
+      // failure aborting the whole send), are covered by the two tests
+      // below using FakeChatRepository.mediaCallFailures.
       expect(repo.sendCallCount, 1);
+    });
+
+    test(
+        'thumbnail upload failure (2nd intent) is non-fatal: send still '
+        'completes with a null mediaThumbnailKey', () async {
+      final repo = FakeChatRepository(currentUserId: userId)
+        // Call order inside _attemptSend's two-intent video branch: 1 =
+        // video createMediaUploadIntent, 2 = video uploadChatMedia, 3 =
+        // thumbnail createMediaUploadIntent, 4 = thumbnail uploadChatMedia.
+        // Failing call 3 exercises the thumbnail intent request itself
+        // failing (caught locally, non-fatal).
+        ..mediaCallFailures[3] = Exception('thumbnail intent failed');
+      final b = await boot(repo);
+      final videoPath = await writeFile('valid.mp4');
+      final thumbPath = await writeFile('valid_poster.jpg');
+
+      await b.controller.sendVideoMessage(
+        localPath: videoPath,
+        durationMs: 4200,
+        thumbnailLocalPath: thumbPath,
+        width: 1280,
+        height: 720,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // The send still completed: exactly one canonical message landed via
+      // sendTextMessage, and no error was surfaced to state.
+      expect(repo.sendCallCount, 1);
+      expect(b.state.error, isNull);
+      final messages = b.state.messages;
+      expect(messages, hasLength(1));
+      final message = messages.single;
+      expect(message.status, MessageStatus.sent);
+      expect(message.mediaType, 'video');
+      // The thumbnail upload failed, so no thumbnail key reached
+      // sendTextMessage — mirrors a video message that simply has no
+      // poster image.
+      expect(message.mediaThumbnailKey, isNull);
+    });
+
+    test(
+        'video upload failure (1st intent) aborts the whole send: no '
+        'canonical message reaches sendTextMessage, message stays queued '
+        'for retry rather than silently disappearing', () async {
+      final repo = FakeChatRepository(currentUserId: userId)
+        // Failing call 1 (the video's own createMediaUploadIntent) must
+        // abort the send entirely, before the thumbnail's intent (call 3,
+        // which never happens here since the outer try/catch in
+        // _attemptSend catches this failure before reaching that branch)
+        // and before sendTextMessage are ever reached.
+        ..mediaCallFailures[1] = Exception('video intent failed');
+      final b = await boot(repo);
+      final videoPath = await writeFile('valid.mp4');
+      final thumbPath = await writeFile('valid_poster.jpg');
+
+      await b.controller.sendVideoMessage(
+        localPath: videoPath,
+        durationMs: 4200,
+        thumbnailLocalPath: thumbPath,
+        width: 1280,
+        height: 720,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // sendTextMessage (which increments sendCallCount) was never reached —
+      // the whole send aborted at the first (video) intent failure, unlike
+      // the thumbnail-only failure above.
+      expect(repo.sendCallCount, 0);
+      expect(b.state.error, isNotNull);
+      // The optimistic message survives as queued (for automatic retry),
+      // not silently dropped and not marked failed on this first attempt.
+      final messages = b.state.messages;
+      expect(messages, hasLength(1));
+      expect(messages.single.status, MessageStatus.queued);
     });
   });
 }

@@ -88,6 +88,13 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
       _controller = controller;
       try {
         await controller.initialize();
+        // Apply any mute toggle that happened before the controller existed
+        // (_isMuted can be flipped from the mute button while the player is
+        // still showing the poster, before first play constructs this
+        // controller) — otherwise the stored mute state is silently dropped
+        // and first playback always starts unmuted regardless of what the
+        // user tapped.
+        await controller.setVolume(_isMuted ? 0.0 : 1.0);
       } catch (_) {
         // Playback isn't available (unsupported codec, unreachable URL, no
         // platform video decoder on this host) — fall back to the poster

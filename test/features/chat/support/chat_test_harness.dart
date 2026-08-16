@@ -280,24 +280,43 @@ class FakeChatRepository implements ChatRepository {
   @override
   Future<String?> getRelationshipIdForPartner(String partnerUserId) async =>
       null;
+  /// Failure seam for [createMediaUploadIntent]/[uploadChatMedia], scripted
+  /// by call number (1-indexed across BOTH methods combined, matching the
+  /// order _attemptSend's two-intent video branch actually calls them in:
+  /// call 1 = video's createMediaUploadIntent, call 2 = video's
+  /// uploadChatMedia, call 3 = thumbnail's createMediaUploadIntent, call 4 =
+  /// thumbnail's uploadChatMedia). Left at its default (empty map, always
+  /// succeed) every other test using this harness is unaffected.
+  final Map<int, Object> mediaCallFailures = {};
+  int _mediaCallCount = 0;
+
   @override
   Future<ChatMediaUploadIntent> createMediaUploadIntent({
     required String relationshipId,
     required String mimeType,
     required String mediaType,
-  }) async =>
-      ChatMediaUploadIntent(
-        intentId: 'intent',
-        storageKey: 'chat-media/test.jpg',
-        expiresAt: DateTime.now().add(const Duration(minutes: 15)),
-        bucket: 'message-media',
-      );
+  }) async {
+    _mediaCallCount++;
+    final failure = mediaCallFailures[_mediaCallCount];
+    if (failure != null) throw failure;
+    return ChatMediaUploadIntent(
+      intentId: 'intent',
+      storageKey: 'chat-media/test.jpg',
+      expiresAt: DateTime.now().add(const Duration(minutes: 15)),
+      bucket: 'message-media',
+    );
+  }
+
   @override
   Future<void> uploadChatMedia({
     required ChatMediaUploadIntent intent,
     required String localPath,
     required String mimeType,
-  }) async {}
+  }) async {
+    _mediaCallCount++;
+    final failure = mediaCallFailures[_mediaCallCount];
+    if (failure != null) throw failure;
+  }
   @override
   Future<String?> createSignedMediaUrl(String mediaKey) async => null;
   @override

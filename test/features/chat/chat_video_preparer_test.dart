@@ -78,6 +78,44 @@ void main() {
     });
   });
 
+  group('early absolute source-size guard', () {
+    // Final-whole-branch-review fix: VideoTrimScreen clamps the selected
+    // window to <=3 minutes before prepare() ever runs, which meant the
+    // window-estimate guard could only trip within a narrow high-bitrate
+    // band — not the broad "reject huge sources early" protection the
+    // Global Constraints imply. This test asserts a source file bigger than
+    // maxSourceBytes is rejected immediately from just its raw byte length,
+    // independent of trim window and before any MIME sniff/decode work
+    // (proven here by the fact that the file has no valid ftyp box at all —
+    // if the guard didn't fire first, MIME sniffing would reject with
+    // 'media_type_unsupported' instead of 'media_too_large').
+    test(
+        'a source file larger than maxSourceBytes is rejected before MIME '
+        'sniffing, regardless of trim window', () async {
+      final file = File(p.join(tmp.path, 'huge.mp4'));
+      // Not a valid ftyp box — if this guard didn't run first, the file
+      // would instead fail MIME sniffing with a different rejection code.
+      final raf = await file.open(mode: FileMode.write);
+      await raf.truncate(ChatVideoPreparer.maxSourceBytes + 1);
+      await raf.close();
+
+      expect(
+        () => const ChatVideoPreparer().prepare(
+          localPath: file.path,
+          trimStart: Duration.zero,
+          trimEnd: const Duration(seconds: 5),
+        ),
+        throwsA(
+          isA<ChatVideoRejected>().having(
+            (e) => e.code,
+            'code',
+            'media_too_large',
+          ),
+        ),
+      );
+    });
+  });
+
   group('resource cleanup / existence checks', () {
     test('rejects a missing source file', () async {
       expect(
