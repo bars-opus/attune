@@ -34,7 +34,7 @@ class SupabaseChatRepository implements ChatRepository {
   static const _messageColumns =
       'id,relationship_id,sender_id,client_message_id,content,created_at,'
       'delivered_at,read_at,media_url,media_thumbnail_url,media_type,'
-      'media_duration_ms,media_waveform,source,'
+      'media_duration_ms,media_waveform,media_width,media_height,source,'
       'reply_to_message_id,quoted_text,deleted_at,edited_at';
 
   User get _currentUser {
@@ -257,6 +257,9 @@ class SupabaseChatRepository implements ChatRepository {
     String? mediaType,
     int? mediaDurationMs,
     List<int>? waveform,
+    String? mediaThumbnailKey,
+    int? mediaWidth,
+    int? mediaHeight,
     String? replyToMessageId,
     String? quotedText,
   }) async {
@@ -279,6 +282,9 @@ class SupabaseChatRepository implements ChatRepository {
               'media_type': mediaType,
               'media_duration_ms': mediaDurationMs,
               'media_waveform': waveform,
+              'media_thumbnail_url': mediaThumbnailKey,
+              'media_width': mediaWidth,
+              'media_height': mediaHeight,
               'reply_to_message_id': replyToMessageId,
               'quoted_text': quotedText,
             })
@@ -735,8 +741,21 @@ class SupabaseChatRepository implements ChatRepository {
           base = base.copyWith(reactions: reactions);
         }
         if (base.mediaKey == null ||
-            (base.mediaType != 'image' && base.mediaType != 'audio')) {
+            (base.mediaType != 'image' &&
+                base.mediaType != 'audio' &&
+                base.mediaType != 'video')) {
           return base;
+        }
+        if (base.mediaType == 'video') {
+          final results = await Future.wait([
+            createSignedMediaUrl(base.mediaKey!),
+            if (base.mediaThumbnailKey != null)
+              createSignedMediaUrl(base.mediaThumbnailKey!),
+          ]);
+          return base.copyWith(
+            signedMediaUrl: results[0],
+            signedThumbnailUrl: results.length > 1 ? results[1] : null,
+          );
         }
         final signedUrl = await createSignedMediaUrl(
           base.mediaThumbnailKey ?? base.mediaKey!,

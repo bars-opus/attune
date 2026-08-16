@@ -13,6 +13,7 @@ import 'package:attune/features/chat/data/repositories/supabase_chat_repository.
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/domain/services/chat_feature_flags.dart';
+import 'package:attune/features/chat/domain/services/chat_video_preparer.dart';
 import 'package:attune/features/chat/utils/chat_error.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
@@ -628,6 +629,96 @@ class ChatController extends StateNotifier<ChatState> {
     await _attemptSend(pending);
   }
 
+  /// Sends a video message, mirroring sendImageMessage/sendVoiceMessage's
+  /// exact shape. Unlike either of those, this requires the thumbnail file
+  /// to also exist before queueing — a video with no way to ever get a
+  /// poster is a worse outcome than asking the user to retry the whole
+  /// prepare step (see design spec's error table: thumbnail EXTRACTION
+  /// failure blocks the send before it's queued; thumbnail UPLOAD failure,
+  /// handled in _attemptSend below, is non-fatal once the video itself has
+  /// already uploaded successfully).
+  Future<void> sendVideoMessage({
+    required String localPath,
+    required int durationMs,
+    required String thumbnailLocalPath,
+    required int width,
+    required int height,
+  }) async {
+    if (!state.conversation.canSend) return;
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    final file = File(localPath);
+    if (!await file.exists()) {
+      if (mounted) {
+        state = state.copyWith(error: 'That video is no longer available.');
+      }
+      return;
+    }
+    final thumbnailFile = File(thumbnailLocalPath);
+    if (!await thumbnailFile.exists()) {
+      if (mounted) {
+        state = state.copyWith(error: 'That video is no longer available.');
+      }
+      return;
+    }
+
+    // Belt-and-suspenders duration check mirroring sendVoiceMessage's own
+    // check against VoiceRecorderService.maxDuration — a stale/modified
+    // local file or a future caller bypassing ChatVideoPreparer should not
+    // be able to queue an oversized send.
+    if (durationMs > ChatVideoPreparer.maxDuration.inMilliseconds) {
+      if (mounted) {
+        state = state.copyWith(error: 'That video is too long to send.');
+      }
+      return;
+    }
+    if (durationMs < ChatVideoPreparer.minDuration.inMilliseconds) {
+      return;
+    }
+
+    final clientMessageId = const Uuid().v4();
+    final optimisticId = '_local_$clientMessageId';
+    final now = DateTime.now();
+    final pending = PendingSend(
+      clientMessageId: clientMessageId,
+      relationshipId: relationshipId,
+      senderId: user.id,
+      text: '',
+      localMediaPath: localPath,
+      mediaMimeType: 'video/mp4',
+      mediaType: 'video',
+      mediaDurationMs: durationMs,
+      localThumbnailPath: thumbnailLocalPath,
+      thumbnailMimeType: 'image/jpeg',
+      mediaWidth: width,
+      mediaHeight: height,
+      createdAt: now,
+    );
+    await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
+
+    final optimistic = Message.optimistic(
+      id: optimisticId,
+      clientMessageId: clientMessageId,
+      relationshipId: relationshipId,
+      senderId: user.id,
+      content: '',
+      createdAt: now,
+      mediaType: 'video',
+      localMediaPath: localPath,
+      mediaDurationMs: durationMs,
+      mediaWidth: width,
+      mediaHeight: height,
+    );
+    state = state.copyWith(
+      isSending: true,
+      error: null,
+      messages: [optimistic, ...state.messages],
+    );
+
+    await _attemptSend(pending);
+  }
+
   Future<void> retryMessage(Message message) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
@@ -665,10 +756,25 @@ class ChatController extends StateNotifier<ChatState> {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
+    // Look up the outbox entry before removing it so a video's thumbnail
+    // temp file (tracked only on PendingSend, not on Message — see
+    // retryMessage's identical lookup above) can also be cleaned up here.
+    final outbox = await ref
+        .read(chatCacheServiceProvider)
+        .readOutbox(user.id, relationshipId: relationshipId);
+    PendingSend? pending;
+    for (final item in outbox) {
+      if (item.clientMessageId == message.clientMessageId) {
+        pending = item;
+        break;
+      }
+    }
+
     await ref
         .read(chatCacheServiceProvider)
         .removeOutbox(user.id, relationshipId, message.clientMessageId);
     await _deleteStagedMedia(message.localMediaPath);
+    await _deleteStagedMedia(pending?.localThumbnailPath);
 
     if (!mounted) return;
     state = state.copyWith(
@@ -911,8 +1017,10 @@ class ChatController extends StateNotifier<ChatState> {
 
       final repository = ref.read(chatRepositoryProvider);
       String? mediaKey;
+      String? mediaThumbnailKey;
       final isMediaSend = (pending.mediaType == 'image' ||
-              pending.mediaType == 'audio') &&
+              pending.mediaType == 'audio' ||
+              pending.mediaType == 'video') &&
           pending.localMediaPath != null &&
           pending.mediaMimeType != null;
       if (isMediaSend) {
@@ -927,6 +1035,32 @@ class ChatController extends StateNotifier<ChatState> {
           mimeType: pending.mediaMimeType!,
         );
         mediaKey = intent.storageKey;
+
+        // Video-only: a second intent/upload for the thumbnail, through the
+        // ordinary image path (media_type: 'image'). Non-fatal on its own
+        // failure — a successfully-uploaded 25MB video must not be lost
+        // over a missing 40KB poster (see design spec's error table). A
+        // failure here is caught locally so it doesn't abort the whole
+        // send via the outer try/catch.
+        if (pending.mediaType == 'video' &&
+            pending.localThumbnailPath != null &&
+            pending.thumbnailMimeType != null) {
+          try {
+            final thumbIntent = await repository.createMediaUploadIntent(
+              relationshipId: pending.relationshipId,
+              mimeType: pending.thumbnailMimeType!,
+              mediaType: 'image',
+            );
+            await repository.uploadChatMedia(
+              intent: thumbIntent,
+              localPath: pending.localThumbnailPath!,
+              mimeType: pending.thumbnailMimeType!,
+            );
+            mediaThumbnailKey = thumbIntent.storageKey;
+          } catch (error) {
+            ChatLog.e('video thumbnail upload failed (non-fatal)', error);
+          }
+        }
       }
       final canonical = await repository.sendTextMessage(
         relationshipId: pending.relationshipId,
@@ -937,6 +1071,9 @@ class ChatController extends StateNotifier<ChatState> {
         mediaType: pending.mediaType,
         mediaDurationMs: pending.mediaDurationMs,
         waveform: pending.waveform,
+        mediaThumbnailKey: mediaThumbnailKey,
+        mediaWidth: pending.mediaWidth,
+        mediaHeight: pending.mediaHeight,
         replyToMessageId: pending.replyToMessageId,
         quotedText: pending.quotedText,
       );
@@ -948,6 +1085,7 @@ class ChatController extends StateNotifier<ChatState> {
             pending.clientMessageId,
           );
       await _deleteStagedMedia(pending.localMediaPath);
+      await _deleteStagedMedia(pending.localThumbnailPath);
 
       if (!mounted) return;
       state = state.copyWith(
@@ -979,6 +1117,7 @@ class ChatController extends StateNotifier<ChatState> {
                 pending.clientMessageId,
               );
           await _deleteStagedMedia(pending.localMediaPath);
+          await _deleteStagedMedia(pending.localThumbnailPath);
           if (!mounted) return;
           state = state.copyWith(
             isSending: false,
@@ -1271,6 +1410,7 @@ class ChatController extends StateNotifier<ChatState> {
         .purgeRelationship(user.id, relationshipId);
     for (final item in pending) {
       await _deleteStagedMedia(item.localMediaPath);
+      await _deleteStagedMedia(item.localThumbnailPath);
     }
   }
 
@@ -1289,6 +1429,7 @@ class ChatController extends StateNotifier<ChatState> {
         .purgeRelationship(previousUserId, relationshipId);
     for (final item in pending) {
       await _deleteStagedMedia(item.localMediaPath);
+      await _deleteStagedMedia(item.localThumbnailPath);
     }
     if (mounted) {
       state = state.copyWith(

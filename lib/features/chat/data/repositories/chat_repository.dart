@@ -30,6 +30,9 @@ abstract class ChatRepository {
     String? mediaType,
     int? mediaDurationMs,
     List<int>? waveform,
+    String? mediaThumbnailKey,
+    int? mediaWidth,
+    int? mediaHeight,
     String? replyToMessageId,
     String? quotedText,
   });

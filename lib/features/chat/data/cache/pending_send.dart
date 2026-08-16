@@ -10,6 +10,10 @@ class PendingSend {
   final String? mediaType;
   final int? mediaDurationMs;
   final List<int>? waveform;
+  final String? localThumbnailPath;
+  final String? thumbnailMimeType;
+  final int? mediaWidth;
+  final int? mediaHeight;
   final DateTime createdAt;
   final int attempts;
   final DateTime? nextAttemptAt;
@@ -28,6 +32,10 @@ class PendingSend {
     this.mediaType,
     this.mediaDurationMs,
     this.waveform,
+    this.localThumbnailPath,
+    this.thumbnailMimeType,
+    this.mediaWidth,
+    this.mediaHeight,
     required this.createdAt,
     this.attempts = 0,
     this.nextAttemptAt,
@@ -53,6 +61,10 @@ class PendingSend {
       mediaType: mediaType,
       mediaDurationMs: mediaDurationMs,
       waveform: waveform,
+      localThumbnailPath: localThumbnailPath,
+      thumbnailMimeType: thumbnailMimeType,
+      mediaWidth: mediaWidth,
+      mediaHeight: mediaHeight,
       createdAt: createdAt,
       attempts: attempts ?? this.attempts,
       nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
@@ -74,6 +86,10 @@ class PendingSend {
       'mediaType': mediaType,
       'mediaDurationMs': mediaDurationMs,
       'waveform': waveform,
+      'localThumbnailPath': localThumbnailPath,
+      'thumbnailMimeType': thumbnailMimeType,
+      'mediaWidth': mediaWidth,
+      'mediaHeight': mediaHeight,
       'createdAt': createdAt.toIso8601String(),
       'attempts': attempts,
       'nextAttemptAt': nextAttemptAt?.toIso8601String(),
@@ -97,6 +113,10 @@ class PendingSend {
       waveform: (json['waveform'] as List<dynamic>?)
           ?.map((e) => (e as num).toInt())
           .toList(),
+      localThumbnailPath: json['localThumbnailPath'] as String?,
+      thumbnailMimeType: json['thumbnailMimeType'] as String?,
+      mediaWidth: (json['mediaWidth'] as num?)?.toInt(),
+      mediaHeight: (json['mediaHeight'] as num?)?.toInt(),
       createdAt: DateTime.parse(json['createdAt'] as String),
       attempts: (json['attempts'] as num?)?.toInt() ?? 0,
       nextAttemptAt:

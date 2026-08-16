@@ -16,6 +16,8 @@ class Message {
   final int? mediaDurationMs;
   final List<int>? waveform;
   final String? signedThumbnailUrl;
+  final int? mediaWidth;
+  final int? mediaHeight;
   final String source;
   final DateTime? deliveredAt;
   final DateTime? readAt;
@@ -44,6 +46,8 @@ class Message {
     this.mediaDurationMs,
     this.waveform,
     this.signedThumbnailUrl,
+    this.mediaWidth,
+    this.mediaHeight,
     this.source = 'native',
     this.deliveredAt,
     this.readAt,
@@ -76,6 +80,8 @@ class Message {
       waveform: (row['media_waveform'] as List<dynamic>?)
           ?.map((e) => (e as num).toInt())
           .toList(),
+      mediaWidth: (row['media_width'] as num?)?.toInt(),
+      mediaHeight: (row['media_height'] as num?)?.toInt(),
       source: (row['source'] as String?) ?? 'native',
       deliveredAt: deliveredAt,
       readAt: readAt,
@@ -106,6 +112,8 @@ class Message {
     String? localMediaPath,
     int? mediaDurationMs,
     List<int>? waveform,
+    int? mediaWidth,
+    int? mediaHeight,
     String? replyToMessageId,
     String? quotedText,
   }) {
@@ -121,6 +129,8 @@ class Message {
       localMediaPath: localMediaPath,
       mediaDurationMs: mediaDurationMs,
       waveform: waveform,
+      mediaWidth: mediaWidth,
+      mediaHeight: mediaHeight,
       source: 'native',
       status: MessageStatus.sending,
       isMine: true,
@@ -144,6 +154,8 @@ class Message {
     int? mediaDurationMs,
     List<int>? waveform,
     String? signedThumbnailUrl,
+    int? mediaWidth,
+    int? mediaHeight,
     String? source,
     DateTime? deliveredAt,
     DateTime? readAt,
@@ -170,6 +182,8 @@ class Message {
       mediaDurationMs: mediaDurationMs ?? this.mediaDurationMs,
       waveform: waveform ?? this.waveform,
       signedThumbnailUrl: signedThumbnailUrl ?? this.signedThumbnailUrl,
+      mediaWidth: mediaWidth ?? this.mediaWidth,
+      mediaHeight: mediaHeight ?? this.mediaHeight,
       source: source ?? this.source,
       deliveredAt: deliveredAt ?? this.deliveredAt,
       readAt: readAt ?? this.readAt,
@@ -196,6 +210,8 @@ class Message {
       'mediaThumbnailKey': mediaThumbnailKey,
       'mediaDurationMs': mediaDurationMs,
       'waveform': waveform,
+      'mediaWidth': mediaWidth,
+      'mediaHeight': mediaHeight,
       'source': source,
       'deliveredAt': deliveredAt?.toIso8601String(),
       'readAt': readAt?.toIso8601String(),
@@ -224,6 +240,8 @@ class Message {
       waveform: (json['waveform'] as List<dynamic>?)
           ?.map((e) => (e as num).toInt())
           .toList(),
+      mediaWidth: (json['mediaWidth'] as num?)?.toInt(),
+      mediaHeight: (json['mediaHeight'] as num?)?.toInt(),
       source: (json['source'] as String?) ?? 'native',
       deliveredAt: _parseDateTime(json['deliveredAt']),
       readAt: _parseDateTime(json['readAt']),
