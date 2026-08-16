@@ -20,6 +20,7 @@ class Message {
   final int? mediaHeight;
   final bool isViewOnce;
   final DateTime? viewedAt;
+  final bool isSystemNotice;
   final String source;
   final DateTime? deliveredAt;
   final DateTime? readAt;
@@ -52,6 +53,7 @@ class Message {
     this.mediaHeight,
     this.isViewOnce = false,
     this.viewedAt,
+    this.isSystemNotice = false,
     this.source = 'native',
     this.deliveredAt,
     this.readAt,
@@ -88,6 +90,7 @@ class Message {
       mediaHeight: (row['media_height'] as num?)?.toInt(),
       isViewOnce: (row['is_view_once'] as bool?) ?? false,
       viewedAt: _parseDateTime(row['viewed_at']),
+      isSystemNotice: (row['is_system_notice'] as bool?) ?? false,
       source: (row['source'] as String?) ?? 'native',
       deliveredAt: deliveredAt,
       readAt: readAt,
@@ -166,6 +169,7 @@ class Message {
     int? mediaHeight,
     bool? isViewOnce,
     DateTime? viewedAt,
+    bool? isSystemNotice,
     String? source,
     DateTime? deliveredAt,
     DateTime? readAt,
@@ -196,6 +200,7 @@ class Message {
       mediaHeight: mediaHeight ?? this.mediaHeight,
       isViewOnce: isViewOnce ?? this.isViewOnce,
       viewedAt: viewedAt ?? this.viewedAt,
+      isSystemNotice: isSystemNotice ?? this.isSystemNotice,
       source: source ?? this.source,
       deliveredAt: deliveredAt ?? this.deliveredAt,
       readAt: readAt ?? this.readAt,
@@ -226,6 +231,7 @@ class Message {
       'mediaHeight': mediaHeight,
       'isViewOnce': isViewOnce,
       'viewedAt': viewedAt?.toIso8601String(),
+      'isSystemNotice': isSystemNotice,
       'source': source,
       'deliveredAt': deliveredAt?.toIso8601String(),
       'readAt': readAt?.toIso8601String(),
@@ -258,6 +264,7 @@ class Message {
       mediaHeight: (json['mediaHeight'] as num?)?.toInt(),
       isViewOnce: (json['isViewOnce'] as bool?) ?? false,
       viewedAt: _parseDateTime(json['viewedAt']),
+      isSystemNotice: (json['isSystemNotice'] as bool?) ?? false,
       source: (json['source'] as String?) ?? 'native',
       deliveredAt: _parseDateTime(json['deliveredAt']),
       readAt: _parseDateTime(json['readAt']),

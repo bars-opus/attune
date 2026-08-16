@@ -36,7 +36,7 @@ class SupabaseChatRepository implements ChatRepository {
       'delivered_at,read_at,media_url,media_thumbnail_url,media_type,'
       'media_duration_ms,media_waveform,media_width,media_height,source,'
       'reply_to_message_id,quoted_text,deleted_at,edited_at,'
-      'is_view_once,viewed_at';
+      'is_view_once,viewed_at,is_system_notice';
 
   User get _currentUser {
     final user = _supabase.auth.currentUser;
@@ -264,6 +264,7 @@ class SupabaseChatRepository implements ChatRepository {
     String? replyToMessageId,
     String? quotedText,
     bool isViewOnce = false,
+    bool isSystemNotice = false,
   }) async {
     final user = _currentUser;
     if (senderId != user.id) {
@@ -290,6 +291,7 @@ class SupabaseChatRepository implements ChatRepository {
               'reply_to_message_id': replyToMessageId,
               'quoted_text': quotedText,
               'is_view_once': isViewOnce,
+              'is_system_notice': isSystemNotice,
             })
             .select(_messageColumns)
             .single();

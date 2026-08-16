@@ -1,10 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:attune/core/providers/profile_providers/profile_provider.dart';
+import 'package:attune/core/services/media/screenshot_detection_service.dart';
+import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
 
 /// Full-screen one-shot ephemeral video playback. Unlike VideoMessagePlayer
@@ -52,6 +56,8 @@ class _EphemeralVideoViewerScreenState
   bool _hasMarkedViewed = false;
   bool _expiredElsewhere = false;
   bool _initFailed = false;
+  final _screenshotDetection = ScreenshotDetectionService();
+  StreamSubscription<void>? _screenshotSubscription;
 
   @override
   void initState() {
@@ -79,6 +85,28 @@ class _EphemeralVideoViewerScreenState
           // hang from the user's perspective).
           if (mounted) setState(() => _initFailed = true);
         });
+    _screenshotSubscription = _screenshotDetection.onScreenshotDetected.listen(
+      (_) => unawaited(_notifyScreenshot()),
+    );
+  }
+
+  Future<void> _notifyScreenshot() async {
+    // Best-effort instrumentation only (see ScreenshotDetectionService's own
+    // doc comment) — a screenshot notice is authored as if from the viewer
+    // (the person who screenshotted), riding the ordinary sender_id/insert
+    // path unchanged (see 20260816140000_chat_screenshot_notice.sql), so no
+    // separate "system author" concept is needed.
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+    final profile = ref.read(currentUserProfileProvider).valueOrNull;
+    final name = profile?.displayName ?? profile?.username ?? 'Someone';
+    await ref.read(chatRepositoryProvider).sendTextMessage(
+      relationshipId: widget.conversation.relationshipId,
+      senderId: user.id,
+      clientMessageId: const Uuid().v4(),
+      content: '$name took a screenshot',
+      isSystemNotice: true,
+    );
   }
 
   void _onPlaybackUpdate() {
@@ -103,6 +131,8 @@ class _EphemeralVideoViewerScreenState
   void dispose() {
     _controller?.removeListener(_onPlaybackUpdate);
     _controller?.dispose();
+    unawaited(_screenshotSubscription?.cancel());
+    _screenshotDetection.dispose();
     super.dispose();
   }
 

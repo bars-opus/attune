@@ -101,6 +101,7 @@ class FakeChatRepository implements ChatRepository {
     String? replyToMessageId,
     String? quotedText,
     bool isViewOnce = false,
+    bool isSystemNotice = false,
   }) async {
     sendCallCount++;
     if (sendDelay > Duration.zero) await Future<void>.delayed(sendDelay);
@@ -139,6 +140,7 @@ class FakeChatRepository implements ChatRepository {
       'reply_to_message_id': replyToMessageId,
       'quoted_text': quotedText,
       'is_view_once': isViewOnce,
+      'is_system_notice': isSystemNotice,
     };
     final message = Message.fromRow(row, currentUserId: currentUserId);
     serverMessages[id] = message;

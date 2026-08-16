@@ -392,6 +392,17 @@ class _BubbleBody extends StatelessWidget {
             ? Theme.of(context).colorScheme.onPrimary
             : Theme.of(context).colorScheme.onSurface;
 
+    if (message.isSystemNotice) {
+      return Text(
+        message.content,
+        style: TextStyle(
+          color: color,
+          fontStyle: FontStyle.italic,
+          fontSize: 13,
+        ),
+      );
+    }
+
     if (message.isDeleted) {
       return Text(
         'This message was deleted',
