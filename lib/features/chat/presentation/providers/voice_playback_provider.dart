@@ -11,3 +11,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 final currentlyPlayingVoiceMessageIdProvider = StateProvider<String?>(
   (ref) => null,
 );
+
+/// The message id of the video message currently playing, if any —
+/// app-wide (not scoped per conversation), same shape as
+/// currentlyPlayingVoiceMessageIdProvider. Deliberately in the same file so
+/// VideoMessagePlayer/VoiceMessagePlayer can each cross-pause the other:
+/// starting a video should stop any currently-playing voice message, and
+/// vice versa, since two simultaneous audio streams is the actual
+/// user-facing failure mode both providers exist to prevent — not just
+/// "two of the same media type."
+final currentlyPlayingVideoMessageIdProvider = StateProvider<String?>(
+  (ref) => null,
+);

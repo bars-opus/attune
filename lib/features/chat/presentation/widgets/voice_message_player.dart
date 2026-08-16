@@ -83,6 +83,13 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
       // in build() below), so setting the provider here is sufficient to
       // stop the other bubble.
     }
+    // Cross-media pause: stop any currently-playing video message before
+    // this voice message starts. The reverse (video stopping a playing
+    // voice message) is wired symmetrically in VideoMessagePlayer's own
+    // _togglePlayback.
+    if (ref.read(currentlyPlayingVideoMessageIdProvider) != null) {
+      ref.read(currentlyPlayingVideoMessageIdProvider.notifier).state = null;
+    }
     ref.read(currentlyPlayingVoiceMessageIdProvider.notifier).state =
         widget.messageId;
 

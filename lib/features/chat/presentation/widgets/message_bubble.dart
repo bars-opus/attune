@@ -3,6 +3,7 @@ import 'package:attune/core/widgets/focused_action_menu.dart';
 import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.dart';
+import 'package:attune/features/chat/presentation/widgets/video_message_player.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_message_player.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
@@ -412,6 +413,31 @@ class _BubbleBody extends StatelessWidget {
             audioUrl: audioUrl,
             durationMs: message.mediaDurationMs ?? 0,
             waveform: message.waveform ?? const [],
+          ),
+        );
+      }
+    }
+    if (message.hasVideo) {
+      final videoUrl = message.localMediaPath ?? message.signedMediaUrl;
+      if (videoUrl != null) {
+        children.add(
+          SizedBox(
+            width: 220,
+            child: VideoMessagePlayer(
+              // clientMessageId, not message.id — the same stability
+              // requirement already established for VoiceMessagePlayer
+              // (see the comment on that branch immediately above this
+              // one): the optimistic message's id changes when the
+              // canonical server row replaces it, but clientMessageId
+              // stays the same throughout.
+              key: ValueKey(message.clientMessageId),
+              messageId: message.clientMessageId,
+              videoUrl: videoUrl,
+              thumbnailUrl: message.signedThumbnailUrl,
+              durationMs: message.mediaDurationMs ?? 0,
+              width: message.mediaWidth ?? 16,
+              height: message.mediaHeight ?? 9,
+            ),
           ),
         );
       }
