@@ -27,8 +27,24 @@ import io.flutter.plugin.common.MethodChannel
  */
 class MainActivity : FlutterActivity() {
     private val channelName = "attune/screenshot_detection"
+
+    // MediaStore commonly fires ContentObserver.onChange more than once for
+    // a single screenshot write (e.g. once for the initial pending/zero-byte
+    // row insert, again when the file write completes/metadata updates).
+    // This window suppresses re-firing "onScreenshot" for the same physical
+    // screenshot. 2s is comfortably longer than the gap between those two
+    // MediaStore callbacks (typically well under a second on-device) while
+    // remaining short enough that two genuinely distinct screenshots taken
+    // in quick succession (a realistic user action — e.g. screenshotting two
+    // parts of a conversation back to back) still both get reported.
+    private val screenshotDebounceMillis = 2000L
     private var methodChannel: MethodChannel? = null
     private var screenshotObserver: ContentObserver? = null
+
+    // Only ever read/written from onChange, which — because the observer
+    // below is constructed with Handler(Looper.getMainLooper()) — always
+    // runs on the main thread. No additional synchronization is needed.
+    private var lastScreenshotDetectedAtMillis: Long = 0L
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -55,13 +71,25 @@ class MainActivity : FlutterActivity() {
         // twice without an intervening stopDetection.
         stopScreenshotDetection()
 
+        // Reset so a stale timestamp from a previous viewing session can't
+        // suppress the first genuine detection of this new session.
+        lastScreenshotDetectedAtMillis = 0L
+
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean, uri: Uri?) {
                 super.onChange(selfChange, uri)
                 if (uri == null) return
-                if (isLikelyScreenshot(uri)) {
-                    methodChannel?.invokeMethod("onScreenshot", null)
+                if (!isLikelyScreenshot(uri)) return
+
+                val now = System.currentTimeMillis()
+                if (now - lastScreenshotDetectedAtMillis < screenshotDebounceMillis) {
+                    // Almost certainly a second MediaStore callback for the
+                    // same screenshot write (pending-row insert followed by
+                    // completed-write update) — swallow it.
+                    return
                 }
+                lastScreenshotDetectedAtMillis = now
+                methodChannel?.invokeMethod("onScreenshot", null)
             }
         }
         screenshotObserver = observer
