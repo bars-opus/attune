@@ -11,6 +11,7 @@ class ChatFeatureFlags {
   static const String linkPreviews = 'chat_link_previews';
   static const String historicalImport = 'chat_historical_import';
   static const String streaks = 'chat_streaks';
+  static const String ephemeralVideo = 'chat_ephemeral_video';
 
   static const Map<String, bool> _defaults = <String, bool>{
     imageSharing: false,
@@ -23,6 +24,7 @@ class ChatFeatureFlags {
     linkPreviews: false,
     historicalImport: false,
     streaks: false,
+    ephemeralVideo: false,
   };
 
   static Future<bool> isEnabled(

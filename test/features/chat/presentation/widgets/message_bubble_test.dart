@@ -1,11 +1,16 @@
+import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/providers/voice_playback_provider.dart';
+import 'package:attune/features/chat/presentation/screens/ephemeral_video_viewer_screen.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
+import 'package:attune/features/chat/presentation/widgets/video_message_player.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../support/chat_test_harness.dart';
 
 void main() {
   testWidgets('renders tombstone text when message is deleted', (tester) async {
@@ -585,5 +590,224 @@ void main() {
     );
 
     expect(find.textContaining('❤'), findsNothing);
+  });
+
+  Conversation testConversation() => Conversation(
+        id: 'r1',
+        relationshipId: 'r1',
+        partnerId: 'partner',
+        name: 'Partner',
+        updatedAt: DateTime(2026, 8, 16),
+        relationshipStatus: 'active',
+        availability: ConversationAvailability.active,
+      );
+
+  testWidgets(
+      'an isViewOnce unviewed video renders the sealed tile, not VideoMessagePlayer',
+      (tester) async {
+    final message = Message(
+      id: 'm1',
+      clientMessageId: 'c1',
+      relationshipId: 'r1',
+      senderId: 'other',
+      content: '',
+      createdAt: DateTime(2026, 8, 16),
+      status: MessageStatus.sent,
+      isMine: false,
+      mediaType: 'video',
+      isViewOnce: true,
+      signedMediaUrl: 'https://example.com/clip.mp4',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            message: message,
+            conversation: testConversation(),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(VideoMessagePlayer), findsNothing);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+  });
+
+  testWidgets(
+      'tapping an unviewed ephemeral video sealed tile pushes EphemeralVideoViewerScreen',
+      (tester) async {
+    final message = Message(
+      id: 'm1',
+      clientMessageId: 'c1',
+      relationshipId: 'r1',
+      senderId: 'other',
+      content: '',
+      createdAt: DateTime(2026, 8, 16),
+      status: MessageStatus.sent,
+      isMine: false,
+      mediaType: 'video',
+      isViewOnce: true,
+      signedMediaUrl: 'https://example.com/clip.mp4',
+    );
+
+    // EphemeralVideoViewerScreen reads chatRepositoryProvider (to call
+    // markVideoViewed), which in turn needs supabaseClientProvider — a
+    // real Supabase.instance is not initialized in this test host. Use
+    // the shared chat_test_harness fake repository/container (the same
+    // one ephemeral_video_viewer_screen_test.dart itself uses) rather
+    // than a bare ProviderScope, so pushing the real screen doesn't hit
+    // an uninitialized-Supabase assertion.
+    final repo = FakeChatRepository(currentUserId: 'other');
+    final container = buildChatContainer(repository: repo, userId: 'other');
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(
+              message: message,
+              conversation: testConversation(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byIcon(Icons.play_arrow_rounded));
+    // Two pumps to complete the MaterialPageRoute push: the first starts
+    // the ~300ms transition, the second lets it finish (matches
+    // ephemeral_video_viewer_screen_test.dart's own established pattern
+    // for pushing this same screen).
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.byType(EphemeralVideoViewerScreen), findsOneWidget);
+  });
+
+  testWidgets(
+      'an ephemeral video still sending (synthetic id, local path only) is not tappable',
+      (tester) async {
+    // Mirrors the optimistic-message shape used elsewhere in this file
+    // (see the I3 regression guard test above): a still-uploading
+    // ephemeral video has a synthetic '_local_<clientMessageId>' id, only
+    // a localMediaPath (no signedMediaUrl yet), and status ==
+    // MessageStatus.sending. isEphemeralVideoAvailable is still true (it
+    // only requires isViewOnce && viewedAt == null && a media path/url),
+    // so without gating the tap on message.status, tapping this tile
+    // would push EphemeralVideoViewerScreen with a synthetic id that
+    // markVideoViewed can't match server-side — a confusing no-op open.
+    final message = Message(
+      id: '_local_c1',
+      clientMessageId: 'c1',
+      relationshipId: 'r1',
+      senderId: 'me',
+      content: '',
+      createdAt: DateTime(2026, 8, 16),
+      status: MessageStatus.sending,
+      isMine: true,
+      mediaType: 'video',
+      isViewOnce: true,
+      localMediaPath: '/tmp/clip.mp4',
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(
+              message: message,
+              conversation: testConversation(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.play_arrow_rounded));
+    await tester.pump();
+
+    expect(find.byType(EphemeralVideoViewerScreen), findsNothing);
+  });
+
+  testWidgets('an isViewOnce viewed video renders the "Video expired" tombstone',
+      (tester) async {
+    final message = Message(
+      id: 'm1',
+      clientMessageId: 'c1',
+      relationshipId: 'r1',
+      senderId: 'other',
+      content: '',
+      createdAt: DateTime(2026, 8, 16),
+      status: MessageStatus.sent,
+      isMine: false,
+      mediaType: 'video',
+      isViewOnce: true,
+      viewedAt: DateTime(2026, 8, 16, 12),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            message: message,
+            conversation: testConversation(),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Video expired'), findsOneWidget);
+    // No interactivity: behavioral check rather than a structural
+    // GestureDetector search — UniversalBubble itself always wraps its
+    // content in a long-press/swipe GestureDetector regardless of message
+    // type, so a structural "no GestureDetector inside MessageBubble"
+    // assertion would false-positive on that unrelated chrome. Tapping
+    // directly on the tombstone's own text must not open the viewer (no
+    // sealed-tile-style onTap wraps this branch's content specifically).
+    await tester.tap(find.text('Video expired'), warnIfMissed: false);
+    await tester.pump();
+    expect(find.byType(EphemeralVideoViewerScreen), findsNothing);
+  });
+
+  testWidgets('a non-view-once video message still renders VideoMessagePlayer unaffected',
+      (tester) async {
+    // Regression guard: an ordinary Part 1 gallery-pick video message
+    // (isViewOnce == false, hasVideo == true) must render exactly as it
+    // did before this task — this is the test that would catch an
+    // accidental branch-ordering regression breaking Part 1's existing
+    // video messages.
+    final message = Message(
+      id: 'm1',
+      clientMessageId: 'c1',
+      relationshipId: 'r1',
+      senderId: 'other',
+      content: '',
+      createdAt: DateTime(2026, 8, 16),
+      status: MessageStatus.sent,
+      isMine: false,
+      mediaType: 'video',
+      signedMediaUrl: 'https://example.com/clip.mp4',
+      mediaDurationMs: 5000,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(
+              message: message,
+              conversation: testConversation(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(VideoMessagePlayer), findsOneWidget);
+    expect(find.text('Video expired'), findsNothing);
   });
 }

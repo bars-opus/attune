@@ -16,6 +16,7 @@ import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/domain/services/chat_image_preparer.dart';
 import 'package:attune/features/chat/domain/services/chat_video_preparer.dart';
 import 'package:attune/features/chat/presentation/providers/chat_experience_providers.dart';
+import 'package:attune/features/chat/presentation/screens/ephemeral_camera_screen.dart';
 import 'package:attune/features/chat/presentation/screens/video_trim_screen.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/state/typing_controller.dart';
@@ -424,6 +425,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _scrollToLatest();
   }
 
+  Future<void> _attachEphemeralCamera() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EphemeralCameraScreen(conversation: widget.conversation),
+      ),
+    );
+  }
+
   String _videoRejectionMessage(String code) {
     switch (code) {
       case 'media_type_unsupported':
@@ -631,6 +640,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final videoAttachEnabled =
         videoSharingEnabled.valueOrNull == true &&
         imageSharingEnabled.valueOrNull == true;
+    final ephemeralVideoEnabled = ref.watch(chatEphemeralVideoEnabledProvider);
+    // Same reasoning as videoAttachEnabled above: create_chat_media_upload_intent
+    // cannot distinguish an ephemeral video intent from a gallery one (both
+    // request media_type = 'video'), so chat_ephemeral_video must be layered
+    // ON TOP of the existing chat_video_sharing AND chat_image_sharing gate,
+    // not checked independently — see the 20260816130000 migration's header
+    // comment, which is the source of truth to keep in sync with.
+    final captureVideoEnabled =
+        ephemeralVideoEnabled.valueOrNull == true && videoAttachEnabled;
     final voiceMessagesEnabled = ref.watch(chatVoiceMessagesEnabledProvider);
     final translatorEnabled = ref.watch(chatTranslatorEntryEnabledProvider);
     final headerDrawerEnabled = ref.watch(
@@ -804,6 +822,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                         unawaited(_attachVideo());
                       }
                       : null,
+              onCaptureVideo:
+                  captureVideoEnabled
+                      ? () {
+                        unawaited(_attachEphemeralCamera());
+                      }
+                      : null,
               onOpenTranslator:
                   translatorEnabled.valueOrNull == true
                       ? () {
@@ -812,6 +836,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                       : null,
               showAttachImage: imageSharingEnabled.valueOrNull == true,
               showAttachVideo: videoAttachEnabled,
+              showCaptureVideo: captureVideoEnabled,
               showTranslator: translatorEnabled.valueOrNull == true,
               showVoiceMessage: voiceMessagesEnabled.valueOrNull == true,
               onVoiceMessageRecorded:
@@ -1368,6 +1393,7 @@ class _MessageList extends ConsumerWidget {
 
           Widget bubble = MessageBubble(
             message: message,
+            conversation: conversation,
             onRetry:
                 message.isFailed
                     ? () => ref

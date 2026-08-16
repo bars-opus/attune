@@ -111,10 +111,12 @@ Future<void> _pump(
   VoidCallback? onOpenTranslator,
   VoidCallback? onAttachImage,
   VoidCallback? onAttachVideo,
+  VoidCallback? onCaptureVideo,
   bool showTranslator = false,
   bool showAttachImage = false,
   bool showAttachVideo = false,
   bool showVoiceMessage = false,
+  bool showCaptureVideo = false,
   bool enabled = true,
 }) {
   return tester.pumpWidget(
@@ -126,10 +128,12 @@ Future<void> _pump(
           onOpenTranslator: onOpenTranslator,
           onAttachImage: onAttachImage,
           onAttachVideo: onAttachVideo,
+          onCaptureVideo: onCaptureVideo,
           showTranslator: showTranslator,
           showAttachImage: showAttachImage,
           showAttachVideo: showAttachVideo,
           showVoiceMessage: showVoiceMessage,
+          showCaptureVideo: showCaptureVideo,
           enabled: enabled,
         ),
       ),
@@ -363,5 +367,44 @@ void main() {
 
     expect(attachVideoCalled, 1);
     expect(find.text('Video Library'), findsNothing);
+  });
+
+  testWidgets(
+      'camera icon absent by default, existing photo/video/voice icons unaffected',
+      (tester) async {
+    final controller = TextEditingController();
+    await _pump(
+      tester,
+      controller: controller,
+      showAttachImage: true,
+      onAttachImage: () {},
+      showAttachVideo: true,
+      onAttachVideo: () {},
+      showVoiceMessage: true,
+      // showCaptureVideo/onCaptureVideo deliberately omitted — this is
+      // the additive-only guarantee: the new pair must default to
+      // absent/off without disturbing any of the three pre-existing
+      // pairs.
+    );
+
+    expect(find.byIcon(Icons.camera_alt_outlined), findsNothing);
+    expect(find.byIcon(Icons.photo_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
+  });
+
+  testWidgets('camera icon appears and calls onCaptureVideo when showCaptureVideo is true',
+      (tester) async {
+    var captureVideoCalled = 0;
+    final controller = TextEditingController();
+    await _pump(
+      tester,
+      controller: controller,
+      showCaptureVideo: true,
+      onCaptureVideo: () => captureVideoCalled++,
+    );
+
+    expect(find.byIcon(Icons.camera_alt_outlined), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.camera_alt_outlined));
+    expect(captureVideoCalled, 1);
   });
 }

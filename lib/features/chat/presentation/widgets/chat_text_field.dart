@@ -17,10 +17,12 @@ class ChatTextField extends StatefulWidget {
     this.onAttachVideo,
     this.onOpenTranslator,
     this.onVoiceMessageRecorded,
+    this.onCaptureVideo,
     this.showAttachImage = false,
     this.showAttachVideo = false,
     this.showTranslator = false,
     this.showVoiceMessage = false,
+    this.showCaptureVideo = false,
     this.enabled = true,
     this.hintText = 'Type a message...',
     this.focusNode,
@@ -40,10 +42,17 @@ class ChatTextField extends StatefulWidget {
   /// per the design spec.
   final void Function(VoiceRecording recording)? onVoiceMessageRecorded;
 
+  /// Opens the ephemeral (view-once) camera capture flow. Purely additive
+  /// alongside onAttachImage/onAttachVideo/onVoiceMessageRecorded — a new,
+  /// dedicated leading icon, not folded into the existing Photo/Video
+  /// attach-sheet dispatcher.
+  final VoidCallback? onCaptureVideo;
+
   final bool showAttachImage;
   final bool showAttachVideo;
   final bool showTranslator;
   final bool showVoiceMessage;
+  final bool showCaptureVideo;
   final bool enabled;
   final String hintText;
 
@@ -260,6 +269,12 @@ class _ChatTextFieldState extends State<ChatTextField> {
               onPressed: widget.enabled ? () => _handleAttachTap(context) : null,
               icon: const Icon(Icons.photo_outlined),
               tooltip: widget.showAttachVideo ? 'Add media' : 'Add image',
+            ),
+          if (widget.showCaptureVideo)
+            IconButton(
+              onPressed: widget.enabled ? widget.onCaptureVideo : null,
+              icon: const Icon(Icons.camera_alt_outlined),
+              tooltip: 'Record a video',
             ),
           if (widget.showTranslator && _hasText)
             IconButton(

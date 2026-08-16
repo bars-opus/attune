@@ -49,6 +49,21 @@ final chatVideoSharingEnabledProvider = FutureProvider<bool>((ref) {
   );
 });
 
+/// Gates offering the ephemeral (view-once) camera capture entry point.
+/// This flag alone is NOT sufficient to enable capture — the RPC behind it
+/// (create_chat_media_upload_intent) cannot distinguish an ephemeral video
+/// intent from a gallery-pick one (both request media_type = 'video'), so
+/// callers must additionally require chatVideoSharingEnabledProvider AND
+/// chatImageSharingEnabledProvider, exactly like Part 1's videoAttachEnabled
+/// derivation in chat_screen.dart. See the 20260816130000 migration's header
+/// comment, the source of truth for this three-way requirement.
+final chatEphemeralVideoEnabledProvider = FutureProvider<bool>((ref) {
+  return ChatFeatureFlags.isEnabled(
+    ref.watch(supabaseClientProvider),
+    ChatFeatureFlags.ephemeralVideo,
+  );
+});
+
 final conversationsProvider =
     AsyncNotifierProvider<ConversationsNotifier, List<Conversation>>(
       ConversationsNotifier.new,

@@ -1,7 +1,9 @@
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/core/widgets/focused_action_menu.dart';
 import 'package:attune/core/widgets/universal_bubble.dart';
+import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
+import 'package:attune/features/chat/presentation/screens/ephemeral_video_viewer_screen.dart';
 import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.dart';
 import 'package:attune/features/chat/presentation/widgets/video_message_player.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_message_player.dart';
@@ -14,6 +16,7 @@ class MessageBubble extends StatelessWidget {
   const MessageBubble({
     super.key,
     required this.message,
+    this.conversation,
     this.onRetry,
     this.onRemove,
     this.showStatus = true,
@@ -37,6 +40,18 @@ class MessageBubble extends StatelessWidget {
   });
 
   final Message message;
+
+  /// Needed to push EphemeralVideoViewerScreen, which requires the full
+  /// Conversation (not just relationshipId) to build its own
+  /// provider-backed state. Nullable rather than required so this task's
+  /// change doesn't force every pre-existing MessageBubble test/call site
+  /// (none of which exercise ephemeral video) to start passing one — every
+  /// REAL call site (ChatScreen's _MessageList) already has the
+  /// conversation in scope and passes it. A null conversation simply
+  /// means an isEphemeralVideoAvailable bubble renders its sealed tile as
+  /// non-interactive (see _BubbleBody's canView derivation) rather than
+  /// crashing — the tombstone branch never needs it at all.
+  final Conversation? conversation;
   final VoidCallback? onRetry;
   final VoidCallback? onRemove;
   final bool showStatus;
@@ -162,7 +177,11 @@ class MessageBubble extends StatelessWidget {
                     style: Theme.of(context).textTheme.labelSmall,
                   ),
                 ),
-              _BubbleBody(message: message, isMine: isMine),
+              _BubbleBody(
+                message: message,
+                isMine: isMine,
+                conversation: conversation,
+              ),
             ],
           ),
           footer: Wrap(
@@ -356,10 +375,15 @@ void _openFullEmojiPicker(NavigatorState navigator, void Function(String emoji)?
 }
 
 class _BubbleBody extends StatelessWidget {
-  const _BubbleBody({required this.message, required this.isMine});
+  const _BubbleBody({
+    required this.message,
+    required this.isMine,
+    required this.conversation,
+  });
 
   final Message message;
   final bool isMine;
+  final Conversation? conversation;
 
   @override
   Widget build(BuildContext context) {
@@ -417,7 +441,73 @@ class _BubbleBody extends StatelessWidget {
         );
       }
     }
-    if (message.hasVideo) {
+    if (message.isEphemeralVideoExpired) {
+      children.add(
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.videocam_off_outlined, size: 18, color: color),
+            const SizedBox(width: 6),
+            Text(
+              'Video expired',
+              style: TextStyle(color: color, fontStyle: FontStyle.italic),
+            ),
+          ],
+        ),
+      );
+    } else if (message.isEphemeralVideoAvailable) {
+      final videoUrl = message.localMediaPath ?? message.signedMediaUrl;
+      // Gate the tap on the send having actually completed: an optimistic,
+      // still-uploading ephemeral video has only a localMediaPath (no
+      // signedMediaUrl yet) and a synthetic '_local_<clientMessageId>' id
+      // (see the hasAudio/hasVideo branches' comments above on the
+      // optimistic-to-canonical id swap). Tapping it would push
+      // EphemeralVideoViewerScreen with that synthetic id, and its
+      // markVideoViewed RPC call would safely no-op against a
+      // non-existent row — but the UI would look broken (the viewer
+      // opening over a clip that isn't actually server-backed yet, for no
+      // visible reason). Disabling the tap until MessageStatus.sending
+      // clears avoids that confusing state without relying on the RPC's
+      // no-op-on-no-match behavior as the only safety net.
+      final conv = conversation;
+      final canView = videoUrl != null &&
+          conv != null &&
+          message.status != MessageStatus.sending;
+      if (videoUrl != null) {
+        children.add(
+          GestureDetector(
+            onTap: canView
+                ? () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => EphemeralVideoViewerScreen(
+                          messageId: message.id,
+                          videoUrl: videoUrl,
+                          conversation: conv,
+                        ),
+                      ),
+                    );
+                  }
+                : null,
+            child: Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Icon(
+                  Icons.play_arrow_rounded,
+                  size: 48,
+                  color: canView ? null : color.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+    } else if (message.hasVideo) {
       final videoUrl = message.localMediaPath ?? message.signedMediaUrl;
       if (videoUrl != null) {
         children.add(
