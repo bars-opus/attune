@@ -190,4 +190,131 @@ void main() {
       expect(copied.signedThumbnailUrl, 'https://example.com/poster.jpg');
     });
   });
+
+  group('ephemeral video fields', () {
+    test('isViewOnce defaults to false and viewedAt defaults to null', () {
+      final message = Message(
+        id: 'm1',
+        clientMessageId: 'c1',
+        relationshipId: 'r1',
+        senderId: 's1',
+        content: '',
+        createdAt: DateTime(2026, 8, 16),
+        status: MessageStatus.sent,
+        isMine: true,
+        mediaType: 'video',
+      );
+      expect(message.isViewOnce, isFalse);
+      expect(message.viewedAt, isNull);
+    });
+
+    test('isEphemeralVideoAvailable is true only when view-once, unviewed, and media is present', () {
+      final available = Message(
+        id: 'm1',
+        clientMessageId: 'c1',
+        relationshipId: 'r1',
+        senderId: 's1',
+        content: '',
+        createdAt: DateTime(2026, 8, 16),
+        status: MessageStatus.sending,
+        isMine: true,
+        mediaType: 'video',
+        isViewOnce: true,
+        localMediaPath: '/tmp/clip.mp4',
+      );
+      expect(available.isEphemeralVideoAvailable, isTrue);
+      expect(available.isEphemeralVideoExpired, isFalse);
+
+      final notViewOnce = available.copyWith(isViewOnce: false);
+      expect(notViewOnce.isEphemeralVideoAvailable, isFalse);
+
+      final noMediaYet = Message(
+        id: 'm2',
+        clientMessageId: 'c2',
+        relationshipId: 'r1',
+        senderId: 's1',
+        content: '',
+        createdAt: DateTime(2026, 8, 16),
+        status: MessageStatus.sending,
+        isMine: true,
+        mediaType: 'video',
+        isViewOnce: true,
+      );
+      expect(noMediaYet.isEphemeralVideoAvailable, isFalse);
+      expect(noMediaYet.isEphemeralVideoExpired, isFalse);
+    });
+
+    test('isEphemeralVideoExpired is true once viewedAt is set, regardless of media presence', () {
+      final expired = Message(
+        id: 'm1',
+        clientMessageId: 'c1',
+        relationshipId: 'r1',
+        senderId: 's1',
+        content: '',
+        createdAt: DateTime(2026, 8, 16),
+        status: MessageStatus.sent,
+        isMine: true,
+        mediaType: 'video',
+        isViewOnce: true,
+        viewedAt: DateTime(2026, 8, 16, 12),
+      );
+      expect(expired.isEphemeralVideoExpired, isTrue);
+      expect(expired.isEphemeralVideoAvailable, isFalse);
+    });
+
+    test('a non-view-once video message is never ephemeral-available or -expired', () {
+      final ordinary = Message(
+        id: 'm1',
+        clientMessageId: 'c1',
+        relationshipId: 'r1',
+        senderId: 's1',
+        content: '',
+        createdAt: DateTime(2026, 8, 16),
+        status: MessageStatus.sent,
+        isMine: true,
+        mediaType: 'video',
+        signedMediaUrl: 'https://example.com/clip.mp4',
+      );
+      expect(ordinary.isEphemeralVideoAvailable, isFalse);
+      expect(ordinary.isEphemeralVideoExpired, isFalse);
+      expect(ordinary.hasVideo, isTrue); // unaffected — this is Part 1's gallery-video path
+    });
+
+    test('isViewOnce and viewedAt persist through toJson/fromJson', () {
+      final original = Message(
+        id: 'm1',
+        clientMessageId: 'c1',
+        relationshipId: 'r1',
+        senderId: 's1',
+        content: '',
+        createdAt: DateTime(2026, 8, 16, 9),
+        status: MessageStatus.sent,
+        isMine: true,
+        mediaType: 'video',
+        isViewOnce: true,
+        viewedAt: DateTime(2026, 8, 16, 10),
+      );
+      final restored = Message.fromJson(original.toJson());
+      expect(restored.isViewOnce, isTrue);
+      expect(restored.viewedAt, DateTime(2026, 8, 16, 10));
+    });
+
+    test('copyWith preserves isViewOnce/viewedAt when not overridden', () {
+      final original = Message(
+        id: 'm1',
+        clientMessageId: 'c1',
+        relationshipId: 'r1',
+        senderId: 's1',
+        content: '',
+        createdAt: DateTime(2026, 8, 16),
+        status: MessageStatus.sending,
+        isMine: true,
+        mediaType: 'video',
+        isViewOnce: true,
+      );
+      final copied = original.copyWith(status: MessageStatus.sent);
+      expect(copied.isViewOnce, isTrue);
+      expect(copied.viewedAt, isNull);
+    });
+  });
 }

@@ -18,6 +18,8 @@ class Message {
   final String? signedThumbnailUrl;
   final int? mediaWidth;
   final int? mediaHeight;
+  final bool isViewOnce;
+  final DateTime? viewedAt;
   final String source;
   final DateTime? deliveredAt;
   final DateTime? readAt;
@@ -48,6 +50,8 @@ class Message {
     this.signedThumbnailUrl,
     this.mediaWidth,
     this.mediaHeight,
+    this.isViewOnce = false,
+    this.viewedAt,
     this.source = 'native',
     this.deliveredAt,
     this.readAt,
@@ -82,6 +86,8 @@ class Message {
           .toList(),
       mediaWidth: (row['media_width'] as num?)?.toInt(),
       mediaHeight: (row['media_height'] as num?)?.toInt(),
+      isViewOnce: (row['is_view_once'] as bool?) ?? false,
+      viewedAt: _parseDateTime(row['viewed_at']),
       source: (row['source'] as String?) ?? 'native',
       deliveredAt: deliveredAt,
       readAt: readAt,
@@ -114,6 +120,7 @@ class Message {
     List<int>? waveform,
     int? mediaWidth,
     int? mediaHeight,
+    bool isViewOnce = false,
     String? replyToMessageId,
     String? quotedText,
   }) {
@@ -131,6 +138,7 @@ class Message {
       waveform: waveform,
       mediaWidth: mediaWidth,
       mediaHeight: mediaHeight,
+      isViewOnce: isViewOnce,
       source: 'native',
       status: MessageStatus.sending,
       isMine: true,
@@ -156,6 +164,8 @@ class Message {
     String? signedThumbnailUrl,
     int? mediaWidth,
     int? mediaHeight,
+    bool? isViewOnce,
+    DateTime? viewedAt,
     String? source,
     DateTime? deliveredAt,
     DateTime? readAt,
@@ -184,6 +194,8 @@ class Message {
       signedThumbnailUrl: signedThumbnailUrl ?? this.signedThumbnailUrl,
       mediaWidth: mediaWidth ?? this.mediaWidth,
       mediaHeight: mediaHeight ?? this.mediaHeight,
+      isViewOnce: isViewOnce ?? this.isViewOnce,
+      viewedAt: viewedAt ?? this.viewedAt,
       source: source ?? this.source,
       deliveredAt: deliveredAt ?? this.deliveredAt,
       readAt: readAt ?? this.readAt,
@@ -212,6 +224,8 @@ class Message {
       'waveform': waveform,
       'mediaWidth': mediaWidth,
       'mediaHeight': mediaHeight,
+      'isViewOnce': isViewOnce,
+      'viewedAt': viewedAt?.toIso8601String(),
       'source': source,
       'deliveredAt': deliveredAt?.toIso8601String(),
       'readAt': readAt?.toIso8601String(),
@@ -242,6 +256,8 @@ class Message {
           .toList(),
       mediaWidth: (json['mediaWidth'] as num?)?.toInt(),
       mediaHeight: (json['mediaHeight'] as num?)?.toInt(),
+      isViewOnce: (json['isViewOnce'] as bool?) ?? false,
+      viewedAt: _parseDateTime(json['viewedAt']),
       source: (json['source'] as String?) ?? 'native',
       deliveredAt: _parseDateTime(json['deliveredAt']),
       readAt: _parseDateTime(json['readAt']),
@@ -270,6 +286,11 @@ class Message {
   bool get hasVideo =>
       mediaType == 'video' &&
       (signedMediaUrl != null || localMediaPath != null);
+  bool get isEphemeralVideoAvailable =>
+      isViewOnce &&
+      viewedAt == null &&
+      (localMediaPath != null || signedMediaUrl != null);
+  bool get isEphemeralVideoExpired => isViewOnce && viewedAt != null;
   bool get isQueued => status == MessageStatus.queued;
   bool get isSending => status == MessageStatus.sending;
   bool get isFailed => status == MessageStatus.failed;
