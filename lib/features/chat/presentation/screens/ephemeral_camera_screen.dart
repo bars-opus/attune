@@ -174,6 +174,13 @@ class EphemeralCameraScreenState
         localPath: localPath,
         trimStart: Duration.zero,
         trimEnd: held,
+        // Ephemeral-specific ceilings, distinct from the gallery-attach
+        // flow's 3-minute/25MB defaults — genuinely enforced by
+        // ChatVideoPreparer.prepare() itself (debugResolveMaxDuration/
+        // debugResolveMaxBytes), not just incidentally satisfied by the
+        // client-side 10s recording cap.
+        maxDuration: const Duration(seconds: 10),
+        maxBytes: 2 * 1024 * 1024,
       );
       if (!mounted) return;
       await ref

@@ -26,11 +26,22 @@ class VideoPrepareProgressDialog extends StatefulWidget {
     required this.localPath,
     required this.trimStart,
     required this.trimEnd,
+    this.maxDuration,
+    this.maxBytes,
   });
 
   final String localPath;
   final Duration trimStart;
   final Duration trimEnd;
+
+  /// Overrides forwarded to [ChatVideoPreparer.prepare]'s own
+  /// `maxDuration`/`maxBytes` params. Null means "use prepare()'s class
+  /// constants" — Part 1's gallery-attach flow (chat_screen.dart's
+  /// _attachVideo) omits these and keeps getting the original 3-minute/
+  /// 25MB gallery ceiling unchanged. EphemeralCameraScreen passes its own
+  /// 10s/2MB ephemeral targets explicitly.
+  final Duration? maxDuration;
+  final int? maxBytes;
 
   /// Shows the dialog and returns a future that completes exactly like
   /// [ChatVideoPreparer.prepare] itself would — with the prepared video, or
@@ -41,6 +52,8 @@ class VideoPrepareProgressDialog extends StatefulWidget {
     required String localPath,
     required Duration trimStart,
     required Duration trimEnd,
+    Duration? maxDuration,
+    int? maxBytes,
   }) async {
     final result = await showDialog<_DialogResult>(
       context: context,
@@ -50,6 +63,8 @@ class VideoPrepareProgressDialog extends StatefulWidget {
             localPath: localPath,
             trimStart: trimStart,
             trimEnd: trimEnd,
+            maxDuration: maxDuration,
+            maxBytes: maxBytes,
           ),
     );
     // A null `result` only happens if the dialog route is popped by
@@ -105,6 +120,8 @@ class _VideoPrepareProgressDialogState
         localPath: widget.localPath,
         trimStart: widget.trimStart,
         trimEnd: widget.trimEnd,
+        maxDuration: widget.maxDuration,
+        maxBytes: widget.maxBytes,
         onProgress: (value) {
           if (!mounted) return;
           // video_compress reports 0-100 on its native progress channel;
