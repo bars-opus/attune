@@ -1417,13 +1417,67 @@ class ChatController extends StateNotifier<ChatState> {
   /// [Message.localMediaPath] is the one field the server cannot know (it
   /// points at the sender's on-device file), so it is carried forward from
   /// the existing entry rather than being nulled out by the incoming row.
+  ///
+  /// Important finding I3: that carry-forward must NOT happen when the
+  /// incoming row shows the message just became ephemeral-expired
+  /// (isEphemeralVideoExpired = isViewOnce && viewedAt != null — note this
+  /// is independent of media_url/localMediaPath, so a naive carry-forward
+  /// would otherwise leave the sender's on-device capture file referenced,
+  /// and thus recoverable, even after the server has revoked the video for
+  /// everyone). When a message transitions un-expired -> expired during
+  /// this merge — whether the "existing" copy is the settled canonical row
+  /// (normal case: sender's own earlier view, or a later revocation) or
+  /// still the pre-swap OPTIMISTIC `_local_` row (the race where a
+  /// realtime refresh's _mergeMessages runs before _attemptSend's own
+  /// _replaceOptimistic has swapped the optimistic row out — the
+  /// optimistic row is keyed by `_local_...` and canonical rows are keyed
+  /// by their server id, so they never collide in `byId` and the
+  /// optimistic row's localMediaPath would otherwise survive this method's
+  /// final de-dup-by-clientMessageId step completely untouched) — the
+  /// local file is deleted (fire-and-forget; deletion failures are already
+  /// swallowed by _deleteStagedMedia's own best-effort try/catch).
   List<Message> _mergeMessages(List<Message> incoming) {
+    // clientMessageId -> local path of any in-memory row (optimistic or
+    // canonical) that is about to be superseded by an incoming row that
+    // has become ephemeral-expired, so the eventual de-dup step below
+    // never silently drops a still-referenced on-device file.
+    final staleLocalPathsByClientId = <String, String>{};
+
     final byId = <String, Message>{};
     for (final message in state.messages) {
       byId[message.id] = message;
     }
     for (final message in incoming) {
       final existing = byId[message.id];
+      final justExpired =
+          message.isEphemeralVideoExpired &&
+          existing?.isEphemeralVideoExpired != true;
+      if (justExpired) {
+        // The incoming canonical row is server-hydrated and never carries a
+        // local path (Message.fromRow has no localMediaPath source), so
+        // storing `message` as-is already drops it — no copyWith needed
+        // (copyWith's `??` semantics mean `localMediaPath: null` would be a
+        // no-op if `existing`'s value were passed through some other way).
+        final staleLocalPath = existing?.localMediaPath;
+        if (staleLocalPath != null) {
+          unawaited(_deleteStagedMedia(staleLocalPath));
+        }
+        byId[message.id] = message;
+        // Also cover the still-optimistic-row race described above: the
+        // pre-swap `_local_...` row for this same clientMessageId (if any)
+        // is untouched by the byId-keyed logic above (different id), so
+        // record its local path here and sweep it in the de-dup pass
+        // below, which is what actually discards that row.
+        for (final candidate in state.messages) {
+          if (candidate.id.startsWith('_local_') &&
+              candidate.clientMessageId == message.clientMessageId &&
+              candidate.localMediaPath != null) {
+            staleLocalPathsByClientId[message.clientMessageId] =
+                candidate.localMediaPath!;
+          }
+        }
+        continue;
+      }
       byId[message.id] = existing?.localMediaPath != null &&
               message.localMediaPath == null
           ? message.copyWith(localMediaPath: existing!.localMediaPath)
@@ -1441,7 +1495,15 @@ class ChatController extends StateNotifier<ChatState> {
 
     return merged.where((message) {
       if (!message.id.startsWith('_local_')) return true;
-      return !canonicalByClientId.containsKey(message.clientMessageId);
+      final isSuperseded =
+          canonicalByClientId.containsKey(message.clientMessageId);
+      if (isSuperseded) {
+        final stalePath = staleLocalPathsByClientId[message.clientMessageId];
+        if (stalePath != null) {
+          unawaited(_deleteStagedMedia(stalePath));
+        }
+      }
+      return !isSuperseded;
     }).toList();
   }
 
@@ -1561,6 +1623,18 @@ class ChatController extends StateNotifier<ChatState> {
   @visibleForTesting
   Future<void> debugHandleAccountChange(String previousUserId) =>
       _handleAccountChange(previousUserId);
+
+  /// Test-only seam for constructing a specific in-memory
+  /// state.messages precondition (e.g. a settled canonical row that still
+  /// carries a localMediaPath, or a not-yet-swapped optimistic `_local_`
+  /// row) without driving the full send pipeline, which has its own
+  /// cleanup side effects that would mask what _mergeMessages itself is
+  /// responsible for. See chat_state_send_ephemeral_video_message_test.dart
+  /// (Important finding I3 regression tests).
+  @visibleForTesting
+  void debugSetMessages(List<Message> messages) {
+    state = state.copyWith(messages: messages);
+  }
 
   Future<void> _handleAccountChange(String previousUserId) async {
     await _realtimeSubscription?.cancel();

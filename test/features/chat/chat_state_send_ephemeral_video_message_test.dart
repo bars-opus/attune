@@ -205,6 +205,138 @@ void main() {
       expect(repo.sendCallCount, 1);
     });
 
+    test(
+        'a canonical row in state that transitions to expired during a '
+        'merge has its local capture file deleted and localMediaPath '
+        'cleared (Important finding I3)', () async {
+      // _attemptSend already deletes pending.localMediaPath immediately
+      // after every successful send (chat_state.dart, right after
+      // sendTextMessage returns) — that part of the pipeline predates this
+      // feature and is not what I3 is about. The gap I3 describes is
+      // narrower: an already-settled CANONICAL row sitting in
+      // state.messages that still (for whatever reason — e.g. it was
+      // reconciled from a source other than this session's own
+      // _attemptSend) carries a populated localMediaPath, which
+      // _mergeMessages's carry-forward logic would otherwise propagate
+      // onto the newly-expired incoming row unchanged. This test
+      // constructs that state directly (bypassing the send pipeline, which
+      // already cleans up on its own) to isolate _mergeMessages's own
+      // responsibility.
+      final repo = FakeChatRepository(currentUserId: userId);
+      final b = await boot(repo);
+      final videoPath = await writeFile('sender_clip.mp4');
+
+      final canonical = repo.seedIncoming(
+        id: 'm1',
+        relationshipId: relId,
+        senderId: userId,
+        content: '',
+        createdAt: DateTime.now(),
+      );
+      repo.serverMessages['m1'] = canonical.copyWith(isViewOnce: true);
+
+      // Directly install a canonical (non-`_local_`) row in state that
+      // still carries a localMediaPath, simulating the "settled row still
+      // references the on-device file" precondition _mergeMessages must
+      // guard against.
+      b.controller.debugSetMessages([
+        canonical.copyWith(isViewOnce: true, localMediaPath: videoPath),
+      ]);
+      expect(await File(videoPath).exists(), isTrue);
+
+      // Now the server row is revoked (mark_video_viewed is symmetric —
+      // either the sender's own complete view or the receiver's counts,
+      // see 20260816130000_chat_ephemeral_video.sql) and a refresh merges
+      // it in.
+      repo.serverMessages['m1'] = repo.serverMessages['m1']!.copyWith(
+        viewedAt: DateTime.now(),
+      );
+      await b.controller.loadMessages();
+
+      final merged = b.state.messages.single;
+      expect(merged.isEphemeralVideoExpired, isTrue);
+      expect(
+        merged.localMediaPath,
+        isNull,
+        reason:
+            'the tombstone row must not carry the local path forward, or '
+            "the sender's clip would remain recoverable on-device",
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(
+        await File(videoPath).exists(),
+        isFalse,
+        reason:
+            "the sender's on-device capture file must be deleted once the "
+            'video is revoked, matching the tombstone the UI already shows',
+      );
+    });
+
+    test(
+        'a still-optimistic (_local_) row for the same message is cleaned '
+        'up too if a realtime merge lands an already-expired canonical row '
+        'before the send pipeline swaps the optimistic row out '
+        '(Important finding I3)', () async {
+      // This is the actual race _mergeMessages must guard against: the
+      // optimistic row (id starts with `_local_`) and the freshly-fetched
+      // canonical row are keyed differently in _mergeMessages's `byId`
+      // map, so they never collide there — only the final
+      // de-dup-by-clientMessageId step drops the optimistic row, and
+      // without this fix that drop happened silently, with no
+      // _deleteStagedMedia call, whenever the incoming canonical row had
+      // already become ephemeral-expired by the time it was fetched.
+      final repo = FakeChatRepository(currentUserId: userId);
+      final b = await boot(repo);
+      final videoPath = await writeFile('optimistic_clip.mp4');
+      const clientMessageId = 'client-1';
+
+      final canonical = repo.seedIncoming(
+        id: 'm1',
+        relationshipId: relId,
+        senderId: userId,
+        content: '',
+        createdAt: DateTime.now(),
+      );
+      // Already expired by the time it's fetched — mirrors a revocation
+      // that landed before this device ever saw the un-expired row.
+      repo.serverMessages['m1'] = canonical.copyWith(
+        isViewOnce: true,
+        viewedAt: DateTime.now(),
+        clientMessageId: clientMessageId,
+      );
+
+      b.controller.debugSetMessages([
+        Message.optimistic(
+          id: '_local_$clientMessageId',
+          clientMessageId: clientMessageId,
+          relationshipId: relId,
+          senderId: userId,
+          content: '',
+          createdAt: DateTime.now(),
+          mediaType: 'video',
+          localMediaPath: videoPath,
+          isViewOnce: true,
+        ),
+      ]);
+      expect(await File(videoPath).exists(), isTrue);
+
+      await b.controller.loadMessages();
+
+      final merged = b.state.messages;
+      expect(merged, hasLength(1));
+      expect(merged.single.id, 'm1');
+      expect(merged.single.localMediaPath, isNull);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(
+        await File(videoPath).exists(),
+        isFalse,
+        reason:
+            'the still-optimistic row is discarded by the de-dup step, so '
+            'its local file must be swept there rather than silently '
+            'orphaned',
+      );
+    });
+
     test('the queued PendingSend has isViewOnce true', () async {
       final repo = FakeChatRepository(currentUserId: userId)
         // Hold the send open so the outbox entry is still queued when we
