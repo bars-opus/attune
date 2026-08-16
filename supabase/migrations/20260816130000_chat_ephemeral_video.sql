@@ -46,15 +46,30 @@ ON CONFLICT (key) DO NOTHING;
 --
 --    Idempotency/atomicity (Algorithm Quality Review Checklist 1.1, 2.18,
 --    [MUTATION] scope): the UPDATE ... WHERE viewed_at IS NULL guard below
---    is the entire safety mechanism. Two concurrent calls for the same
---    p_message_id — whether from the same device retrying after a network
---    failure, two devices open simultaneously, or sender-then-receiver
---    racing — can only ever have ONE of them find viewed_at still NULL and
---    proceed past the RETURNING clause; every other call's RETURNING
---    yields no row, v_message.id stays NULL, and the function returns
---    early with no side effects. This makes retries always safe: a client
---    that doesn't know whether its previous call actually landed
---    server-side can simply call again.
+--    is the entire safety mechanism for the "two concurrent calls" race.
+--    Two concurrent calls for the same p_message_id — whether from the
+--    same device retrying after a network failure, two devices open
+--    simultaneously, or sender-then-receiver racing — can only ever have
+--    ONE of them find viewed_at still NULL and proceed past the RETURNING
+--    clause; every other call's RETURNING yields no row, v_message.id
+--    stays NULL, and the function returns early with no side effects.
+--
+--    Separately: this entire function body runs as ONE implicit
+--    transaction (a single plpgsql function invocation, no internal COMMIT).
+--    The viewed_at UPDATE above, the storage.objects DELETE below, and the
+--    final media_url/media_thumbnail_url UPDATE below all commit together
+--    or not at all. If the DELETE or the final UPDATE raises (including a
+--    23514 from messages_payload_present, since fixed by
+--    20260902120000_chat_ephemeral_video_final_review_fixes.sql), the
+--    WHOLE function rolls back — the viewed_at write from the first
+--    statement is undone too, not left stranded as committed. So a failure
+--    partway through never leaves a row with viewed_at set but media_url
+--    still present-and-undeleted, or vice versa; the row simply reverts to
+--    its exact pre-call state (viewed_at IS NULL, media_url intact) and a
+--    retry re-attempts the whole sequence from scratch. This is what makes
+--    retries always safe: a client that doesn't know whether its previous
+--    call actually landed server-side can simply call again, with no
+--    "already half-revoked" state possible in between.
 --
 --    Deliberately does NOT distinguish sender from receiver — full
 --    symmetry is the confirmed, intended design (see design spec Section
