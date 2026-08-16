@@ -135,6 +135,28 @@ final chatControllerProvider = StateNotifierProvider.autoDispose
       return ChatController(ref, conversation);
     });
 
+/// Whether a single message (by id) within [conversation] currently has
+/// [Message.isEphemeralVideoExpired] true. Derived from
+/// chatControllerProvider(conversation)'s own state.messages — the same
+/// list realtime updates (Spec 6.2 catch-up, mark_video_viewed revocations
+/// from another device, etc.) already flow into — rather than a new
+/// standalone provider, so EphemeralVideoViewerScreen (or any other single-
+/// message watcher) recomputes exactly when that message's row actually
+/// changes.
+final ephemeralVideoExpiredProvider = Provider.autoDispose
+    .family<bool, ({Conversation conversation, String messageId})>((
+      ref,
+      args,
+    ) {
+      final messages = ref.watch(
+        chatControllerProvider(args.conversation).select((s) => s.messages),
+      );
+      for (final message in messages) {
+        if (message.id == args.messageId) return message.isEphemeralVideoExpired;
+      }
+      return false;
+    });
+
 class ChatController extends StateNotifier<ChatState> {
   static const _maxAutomaticSendAttempts = 5;
   static final _backoffJitter = Random();

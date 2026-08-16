@@ -321,6 +321,19 @@ class FakeChatRepository implements ChatRepository {
   }
   @override
   Future<String?> createSignedMediaUrl(String mediaKey) async => null;
+
+  /// Recorded messageIds passed to [markVideoViewed], in call order.
+  final List<String> markVideoViewedCalls = [];
+
+  @override
+  Future<void> markVideoViewed({required String messageId}) async {
+    markVideoViewedCalls.add(messageId);
+    final existing = serverMessages[messageId];
+    if (existing != null) {
+      serverMessages[messageId] = existing.copyWith(viewedAt: DateTime.now());
+    }
+  }
+
   @override
   Future<int> fetchStreak(String relationshipId) async => streakValue;
   @override

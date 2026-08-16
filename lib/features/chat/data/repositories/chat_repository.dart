@@ -58,6 +58,12 @@ abstract class ChatRepository {
   });
   Future<String?> createSignedMediaUrl(String mediaKey);
 
+  /// Marks a view-once (ephemeral) video message as viewed, atomically
+  /// deleting its media server-side (see mark_video_viewed RPC, Task 2).
+  /// Called on playback completion or explicit dismissal of
+  /// EphemeralVideoViewerScreen — both count as "viewed."
+  Future<void> markVideoViewed({required String messageId});
+
   /// Sets this relationship's chat name (either partner may call this at
   /// any time the relationship is active). Validated server-side (1-30
   /// trimmed characters); see set_relationship_chat_name RPC.

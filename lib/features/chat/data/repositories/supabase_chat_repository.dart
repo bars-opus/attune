@@ -358,6 +358,14 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
+  Future<void> markVideoViewed({required String messageId}) async {
+    await _supabase.rpc(
+      'mark_video_viewed',
+      params: {'p_message_id': messageId},
+    );
+  }
+
+  @override
   Future<String?> createSignedMediaUrl(String mediaKey) async {
     final cached = _signedUrlCache[mediaKey];
     if (cached != null && cached.expiresAt.isAfter(DateTime.now())) {
