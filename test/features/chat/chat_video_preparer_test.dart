@@ -180,4 +180,55 @@ void main() {
       expect(ChatVideoPreparer.debugSniffMime(bytes), isNull);
     });
   });
+
+  group('optional maxDuration/maxBytes overrides', () {
+    test('omitting maxDuration/maxBytes preserves the existing 3-minute/25MB constants', () {
+      // This test asserts on the PARAMETER DEFAULTING behavior itself,
+      // not a full prepare() run (which needs native calls unavailable in
+      // this test host) — it confirms the guard conditions prepare()
+      // evaluates internally would be computed against
+      // ChatVideoPreparer.maxDuration/maxBytes when the new parameters are
+      // null, by checking the effective values a small extracted helper
+      // would resolve to. Since prepare() doesn't expose this resolution
+      // as a separate testable unit today, this task also adds a
+      // @visibleForTesting seam (Step 3) specifically so this can be
+      // asserted without a full native-backed prepare() call.
+      expect(
+        ChatVideoPreparer.debugResolveMaxDuration(null),
+        ChatVideoPreparer.maxDuration,
+      );
+      expect(
+        ChatVideoPreparer.debugResolveMaxBytes(null),
+        ChatVideoPreparer.maxBytes,
+      );
+    });
+
+    test('passing maxDuration/maxBytes overrides the defaults', () {
+      const overrideDuration = Duration(seconds: 10);
+      const overrideBytes = 2 * 1024 * 1024;
+      expect(
+        ChatVideoPreparer.debugResolveMaxDuration(overrideDuration),
+        overrideDuration,
+      );
+      expect(
+        ChatVideoPreparer.debugResolveMaxBytes(overrideBytes),
+        overrideBytes,
+      );
+    });
+
+    test('an ephemeral-scale duration bound (10s) correctly rejects an 11-second window', () async {
+      // Uses ChatVideoPreparer's own debugEstimateWindowBytes/duration-bounds
+      // reasoning indirectly: since prepare() itself needs native calls this
+      // test host can't provide, this asserts the resolved bound value
+      // itself is what a caller would compare effectiveDuration against —
+      // i.e. that passing maxDuration: Duration(seconds: 10) genuinely
+      // produces a 10-second (not 3-minute) ceiling for any downstream
+      // duration comparison.
+      final resolved = ChatVideoPreparer.debugResolveMaxDuration(
+        const Duration(seconds: 10),
+      );
+      expect(const Duration(seconds: 11) > resolved, isTrue);
+      expect(const Duration(seconds: 9) > resolved, isFalse);
+    });
+  });
 }

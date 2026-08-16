@@ -116,11 +116,25 @@ class ChatVideoPreparer {
     }
   }
 
+  /// Test seam: the same maxDuration-defaulting prepare() does internally
+  /// (fall back to the class constant when the caller omits an override),
+  /// exposed so the defaulting behavior itself can be asserted without a
+  /// full native-backed prepare() call.
+  @visibleForTesting
+  static Duration debugResolveMaxDuration(Duration? override) =>
+      override ?? maxDuration;
+
+  /// Test seam: mirrors debugResolveMaxDuration for the byte ceiling.
+  @visibleForTesting
+  static int debugResolveMaxBytes(int? override) => override ?? maxBytes;
+
   Future<PreparedChatVideo> prepare({
     required String localPath,
     Duration? trimStart,
     Duration? trimEnd,
     void Function(double)? onProgress,
+    Duration? maxDuration,
+    int? maxBytes,
   }) async {
     final source = File(localPath);
     if (!await source.exists()) {
@@ -149,6 +163,9 @@ class ChatVideoPreparer {
     if (sniffedMime == null) {
       throw const ChatVideoRejected('media_type_unsupported');
     }
+
+    final effectiveMaxDuration = debugResolveMaxDuration(maxDuration);
+    final effectiveMaxBytes = debugResolveMaxBytes(maxBytes);
 
     final MediaInfo info;
     try {
@@ -185,7 +202,7 @@ class ChatVideoPreparer {
     if (effectiveDuration < minDuration) {
       throw const ChatVideoRejected('media_too_short');
     }
-    if (effectiveDuration > maxDuration) {
+    if (effectiveDuration > effectiveMaxDuration) {
       throw const ChatVideoRejected('media_too_long');
     }
 
@@ -237,7 +254,7 @@ class ChatVideoPreparer {
 
     final outFile = compressed!.file!;
     final outSize = await outFile.length();
-    if (outSize <= 0 || outSize > maxBytes) {
+    if (outSize <= 0 || outSize > effectiveMaxBytes) {
       throw const ChatVideoRejected('media_compress_failed');
     }
 
