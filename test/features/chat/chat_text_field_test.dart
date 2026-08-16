@@ -110,8 +110,10 @@ Future<void> _pump(
   VoidCallback? onSend,
   VoidCallback? onOpenTranslator,
   VoidCallback? onAttachImage,
+  VoidCallback? onAttachVideo,
   bool showTranslator = false,
   bool showAttachImage = false,
+  bool showAttachVideo = false,
   bool showVoiceMessage = false,
   bool enabled = true,
 }) {
@@ -123,8 +125,10 @@ Future<void> _pump(
           onSend: onSend ?? () {},
           onOpenTranslator: onOpenTranslator,
           onAttachImage: onAttachImage,
+          onAttachVideo: onAttachVideo,
           showTranslator: showTranslator,
           showAttachImage: showAttachImage,
+          showAttachVideo: showAttachVideo,
           showVoiceMessage: showVoiceMessage,
           enabled: enabled,
         ),
@@ -301,5 +305,63 @@ void main() {
     // rather than leaking into pumpWidget's teardown/leak checks.
     await gesture.up();
     await tester.pump();
+  });
+
+  testWidgets('photo icon calls onAttachImage directly when only showAttachImage is true (video off)',
+      (tester) async {
+    var attachImageCalled = 0;
+    await _pump(
+      tester,
+      controller: TextEditingController(),
+      showAttachImage: true,
+      onAttachImage: () => attachImageCalled++,
+      showAttachVideo: false,
+    );
+
+    await tester.tap(find.byIcon(Icons.photo_outlined));
+    await tester.pump();
+
+    expect(attachImageCalled, 1);
+    // No bottom sheet should have appeared.
+    expect(find.byType(BottomSheet), findsNothing);
+  });
+
+  testWidgets('attach icon opens a Photo/Video sheet when both showAttachImage and showAttachVideo are true',
+      (tester) async {
+    await _pump(
+      tester,
+      controller: TextEditingController(),
+      showAttachImage: true,
+      onAttachImage: () {},
+      showAttachVideo: true,
+      onAttachVideo: () {},
+    );
+
+    await tester.tap(find.byIcon(Icons.photo_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Photo Library'), findsOneWidget);
+    expect(find.text('Video Library'), findsOneWidget);
+  });
+
+  testWidgets('tapping Video Library in the sheet calls onAttachVideo and dismisses the sheet',
+      (tester) async {
+    var attachVideoCalled = 0;
+    await _pump(
+      tester,
+      controller: TextEditingController(),
+      showAttachImage: true,
+      onAttachImage: () {},
+      showAttachVideo: true,
+      onAttachVideo: () => attachVideoCalled++,
+    );
+
+    await tester.tap(find.byIcon(Icons.photo_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Video Library'));
+    await tester.pumpAndSettle();
+
+    expect(attachVideoCalled, 1);
+    expect(find.text('Video Library'), findsNothing);
   });
 }

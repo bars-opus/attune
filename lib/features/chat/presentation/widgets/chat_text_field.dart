@@ -14,9 +14,11 @@ class ChatTextField extends StatefulWidget {
     required this.controller,
     required this.onSend,
     this.onAttachImage,
+    this.onAttachVideo,
     this.onOpenTranslator,
     this.onVoiceMessageRecorded,
     this.showAttachImage = false,
+    this.showAttachVideo = false,
     this.showTranslator = false,
     this.showVoiceMessage = false,
     this.enabled = true,
@@ -29,6 +31,7 @@ class ChatTextField extends StatefulWidget {
   final TextEditingController controller;
   final VoidCallback onSend;
   final VoidCallback? onAttachImage;
+  final VoidCallback? onAttachVideo;
   final VoidCallback? onOpenTranslator;
 
   /// Called once a press-and-hold recording completes with a valid
@@ -38,6 +41,7 @@ class ChatTextField extends StatefulWidget {
   final void Function(VoiceRecording recording)? onVoiceMessageRecorded;
 
   final bool showAttachImage;
+  final bool showAttachVideo;
   final bool showTranslator;
   final bool showVoiceMessage;
   final bool enabled;
@@ -108,6 +112,39 @@ class _ChatTextFieldState extends State<ChatTextField> {
     if (!(widget.enabled && _hasText)) return;
     setState(() => _sendPulse++);
     widget.onSend();
+  }
+
+  void _handleAttachTap(BuildContext context) {
+    if (!widget.showAttachVideo || widget.onAttachVideo == null) {
+      widget.onAttachImage?.call();
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_outlined),
+              title: const Text('Photo Library'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                widget.onAttachImage?.call();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.videocam_outlined),
+              title: const Text('Video Library'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                widget.onAttachVideo?.call();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _startRecording() async {
@@ -220,9 +257,9 @@ class _ChatTextFieldState extends State<ChatTextField> {
         children: [
           if (widget.showAttachImage)
             IconButton(
-              onPressed: widget.enabled ? widget.onAttachImage : null,
+              onPressed: widget.enabled ? () => _handleAttachTap(context) : null,
               icon: const Icon(Icons.photo_outlined),
-              tooltip: 'Add image',
+              tooltip: widget.showAttachVideo ? 'Add media' : 'Add image',
             ),
           if (widget.showTranslator && _hasText)
             IconButton(
