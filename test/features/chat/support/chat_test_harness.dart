@@ -324,12 +324,22 @@ class FakeChatRepository implements ChatRepository {
   @override
   Future<String?> createSignedMediaUrl(String mediaKey) async => null;
 
-  /// Recorded messageIds passed to [markVideoViewed], in call order.
+  /// Recorded messageIds passed to [markVideoViewed], in call order —
+  /// includes calls that go on to throw via [markVideoViewedFailures].
   final List<String> markVideoViewedCalls = [];
+
+  /// Queued errors for [markVideoViewed], consumed FIFO — one entry is
+  /// popped and thrown per call while the queue is non-empty, then calls
+  /// succeed normally. Lets a test script "fails once, then a retry
+  /// succeeds" (or "fails every time") without network mocking.
+  final List<Object> markVideoViewedFailures = [];
 
   @override
   Future<void> markVideoViewed({required String messageId}) async {
     markVideoViewedCalls.add(messageId);
+    if (markVideoViewedFailures.isNotEmpty) {
+      throw markVideoViewedFailures.removeAt(0);
+    }
     final existing = serverMessages[messageId];
     if (existing != null) {
       serverMessages[messageId] = existing.copyWith(viewedAt: DateTime.now());

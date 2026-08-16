@@ -2,6 +2,7 @@ import 'package:attune/features/chat/config/chat_config.dart';
 import 'package:attune/features/chat/presentation/screens/ephemeral_video_viewer_screen.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -10,6 +11,27 @@ import 'support/chat_test_harness.dart';
 void main() {
   const userId = 'user-a';
   const relId = 'rel-1';
+
+  // ScreenshotDetectionService listens on this exact MethodChannel name
+  // (lib/core/services/media/screenshot_detection_service.dart) and treats
+  // an incoming 'onScreenshot' call as a detected screenshot event. There
+  // is no test seam to inject a fake service into
+  // EphemeralVideoViewerScreen (it constructs its own instance internally,
+  // matching the class's own "best-effort instrumentation" design), so
+  // tests that need to simulate a screenshot drive the platform channel
+  // directly the same way the real native side would.
+  const screenshotChannel = MethodChannel('attune/screenshot_detection');
+
+  Future<void> simulateScreenshot(WidgetTester tester) async {
+    final call = const StandardMethodCodec().encodeMethodCall(
+      const MethodCall('onScreenshot'),
+    );
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      screenshotChannel.name,
+      call,
+      (_) {},
+    );
+  }
 
   // Pushed via Navigator.push, mirroring the brief's own stated production
   // usage (this screen is never a MaterialApp's `home`) — so an
@@ -221,5 +243,198 @@ void main() {
     await tester.pump();
 
     expect(repo.markVideoViewedCalls, ['m1']);
+  });
+
+  testWidgets(
+      'still closes the screen when markVideoViewed fails on both the '
+      'initial call and its retry (Important finding I1)', (tester) async {
+    final repo = FakeChatRepository(currentUserId: userId);
+    final conversation = activeConversation(relId);
+    repo.conversationOverride = conversation;
+    repo.seedIncoming(
+      id: 'm1',
+      relationshipId: relId,
+      senderId: 'partner',
+      content: '',
+      createdAt: DateTime.now(),
+    );
+    // Both the initial attempt and the one retry fail, exercising the
+    // worst case: the user must still be able to leave the screen even
+    // though the server call never landed.
+    repo.markVideoViewedFailures.addAll([
+      Exception('network down'),
+      Exception('still down'),
+    ]);
+    final container = buildChatContainer(repository: repo, userId: userId);
+    addTearDown(container.dispose);
+    container.read(chatControllerProvider(conversation).notifier);
+
+    await tester.pumpWidget(
+      buildHarness(
+        container,
+        EphemeralVideoViewerScreen(
+          messageId: 'm1',
+          videoUrl: '/tmp/local/clip.mp4',
+          conversation: conversation,
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    // Tap to dismiss: triggers _markViewedAndClose, which should try once,
+    // fail, wait ~500ms, retry, fail again, and STILL pop the route rather
+    // than leaving the user stuck.
+    await tester.tap(find.byType(EphemeralVideoViewerScreen));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    // Let the pop's route-removal transition (~300ms) finish, same as the
+    // push transition this file's other tests already account for.
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(repo.markVideoViewedCalls, ['m1', 'm1']);
+    // The viewer route is gone; back on the harness's "open" screen.
+    expect(find.byType(EphemeralVideoViewerScreen), findsNothing);
+    expect(find.text('open'), findsOneWidget);
+  });
+
+  testWidgets(
+      'closes normally after one failed attempt followed by a successful '
+      'retry (Important finding I1)', (tester) async {
+    final repo = FakeChatRepository(currentUserId: userId);
+    final conversation = activeConversation(relId);
+    repo.conversationOverride = conversation;
+    repo.seedIncoming(
+      id: 'm1',
+      relationshipId: relId,
+      senderId: 'partner',
+      content: '',
+      createdAt: DateTime.now(),
+    );
+    repo.markVideoViewedFailures.add(Exception('transient network blip'));
+    final container = buildChatContainer(repository: repo, userId: userId);
+    addTearDown(container.dispose);
+    container.read(chatControllerProvider(conversation).notifier);
+
+    await tester.pumpWidget(
+      buildHarness(
+        container,
+        EphemeralVideoViewerScreen(
+          messageId: 'm1',
+          videoUrl: '/tmp/local/clip.mp4',
+          conversation: conversation,
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    await tester.tap(find.byType(EphemeralVideoViewerScreen));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(repo.markVideoViewedCalls, ['m1', 'm1']);
+    expect(find.byType(EphemeralVideoViewerScreen), findsNothing);
+  });
+
+  testWidgets(
+      'sends at most one screenshot notice per screen instance even when '
+      'the platform channel fires the event twice (Important finding I4)',
+      (tester) async {
+    final repo = FakeChatRepository(currentUserId: userId);
+    final conversation = activeConversation(relId);
+    repo.conversationOverride = conversation;
+    repo.seedIncoming(
+      id: 'm1',
+      relationshipId: relId,
+      senderId: 'partner',
+      content: '',
+      createdAt: DateTime.now(),
+    );
+    final container = buildChatContainer(repository: repo, userId: userId);
+    addTearDown(container.dispose);
+    container.read(chatControllerProvider(conversation).notifier);
+
+    await tester.pumpWidget(
+      buildHarness(
+        container,
+        EphemeralVideoViewerScreen(
+          messageId: 'm1',
+          videoUrl: '/tmp/local/clip.mp4',
+          conversation: conversation,
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    final sendsBefore = repo.sendCallCount;
+
+    // Simulate the platform firing the screenshot event twice in quick
+    // succession — e.g. across the Android native ContentObserver's
+    // debounce window, or on iOS which has no native debounce at all.
+    await simulateScreenshot(tester);
+    await simulateScreenshot(tester);
+    await tester.pump();
+
+    expect(
+      repo.sendCallCount - sendsBefore,
+      1,
+      reason:
+          'only the first screenshot event should produce a system-notice send',
+    );
+    expect(
+      repo.serverMessages.values.where((m) => m.isSystemNotice).length,
+      1,
+    );
+  });
+
+  testWidgets(
+      'a failed screenshot-notice send does not crash the screen or block '
+      'playback/dismissal (Important finding I4)', (tester) async {
+    final repo = FakeChatRepository(currentUserId: userId);
+    final conversation = activeConversation(relId);
+    repo.conversationOverride = conversation;
+    repo.seedIncoming(
+      id: 'm1',
+      relationshipId: relId,
+      senderId: 'partner',
+      content: '',
+      createdAt: DateTime.now(),
+    );
+    repo.nextSendError = Exception('screenshot notice send failed');
+    final container = buildChatContainer(repository: repo, userId: userId);
+    addTearDown(container.dispose);
+    container.read(chatControllerProvider(conversation).notifier);
+
+    await tester.pumpWidget(
+      buildHarness(
+        container,
+        EphemeralVideoViewerScreen(
+          messageId: 'm1',
+          videoUrl: '/tmp/local/clip.mp4',
+          conversation: conversation,
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    await simulateScreenshot(tester);
+    await tester.pump();
+
+    // The screen must still be usable — no uncaught exception should have
+    // propagated out of the stream listener. Dismissing normally still
+    // works and still calls markVideoViewed.
+    await tester.tap(find.byType(EphemeralVideoViewerScreen));
+    await tester.pump();
+
+    expect(repo.markVideoViewedCalls, ['m1']);
+    expect(tester.takeException(), isNull);
   });
 }

@@ -6,6 +6,7 @@ import 'package:attune/core/services/media/screenshot_detection_service.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
+import 'package:attune/features/chat/utils/chat_log.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -56,6 +57,14 @@ class _EphemeralVideoViewerScreenState
   bool _hasMarkedViewed = false;
   bool _expiredElsewhere = false;
   bool _initFailed = false;
+  // One-notice-per-viewing-session latch (Important finding I4): the
+  // Android-side ContentObserver debounce is native, per-session, and
+  // 2-second-windowed, and iOS has no debounce at all — either can still
+  // fire onScreenshotDetected more than once for what feels like a single
+  // screenshot to the user. Set true on the FIRST attempted notice
+  // (success or failure) so at most one "X took a screenshot" system
+  // message is ever sent per screen instance.
+  bool _screenshotNotified = false;
   final _screenshotDetection = ScreenshotDetectionService();
   StreamSubscription<void>? _screenshotSubscription;
 
@@ -96,17 +105,34 @@ class _EphemeralVideoViewerScreenState
     // (the person who screenshotted), riding the ordinary sender_id/insert
     // path unchanged (see 20260816140000_chat_screenshot_notice.sql), so no
     // separate "system author" concept is needed.
+    //
+    // Latched to at most one attempt per screen instance (Important finding
+    // I4): set BEFORE the await, same "claim intent first" shape as
+    // _markViewedAndClose's _hasMarkedViewed, so a second screenshot event
+    // arriving while the first notice is still in flight can't also pass
+    // the guard and send a duplicate.
+    if (_screenshotNotified) return;
+    _screenshotNotified = true;
     final user = ref.read(currentUserProvider);
     if (user == null) return;
     final profile = ref.read(currentUserProfileProvider).valueOrNull;
     final name = profile?.displayName ?? profile?.username ?? 'Someone';
-    await ref.read(chatRepositoryProvider).sendTextMessage(
-      relationshipId: widget.conversation.relationshipId,
-      senderId: user.id,
-      clientMessageId: const Uuid().v4(),
-      content: '$name took a screenshot',
-      isSystemNotice: true,
-    );
+    try {
+      await ref.read(chatRepositoryProvider).sendTextMessage(
+        relationshipId: widget.conversation.relationshipId,
+        senderId: user.id,
+        clientMessageId: const Uuid().v4(),
+        content: '$name took a screenshot',
+        isSystemNotice: true,
+      );
+    } catch (error) {
+      // Best-effort: a failed screenshot notice must never propagate
+      // uncaught into the onScreenshotDetected stream listener (which
+      // would otherwise crash the isolate's error zone), and must never
+      // block or affect video playback/dismissal. Logged so it's at least
+      // diagnosable, not silently swallowed.
+      ChatLog.e('screenshot notice send failed', error);
+    }
   }
 
   void _onPlaybackUpdate() {
@@ -121,9 +147,32 @@ class _EphemeralVideoViewerScreenState
   Future<void> _markViewedAndClose() async {
     if (_hasMarkedViewed) return;
     _hasMarkedViewed = true;
-    await ref
-        .read(chatRepositoryProvider)
-        .markVideoViewed(messageId: widget.messageId);
+    // markVideoViewed is documented idempotent/safe-to-retry (see
+    // mark_video_viewed's own header comment in
+    // 20260816130000_chat_ephemeral_video.sql — the UPDATE ... WHERE
+    // viewed_at IS NULL guard means a second call after a failed first
+    // attempt is a safe no-op if the first actually landed, and a full
+    // retry otherwise). One retry after a brief delay covers a transient
+    // network blip without making the user wait indefinitely; a second
+    // failure just logs and still closes the screen (Important finding
+    // I1) — the user's dismissal intent must be honored either way, since
+    // _hasMarkedViewed is already latched true and there is otherwise no
+    // way for the user to get off this screen except the OS back gesture.
+    try {
+      await ref
+          .read(chatRepositoryProvider)
+          .markVideoViewed(messageId: widget.messageId);
+    } catch (error) {
+      ChatLog.e('mark video viewed failed, retrying once', error);
+      try {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        await ref
+            .read(chatRepositoryProvider)
+            .markVideoViewed(messageId: widget.messageId);
+      } catch (retryError) {
+        ChatLog.e('mark video viewed retry failed', retryError);
+      }
+    }
     if (mounted) Navigator.of(context).pop();
   }
 
