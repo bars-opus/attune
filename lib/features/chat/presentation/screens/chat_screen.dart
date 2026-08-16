@@ -14,11 +14,14 @@ import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/domain/services/chat_image_preparer.dart';
+import 'package:attune/features/chat/domain/services/chat_video_preparer.dart';
 import 'package:attune/features/chat/presentation/providers/chat_experience_providers.dart';
+import 'package:attune/features/chat/presentation/screens/video_trim_screen.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/state/typing_controller.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
+import 'package:attune/features/chat/presentation/widgets/video_prepare_progress_dialog.dart';
 import 'package:attune/features/conflict_translator/data/models/translator_request.dart';
 import 'package:attune/features/conflict_translator/presentation/providers/translator_providers.dart'
     as translator_providers;
@@ -34,6 +37,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:video_compress/video_compress.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key, required this.conversation, this.initialJumpToMessageId});
@@ -349,6 +353,93 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _scrollToLatest();
   }
 
+  Future<void> _attachVideo() async {
+    final picked = await _imagePicker.pickVideo(fromCamera: false);
+    if (picked == null || !mounted) return;
+
+    MediaInfo? sourceInfo;
+    try {
+      sourceInfo = await VideoCompress.getMediaInfo(picked.path);
+    } catch (_) {
+      sourceInfo = null;
+    }
+    if (!mounted) return;
+    final sourceDurationMs = sourceInfo?.duration?.round();
+    if (sourceDurationMs == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('That video could not be read. Try a different one.'),
+        ),
+      );
+      return;
+    }
+
+    final window = await Navigator.of(context).push<({Duration start, Duration end})?>(
+      MaterialPageRoute(
+        builder:
+            (_) => VideoTrimScreen(
+              sourcePath: picked.path,
+              sourceDuration: Duration(milliseconds: sourceDurationMs),
+            ),
+      ),
+    );
+    if (window == null || !mounted) return; // user backed out
+
+    final PreparedChatVideo prepared;
+    try {
+      prepared = await VideoPrepareProgressDialog.show(
+        context,
+        localPath: picked.path,
+        trimStart: window.start,
+        trimEnd: window.end,
+      );
+    } on ChatVideoRejected catch (rejected) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_videoRejectionMessage(rejected.code))),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    _controller.clear();
+    await _clearDraft();
+    // Mirrors _attachImage's identical reasoning: sendVideoMessage has no
+    // replyToMessageId/quotedText params (video replies are equally out of
+    // scope per the design spec), so clear any pending reply target here.
+    _clearReplyTarget();
+    await ref
+        .read(chatControllerProvider(widget.conversation).notifier)
+        .sendVideoMessage(
+          localPath: prepared.file.path,
+          durationMs: prepared.durationMs,
+          thumbnailLocalPath: prepared.thumbnailFile.path,
+          width: prepared.width,
+          height: prepared.height,
+        );
+    _scrollToLatest();
+  }
+
+  String _videoRejectionMessage(String code) {
+    switch (code) {
+      case 'media_type_unsupported':
+        return 'That file type is not supported. Choose an MP4 or MOV video.';
+      case 'media_too_large':
+      case 'media_compress_failed':
+        return 'That video is too large to send. Try trimming it shorter.';
+      case 'media_too_long':
+        return 'That video is too long. Trim it to 3 minutes or less.';
+      case 'media_too_short':
+        return 'That clip is too short to send.';
+      case 'media_decode_failed':
+        return 'That video could not be read. Try a different one.';
+      case 'thumbnail_failed':
+        return 'Could not prepare that video. Try again.';
+      default:
+        return 'That video is no longer available.';
+    }
+  }
+
   Future<void> _onVoiceMessageRecorded(VoiceRecording recording) async {
     await ref
         .read(chatControllerProvider(widget.conversation).notifier)
@@ -523,6 +614,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
     final conversation = state.conversation;
     final imageSharingEnabled = ref.watch(chatImageSharingEnabledProvider);
+    final videoSharingEnabled = ref.watch(chatVideoSharingEnabledProvider);
     final voiceMessagesEnabled = ref.watch(chatVoiceMessagesEnabledProvider);
     final translatorEnabled = ref.watch(chatTranslatorEntryEnabledProvider);
     final headerDrawerEnabled = ref.watch(
@@ -690,6 +782,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                         unawaited(_attachImage());
                       }
                       : null,
+              onAttachVideo:
+                  videoSharingEnabled.valueOrNull == true
+                      ? () {
+                        unawaited(_attachVideo());
+                      }
+                      : null,
               onOpenTranslator:
                   translatorEnabled.valueOrNull == true
                       ? () {
@@ -697,6 +795,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                       }
                       : null,
               showAttachImage: imageSharingEnabled.valueOrNull == true,
+              showAttachVideo: videoSharingEnabled.valueOrNull == true,
               showTranslator: translatorEnabled.valueOrNull == true,
               showVoiceMessage: voiceMessagesEnabled.valueOrNull == true,
               onVoiceMessageRecorded:
