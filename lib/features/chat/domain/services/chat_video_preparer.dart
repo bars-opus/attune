@@ -59,6 +59,17 @@ class ChatVideoPreparer {
   static const int maxSourceBytes = 300 * 1024 * 1024; // trim-window estimate guard
   static const Duration maxDuration = Duration(minutes: 3);
   static const Duration minDuration = Duration(milliseconds: 500);
+
+  /// Longest-edge target for the transcoded output. Not passed as a
+  /// standalone parameter — video_compress has no explicit
+  /// width/height/bitrate control surface, only the [VideoQuality] enum
+  /// (see the `compressVideo` call in [prepare] below). This constant is
+  /// honored by choosing [VideoQuality.Res1280x720Quality], which the
+  /// plugin's native Android implementation maps to `atMost(720, 1280)`
+  /// (`DefaultVideoStrategy` in video_compress's Kotlin source). It's kept
+  /// as a named constant — rather than inlined — because Task 6 (trim
+  /// screen) and other call sites reason about "what resolution will this
+  /// produce" against this name.
   static const int targetHeight = 720;
 
   /// Test seam: the same trim-window-byte-estimate formula prepare() uses
@@ -156,11 +167,26 @@ class ChatVideoPreparer {
       throw const ChatVideoRejected('media_too_large');
     }
 
+    // NOTE on quality targets: video_compress's method channel only accepts
+    // path/quality/deleteOrigin/startTime/duration/includeAudio/frameRate
+    // (see the plugin's own `compressVideo` implementation) — there is no
+    // bitrate or audio-channel-count parameter anywhere in its API surface.
+    // The design spec's 800kbps video / 64kbps-mono-AAC audio targets are
+    // therefore NOT directly enforceable with this plugin: on Android,
+    // VideoQuality.Res1280x720Quality resolves to an `atMost(720, 1280)`
+    // resolution cap with the encoder's own default bitrate for that
+    // resolution (not a fixed 800kbps), and audio is passed through via
+    // DefaultAudioStrategy using the source's own channel count/sample rate
+    // (not downmixed to mono or capped at 64kbps); on iOS it maps to the
+    // opaque AVAssetExportPresetMediumHighQuality-class preset for 720p.
+    // [maxBytes] (25MB, enforced below) is the real, authoritative backstop
+    // against oversized output — resolution/quality-enum choice is a
+    // best-effort input to staying under that ceiling, not a guarantee.
     final MediaInfo? compressed;
     try {
       compressed = await VideoCompress.compressVideo(
         localPath,
-        quality: VideoQuality.MediumQuality,
+        quality: VideoQuality.Res1280x720Quality,
         startTime: effectiveStart.inSeconds,
         duration: effectiveDuration.inSeconds,
         includeAudio: true,
