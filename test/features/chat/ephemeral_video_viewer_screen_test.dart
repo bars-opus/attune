@@ -176,4 +176,50 @@ void main() {
     // guard in EphemeralVideoViewerScreen.build.
     expect(find.text('Already viewed'), findsOneWidget);
   });
+
+  testWidgets(
+      'shows a visible error state (not an indefinite spinner) when the video '
+      "can't be initialized, and dismissing it calls markVideoViewed once",
+      (tester) async {
+    final repo = FakeChatRepository(currentUserId: userId);
+    final conversation = activeConversation(relId);
+    repo.conversationOverride = conversation;
+    repo.seedIncoming(
+      id: 'm1',
+      relationshipId: relId,
+      senderId: 'partner',
+      content: '',
+      createdAt: DateTime.now(),
+    );
+    final container = buildChatContainer(repository: repo, userId: userId);
+    addTearDown(container.dispose);
+    container.read(chatControllerProvider(conversation).notifier);
+
+    await tester.pumpWidget(
+      buildHarness(
+        container,
+        EphemeralVideoViewerScreen(
+          messageId: 'm1',
+          videoUrl: '/tmp/local/clip.mp4',
+          conversation: conversation,
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    // Two pumps to complete the push (see the first test's comment), plus
+    // this test host's VideoPlayerController.initialize() rejecting (no
+    // platform video decoder, matching VideoMessagePlayer's documented
+    // behavior) during that same window — that rejection is exactly what
+    // this test means to exercise.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.text("Couldn't play this video"), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    await tester.tap(find.byType(EphemeralVideoViewerScreen));
+    await tester.pump();
+
+    expect(repo.markVideoViewedCalls, ['m1']);
+  });
 }

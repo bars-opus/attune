@@ -51,6 +51,7 @@ class _EphemeralVideoViewerScreenState
   VideoPlayerController? _controller;
   bool _hasMarkedViewed = false;
   bool _expiredElsewhere = false;
+  bool _initFailed = false;
 
   @override
   void initState() {
@@ -67,14 +68,16 @@ class _EphemeralVideoViewerScreenState
           controller.play();
         })
         .catchError((_) {
-          // Deliberately does NOT auto-pop: the tap-anywhere-to-dismiss
-          // affordance (see build()'s GestureDetector, which wraps the
-          // loading state too) already covers "this video can't be
-          // played," and routing a decode failure through the same
-          // _markViewedAndClose path — rather than a silent pop here —
-          // means a corrupt/undecodable ephemeral video still gets
-          // correctly marked viewed instead of leaking a message that can
-          // never be dismissed as viewed.
+          // Does NOT auto-pop and does NOT auto-mark-viewed: a decode
+          // failure is surfaced as a real, visible error state (see
+          // build()'s _initFailed branch) with its own explicit dismiss
+          // affordance, rather than either silently closing (the brief's
+          // original draft, which left the message unmarked and looked
+          // like the app just closed on its own) or silently leaving an
+          // indefinite spinner with no indication anything failed (this
+          // screen's behavior before this fix — indistinguishable from a
+          // hang from the user's perspective).
+          if (mounted) setState(() => _initFailed = true);
         });
   }
 
@@ -135,6 +138,44 @@ class _EphemeralVideoViewerScreenState
           child: Text(
             'Already viewed',
             style: TextStyle(color: Colors.white),
+          ),
+        ),
+      );
+    }
+
+    if (_initFailed) {
+      // A visible error state, not an indefinite spinner: without this the
+      // user has no way to tell a decode failure apart from the app
+      // hanging — the tap-anywhere-to-dismiss affordance below is the same
+      // established gesture as the normal playback view, and dismissing
+      // from here is a deliberate "I'm done, close it" action, so it marks
+      // the message viewed exactly like any other explicit dismissal.
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: GestureDetector(
+          // opaque, not the default deferToChild: the error message itself
+          // is a small centered Column, but the tap-anywhere affordance is
+          // meant to cover the whole screen, matching the normal playback
+          // view's Stack(fit: StackFit.expand) hit area.
+          behavior: HitTestBehavior.opaque,
+          onTap: () => unawaited(_markViewedAndClose()),
+          child: const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.error_outline, color: Colors.white70, size: 40),
+                SizedBox(height: 12),
+                Text(
+                  "Couldn't play this video",
+                  style: TextStyle(color: Colors.white),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Tap to close',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ],
+            ),
           ),
         ),
       );
