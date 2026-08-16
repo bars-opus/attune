@@ -14,6 +14,7 @@ class PendingSend {
   final String? thumbnailMimeType;
   final int? mediaWidth;
   final int? mediaHeight;
+  final bool isViewOnce;
   final DateTime createdAt;
   final int attempts;
   final DateTime? nextAttemptAt;
@@ -36,6 +37,7 @@ class PendingSend {
     this.thumbnailMimeType,
     this.mediaWidth,
     this.mediaHeight,
+    this.isViewOnce = false,
     required this.createdAt,
     this.attempts = 0,
     this.nextAttemptAt,
@@ -65,6 +67,7 @@ class PendingSend {
       thumbnailMimeType: thumbnailMimeType,
       mediaWidth: mediaWidth,
       mediaHeight: mediaHeight,
+      isViewOnce: isViewOnce,
       createdAt: createdAt,
       attempts: attempts ?? this.attempts,
       nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
@@ -90,6 +93,7 @@ class PendingSend {
       'thumbnailMimeType': thumbnailMimeType,
       'mediaWidth': mediaWidth,
       'mediaHeight': mediaHeight,
+      'isViewOnce': isViewOnce,
       'createdAt': createdAt.toIso8601String(),
       'attempts': attempts,
       'nextAttemptAt': nextAttemptAt?.toIso8601String(),
@@ -117,6 +121,7 @@ class PendingSend {
       thumbnailMimeType: json['thumbnailMimeType'] as String?,
       mediaWidth: (json['mediaWidth'] as num?)?.toInt(),
       mediaHeight: (json['mediaHeight'] as num?)?.toInt(),
+      isViewOnce: (json['isViewOnce'] as bool?) ?? false,
       createdAt: DateTime.parse(json['createdAt'] as String),
       attempts: (json['attempts'] as num?)?.toInt() ?? 0,
       nextAttemptAt:

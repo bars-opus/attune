@@ -60,4 +60,53 @@ void main() {
     expect(restored.mediaWidth, isNull);
     expect(restored.mediaHeight, isNull);
   });
+
+  test('PendingSend toJson/fromJson round-trips isViewOnce', () {
+    final original = PendingSend(
+      clientMessageId: 'c1',
+      relationshipId: 'r1',
+      senderId: 'me',
+      text: '',
+      localMediaPath: '/tmp/clip.mp4',
+      mediaMimeType: 'video/mp4',
+      mediaType: 'video',
+      mediaDurationMs: 8000,
+      localThumbnailPath: '/tmp/poster.jpg',
+      thumbnailMimeType: 'image/jpeg',
+      mediaWidth: 720,
+      mediaHeight: 1280,
+      isViewOnce: true,
+      createdAt: DateTime(2026, 8, 16, 9),
+    );
+    final restored = PendingSend.fromJson(original.toJson());
+    expect(restored.isViewOnce, isTrue);
+  });
+
+  test('PendingSend.copyWith preserves isViewOnce', () {
+    final original = PendingSend(
+      clientMessageId: 'c1',
+      relationshipId: 'r1',
+      senderId: 'me',
+      text: '',
+      mediaType: 'video',
+      isViewOnce: true,
+      createdAt: DateTime(2026, 8, 16, 9),
+    );
+    final copied = original.copyWith(state: PendingSendState.sending);
+    expect(copied.isViewOnce, isTrue);
+  });
+
+  test('isViewOnce defaults to false for a non-ephemeral PendingSend', () {
+    final original = PendingSend(
+      clientMessageId: 'c1',
+      relationshipId: 'r1',
+      senderId: 'me',
+      text: '',
+      mediaType: 'video',
+      createdAt: DateTime(2026, 8, 16, 9),
+    );
+    expect(original.isViewOnce, isFalse);
+    final restored = PendingSend.fromJson(original.toJson());
+    expect(restored.isViewOnce, isFalse);
+  });
 }

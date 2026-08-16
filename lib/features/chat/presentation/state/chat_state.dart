@@ -726,6 +726,105 @@ class ChatController extends StateNotifier<ChatState> {
     await _attemptSend(pending);
   }
 
+  /// Sends an ephemeral (view-once) video message, mirroring
+  /// sendVideoMessage's exact shape with one addition: the constructed
+  /// PendingSend/Message carries isViewOnce: true. Deliberately a separate
+  /// method rather than a parameter on sendVideoMessage — the two have
+  /// different validation (10s cap here vs. ChatVideoPreparer.maxDuration's
+  /// 3-minute default there) and conflating them risks exactly the kind of
+  /// accidental cross-contamination Part 1 was careful to avoid with
+  /// _attemptSend's branching. _attemptSend itself needs NO new branching:
+  /// an ephemeral capture's PendingSend.mediaType is 'video' just like a
+  /// gallery pick, so it flows through the identical two-intent upload path
+  /// already there — only the final sendTextMessage call (below, and in
+  /// _attemptSend) needs isViewOnce threaded through.
+  Future<void> sendEphemeralVideoMessage({
+    required String localPath,
+    required int durationMs,
+    required String thumbnailLocalPath,
+    required int width,
+    required int height,
+  }) async {
+    if (!state.conversation.canSend) return;
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    final file = File(localPath);
+    if (!await file.exists()) {
+      if (mounted) {
+        state = state.copyWith(error: 'That video is no longer available.');
+      }
+      return;
+    }
+    final thumbnailFile = File(thumbnailLocalPath);
+    if (!await thumbnailFile.exists()) {
+      if (mounted) {
+        state = state.copyWith(error: 'That video is no longer available.');
+      }
+      return;
+    }
+
+    // Belt-and-suspenders duration check against the 10-second ephemeral
+    // cap — mirrors sendVideoMessage's identical check against
+    // ChatVideoPreparer.maxDuration, but against the ephemeral-specific
+    // bound, since a stale/modified local file or a future caller
+    // bypassing EphemeralCameraScreen's own recording cap should not be
+    // able to queue an oversized ephemeral send.
+    const ephemeralMaxDuration = Duration(seconds: 10);
+    if (durationMs > ephemeralMaxDuration.inMilliseconds) {
+      if (mounted) {
+        state = state.copyWith(error: 'That video is too long to send.');
+      }
+      return;
+    }
+    if (durationMs < ChatVideoPreparer.minDuration.inMilliseconds) {
+      return;
+    }
+
+    final clientMessageId = const Uuid().v4();
+    final optimisticId = '_local_$clientMessageId';
+    final now = DateTime.now();
+    final pending = PendingSend(
+      clientMessageId: clientMessageId,
+      relationshipId: relationshipId,
+      senderId: user.id,
+      text: '',
+      localMediaPath: localPath,
+      mediaMimeType: 'video/mp4',
+      mediaType: 'video',
+      mediaDurationMs: durationMs,
+      localThumbnailPath: thumbnailLocalPath,
+      thumbnailMimeType: 'image/jpeg',
+      mediaWidth: width,
+      mediaHeight: height,
+      isViewOnce: true,
+      createdAt: now,
+    );
+    await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
+
+    final optimistic = Message.optimistic(
+      id: optimisticId,
+      clientMessageId: clientMessageId,
+      relationshipId: relationshipId,
+      senderId: user.id,
+      content: '',
+      createdAt: now,
+      mediaType: 'video',
+      localMediaPath: localPath,
+      mediaDurationMs: durationMs,
+      mediaWidth: width,
+      mediaHeight: height,
+      isViewOnce: true,
+    );
+    state = state.copyWith(
+      isSending: true,
+      error: null,
+      messages: [optimistic, ...state.messages],
+    );
+
+    await _attemptSend(pending);
+  }
+
   Future<void> retryMessage(Message message) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
@@ -1081,6 +1180,7 @@ class ChatController extends StateNotifier<ChatState> {
         mediaThumbnailKey: mediaThumbnailKey,
         mediaWidth: pending.mediaWidth,
         mediaHeight: pending.mediaHeight,
+        isViewOnce: pending.isViewOnce,
         replyToMessageId: pending.replyToMessageId,
         quotedText: pending.quotedText,
       );
