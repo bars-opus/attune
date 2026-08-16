@@ -92,8 +92,18 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
         // Playback isn't available (unsupported codec, unreachable URL, no
         // platform video decoder on this host) — fall back to the poster
         // rather than leaving an unhandled exception in flight. The
-        // cross-media pause above has already taken effect; this only
-        // affects whether this widget itself starts playing.
+        // cross-media pause above has already taken effect (voice was
+        // stopped), but this widget itself never actually started playing
+        // — so the video provider must be rolled back to null rather than
+        // left pointing at a message that isn't playing. Guarded to this
+        // widget's own messageId so a fast subsequent tap elsewhere (which
+        // would have reassigned the provider to a different message before
+        // this catch runs) can't be clobbered.
+        if (ref.read(currentlyPlayingVideoMessageIdProvider) ==
+            widget.messageId) {
+          ref.read(currentlyPlayingVideoMessageIdProvider.notifier).state =
+              null;
+        }
         _controller = null;
         if (mounted) setState(() {});
         return;

@@ -45,6 +45,21 @@ void main() {
     addTearDown(container.dispose);
     container.read(currentlyPlayingVoiceMessageIdProvider.notifier).state = 'voice-1';
 
+    // Recording every value currentlyPlayingVideoMessageIdProvider takes,
+    // rather than only reading it once after the fact, so the assertion
+    // doesn't depend on exactly how far a given pump() drains the async
+    // continuation inside _togglePlayback (tap() itself may already run it
+    // to completion on this test host). What matters is that 'm1' is
+    // reached at all (proving the write happens synchronously, before
+    // controller construction/initialize()), regardless of whatever the
+    // provider settles on afterwards.
+    final videoProviderValues = <String?>[];
+    container.listen<String?>(
+      currentlyPlayingVideoMessageIdProvider,
+      (previous, next) => videoProviderValues.add(next),
+      fireImmediately: true,
+    );
+
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
@@ -69,7 +84,19 @@ void main() {
     await tester.pump();
 
     expect(container.read(currentlyPlayingVoiceMessageIdProvider), isNull);
-    expect(container.read(currentlyPlayingVideoMessageIdProvider), 'm1');
+    // 'm1' was reached — the cross-media pause write happens synchronously,
+    // before the controller is constructed or initialize() is awaited.
+    expect(videoProviderValues, contains('m1'));
+
+    // On this test host there is no platform video decoder, so
+    // controller.initialize() always rejects; VideoMessagePlayer correctly
+    // rolls currentlyPlayingVideoMessageIdProvider back to null once that
+    // failure is caught, since this widget never actually started playing
+    // — a provider claiming "playing" for a message that isn't would be a
+    // false-positive lock on the shared cross-media state. That rollback
+    // is real, correct production behavior (see the catch block's own
+    // comment), so the provider's settled value here is null, not 'm1'.
+    expect(container.read(currentlyPlayingVideoMessageIdProvider), isNull);
   });
 
   testWidgets('identity is keyed on clientMessageId-equivalent messageId, stable across a widget rebuild with a new videoUrl',
