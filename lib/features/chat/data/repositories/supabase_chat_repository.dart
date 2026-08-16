@@ -35,7 +35,8 @@ class SupabaseChatRepository implements ChatRepository {
       'id,relationship_id,sender_id,client_message_id,content,created_at,'
       'delivered_at,read_at,media_url,media_thumbnail_url,media_type,'
       'media_duration_ms,media_waveform,media_width,media_height,source,'
-      'reply_to_message_id,quoted_text,deleted_at,edited_at';
+      'reply_to_message_id,quoted_text,deleted_at,edited_at,'
+      'is_view_once,viewed_at';
 
   User get _currentUser {
     final user = _supabase.auth.currentUser;
@@ -262,6 +263,7 @@ class SupabaseChatRepository implements ChatRepository {
     int? mediaHeight,
     String? replyToMessageId,
     String? quotedText,
+    bool isViewOnce = false,
   }) async {
     final user = _currentUser;
     if (senderId != user.id) {
@@ -287,6 +289,7 @@ class SupabaseChatRepository implements ChatRepository {
               'media_height': mediaHeight,
               'reply_to_message_id': replyToMessageId,
               'quoted_text': quotedText,
+              'is_view_once': isViewOnce,
             })
             .select(_messageColumns)
             .single();

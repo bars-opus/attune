@@ -35,6 +35,7 @@ abstract class ChatRepository {
     int? mediaHeight,
     String? replyToMessageId,
     String? quotedText,
+    bool isViewOnce = false,
   });
   Future<Message?> findMessageByClientId({
     required String senderId,
