@@ -45,6 +45,7 @@ class MessageBubble extends StatelessWidget {
     this.onReact,
     this.onRemoveReaction,
     this.onImageTap,
+    this.onVideoTap,
     this.isGrouped = false,
   });
 
@@ -146,6 +147,15 @@ class MessageBubble extends StatelessWidget {
   /// tap affordance (matches this file's existing null-disables-gesture
   /// convention) — only meaningful when message.hasImage.
   final void Function(Message message)? onImageTap;
+
+  /// Mirrors [onImageTap] exactly, for a non-ephemeral video bubble — the
+  /// caller opens VideoViewerScreen with the filtered video-only subset +
+  /// this message's position in it. Null disables the tap affordance. Only
+  /// meaningful when message.hasVideo (an ephemeral/view-once video keeps
+  /// its own separate tap-to-EphemeralVideoViewerScreen gesture, already
+  /// wired independently in _BubbleBody's isEphemeralVideoAvailable
+  /// branch — this callback is never consulted there).
+  final void Function(Message message)? onVideoTap;
 
   @override
   Widget build(BuildContext context) {
@@ -277,6 +287,7 @@ class MessageBubble extends StatelessWidget {
                     isMine: isMine,
                     conversation: conversation,
                     onImageTap: onImageTap,
+                    onVideoTap: onVideoTap,
                     onBubbleColor: onBubbleColor,
                     isStarred: isStarred,
                     showStatus: showStatus,
@@ -516,12 +527,14 @@ class _BubbleBody extends StatelessWidget {
     required this.isStarred,
     required this.showStatus,
     this.onImageTap,
+    this.onVideoTap,
   });
 
   final Message message;
   final bool isMine;
   final Conversation? conversation;
   final void Function(Message message)? onImageTap;
+  final void Function(Message message)? onVideoTap;
 
   final Color onBubbleColor;
 
@@ -731,6 +744,17 @@ class _BubbleBody extends StatelessWidget {
           ),
         );
       }
+    } else if (message.isPreparing) {
+      // The instant-show optimistic bubble: appears the moment the trim
+      // window is confirmed, before ChatVideoPreparer's compression has
+      // produced a real playable file/thumbnail — same "show first,
+      // prepare in the background" timing images already get, just with a
+      // visible progress state since video compression is real,
+      // non-instant work (unlike image's near-instant client-side
+      // compress). Swaps to the real VideoMessagePlayer branch below once
+      // isPreparing flips false and the compressed file is threaded
+      // through (see ChatController.sendVideoMessage).
+      children.add(_VideoCompressingTile(progress: message.compressProgress));
     } else if (message.hasVideo) {
       children.add(
         SizedBox(
@@ -745,6 +769,8 @@ class _BubbleBody extends StatelessWidget {
                     durationMs: message.mediaDurationMs ?? 0,
                     width: message.mediaWidth ?? 16,
                     height: message.mediaHeight ?? 9,
+                    onExpand:
+                        onVideoTap == null ? null : () => onVideoTap!(message),
                   )
                   : ResolvedMediaUrl(
                     signedMediaUrl: message.signedMediaUrl,
@@ -769,6 +795,10 @@ class _BubbleBody extends StatelessWidget {
                           durationMs: message.mediaDurationMs ?? 0,
                           width: message.mediaWidth ?? 16,
                           height: message.mediaHeight ?? 9,
+                          onExpand:
+                              onVideoTap == null
+                                  ? null
+                                  : () => onVideoTap!(message),
                         ),
                   ),
         ),
@@ -1278,6 +1308,52 @@ class _StatusChip extends StatelessWidget {
     }
 
     return InkWell(onTap: onRetry, child: child);
+  }
+}
+
+/// Shown in place of VideoMessagePlayer while ChatController.sendVideoMessage
+/// is still running ChatVideoPreparer's compression pass in the background
+/// (message.isPreparing) — no real video/thumbnail file exists yet, so this
+/// intentionally doesn't try to build a player around one. [progress] is
+/// null before the first video_compress progress tick arrives, in which
+/// case the indicator just spins indeterminately rather than sitting at 0%.
+class _VideoCompressingTile extends StatelessWidget {
+  const _VideoCompressingTile({required this.progress});
+
+  final double? progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 220,
+      height: 220,
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 36,
+              height: 36,
+              child: CircularProgressIndicator(value: progress),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              progress == null
+                  ? 'Compressing…'
+                  : '${(progress! * 100).round()}%',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

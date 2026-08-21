@@ -56,7 +56,8 @@ class ChatVideoPreparer {
   const ChatVideoPreparer();
 
   static const int maxBytes = 25 * 1024 * 1024; // post-transcode output ceiling
-  static const int maxSourceBytes = 300 * 1024 * 1024; // trim-window estimate guard
+  static const int maxSourceBytes =
+      500 * 1024 * 1024; // trim-window estimate guard
   static const Duration maxDuration = Duration(minutes: 3);
   static const Duration minDuration = Duration(milliseconds: 500);
 
@@ -85,7 +86,8 @@ class ChatVideoPreparer {
     required Duration windowDuration,
   }) {
     if (sourceDuration.inMicroseconds <= 0) return 0;
-    final fraction = windowDuration.inMicroseconds / sourceDuration.inMicroseconds;
+    final fraction =
+        windowDuration.inMicroseconds / sourceDuration.inMicroseconds;
     return (sourceBytes * fraction).round();
   }
 
@@ -96,7 +98,8 @@ class ChatVideoPreparer {
   static String? debugSniffMime(List<int> bytes) {
     if (bytes.length < 12) return null;
     // ISO base media file format: [4-byte box size][4-byte type 'ftyp'][4-byte major brand]...
-    final isFtyp = bytes[4] == 0x66 &&
+    final isFtyp =
+        bytes[4] == 0x66 &&
         bytes[5] == 0x74 &&
         bytes[6] == 0x79 &&
         bytes[7] == 0x70;
@@ -229,11 +232,12 @@ class ChatVideoPreparer {
     // the subscription can't outlive this call or fire after prepare()
     // returns/throws (compressProgress$ is a singleton on the plugin
     // instance, shared across calls).
-    final progressSubscription = onProgress == null
-        ? null
-        : VideoCompress.compressProgress$.subscribe((value) {
-            onProgress(value);
-          });
+    final progressSubscription =
+        onProgress == null
+            ? null
+            : VideoCompress.compressProgress$.subscribe((value) {
+              onProgress(value);
+            });
     try {
       compressed = await VideoCompress.compressVideo(
         localPath,
@@ -295,7 +299,8 @@ class ChatVideoPreparer {
     } catch (_) {
       dir = Directory.systemTemp;
     }
-    final name = '${prefix}_${DateTime.now().microsecondsSinceEpoch}.$extension';
+    final name =
+        '${prefix}_${DateTime.now().microsecondsSinceEpoch}.$extension';
     return p.join(dir.path, name);
   }
 }

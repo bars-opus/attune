@@ -723,6 +723,19 @@ class ChatController extends StateNotifier<ChatState> {
   /// failure blocks the send before it's queued; thumbnail UPLOAD failure,
   /// handled in _attemptSend below, is non-fatal once the video itself has
   /// already uploaded successfully).
+  ///
+  /// Takes an ALREADY-PREPARED file (post-ChatVideoPreparer) — this is
+  /// deliberate, not an oversight: it's what keeps this method fully
+  /// testable with plain fixture files and no real video_compress/native
+  /// calls (see chat_state_send_video_message_test.dart). The gallery-pick
+  /// flow that needs the optimistic bubble to appear BEFORE compression
+  /// finishes calls [sendVideoMessageFromTrim] instead, which runs
+  /// ChatVideoPreparer itself and then calls this method with the result —
+  /// this method's own optimistic Message becomes the SECOND bubble
+  /// insertion in that flow only if called directly; sendVideoMessageFromTrim
+  /// avoids that by updating its own already-inserted bubble in place
+  /// rather than going through this method's optimistic-insert path (see
+  /// its own doc comment for the split).
   Future<void> sendVideoMessage({
     required String localPath,
     required int durationMs,
@@ -803,6 +816,168 @@ class ChatController extends StateNotifier<ChatState> {
     );
 
     await _attemptSend(pending);
+  }
+
+  /// Gallery-pick entry point for video: shows the optimistic bubble the
+  /// instant the user confirms their trim selection (isPreparing: true, no
+  /// real media yet), matching sendImageMessage's "show first, prepare in
+  /// the background" ordering — no more blocking modal dialog
+  /// (VideoPrepareProgressDialog, now unused by chat_screen.dart's
+  /// _attachVideo) held open until ChatVideoPreparer's compression
+  /// finishes. MessageBubble/VideoMessagePlayer render a
+  /// compressing-progress state while isPreparing is true (see
+  /// _VideoCompressingTile). Once prepare() finishes, the SAME message
+  /// (same id) is updated in place with the real duration/dimensions/local
+  /// paths and isPreparing: false, then the upload runs via the same
+  /// PendingSend/_attemptSend path sendVideoMessage itself uses — this
+  /// method deliberately does NOT call sendVideoMessage (that would insert
+  /// a SECOND, separate optimistic bubble on top of this one); it inlines
+  /// the equivalent PendingSend/outbox/_attemptSend steps against its own
+  /// already-inserted message instead.
+  Future<void> sendVideoMessageFromTrim({
+    required String localPath,
+    required Duration trimStart,
+    required Duration trimEnd,
+  }) async {
+    if (!state.conversation.canSend) return;
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    final file = File(localPath);
+    if (!await file.exists()) {
+      if (mounted) {
+        state = state.copyWith(error: 'That video is no longer available.');
+      }
+      return;
+    }
+
+    final clientMessageId = const Uuid().v4();
+    final optimisticId = '_local_$clientMessageId';
+    final now = DateTime.now();
+    final trimWindowMs = (trimEnd - trimStart).inMilliseconds;
+
+    final optimistic = Message.optimistic(
+      id: optimisticId,
+      clientMessageId: clientMessageId,
+      relationshipId: relationshipId,
+      senderId: user.id,
+      content: '',
+      createdAt: now,
+      mediaType: 'video',
+      // The RAW (uncompressed) picked file — good enough for
+      // VideoMessagePlayer's eventual real render once isPreparing flips
+      // false and the compressed file/thumbnail are threaded through
+      // below; while isPreparing is true this path isn't rendered as a
+      // player at all (see _VideoCompressingTile), so its exact
+      // provenance (raw vs. compressed) doesn't matter yet.
+      localMediaPath: localPath,
+      // Provisional — the trim window's own length, not yet the real
+      // post-compress duration (which can differ by a frame or two of
+      // encoder rounding). Corrected below once prepare() returns.
+      mediaDurationMs: trimWindowMs,
+      isPreparing: true,
+      compressProgress: 0,
+    );
+    state = state.copyWith(
+      isSending: true,
+      error: null,
+      messages: [optimistic, ...state.messages],
+    );
+
+    // Updates the still-optimistic bubble in place by clientMessageId —
+    // NOT _replaceOptimistic, which is specifically for the one-time
+    // optimistic-to-canonical swap after a successful send. This can fire
+    // many times (once per progress tick) before that swap ever happens.
+    void updateOptimistic(Message Function(Message current) update) {
+      if (!mounted) return;
+      final messages = state.messages;
+      final index = messages.indexWhere(
+        (m) => m.id == optimisticId && m.clientMessageId == clientMessageId,
+      );
+      if (index == -1) return;
+      final next = List<Message>.from(messages);
+      next[index] = update(next[index]);
+      state = state.copyWith(messages: next);
+    }
+
+    final PreparedChatVideo prepared;
+    try {
+      prepared = await const ChatVideoPreparer().prepare(
+        localPath: localPath,
+        trimStart: trimStart,
+        trimEnd: trimEnd,
+        onProgress: (value) {
+          // video_compress reports 0-100 on its native progress channel;
+          // normalize to LinearProgressIndicator's 0-1 contract, mirroring
+          // VideoPrepareProgressDialog's own identical calculation.
+          updateOptimistic(
+            (m) => m.copyWith(compressProgress: (value / 100).clamp(0.0, 1.0)),
+          );
+        },
+      );
+    } on ChatVideoRejected catch (rejected) {
+      if (!mounted) return;
+      state = state.copyWith(
+        isSending: false,
+        messages:
+            state.messages
+                .where((entry) => entry.clientMessageId != clientMessageId)
+                .toList(),
+        error: _videoRejectionMessage(rejected.code),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    final pending = PendingSend(
+      clientMessageId: clientMessageId,
+      relationshipId: relationshipId,
+      senderId: user.id,
+      text: '',
+      localMediaPath: prepared.file.path,
+      mediaMimeType: prepared.mimeType,
+      mediaType: 'video',
+      mediaDurationMs: prepared.durationMs,
+      localThumbnailPath: prepared.thumbnailFile.path,
+      thumbnailMimeType: prepared.thumbnailMimeType,
+      mediaWidth: prepared.width,
+      mediaHeight: prepared.height,
+      createdAt: now,
+    );
+    await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
+
+    updateOptimistic(
+      (m) => m.copyWith(
+        localMediaPath: prepared.file.path,
+        mediaDurationMs: prepared.durationMs,
+        mediaWidth: prepared.width,
+        mediaHeight: prepared.height,
+        isPreparing: false,
+      ),
+    );
+
+    await _attemptSend(pending);
+  }
+
+  String _videoRejectionMessage(String code) {
+    switch (code) {
+      case 'media_type_unsupported':
+        return 'That file type is not supported. Choose an MP4 or MOV video.';
+      case 'media_too_large':
+        return 'That video is more than 500MB. Trim it shorter or compress it before sending.';
+      case 'media_compress_failed':
+        return "That video couldn't be compressed small enough to send. Try trimming it shorter.";
+      case 'media_too_long':
+        return 'That video is too long. Trim it to 3 minutes or less.';
+      case 'media_too_short':
+        return 'That clip is too short to send.';
+      case 'media_decode_failed':
+        return 'That video could not be read. Try a different one.';
+      case 'thumbnail_failed':
+        return 'Could not prepare that video. Try again.';
+      default:
+        return 'That video is no longer available.';
+    }
   }
 
   /// Sends an ephemeral (view-once) video message, mirroring

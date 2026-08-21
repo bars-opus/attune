@@ -893,6 +893,15 @@ class SupabaseChatRepository implements ChatRepository {
         // tombstoning) — excluded here since a media grid has nowhere
         // sensible to show a tombstone the way a chat bubble does.
         .isFilter('deleted_at', null)
+        // An ephemeral (view-once) video must never resurface in this
+        // persistent, replayable gallery — viewed or not, that defeats the
+        // entire point of view-once. It keeps its own separate
+        // EphemeralVideoViewerScreen flow, reached only from its chat
+        // bubble. mediaType == 'video' is the only case this can ever
+        // matter for (images/audio have no is_view_once concept today),
+        // but the filter is unconditional since is_view_once is false for
+        // every other media type's rows anyway.
+        .eq('is_view_once', false)
         .order('created_at', ascending: false)
         .order('id', ascending: false);
 

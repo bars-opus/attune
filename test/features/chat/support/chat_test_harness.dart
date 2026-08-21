@@ -485,7 +485,8 @@ class FakeChatRepository implements ChatRepository {
             (m) =>
                 m.relationshipId == relationshipId &&
                 m.mediaType == mediaType &&
-                !m.isDeleted,
+                !m.isDeleted &&
+                !m.isViewOnce,
           )
           .toList();
 

@@ -15,13 +15,11 @@ import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
-import 'package:attune/features/chat/domain/services/chat_video_preparer.dart';
 import 'package:attune/features/chat/presentation/providers/chat_experience_providers.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/state/typing_controller.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
-import 'package:attune/features/chat/presentation/widgets/video_prepare_progress_dialog.dart';
 import 'package:attune/features/conflict_translator/data/models/translator_request.dart';
 import 'package:attune/features/conflict_translator/presentation/providers/translator_providers.dart'
     as translator_providers;
@@ -380,41 +378,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
     if (window == null || !mounted) return; // user backed out
 
-    // Invariant: no `await` may be inserted between the `!mounted` check
-    // above and this dialog call without re-checking `mounted` again —
-    // there's currently nothing async in between, which is what makes using
-    // `context` here safe.
-    final PreparedChatVideo prepared;
-    try {
-      prepared = await VideoPrepareProgressDialog.show(
-        context,
-        localPath: picked.path,
-        trimStart: window.start,
-        trimEnd: window.end,
-      );
-    } on ChatVideoRejected catch (rejected) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_videoRejectionMessage(rejected.code))),
-      );
-      return;
-    }
-    if (!mounted) return;
-
     _controller.clear();
     await _clearDraft();
-    // Mirrors _attachImage's identical reasoning: sendVideoMessage has no
-    // replyToMessageId/quotedText params (video replies are equally out of
-    // scope per the design spec), so clear any pending reply target here.
+    // Mirrors _attachImage's identical reasoning: sendVideoMessageFromTrim
+    // has no replyToMessageId/quotedText params (video replies are equally
+    // out of scope per the design spec), so clear any pending reply target
+    // here.
     _clearReplyTarget();
+    // sendVideoMessageFromTrim takes the RAW trimmed selection and shows
+    // the optimistic (isPreparing: true) bubble before running
+    // ChatVideoPreparer's compression itself — no more blocking
+    // VideoPrepareProgressDialog in between; the bubble appears instantly
+    // and the compression progress renders inline on it instead, matching
+    // _attachImage's identical "show first, prepare in the background"
+    // ordering above. Rejection (too large/long/etc.) is handled inside
+    // sendVideoMessageFromTrim itself (surfaces via state.error), same as
+    // sendImageMessage/_attachImage's existing convention.
     await ref
         .read(chatControllerProvider(widget.conversation).notifier)
-        .sendVideoMessage(
-          localPath: prepared.file.path,
-          durationMs: prepared.durationMs,
-          thumbnailLocalPath: prepared.thumbnailFile.path,
-          width: prepared.width,
-          height: prepared.height,
+        .sendVideoMessageFromTrim(
+          localPath: picked.path,
+          trimStart: window.start,
+          trimEnd: window.end,
         );
     _scrollToLatest();
   }
@@ -436,26 +421,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Chat games are coming soon.')),
     );
-  }
-
-  String _videoRejectionMessage(String code) {
-    switch (code) {
-      case 'media_type_unsupported':
-        return 'That file type is not supported. Choose an MP4 or MOV video.';
-      case 'media_too_large':
-      case 'media_compress_failed':
-        return 'That video is too large to send. Try trimming it shorter.';
-      case 'media_too_long':
-        return 'That video is too long. Trim it to 3 minutes or less.';
-      case 'media_too_short':
-        return 'That clip is too short to send.';
-      case 'media_decode_failed':
-        return 'That video could not be read. Try a different one.';
-      case 'thumbnail_failed':
-        return 'Could not prepare that video. Try again.';
-      default:
-        return 'That video is no longer available.';
-    }
   }
 
   Future<void> _onVoiceMessageRecorded(VoiceRecording recording) async {
@@ -1016,121 +981,120 @@ class _ConversationHeaderCard extends StatelessWidget {
             ? 'Syncing'
             : 'Synced ${_relativeSyncLabel(lastSyncedAt!)}';
 
-    return Row(
-      children: [
-        GlowPulse(
-          active:
-              conversation.availability == ConversationAvailability.active &&
-              isOnline,
-          child: CircleAvatar(
-            backgroundImage:
-                conversation.avatarUrl == null
-                    ? null
-                    : NetworkImage(conversation.avatarUrl!),
-            child:
-                conversation.avatarUrl == null
-                    ? Text(_initialForName(conversation.name))
-                    : null,
-          ),
-        ),
-        Gap(Spacing.sm.w),
-        RichText(
-          text: TextSpan(
-            children: [
-              TextSpan(
-                text: conversation.name,
-                style: textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface.withValues(alpha: 0.8),
-                ),
-              ),
-              TextSpan(
-                text: '\n$subtitle',
-                style: textTheme.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface.withOpacity(.4),
-                ),
-              ),
-            ],
-          ),
-          textAlign: TextAlign.start,
-        ),
-      ],
-    );
-
-    // Column(
+    return
+    // Row(
     //   children: [
-    //     Row(
-    //       children: [
-    // GlowPulse(
-    //   active:
-    //       conversation.availability ==
-    //           ConversationAvailability.active &&
-    //       isOnline,
-    //   child: CircleAvatar(
-    //     backgroundImage:
-    //         conversation.avatarUrl == null
-    //             ? null
-    //             : NetworkImage(conversation.avatarUrl!),
-    //     child:
-    //         conversation.avatarUrl == null
-    //             ? Text(_initialForName(conversation.name))
-    //             : null,
-    //   ),
-    // ),
-    // const SizedBox(width: 12),
-    // Expanded(
-    //   child: Column(
-    //     crossAxisAlignment: CrossAxisAlignment.start,
-    //     children: [
-
-    // Text(
-    //   conversation.name,
-    //   style: Theme.of(context).textTheme.titleMedium,
-    // ),
-    // const SizedBox(height: 2),
-    // Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-    //     ],
-    //   ),
-    // ),
-    // _PulseBadge(pulse: pulse),
-    // if (expandedEnabled)
-    //   IconButton(
-    //     onPressed: onToggleExpanded,
-    //     icon: Icon(
-    //       isExpanded
-    //           ? Icons.expand_less_rounded
-    //           : Icons.expand_more_rounded,
+    //     GlowPulse(
+    //       active:
+    //           conversation.availability == ConversationAvailability.active &&
+    //           isOnline,
+    //       child: CircleAvatar(
+    //         backgroundImage:
+    //             conversation.avatarUrl == null
+    //                 ? null
+    //                 : NetworkImage(conversation.avatarUrl!),
+    //         child:
+    //             conversation.avatarUrl == null
+    //                 ? Text(_initialForName(conversation.name))
+    //                 : null,
+    //       ),
     //     ),
-    //     tooltip: isExpanded ? 'Hide chat details' : 'Show chat details',
-    //   ),
-    //   ],
-    // ),
-    // if (expandedEnabled && isExpanded) ...[
-    //   const SizedBox(height: 12),
-    //   snapshot.when(
-    //     data:
-    //         (value) => _HeaderDrawerContent(
-    //           snapshot: value,
-    //           onOpenPulse: onOpenPulse,
-    //           onOpenInsights: onOpenInsights,
-    //         ),
-    //     loading:
-    //         () => const Padding(
-    //           padding: EdgeInsets.symmetric(vertical: 16),
-    //           child: Center(child: CircularProgressIndicator()),
-    //         ),
-    //     error:
-    //         (_, __) => const Padding(
-    //           padding: EdgeInsets.symmetric(vertical: 8),
-    //           child: Text(
-    //             'Extra relationship context is unavailable right now.',
+    //     Gap(Spacing.sm.w),
+    //     RichText(
+    //       text: TextSpan(
+    //         children: [
+    //           TextSpan(
+    //             text: conversation.name,
+    //             style: textTheme.titleLarge?.copyWith(
+    //               fontWeight: FontWeight.w600,
+    //               color: colorScheme.onSurface.withValues(alpha: 0.8),
+    //             ),
     //           ),
-    //         ),
-    //   ),
-    // ],
+    //           TextSpan(
+    //             text: '\n$subtitle',
+    //             style: textTheme.bodySmall?.copyWith(
+    //               fontWeight: FontWeight.w600,
+    //               color: colorScheme.onSurface.withOpacity(.4),
+    //             ),
+    //           ),
+    //         ],
+    //       ),
+    //       textAlign: TextAlign.start,
+    //     ),
     //   ],
     // );
+    Column(
+      children: [
+        Row(
+          children: [
+            GlowPulse(
+              active:
+                  conversation.availability ==
+                      ConversationAvailability.active &&
+                  isOnline,
+              child: CircleAvatar(
+                backgroundImage:
+                    conversation.avatarUrl == null
+                        ? null
+                        : NetworkImage(conversation.avatarUrl!),
+                child:
+                    conversation.avatarUrl == null
+                        ? Text(_initialForName(conversation.name))
+                        : null,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    conversation.name,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+            ),
+            _PulseBadge(pulse: pulse),
+            if (expandedEnabled)
+              IconButton(
+                onPressed: onToggleExpanded,
+                icon: Icon(
+                  isExpanded
+                      ? Icons.expand_less_rounded
+                      : Icons.expand_more_rounded,
+                ),
+                tooltip: isExpanded ? 'Hide chat details' : 'Show chat details',
+              ),
+          ],
+        ),
+        if (expandedEnabled && isExpanded) ...[
+          const SizedBox(height: 12),
+          snapshot.when(
+            data:
+                (value) => _HeaderDrawerContent(
+                  snapshot: value,
+                  onOpenPulse: onOpenPulse,
+                  onOpenInsights: onOpenInsights,
+                ),
+            loading:
+                () => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+            error:
+                (_, __) => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'Extra relationship context is unavailable right now.',
+                  ),
+                ),
+          ),
+        ],
+      ],
+    );
   }
 }
 
@@ -1493,6 +1457,33 @@ class _MessageList extends ConsumerWidget {
                   'imageViewer',
                   extra: ImageViewerRouteArgs(
                     images: images,
+                    initialIndex: index,
+                  ),
+                );
+                if (jumpToId != null) {
+                  await onJumpToParent(jumpToId, state.messages);
+                }
+              },
+              onVideoTap: (tapped) async {
+                // Mirrors onImageTap exactly. isViewOnce excluded — an
+                // ephemeral video has its own separate
+                // EphemeralVideoViewerScreen flow (tap-to-view-once,
+                // markVideoViewed, expiry) and must never appear in this
+                // regular, replayable video gallery.
+                final videos =
+                    state.messages
+                        .where((m) => m.hasVideo && !m.isViewOnce)
+                        .toList()
+                        .reversed
+                        .toList();
+                final index = videos.indexWhere(
+                  (m) => m.clientMessageId == tapped.clientMessageId,
+                );
+                if (index == -1) return;
+                final jumpToId = await context.pushNamed<String>(
+                  'videoViewer',
+                  extra: VideoViewerRouteArgs(
+                    videos: videos,
                     initialIndex: index,
                   ),
                 );

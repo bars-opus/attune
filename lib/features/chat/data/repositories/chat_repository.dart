@@ -100,11 +100,15 @@ abstract class ChatRepository {
   /// newest-starred first.
   Future<List<Message>> getStarredMessages();
 
-  /// Every non-deleted message in [relationshipId] whose media_type matches
-  /// [mediaType] ('image', 'audio', or 'video'), newest first — feeds the
-  /// media/docs/links tab screen reached from Chat settings. Does not
-  /// resolve signed URLs eagerly (same as getMessages) — callers resolve
-  /// on demand via ResolvedMediaUrl, same as the chat bubble/image viewer.
+  /// Every non-deleted, non-view-once message in [relationshipId] whose
+  /// media_type matches [mediaType] ('image', 'audio', or 'video'), newest
+  /// first — feeds the media/docs/links tab screen reached from Chat
+  /// settings. Ephemeral (view-once) videos are excluded regardless of
+  /// their viewed_at state — that content must never resurface in this
+  /// persistent, replayable gallery, only through its own
+  /// EphemeralVideoViewerScreen flow off the chat bubble. Does not resolve
+  /// signed URLs eagerly (same as getMessages) — callers resolve on demand
+  /// via ResolvedMediaUrl, same as the chat bubble/image viewer.
   Future<List<Message>> getMediaMessages(
     String relationshipId, {
     required String mediaType,

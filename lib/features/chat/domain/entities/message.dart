@@ -32,6 +32,21 @@ class Message {
   final DateTime? editedAt;
   final Map<String, Set<String>> reactions;
 
+  /// True while a video message's optimistic bubble is showing but the
+  /// client-side ChatVideoPreparer compression that must finish before
+  /// upload is still running. Client-only, like localMediaPath/
+  /// signedMediaUrl — never sent to or read from the server (excluded from
+  /// toJson/fromJson) and never true for a hydrated/canonical row.
+  /// Lets VideoMessagePlayer render a compressing-progress state instead of
+  /// trying to build a player around a video that isn't ready yet.
+  final bool isPreparing;
+
+  /// 0.0-1.0 compression progress, only meaningful while [isPreparing] is
+  /// true — mirrors VideoPrepareProgressDialog's own normalized
+  /// (value/100).clamp(0.0, 1.0) reading of video_compress's progress
+  /// channel. Null before the first progress callback fires.
+  final double? compressProgress;
+
   const Message({
     required this.id,
     required this.clientMessageId,
@@ -62,6 +77,8 @@ class Message {
     this.deletedAt,
     this.editedAt,
     this.reactions = const {},
+    this.isPreparing = false,
+    this.compressProgress,
   });
 
   factory Message.fromRow(
@@ -127,6 +144,8 @@ class Message {
     bool isViewOnce = false,
     String? replyToMessageId,
     String? quotedText,
+    bool isPreparing = false,
+    double? compressProgress,
   }) {
     return Message(
       id: id,
@@ -148,6 +167,8 @@ class Message {
       isMine: true,
       replyToMessageId: replyToMessageId,
       quotedText: quotedText,
+      isPreparing: isPreparing,
+      compressProgress: compressProgress,
     );
   }
 
@@ -181,6 +202,8 @@ class Message {
     DateTime? deletedAt,
     DateTime? editedAt,
     Map<String, Set<String>>? reactions,
+    bool? isPreparing,
+    double? compressProgress,
   }) {
     return Message(
       id: id ?? this.id,
@@ -212,6 +235,8 @@ class Message {
       deletedAt: deletedAt ?? this.deletedAt,
       editedAt: editedAt ?? this.editedAt,
       reactions: reactions ?? this.reactions,
+      isPreparing: isPreparing ?? this.isPreparing,
+      compressProgress: compressProgress ?? this.compressProgress,
     );
   }
 

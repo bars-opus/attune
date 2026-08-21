@@ -22,6 +22,7 @@ class VideoMessagePlayer extends ConsumerStatefulWidget {
     required this.durationMs,
     required this.width,
     required this.height,
+    this.onExpand,
   });
 
   final String messageId;
@@ -31,9 +32,17 @@ class VideoMessagePlayer extends ConsumerStatefulWidget {
   final int width;
   final int height;
 
+  /// Tapping the fullscreen-expand corner button calls this — the caller
+  /// (MessageBubble's onVideoTap, wired up in ChatScreen) opens
+  /// VideoViewerScreen. Deliberately a SEPARATE affordance from this
+  /// widget's own tap-to-play/pause gesture (unchanged below) rather than
+  /// replacing it: inline preview and full-screen viewing are both
+  /// genuinely useful and don't need to be mutually exclusive. Null hides
+  /// the button entirely (e.g. a caller with no viewer route to open).
+  final VoidCallback? onExpand;
+
   @override
-  ConsumerState<VideoMessagePlayer> createState() =>
-      _VideoMessagePlayerState();
+  ConsumerState<VideoMessagePlayer> createState() => _VideoMessagePlayerState();
 }
 
 class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
@@ -76,9 +85,10 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
     if (_controller == null) {
       // Local-vs-remote source branching copies VoiceMessagePlayer's
       // startsWith('http') check exactly.
-      final controller = widget.videoUrl.startsWith('http')
-          ? VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
-          : VideoPlayerController.file(File(widget.videoUrl));
+      final controller =
+          widget.videoUrl.startsWith('http')
+              ? VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
+              : VideoPlayerController.file(File(widget.videoUrl));
       controller.addListener(() {
         if (!mounted) return;
         if (!controller.value.isPlaying && _isPlaying) {
@@ -124,7 +134,10 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
   @override
   Widget build(BuildContext context) {
     // Another video bubble became the currently-playing one — pause this one.
-    ref.listen<String?>(currentlyPlayingVideoMessageIdProvider, (previous, next) {
+    ref.listen<String?>(currentlyPlayingVideoMessageIdProvider, (
+      previous,
+      next,
+    ) {
       if (next != widget.messageId && _isPlaying) {
         _controller?.pause();
         setState(() => _isPlaying = false);
@@ -142,9 +155,10 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
               VideoPlayer(_controller!)
             else if (widget.thumbnailUrl != null)
               Image(
-                image: widget.thumbnailUrl!.startsWith('http')
-                    ? NetworkImage(widget.thumbnailUrl!) as ImageProvider
-                    : FileImage(File(widget.thumbnailUrl!)),
+                image:
+                    widget.thumbnailUrl!.startsWith('http')
+                        ? NetworkImage(widget.thumbnailUrl!) as ImageProvider
+                        : FileImage(File(widget.thumbnailUrl!)),
                 fit: BoxFit.cover,
                 // A missing/unreachable thumbnail (404, offline, or — in
                 // tests — the test HTTP binding rejecting all real
@@ -152,12 +166,16 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
                 // plain surface instead of leaving the exception
                 // unhandled, matching this widget's own no-thumbnail
                 // ColoredBox fallback above.
-                errorBuilder: (context, error, stackTrace) => ColoredBox(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                ),
+                errorBuilder:
+                    (context, error, stackTrace) => ColoredBox(
+                      color:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                    ),
               )
             else
-              ColoredBox(color: Theme.of(context).colorScheme.surfaceContainerHighest),
+              ColoredBox(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              ),
             if (!_isPlaying)
               Center(
                 child: Icon(
@@ -185,16 +203,29 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
               left: 8,
               bottom: 8,
               child: IconButton(
-                onPressed: () => setState(() {
-                  _isMuted = !_isMuted;
-                  _controller?.setVolume(_isMuted ? 0.0 : 1.0);
-                }),
+                onPressed:
+                    () => setState(() {
+                      _isMuted = !_isMuted;
+                      _controller?.setVolume(_isMuted ? 0.0 : 1.0);
+                    }),
                 icon: Icon(
                   _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
                   color: Colors.white,
                 ),
               ),
             ),
+            if (widget.onExpand != null)
+              Positioned(
+                right: 4,
+                top: 4,
+                child: IconButton(
+                  onPressed: widget.onExpand,
+                  icon: const Icon(
+                    Icons.fullscreen_rounded,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
