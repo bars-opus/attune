@@ -9,6 +9,7 @@ import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
 
@@ -71,9 +72,10 @@ class _EphemeralVideoViewerScreenState
   @override
   void initState() {
     super.initState();
-    final controller = widget.videoUrl.startsWith('http')
-        ? VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
-        : VideoPlayerController.file(File(widget.videoUrl));
+    final controller =
+        widget.videoUrl.startsWith('http')
+            ? VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
+            : VideoPlayerController.file(File(widget.videoUrl));
     controller.addListener(_onPlaybackUpdate);
     controller
         .initialize()
@@ -118,13 +120,15 @@ class _EphemeralVideoViewerScreenState
     final profile = ref.read(currentUserProfileProvider).valueOrNull;
     final name = profile?.displayName ?? profile?.username ?? 'Someone';
     try {
-      await ref.read(chatRepositoryProvider).sendTextMessage(
-        relationshipId: widget.conversation.relationshipId,
-        senderId: user.id,
-        clientMessageId: const Uuid().v4(),
-        content: '$name took a screenshot',
-        isSystemNotice: true,
-      );
+      await ref
+          .read(chatRepositoryProvider)
+          .sendTextMessage(
+            relationshipId: widget.conversation.relationshipId,
+            senderId: user.id,
+            clientMessageId: const Uuid().v4(),
+            content: '$name took a screenshot',
+            isSystemNotice: true,
+          );
     } catch (error) {
       // Best-effort: a failed screenshot notice must never propagate
       // uncaught into the onScreenshotDetected stream listener (which
@@ -173,7 +177,7 @@ class _EphemeralVideoViewerScreenState
         ChatLog.e('mark video viewed retry failed', retryError);
       }
     }
-    if (mounted) Navigator.of(context).pop();
+    if (mounted) context.pop();
   }
 
   @override
@@ -214,10 +218,7 @@ class _EphemeralVideoViewerScreenState
       return const Scaffold(
         backgroundColor: Colors.black,
         body: Center(
-          child: Text(
-            'Already viewed',
-            style: TextStyle(color: Colors.white),
-          ),
+          child: Text('Already viewed', style: TextStyle(color: Colors.white)),
         ),
       );
     }

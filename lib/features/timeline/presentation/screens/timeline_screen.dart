@@ -22,10 +22,18 @@ class TimelineScreen extends ConsumerStatefulWidget {
   ConsumerState<TimelineScreen> createState() => _TimelineScreenState();
 }
 
-class _TimelineScreenState extends ConsumerState<TimelineScreen> {
+class _TimelineScreenState extends ConsumerState<TimelineScreen>
+    with AutomaticKeepAliveClientMixin {
   DateTime _focusedMonth = DateTime.now();
   DateTime? _selectedDate;
   final ScrollController _scrollController = ScrollController();
+
+  // Keeps this tab's state (focused month, selected date, scroll position)
+  // alive when TabBarView scrolls it off-screen switching tabs, instead of
+  // disposing and rebuilding from scratch every time the user comes back
+  // to Timeline.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -60,12 +68,11 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin requirement
     final eventsAsync = ref.watch(timelineEventsProvider(_focusedMonth));
     final currentUserId = ref.watch(currentUserIdProvider);
     final relationshipIdAsync = ref.watch(currentRelationshipIdProvider);
-    final remindersAsync = ref.watch(
-      reminders_providers.remindersListProvider,
-    );
+    final remindersAsync = ref.watch(reminders_providers.remindersListProvider);
 
     return relationshipIdAsync.when(
       data: (relationshipId) {
@@ -130,13 +137,10 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                         return const SizedBox.shrink();
                       }
                       return Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: Spacing.md.w,
-                        ),
+                        padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Gap(Spacing.md.h),
                             Text(
                               'Upcoming',
                               style: Theme.of(context).textTheme.titleSmall
@@ -147,7 +151,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                               reminders: reminders,
                               onReminderTap: (reminder) {},
                             ),
-                            const Divider(height: 32),
+                            // const Divider(height: 32),
                           ],
                         ),
                       );
@@ -175,12 +179,32 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                         eventsByDate[date]!.add(event);
                       }
 
-                      return Column(
-                        children: [
-                          Gap(Spacing.md.h),
-                          CalendarStrip(
+                      return CardInkWell(
+                        padding: const EdgeInsets.only(top: Spacing.lg),
+                        child: CalendarStrip(
+                          focusedMonth: _focusedMonth,
+                          eventsByDate: eventsByDate,
+                          remindersByDate: _remindersByDate(
+                            remindersAsync.valueOrNull ?? const [],
+                          ),
+                          selectedDate: _selectedDate,
+                          onDaySelected: (date) {
+                            _scrollToDate(date);
+                          },
+                          onMonthChanged: (month) {
+                            setState(() {
+                              _focusedMonth = month;
+                            });
+                            ref.invalidate(timelineEventsProvider(month));
+                          },
+                        ),
+                      );
+                    },
+                    loading:
+                        () => CardInkWell(
+                          padding: const EdgeInsets.only(top: Spacing.lg),
+                          child: CalendarStrip(
                             focusedMonth: _focusedMonth,
-                            eventsByDate: eventsByDate,
                             remindersByDate: _remindersByDate(
                               remindersAsync.valueOrNull ?? const [],
                             ),
@@ -194,26 +218,15 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                               });
                               ref.invalidate(timelineEventsProvider(month));
                             },
+                            eventsByDate: {},
                           ),
-                          const Divider(height: 32),
-                        ],
-                      );
-                    },
-                    loading:
-                        () => const Column(
-                          children: [
-                            SizedBox(height: 300),
-                            Center(child: CircularProgressIndicator()),
-                          ],
                         ),
                     error:
-                        (error, stack) => Column(
-                          children: [
-                            const SizedBox(height: 300),
-                            Center(
-                              child: Text('Error loading calendar: $error'),
-                            ),
-                          ],
+                        (error, stack) => Center(
+                          child: ErrorStateWidget(
+                            title: '',
+                            subtitle: 'Error loading calendar: $error',
+                          ),
                         ),
                   ),
                 ),
@@ -223,7 +236,9 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                   sliver: eventsAsync.when(
                     data: (events) {
                       final excludedIds = linkedTimelineEventIds(
-                        upcomingReminders(remindersAsync.valueOrNull ?? const []),
+                        upcomingReminders(
+                          remindersAsync.valueOrNull ?? const [],
+                        ),
                       );
                       final visibleEvents =
                           events
@@ -251,12 +266,15 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                     },
                     loading:
                         () => const SliverToBoxAdapter(
-                          child: Center(child: CircularProgressIndicator()),
+                          child: Center(child: CircularLoadingIndicator()),
                         ),
                     error:
                         (error, stack) => SliverToBoxAdapter(
                           child: Center(
-                            child: Text('Error loading moments: $error'),
+                            child: ErrorStateWidget(
+                              title: '',
+                              subtitle: 'Error loading moments: $error',
+                            ),
                           ),
                         ),
                   ),

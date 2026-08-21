@@ -464,10 +464,7 @@ class SupabaseChatRepository implements ChatRepository {
   }) async {
     await _supabase.rpc(
       'set_relationship_avatar',
-      params: {
-        'p_relationship_id': relationshipId,
-        'p_intent_id': intentId,
-      },
+      params: {'p_relationship_id': relationshipId, 'p_intent_id': intentId},
     );
   }
 
@@ -491,69 +488,70 @@ class SupabaseChatRepository implements ChatRepository {
       () => StreamController<TypingEvent>.broadcast(),
     );
 
-    final channel = _supabase
-        .channel('chat:$relationshipId')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'messages',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'relationship_id',
-            value: relationshipId,
-          ),
-          callback: (_) => events.add(null),
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: 'relationships',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'id',
-            value: relationshipId,
-          ),
-          callback: (_) => events.add(null),
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'message_pins',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'relationship_id',
-            value: relationshipId,
-          ),
-          callback: (_) => events.add(null),
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'message_reactions',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'relationship_id',
-            value: relationshipId,
-          ),
-          callback: (_) => events.add(null),
-        )
-        .onBroadcast(
-          event: 'typing',
-          callback: (payload) {
-            // Supabase broadcast nests the sent data under a `payload` key on
-            // the receiving side; be robust to both the nested and flat shape.
-            final data =
-                (payload['payload'] is Map)
-                    ? Map<String, dynamic>.from(payload['payload'] as Map)
-                    : payload;
-            final senderId = data['senderId'];
-            final isTyping = data['typing'];
-            if (senderId is String && isTyping is bool) {
-              typing.add(TypingEvent(senderId, isTyping));
-            }
-          },
-        )
-        .subscribe();
+    final channel =
+        _supabase
+            .channel('chat:$relationshipId')
+            .onPostgresChanges(
+              event: PostgresChangeEvent.all,
+              schema: 'public',
+              table: 'messages',
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'relationship_id',
+                value: relationshipId,
+              ),
+              callback: (_) => events.add(null),
+            )
+            .onPostgresChanges(
+              event: PostgresChangeEvent.update,
+              schema: 'public',
+              table: 'relationships',
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'id',
+                value: relationshipId,
+              ),
+              callback: (_) => events.add(null),
+            )
+            .onPostgresChanges(
+              event: PostgresChangeEvent.all,
+              schema: 'public',
+              table: 'message_pins',
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'relationship_id',
+                value: relationshipId,
+              ),
+              callback: (_) => events.add(null),
+            )
+            .onPostgresChanges(
+              event: PostgresChangeEvent.all,
+              schema: 'public',
+              table: 'message_reactions',
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'relationship_id',
+                value: relationshipId,
+              ),
+              callback: (_) => events.add(null),
+            )
+            .onBroadcast(
+              event: 'typing',
+              callback: (payload) {
+                // Supabase broadcast nests the sent data under a `payload` key on
+                // the receiving side; be robust to both the nested and flat shape.
+                final data =
+                    (payload['payload'] is Map)
+                        ? Map<String, dynamic>.from(payload['payload'] as Map)
+                        : payload;
+                final senderId = data['senderId'];
+                final isTyping = data['typing'];
+                if (senderId is String && isTyping is bool) {
+                  typing.add(TypingEvent(senderId, isTyping));
+                }
+              },
+            )
+            .subscribe();
 
     _channels[relationshipId] = channel;
     return channel;
@@ -620,10 +618,13 @@ class SupabaseChatRepository implements ChatRepository {
   Future<int> fetchStreak(String relationshipId) async {
     try {
       final offset = DateTime.now().timeZoneOffset.inMinutes;
-      final res = await _supabase.rpc('chat_conversation_streak', params: {
-        'p_relationship_id': relationshipId,
-        'p_utc_offset_minutes': offset,
-      });
+      final res = await _supabase.rpc(
+        'chat_conversation_streak',
+        params: {
+          'p_relationship_id': relationshipId,
+          'p_utc_offset_minutes': offset,
+        },
+      );
       return (res as num?)?.toInt() ?? 0;
     } catch (_) {
       return 0;
@@ -878,6 +879,59 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
+  Future<List<Message>> getMediaMessages(
+    String relationshipId, {
+    required String mediaType,
+  }) async {
+    final user = _currentUser;
+    final rows = await _supabase
+        .from('messages')
+        .select(_messageColumns)
+        .eq('relationship_id', relationshipId)
+        .eq('media_type', mediaType)
+        // A deleted message's media is gone (see delete_message RPC's
+        // tombstoning) — excluded here since a media grid has nowhere
+        // sensible to show a tombstone the way a chat bubble does.
+        .isFilter('deleted_at', null)
+        .order('created_at', ascending: false)
+        .order('id', ascending: false);
+
+    return rows
+        .map((row) => Message.fromRow(row, currentUserId: user.id))
+        .toList();
+  }
+
+  @override
+  Future<List<Message>> searchMessages(
+    String relationshipId, {
+    required String query,
+  }) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return const [];
+
+    final user = _currentUser;
+    // Escape ilike's own metacharacters (% and _) so a literal search for
+    // e.g. "50% off" or "a_b" matches that exact text instead of being
+    // interpreted as wildcards.
+    final escaped = trimmed.replaceAll('%', r'\%').replaceAll('_', r'\_');
+    final rows = await _supabase
+        .from('messages')
+        .select(_messageColumns)
+        .eq('relationship_id', relationshipId)
+        .ilike('content', '%$escaped%')
+        // A deleted message's content is gone (delete_message RPC clears
+        // it) — excluded here since there is nothing to show/highlight in
+        // a search result for a tombstoned message.
+        .isFilter('deleted_at', null)
+        .order('created_at', ascending: false)
+        .order('id', ascending: false);
+
+    return rows
+        .map((row) => Message.fromRow(row, currentUserId: user.id))
+        .toList();
+  }
+
+  @override
   Future<void> pinMessage({
     required String relationshipId,
     required String messageId,
@@ -937,9 +991,6 @@ class SupabaseChatRepository implements ChatRepository {
 
   @override
   Future<void> removeReaction(String messageId) async {
-    await _supabase.rpc(
-      'remove_reaction',
-      params: {'p_message_id': messageId},
-    );
+    await _supabase.rpc('remove_reaction', params: {'p_message_id': messageId});
   }
 }

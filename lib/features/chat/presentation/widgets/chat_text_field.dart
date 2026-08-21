@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:attune/core/services/media/voice_recorder_service.dart';
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
+import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/core/ui/motion/scale_pop.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -18,11 +19,14 @@ class ChatTextField extends StatefulWidget {
     this.onOpenTranslator,
     this.onVoiceMessageRecorded,
     this.onCaptureVideo,
+    this.onAttachFile,
+    this.onOpenGames,
     this.showAttachImage = false,
     this.showAttachVideo = false,
     this.showTranslator = false,
     this.showVoiceMessage = false,
     this.showCaptureVideo = false,
+    this.showGames = false,
     this.enabled = true,
     this.hintText = 'Type a message...',
     this.focusNode,
@@ -42,17 +46,24 @@ class ChatTextField extends StatefulWidget {
   /// per the design spec.
   final void Function(VoiceRecording recording)? onVoiceMessageRecorded;
 
-  /// Opens the ephemeral (view-once) camera capture flow. Purely additive
-  /// alongside onAttachImage/onAttachVideo/onVoiceMessageRecorded — a new,
-  /// dedicated leading icon, not folded into the existing Photo/Video
-  /// attach-sheet dispatcher.
+  /// Opens the ephemeral (view-once) "streak" camera capture flow. Surfaced
+  /// as a dedicated trailing icon (next to mic/games) rather than inside the
+  /// '+' attach sheet, since it's a capture action, not a library pick.
   final VoidCallback? onCaptureVideo;
+
+  /// File attach — placeholder for now, wired into the '+' sheet.
+  final VoidCallback? onAttachFile;
+
+  /// Games entry point — placeholder for now, both the trailing icon and the
+  /// '+' sheet's "Games" row call this.
+  final VoidCallback? onOpenGames;
 
   final bool showAttachImage;
   final bool showAttachVideo;
   final bool showTranslator;
   final bool showVoiceMessage;
   final bool showCaptureVideo;
+  final bool showGames;
   final bool enabled;
   final String hintText;
 
@@ -79,6 +90,74 @@ class ChatTextField extends StatefulWidget {
 
   @override
   State<ChatTextField> createState() => _ChatTextFieldState();
+}
+
+/// A tappable icon with a small, fixed hit box — deliberately NOT
+/// IconButton/AppIconButton, both of which reserve a much larger padded
+/// tap target that made the composer row look sparse. GestureDetector
+/// around a bare Icon keeps the row visually tight while still giving a
+/// full, comfortable ~40x40 tap target via a transparent HitTestBehavior.
+class _ComposerIcon extends StatelessWidget {
+  const _ComposerIcon({
+    required this.icon,
+    required this.onTap,
+    this.tooltip,
+    this.child,
+    this.filled = false,
+    this.fillColor,
+    this.iconColor,
+  }) : assert(icon != null || child != null, 'Provide either icon or child');
+
+  final IconData? icon;
+  final VoidCallback? onTap;
+  final String? tooltip;
+
+  /// Overrides the default Icon(icon) — used by the mic/send slots, which
+  /// need IconCrossfade wrapping the glyph rather than a bare Icon.
+  final Widget? child;
+
+  /// Send button's filled-circle treatment; every other composer icon is
+  /// unfilled (plain glyph, theme's default icon color).
+  final bool filled;
+  final Color? fillColor;
+  final Color? iconColor;
+
+  static const double _tapSize = 40;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme;
+    final resolvedIconColor =
+        iconColor ?? (filled ? color.onPrimary : color.onSurfaceVariant);
+    final content = IconTheme.merge(
+      data: IconThemeData(color: resolvedIconColor, size: 24),
+      child: child ?? Icon(icon),
+    );
+
+    final button = Opacity(
+      opacity: onTap != null ? 1.0 : 0.38,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: _tapSize,
+          height: _tapSize,
+          alignment: Alignment.center,
+          decoration:
+              filled
+                  ? BoxDecoration(
+                    color: fillColor ?? color.primary,
+                    shape: BoxShape.circle,
+                  )
+                  : null,
+          child: content,
+        ),
+      ),
+    );
+
+    if (tooltip == null || tooltip!.isEmpty) return button;
+    return Tooltip(message: tooltip!, child: button);
+  }
 }
 
 class _ChatTextFieldState extends State<ChatTextField> {
@@ -124,35 +203,51 @@ class _ChatTextFieldState extends State<ChatTextField> {
   }
 
   void _handleAttachTap(BuildContext context) {
-    if (!widget.showAttachVideo || widget.onAttachVideo == null) {
-      widget.onAttachImage?.call();
-      return;
-    }
     showModalBottomSheet<void>(
       context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_outlined),
-              title: const Text('Photo Library'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                widget.onAttachImage?.call();
-              },
+      builder:
+          (sheetContext) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.showAttachImage)
+                  ListTile(
+                    leading: const Icon(Icons.photo_outlined),
+                    title: const Text('Photos'),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      widget.onAttachImage?.call();
+                    },
+                  ),
+                if (widget.showAttachVideo)
+                  ListTile(
+                    leading: const Icon(Icons.videocam_outlined),
+                    title: const Text('Video'),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      widget.onAttachVideo?.call();
+                    },
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.insert_drive_file_outlined),
+                  title: const Text('Files'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    widget.onAttachFile?.call();
+                  },
+                ),
+                if (widget.showGames)
+                  ListTile(
+                    leading: const Icon(Icons.sports_esports_outlined),
+                    title: const Text('Games'),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      widget.onOpenGames?.call();
+                    },
+                  ),
+              ],
             ),
-            ListTile(
-              leading: const Icon(Icons.videocam_outlined),
-              title: const Text('Video Library'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                widget.onAttachVideo?.call();
-              },
-            ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
@@ -238,7 +333,8 @@ class _ChatTextFieldState extends State<ChatTextField> {
 
     try {
       final recording = await recorder.stop();
-      if (recording.durationMs >= VoiceRecorderService.minDuration.inMilliseconds) {
+      if (recording.durationMs >=
+          VoiceRecorderService.minDuration.inMilliseconds) {
         widget.onVoiceMessageRecorded?.call(recording);
       }
       // A too-short recording is silently discarded per the design spec —
@@ -247,7 +343,9 @@ class _ChatTextFieldState extends State<ChatTextField> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('That recording could not be sent. Please try again.'),
+            content: Text(
+              'That recording could not be sent. Please try again.',
+            ),
           ),
         );
       }
@@ -259,116 +357,205 @@ class _ChatTextFieldState extends State<ChatTextField> {
 
   @override
   Widget build(BuildContext context) {
+    final showAttachSheet = widget.showAttachImage || widget.showAttachVideo;
     return SafeArea(
       top: false,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (widget.showAttachImage)
-            IconButton(
-              onPressed: widget.enabled ? () => _handleAttachTap(context) : null,
-              icon: const Icon(Icons.photo_outlined),
-              tooltip: widget.showAttachVideo ? 'Add media' : 'Add image',
+          if (showAttachSheet)
+            _ComposerIcon(
+              icon: Icons.add,
+              onTap: widget.enabled ? () => _handleAttachTap(context) : null,
+              tooltip: 'Add',
             ),
-          if (widget.showCaptureVideo)
-            IconButton(
-              onPressed: widget.enabled ? widget.onCaptureVideo : null,
-              icon: const Icon(Icons.camera_alt_outlined),
-              tooltip: 'Record a video',
-            ),
-          if (widget.showTranslator && _hasText)
-            IconButton(
-              onPressed: widget.enabled ? widget.onOpenTranslator : null,
-              icon: const Icon(Icons.help_outline_rounded),
-              tooltip: 'Help me say this',
+          if (widget.showTranslator)
+            AnimatedSize(
+              duration:
+                  reduceMotionOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.centerLeft,
+              child: AnimatedOpacity(
+                duration:
+                    reduceMotionOf(context)
+                        ? Duration.zero
+                        : const Duration(milliseconds: 150),
+                opacity: _hasText ? 1.0 : 0.0,
+                child:
+                    _hasText
+                        ? _ComposerIcon(
+                          icon: Icons.help_outline_rounded,
+                          onTap:
+                              widget.enabled ? widget.onOpenTranslator : null,
+                          tooltip: 'Help me say this',
+                        )
+                        : const SizedBox(height: _ComposerIcon._tapSize),
+              ),
             ),
           Expanded(
-            child: _isRecording
-                ? VoiceRecordingBar(
-                    elapsed: _elapsed,
-                    // Live per-frame amplitude isn't wired to this bar in
-                    // this task — VoiceRecorderService exposes the final
-                    // downsampled waveform via stop(), not a live stream
-                    // consumable outside the service. A constant mid-level
-                    // fill keeps the bar visually alive without
-                    // overengineering a live-amplitude plumbing path that
-                    // the design spec didn't require for the recording BAR
-                    // specifically (only the SENT bubble's waveform must
-                    // reflect real amplitude data).
-                    amplitude: 0.5,
-                    isCancelling: _isCancelling,
-                  )
-                : CardInkWell(
-                    borderRadius: BorderRadius.circular(BorderRadiusTokens.xl),
-                    padding: const EdgeInsets.all(0),
-                    margin: const EdgeInsets.all(0),
-                    elevation: ElevationTokens.sm,
-                    child: AppTextFormField(
-                      controller: widget.controller,
-                      focusNode: widget.focusNode,
-                      hintText: widget.hintText,
-                      minLines: 1,
-                      maxLines: 5,
-                      showBorder: true,
-                      focusedBorderColor: widget.sendButtonColor,
-                      onFieldSubmitted: (_) => _handleSend(),
-                      label: '',
-                    ),
-                  ),
-          ),
-          const SizedBox(width: 8),
-          if (widget.showVoiceMessage && !_hasText)
-            Semantics(
-              button: true,
-              label: 'Hold to record a voice message',
-              child: GestureDetector(
-                onLongPressStart: (_) => unawaited(_startRecording()),
-                onLongPressMoveUpdate: _onLongPressMoveUpdate,
-                onLongPressEnd: (details) =>
-                    unawaited(_onLongPressEnd(details)),
-                // No `tooltip:` here deliberately — IconButton's tooltip
-                // wraps its child in its own long-press-to-show
-                // GestureDetector, which wins the gesture arena against
-                // this widget's own onLongPressStart and silently eats the
-                // hold-to-record gesture (confirmed empirically: with
-                // `tooltip` set, onLongPressStart never fires). The
-                // Semantics label above covers the accessibility purpose
-                // the tooltip would have served.
-                child: IconButton.filled(
-                  onPressed: widget.enabled ? () {} : null,
-                  style: widget.sendButtonColor == null
-                      ? null
-                      : IconButton.styleFrom(
-                          backgroundColor: widget.sendButtonColor,
-                          foregroundColor: widget.onSendButtonColor,
+            child:
+                _isRecording
+                    ? VoiceRecordingBar(
+                      elapsed: _elapsed,
+                      // Live per-frame amplitude isn't wired to this bar in
+                      // this task — VoiceRecorderService exposes the final
+                      // downsampled waveform via stop(), not a live stream
+                      // consumable outside the service. A constant mid-level
+                      // fill keeps the bar visually alive without
+                      // overengineering a live-amplitude plumbing path that
+                      // the design spec didn't require for the recording BAR
+                      // specifically (only the SENT bubble's waveform must
+                      // reflect real amplitude data).
+                      amplitude: 0.5,
+                      isCancelling: _isCancelling,
+                    )
+                    : TweenAnimationBuilder<double>(
+                      tween: Tween<double>(
+                        begin: ElevationTokens.sm,
+                        end: _hasText ? 0 : ElevationTokens.sm,
+                      ),
+                      duration:
+                          reduceMotionOf(context)
+                              ? Duration.zero
+                              : const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, elevation, child) {
+                        // Interpolates Material's own elevation shadow
+                        // (kElevationToShadow — the same subtle, tight,
+                        // near-zero-spread double-shadow Card.elevation uses)
+                        // between two whole-number presets, since the lookup
+                        // table only has integer keys. A flat, hand-tuned
+                        // BoxShadow (higher opacity, wider blur/spread) read
+                        // too heavy next to send button next to it.
+                        final lower = elevation.floor().clamp(0, 24);
+                        final upper = elevation.ceil().clamp(0, 24);
+                        final t = elevation - lower;
+                        final lowerShadows =
+                            kElevationToShadow[lower] ?? const [];
+                        final upperShadows =
+                            kElevationToShadow[upper] ?? const [];
+                        final shadows =
+                            lowerShadows.isEmpty || upperShadows.isEmpty
+                                ? (t < 0.5 ? lowerShadows : upperShadows)
+                                : List<BoxShadow>.generate(
+                                  lowerShadows.length,
+                                  (i) =>
+                                      BoxShadow.lerp(
+                                        lowerShadows[i],
+                                        upperShadows[i],
+                                        t,
+                                      )!,
+                                );
+                        return Container(
+                          margin: const EdgeInsets.only(right: Spacing.md),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(
+                              BorderRadiusTokens.xl,
+                            ),
+                            boxShadow: shadows,
+                          ),
+                          child: child,
+                        );
+                      },
+                      // CardInkWell's own elevation stays 0 — the animated
+                      // shadow above replaces it, since Card's elevation
+                      // can't be tweened smoothly (it snaps between fixed
+                      // Material shadow presets, which read as a glitch when
+                      // toggled on every keystroke).
+                      child: CardInkWell(
+                        color: _hasText ? Colors.transparent : null,
+                        borderRadius: BorderRadius.circular(
+                          BorderRadiusTokens.xl,
                         ),
-                  icon: IconCrossfade(
-                    child: Icon(
-                      Icons.mic_none_rounded,
-                      key: ValueKey(_isRecording),
+                        padding: const EdgeInsets.all(0),
+                        margin: EdgeInsets.zero,
+                        elevation: 0,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: AppTextFormField(
+                                controller: widget.controller,
+                                focusNode: widget.focusNode,
+                                hintText: widget.hintText,
+                                minLines: 1,
+                                maxLines: 5,
+                                showBorder: true,
+                                focusedBorderColor: widget.sendButtonColor,
+                                onFieldSubmitted: (_) => _handleSend(),
+                                label: '',
+                              ),
+                            ),
+                            // Trailing icons moved inside the pill, alongside
+                            // the field, as an experiment — was previously a
+                            // separate Row sibling outside CardInkWell.
+                            if (widget.showGames && !_hasText)
+                              _ComposerIcon(
+                                icon: Icons.sports_esports_outlined,
+                                onTap:
+                                    widget.enabled ? widget.onOpenGames : null,
+                                tooltip: 'Games',
+                              ),
+                            if (widget.showCaptureVideo && !_hasText)
+                              _ComposerIcon(
+                                icon: Icons.camera_alt_outlined,
+                                onTap:
+                                    widget.enabled
+                                        ? widget.onCaptureVideo
+                                        : null,
+                                tooltip: 'Streak',
+                              ),
+                            if (widget.showVoiceMessage && !_hasText)
+                              Semantics(
+                                button: true,
+                                label: 'Hold to record a voice message',
+                                child: GestureDetector(
+                                  onLongPressStart:
+                                      (_) => unawaited(_startRecording()),
+                                  onLongPressMoveUpdate: _onLongPressMoveUpdate,
+                                  onLongPressEnd:
+                                      (details) =>
+                                          unawaited(_onLongPressEnd(details)),
+                                  child: _ComposerIcon(
+                                    icon: null,
+                                    onTap: widget.enabled ? () {} : null,
+                                    child: IconCrossfade(
+                                      child: Icon(
+                                        Icons.mic_none_rounded,
+                                        key: ValueKey(_isRecording),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              )
+                            else
+                              _ComposerIcon(
+                                icon: null,
+                                onTap:
+                                    widget.enabled && _hasText
+                                        ? _handleSend
+                                        : null,
+                                tooltip: 'Send message',
+                                filled: true,
+                                fillColor:
+                                    widget.sendButtonColor ?? Colors.green,
+                                iconColor:
+                                    widget.onSendButtonColor ?? Colors.white,
+                                child: IconCrossfade(
+                                  child: ScalePop(
+                                    key: const ValueKey('send'),
+                                    trigger: _sendPulse,
+                                    child: const Icon(Icons.send_rounded),
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(width: 4),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ),
-            )
-          else
-            IconButton.filled(
-              onPressed: widget.enabled && _hasText ? _handleSend : null,
-              tooltip: 'Send message',
-              style: widget.sendButtonColor == null
-                  ? null
-                  : IconButton.styleFrom(
-                      backgroundColor: widget.sendButtonColor,
-                      foregroundColor: widget.onSendButtonColor,
-                    ),
-              icon: IconCrossfade(
-                child: ScalePop(
-                  key: const ValueKey('send'),
-                  trigger: _sendPulse,
-                  child: const Icon(Icons.send_rounded),
-                ),
-              ),
-            ),
+          ),
         ],
       ),
     );

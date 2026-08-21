@@ -86,6 +86,19 @@ class ChatImagePreparer {
 
     final targetPath = await _tempTargetPath();
 
+    // flutter_image_compress's minWidth/minHeight are a TARGET size the
+    // plugin scales toward (not a floor) — it resizes the image as close to
+    // these dimensions as it can while preserving aspect ratio. Passing 1x1
+    // here previously made every image collapse to a near-1x1 output. Derive
+    // the real longest-edge-maxDimension target from the already-decoded
+    // source so the plugin resizes correctly, mirroring _resizeLongestEdge's
+    // logic used by the Dart fallback path below.
+    final targetDimensions = _longestEdgeTarget(
+      decoded.width,
+      decoded.height,
+      maxDimension,
+    );
+
     // flutter_image_compress bakes in orientation, strips EXIF (keepExif:false),
     // resizes the longest edge, and re-encodes as JPEG. We step quality down
     // until the output meets the size ceiling. If the native plugin is
@@ -97,8 +110,8 @@ class ChatImagePreparer {
           localPath,
           targetPath,
           quality: quality,
-          minWidth: 1, // let the longest-edge cap below drive sizing
-          minHeight: 1,
+          minWidth: targetDimensions.width,
+          minHeight: targetDimensions.height,
           keepExif: false,
           format: CompressFormat.jpeg,
         );
@@ -131,6 +144,27 @@ class ChatImagePreparer {
     }
 
     throw const ChatImageRejected('media_compress_failed');
+  }
+
+  /// Computes the (width, height) that keep the longer source edge at most
+  /// [longest] pixels, preserving aspect ratio. Returns the source
+  /// dimensions unchanged if already within the cap — flutter_image_compress
+  /// treats minWidth/minHeight as a target it scales toward, so passing the
+  /// untouched source size here is a correct no-op resize, not a floor.
+  ({int width, int height}) _longestEdgeTarget(
+    int sourceWidth,
+    int sourceHeight,
+    int longest,
+  ) {
+    final longestSide = sourceWidth >= sourceHeight ? sourceWidth : sourceHeight;
+    if (longestSide <= longest) {
+      return (width: sourceWidth, height: sourceHeight);
+    }
+    final scale = longest / longestSide;
+    return (
+      width: (sourceWidth * scale).round(),
+      height: (sourceHeight * scale).round(),
+    );
   }
 
   img.Image _resizeLongestEdge(img.Image src, int longest) {

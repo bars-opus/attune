@@ -184,13 +184,14 @@ class FakeChatRepository implements ChatRepository {
     ChatMessageCursor? before,
     int limit = 50,
   }) async {
-    final all = serverMessages.values
-        .where((m) => m.relationshipId == relationshipId)
-        .toList()
-      ..sort((a, b) {
-        final t = b.createdAt.compareTo(a.createdAt);
-        return t != 0 ? t : b.id.compareTo(a.id);
-      });
+    final all =
+        serverMessages.values
+            .where((m) => m.relationshipId == relationshipId)
+            .toList()
+          ..sort((a, b) {
+            final t = b.createdAt.compareTo(a.createdAt);
+            return t != 0 ? t : b.id.compareTo(a.id);
+          });
     if (before == null) return all.take(limit).toList();
     return all
         .where((m) => m.createdAt.isBefore(before.createdAt))
@@ -204,13 +205,14 @@ class FakeChatRepository implements ChatRepository {
     ChatMessageCursor? after,
     int limit = 50,
   }) async {
-    final all = serverMessages.values
-        .where((m) => m.relationshipId == relationshipId)
-        .toList()
-      ..sort((a, b) {
-        final t = a.createdAt.compareTo(b.createdAt);
-        return t != 0 ? t : a.id.compareTo(b.id);
-      });
+    final all =
+        serverMessages.values
+            .where((m) => m.relationshipId == relationshipId)
+            .toList()
+          ..sort((a, b) {
+            final t = a.createdAt.compareTo(b.createdAt);
+            return t != 0 ? t : a.id.compareTo(b.id);
+          });
     if (after == null) return all.take(limit).toList();
     return all.where((m) => m.createdAt.isAfter(after.createdAt)).toList();
   }
@@ -284,6 +286,7 @@ class FakeChatRepository implements ChatRepository {
   @override
   Future<String?> getRelationshipIdForPartner(String partnerUserId) async =>
       null;
+
   /// Failure seam for [createMediaUploadIntent]/[uploadChatMedia], scripted
   /// by call number (1-indexed across BOTH methods combined, matching the
   /// order _attemptSend's two-intent video branch actually calls them in:
@@ -321,6 +324,7 @@ class FakeChatRepository implements ChatRepository {
     final failure = mediaCallFailures[_mediaCallCount];
     if (failure != null) throw failure;
   }
+
   @override
   Future<String?> createSignedMediaUrl(String mediaKey) async => null;
 
@@ -357,13 +361,12 @@ class FakeChatRepository implements ChatRepository {
   Future<RelationshipAvatarUploadIntent> createRelationshipAvatarUploadIntent({
     required String relationshipId,
     required String mimeType,
-  }) async =>
-      RelationshipAvatarUploadIntent(
-        intentId: 'avatar-intent',
-        storageKey: 'relationship-avatars/test.jpg',
-        expiresAt: DateTime.now().add(const Duration(minutes: 15)),
-        bucket: 'relationship-avatars',
-      );
+  }) async => RelationshipAvatarUploadIntent(
+    intentId: 'avatar-intent',
+    storageKey: 'relationship-avatars/test.jpg',
+    expiresAt: DateTime.now().add(const Duration(minutes: 15)),
+    bucket: 'relationship-avatars',
+  );
   @override
   Future<void> uploadRelationshipAvatarImage({
     required RelationshipAvatarUploadIntent intent,
@@ -418,8 +421,7 @@ class FakeChatRepository implements ChatRepository {
   @override
   Future<List<MessageEditHistoryEntry>> getMessageEditHistory(
     String messageId,
-  ) async =>
-      const [];
+  ) async => const [];
 
   @override
   Future<void> starMessage(String messageId) async {
@@ -468,9 +470,41 @@ class FakeChatRepository implements ChatRepository {
   }
 
   @override
-  Future<List<Message>> getStarredMessages() async => serverMessages.values
-      .where((m) => starredMessageIds.contains(m.id))
-      .toList();
+  Future<List<Message>> getStarredMessages() async =>
+      serverMessages.values
+          .where((m) => starredMessageIds.contains(m.id))
+          .toList();
+
+  @override
+  Future<List<Message>> getMediaMessages(
+    String relationshipId, {
+    required String mediaType,
+  }) async =>
+      serverMessages.values
+          .where(
+            (m) =>
+                m.relationshipId == relationshipId &&
+                m.mediaType == mediaType &&
+                !m.isDeleted,
+          )
+          .toList();
+
+  @override
+  Future<List<Message>> searchMessages(
+    String relationshipId, {
+    required String query,
+  }) async {
+    final trimmed = query.trim().toLowerCase();
+    if (trimmed.isEmpty) return const [];
+    return serverMessages.values
+        .where(
+          (m) =>
+              m.relationshipId == relationshipId &&
+              !m.isDeleted &&
+              m.content.toLowerCase().contains(trimmed),
+        )
+        .toList();
+  }
 
   @override
   Future<void> pinMessage({
@@ -539,9 +573,7 @@ ProviderContainer buildChatContainer({
   required String userId,
   List<Override> extraOverrides = const [],
 }) {
-  final cache = ChatCacheService.forTesting(
-    backend: stub.createBackend(),
-  );
+  final cache = ChatCacheService.forTesting(backend: stub.createBackend());
   final container = ProviderContainer(
     overrides: [
       chatRepositoryProvider.overrideWithValue(repository),

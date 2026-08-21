@@ -13,6 +13,7 @@ import 'package:attune/features/chat/data/repositories/supabase_chat_repository.
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/domain/services/chat_feature_flags.dart';
+import 'package:attune/features/chat/domain/services/chat_image_preparer.dart';
 import 'package:attune/features/chat/domain/services/chat_video_preparer.dart';
 import 'package:attune/features/chat/utils/chat_error.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
@@ -24,6 +25,19 @@ import 'package:uuid/uuid.dart';
 
 final chatRepositoryProvider = Provider<ChatRepository>((ref) {
   return ref.watch(supabaseChatRepositoryProvider);
+});
+
+/// Resolves a signed URL for a chat media storage key on demand — used by
+/// MessageBubble's image slot when a cached (locally-restored) message
+/// renders before ChatController's own hydration pass has re-signed its
+/// URL. Keyed on mediaKey (not the message id), so switching conversations
+/// or messages with the same key reuses SupabaseChatRepository's own
+/// signed-URL cache rather than re-requesting on every rebuild.
+final signedMediaUrlProvider = FutureProvider.family<String?, String>((
+  ref,
+  mediaKey,
+) {
+  return ref.watch(chatRepositoryProvider).createSignedMediaUrl(mediaKey);
 });
 
 final conversationsRefreshProvider = StateProvider<int>((ref) => 0);
@@ -159,15 +173,13 @@ final chatControllerProvider = StateNotifierProvider.autoDispose
 /// message watcher) recomputes exactly when that message's row actually
 /// changes.
 final ephemeralVideoExpiredProvider = Provider.autoDispose
-    .family<bool, ({Conversation conversation, String messageId})>((
-      ref,
-      args,
-    ) {
+    .family<bool, ({Conversation conversation, String messageId})>((ref, args) {
       final messages = ref.watch(
         chatControllerProvider(args.conversation).select((s) => s.messages),
       );
       for (final message in messages) {
-        if (message.id == args.messageId) return message.isEphemeralVideoExpired;
+        if (message.id == args.messageId)
+          return message.isEphemeralVideoExpired;
       }
       return false;
     });
@@ -247,14 +259,17 @@ class ChatController extends StateNotifier<ChatState> {
     // Seed the baseline after the first load so initial history (warm cache
     // or cold fetch) never triggers the receive haptic; only messages that
     // arrive after this point can be "new" (Task 10).
-    _lastPartnerMessageId = state.messages
-        .where((m) => !m.isMine && !m.id.startsWith('_local_'))
-        .fold<Message?>(
-          null,
-          (best, m) =>
-              best == null || m.createdAt.isAfter(best.createdAt) ? m : best,
-        )
-        ?.id;
+    _lastPartnerMessageId =
+        state.messages
+            .where((m) => !m.isMine && !m.id.startsWith('_local_'))
+            .fold<Message?>(
+              null,
+              (best, m) =>
+                  best == null || m.createdAt.isAfter(best.createdAt)
+                      ? m
+                      : best,
+            )
+            ?.id;
     _hasSeededPartnerBaseline = true;
     await _refreshPinnedMessages();
     await _refreshStarredMessageIds();
@@ -275,7 +290,9 @@ class ChatController extends StateNotifier<ChatState> {
     // Report presence so the backend can suppress a redundant push while the
     // recipient is looking at this conversation (Spec 9.2). Best-effort.
     unawaited(
-      ref.read(chatRepositoryProvider).setPresence(active ? relationshipId : null),
+      ref
+          .read(chatRepositoryProvider)
+          .setPresence(active ? relationshipId : null),
     );
     if (active) {
       markAsReadDebounced();
@@ -404,10 +421,7 @@ class ChatController extends StateNotifier<ChatState> {
     for (final message in state.messages) {
       if (message.id.startsWith('_local_')) continue;
       // state.messages is newest-first; the first canonical row is the newest.
-      cursor = ChatMessageCursor(
-        createdAt: message.createdAt,
-        id: message.id,
-      );
+      cursor = ChatMessageCursor(createdAt: message.createdAt, id: message.id);
       break;
     }
 
@@ -533,9 +547,15 @@ class ChatController extends StateNotifier<ChatState> {
     await _attemptSend(pending);
   }
 
+  /// Takes the RAW picked (pre-compression) image path — deliberately not
+  /// an already-prepared one. The optimistic bubble is added using this raw
+  /// file FIRST, so it appears the instant the user taps send; ChatImage-
+  /// Preparer's compression (a real decode/resize/encode pass, not
+  /// instant) runs after, in the background, before the actual upload.
+  /// Compression happening before the optimistic add was the cause of the
+  /// visible "nothing happens for a moment" delay this used to have.
   Future<void> sendImageMessage({
     required String localPath,
-    required String mimeType,
     String caption = '',
   }) async {
     if (!state.conversation.canSend) return;
@@ -551,31 +571,9 @@ class ChatController extends StateNotifier<ChatState> {
       return;
     }
 
-    final size = await file.length();
-    if (size > 800 * 1024) {
-      if (mounted) {
-        state = state.copyWith(
-          error:
-              'That image is too large for chat. Please choose a smaller image.',
-        );
-      }
-      return;
-    }
-
     final clientMessageId = const Uuid().v4();
     final optimisticId = '_local_$clientMessageId';
     final now = DateTime.now();
-    final pending = PendingSend(
-      clientMessageId: clientMessageId,
-      relationshipId: relationshipId,
-      senderId: user.id,
-      text: caption,
-      localMediaPath: localPath,
-      mediaMimeType: mimeType,
-      mediaType: 'image',
-      createdAt: now,
-    );
-    await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
 
     final optimistic = Message.optimistic(
       id: optimisticId,
@@ -593,7 +591,51 @@ class ChatController extends StateNotifier<ChatState> {
       messages: [optimistic, ...state.messages],
     );
 
+    final PreparedChatImage prepared;
+    try {
+      prepared = await const ChatImagePreparer().prepare(localPath);
+    } on ChatImageRejected catch (rejected) {
+      if (!mounted) return;
+      state = state.copyWith(
+        isSending: false,
+        messages:
+            state.messages
+                .where((entry) => entry.clientMessageId != clientMessageId)
+                .toList(),
+        error: _imageRejectionMessage(rejected.code),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    final pending = PendingSend(
+      clientMessageId: clientMessageId,
+      relationshipId: relationshipId,
+      senderId: user.id,
+      text: caption,
+      localMediaPath: prepared.file.path,
+      mediaMimeType: prepared.mimeType,
+      mediaType: 'image',
+      createdAt: now,
+    );
+    await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
+
     await _attemptSend(pending);
+  }
+
+  String _imageRejectionMessage(String code) {
+    switch (code) {
+      case 'media_type_unsupported':
+        return 'That file type is not supported. Choose a JPG, PNG, or WebP image.';
+      case 'media_too_large':
+      case 'media_compress_failed':
+        return 'That image is too large to send. Try a smaller one.';
+      case 'media_decode_failed':
+      case 'media_dimensions_excessive':
+        return 'That image could not be read. Try a different one.';
+      default:
+        return 'That image is no longer available.';
+    }
   }
 
   /// Sends a voice message, mirroring sendImageMessage's exact shape:
@@ -920,13 +962,23 @@ class ChatController extends StateNotifier<ChatState> {
     await _deleteStagedMedia(pending?.localThumbnailPath);
 
     if (!mounted) return;
-    state = state.copyWith(
-      messages:
-          state.messages
-              .where(
-                (entry) => entry.clientMessageId != message.clientMessageId,
-              )
-              .toList(),
+    final remaining =
+        state.messages
+            .where((entry) => entry.clientMessageId != message.clientMessageId)
+            .toList();
+    state = state.copyWith(messages: remaining);
+
+    // loadMessages/_catchUpFromCursor persist the FULL state.messages list
+    // (including any still-failed/optimistic local entries) to the message
+    // cache on every sync. Without also re-writing here, a failed message
+    // removed from state above stays in that on-disk cache from whichever
+    // earlier write captured it — and _init()'s readMessages() on the next
+    // cold start restores it right back, even though the outbox entry (the
+    // thing that actually drove the retry/remove UI) is already gone.
+    unawaited(
+      ref
+          .read(chatCacheServiceProvider)
+          .writeMessages(user.id, relationshipId, remaining),
     );
   }
 
@@ -934,13 +986,15 @@ class ChatController extends StateNotifier<ChatState> {
     await _repository.deleteMessage(message.id);
     if (!mounted) return;
     state = state.copyWith(
-      messages: state.messages
-          .map(
-            (entry) => entry.id == message.id
-                ? entry.copyWith(deletedAt: DateTime.now(), content: '')
-                : entry,
-          )
-          .toList(),
+      messages:
+          state.messages
+              .map(
+                (entry) =>
+                    entry.id == message.id
+                        ? entry.copyWith(deletedAt: DateTime.now(), content: '')
+                        : entry,
+              )
+              .toList(),
     );
   }
 
@@ -951,13 +1005,18 @@ class ChatController extends StateNotifier<ChatState> {
     );
     if (!mounted) return;
     state = state.copyWith(
-      messages: state.messages
-          .map(
-            (entry) => entry.id == message.id
-                ? entry.copyWith(content: newContent, editedAt: DateTime.now())
-                : entry,
-          )
-          .toList(),
+      messages:
+          state.messages
+              .map(
+                (entry) =>
+                    entry.id == message.id
+                        ? entry.copyWith(
+                          content: newContent,
+                          editedAt: DateTime.now(),
+                        )
+                        : entry,
+              )
+              .toList(),
     );
   }
 
@@ -973,9 +1032,8 @@ class ChatController extends StateNotifier<ChatState> {
     await _repository.unstarMessage(messageId);
     if (!mounted) return;
     state = state.copyWith(
-      starredMessageIds: state.starredMessageIds
-          .where((id) => id != messageId)
-          .toSet(),
+      starredMessageIds:
+          state.starredMessageIds.where((id) => id != messageId).toSet(),
     );
   }
 
@@ -1012,11 +1070,21 @@ class ChatController extends StateNotifier<ChatState> {
     );
     if (!mounted) return;
     state = state.copyWith(
-      messages: state.messages
-          .map((entry) => entry.id == message.id
-              ? entry.copyWith(reactions: _withReaction(entry.reactions, user.id, emoji))
-              : entry)
-          .toList(),
+      messages:
+          state.messages
+              .map(
+                (entry) =>
+                    entry.id == message.id
+                        ? entry.copyWith(
+                          reactions: _withReaction(
+                            entry.reactions,
+                            user.id,
+                            emoji,
+                          ),
+                        )
+                        : entry,
+              )
+              .toList(),
     );
   }
 
@@ -1027,11 +1095,17 @@ class ChatController extends StateNotifier<ChatState> {
     await _repository.removeReaction(message.id);
     if (!mounted) return;
     state = state.copyWith(
-      messages: state.messages
-          .map((entry) => entry.id == message.id
-              ? entry.copyWith(reactions: _withoutReaction(entry.reactions, user.id))
-              : entry)
-          .toList(),
+      messages:
+          state.messages
+              .map(
+                (entry) =>
+                    entry.id == message.id
+                        ? entry.copyWith(
+                          reactions: _withoutReaction(entry.reactions, user.id),
+                        )
+                        : entry,
+              )
+              .toList(),
     );
   }
 
@@ -1161,7 +1235,8 @@ class ChatController extends StateNotifier<ChatState> {
       final repository = ref.read(chatRepositoryProvider);
       String? mediaKey;
       String? mediaThumbnailKey;
-      final isMediaSend = (pending.mediaType == 'image' ||
+      final isMediaSend =
+          (pending.mediaType == 'image' ||
               pending.mediaType == 'audio' ||
               pending.mediaType == 'video') &&
           pending.localMediaPath != null &&
@@ -1299,8 +1374,7 @@ class ChatController extends StateNotifier<ChatState> {
     // outage do not retry in lockstep. Window caps at 2^6 = 64s.
     final windowSeconds = 1 << attempts.clamp(1, 6);
     final backoffMillis =
-        (windowSeconds * 500) +
-        _backoffJitter.nextInt(windowSeconds * 500 + 1);
+        (windowSeconds * 500) + _backoffJitter.nextInt(windowSeconds * 500 + 1);
 
     final updatedPending = pending.copyWith(
       attempts: attempts,
@@ -1478,10 +1552,10 @@ class ChatController extends StateNotifier<ChatState> {
         }
         continue;
       }
-      byId[message.id] = existing?.localMediaPath != null &&
-              message.localMediaPath == null
-          ? message.copyWith(localMediaPath: existing!.localMediaPath)
-          : message;
+      byId[message.id] =
+          existing?.localMediaPath != null && message.localMediaPath == null
+              ? message.copyWith(localMediaPath: existing!.localMediaPath)
+              : message;
     }
 
     final merged = byId.values.toList()..sort(_byCreatedThenId);
@@ -1495,8 +1569,9 @@ class ChatController extends StateNotifier<ChatState> {
 
     return merged.where((message) {
       if (!message.id.startsWith('_local_')) return true;
-      final isSuperseded =
-          canonicalByClientId.containsKey(message.clientMessageId);
+      final isSuperseded = canonicalByClientId.containsKey(
+        message.clientMessageId,
+      );
       if (isSuperseded) {
         final stalePath = staleLocalPathsByClientId[message.clientMessageId];
         if (stalePath != null) {

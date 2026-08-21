@@ -181,15 +181,16 @@ void main() {
       showVoiceMessage: false,
     );
 
-    final sendButton = tester.widget<IconButton>(
-      find.widgetWithIcon(IconButton, Icons.send_rounded),
-    );
-    expect(sendButton.onPressed, isNull); // disabled while empty
+    // The send icon is present but its GestureDetector.onTap is null while
+    // empty (the composer's own _ComposerIcon, not a Material IconButton —
+    // tapping does nothing).
+    await tester.tap(find.byIcon(Icons.send_rounded));
+    expect(sent, 0);
 
     await tester.enterText(find.byType(TextField), 'hello');
     await tester.pump();
 
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.send_rounded));
+    await tester.tap(find.byIcon(Icons.send_rounded));
     expect(sent, 1);
   });
 
@@ -223,7 +224,9 @@ void main() {
       controller: controller,
       showAttachImage: false,
     );
-    expect(find.byIcon(Icons.photo_outlined), findsNothing);
+    // The '+' attach icon only renders when showAttachImage OR
+    // showAttachVideo is true (see showAttachSheet in ChatTextField.build).
+    expect(find.byIcon(Icons.add), findsNothing);
 
     await _pump(
       tester,
@@ -231,7 +234,7 @@ void main() {
       showAttachImage: true,
       onAttachImage: () {},
     );
-    expect(find.byIcon(Icons.photo_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.add), findsOneWidget);
   });
 
   testWidgets('disabled composer prevents send even with text', (tester) async {
@@ -244,10 +247,7 @@ void main() {
       onSend: () => sent++,
     );
 
-    final sendButton = tester.widget<IconButton>(
-      find.widgetWithIcon(IconButton, Icons.send_rounded),
-    );
-    expect(sendButton.onPressed, isNull);
+    await tester.tap(find.byIcon(Icons.send_rounded));
     expect(sent, 0);
   });
 
@@ -311,7 +311,7 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('photo icon calls onAttachImage directly when only showAttachImage is true (video off)',
+  testWidgets('attach ("+") icon opens a sheet with just Photos + Files when only showAttachImage is true (video off)',
       (tester) async {
     var attachImageCalled = 0;
     await _pump(
@@ -322,15 +322,19 @@ void main() {
       showAttachVideo: false,
     );
 
-    await tester.tap(find.byIcon(Icons.photo_outlined));
-    await tester.pump();
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Photos'), findsOneWidget);
+    expect(find.text('Video'), findsNothing);
+
+    await tester.tap(find.text('Photos'));
+    await tester.pumpAndSettle();
 
     expect(attachImageCalled, 1);
-    // No bottom sheet should have appeared.
-    expect(find.byType(BottomSheet), findsNothing);
   });
 
-  testWidgets('attach icon opens a Photo/Video sheet when both showAttachImage and showAttachVideo are true',
+  testWidgets('attach icon opens a Photos/Video sheet when both showAttachImage and showAttachVideo are true',
       (tester) async {
     await _pump(
       tester,
@@ -341,14 +345,14 @@ void main() {
       onAttachVideo: () {},
     );
 
-    await tester.tap(find.byIcon(Icons.photo_outlined));
+    await tester.tap(find.byIcon(Icons.add));
     await tester.pumpAndSettle();
 
-    expect(find.text('Photo Library'), findsOneWidget);
-    expect(find.text('Video Library'), findsOneWidget);
+    expect(find.text('Photos'), findsOneWidget);
+    expect(find.text('Video'), findsOneWidget);
   });
 
-  testWidgets('tapping Video Library in the sheet calls onAttachVideo and dismisses the sheet',
+  testWidgets('tapping Video in the sheet calls onAttachVideo and dismisses the sheet',
       (tester) async {
     var attachVideoCalled = 0;
     await _pump(
@@ -360,17 +364,17 @@ void main() {
       onAttachVideo: () => attachVideoCalled++,
     );
 
-    await tester.tap(find.byIcon(Icons.photo_outlined));
+    await tester.tap(find.byIcon(Icons.add));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Video Library'));
+    await tester.tap(find.text('Video'));
     await tester.pumpAndSettle();
 
     expect(attachVideoCalled, 1);
-    expect(find.text('Video Library'), findsNothing);
+    expect(find.text('Video'), findsNothing);
   });
 
   testWidgets(
-      'camera icon absent by default, existing photo/video/voice icons unaffected',
+      'streak camera icon absent by default, existing attach/voice icons unaffected',
       (tester) async {
     final controller = TextEditingController();
     await _pump(
@@ -388,7 +392,7 @@ void main() {
     );
 
     expect(find.byIcon(Icons.camera_alt_outlined), findsNothing);
-    expect(find.byIcon(Icons.photo_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.add), findsOneWidget);
     expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
   });
 

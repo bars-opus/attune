@@ -8,11 +8,12 @@ import 'package:attune/features/chat/presentation/widgets/video_prepare_progress
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 /// Full-screen live camera preview for press-and-hold ephemeral video
-/// capture. Pushed via Navigator.push from chat_screen.dart's composer, not
-/// a GoRouter route — mirrors VideoTrimScreen's established
-/// "full-screen route for video-specific UI" pattern from Part 1.
+/// capture. Reached via the 'ephemeralCamera' named route (registered in
+/// app_router.dart) from chat_screen.dart's composer, which passes the
+/// Conversation via `extra`.
 ///
 /// Release-to-send has NO confirm step — this is a deliberate, confirmed
 /// design choice (true Snapchat parity), not an oversight. A minimum hold
@@ -36,8 +37,7 @@ class EphemeralCameraScreen extends ConsumerStatefulWidget {
       EphemeralCameraScreenState();
 }
 
-class EphemeralCameraScreenState
-    extends ConsumerState<EphemeralCameraScreen> {
+class EphemeralCameraScreenState extends ConsumerState<EphemeralCameraScreen> {
   static const Duration _maxRecordingDuration = Duration(seconds: 10);
   static const Duration _minHoldDuration = Duration(milliseconds: 500);
 
@@ -46,8 +46,7 @@ class EphemeralCameraScreenState
   /// ChatVideoPreparer whether a hold was long enough to be an intentional
   /// recording versus an accidental tap.
   @visibleForTesting
-  static bool debugShouldDiscardHold(Duration held) =>
-      held < _minHoldDuration;
+  static bool debugShouldDiscardHold(Duration held) => held < _minHoldDuration;
 
   /// Test seam: the 10-second auto-stop clamp, exposed so its correctness
   /// (never exceeds the cap, never clamps a shorter recording down) can be
@@ -87,9 +86,7 @@ class EphemeralCameraScreenState
       // hardware-unavailable cases; either way there is no usable preview,
       // so both collapse to the same "can't record" messaging here.
       if (mounted) {
-        setState(
-          () => _permissionError = 'Camera access is needed to record.',
-        );
+        setState(() => _permissionError = 'Camera access is needed to record.');
       }
     }
   }
@@ -192,16 +189,16 @@ class EphemeralCameraScreenState
             width: prepared.width,
             height: prepared.height,
           );
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) context.pop();
     } on ChatVideoRejected catch (rejected) {
       if (!mounted) return;
       setState(() {
         _isPreparing = false;
         _permissionError = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_rejectionMessage(rejected.code))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_rejectionMessage(rejected.code))));
       // Deliberately does NOT pop back to the chat screen on failure — the
       // user is still on the camera screen and can try recording again,
       // unlike a picker-cancel elsewhere in the app which just returns.

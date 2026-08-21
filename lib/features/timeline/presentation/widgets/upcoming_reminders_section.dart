@@ -55,9 +55,12 @@ List<ReminderModel> upcomingReminders(
 
 String _countdownLabel(DateTime occurrence, {DateTime? now}) {
   final today = now ?? DateTime.now();
-  final days = DateTime(occurrence.year, occurrence.month, occurrence.day)
-      .difference(DateTime(today.year, today.month, today.day))
-      .inDays;
+  final days =
+      DateTime(
+        occurrence.year,
+        occurrence.month,
+        occurrence.day,
+      ).difference(DateTime(today.year, today.month, today.day)).inDays;
   if (days == 0) return 'Today';
   if (days == 1) return 'Tomorrow';
   return 'In $days days';
@@ -93,13 +96,13 @@ class UpcomingRemindersSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     final filtered = upcomingReminders(reminders);
     if (filtered.isEmpty) return const SizedBox.shrink();
 
     final sorted = [...filtered]
-      ..sort(
-        (a, b) => nextOccurrence(a).compareTo(nextOccurrence(b)),
-      );
+      ..sort((a, b) => nextOccurrence(a).compareTo(nextOccurrence(b)));
 
     return ListView.builder(
       shrinkWrap: true,
@@ -108,7 +111,10 @@ class UpcomingRemindersSection extends StatelessWidget {
       itemBuilder: (context, index) {
         final reminder = sorted[index];
         return CardInkWell(
+          margin: EdgeInsets.only(bottom: Spacing.sm.h),
+
           child: InfoRowWidget(
+            iconColor: colorScheme.onBackground.withOpacity(.3),
             subtitle: _countdownLabel(nextOccurrence(reminder)),
             title: reminder.title,
             icon:
@@ -118,10 +124,15 @@ class UpcomingRemindersSection extends StatelessWidget {
             iconSize: 20.h,
             onTap:
                 onReminderTap == null ? null : () => onReminderTap!(reminder),
-            disableTrailing: true,
+
             showAvatar: false,
             showDivider: false,
             showTrailingArrow: false,
+            trailing: Icon(
+              color: colorScheme.primary,
+              FontAwesomeIcons.birthdayCake,
+              size: 25.h,
+            ),
           ),
         );
       },

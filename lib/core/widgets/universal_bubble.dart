@@ -70,6 +70,13 @@ class UniversalBubble extends StatefulWidget {
     this.quoteForegroundColor,
     this.quoteTextStyle,
     this.quoteIconSize = 20,
+    this.quoteAuthorLabel,
+    this.quoteAuthorIsMine,
+    this.quoteMineBorderColor,
+    this.quotePartnerBorderColor,
+    this.showShadow = false,
+    this.showCardBorder = false,
+    this.verticalPadding = 4,
   });
 
   /// True puts the bubble on the right, false on the left.
@@ -183,6 +190,64 @@ class UniversalBubble extends StatefulWidget {
   /// passes `30.h` to preserve its pre-refactor appearance exactly.
   final double quoteIconSize;
 
+  /// Optional label shown above the quoted text (e.g. "You" / a partner's
+  /// name) — who the quoted/replied-to message originally belonged to.
+  /// Null (the default) renders no label, preserving ForumPostBubble's
+  /// exact prior appearance; MessageBubble passes this to identify whose
+  /// message is being replied to.
+  final String? quoteAuthorLabel;
+
+  /// Who the quoted/replied-to message ORIGINALLY belonged to — true for
+  /// your own earlier message, false for your partner's, null when the
+  /// parent isn't loaded (so genuinely unknown, not guessed). Drives the
+  /// COLOR of a side bar on the quote block ([quoteMineBorderColor] when
+  /// true, [quotePartnerBorderColor] when false); the bar's SIDE instead
+  /// follows [isMine] — this bubble's own screen alignment — so a
+  /// partner's bubble always gets a left-side bar regardless of who's
+  /// quoted inside it, just tinted differently. Null (the default) renders
+  /// no side bar at all, preserving ForumPostBubble's exact prior
+  /// appearance.
+  final bool? quoteAuthorIsMine;
+
+  /// Side-border color when [quoteAuthorIsMine] is true. Defaults to
+  /// colorScheme.error (chat's "red for you" look) when null.
+  final Color? quoteMineBorderColor;
+
+  /// Side-border color when [quoteAuthorIsMine] is false. Defaults to
+  /// colorScheme.primary (chat's "primary for partner" look) when null.
+  final Color? quotePartnerBorderColor;
+
+  /// Adds a slight drop shadow to the bubble fill. Defaults to false so
+  /// ForumPostBubble (this widget's other caller) sees zero visual change —
+  /// MessageBubble opts in to match the composer's own floating-shadow look.
+  final bool showShadow;
+
+  /// Draws a subtle 1px outline around the bubble fill, matching
+  /// CardInkWell's own border look (colorScheme.outline at 10% opacity,
+  /// hairline width) — the shared "card" visual language used elsewhere in
+  /// the app. Defaults to false so ForumPostBubble sees zero visual
+  /// change; MessageBubble opts in. A real Card/InkWell isn't used
+  /// directly here since the bubble fill already carries its own
+  /// swipe-to-reply, swipe-to-reveal-actions, and long-press gestures —
+  /// wrapping it in InkWell would conflict with that GestureDetector
+  /// stack, so only the border/radius LOOK is borrowed, not the widget.
+  final bool showCardBorder;
+
+  /// Vertical space above and below the whole bubble row (outside the
+  /// fill), i.e. half the gap between two consecutive bubbles. Defaults to
+  /// 4 (the original fixed value, unconditionally used before this
+  /// parameter existed) so ForumPostBubble sees zero visual change.
+  /// MessageBubble passes a smaller value (0) for consecutive same-sender
+  /// messages so a grouped run of bubbles sits close together, like
+  /// WhatsApp/iMessage — the per-item Padding chat_screen.dart's list adds
+  /// between items only controls the gap on ONE side of each bubble; this
+  /// controls the bubble's own built-in gap on the OTHER side, which stays
+  /// fixed at 4 regardless of grouping unless this is also threaded
+  /// through, otherwise "no padding between them" is only half true (4px
+  /// of this widget's own padding remains even when the list item's own
+  /// extra gap is removed).
+  final double verticalPadding;
+
   @override
   State<UniversalBubble> createState() => _UniversalBubbleState();
 }
@@ -247,6 +312,97 @@ class _UniversalBubbleState extends State<UniversalBubble>
   /// old ActionPane's extentRatio: 0.25 did.
   final GlobalKey _bubbleRowKey = GlobalKey();
 
+  /// Color for the quote side bar AND its author label — red when the
+  /// quoted message is yours, primary (or the caller's override) when it's
+  /// your partner's. Shared by [_quoteWithSideBar] and both quote blocks'
+  /// author-label Text so the label always matches the bar beside it.
+  Color _quoteSideBarColor(BuildContext context, bool quoteAuthorIsMine) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return quoteAuthorIsMine
+        ? (widget.quoteMineBorderColor ?? colorScheme.error)
+        : (widget.quotePartnerBorderColor ?? colorScheme.primary);
+  }
+
+  /// The quote-mark icon, mirrored horizontally on your own bubble so it
+  /// visually "faces" the text column beside it — Icons.format_quote only
+  /// ships as a left-facing glyph, and on the mine side (icon leading,
+  /// text trailing) an unflipped icon reads backwards.
+  Widget _quoteIcon() {
+    final icon = Icon(
+      Icons.format_quote,
+      size: widget.quoteIconSize,
+      color: widget.quoteForegroundColor ?? widget.onBubbleColor,
+    );
+    if (!widget.isMine) return icon;
+    return Transform.flip(flipX: true, child: icon);
+  }
+
+  /// Quote block's own corner radius, squared off on whichever side the
+  /// side bar sits (see [_quoteWithSideBar]) so the bar reads as directly
+  /// attached to the block instead of a rounded block floating next to a
+  /// rounded bar. Only squares when a bar is actually rendered
+  /// ([widget.quoteAuthorIsMine] non-null) — with no bar, all 4 corners
+  /// stay rounded exactly as before.
+  BorderRadius _quoteBlockRadius() {
+    const radius = Radius.circular(8);
+    if (widget.quoteAuthorIsMine == null) return BorderRadius.circular(8);
+    return widget.isMine
+        ? const BorderRadius.only(topLeft: radius, bottomLeft: radius)
+        : const BorderRadius.only(topRight: radius, bottomRight: radius);
+  }
+
+  /// Wraps [quoteBlock] with a WhatsApp-style colored side bar. The SIDE
+  /// follows [widget.isMine] — this bubble's own screen alignment: right
+  /// for your own bubbles, left for your partner's. The COLOR follows
+  /// [quoteAuthorIsMine] — who originally wrote the quoted text: red if
+  /// you're being quoted, primary if your partner is. These are
+  /// deliberately independent: a partner's bubble (left side) quoting
+  /// YOUR message still gets a left-side bar, just in red — the bar always
+  /// sits on this bubble's own side, only its color changes.
+  ///
+  /// Returns [quoteBlock] unchanged when quoteAuthorIsMine is null
+  /// (ForumPostBubble, which never sets it, sees zero visual change).
+  ///
+  /// A real solid Container bar in a Row, not BoxDecoration's `border:` —
+  /// a single-side Border combined with a rounded borderRadius on the same
+  /// decoration is unreliable in Flutter (one side silently failed to
+  /// paint in practice here), where a plain colored widget always renders.
+  Widget _quoteWithSideBar(BuildContext context, Widget quoteBlock) {
+    final quoteAuthorIsMine = widget.quoteAuthorIsMine;
+    if (quoteAuthorIsMine == null) return quoteBlock;
+    final color = _quoteSideBarColor(context, quoteAuthorIsMine);
+    // Rounded on the outer edge only; the inner edge (against quoteBlock)
+    // stays square. quoteBlock's own touching corners are squared off too
+    // (see _quoteBlockRadius) so the two pieces meet as one continuous
+    // shape, the bar reading as directly attached to the block rather than
+    // a rounded rectangle floating next to another rounded rectangle.
+    const radius = Radius.circular(8);
+    final bar = Container(
+      width: 4,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius:
+            widget.isMine
+                ? const BorderRadius.only(topRight: radius, bottomRight: radius)
+                : const BorderRadius.only(topLeft: radius, bottomLeft: radius),
+      ),
+    );
+    // IntrinsicHeight (not CrossAxisAlignment.stretch, which demands
+    // infinite height from an unbounded parent like the Column above this)
+    // lets the bar match quoteBlock's own natural height without either
+    // side needing bounded constraints from outside.
+    return IntrinsicHeight(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children:
+            widget.isMine
+                ? [Flexible(child: quoteBlock), bar]
+                : [bar, Flexible(child: quoteBlock)],
+      ),
+    );
+  }
+
   /// Measures the revealed actions' own intrinsic width, so the reveal
   /// never collapses narrower than what the actions themselves need to be
   /// tappable — a short bubble's 25%-of-width reveal can otherwise be
@@ -300,40 +456,85 @@ class _UniversalBubbleState extends State<UniversalBubble>
           mainAxisSize: MainAxisSize.min,
           children: [
             if (widget.quotedText != null) ...[
-              IgnorePointer(
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color:
-                        widget.quoteBackgroundColor ??
-                        widget.onBubbleColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.format_quote,
-                        size: widget.quoteIconSize,
-                        color:
-                            widget.quoteForegroundColor ?? widget.onBubbleColor,
-                      ),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          widget.quotedText!,
-                          style:
-                              widget.quoteTextStyle ??
-                              TextStyle(
-                                color:
-                                    widget.quoteForegroundColor ??
-                                    widget.onBubbleColor,
-                                fontSize: 12,
+              _quoteWithSideBar(
+                context,
+                IgnorePointer(
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color:
+                          widget.quoteBackgroundColor ??
+                          widget.onBubbleColor.withValues(alpha: 0.15),
+                      borderRadius: _quoteBlockRadius(),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      // Icon sits at the container's OPPOSITE outer edge
+                      // from the side bar/author label: leading (before the
+                      // text column) for your own bubble (bar+label on the
+                      // right), trailing for the partner's (bar+label on
+                      // the left) — icon and text column pinned to
+                      // opposite ends of the row.
+                      children: [
+                        if (widget.isMine) ...[
+                          _quoteIcon(),
+                          const SizedBox(width: 4),
+                        ],
+                        Flexible(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (widget.quoteAuthorLabel != null)
+                                Align(
+                                  alignment:
+                                      widget.isMine
+                                          ? Alignment.centerRight
+                                          : Alignment.centerLeft,
+                                  child: Text(
+                                    widget.quoteAuthorLabel!,
+                                    style: (widget.quoteTextStyle ??
+                                            TextStyle(
+                                              color:
+                                                  widget.quoteForegroundColor ??
+                                                  widget.onBubbleColor,
+                                              fontSize: 12,
+                                            ))
+                                        .copyWith(
+                                          color:
+                                              widget.quoteAuthorIsMine == null
+                                                  ? null
+                                                  : _quoteSideBarColor(
+                                                    context,
+                                                    widget.quoteAuthorIsMine!,
+                                                  ),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                ),
+                              Text(
+                                widget.quotedText!,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style:
+                                    widget.quoteTextStyle ??
+                                    TextStyle(
+                                      color:
+                                          widget.quoteForegroundColor ??
+                                          widget.onBubbleColor,
+                                      fontSize: 12,
+                                    ),
                               ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                        if (!widget.isMine) ...[
+                          const SizedBox(width: 4),
+                          _quoteIcon(),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -555,7 +756,10 @@ class _UniversalBubbleState extends State<UniversalBubble>
     return Align(
       alignment: widget.isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: EdgeInsets.symmetric(
+          horizontal: 8,
+          vertical: widget.verticalPadding,
+        ),
         // Wired unconditionally: each direction has its own null-check
         // inside its handler (onReply for rightward, endActions for
         // leftward), so gating the recognizer on onReply alone would
@@ -755,6 +959,48 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                       decoration: BoxDecoration(
                                         color: widget.bubbleColor,
                                         borderRadius: BorderRadius.circular(18),
+                                        border:
+                                            widget.showCardBorder
+                                                ? Border.all(
+                                                  // Same values CardInkWell
+                                                  // itself uses.
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .outline
+                                                      .withValues(alpha: 0.1),
+                                                  width: 0.3,
+                                                )
+                                                : null,
+                                        // Same shadow SHAPE CardInkWell's own
+                                        // Card gets from ElevationTokens.xs
+                                        // (1dp) — Material's real umbra/
+                                        // penumbra/ambient stack (same
+                                        // offsets/blur/spread as
+                                        // kElevationToShadow[1]) — but each
+                                        // layer's alpha is halved, since the
+                                        // full-strength preset read heavier
+                                        // than wanted here.
+                                        boxShadow:
+                                            widget.showShadow
+                                                ? const [
+                                                  BoxShadow(
+                                                    offset: Offset(0, 2),
+                                                    blurRadius: 1,
+                                                    spreadRadius: -1,
+                                                    color: Color(0x1A000000),
+                                                  ),
+                                                  BoxShadow(
+                                                    offset: Offset(0, 1),
+                                                    blurRadius: 1,
+                                                    color: Color(0x12000000),
+                                                  ),
+                                                  BoxShadow(
+                                                    offset: Offset(0, 1),
+                                                    blurRadius: 3,
+                                                    color: Color(0x0F000000),
+                                                  ),
+                                                ]
+                                                : null,
                                       ),
                                       child: Padding(
                                         padding: const EdgeInsets.symmetric(
@@ -767,63 +1013,114 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             if (widget.quotedText != null) ...[
-                                              GestureDetector(
-                                                onTap: widget.onJumpToParent,
-                                                behavior:
-                                                    HitTestBehavior.opaque,
-                                                child: Container(
-                                                  padding: const EdgeInsets.all(
-                                                    6,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color:
-                                                        widget
-                                                            .quoteBackgroundColor ??
-                                                        widget.onBubbleColor
-                                                            .withValues(
-                                                              alpha: 0.15,
-                                                            ),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
-                                                  ),
-                                                  child: Row(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      Icon(
-                                                        Icons.format_quote,
-                                                        size:
-                                                            widget
-                                                                .quoteIconSize,
-                                                        color:
-                                                            widget
-                                                                .quoteForegroundColor ??
-                                                            widget
-                                                                .onBubbleColor,
-                                                      ),
-                                                      const SizedBox(width: 4),
-                                                      Flexible(
-                                                        child: Text(
-                                                          widget.quotedText!,
-                                                          style:
-                                                              widget
-                                                                  .quoteTextStyle ??
-                                                              TextStyle(
-                                                                color:
-                                                                    widget
-                                                                        .quoteForegroundColor ??
-                                                                    widget
-                                                                        .onBubbleColor,
-                                                                fontSize: 12,
+                                              _quoteWithSideBar(
+                                                context,
+                                                GestureDetector(
+                                                  onTap: widget.onJumpToParent,
+                                                  behavior:
+                                                      HitTestBehavior.opaque,
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.all(6),
+                                                    decoration: BoxDecoration(
+                                                      color:
+                                                          widget
+                                                              .quoteBackgroundColor ??
+                                                          widget.onBubbleColor
+                                                              .withValues(
+                                                                alpha: 0.15,
                                                               ),
+                                                      borderRadius:
+                                                          _quoteBlockRadius(),
+                                                    ),
+                                                    child: Row(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        if (widget.isMine) ...[
+                                                          _quoteIcon(),
+                                                          const SizedBox(
+                                                            width: 4,
+                                                          ),
+                                                        ],
+                                                        Flexible(
+                                                          child: Column(
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment
+                                                                    .start,
+                                                            mainAxisSize:
+                                                                MainAxisSize
+                                                                    .min,
+                                                            children: [
+                                                              if (widget
+                                                                      .quoteAuthorLabel !=
+                                                                  null)
+                                                                Align(
+                                                                  alignment:
+                                                                      widget.isMine
+                                                                          ? Alignment
+                                                                              .centerRight
+                                                                          : Alignment
+                                                                              .centerLeft,
+                                                                  child: Text(
+                                                                    widget
+                                                                        .quoteAuthorLabel!,
+                                                                    style: (widget.quoteTextStyle ??
+                                                                            TextStyle(
+                                                                              color:
+                                                                                  widget.quoteForegroundColor ??
+                                                                                  widget.onBubbleColor,
+                                                                              fontSize:
+                                                                                  12,
+                                                                            ))
+                                                                        .copyWith(
+                                                                          color:
+                                                                              widget.quoteAuthorIsMine ==
+                                                                                      null
+                                                                                  ? null
+                                                                                  : _quoteSideBarColor(
+                                                                                    context,
+                                                                                    widget.quoteAuthorIsMine!,
+                                                                                  ),
+                                                                          fontWeight:
+                                                                              FontWeight.w600,
+                                                                        ),
+                                                                  ),
+                                                                ),
+                                                              Text(
+                                                                widget
+                                                                    .quotedText!,
+                                                                maxLines: 2,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                                style:
+                                                                    widget
+                                                                        .quoteTextStyle ??
+                                                                    TextStyle(
+                                                                      color:
+                                                                          widget
+                                                                              .quoteForegroundColor ??
+                                                                          widget
+                                                                              .onBubbleColor,
+                                                                      fontSize:
+                                                                          12,
+                                                                    ),
+                                                              ),
+                                                            ],
+                                                          ),
                                                         ),
-                                                      ),
-                                                    ],
+                                                        if (!widget.isMine) ...[
+                                                          const SizedBox(
+                                                            width: 4,
+                                                          ),
+                                                          _quoteIcon(),
+                                                        ],
+                                                      ],
+                                                    ),
                                                   ),
                                                 ),
                                               ),

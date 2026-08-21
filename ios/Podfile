@@ -1,3 +1,5 @@
+source 'https://github.com/CocoaPods/Specs.git'
+
 platform :ios, '14.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
@@ -38,6 +40,28 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    # flutter_native_splash (pinned at 2.4.4 — later versions need a newer
+    # `meta` than this project's Flutter SDK provides, see pubspec.yaml) and
+    # geocoding_ios ship PrivacyInfo.xcprivacy as a plain source file rather
+    # than through a proper resource bundle. Recent Xcode/SDK build systems
+    # (confirmed on iphonesimulator26.1) refuse to "compile" that XML file
+    # for any architecture, failing with "no rule to process file ... of
+    # type 'text.xml'". Move it out of Compile Sources into Resources on
+    # every target that has it, matching the fix Apple's own privacy-manifest
+    # tooling expects. Only PBXNativeTarget has source/resources build
+    # phases — pods_project.targets also includes PBXAggregateTarget
+    # entries (e.g. resource-bundle-only targets), which don't.
+    if target.respond_to?(:source_build_phase) && target.respond_to?(:resources_build_phase)
+      target.source_build_phase.files.each do |build_file|
+        file_ref = build_file.file_ref
+        next unless file_ref && file_ref.path && file_ref.path.end_with?('PrivacyInfo.xcprivacy')
+
+        target.source_build_phase.remove_file_reference(file_ref)
+        target.resources_build_phase.add_file_reference(file_ref) unless
+          target.resources_build_phase.files_references.include?(file_ref)
+      end
+    end
 
     # Keep embedded plugin framework versions from tripping App Store Connect's
     # bundle-version validation against the app's released version train.

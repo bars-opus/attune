@@ -8,9 +8,10 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 
 /// Full-screen trim UI shown unconditionally after every gallery video pick,
 /// before ChatVideoPreparer.prepare() runs, so the transcode encodes exactly
-/// the range the user selects. Pushed via Navigator.push, not a GoRouter
-/// route — mirrors how other modal chat media UI is already pushed, and
-/// ensures this screen never appears in deep links.
+/// the range the user selects. Reached via the 'videoTrim' named route
+/// (registered in app_router.dart), which takes a VideoTrimRouteArgs via
+/// `extra` and returns the confirmed {start, end} window as a typed pop
+/// result — null means the user backed out.
 ///
 /// Selection is physically clamped to
 /// [ChatVideoPreparer.minDuration, ChatVideoPreparer.maxDuration] by the
@@ -68,11 +69,14 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
     try {
       final controller = VideoPlayerController.file(File(widget.sourcePath));
       _controller = controller;
-      controller.initialize().then((_) {
-        if (mounted) setState(() {});
-      }).catchError((_) {
-        if (mounted) setState(() => _controllerFailed = true);
-      });
+      controller
+          .initialize()
+          .then((_) {
+            if (mounted) setState(() {});
+          })
+          .catchError((_) {
+            if (mounted) setState(() => _controllerFailed = true);
+          });
     } catch (_) {
       _controllerFailed = true;
     }
@@ -85,9 +89,10 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
     final frames = List<Uint8List?>.filled(_filmstripFrameCount, null);
     final totalMicros = widget.sourceDuration.inMicroseconds;
     for (var i = 0; i < _filmstripFrameCount; i++) {
-      final atMicros = totalMicros <= 0
-          ? 0
-          : (totalMicros * i / _filmstripFrameCount).round();
+      final atMicros =
+          totalMicros <= 0
+              ? 0
+              : (totalMicros * i / _filmstripFrameCount).round();
       try {
         frames[i] = await VideoThumbnail.thumbnailData(
           video: widget.sourcePath,
@@ -156,17 +161,17 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
     });
   }
 
-  void _handleDragDelta(double dxMicrosPerPixel, double dx, {required bool isStart}) {
+  void _handleDragDelta(
+    double dxMicrosPerPixel,
+    double dx, {
+    required bool isStart,
+  }) {
     final deltaMicros = (dx * dxMicrosPerPixel).round();
     if (deltaMicros == 0) return;
     if (isStart) {
-      _onStartHandleChanged(
-        _windowStart + Duration(microseconds: deltaMicros),
-      );
+      _onStartHandleChanged(_windowStart + Duration(microseconds: deltaMicros));
     } else {
-      _onEndHandleChanged(
-        _windowEnd + Duration(microseconds: deltaMicros),
-      );
+      _onEndHandleChanged(_windowEnd + Duration(microseconds: deltaMicros));
     }
   }
 
@@ -179,22 +184,23 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
         child: Column(
           children: [
             Expanded(
-              child: _controller?.value.isInitialized == true
-                  ? AspectRatio(
-                      aspectRatio: _controller!.value.aspectRatio,
-                      child: VideoPlayer(_controller!),
-                    )
-                  : _controllerFailed
+              child:
+                  _controller?.value.isInitialized == true
+                      ? AspectRatio(
+                        aspectRatio: _controller!.value.aspectRatio,
+                        child: VideoPlayer(_controller!),
+                      )
+                      : _controllerFailed
                       ? ColoredBox(
-                          color: colorScheme.surfaceContainerHighest,
-                          child: Center(
-                            child: Icon(
-                              Icons.movie_outlined,
-                              size: 48,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
+                        color: colorScheme.surfaceContainerHighest,
+                        child: Center(
+                          child: Icon(
+                            Icons.movie_outlined,
+                            size: 48,
+                            color: colorScheme.onSurfaceVariant,
                           ),
-                        )
+                        ),
+                      )
                       : const Center(child: CircularProgressIndicator()),
             ),
             Padding(
@@ -216,8 +222,10 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                   final totalMicros = widget.sourceDuration.inMicroseconds
                       .clamp(1, double.maxFinite.toInt());
                   final microsPerPixel = totalMicros / trackWidth;
-                  final startX = _windowStart.inMicroseconds / totalMicros * trackWidth;
-                  final endX = _windowEnd.inMicroseconds / totalMicros * trackWidth;
+                  final startX =
+                      _windowStart.inMicroseconds / totalMicros * trackWidth;
+                  final endX =
+                      _windowEnd.inMicroseconds / totalMicros * trackWidth;
 
                   return SizedBox(
                     height: 64,
@@ -231,19 +239,24 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                               borderRadius: BorderRadiusTokens.mdAll,
                             ),
                             child: Row(
-                              children: List.generate(_filmstripFrameCount, (i) {
+                              children: List.generate(_filmstripFrameCount, (
+                                i,
+                              ) {
                                 final frame = _filmstripFrames?[i];
                                 return Expanded(
-                                  child: frame != null
-                                      ? Image.memory(
-                                          frame,
-                                          fit: BoxFit.cover,
-                                          height: 64,
-                                          gaplessPlayback: true,
-                                        )
-                                      : Container(
-                                          color: colorScheme.surfaceContainerHighest,
-                                        ),
+                                  child:
+                                      frame != null
+                                          ? Image.memory(
+                                            frame,
+                                            fit: BoxFit.cover,
+                                            height: 64,
+                                            gaplessPlayback: true,
+                                          )
+                                          : Container(
+                                            color:
+                                                colorScheme
+                                                    .surfaceContainerHighest,
+                                          ),
                                 );
                               }),
                             ),
@@ -255,14 +268,18 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                           top: 0,
                           bottom: 0,
                           width: startX.clamp(0, trackWidth),
-                          child: ColoredBox(color: colorScheme.scrim.withValues(alpha: 0.55)),
+                          child: ColoredBox(
+                            color: colorScheme.scrim.withValues(alpha: 0.55),
+                          ),
                         ),
                         Positioned(
                           left: endX.clamp(0, trackWidth),
                           right: 0,
                           top: 0,
                           bottom: 0,
-                          child: ColoredBox(color: colorScheme.scrim.withValues(alpha: 0.55)),
+                          child: ColoredBox(
+                            color: colorScheme.scrim.withValues(alpha: 0.55),
+                          ),
                         ),
                         // Selection border.
                         Positioned(
@@ -274,8 +291,14 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                             child: Container(
                               decoration: BoxDecoration(
                                 border: Border(
-                                  top: BorderSide(color: colorScheme.primary, width: 3),
-                                  bottom: BorderSide(color: colorScheme.primary, width: 3),
+                                  top: BorderSide(
+                                    color: colorScheme.primary,
+                                    width: 3,
+                                  ),
+                                  bottom: BorderSide(
+                                    color: colorScheme.primary,
+                                    width: 3,
+                                  ),
                                 ),
                               ),
                             ),
@@ -289,11 +312,12 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                           width: 48,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onHorizontalDragUpdate: (details) => _handleDragDelta(
-                              microsPerPixel,
-                              details.delta.dx,
-                              isStart: true,
-                            ),
+                            onHorizontalDragUpdate:
+                                (details) => _handleDragDelta(
+                                  microsPerPixel,
+                                  details.delta.dx,
+                                  isStart: true,
+                                ),
                             child: Center(
                               child: Container(
                                 width: 4,
@@ -314,11 +338,12 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                           width: 48,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onHorizontalDragUpdate: (details) => _handleDragDelta(
-                              microsPerPixel,
-                              details.delta.dx,
-                              isStart: false,
-                            ),
+                            onHorizontalDragUpdate:
+                                (details) => _handleDragDelta(
+                                  microsPerPixel,
+                                  details.delta.dx,
+                                  isStart: false,
+                                ),
                             child: Center(
                               child: Container(
                                 width: 4,
@@ -342,12 +367,13 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: _canConfirm
-                      ? () => Navigator.of(context).pop((
+                  onPressed:
+                      _canConfirm
+                          ? () => context.pop((
                             start: _windowStart,
                             end: _windowEnd,
                           ))
-                      : null,
+                          : null,
                   child: const Text('Use this clip'),
                 ),
               ),

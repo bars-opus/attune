@@ -83,9 +83,10 @@ class Message {
       mediaType: row['media_type'] as String?,
       mediaThumbnailKey: row['media_thumbnail_url'] as String?,
       mediaDurationMs: (row['media_duration_ms'] as num?)?.toInt(),
-      waveform: (row['media_waveform'] as List<dynamic>?)
-          ?.map((e) => (e as num).toInt())
-          .toList(),
+      waveform:
+          (row['media_waveform'] as List<dynamic>?)
+              ?.map((e) => (e as num).toInt())
+              .toList(),
       mediaWidth: (row['media_width'] as num?)?.toInt(),
       mediaHeight: (row['media_height'] as num?)?.toInt(),
       isViewOnce: (row['is_view_once'] as bool?) ?? false,
@@ -257,9 +258,10 @@ class Message {
       mediaType: json['mediaType'] as String?,
       mediaThumbnailKey: json['mediaThumbnailKey'] as String?,
       mediaDurationMs: (json['mediaDurationMs'] as num?)?.toInt(),
-      waveform: (json['waveform'] as List<dynamic>?)
-          ?.map((e) => (e as num).toInt())
-          .toList(),
+      waveform:
+          (json['waveform'] as List<dynamic>?)
+              ?.map((e) => (e as num).toInt())
+              .toList(),
       mediaWidth: (json['mediaWidth'] as num?)?.toInt(),
       mediaHeight: (json['mediaHeight'] as num?)?.toInt(),
       isViewOnce: (json['isViewOnce'] as bool?) ?? false,
@@ -274,7 +276,8 @@ class Message {
       isMine: json['isMine'] as bool,
       replyToMessageId: json['replyToMessageId'] as String?,
       quotedText: json['quotedText'] as String?,
-      reactions: (json['reactions'] as Map<String, dynamic>?)?.map(
+      reactions:
+          (json['reactions'] as Map<String, dynamic>?)?.map(
             (emoji, ids) => MapEntry(
               emoji,
               (ids as List<dynamic>).map((e) => e as String).toSet(),
@@ -284,15 +287,24 @@ class Message {
     );
   }
 
+  // True whenever we know what this media IS — mediaKey (the stable
+  // storage path) alone is sufficient, same as an already-resolved
+  // signedMediaUrl or a client-local file. NOT gated on requiring
+  // signedMediaUrl/localMediaPath specifically: a locally-restored (cached)
+  // message has mediaKey but no signedMediaUrl yet — requiring the URL made
+  // every cached media message flash "Unsupported message" before
+  // ChatController's hydration pass re-signed it moments later. Resolving a
+  // URL from mediaKey is the rendering widget's job (see
+  // signedMediaUrlProvider), not a precondition for recognizing the type.
   bool get hasImage =>
       mediaType == 'image' &&
-      (signedMediaUrl != null || localMediaPath != null);
+      (mediaKey != null || signedMediaUrl != null || localMediaPath != null);
   bool get hasAudio =>
       mediaType == 'audio' &&
-      (signedMediaUrl != null || localMediaPath != null);
+      (mediaKey != null || signedMediaUrl != null || localMediaPath != null);
   bool get hasVideo =>
       mediaType == 'video' &&
-      (signedMediaUrl != null || localMediaPath != null);
+      (mediaKey != null || signedMediaUrl != null || localMediaPath != null);
   bool get isEphemeralVideoAvailable =>
       isViewOnce &&
       viewedAt == null &&

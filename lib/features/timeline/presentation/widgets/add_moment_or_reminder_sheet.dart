@@ -9,32 +9,43 @@ enum AddChoice { moment, reminder }
 /// FAB and a choice between the two existing, unmodified flows.
 class AddMomentOrReminderSheet {
   static Future<AddChoice?> show(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return showModalBottomSheet<AddChoice>(
       context: context,
       isScrollControlled: true,
       builder: (context) {
         return SafeArea(
           child: Padding(
-            padding: EdgeInsets.symmetric(vertical: Spacing.md.h),
+            padding: EdgeInsets.all(Spacing.md.h),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                Gap(Spacing.md),
                 InfoRowWidget(
                   title: 'Log a moment',
                   subtitle: 'A milestone, conflict, highlight...',
                   icon: Icons.auto_awesome_outlined,
-                  disableTrailing: true,
                   showAvatar: false,
                   showDivider: false,
                   showTrailingArrow: false,
+                  trailing: Icon(
+                    Icons.add,
+                    size: 25.h,
+                    color: colorScheme.onBackground.withOpacity(.5),
+                  ),
                   onTap: () => Navigator.of(context).pop(AddChoice.moment),
                 ),
+                AppDivider(),
                 InfoRowWidget(
                   title: 'Add a reminder',
                   subtitle: 'Anniversary, birthday, or any date',
                   icon: Icons.event_outlined,
-                  disableTrailing: true,
                   showAvatar: false,
+                  trailing: Icon(
+                    Icons.add,
+                    size: 25.h,
+                    color: colorScheme.onBackground.withOpacity(.5),
+                  ),
                   showDivider: false,
                   showTrailingArrow: false,
                   onTap: () => Navigator.of(context).pop(AddChoice.reminder),

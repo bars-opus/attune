@@ -7,69 +7,78 @@ class LogMomentTypeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
 
     return Scaffold(
+      backgroundColor: colorScheme.neutral,
       appBar: AppBar(
-        title: const Text('Log a moment'),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.pop(context),
-        ),
+        backgroundColor: Colors.transparent,
+        automaticallyImplyLeading: true,
       ),
       body: Padding(
         padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: ListView(
           children: [
-            Text(
-              'What kind of moment is this?',
-              style: textTheme.headlineSmall,
+            // Text(
+            //   'What kind of moment is this?',
+            //   style: textTheme.headlineSmall,
+            // ),
+            SemanticContainerWidget(
+              content: 'What kind of moment is this?',
+              icon: Icons.auto_awesome_outlined,
+              isSkeleton: true,
+              title: 'Log a moment',
+              backgroundColor: colorScheme.primary.withOpacity(0.1),
+              borderColor: colorScheme.primary,
+              iconColor: colorScheme.primary,
+              textTheme: textTheme,
             ),
             Gap(Spacing.lg.h),
-            GridView.count(
-              shrinkWrap: true,
-              crossAxisCount: 2,
-              mainAxisSpacing: Spacing.md.h,
-              crossAxisSpacing: Spacing.md.w,
-              childAspectRatio: 1.2,
-              children: [
-                _buildTypeCard(
-                  context,
-                  type: 'milestone',
-                  icon: Icons.emoji_events_outlined,
-                  label: 'Milestone',
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                _buildTypeCard(
-                  context,
-                  type: 'highlight',
-                  icon: Icons.favorite_outline,
-                  label: 'Highlight',
-                  color: Colors.amber,
-                ),
-                _buildTypeCard(
-                  context,
-                  type: 'conflict',
-                  icon: Icons.flash_on_outlined,
-                  label: 'Conflict',
-                  color: Colors.red,
-                ),
-                _buildTypeCard(
-                  context,
-                  type: 'first',
-                  icon: Icons.star_outline,
-                  label: 'First',
-                  color: Colors.purple,
-                ),
-                _buildTypeCard(
-                  context,
-                  type: 'anniversary',
-                  icon: Icons.cake_outlined,
-                  label: 'Anniversary',
-                  color: Colors.pink,
-                ),
-              ],
+            // ListView(
+            // shrinkWrap: true,
+            // crossAxisCount: 2,
+            // mainAxisSpacing: Spacing.md.h,
+            // crossAxisSpacing: Spacing.md.w,
+            // childAspectRatio: 1.2,
+            // children: [
+            _buildTypeCard(
+              context,
+              type: 'milestone',
+              icon: Icons.emoji_events_outlined,
+              label: 'Milestone',
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            _buildTypeCard(
+              context,
+              type: 'highlight',
+              icon: Icons.favorite_outline,
+              label: 'Highlight',
+              color: Colors.amber,
+            ),
+            _buildTypeCard(
+              context,
+              type: 'conflict',
+              icon: Icons.flash_on_outlined,
+              label: 'Conflict',
+              color: Colors.red,
+            ),
+            _buildTypeCard(
+              context,
+              type: 'first',
+              icon: Icons.star_outline,
+              label: 'First',
+              color: Colors.purple,
+            ),
+            _buildTypeCard(
+              context,
+              type: 'anniversary',
+              icon: Icons.cake_outlined,
+              label: 'Anniversary',
+              color: Colors.pink,
+              //   ),
+              // ],
             ),
           ],
         ),
@@ -84,36 +93,35 @@ class LogMomentTypeScreen extends StatelessWidget {
     required String label,
     required Color color,
   }) {
-    return GestureDetector(
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return CardInkWell(
+      elevation: 0,
+      color: color.withOpacity(.3),
       onTap: () {
         context.pushNamed(
           'logMomentDetails',
           extra: (eventType: type, editEventId: null, initialData: null),
         );
       },
-      child: Container(
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-          border: Border.all(
-            color: color.withOpacity(0.3),
-            width: BorderWidthTokens.hairline,
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 40, color: color),
-            Gap(Spacing.sm.h),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
+      child: InfoRowWidget(
+        title: label,
+        subtitle: '',
+        backgroundColor: colorScheme.background,
+        iconColor: color,
+
+        // titleFontColor: colorScheme.background,
+        icon: icon,
+        showAvatar: true,
+        showDivider: false,
+        showTrailingArrow: true,
+
+        onTap: () {
+          context.pushNamed(
+            'logMomentDetails',
+            extra: (eventType: type, editEventId: null, initialData: null),
+          );
+        },
       ),
     );
   }

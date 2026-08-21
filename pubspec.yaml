@@ -59,7 +59,7 @@ dependencies:
   flutter_image_compress: ^2.1.0
   path_provider: ^2.1.1
   geolocator: ^11.0.0  
-  geocoding: ^3.0.0
+  geocoding: ^4.0.0
   flutter_native_timezone: ^2.0.0
   table_calendar: ^3.0.9
   flutter_secure_storage: ^9.0.0
@@ -76,7 +76,7 @@ dependencies:
   flutter_animate: ^4.5.0
   vibration: ^1.8.4
   audioplayers: ^6.1.0
-  record: ^5.1.0
+  record: ^6.0.0
   video_player: ^2.9.0
   video_thumbnail: ^0.5.3
   video_compress: ^3.1.2
@@ -94,7 +94,7 @@ dependencies:
   share_plus: ^7.0.0
   qr_flutter: ^4.1.0
   webview_flutter: ^4.4.0
-  onesignal_flutter: ^5.1.0
+  onesignal_flutter: 5.5.1
   app_links: ^6.0.0
   rename: ^2.0.1
   phone_numbers_parser: ^9.0.23

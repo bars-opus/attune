@@ -28,13 +28,22 @@ import 'package:attune/features/forums/presentation/screens/debate_room_screen.d
 import 'package:attune/features/forums/presentation/screens/forum_insight_screen.dart';
 import 'package:attune/features/forums/presentation/screens/side_selection_screen.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
+import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/screens/chat_channel_loader.dart';
 import 'package:attune/features/chat/presentation/screens/chat_import_screen.dart';
 import 'package:attune/features/chat/presentation/screens/chat_insights_screen.dart';
+import 'package:attune/features/chat/presentation/screens/chat_media_screen.dart';
+import 'package:attune/features/chat/presentation/screens/chat_message_search_screen.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
 import 'package:attune/features/chat/presentation/screens/chat_settings_screen.dart';
+import 'package:attune/features/chat/presentation/screens/ephemeral_camera_screen.dart';
+import 'package:attune/features/chat/presentation/screens/ephemeral_video_viewer_screen.dart';
+import 'package:attune/features/chat/presentation/screens/image_caption_screen.dart';
+import 'package:attune/features/chat/presentation/screens/image_viewer_screen.dart';
 import 'package:attune/features/chat/presentation/screens/previous_relationships_screen.dart';
 import 'package:attune/features/chat/presentation/screens/starred_messages_screen.dart';
+import 'package:attune/features/chat/presentation/screens/video_trim_screen.dart';
+import 'package:attune/features/chat/presentation/screens/video_viewer_screen.dart';
 import 'package:attune/features/healing/presentation/screens/healing_journey_screen.dart';
 import 'package:attune/features/reflection_journal/presentation/screens/journal_entry_compose_screen.dart';
 import 'package:attune/features/reflection_journal/presentation/screens/journal_entry_detail_screen.dart';
@@ -136,6 +145,14 @@ class RouteNames {
   static const String previousRelationships = '/previous-relationships';
   static const String starredMessages = '/starred-messages';
   static const String chatSettings = '/chat-settings';
+  static const String chatMedia = '/chat-media';
+  static const String chatMessageSearch = '/chat-message-search';
+  static const String imageCaption = '/image-caption';
+  static const String videoTrim = '/video-trim';
+  static const String ephemeralCamera = '/ephemeral-camera';
+  static const String imageViewer = '/image-viewer';
+  static const String videoViewer = '/video-viewer';
+  static const String ephemeralVideoViewer = '/ephemeral-video-viewer';
   static const String editScreen = '/editScreen';
   static const String createUsername = '/createUsername';
   static const String verifyEmail = '/verifyEmail';
@@ -277,6 +294,53 @@ class RouteNames {
   static const String notificationInbox = '/notificationInbox';
 }
 
+/// GoRouter's `extra` carries exactly one object per route — these small
+/// wrapper classes bundle multi-argument screens' params into one object
+/// for routes that need more than a single Conversation/String, following
+/// the same state.extra pattern every other route below already uses.
+
+class VideoTrimRouteArgs {
+  const VideoTrimRouteArgs({
+    required this.sourcePath,
+    required this.sourceDuration,
+  });
+
+  final String sourcePath;
+  final Duration sourceDuration;
+}
+
+class ImageViewerRouteArgs {
+  const ImageViewerRouteArgs({
+    required this.images,
+    required this.initialIndex,
+  });
+
+  final List<Message> images;
+  final int initialIndex;
+}
+
+class VideoViewerRouteArgs {
+  const VideoViewerRouteArgs({
+    required this.videos,
+    required this.initialIndex,
+  });
+
+  final List<Message> videos;
+  final int initialIndex;
+}
+
+class EphemeralVideoViewerRouteArgs {
+  const EphemeralVideoViewerRouteArgs({
+    required this.messageId,
+    required this.videoUrl,
+    required this.conversation,
+  });
+
+  final String messageId;
+  final String videoUrl;
+  final Conversation conversation;
+}
+
 /// Lets code with no widget BuildContext of its own (e.g. a push
 /// notification tap arriving from the OS, which has no guaranteed
 /// context) still navigate. Read via appNavigatorKey.currentContext,
@@ -305,8 +369,7 @@ Future<BuildContext?> waitForRouterSettled() async {
     final context = appNavigatorKey.currentContext;
     if (context == null || !context.mounted) continue;
     final location =
-        GoRouter.of(context).routerDelegate.currentConfiguration.uri
-            .toString();
+        GoRouter.of(context).routerDelegate.currentConfiguration.uri.toString();
     if (location.isNotEmpty && location != '/_invisible') {
       return context;
     }
@@ -1302,6 +1365,123 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
             );
           }
           return ChatSettingsScreen(conversation: conversation);
+        },
+      ),
+      GoRoute(
+        path: RouteNames.chatMedia,
+        name: 'chatMedia',
+        builder: (context, state) {
+          final conversation = state.extra as Conversation?;
+          if (conversation == null) {
+            return const Scaffold(
+              body: Center(child: Text('Conversation unavailable.')),
+            );
+          }
+          return ChatMediaScreen(conversation: conversation);
+        },
+      ),
+      GoRoute(
+        path: RouteNames.chatMessageSearch,
+        name: 'chatMessageSearch',
+        builder: (context, state) {
+          final conversation = state.extra as Conversation?;
+          if (conversation == null) {
+            return const Scaffold(
+              body: Center(child: Text('Conversation unavailable.')),
+            );
+          }
+          return ChatMessageSearchScreen(conversation: conversation);
+        },
+      ),
+      GoRoute(
+        path: RouteNames.imageCaption,
+        name: 'imageCaption',
+        builder: (context, state) {
+          final imagePath = state.extra as String?;
+          if (imagePath == null) {
+            return const Scaffold(
+              body: Center(child: Text('Image unavailable.')),
+            );
+          }
+          return ImageCaptionScreen(imagePath: imagePath);
+        },
+      ),
+      GoRoute(
+        path: RouteNames.videoTrim,
+        name: 'videoTrim',
+        builder: (context, state) {
+          final args = state.extra as VideoTrimRouteArgs?;
+          if (args == null) {
+            return const Scaffold(
+              body: Center(child: Text('Video unavailable.')),
+            );
+          }
+          return VideoTrimScreen(
+            sourcePath: args.sourcePath,
+            sourceDuration: args.sourceDuration,
+          );
+        },
+      ),
+      GoRoute(
+        path: RouteNames.ephemeralCamera,
+        name: 'ephemeralCamera',
+        builder: (context, state) {
+          final conversation = state.extra as Conversation?;
+          if (conversation == null) {
+            return const Scaffold(
+              body: Center(child: Text('Conversation unavailable.')),
+            );
+          }
+          return EphemeralCameraScreen(conversation: conversation);
+        },
+      ),
+      GoRoute(
+        path: RouteNames.imageViewer,
+        name: 'imageViewer',
+        builder: (context, state) {
+          final args = state.extra as ImageViewerRouteArgs?;
+          if (args == null) {
+            return const Scaffold(
+              body: Center(child: Text('Images unavailable.')),
+            );
+          }
+          return ImageViewerScreen(
+            images: args.images,
+            initialIndex: args.initialIndex,
+          );
+        },
+      ),
+      GoRoute(
+        path: RouteNames.videoViewer,
+        name: 'videoViewer',
+        builder: (context, state) {
+          final args = state.extra as VideoViewerRouteArgs?;
+          if (args == null) {
+            return const Scaffold(
+              body: Center(child: Text('Videos unavailable.')),
+            );
+          }
+          return VideoViewerScreen(
+            videos: args.videos,
+            initialIndex: args.initialIndex,
+          );
+        },
+      ),
+      GoRoute(
+        path: RouteNames.ephemeralVideoViewer,
+        name: 'ephemeralVideoViewer',
+        builder: (context, state) {
+          final args = state.extra as EphemeralVideoViewerRouteArgs?;
+          if (args == null) {
+            return const Scaffold(
+              body: Center(child: Text('Video unavailable.')),
+            );
+          }
+          return EphemeralVideoViewerScreen(
+            messageId: args.messageId,
+            videoUrl: args.videoUrl,
+            conversation: args.conversation,
+          );
         },
       ),
       GoRoute(

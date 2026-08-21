@@ -23,7 +23,12 @@ class MomentsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (events.isEmpty) {
-      return _buildEmptyState(context);
+      return EmptyStateWidget(
+        icon: Icons.calendar_today_outlined,
+        title: 'Your relationship story starts here.',
+        subtitle:
+            'Log your first moment — a milestone,\na highlight, or even a conflict you\nworked through together.',
+      );
     }
 
     // Group events by month
@@ -37,12 +42,12 @@ class MomentsList extends StatelessWidget {
     }
 
     // Sort months descending (newest first)
-    final sortedMonths = groupedEvents.keys.toList()
-      ..sort((a, b) {
-        final dateA = DateFormat('MMMM yyyy').parse(a);
-        final dateB = DateFormat('MMMM yyyy').parse(b);
-        return dateB.compareTo(dateA);
-      });
+    final sortedMonths =
+        groupedEvents.keys.toList()..sort((a, b) {
+          final dateA = DateFormat('MMMM yyyy').parse(a);
+          final dateB = DateFormat('MMMM yyyy').parse(b);
+          return dateB.compareTo(dateA);
+        });
 
     return ListView.builder(
       shrinkWrap: true,
@@ -51,7 +56,7 @@ class MomentsList extends StatelessWidget {
       itemBuilder: (context, index) {
         final month = sortedMonths[index];
         final monthEvents = groupedEvents[month]!;
-        
+
         // Sort events within month by date (newest first)
         monthEvents.sort((a, b) => b.occurredAt.compareTo(a.occurredAt));
 
@@ -63,62 +68,26 @@ class MomentsList extends StatelessWidget {
               padding: EdgeInsets.only(bottom: Spacing.md.h),
               child: Text(
                 month,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+            ...monthEvents.map(
+              (event) => Padding(
+                padding: EdgeInsets.only(bottom: Spacing.sm.h),
+                child: MomentCard(
+                  event: event,
+                  currentUserId: currentUserId,
+                  currentMonth: currentMonth,
                 ),
               ),
             ),
-            ...monthEvents.map((event) => Padding(
-              padding: EdgeInsets.only(bottom: Spacing.sm.h),
-              child: MomentCard(
-                event: event,
-                currentUserId: currentUserId,
-                currentMonth: currentMonth,
-              ),
-            )),
           ],
         );
       },
     );
   }
 
-  Widget _buildEmptyState(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
 
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.calendar_today_outlined,
-            size: 48,
-            color: colorScheme.onSurface.withOpacity(0.3),
-          ),
-          Gap(Spacing.md.h),
-          Text(
-            'Your relationship story starts here.',
-            style: textTheme.titleMedium,
-            textAlign: TextAlign.center,
-          ),
-          Gap(Spacing.sm.h),
-          Text(
-            'Log your first moment — a milestone,\na highlight, or even a conflict you\nworked through together.',
-            style: textTheme.bodyMedium,
-            textAlign: TextAlign.center,
-          ),
-          Gap(Spacing.lg.h),
-          ElevatedButton.icon(
-            onPressed: () {
-              // Navigate to log moment flow
-              // This will be handled by the parent screen
-              onDateSelected(DateTime.now());
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Log your first moment'),
-          ),
-        ],
-      ),
-    );
-  }
 }

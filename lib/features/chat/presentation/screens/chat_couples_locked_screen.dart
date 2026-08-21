@@ -664,7 +664,7 @@ class _StackedInviteAvatars extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+  
 
     return SizedBox(
       width: _avatarSize + _xOffset,

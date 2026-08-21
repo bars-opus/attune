@@ -276,7 +276,7 @@ class InfoRowWidget extends StatelessWidget {
     this.subTitleFontColor,
     this.isNotAvatarImage = false,
     this.pinAvatar = true,
-    this.padAvatarTop = true,
+    this.padAvatarTop = false,
     this.bottomWidget,
   }) : assert(
          // Either icon or imageUrl must be provided for visual identity

@@ -42,6 +42,7 @@ abstract class ChatRepository {
     required String senderId,
     required String clientMessageId,
   });
+
   /// Requests a one-time upload slot in the shared message-media bucket for
   /// either an image or an audio (voice message) attachment. [mediaType]
   /// must be 'image' or 'audio' — the server independently enforces both
@@ -98,6 +99,26 @@ abstract class ChatRepository {
   /// This user's starred messages across all their relationships,
   /// newest-starred first.
   Future<List<Message>> getStarredMessages();
+
+  /// Every non-deleted message in [relationshipId] whose media_type matches
+  /// [mediaType] ('image', 'audio', or 'video'), newest first — feeds the
+  /// media/docs/links tab screen reached from Chat settings. Does not
+  /// resolve signed URLs eagerly (same as getMessages) — callers resolve
+  /// on demand via ResolvedMediaUrl, same as the chat bubble/image viewer.
+  Future<List<Message>> getMediaMessages(
+    String relationshipId, {
+    required String mediaType,
+  });
+
+  /// Non-deleted text messages in [relationshipId] whose content contains
+  /// [query] (case-insensitive), newest first — feeds the in-chat search
+  /// screen reached from Chat settings. An empty/whitespace-only [query]
+  /// returns an empty list rather than every message, so callers don't
+  /// need their own empty-query guard.
+  Future<List<Message>> searchMessages(
+    String relationshipId, {
+    required String query,
+  });
 
   /// Pins a message to the top of the relationship's chat (server enforces
   /// the 3-pin cap — see pin_message RPC). Throws 'pin_limit_reached' when

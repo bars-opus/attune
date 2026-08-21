@@ -10,9 +10,7 @@ import 'package:attune/features/pulse/presentation/widgets/checkin_banner.dart';
 import 'package:attune/features/pulse/presentation/widgets/trend_chart.dart';
 import 'package:attune/features/pulse/presentation/widgets/visualisation_switcher.dart';
 import 'package:attune/features/pulse/providers/pulse_providers.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:gap/gap.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PulseScreen extends ConsumerStatefulWidget {
@@ -22,9 +20,17 @@ class PulseScreen extends ConsumerStatefulWidget {
   ConsumerState<PulseScreen> createState() => _PulseScreenState();
 }
 
-class _PulseScreenState extends ConsumerState<PulseScreen> {
+class _PulseScreenState extends ConsumerState<PulseScreen>
+    with AutomaticKeepAliveClientMixin {
   String _selectedVisualisation = 'ring';
   bool _isRefreshing = false;
+
+  // Keeps this tab's state (loaded data, selected visualisation, scroll
+  // position) alive when TabBarView scrolls it off-screen switching tabs,
+  // instead of disposing and rebuilding from scratch every time the user
+  // comes back to Pulse.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -69,6 +75,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin requirement
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final pulseAsync = ref.watch(currentPulseScoreProvider);
@@ -80,49 +87,81 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
         slivers: [
           SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.all(Spacing.md.w),
+              padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Header
-                  Row(
-                    children: [
-                      Text(
-                        'Pulse',
-                        style: textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const Spacer(),
-                      if (!_isRefreshing)
-                        IconButton(
-                          icon: const Icon(Icons.refresh),
-                          onPressed: _refreshPulse,
-                        ),
-                      if (_isRefreshing)
-                        const SizedBox(
-                          width: 40,
-                          height: 40,
-                          child: Center(child: CircularProgressIndicator()),
-                        ),
-                    ],
-                  ),
-                  Gap(Spacing.sm.h),
-                  Text(
-                    'Updated ${_getLastUpdatedText(pulseAsync)}',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.6),
+                  CardInkWell(
+                    child: InfoRowWidget(
+                      title: 'Updated ${_getLastUpdatedText(pulseAsync)}',
+                      subtitle: 'Pulse',
+                      icon: Icons.trending_down,
+                      showAvatar: false,
+                      showTrailingArrow: true,
+                      iconColor: Colors.grey,
+                      showDivider: false,
+                      onTap: () {},
+
+                      trailing:
+                          _isRefreshing
+                              ? SizedBox(
+                                width: 40,
+                                height: 40,
+                                child: Center(
+                                  child: CircularLoadingIndicator(),
+                                ),
+                              )
+                              : IconButton(
+                                icon: const Icon(Icons.refresh),
+                                onPressed: _refreshPulse,
+                              ),
                     ),
                   ),
+
+                  // Row(
+                  //   children: [
+                  //     Text(
+                  //       'Pulse',
+                  //       style: textTheme.headlineMedium?.copyWith(
+                  //         fontWeight: FontWeight.bold,
+                  //       ),
+                  //     ),
+                  //     const Spacer(),
+                  //     if (!_isRefreshing)
+                  //       IconButton(
+                  //         icon: const Icon(Icons.refresh),
+                  //         onPressed: _refreshPulse,
+                  //       ),
+                  //     if (_isRefreshing)
+                  //       const SizedBox(
+                  //         width: 40,
+                  //         height: 40,
+                  //         child: Center(child: CircularProgressIndicator()),
+                  //       ),
+                  //   ],
+                  // ),
+                  // Gap(Spacing.sm.h),
+                  // Text(
+                  //   'Updated ${_getLastUpdatedText(pulseAsync)}',
+                  //   style: textTheme.bodySmall?.copyWith(
+                  //     color: colorScheme.onSurface.withOpacity(0.6),
+                  //   ),
+                  // ),
                   Gap(Spacing.md.h),
 
                   // Main content
                   pulseAsync.when(
                     loading:
-                        () => const Center(child: CircularProgressIndicator()),
+                        () => const Center(child: CircularLoadingIndicator()),
                     error:
                         (error, stack) => Center(
-                          child: ErrorStateWidget(subtitle: 'Error: $error'),
+                          child: ErrorStateWidget(
+                            title: '',
+                            subtitle: 'Error: $error',
+                          ),
+
+                          //  ErrorStateWidget(subtitle: 'Error: $error'),
                         ),
                     data: (pulse) {
                       if (pulse == null) {
@@ -291,20 +330,27 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
   }
 
   Widget _buildNoDataState() {
+    final colorScheme = Theme.of(context).colorScheme;
     return Column(
       children: [
-        const SizedBox(height: 100),
-        Icon(Icons.show_chart, size: 64, color: Colors.grey),
-        Gap(Spacing.md.h),
-        Text(
-          'No pulse score yet',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        Gap(Spacing.sm.h),
-        Text(
-          'Complete your first weekly check-in\nto see your relationship pulse.',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyMedium,
+        // const SizedBox(height: 100),
+        // Icon(Icons.show_chart, size: 64, color: Colors.grey),
+        // Gap(Spacing.md.h),
+        // Text(
+        //   'No pulse score yet',
+        //   style: Theme.of(context).textTheme.titleMedium,
+        // ),
+        // Gap(Spacing.sm.h),
+        // Text(
+        //   'Complete your first weekly check-in\nto see your relationship pulse.',
+        //   textAlign: TextAlign.center,
+        //   style: Theme.of(context).textTheme.bodyMedium,
+        // ),
+        EmptyStateWidget(
+          icon: Icons.show_chart,
+          title: 'No pulse score yet',
+          subtitle:
+              'Complete your first weekly check-in\nto see your relationship pulse.',
         ),
         Gap(Spacing.lg.h),
         AppButton(
@@ -312,6 +358,14 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
           onPressed: () {
             context.pushNamed('weeklyCheckin');
           },
+
+          elevation: 0,
+
+          textColor: colorScheme.surface,
+          size: ButtonSize.small,
+          width: double.infinity,
+          padding: Spacing.horizontalMd,
+          height: 40.h,
         ),
         Gap(Spacing.md.h), // Add spacing between buttons
         AppButton(
@@ -319,8 +373,16 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
           onPressed: () {
             context.pushNamed('logMomentType');
           },
-          customColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-          textColor: Theme.of(context).colorScheme.onSurface,
+
+          elevation: 0,
+
+          size: ButtonSize.small,
+          width: double.infinity,
+          padding: Spacing.horizontalMd,
+          height: 40.h,
+
+          customColor: colorScheme.surfaceContainerHighest,
+          textColor: colorScheme.onSurface,
         ),
       ],
     );

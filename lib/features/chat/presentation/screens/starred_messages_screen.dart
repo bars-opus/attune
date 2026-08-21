@@ -1,10 +1,8 @@
-import 'package:attune/app/routing/app_router.dart';
+import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 final starredMessagesProvider = FutureProvider<List<Message>>((ref) async {
@@ -28,6 +26,7 @@ class StarredMessagesScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
         title: Text(
           'Starred messages',
           style: textTheme.titleLarge?.copyWith(
@@ -40,22 +39,29 @@ class StarredMessagesScreen extends ConsumerWidget {
         data: (messages) {
           if (messages.isEmpty) {
             return Center(
-              child: Text(
-                'No starred messages yet.',
-                style: textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
+              child: EmptyStateWidget(
+                title: '',
+                subtitle: 'No starred messages yet.',
+                icon: Icons.star_border,
               ),
             );
           }
           return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+            padding: const EdgeInsets.all(Spacing.md),
             itemCount: messages.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
               final message = messages[index];
-              return ListTile(
-                leading: Icon(Icons.star, color: colorScheme.primary),
+              return InfoRowWidget(
+                title:
+                    message.isDeleted
+                        ? 'This message was deleted'
+                        : message.content,
+                subtitle: DateFormat.yMMMd().add_jm().format(message.createdAt),
+                icon: Icons.star_border,
+                showAvatar: false,
+
+                showDivider: true,
                 onTap:
                     message.isDeleted
                         ? null
@@ -63,26 +69,6 @@ class StarredMessagesScreen extends ConsumerWidget {
                           '${RouteNames.chatScreen}?jumpTo=${message.id}',
                           extra: conversation,
                         ),
-                title: Text(
-                  message.isDeleted
-                      ? 'This message was deleted'
-                      : message.content,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style:
-                      message.isDeleted
-                          ? textTheme.bodyMedium?.copyWith(
-                            fontStyle: FontStyle.italic,
-                            color: colorScheme.onSurfaceVariant,
-                          )
-                          : textTheme.bodyMedium,
-                ),
-                subtitle: Text(
-                  DateFormat.yMMMd().add_jm().format(message.createdAt),
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
               );
             },
           );
@@ -90,11 +76,9 @@ class StarredMessagesScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error:
             (_, __) => Center(
-              child: Text(
-                "Couldn't load starred messages.",
-                style: textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
+              child: ErrorStateWidget(
+                title: '',
+                subtitle: "Couldn't load starred messages.",
               ),
             ),
       ),

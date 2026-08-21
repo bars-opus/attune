@@ -1,0 +1,50 @@
+-- supabase/migrations/20260903130000_chat_media_upload_intent_grants.sql
+--
+-- Fixes: chat image/video/voice sends fail with
+-- `StorageException: permission denied for table
+-- relationship_avatar_upload_intents, statusCode: 403` — even though the
+-- upload targets the UNRELATED `message-media` bucket, not
+-- `relationship-avatars`.
+--
+-- Root cause: storage.objects has multiple RLS policies (one per bucket
+-- feature: message_media_insert_by_intent, relationship_avatars_insert_by_
+-- intent, dating_photos_insert_by_intent, etc). Postgres evaluates ALL
+-- applicable policies for an INSERT and ORs their WITH CHECK results — it
+-- does NOT guarantee left-to-right short-circuit of each policy's own
+-- `bucket_id = '...' AND EXISTS (...)` clause. The planner is free to
+-- evaluate the EXISTS subquery before the bucket_id equality check. Every
+-- one of these *_upload_intents tables was created with
+-- `REVOKE ALL ... FROM anon, authenticated` and RLS enabled but NO policy
+-- of its own (correct — it should only ever be touched via its
+-- SECURITY DEFINER intent-creation RPC). That combination is normally safe
+-- for direct queries (RLS-enabled + zero policies denies all rows), but a
+-- bare REVOKE ALL also strips the base SELECT privilege needed just to
+-- evaluate `EXISTS (SELECT 1 FROM that_table ...)` inside ANOTHER table's
+-- RLS policy — so whenever the planner evaluates that EXISTS before the
+-- cheap bucket_id check, it throws 42501 "permission denied for table
+-- <name>" instead of short-circuiting to false.
+--
+-- This has been silently possible for every *_upload_intents table since
+-- each was introduced (message_media_upload_intents from
+-- 20260705133000_chat_media_month2.sql included) — it only surfaced
+-- tonight because query-plan choice made it visible for
+-- relationship_avatar_upload_intents specifically. It is not a regression
+-- from tonight's changes.
+--
+-- dating_photo_upload_intents (20260813130000_dating_photo_pipeline.sql,
+-- referenced by dating_profile_photos_insert_by_intent's EXISTS subquery
+-- in 20260813140000_dating_photo_storage_bucket.sql) has the identical
+-- shape and is fixed here too, rather than left as a known landmine for
+-- whenever dating photo upload next gets exercised under an adverse plan.
+--
+-- Fix: grant SELECT (only) to authenticated on every *_upload_intents
+-- table referenced by a storage.objects policy's EXISTS subquery. This
+-- does NOT open direct row access — RLS is still enabled with zero
+-- policies on these tables, so `SELECT * FROM relationship_avatar_upload_
+-- intents` as an authenticated user still returns zero rows. The grant
+-- only satisfies the base-privilege check Postgres performs before RLS is
+-- consulted, which is what EXISTS subqueries inside OTHER tables' policies
+-- need regardless of which order the planner picks.
+GRANT SELECT ON public.relationship_avatar_upload_intents TO authenticated;
+GRANT SELECT ON public.message_media_upload_intents TO authenticated;
+GRANT SELECT ON public.dating_photo_upload_intents TO authenticated;

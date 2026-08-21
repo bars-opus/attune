@@ -8,8 +8,8 @@ import 'package:attune/core/widgets/profile_avatar.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/services/chat_image_preparer.dart';
 import 'package:attune/features/chat/domain/services/relationship_chat_name_validator.dart';
-import 'package:attune/features/chat/presentation/providers/chat_experience_providers.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
+import 'package:attune/features/chat/presentation/widgets/chat_settings_static_rows.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Lets either partner set/edit a name and photo for their relationship's
@@ -145,120 +145,111 @@ class _ChatSettingsScreenState extends ConsumerState<ChatSettingsScreen> {
     }
   }
 
-  Future<void> _openHistoricalImport() async {
-    await context.pushNamed('chatImport', extra: widget.conversation);
-  }
-
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final isBusy = _isSavingName || _isUploadingPhoto;
-    final historicalImportEnabled = ref.watch(
-      chatHistoricalImportEnabledProvider,
-    );
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
 
       child: Scaffold(
-        body: SafeArea(
-          child: ListView(
-            padding: EdgeInsets.all(Spacing.lg.h),
-            children: [
-              Center(
-                child: GestureDetector(
-                  onTap: isBusy ? null : _changePhoto,
-                  child: Stack(
-                    alignment: Alignment.center,
+        body: ListView(
+          padding: EdgeInsets.symmetric(horizontal: Spacing.md.h),
+          children: [
+            // Gap(Spacing.md.h),
+            CardInkWell(
+              child: Column(
+                children: [
+                  Gap(Spacing.xl.h),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      ProfileAvatar(
-                        avatarUrl: widget.conversation.avatarUrl ?? '',
-                        size: 112.h,
-                        currentUserId: widget.conversation.relationshipId,
-                        // No navigation transition animates this avatar in from
-                        // elsewhere, and reusing conversation.relationshipId as
-                        // a Hero tag risks colliding with a real per-user
-                        // ProfileAvatar Hero elsewhere in the tree.
-                        enableHero: false,
+                      GestureDetector(
+                        onTap: isBusy ? null : _changePhoto,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            ProfileAvatar(
+                              avatarUrl: widget.conversation.avatarUrl ?? '',
+                              size: 50.h,
+                              currentUserId: widget.conversation.relationshipId,
+                              // No navigation transition animates this avatar in from
+                              // elsewhere, and reusing conversation.relationshipId as
+                              // a Hero tag risks colliding with a real per-user
+                              // ProfileAvatar Hero elsewhere in the tree.
+                              enableHero: false,
+                            ),
+                            if (_isUploadingPhoto)
+                              const CircularLoadingIndicator(),
+                          ],
+                        ),
                       ),
-                      if (_isUploadingPhoto) const CircularLoadingIndicator(),
+                      Gap(Spacing.md.w),
+                      Expanded(
+                        child: AppTextFormField(
+                          fillColor: colorScheme.neutral,
+                          controller: _nameController,
+                          label: 'Coupples name',
+                          hintText: 'e.g. Japerl34',
+                          enabled: !isBusy,
+                          textInputAction: TextInputAction.done,
+                          onFieldSubmitted: (_) => _saveName(),
+                        ),
+                      ),
                     ],
                   ),
-                ),
-              ),
-              Gap(Spacing.sm.h),
-              Center(
-                child: TextButton(
-                  onPressed: isBusy ? null : _changePhoto,
-                  child: const Text('Change photo'),
-                ),
-              ),
-              Gap(Spacing.xl.h),
-              AppTextFormField(
-                controller: _nameController,
-                label: 'Chat name',
-                hintText: 'e.g. Japerl34',
-                enabled: !isBusy,
-                textInputAction: TextInputAction.done,
-                onFieldSubmitted: (_) => _saveName(),
-              ),
-              Gap(Spacing.sm.h),
-              Text(
-                'Visible to both of you. Either partner can change this at any time.',
-                style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-              if (_errorMessage != null) ...[
-                Gap(Spacing.smMd.h),
-                Text(
-                  _errorMessage!,
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.error,
-                  ),
-                ),
-              ],
-              Gap(Spacing.lg.h),
-              AppButton(
-                label: 'Save',
-                isLoading: _isSavingName,
-                onPressed: isBusy ? null : _saveName,
-              ),
-              Gap(Spacing.xl.h),
-              const AppDivider(),
-              Gap(Spacing.sm.h),
-              InfoRowWidget(
-                title: 'Previous relationships',
-                subtitle: 'Read-only chat history from past relationships',
-                icon: Icons.history,
-                showAvatar: false,
-                showDivider: false,
-                onTap: () => context.pushNamed('previousRelationships'),
-              ),
-              InfoRowWidget(
-                title: 'Starred messages',
-                subtitle: 'Messages you\'ve starred, just for you',
-                icon: Icons.star_border,
-                showAvatar: false,
-                showDivider: false,
-                onTap:
-                    () => context.pushNamed(
-                      'starredMessages',
-                      extra: widget.conversation,
+
+                  // Gap(Spacing.sm.h),
+                  // Center(
+                  //   child: AppTextButton(
+                  //     fontSize: 12.h,
+                  //     alignment: Alignment.center,
+                  //     onPressed: isBusy ? null : _changePhoto,
+                  //     text: 'Change photo',
+                  //   ),
+                  // ),
+                  // Gap(Spacing.xl.h),
+                  SemanticContainerWidget(
+                    title: '',
+                    content:
+                        'Visible to both of you. Either partner can change this at any time.',
+
+                    icon: Icons.favorite,
+                    isSkeleton: true,
+                    backgroundColor: colorScheme.primary.withValues(
+                      alpha: 0.08,
                     ),
+                    borderColor: colorScheme.primary,
+                    iconColor: colorScheme.primary,
+                    textTheme: textTheme,
+                  ),
+
+                  if (_errorMessage != null) ...[
+                    Gap(Spacing.smMd.h),
+                    Text(
+                      _errorMessage!,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.error,
+                      ),
+                    ),
+                  ],
+                  // Gap(Spacing.lg.h),
+                  // AppButton(
+                  //   label: 'Save',
+                  //   isLoading: _isSavingName,
+                  //   onPressed: isBusy ? null : _saveName,
+                  // ),
+                  Gap(Spacing.xl.h),
+                  //
+                  // Gap(Spacing.sm.h),
+                ],
               ),
-              if (historicalImportEnabled.valueOrNull == true)
-                InfoRowWidget(
-                  title: 'Import chat history',
-                  subtitle: 'Bring in a previous conversation from WhatsApp',
-                  icon: Icons.history_rounded,
-                  showAvatar: false,
-                  showDivider: false,
-                  onTap: () => unawaited(_openHistoricalImport()),
-                ),
-            ],
-          ),
+            ),
+            ChatSettingsStaticRows(conversation: widget.conversation),
+            Gap(Spacing.xl.h),
+          ],
         ),
       ),
     );

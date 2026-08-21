@@ -36,7 +36,10 @@ void main() {
       MessageBubble(message: _mine(status: MessageStatus.read)),
     );
 
-    expect(find.text('Read'), findsOneWidget);
+    // WhatsApp-style: icon + color only, no visible "Read" text — the
+    // accessible label below is what keeps this non-color-only for screen
+    // readers.
+    expect(find.text('Read'), findsNothing);
     expect(
       find.bySemanticsLabel(RegExp('Message status: Read')),
       findsOneWidget,
