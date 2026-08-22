@@ -1,7 +1,9 @@
 import 'package:attune/features/chat/domain/entities/message.dart';
+import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/widgets/resolved_media_url.dart';
 import 'package:attune/features/chat/presentation/widgets/video_message_player.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 /// Full-screen, swipeable video gallery — the video counterpart of
@@ -86,13 +88,26 @@ class _VideoViewerScreenState extends State<VideoViewerScreen> {
   }
 }
 
-class _FullScreenVideo extends StatelessWidget {
+class _FullScreenVideo extends ConsumerWidget {
   const _FullScreenVideo({required this.message});
 
   final Message message;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Same expired-signed-URL retry the chat bubble gets: a viewer opened
+    // from a long-running chat can be handed a link whose ~10-minute
+    // signature has already lapsed. Null for a local file, which never
+    // expires.
+    Future<String?> Function()? freshUrl;
+    final mediaKey = message.mediaKey;
+    if (mediaKey != null) {
+      freshUrl =
+          () => ref
+              .read(chatRepositoryProvider)
+              .createSignedMediaUrl(mediaKey, forceRefresh: true);
+    }
+
     return Center(
       child:
           message.localMediaPath != null
@@ -104,6 +119,7 @@ class _FullScreenVideo extends StatelessWidget {
                 durationMs: message.mediaDurationMs ?? 0,
                 width: message.mediaWidth ?? 16,
                 height: message.mediaHeight ?? 9,
+                onRequestFreshUrl: freshUrl,
               )
               : ResolvedMediaUrl(
                 signedMediaUrl: message.signedMediaUrl,
@@ -123,6 +139,7 @@ class _FullScreenVideo extends StatelessWidget {
                       durationMs: message.mediaDurationMs ?? 0,
                       width: message.mediaWidth ?? 16,
                       height: message.mediaHeight ?? 9,
+                      onRequestFreshUrl: freshUrl,
                     ),
               ),
     );

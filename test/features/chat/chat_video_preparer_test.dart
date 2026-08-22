@@ -29,6 +29,88 @@ void main() {
     });
   });
 
+  group('rotation-corrected dimensions', () {
+    // The bug this guards: video_compress reports RAW encoded frame
+    // dimensions and exposes rotation as a separate `orientation` field. A
+    // portrait phone clip is stored as a 1280x720 landscape frame plus a
+    // 90-degree flag, so persisting the raw numbers made every portrait
+    // video render with a landscape aspect ratio — too tall in the bubble,
+    // letterboxed against the wrong edge fullscreen.
+    test('a 90-degree rotation swaps the axes (landscape frame reads as '
+        'portrait)', () {
+      final size = ChatVideoPreparer.debugOrientedSize(
+        width: 1280,
+        height: 720,
+        orientation: 90,
+      );
+      expect(size.width, 720);
+      expect(size.height, 1280);
+      // The real assertion: the resulting ratio is portrait (< 1), not the
+      // landscape ratio the raw numbers describe.
+      expect(size.width / size.height, lessThan(1));
+    });
+
+    test('a 270-degree rotation also swaps the axes', () {
+      final size = ChatVideoPreparer.debugOrientedSize(
+        width: 1280,
+        height: 720,
+        orientation: 270,
+      );
+      expect(size.width, 720);
+      expect(size.height, 1280);
+    });
+
+    test('0 and 180 degrees leave the axes untouched', () {
+      for (final orientation in [0, 180]) {
+        final size = ChatVideoPreparer.debugOrientedSize(
+          width: 1280,
+          height: 720,
+          orientation: orientation,
+        );
+        expect(size.width, 1280, reason: 'orientation $orientation');
+        expect(size.height, 720, reason: 'orientation $orientation');
+      }
+    });
+
+    test('a null/unknown orientation is treated as no rotation', () {
+      final size = ChatVideoPreparer.debugOrientedSize(
+        width: 1280,
+        height: 720,
+        orientation: null,
+      );
+      expect(size.width, 1280);
+      expect(size.height, 720);
+    });
+
+    test('negative and over-360 orientations normalize before deciding', () {
+      // Some encoders report -90 rather than 270.
+      final negative = ChatVideoPreparer.debugOrientedSize(
+        width: 1280,
+        height: 720,
+        orientation: -90,
+      );
+      expect(negative.width, 720);
+      expect(negative.height, 1280);
+
+      final wrapped = ChatVideoPreparer.debugOrientedSize(
+        width: 1280,
+        height: 720,
+        orientation: 450, // 450 % 360 == 90
+      );
+      expect(wrapped.width, 720);
+      expect(wrapped.height, 1280);
+    });
+
+    test('an already-portrait frame with no rotation stays portrait', () {
+      final size = ChatVideoPreparer.debugOrientedSize(
+        width: 720,
+        height: 1280,
+        orientation: 0,
+      );
+      expect(size.width / size.height, lessThan(1));
+    });
+  });
+
   group('trim-window byte-size-guard estimate', () {
     // This is the numeric-transform logic the plan's Global Constraints
     // section specifically calls out as needing a RELATIVE-correctness

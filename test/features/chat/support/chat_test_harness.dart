@@ -326,7 +326,10 @@ class FakeChatRepository implements ChatRepository {
   }
 
   @override
-  Future<String?> createSignedMediaUrl(String mediaKey) async => null;
+  Future<String?> createSignedMediaUrl(
+    String mediaKey, {
+    bool forceRefresh = false,
+  }) async => null;
 
   /// Recorded messageIds passed to [markVideoViewed], in call order —
   /// includes calls that go on to throw via [markVideoViewedFailures].

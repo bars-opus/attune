@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:attune/features/chat/presentation/providers/voice_playback_provider.dart';
@@ -23,6 +24,7 @@ class VideoMessagePlayer extends ConsumerStatefulWidget {
     required this.width,
     required this.height,
     this.onExpand,
+    this.onRequestFreshUrl,
   });
 
   final String messageId;
@@ -41,6 +43,15 @@ class VideoMessagePlayer extends ConsumerStatefulWidget {
   /// the button entirely (e.g. a caller with no viewer route to open).
   final VoidCallback? onExpand;
 
+  /// Re-signs this video's storage key and returns a fresh URL, or null if
+  /// it can't be resolved. Called only after an initialize() attempt on a
+  /// REMOTE url fails — [videoUrl] is a signed URL with a ~10-minute TTL
+  /// captured at hydration time, so a chat left open longer than that hands
+  /// this widget an already-expired link. Without this the failure was
+  /// silent and permanent for that bubble ("older videos sometimes don't
+  /// show"). Null disables the retry (local-file callers don't need it).
+  final Future<String?> Function()? onRequestFreshUrl;
+
   @override
   ConsumerState<VideoMessagePlayer> createState() => _VideoMessagePlayerState();
 }
@@ -50,6 +61,17 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
   bool _isPlaying = false;
   bool _isMuted = false;
 
+  /// True after an initialize() attempt failed — surfaces a real, tappable
+  /// "couldn't play, tap to retry" state instead of silently leaving a dead
+  /// poster the user can tap forever with nothing happening (the old
+  /// behavior, and the reason expired-signed-URL videos looked like they
+  /// "just don't show").
+  bool _failed = false;
+
+  /// True while initialize() is in flight, so a second tap can't spin up a
+  /// competing controller for the same widget.
+  bool _initializing = false;
+
   @override
   void dispose() {
     // No background/lock-screen playback — leaving the message list stops
@@ -58,10 +80,35 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
     super.dispose();
   }
 
-  double get _aspectRatio =>
-      widget.height == 0 ? 16 / 9 : widget.width / widget.height;
+  /// The true, rotation-corrected display aspect ratio.
+  ///
+  /// Prefers the DECODER's own value once the controller has initialized:
+  /// video_player's `value.aspectRatio` already accounts for rotation
+  /// metadata, which the persisted width/height do NOT. video_compress's
+  /// MediaInfo reports raw encoded frame dimensions — a portrait phone clip
+  /// is stored as 1280x720 plus a 90-degree rotation flag, so the stored
+  /// numbers describe a LANDSCAPE frame for a video that displays portrait.
+  /// Trusting them made portrait videos render too tall/wrong in the bubble
+  /// and letterbox against the wrong edge in the fullscreen viewer.
+  ///
+  /// Falls back to the stored dimensions (pre-initialize, so the poster
+  /// still reserves roughly the right box and the layout doesn't jump), and
+  /// finally to 16/9 when those are missing/zero — older rows predating the
+  /// width/height columns.
+  double get _aspectRatio {
+    final decoded = _controller?.value;
+    if (decoded != null && decoded.isInitialized) {
+      final ratio = decoded.aspectRatio;
+      if (ratio.isFinite && ratio > 0) return ratio;
+    }
+    if (widget.width > 0 && widget.height > 0) {
+      return widget.width / widget.height;
+    }
+    return 16 / 9;
+  }
 
   Future<void> _togglePlayback() async {
+    if (_initializing) return;
     if (_isPlaying) {
       await _controller?.pause();
       setState(() => _isPlaying = false);
@@ -83,52 +130,101 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
         widget.messageId;
 
     if (_controller == null) {
-      // Local-vs-remote source branching copies VoiceMessagePlayer's
-      // startsWith('http') check exactly.
-      final controller =
-          widget.videoUrl.startsWith('http')
-              ? VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
-              : VideoPlayerController.file(File(widget.videoUrl));
-      controller.addListener(() {
-        if (!mounted) return;
-        if (!controller.value.isPlaying && _isPlaying) {
-          setState(() => _isPlaying = false);
+      if (mounted) {
+        setState(() {
+          _initializing = true;
+          _failed = false;
+        });
+      }
+      // First attempt uses the URL we were handed. A remote URL is a
+      // signed URL with a ~10-minute TTL captured when the message was
+      // hydrated — sit in a chat longer than that, scroll back, and it's
+      // expired, which is exactly why older videos "sometimes don't
+      // show". On failure, re-sign via onRequestFreshUrl and try once
+      // more before giving up.
+      var ok = await _initializeWith(widget.videoUrl);
+      if (!ok && widget.videoUrl.startsWith('http')) {
+        final fresh = await widget.onRequestFreshUrl?.call();
+        if (fresh != null && fresh != widget.videoUrl) {
+          ok = await _initializeWith(fresh);
         }
-      });
-      _controller = controller;
-      try {
-        await controller.initialize();
-        // Apply any mute toggle that happened before the controller existed
-        // (_isMuted can be flipped from the mute button while the player is
-        // still showing the poster, before first play constructs this
-        // controller) — otherwise the stored mute state is silently dropped
-        // and first playback always starts unmuted regardless of what the
-        // user tapped.
-        await controller.setVolume(_isMuted ? 0.0 : 1.0);
-      } catch (_) {
+      }
+
+      if (!ok) {
         // Playback isn't available (unsupported codec, unreachable URL, no
-        // platform video decoder on this host) — fall back to the poster
-        // rather than leaving an unhandled exception in flight. The
-        // cross-media pause above has already taken effect (voice was
-        // stopped), but this widget itself never actually started playing
-        // — so the video provider must be rolled back to null rather than
-        // left pointing at a message that isn't playing. Guarded to this
-        // widget's own messageId so a fast subsequent tap elsewhere (which
-        // would have reassigned the provider to a different message before
-        // this catch runs) can't be clobbered.
+        // platform video decoder on this host). The cross-media pause above
+        // has already taken effect (voice was stopped), but this widget
+        // never actually started playing — so the video provider must be
+        // rolled back to null rather than left pointing at a message that
+        // isn't playing. Guarded to this widget's own messageId so a fast
+        // subsequent tap elsewhere (which would have reassigned the
+        // provider to a different message before this runs) can't be
+        // clobbered.
         if (ref.read(currentlyPlayingVideoMessageIdProvider) ==
             widget.messageId) {
           ref.read(currentlyPlayingVideoMessageIdProvider.notifier).state =
               null;
         }
-        _controller = null;
-        if (mounted) setState(() {});
+        if (mounted) {
+          setState(() {
+            _initializing = false;
+            _failed = true;
+          });
+        }
         return;
       }
+      if (mounted) setState(() => _initializing = false);
     }
 
     await _controller!.play();
-    setState(() => _isPlaying = true);
+    if (mounted) setState(() => _isPlaying = true);
+  }
+
+  /// Builds a controller for [url] and initializes it, returning whether it
+  /// succeeded. Disposes and clears the controller on failure so a retry
+  /// (or the fresh-URL second attempt) always starts from a clean slate
+  /// rather than reusing a half-initialized native surface.
+  Future<bool> _initializeWith(String url) async {
+    // Local-vs-remote source branching copies VoiceMessagePlayer's
+    // startsWith('http') check exactly.
+    final controller =
+        url.startsWith('http')
+            ? VideoPlayerController.networkUrl(Uri.parse(url))
+            : VideoPlayerController.file(File(url));
+    controller.addListener(() {
+      if (!mounted) return;
+      if (!controller.value.isPlaying && _isPlaying) {
+        setState(() => _isPlaying = false);
+      }
+    });
+    try {
+      await controller.initialize();
+      // Apply any mute toggle that happened before the controller existed
+      // (_isMuted can be flipped from the mute button while the player is
+      // still showing the poster, before first play constructs this
+      // controller) — otherwise the stored mute state is silently dropped
+      // and first playback always starts unmuted regardless of what the
+      // user tapped.
+      await controller.setVolume(_isMuted ? 0.0 : 1.0);
+      if (!mounted) {
+        await controller.dispose();
+        return false;
+      }
+      _controller = controller;
+      return true;
+    } catch (_) {
+      // Fire-and-forget: a controller whose initialize() rejected may never
+      // settle its own dispose() either (an unreachable host under a test
+      // binding is the reproducible case), and awaiting it here would stall
+      // the whole failure path — including the
+      // currentlyPlayingVideoMessageIdProvider rollback in the caller,
+      // leaving the shared cross-media lock falsely held by a message that
+      // never played. Errors are swallowed because there is nothing left to
+      // clean up beyond this handle.
+      unawaited(controller.dispose().catchError((_) {}));
+      _controller = null;
+      return false;
+    }
   }
 
   @override
@@ -176,7 +272,50 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
               ColoredBox(
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
               ),
-            if (!_isPlaying)
+            // Spinner while the native surface spins up (and, for an
+            // expired signed URL, while the re-sign + second attempt runs)
+            // — otherwise a slow initialize looks identical to a tap that
+            // did nothing at all.
+            if (_initializing)
+              const Center(
+                child: SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: Colors.white,
+                  ),
+                ),
+              )
+            else if (_failed)
+              // A real, legible failure state instead of a dead poster the
+              // user can tap forever with nothing happening. Tapping
+              // retries (the outer GestureDetector re-enters
+              // _togglePlayback, which re-signs the URL first).
+              ColoredBox(
+                color: Colors.black.withValues(alpha: 0.45),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.refresh_rounded,
+                        size: 36,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        "Couldn't play — tap to retry",
+                        textAlign: TextAlign.center,
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (!_isPlaying)
               Center(
                 child: Icon(
                   Icons.play_arrow_rounded,

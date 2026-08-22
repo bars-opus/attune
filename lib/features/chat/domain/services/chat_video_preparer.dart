@@ -119,6 +119,33 @@ class ChatVideoPreparer {
     }
   }
 
+  /// Corrects raw encoded frame dimensions for rotation metadata, so the
+  /// persisted media_width/media_height describe how the video actually
+  /// DISPLAYS rather than how its frames happen to be stored.
+  ///
+  /// video_compress's MediaInfo reports width/height straight off the
+  /// encoded stream and exposes `orientation` as a SEPARATE field: a
+  /// portrait phone clip is commonly stored as a 1280x720 landscape frame
+  /// plus a 90-degree rotation flag. Persisting those raw numbers made
+  /// every portrait video render with a landscape aspect ratio — too tall
+  /// in the bubble, letterboxed against the wrong edge fullscreen.
+  ///
+  /// A quarter turn (90 or 270) swaps the axes; 0/180 leave them alone. A
+  /// null/unknown orientation is treated as no rotation, which is the same
+  /// assumption the old code made unconditionally.
+  @visibleForTesting
+  static ({int width, int height}) debugOrientedSize({
+    required int width,
+    required int height,
+    required int? orientation,
+  }) {
+    final normalized = ((orientation ?? 0) % 360 + 360) % 360;
+    final quarterTurned = normalized == 90 || normalized == 270;
+    return quarterTurned
+        ? (width: height, height: width)
+        : (width: width, height: height);
+  }
+
   /// Test seam: the same maxDuration-defaulting prepare() does internally
   /// (fall back to the class constant when the caller omits an override),
   /// exposed so the defaulting behavior itself can be asserted without a
@@ -279,6 +306,24 @@ class ChatVideoPreparer {
       throw const ChatVideoRejected('thumbnail_failed');
     }
 
+    // Rotation-correct the dimensions before they're persisted — see
+    // debugOrientedSize. Falls back to the SOURCE probe's dimensions when
+    // the compressed MediaInfo omits them (observed on some Android
+    // encoders, where compressVideo returns a valid file with null
+    // width/height); a wrong-but-present source ratio still beats the 16/9
+    // default the UI would otherwise land on.
+    final rawWidth = compressed.width ?? info.width ?? 0;
+    final rawHeight = compressed.height ?? info.height ?? 0;
+    final oriented = debugOrientedSize(
+      width: rawWidth,
+      height: rawHeight,
+      // Prefer the OUTPUT's orientation: the transcode may have baked the
+      // rotation into the frames (leaving orientation 0), in which case
+      // applying the source's rotation would double-correct and re-break
+      // the ratio. Only fall back to the source when the output is silent.
+      orientation: compressed.orientation ?? info.orientation,
+    );
+
     return PreparedChatVideo(
       file: outFile,
       mimeType: 'video/mp4',
@@ -287,8 +332,8 @@ class ChatVideoPreparer {
       thumbnailFile: preparedThumbnail.file,
       thumbnailMimeType: preparedThumbnail.mimeType,
       thumbnailByteSize: preparedThumbnail.byteSize,
-      width: compressed.width ?? 0,
-      height: compressed.height ?? 0,
+      width: oriented.width,
+      height: oriented.height,
     );
   }
 

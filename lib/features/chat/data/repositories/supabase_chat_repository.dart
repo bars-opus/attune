@@ -368,9 +368,14 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
-  Future<String?> createSignedMediaUrl(String mediaKey) async {
+  Future<String?> createSignedMediaUrl(
+    String mediaKey, {
+    bool forceRefresh = false,
+  }) async {
     final cached = _signedUrlCache[mediaKey];
-    if (cached != null && cached.expiresAt.isAfter(DateTime.now())) {
+    if (!forceRefresh &&
+        cached != null &&
+        cached.expiresAt.isAfter(DateTime.now())) {
       return cached.url;
     }
     try {

@@ -1,5 +1,6 @@
 import 'package:attune/app/routing/app_router.dart';
 import 'package:attune/app/theme/app_colors.dart';
+import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/widgets/card_inkwell.dart';
@@ -8,12 +9,14 @@ import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
+import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.dart';
 import 'package:attune/features/chat/presentation/widgets/resolved_media_url.dart';
 import 'package:attune/features/chat/presentation/widgets/video_message_player.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_message_player.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
@@ -26,6 +29,10 @@ class MessageBubble extends StatelessWidget {
     this.onRetry,
     this.onRemove,
     this.showStatus = true,
+    this.showLatestTimestamp = false,
+    this.showTimestamp = true,
+    this.timestampRevealOffset = 0,
+    this.onTimestampRevealChanged,
     this.onReply,
     this.onJumpToParent,
     this.isHighlighted = false,
@@ -47,6 +54,7 @@ class MessageBubble extends StatelessWidget {
     this.onImageTap,
     this.onVideoTap,
     this.isGrouped = false,
+    this.isGroupedWithPrevious = false,
   });
 
   final Message message;
@@ -63,6 +71,11 @@ class MessageBubble extends StatelessWidget {
   /// keeps the original fixed spacing unchanged.
   final bool isGrouped;
 
+  /// True when this message has a same-sender neighbor below it on screen.
+  /// ChatScreen passes this from the next-newer message in its newest-first
+  /// list so grouped runs can square the touching bottom-side corner too.
+  final bool isGroupedWithPrevious;
+
   /// Needed to push EphemeralVideoViewerScreen, which requires the full
   /// Conversation (not just relationshipId) to build its own
   /// provider-backed state. Nullable rather than required so this task's
@@ -77,6 +90,10 @@ class MessageBubble extends StatelessWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onRemove;
   final bool showStatus;
+  final bool showLatestTimestamp;
+  final bool showTimestamp;
+  final double timestampRevealOffset;
+  final ValueChanged<double>? onTimestampRevealChanged;
 
   /// Swipe-to-reply target. Null (the default) disables the swipe gesture
   /// entirely — e.g. a read-only/archived conversation has nothing
@@ -136,8 +153,8 @@ class MessageBubble extends StatelessWidget {
   /// convention (`onReply`/`onLongPress`).
   final void Function(String emoji)? onReact;
 
-  /// Reserved for a future "tap your own pill to remove" affordance. Not
-  /// yet wired to any gesture in this task — see _buildReactionPills.
+  /// Called when the current user taps their own visible reaction pill.
+  /// Partner-only reaction pills stay display-only.
   final VoidCallback? onRemoveReaction;
 
   /// Tapping this message's image thumbnail calls this with the tapped
@@ -161,164 +178,261 @@ class MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final isMine = message.isMine;
     final colorScheme = Theme.of(context).colorScheme;
+    final bubbleColor = _bubbleFill(context, isMine: isMine);
+    final bubbleGradient = _bubbleGradient(context, isMine: isMine);
+    final bubbleRadius = _groupedBubbleRadius(
+      isMine: isMine,
+      groupedAbove: isGrouped,
+      groupedBelow: isGroupedWithPrevious,
+    );
     final onBubbleColor =
         isMine ? colorScheme.onPrimary : colorScheme.onSurface;
-    final canOpenActions = currentUserId != null && !message.isDeleted;
+    final canOpenActions =
+        currentUserId != null && !message.isDeleted && !message.isPreparing;
+    final hasVisibleFooter =
+        showLatestTimestamp ||
+        (showStatus && isMine) ||
+        (message.isFailed && (onRetry != null || onRemove != null));
 
-    final reactionPills = _buildReactionPills(context, message, currentUserId);
+    final bubbleAdornments = _buildBubbleAdornments(
+      context,
+      message,
+      currentUserId,
+      isStarred: isStarred,
+      onRemoveReaction: onRemoveReaction,
+    );
 
-    // IntrinsicWidth + Align shrink-wraps the Stack to the bubble's own
-    // rendered width (UniversalBubble's Align inside otherwise floats
-    // within whatever width this Stack is given — the full message-list
-    // row — so a plain Stack here would make the reaction pill's
-    // left/right:12 insets track the ROW's edges, not the bubble's own,
-    // narrower, content-dependent edge). This keeps the pill flush with
-    // the same side the quote block's bar/label sit on.
-    return Align(
-      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: IntrinsicWidth(
+    const timestampRevealColumnWidth = 112.0;
+    final timestampRevealBottomInset = hasVisibleFooter ? 24.0 : 0.0;
+
+    // The timestamp reveal belongs to the full message row, not the bubble's
+    // shrink-wrapped width. Keeping it row-level gives every visible message
+    // the same right-side timestamp column during an iMessage-style left
+    // swipe, including short incoming bubbles.
+    return SizedBox(
+      width: double.infinity,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bubbleAdornments == null ? 0 : 16),
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            UniversalBubble(
-              isMine: isMine,
-              bubbleColor:
-                  isMine
-                      ? colorScheme.primary
-                      : colorScheme.surfaceContainerHighest,
-              onBubbleColor: onBubbleColor,
-              showCardBorder: true,
-              showShadow: true,
-              verticalPadding: isGrouped ? 0 : 4,
-              quotedText:
-                  parentDeleted
-                      ? 'Original message deleted'
-                      : message.quotedText,
-              // A step below the message content's own size (bodyLarge) — a
-              // little smaller reads as a preview/citation rather than a
-              // second full-size message, while UniversalBubble's own 12px
-              // fallback read too small next to the bumped-up content text.
-              quoteTextStyle: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: onBubbleColor),
-              // "You" when replying to your own message; the partner's real
-              // chat name otherwise (falls back to "Partner" if conversation
-              // wasn't passed — matches this file's existing nullable-
-              // conversation convention). Omitted (no label row) when
-              // parentIsMine is null — the parent message isn't in the loaded
-              // window, so who sent it genuinely isn't known here, same
-              // "don't guess" principle as parentDeleted.
-              quoteAuthorLabel:
-                  message.quotedText == null || parentIsMine == null
-                      ? null
-                      : parentIsMine!
-                      ? 'You'
-                      : (conversation?.name ?? 'Partner'),
-              // WhatsApp-style colored side border on the quote block. Same
-              // null-means-unknown gate as quoteAuthorLabel.
-              quoteAuthorIsMine:
-                  message.quotedText == null ? null : parentIsMine,
-              quoteMineBorderColor: Colors.red,
-              // Not colorScheme.primary — that's the same green as the "mine"
-              // bubble fill, so it wouldn't read as a distinct accent there.
-              // Blue reads clearly against both bubble fills (green mine /
-              // surfaceContainerHighest theirs).
-              quotePartnerBorderColor: Colors.blue,
-              onJumpToParent:
-                  message.quotedText == null ? null : onJumpToParent,
-              isHighlighted: isHighlighted,
-              bubbleKey: ValueKey(message.clientMessageId),
-              onLongPress:
-                  canOpenActions
-                      ? (bubbleRect, bubbleSnapshot) => showFocusedActionMenu(
-                        context: context,
-                        anchorRect: bubbleRect,
-                        anchorSnapshot: bubbleSnapshot,
-                        quickReactions: const [
-                          ReactionQuickOption(emoji: '❤️'),
-                          ReactionQuickOption(emoji: '👍'),
-                          ReactionQuickOption(emoji: '👎'),
-                          ReactionQuickOption(emoji: '😂'),
-                          ReactionQuickOption(emoji: '‼️'),
-                          ReactionQuickOption(emoji: '❓'),
+            Align(
+              alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+              child: IntrinsicWidth(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    UniversalBubble(
+                      isMine: isMine,
+                      bubbleColor: bubbleColor,
+                      bubbleGradient: bubbleGradient,
+                      onBubbleColor: onBubbleColor,
+                      leading: !isMine ? const SizedBox(width: 8) : null,
+                      showCardBorder: false,
+                      showShadow: false,
+                      bubbleBorderRadius: 24,
+                      bubbleBorderRadiusOverride: bubbleRadius,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      verticalPadding:
+                          isGrouped || isGroupedWithPrevious ? 0 : 4,
+                      footerSpacing: hasVisibleFooter ? 4 : 0,
+                      showFooter: hasVisibleFooter,
+                      dragOffsetOverride:
+                          timestampRevealOffset > 0
+                              ? -timestampRevealOffset
+                              : null,
+                      startReveal: null,
+                      onEndRevealDragChanged: onTimestampRevealChanged,
+                      quotedText:
+                          parentDeleted
+                              ? 'Original message deleted'
+                              : message.quotedText,
+                      // A step below the message content's own size (bodyLarge) — a
+                      // little smaller reads as a preview/citation rather than a
+                      // second full-size message, while UniversalBubble's own 12px
+                      // fallback read too small next to the bumped-up content text.
+                      quoteTextStyle: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: onBubbleColor),
+                      // "You" when replying to your own message; the partner's real
+                      // chat name otherwise (falls back to "Partner" if conversation
+                      // wasn't passed — matches this file's existing nullable-
+                      // conversation convention). Omitted (no label row) when
+                      // parentIsMine is null — the parent message isn't in the loaded
+                      // window, so who sent it genuinely isn't known here, same
+                      // "don't guess" principle as parentDeleted.
+                      quoteAuthorLabel:
+                          message.quotedText == null || parentIsMine == null
+                              ? null
+                              : parentIsMine!
+                              ? 'You'
+                              : (conversation?.name ?? 'Partner'),
+                      // WhatsApp-style colored side border on the quote block. Same
+                      // null-means-unknown gate as quoteAuthorLabel.
+                      quoteAuthorIsMine:
+                          message.quotedText == null ? null : parentIsMine,
+                      quoteMineBorderColor: colorScheme.error,
+                      // Not colorScheme.primary — that's the same green as the "mine"
+                      // bubble fill, so it wouldn't read as a distinct accent there.
+                      // Blue reads clearly against both bubble fills (green mine /
+                      // surfaceContainerHighest theirs).
+                      quotePartnerBorderColor:
+                          AppColors(
+                            Theme.of(context).brightness == Brightness.dark,
+                          ).info,
+                      onJumpToParent:
+                          message.quotedText == null ? null : onJumpToParent,
+                      isHighlighted: isHighlighted,
+                      bubbleKey: ValueKey(message.clientMessageId),
+                      onLongPress:
+                          canOpenActions
+                              ? (
+                                bubbleRect,
+                                bubbleSnapshot,
+                              ) => showFocusedActionMenu(
+                                context: context,
+                                anchorRect: bubbleRect,
+                                anchorSnapshot: bubbleSnapshot,
+                                quickReactions: const [
+                                  ReactionQuickOption(emoji: '❤️'),
+                                  ReactionQuickOption(emoji: '👍'),
+                                  ReactionQuickOption(emoji: '😂'),
+                                  ReactionQuickOption(emoji: '🥹'),
+                                  ReactionQuickOption(emoji: '🤗'),
+                                  ReactionQuickOption(emoji: '😢'),
+                                ],
+                                onReact: (emoji) => onReact?.call(emoji),
+                                // Resolve the Navigator NOW, while this bubble's element
+                                // is definitely still mounted (we are inside its
+                                // long-press handler). Looking it up later, after the
+                                // menu route pops, can fail because the list may have
+                                // recycled this element away by then.
+                                onOpenFullPicker: _buildFullPickerOpener(
+                                  context,
+                                  onReact,
+                                ),
+                                actions: buildMessageActionItems(
+                                  context: context,
+                                  message: message,
+                                  currentUserId: currentUserId!,
+                                  isStarred: isStarred,
+                                  isPinned: isPinned,
+                                  onReply: onReply ?? () {},
+                                  onCopy: onCopy ?? () {},
+                                  onStar: onStar ?? () {},
+                                  onUnstar: onUnstar ?? () {},
+                                  onPin: onPin ?? () {},
+                                  onUnpin: onUnpin ?? () {},
+                                  onEdit: onEdit ?? () {},
+                                  onDelete: onDelete ?? () {},
+                                ),
+                              )
+                              : null,
+                      onReply: onReply,
+                      content: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (message.isImported)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                'Imported from WhatsApp',
+                                style: Theme.of(context).textTheme.labelSmall,
+                              ),
+                            ),
+                          _BubbleBody(
+                            message: message,
+                            isMine: isMine,
+                            conversation: conversation,
+                            onImageTap: onImageTap,
+                            onVideoTap: onVideoTap,
+                            onBubbleColor: onBubbleColor,
+                          ),
                         ],
-                        onReact: (emoji) => onReact?.call(emoji),
-                        // Resolve the Navigator NOW, while this bubble's element
-                        // is definitely still mounted (we are inside its
-                        // long-press handler). Looking it up later, after the
-                        // menu route pops, can fail because the list may have
-                        // recycled this element away by then.
-                        onOpenFullPicker: _buildFullPickerOpener(
-                          context,
-                          onReact,
-                        ),
-                        actions: buildMessageActionItems(
-                          context: context,
-                          message: message,
-                          currentUserId: currentUserId!,
-                          isStarred: isStarred,
-                          isPinned: isPinned,
-                          onReply: onReply ?? () {},
-                          onCopy: onCopy ?? () {},
-                          onStar: onStar ?? () {},
-                          onUnstar: onUnstar ?? () {},
-                          onPin: onPin ?? () {},
-                          onUnpin: onUnpin ?? () {},
-                          onEdit: onEdit ?? () {},
-                          onDelete: onDelete ?? () {},
-                        ),
-                      )
-                      : null,
-              onReply: onReply,
-              content: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (message.isImported)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 2),
-                      child: Text(
-                        'Imported from WhatsApp',
-                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                      footer:
+                          hasVisibleFooter
+                              ? _MessageMeta(
+                                message: message,
+                                isMine: isMine,
+                                isStarred: false,
+                                showStatus: showStatus,
+                                showTime: showLatestTimestamp,
+                                showEdited: false,
+                                onBubbleColor: colorScheme.onSurfaceVariant,
+                                onRetry: onRetry,
+                                onRemove: onRemove,
+                                onShowEditHistory: onShowEditHistory,
+                                colorScheme: colorScheme,
+                                inline: false,
+                              )
+                              : const SizedBox.shrink(),
+                    ),
+                    if (bubbleAdornments != null)
+                      Positioned(
+                        bottom: -12,
+                        left: isMine ? 10 : null,
+                        right: isMine ? null : 10,
+                        child: bubbleAdornments,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            // Keep the timestamp above the translated bubble. Incoming
+            // bubbles naturally leave this lane clear, but a wide outgoing
+            // bubble can otherwise cover the clock's hour/minute and leave
+            // only AM/PM visible during the same drag distance.
+            if (showTimestamp && timestampRevealOffset > 0)
+              Positioned(
+                right: 8,
+                top: 0,
+                bottom: timestampRevealBottomInset,
+                width: timestampRevealColumnWidth,
+                child: IgnorePointer(
+                  child: ColoredBox(
+                    color: Theme.of(context).colorScheme.surface,
+                    child: Center(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: _RevealTimestamp(message: message),
                       ),
                     ),
-                  _BubbleBody(
-                    message: message,
-                    isMine: isMine,
-                    conversation: conversation,
-                    onImageTap: onImageTap,
-                    onVideoTap: onVideoTap,
-                    onBubbleColor: onBubbleColor,
-                    isStarred: isStarred,
-                    showStatus: showStatus,
-                    metaBuilder:
-                        (inline) => _MessageMeta(
-                          message: message,
-                          isMine: isMine,
-                          isStarred: isStarred,
-                          showStatus: showStatus,
-                          onBubbleColor: onBubbleColor,
-                          onRetry: onRetry,
-                          onRemove: onRemove,
-                          onShowEditHistory: onShowEditHistory,
-                          colorScheme: colorScheme,
-                          inline: inline,
-                        ),
                   ),
-                ],
-              ),
-              footer: const SizedBox.shrink(),
-            ),
-            if (reactionPills != null)
-              Positioned(
-                top: -10,
-                left: isMine ? -10 : null,
-                right: isMine ? null : -10,
-                child: reactionPills,
+                ),
               ),
           ],
         ),
       ),
+    );
+  }
+
+  static BorderRadius _groupedBubbleRadius({
+    required bool isMine,
+    required bool groupedAbove,
+    required bool groupedBelow,
+  }) {
+    const outer = Radius.circular(24);
+    const inner = Radius.circular(6);
+
+    if (isMine) {
+      return BorderRadius.only(
+        topLeft: outer,
+        bottomLeft: outer,
+        topRight: groupedAbove ? inner : outer,
+        bottomRight: groupedBelow ? inner : outer,
+      );
+    }
+
+    return BorderRadius.only(
+      topLeft: groupedAbove ? inner : outer,
+      bottomLeft: groupedBelow ? inner : outer,
+      topRight: outer,
+      bottomRight: outer,
     );
   }
 
@@ -337,11 +451,67 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
+class _RevealTimestamp extends StatelessWidget {
+  const _RevealTimestamp({required this.message});
+
+  final Message message;
+
+  @override
+  Widget build(BuildContext context) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerRight,
+      child: Semantics(
+        label: MessageBubble._absoluteTimeLabel(context, message.createdAt),
+        excludeSemantics: true,
+        child: Text(
+          MessageBubble._timeLabel(context, message.createdAt),
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.visible,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Color _bubbleFill(BuildContext context, {required bool isMine}) {
+  final colorScheme = Theme.of(context).colorScheme;
+  if (isMine) return colorScheme.primary;
+
+  final tint = colorScheme.primary.withValues(
+    alpha: Theme.of(context).brightness == Brightness.dark ? 0.08 : 0.02,
+  );
+  final base =
+      Theme.of(context).brightness == Brightness.dark
+          ? colorScheme.surfaceContainerHighest
+          : const Color(0xFFF0F1F4);
+  return Color.alphaBlend(tint, base);
+}
+
+Gradient? _bubbleGradient(BuildContext context, {required bool isMine}) {
+  if (!isMine) return null;
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final appColors = AppColors(isDark);
+  return LinearGradient(
+    colors:
+        isDark
+            ? [appColors.primaryDark, appColors.primary]
+            : [appColors.primaryDark, appColors.primary, appColors.moderate],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+}
+
 /// One small pill per distinct emoji on [message], or null if there are
 /// none. Same emoji from multiple reactors collapses into ONE pill with a
 /// small count badge (never multiple pills for the same emoji). Display
-/// only — tapping a pill to toggle your own reaction is explicitly out of
-/// scope for this plan (see Task 6's manual smoke-test note).
+/// Tapping your own reaction pill removes it; partner-only pills remain
+/// display-only.
 ///
 /// [currentUserId] decides each pill's background, following the bubble
 /// fill convention: primary when you're one of that emoji's reactors (even
@@ -349,12 +519,14 @@ class MessageBubble extends StatelessWidget {
 /// priority), the partner bubble color when only they reacted, and the
 /// neutral default when currentUserId isn't known (matches this file's
 /// existing null-means-unknown gating elsewhere).
-Widget? _buildReactionPills(
+Widget? _buildBubbleAdornments(
   BuildContext context,
   Message message,
-  String? currentUserId,
-) {
-  if (message.reactions.isEmpty) return null;
+  String? currentUserId, {
+  required bool isStarred,
+  VoidCallback? onRemoveReaction,
+}) {
+  if (message.reactions.isEmpty && !isStarred) return null;
   final colorScheme = Theme.of(context).colorScheme;
 
   // Your own reaction pill uses the OTHER theme's primary shade (dark
@@ -364,76 +536,87 @@ Widget? _buildReactionPills(
   // pill blend into your own bubble instead of standing out against it.
   final isDark = Theme.of(context).brightness == Brightness.dark;
   final myReactionColor = isDark ? LightColors.primary : DarkColors.primary;
-
-  // ReplyAvatar's approach (see reply_avatar_stack.dart): a fixed-size
-  // square around the CardInkWell, so BorderRadius.circular(100) draws a
-  // true circle rather than a stadium shape stretched to fit a Row's
-  // variable content width. The reactor count moves to a small badge
-  // overlaid on the circle's corner instead of sitting inline, so adding
-  // it never breaks the circle back into an ellipse.
-  const diameter = 44.0;
+  final onMyReactionColor =
+      isDark ? LightColors.white : LightColors.textPrimary;
 
   return Wrap(
     spacing: 4,
+    runSpacing: 4,
     children: [
       for (final entry in message.reactions.entries)
         if (entry.value.isNotEmpty)
-          SizedBox(
-            width: diameter,
-            height: diameter,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                CardInkWell(
-                  padding: EdgeInsets.zero,
-                  margin: EdgeInsets.zero,
-                  borderRadius: BorderRadius.circular(diameter),
-                  color:
-                      currentUserId == null
-                          ? null
-                          : entry.value.contains(currentUserId)
-                          ? myReactionColor
-                          : colorScheme.surfaceContainerHighest,
-                  child: SizedBox(
-                    width: diameter,
-                    height: diameter,
-                    child: Center(
-                      child: Text(
-                        entry.key,
-                        style: const TextStyle(fontSize: 22),
-                      ),
-                    ),
-                  ),
-                ),
-                if (entry.value.length > 1)
-                  Positioned(
-                    right: -2,
-                    bottom: -2,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 1,
-                      ),
-                      decoration: BoxDecoration(
-                        color: colorScheme.surface,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: colorScheme.outline),
-                      ),
-                      constraints: const BoxConstraints(minWidth: 16),
-                      child: Text(
+          Builder(
+            builder: (context) {
+              final containsMine =
+                  currentUserId != null && entry.value.contains(currentUserId);
+              return CardInkWell(
+                onTap:
+                    containsMine && onRemoveReaction != null
+                        ? onRemoveReaction
+                        : null,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                margin: EdgeInsets.zero,
+                borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
+                elevation: ElevationTokens.none,
+                enableFeedback: containsMine && onRemoveReaction != null,
+                color:
+                    currentUserId == null
+                        ? colorScheme.surface
+                        : containsMine
+                        ? myReactionColor
+                        : colorScheme.surface,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(entry.key, style: const TextStyle(fontSize: 16)),
+                    if (entry.value.length > 1) ...[
+                      const SizedBox(width: 3),
+                      Text(
                         '${entry.value.length}',
-                        textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
+                          color:
+                              containsMine
+                                  ? onMyReactionColor
+                                  : colorScheme.onSurfaceVariant,
                         ),
                       ),
-                    ),
-                  ),
-              ],
-            ),
+                    ],
+                  ],
+                ),
+              );
+            },
           ),
+      if (isStarred) _StarAdornment(colorScheme: colorScheme),
     ],
   );
+}
+
+class _StarAdornment extends StatelessWidget {
+  const _StarAdornment({required this.colorScheme});
+
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return CardInkWell(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+      margin: EdgeInsets.zero,
+      borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
+      elevation: ElevationTokens.none,
+      enableFeedback: false,
+      color: colorScheme.surface,
+      child: Semantics(
+        label: 'Starred',
+        excludeSemantics: true,
+        child: const Icon(
+          Icons.star_rounded,
+          size: 15,
+          color: Color(0xFFFFB020),
+        ),
+      ),
+    );
+  }
 }
 
 /// Opens the full `emoji_picker_flutter` sheet so the user can react with
@@ -523,9 +706,6 @@ class _BubbleBody extends StatelessWidget {
     required this.isMine,
     required this.conversation,
     required this.onBubbleColor,
-    required this.metaBuilder,
-    required this.isStarred,
-    required this.showStatus,
     this.onImageTap,
     this.onVideoTap,
   });
@@ -537,25 +717,6 @@ class _BubbleBody extends StatelessWidget {
   final void Function(Message message)? onVideoTap;
 
   final Color onBubbleColor;
-
-  /// Mirrors MessageBubble.isStarred/showStatus — needed here (not just by
-  /// metaBuilder) so the inline meta-width calculation in
-  /// _inlineMetaWidth can analytically size the same item set
-  /// _MessageMeta itself would render, without building it first.
-  final bool isStarred;
-  final bool showStatus;
-
-  /// Builds the time/status/starred/edited row painted trailing the
-  /// message. Called with inline:true when this message is text-only and
-  /// not failed — WhatsApp's "meta rides the last line" look, inlined into
-  /// the LAST line of plain text via a WidgetSpan, so a short message
-  /// doesn't reserve a whole extra line just for the clock. Called with
-  /// inline:false for everything else (media/system/deleted/unsupported
-  /// bodies aren't paragraph text, so there's no "last line" to ride; a
-  /// failed message's Retry/Remove buttons need Wrap's line-wrap fallback,
-  /// which the inline WidgetSpan placement can't provide) — those render
-  /// the built meta as its own trailing block instead.
-  final Widget Function(bool inline) metaBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -781,82 +942,50 @@ class _BubbleBody extends StatelessWidget {
                     ),
                     error: const _ImageLoadError(),
                     builder:
-                        (context, url) => VideoMessagePlayer(
-                          // clientMessageId, not message.id — the same
-                          // stability requirement already established for
-                          // VoiceMessagePlayer above: the optimistic
-                          // message's id changes when the canonical server
-                          // row replaces it, but clientMessageId stays the
-                          // same throughout.
-                          key: ValueKey(message.clientMessageId),
-                          messageId: message.clientMessageId,
-                          videoUrl: url,
-                          thumbnailUrl: message.signedThumbnailUrl,
-                          durationMs: message.mediaDurationMs ?? 0,
-                          width: message.mediaWidth ?? 16,
-                          height: message.mediaHeight ?? 9,
-                          onExpand:
-                              onVideoTap == null
-                                  ? null
-                                  : () => onVideoTap!(message),
+                        (context, url) => Consumer(
+                          builder:
+                              (context, ref, _) => VideoMessagePlayer(
+                                // clientMessageId, not message.id — the same
+                                // stability requirement already established
+                                // for VoiceMessagePlayer above: the
+                                // optimistic message's id changes when the
+                                // canonical server row replaces it, but
+                                // clientMessageId stays the same throughout.
+                                key: ValueKey(message.clientMessageId),
+                                messageId: message.clientMessageId,
+                                videoUrl: url,
+                                thumbnailUrl: message.signedThumbnailUrl,
+                                durationMs: message.mediaDurationMs ?? 0,
+                                width: message.mediaWidth ?? 16,
+                                height: message.mediaHeight ?? 9,
+                                // `url` above was signed when this message
+                                // was hydrated and expires ~10 minutes
+                                // later; re-sign on demand so a video the
+                                // user scrolls back to after sitting in the
+                                // chat still plays instead of silently
+                                // failing. forceRefresh bypasses the
+                                // repository's own URL cache, which would
+                                // otherwise hand back the same dead link.
+                                onRequestFreshUrl:
+                                    message.mediaKey == null
+                                        ? null
+                                        : () => ref
+                                            .read(chatRepositoryProvider)
+                                            .createSignedMediaUrl(
+                                              message.mediaKey!,
+                                              forceRefresh: true,
+                                            ),
+                                onExpand:
+                                    onVideoTap == null
+                                        ? null
+                                        : () => onVideoTap!(message),
+                              ),
                         ),
                   ),
         ),
       );
     }
     final hasText = message.content.trim().isNotEmpty;
-    // Text-only messages (no media above it) get the WhatsApp treatment:
-    // meta rides the end of the LAST line via a trailing WidgetSpan, so a
-    // short message's clock/tick sits on the same line as the text instead
-    // of always claiming its own line below. A message WITH media still
-    // gets meta as its own trailing block (below) — there's no single text
-    // paragraph for it to flow into there. A FAILED message is excluded
-    // too, even when text-only: meta then includes Retry/Remove buttons,
-    // which are routinely too wide to share a line with short text (a
-    // RenderFlex overflow, confirmed by a real test failure) — the
-    // trailing block's Wrap can actually wrap onto a second line if
-    // needed, unlike an inline WidgetSpan.
-    if (hasText && children.isEmpty && !message.isFailed) {
-      final textStyle = Theme.of(
-        context,
-      ).textTheme.bodyMedium?.copyWith(color: color);
-      return _inlineMetaText(
-        context: context,
-        text: message.content,
-        textStyle: textStyle,
-        meta: metaBuilder(true),
-        // UniversalBubble's own bubble ConstrainedBox(maxWidth: 320) minus
-        // EVERY horizontal inset between that box and this text, per side:
-        // the highlight AnimatedContainer's Border.all(width: 2) AND its
-        // EdgeInsets.all(2) padding (a Border's width insets its child on
-        // top of any padding), then the content Padding(horizontal: 14) —
-        // 320 - 2*2 - 2*2 - 2*14 = 284. Those first two were previously
-        // missed, making this 292; since the gap below is computed to land
-        // meta flush at this edge AND the probe predicts line breaks at
-        // this width, an over-wide value mis-predicts the wrap entirely.
-        // 284 is confirmed against the real rendered RenderParagraph's own
-        // reported size in a widget test.
-        //
-        // Not read via LayoutBuilder: LayoutBuilder's render object
-        // explicitly refuses to report intrinsic dimensions ("does not
-        // support returning intrinsic dimensions"), and MessageBubble's
-        // own outer IntrinsicWidth needs exactly that from this whole
-        // content chain — confirmed by a real runtime assertion once
-        // LayoutBuilder was tried here. UniversalBubble.maxWidth defaults
-        // to 320 and MessageBubble never overrides it, so this mirrors
-        // that default directly; if either the cap or either padding ever
-        // changes, both need updating together.
-        maxWidth: 320 - 4 - 4 - 28,
-        metaWidth: _inlineMetaWidth(
-          context: context,
-          message: message,
-          isMine: isMine,
-          isStarred: isStarred,
-          showStatus: showStatus,
-        ),
-      );
-    }
-
     if (hasText) {
       if (children.isNotEmpty) {
         children.add(const SizedBox(height: 8));
@@ -875,27 +1004,25 @@ class _BubbleBody extends StatelessWidget {
     }
 
     if (children.isEmpty) {
-      children.add(Text('Unsupported message', style: TextStyle(color: color)));
+      // A message that declares a media type but hasn't resolved a source
+      // yet is PENDING, not unsupported. This window is real and routinely
+      // hit: right after a video's compression finishes, the optimistic row
+      // flips isPreparing false and is swapped for the canonical server row
+      // a moment before mediaKey/signedMediaUrl land — hasVideo needs one
+      // of mediaKey/signedMediaUrl/localMediaPath, so for those few frames
+      // every branch above misses and the bubble used to read "Unsupported
+      // message". Show the media placeholder instead; "Unsupported" is
+      // reserved for a message that genuinely has no renderable type.
+      final isPendingMedia =
+          message.mediaType == 'image' ||
+          message.mediaType == 'audio' ||
+          message.mediaType == 'video';
+      children.add(
+        isPendingMedia
+            ? const Shimmer(sweeps: null, child: _ImagePlaceholder())
+            : Text('Unsupported message', style: TextStyle(color: color)),
+      );
     }
-
-    // Every path that reaches here either isn't text-only or is a failed
-    // message — no paragraph for meta to ride inline, so it renders as its
-    // own trailing, right-aligned block instead (this is the
-    // pre-inlining footer look, and Wrap's line-wrap fallback matters here
-    // for a failed message's Retry/Remove buttons). SizedBox(width:
-    // double.infinity) stretches ONLY this child to the surrounding
-    // IntrinsicWidth's computed width (the bubble's actual content width —
-    // driven by whichever sibling, text or media, is widest), so Wrap's
-    // own end-alignment finally has real room to push into; the Column's
-    // crossAxisAlignment stays start throughout, so the message text/media
-    // above keeps its normal left-reading position exactly like WhatsApp —
-    // only meta moves.
-    children.add(
-      Padding(
-        padding: const EdgeInsets.only(top: 2),
-        child: SizedBox(width: double.infinity, child: metaBuilder(false)),
-      ),
-    );
 
     return IntrinsicWidth(
       child: Column(
@@ -907,227 +1034,17 @@ class _BubbleBody extends StatelessWidget {
   }
 }
 
-/// Renders [text] with [meta] riding its last wrapped line, floated flush
-/// against the paragraph's right edge — real WhatsApp behavior: glued right
-/// after the last word when the line is nearly full, pushed further right
-/// with a gap when there's slack, or bumped to meta's own line when the
-/// last line has no room left. Text.rich's textAlign can't target a single
-/// line (it applies to the whole paragraph uniformly), so this measures the
-/// wrapped text's own last-line width with TextPainter, computes meta's
-/// width analytically (see [_inlineMetaWidth]), and reserves exactly the
-/// leading gap needed before the meta WidgetSpan in ONE synchronous layout
-/// pass — Flutter's own line-breaking then wraps that reserved gap (and
-/// meta after it) to a new line on its own if it doesn't fit.
-///
-/// This has to be single-pass, not a "measure then rebuild" two-pass
-/// widget: this exact content Widget gets reused a SECOND time, unchanged,
-/// inside UniversalBubble's long-press snapshot overlay — a fresh copy
-/// forced into the real bubble's already-captured, fixed on-screen Rect
-/// (see UniversalBubble._handleLongPress). A stateful version starts
-/// unmeasured there with no opportunity to settle before that fixed-size
-/// container locks its layout, and an unmeasured (zero-gap) render can
-/// wrap onto a different number of lines than the real, fully-measured
-/// bubble — a real RenderFlex overflow, confirmed by a widget test
-/// failure. This version needs no second frame, so both copies always
-/// render identically from the very first layout.
-Widget _inlineMetaText({
-  required BuildContext context,
-  required String text,
-  required TextStyle? textStyle,
-  required Widget meta,
-  required double maxWidth,
-  required double metaWidth,
-}) {
-  const metaGap = 6.0;
-  // Does the text wrap at all within maxWidth? A single-line message's
-  // bubble is sized by IntrinsicWidth to the CONTENT's own natural width
-  // (text + gap + meta), not to the full maxWidth cap — so "float meta
-  // out to maxWidth" is the wrong target for it: maxWidth can be far
-  // wider than the bubble will actually end up being, producing a gap
-  // that's too large for the intrinsic-sized bubble the paragraph
-  // actually lands in and wrapping it (confirmed by a real test failure).
-  // Only a message that GENUINELY wraps has a bubble already pinned at
-  // maxWidth, where floating meta out to that same edge is correct.
-  final singleLineWidth =
-      (TextPainter(
-        text: TextSpan(text: text, style: textStyle),
-        textDirection: Directionality.of(context),
-      )..layout()).width;
-  if (singleLineWidth + metaGap + metaWidth <= maxWidth) {
-    return Text.rich(
-      TextSpan(
-        text: text,
-        style: textStyle,
-        children: [
-          const WidgetSpan(child: SizedBox(width: metaGap)),
-          WidgetSpan(alignment: PlaceholderAlignment.middle, child: meta),
-        ],
-      ),
-    );
-  }
-
-  final textDirection = Directionality.of(context);
-
-  // Probe the FULL span tree — text plus both trailing placeholders — at
-  // exactly the width the real paragraph will use. Two things here are
-  // load-bearing, and getting either wrong was the original bug:
-  //
-  // 1. Measure the span tree, not the bare text. The trailing meta span
-  //    occupies room on the final line and therefore changes where the
-  //    paragraph breaks, so a text-only probe can report a different line
-  //    count (and a wildly different last-line width) than the layout that
-  //    actually renders. Confirmed case: a text-only probe reported 3
-  //    lines ending at 285px (leaving remaining=5, so the gap collapsed to
-  //    its floor and meta never floated), while the real paragraph broke
-  //    into 4 lines whose last text line was only 71px — ~212px of slack
-  //    the old math never saw.
-  //
-  // 2. Probe at `maxWidth`, NOT at some margin-reduced width. Line
-  //    breaking is a step function: shaving even 2px off the probe width
-  //    can move a word to the next line and invalidate the whole
-  //    prediction. (Confirmed: probing 2px narrow pushed ALL text off the
-  //    last line, so the computed gap ballooned and drove meta onto its
-  //    own line.) The safety margin belongs only on the gap TARGET below,
-  //    where rounding between this painter and Text.rich's own actually
-  //    matters — never on the width whose breaks we are predicting.
-  //
-  // The probe uses the floor gap: with meta glued as tightly as it will
-  // ever be, this finds the earliest possible final break, which is the
-  // break the real layout uses too — widening the gap below only pushes
-  // meta rightward within that same last line, it never pulls text back up
-  // a line (see the clamp below, which never lets the target exceed the
-  // slack the probe actually found).
-  final probe = TextPainter(
-    text: TextSpan(
-      text: text,
-      style: textStyle,
-      children: const [
-        WidgetSpan(child: SizedBox.shrink()),
-        WidgetSpan(child: SizedBox.shrink()),
-      ],
-    ),
-    textDirection: textDirection,
-  );
-  probe.setPlaceholderDimensions([
-    const PlaceholderDimensions(
-      size: Size(metaGap, 1),
-      alignment: PlaceholderAlignment.middle,
-    ),
-    PlaceholderDimensions(
-      size: Size(metaWidth, 1),
-      alignment: PlaceholderAlignment.middle,
-    ),
-  ]);
-  probe.layout(maxWidth: maxWidth);
-
-  final lines = probe.computeLineMetrics();
-  // Width of just the TEXT on the final line, recovered by subtracting the
-  // two placeholders back off that line's total — computeLineMetrics
-  // reports the whole line including the placeholders riding it, but the
-  // gap has to be measured from where the text itself ends.
-  final lastLineTotal = lines.isEmpty ? 0.0 : lines.last.width;
-  final lastLineWidth = lastLineTotal - metaGap - metaWidth;
-  // A last line holding ONLY the two placeholders (no text left on it)
-  // means the probe already wrapped meta onto a line of its own — there is
-  // no last-line slack to fill, and widening the gap would only push meta
-  // further right on that empty line. Keep the floor gap so the real
-  // layout reproduces the same wrap.
-  if (lastLineWidth <= 0) {
-    return Text.rich(
-      TextSpan(
-        text: text,
-        style: textStyle,
-        children: [
-          const WidgetSpan(child: SizedBox(width: metaGap)),
-          WidgetSpan(alignment: PlaceholderAlignment.middle, child: meta),
-        ],
-      ),
-    );
-  }
-
-  // A small safety margin below the true max width: the gap is computed so
-  // text + gap + meta sums to exactly this target, then re-laid-out for
-  // real inside Text.rich using a DIFFERENT TextPainter instance than the
-  // probe above — without this margin, floating-point rounding between the
-  // two could push the real layout a fraction of a pixel past maxWidth and
-  // wrap an extra line this calculation didn't account for.
-  const safetyMargin = 2.0;
-  final remaining = maxWidth - safetyMargin - lastLineWidth;
-  // Reserve enough gap to push meta flush against the bubble's own content
-  // edge when there's slack; floor at metaGap so it never glues with
-  // literally zero space when the line is nearly full.
-  final gap = (remaining - metaWidth).clamp(metaGap, double.infinity);
-  return Text.rich(
-    TextSpan(
-      // The plain text stays exactly `text` (no appended spaces) so
-      // find.text(message.content)-style lookups — used throughout this
-      // file's own tests — keep matching via TextSpan.toPlainText(); the
-      // gap before meta is a WidgetSpan instead, so it doesn't change the
-      // paragraph's plain text.
-      text: text,
-      style: textStyle,
-      children: [
-        WidgetSpan(child: SizedBox(width: gap)),
-        WidgetSpan(alignment: PlaceholderAlignment.middle, child: meta),
-      ],
-    ),
-  );
-}
-
-/// Analytic width of [_MessageMeta]'s inline:true layout — sum of each
-/// possible item's own known width plus the 6px Row spacing between
-/// present items, matching _MessageMeta.build()'s inline item list and
-/// spacing exactly. Deliberately not a real widget measurement (see
-/// _inlineMetaText's doc for why this has to be synchronous/analytic
-/// rather than "build it and read RenderBox.size"). Icon sizes (12, 14)
-/// and the bodySmall text style are the exact same values/theme lookups
-/// _MessageMeta itself uses for these items — if _MessageMeta's inline
-/// item set or sizing ever changes, this needs the matching update.
-double _inlineMetaWidth({
-  required BuildContext context,
-  required Message message,
-  required bool isMine,
-  required bool isStarred,
-  required bool showStatus,
-}) {
-  final bodySmall = Theme.of(context).textTheme.bodySmall;
-  final textDirection = Directionality.of(context);
-  double widthOf(String text, TextStyle? style) {
-    final painter = TextPainter(
-      text: TextSpan(text: text, style: style),
-      textDirection: textDirection,
-      maxLines: 1,
-    )..layout();
-    return painter.width;
-  }
-
-  final widths = <double>[];
-  if (isStarred) widths.add(12);
-  if (message.editedAt != null && !message.isDeleted) {
-    widths.add(widthOf('edited', bodySmall));
-  }
-  widths.add(
-    widthOf(MessageBubble._timeLabel(context, message.createdAt), bodySmall),
-  );
-  if (showStatus && isMine) widths.add(14);
-
-  if (widths.isEmpty) return 0;
-  final spacing = 6.0 * (widths.length - 1);
-  return widths.reduce((a, b) => a + b) + spacing;
-}
-
-/// The starred/edited/time/status-tick/retry/remove row painted trailing a
-/// message. Used two ways by [_BubbleBody]: inlined as a WidgetSpan riding
-/// the last line of plain text, or appended as its own right-aligned block
-/// below non-text content — this widget itself doesn't know which, since
-/// Wrap(alignment: WrapAlignment.end) reads correctly either way (a no-op
-/// when inline, since a WidgetSpan gets no extra width to align within).
+/// Compact message metadata. Chat uses this in two different places:
+/// behind the bubble during a rightward drag for time/status, and below the
+/// bubble only for the few visible footer markers that should remain.
 class _MessageMeta extends StatelessWidget {
   const _MessageMeta({
     required this.message,
     required this.isMine,
     required this.isStarred,
     required this.showStatus,
+    required this.showTime,
+    required this.showEdited,
     required this.onBubbleColor,
     required this.onRetry,
     required this.onRemove,
@@ -1140,6 +1057,8 @@ class _MessageMeta extends StatelessWidget {
   final bool isMine;
   final bool isStarred;
   final bool showStatus;
+  final bool showTime;
+  final bool showEdited;
   final Color onBubbleColor;
   final VoidCallback? onRetry;
   final VoidCallback? onRemove;
@@ -1174,7 +1093,7 @@ class _MessageMeta extends StatelessWidget {
           excludeSemantics: true,
           child: Icon(Icons.star, size: 12, color: onBubbleColor),
         ),
-      if (message.editedAt != null && !message.isDeleted)
+      if (showEdited && message.editedAt != null && !message.isDeleted)
         GestureDetector(
           onTap:
               onShowEditHistory == null
@@ -1189,16 +1108,17 @@ class _MessageMeta extends StatelessWidget {
             ),
           ),
         ),
-      Semantics(
-        label: MessageBubble._absoluteTimeLabel(context, message.createdAt),
-        excludeSemantics: true,
-        child: Text(
-          MessageBubble._timeLabel(context, message.createdAt),
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: onBubbleColor),
+      if (showTime)
+        Semantics(
+          label: MessageBubble._absoluteTimeLabel(context, message.createdAt),
+          excludeSemantics: true,
+          child: Text(
+            MessageBubble._timeLabel(context, message.createdAt),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: onBubbleColor),
+          ),
         ),
-      ),
       if (showStatus && isMine)
         _StatusChip(
           message: message,
@@ -1325,32 +1245,67 @@ class _VideoCompressingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      width: 220,
-      height: 220,
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 36,
-              height: 36,
-              child: CircularProgressIndicator(value: progress),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              progress == null
-                  ? 'Compressing…'
-                  : '${(progress! * 100).round()}%',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
+    final percent = progress == null ? null : (progress! * 100).round();
+    return Semantics(
+      label:
+          percent == null
+              ? 'Preparing video'
+              : 'Preparing video, $percent percent',
+      child: Container(
+        width: 220,
+        height: 220,
+        decoration: BoxDecoration(
+          color: Color.alphaBlend(
+            colorScheme.primary.withValues(alpha: 0.06),
+            colorScheme.surfaceContainerHighest,
+          ),
+          borderRadius: BorderRadius.circular(BorderRadiusTokens.md),
+          border: Border.all(
+            color: colorScheme.outline.withValues(alpha: 0.16),
+            width: BorderWidthTokens.hairline,
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: colorScheme.surface.withValues(alpha: 0.74),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.movie_creation_outlined,
+                  color: colorScheme.primary,
+                  size: IconSizes.md,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              SizedBox(
+                width: 128,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
+                  child: LinearProgressIndicator(
+                    minHeight: 4,
+                    value: progress,
+                    backgroundColor: colorScheme.surface.withValues(
+                      alpha: 0.72,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                percent == null ? 'Preparing video' : 'Preparing $percent%',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

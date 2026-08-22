@@ -58,7 +58,19 @@ abstract class ChatRepository {
     required String localPath,
     required String mimeType,
   });
-  Future<String?> createSignedMediaUrl(String mediaKey);
+
+  /// Resolves a signed URL for [mediaKey], reusing the in-memory cache when
+  /// the cached entry is still comfortably inside its TTL.
+  ///
+  /// Pass [forceRefresh] to bypass and REPLACE that cache entry — needed
+  /// when a consumer has proven the current URL no longer works (e.g.
+  /// VideoPlayerController.initialize() failing on a link whose ~10-minute
+  /// signature expired while the chat sat open). Without it, a retry would
+  /// keep being handed the same dead URL from cache.
+  Future<String?> createSignedMediaUrl(
+    String mediaKey, {
+    bool forceRefresh = false,
+  });
 
   /// Marks a view-once (ephemeral) video message as viewed, atomically
   /// deleting its media server-side (see mark_video_viewed RPC, Task 2).
