@@ -5,6 +5,7 @@ import 'package:attune/features/chat/presentation/providers/voice_playback_provi
 import 'package:attune/features/chat/presentation/screens/ephemeral_video_viewer_screen.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:attune/features/chat/presentation/widgets/video_message_player.dart';
+import 'package:attune/features/chat/presentation/widgets/video_message_thumbnail.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,7 +34,7 @@ void main() {
     expect(find.text('This message was deleted'), findsOneWidget);
   });
 
-  testWidgets('shows a star icon in the footer when the message is starred', (
+  testWidgets('shows a star adornment when the message is starred', (
     tester,
   ) async {
     final message = Message.fromRow({
@@ -51,7 +52,7 @@ void main() {
       ),
     );
 
-    expect(find.byIcon(Icons.star), findsOneWidget);
+    expect(find.byIcon(Icons.star_rounded), findsOneWidget);
   });
 
   testWidgets('does not show a star icon when the message is not starred', (
@@ -75,7 +76,7 @@ void main() {
     expect(find.byIcon(Icons.star), findsNothing);
   });
 
-  testWidgets('renders edited label when message has been edited', (
+  testWidgets('does not render edited as a default footer label', (
     tester,
   ) async {
     final edited = Message.fromRow({
@@ -92,40 +93,37 @@ void main() {
       MaterialApp(home: Scaffold(body: MessageBubble(message: edited))),
     );
 
-    expect(find.textContaining('edited'), findsOneWidget);
+    expect(find.textContaining('edited'), findsNothing);
   });
 
-  testWidgets(
-    'tapping the edited label calls onShowEditHistory with the message',
-    (tester) async {
-      Message? tapped;
-      final edited = Message.fromRow({
-        'id': 'm2b',
-        'client_message_id': 'c2b',
-        'relationship_id': 'r1',
-        'sender_id': 'u1',
-        'content': 'updated text',
-        'created_at': DateTime.now().toIso8601String(),
-        'edited_at': DateTime.now().toIso8601String(),
-      }, currentUserId: 'u1');
+  testWidgets('edited messages do not expose a default footer tap target', (
+    tester,
+  ) async {
+    Message? tapped;
+    final edited = Message.fromRow({
+      'id': 'm2b',
+      'client_message_id': 'c2b',
+      'relationship_id': 'r1',
+      'sender_id': 'u1',
+      'content': 'updated text',
+      'created_at': DateTime.now().toIso8601String(),
+      'edited_at': DateTime.now().toIso8601String(),
+    }, currentUserId: 'u1');
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: MessageBubble(
-              message: edited,
-              onShowEditHistory: (message) => tapped = message,
-            ),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            message: edited,
+            onShowEditHistory: (message) => tapped = message,
           ),
         ),
-      );
+      ),
+    );
 
-      await tester.tap(find.text('edited'));
-      await tester.pumpAndSettle();
-
-      expect(tapped?.id, 'm2b');
-    },
-  );
+    expect(find.text('edited'), findsNothing);
+    expect(tapped, isNull);
+  });
 
   testWidgets('long-press opens the actions sheet for a non-deleted message', (
     tester,
@@ -437,6 +435,40 @@ void main() {
       expect(find.text('1'), findsNothing);
     },
   );
+
+  testWidgets('tapping your own reaction pill removes the reaction', (
+    tester,
+  ) async {
+    var removed = false;
+    final message = Message.fromRow({
+      'id': 'm-react-remove',
+      'client_message_id': 'c-react-remove',
+      'relationship_id': 'r1',
+      'sender_id': 'u1',
+      'content': 'hello',
+      'created_at': DateTime.now().toIso8601String(),
+    }, currentUserId: 'u1').copyWith(
+      reactions: {
+        '❤️': {'u1'},
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            message: message,
+            currentUserId: 'u1',
+            onRemoveReaction: () => removed = true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('❤️'));
+
+    expect(removed, isTrue);
+  });
 
   testWidgets(
     'playing your own voice message survives the optimistic-to-canonical id '
@@ -828,13 +860,18 @@ void main() {
   );
 
   testWidgets(
-    'a non-view-once video message still renders VideoMessagePlayer unaffected',
+    'a non-view-once video message still renders its normal video tile',
     (tester) async {
       // Regression guard: an ordinary Part 1 gallery-pick video message
-      // (isViewOnce == false, hasVideo == true) must render exactly as it
-      // did before this task — this is the test that would catch an
-      // accidental branch-ordering regression breaking Part 1's existing
-      // video messages.
+      // (isViewOnce == false, hasVideo == true) must render the ordinary
+      // video tile — this is the test that would catch an accidental
+      // branch-ordering regression sending an ordinary video down the
+      // ephemeral/expired path.
+      //
+      // The tile is VideoMessageThumbnail (poster-only, tap opens the
+      // full-screen viewer), not VideoMessagePlayer: the bubble no longer
+      // plays inline. That split is what makes the tile's aspect ratio
+      // stable — see VideoMessageThumbnail's class doc.
       final message = Message(
         id: 'm1',
         clientMessageId: 'c1',
@@ -862,7 +899,7 @@ void main() {
         ),
       );
 
-      expect(find.byType(VideoMessagePlayer), findsOneWidget);
+      expect(find.byType(VideoMessageThumbnail), findsOneWidget);
       expect(find.text('Video expired'), findsNothing);
     },
   );

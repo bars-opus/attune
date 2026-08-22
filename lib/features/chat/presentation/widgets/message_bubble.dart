@@ -9,14 +9,12 @@ import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
-import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.dart';
 import 'package:attune/features/chat/presentation/widgets/resolved_media_url.dart';
-import 'package:attune/features/chat/presentation/widgets/video_message_player.dart';
+import 'package:attune/features/chat/presentation/widgets/video_message_thumbnail.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_message_player.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
@@ -917,71 +915,28 @@ class _BubbleBody extends StatelessWidget {
       // through (see ChatController.sendVideoMessage).
       children.add(_VideoCompressingTile(progress: message.compressProgress));
     } else if (message.hasVideo) {
+      // Poster only — never an inline player. Tapping opens the full-screen
+      // viewer, matching WhatsApp/iMessage. Beyond being the expected
+      // interaction, this is what makes the tile's aspect ratio STABLE: the
+      // old inline player derived its shape from the persisted
+      // (rotation-blind) media_width/media_height before playback and from
+      // the decoder's true ratio after, so the bubble visibly jumped shape
+      // mid-tap. VideoMessageThumbnail has one source of truth instead —
+      // the decoded poster, which has rotation baked in by construction.
       children.add(
         SizedBox(
           width: 220,
-          child:
-              message.localMediaPath != null
-                  ? VideoMessagePlayer(
-                    key: ValueKey(message.clientMessageId),
-                    messageId: message.clientMessageId,
-                    videoUrl: message.localMediaPath!,
-                    thumbnailUrl: message.signedThumbnailUrl,
-                    durationMs: message.mediaDurationMs ?? 0,
-                    width: message.mediaWidth ?? 16,
-                    height: message.mediaHeight ?? 9,
-                    onExpand:
-                        onVideoTap == null ? null : () => onVideoTap!(message),
-                  )
-                  : ResolvedMediaUrl(
-                    signedMediaUrl: message.signedMediaUrl,
-                    mediaKey: message.mediaKey,
-                    loading: const Shimmer(
-                      sweeps: null,
-                      child: _ImagePlaceholder(),
-                    ),
-                    error: const _ImageLoadError(),
-                    builder:
-                        (context, url) => Consumer(
-                          builder:
-                              (context, ref, _) => VideoMessagePlayer(
-                                // clientMessageId, not message.id — the same
-                                // stability requirement already established
-                                // for VoiceMessagePlayer above: the
-                                // optimistic message's id changes when the
-                                // canonical server row replaces it, but
-                                // clientMessageId stays the same throughout.
-                                key: ValueKey(message.clientMessageId),
-                                messageId: message.clientMessageId,
-                                videoUrl: url,
-                                thumbnailUrl: message.signedThumbnailUrl,
-                                durationMs: message.mediaDurationMs ?? 0,
-                                width: message.mediaWidth ?? 16,
-                                height: message.mediaHeight ?? 9,
-                                // `url` above was signed when this message
-                                // was hydrated and expires ~10 minutes
-                                // later; re-sign on demand so a video the
-                                // user scrolls back to after sitting in the
-                                // chat still plays instead of silently
-                                // failing. forceRefresh bypasses the
-                                // repository's own URL cache, which would
-                                // otherwise hand back the same dead link.
-                                onRequestFreshUrl:
-                                    message.mediaKey == null
-                                        ? null
-                                        : () => ref
-                                            .read(chatRepositoryProvider)
-                                            .createSignedMediaUrl(
-                                              message.mediaKey!,
-                                              forceRefresh: true,
-                                            ),
-                                onExpand:
-                                    onVideoTap == null
-                                        ? null
-                                        : () => onVideoTap!(message),
-                              ),
-                        ),
-                  ),
+          child: VideoMessageThumbnail(
+            key: ValueKey(message.clientMessageId),
+            // Local poster first (the just-sent case, before the canonical
+            // row's signed thumbnail URL exists), then the signed URL.
+            thumbnailUrl:
+                message.localThumbnailPath ?? message.signedThumbnailUrl,
+            durationMs: message.mediaDurationMs ?? 0,
+            width: message.mediaWidth ?? 0,
+            height: message.mediaHeight ?? 0,
+            onTap: onVideoTap == null ? null : () => onVideoTap!(message),
+          ),
         ),
       );
     }

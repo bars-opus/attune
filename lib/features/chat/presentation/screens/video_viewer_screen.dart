@@ -68,7 +68,15 @@ class _VideoViewerScreenState extends State<VideoViewerScreen> {
               onPageChanged: (index) => setState(() => _currentIndex = index),
               itemBuilder: (context, index) {
                 final message = widget.videos[index];
-                return _FullScreenVideo(message: message);
+                // Only the visible page autoplays. PageView eagerly builds
+                // its immediate neighbours, so passing autoPlay
+                // unconditionally would spin up (and fight over the shared
+                // cross-media playback lock with) videos the user hasn't
+                // swiped to yet.
+                return _FullScreenVideo(
+                  message: message,
+                  autoPlay: index == _currentIndex,
+                );
               },
             ),
           ),
@@ -89,9 +97,13 @@ class _VideoViewerScreenState extends State<VideoViewerScreen> {
 }
 
 class _FullScreenVideo extends ConsumerWidget {
-  const _FullScreenVideo({required this.message});
+  const _FullScreenVideo({required this.message, this.autoPlay = false});
 
   final Message message;
+
+  /// True for the page the user is actually looking at — see the
+  /// itemBuilder's note on why PageView's prebuilt neighbours must not.
+  final bool autoPlay;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -120,6 +132,7 @@ class _FullScreenVideo extends ConsumerWidget {
                 width: message.mediaWidth ?? 16,
                 height: message.mediaHeight ?? 9,
                 onRequestFreshUrl: freshUrl,
+                autoPlay: autoPlay,
               )
               : ResolvedMediaUrl(
                 signedMediaUrl: message.signedMediaUrl,
@@ -140,6 +153,7 @@ class _FullScreenVideo extends ConsumerWidget {
                       width: message.mediaWidth ?? 16,
                       height: message.mediaHeight ?? 9,
                       onRequestFreshUrl: freshUrl,
+                      autoPlay: autoPlay,
                     ),
               ),
     );

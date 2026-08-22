@@ -23,8 +23,8 @@ class VideoMessagePlayer extends ConsumerStatefulWidget {
     required this.durationMs,
     required this.width,
     required this.height,
-    this.onExpand,
     this.onRequestFreshUrl,
+    this.autoPlay = false,
   });
 
   final String messageId;
@@ -34,15 +34,6 @@ class VideoMessagePlayer extends ConsumerStatefulWidget {
   final int width;
   final int height;
 
-  /// Tapping the fullscreen-expand corner button calls this — the caller
-  /// (MessageBubble's onVideoTap, wired up in ChatScreen) opens
-  /// VideoViewerScreen. Deliberately a SEPARATE affordance from this
-  /// widget's own tap-to-play/pause gesture (unchanged below) rather than
-  /// replacing it: inline preview and full-screen viewing are both
-  /// genuinely useful and don't need to be mutually exclusive. Null hides
-  /// the button entirely (e.g. a caller with no viewer route to open).
-  final VoidCallback? onExpand;
-
   /// Re-signs this video's storage key and returns a fresh URL, or null if
   /// it can't be resolved. Called only after an initialize() attempt on a
   /// REMOTE url fails — [videoUrl] is a signed URL with a ~10-minute TTL
@@ -51,6 +42,13 @@ class VideoMessagePlayer extends ConsumerStatefulWidget {
   /// silent and permanent for that bubble ("older videos sometimes don't
   /// show"). Null disables the retry (local-file callers don't need it).
   final Future<String?> Function()? onRequestFreshUrl;
+
+  /// Starts playback as soon as this widget mounts. True for the
+  /// full-screen viewer, which the user reached by explicitly tapping play
+  /// on a poster — making them tap a second time once the screen opens
+  /// would be a pointless extra step. Always false in a list context, where
+  /// mounting several players must never spin up several video surfaces.
+  final bool autoPlay;
 
   @override
   ConsumerState<VideoMessagePlayer> createState() => _VideoMessagePlayerState();
@@ -71,6 +69,19 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
   /// True while initialize() is in flight, so a second tap can't spin up a
   /// competing controller for the same widget.
   bool _initializing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoPlay) {
+      // Post-frame, not inline: _togglePlayback writes Riverpod providers
+      // (the cross-media playback lock), which must not happen during the
+      // first build.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _togglePlayback();
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -353,18 +364,6 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
                 ),
               ),
             ),
-            if (widget.onExpand != null)
-              Positioned(
-                right: 4,
-                top: 4,
-                child: IconButton(
-                  onPressed: widget.onExpand,
-                  icon: const Icon(
-                    Icons.fullscreen_rounded,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
           ],
         ),
       ),

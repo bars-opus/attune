@@ -47,6 +47,13 @@ class Message {
   /// channel. Null before the first progress callback fires.
   final double? compressProgress;
 
+  /// On-device path to a video's poster frame, set on the optimistic row so
+  /// a just-sent video shows its real thumbnail immediately instead of a
+  /// blank tile while the upload and server round-trip complete. Client-only
+  /// like [localMediaPath] — excluded from toJson/fromJson and never present
+  /// on a hydrated canonical row, which uses [signedThumbnailUrl] instead.
+  final String? localThumbnailPath;
+
   const Message({
     required this.id,
     required this.clientMessageId,
@@ -79,6 +86,7 @@ class Message {
     this.reactions = const {},
     this.isPreparing = false,
     this.compressProgress,
+    this.localThumbnailPath,
   });
 
   factory Message.fromRow(
@@ -146,6 +154,7 @@ class Message {
     String? quotedText,
     bool isPreparing = false,
     double? compressProgress,
+    String? localThumbnailPath,
   }) {
     return Message(
       id: id,
@@ -169,6 +178,7 @@ class Message {
       quotedText: quotedText,
       isPreparing: isPreparing,
       compressProgress: compressProgress,
+      localThumbnailPath: localThumbnailPath,
     );
   }
 
@@ -204,6 +214,7 @@ class Message {
     Map<String, Set<String>>? reactions,
     bool? isPreparing,
     double? compressProgress,
+    String? localThumbnailPath,
   }) {
     return Message(
       id: id ?? this.id,
@@ -237,6 +248,7 @@ class Message {
       reactions: reactions ?? this.reactions,
       isPreparing: isPreparing ?? this.isPreparing,
       compressProgress: compressProgress ?? this.compressProgress,
+      localThumbnailPath: localThumbnailPath ?? this.localThumbnailPath,
     );
   }
 

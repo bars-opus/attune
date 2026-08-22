@@ -805,6 +805,10 @@ class ChatController extends StateNotifier<ChatState> {
       createdAt: now,
       mediaType: 'video',
       localMediaPath: localPath,
+      // On-device poster so the bubble renders a real thumbnail
+      // immediately, rather than a blank tile until the upload and server
+      // round-trip produce a signed thumbnail URL.
+      localThumbnailPath: thumbnailLocalPath,
       mediaDurationMs: durationMs,
       mediaWidth: width,
       mediaHeight: height,
@@ -949,6 +953,10 @@ class ChatController extends StateNotifier<ChatState> {
     updateOptimistic(
       (m) => m.copyWith(
         localMediaPath: prepared.file.path,
+        // The on-device poster, so the bubble shows a real thumbnail the
+        // instant compression finishes rather than a blank tile until the
+        // upload + server round-trip produce a signed thumbnail URL.
+        localThumbnailPath: prepared.thumbnailFile.path,
         mediaDurationMs: prepared.durationMs,
         mediaWidth: prepared.width,
         mediaHeight: prepared.height,
