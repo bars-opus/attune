@@ -1,9 +1,12 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:attune/features/chat/presentation/widgets/video_message_thumbnail.dart';
 import 'package:flutter/material.dart';
+import 'package:file/local.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A 1x1 transparent PNG, scaled by the test's own ImageProvider so the
@@ -277,6 +280,138 @@ void main() {
     });
   });
 
+  group('cold restart: poster paints from disk before any URL exists', () {
+    // Temp dirs are reclaimed only after every test in the group has
+    // finished, so no decode is still reading a file when it disappears.
+    final tempDirs = <Directory>[];
+    tearDownAll(() {
+      for (final dir in tempDirs) {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      }
+    });
+
+    File writePoster() {
+      final dir = Directory.systemTemp.createTempSync('poster_cache');
+      tempDirs.add(dir);
+      return File('${dir.path}/poster.jpg')..writeAsBytesSync(_pngBytes);
+    }
+
+    /// Returns a previously-downloaded poster for one specific key, and a
+    /// miss for anything else — the shape of a real cache after a restart.
+    _FakeCacheManager fakeCacheWith(String key, File file) =>
+        _FakeCacheManager({key: file});
+
+    testWidgets('a cache hit paints the poster with no URL in hand', (
+      tester,
+    ) async {
+      final posterFile = writePoster();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: VideoMessageThumbnail(
+              // Exactly the cold-restart state: the cached row carries the
+              // stable storage key, but no signed URL (they expire, so none
+              // is persisted) and no local file (client-only field).
+              thumbnailUrl: null,
+              cacheKey: 'chat-media/rel-1/poster.jpg',
+              durationMs: 5000,
+              width: 720,
+              height: 1280,
+              cacheManager: fakeCacheWith(
+                'chat-media/rel-1/poster.jpg',
+                posterFile,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // The poster is painted straight off disk. Before this, the tile
+      // rendered a grey placeholder for the length of a sign-then-download
+      // round trip while these exact bytes sat in the cache, unreachable
+      // because the provider needed a URL to find them.
+      final image = tester.widget<Image>(
+        find
+            .descendant(
+              of: find.byType(VideoMessageThumbnail),
+              matching: find.byType(Image),
+            )
+            .first,
+      );
+      expect(image.image, isA<FileImage>());
+      expect((image.image as FileImage).file.path, posterFile.path);
+    });
+
+    testWidgets('a cache miss leaves the placeholder, painting no image', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: VideoMessageThumbnail(
+              thumbnailUrl: null,
+              cacheKey: 'chat-media/rel-1/never-fetched.jpg',
+              durationMs: 5000,
+              width: 720,
+              height: 1280,
+              cacheManager: const _FakeCacheManager({}),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // A poster this device has never downloaded is an ordinary miss, not
+      // an error: the tile keeps its placeholder and the normal
+      // resolve-then-fetch path still supplies the poster.
+      expect(
+        find.descendant(
+          of: find.byType(VideoMessageThumbnail),
+          matching: find.byType(Image),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('an available URL wins over the disk lookup', (tester) async {
+      final posterFile = writePoster();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: VideoMessageThumbnail(
+              thumbnailUrl: 'https://example.com/poster.jpg?token=abc',
+              cacheKey: 'chat-media/rel-1/poster.jpg',
+              durationMs: 5000,
+              width: 720,
+              height: 1280,
+              cacheManager: fakeCacheWith(
+                'chat-media/rel-1/poster.jpg',
+                posterFile,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // With a URL in hand the normal provider handles it (and serves the
+      // same disk entry itself) — the by-key lookup is a fallback for the
+      // no-URL case only, not a second code path competing with it.
+      final image = tester.widget<Image>(
+        find
+            .descendant(
+              of: find.byType(VideoMessageThumbnail),
+              matching: find.byType(Image),
+            )
+            .first,
+      );
+      expect(image.image, isA<CachedNetworkImageProvider>());
+    });
+  });
+
   testWidgets('renders the duration label', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -320,4 +455,37 @@ void main() {
     // decode-based assertion above silently vacuous.
     expect(Uint8List.fromList(_pngBytes).sublist(1, 4), [0x50, 0x4E, 0x47]);
   });
+}
+
+/// A disk cache preloaded with a fixed key->file map, standing in for the
+/// state of a real cache after an app restart. Only [getFileFromCache] is
+/// exercised — the tile never downloads, writes, or evicts, so every other
+/// member throwing keeps that guarantee honest rather than silently
+/// tolerating a call the production path shouldn't make.
+class _FakeCacheManager implements BaseCacheManager {
+  const _FakeCacheManager(this._files);
+
+  final Map<String, File> _files;
+
+  @override
+  Future<FileInfo?> getFileFromCache(
+    String key, {
+    bool ignoreMemCache = false,
+  }) async {
+    final file = _files[key];
+    if (file == null) return null;
+    return FileInfo(
+      // FileInfo takes the `file` package's File, not dart:io's;
+      // LocalFileSystem wraps the same on-disk path the tile ultimately
+      // reads through FileImage.
+      const LocalFileSystem().file(file.path),
+      FileSource.Cache,
+      DateTime.now().add(const Duration(days: 7)),
+      key,
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} is not used by the tile');
 }

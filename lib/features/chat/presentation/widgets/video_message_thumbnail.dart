@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 /// The poster-only video tile shown inside a chat bubble. Tapping it opens
 /// the full-screen viewer — this widget NEVER plays inline.
@@ -32,7 +33,14 @@ class VideoMessageThumbnail extends StatefulWidget {
     this.onTap,
     this.uploadProgress,
     this.showBusyOverlay = false,
+    @visibleForTesting this.cacheManager,
   });
+
+  /// Overrides the disk cache used for the by-key poster lookup. Production
+  /// leaves this null and uses [DefaultCacheManager]; tests inject a fake so
+  /// the cold-restart path can be exercised without real files.
+  @visibleForTesting
+  final BaseCacheManager? cacheManager;
 
   /// Poster image — a signed remote URL or a local file path. Null renders
   /// the neutral placeholder (a video whose thumbnail upload failed is
@@ -84,6 +92,25 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
   /// applies.
   double? _decodedRatio;
 
+  /// A previously-downloaded poster found on disk by [cacheKey], used while
+  /// no signed URL is in hand yet.
+  ///
+  /// This is what makes posters appear instantly on a COLD RESTART. The
+  /// restored row carries mediaThumbnailKey but no URL (signed URLs expire,
+  /// so persisting one would persist a dead link), and minting a fresh one
+  /// is a network round trip. The bytes, however, are already on disk from
+  /// the previous session — so the tile rendered grey for the length of a
+  /// round trip while the very image it needed sat in the cache, unreachable
+  /// because CachedNetworkImageProvider needs a URL to look one up.
+  /// Reading the cache directly by key skips both the signing and the
+  /// download.
+  /// Stored as a path rather than a File because flutter_cache_manager's
+  /// FileInfo carries the `file` package's File type, not dart:io's.
+  String? _cachedPosterPath;
+
+  /// Guards against a stale async cache lookup applying to a recycled tile.
+  String? _cacheLookupIdentity;
+
   ImageStream? _stream;
   ImageStreamListener? _listener;
 
@@ -111,7 +138,13 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
 
   ImageProvider? get _provider {
     final url = widget.thumbnailUrl;
-    if (url == null) return null;
+    if (url == null) {
+      // No URL yet. If a previous session already downloaded this poster,
+      // paint it straight from disk instead of showing the grey placeholder
+      // for the duration of a sign-then-download round trip.
+      final cached = _cachedPosterPath;
+      return cached == null ? null : FileImage(File(cached));
+    }
     if (!url.startsWith('http')) return FileImage(File(url));
     // CachedNetworkImageProvider, not NetworkImage: the latter caches in
     // memory only, so every app restart re-downloaded every poster and the
@@ -124,6 +157,37 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _lookUpCachedPoster();
+    _resolvePoster();
+  }
+
+  /// Looks for an already-downloaded copy of this poster on disk, keyed by
+  /// the stable storage path. Only runs while no URL is in hand — once one
+  /// arrives, CachedNetworkImageProvider serves the same disk entry itself.
+  ///
+  /// A miss is entirely normal (a poster this device has never fetched) and
+  /// leaves the placeholder in place, exactly as before.
+  Future<void> _lookUpCachedPoster() async {
+    if (widget.thumbnailUrl != null) return;
+    final key = widget.cacheKey;
+    if (key == null) return;
+    if (_cacheLookupIdentity == key) return;
+    _cacheLookupIdentity = key;
+
+    final info = await (widget.cacheManager ?? DefaultCacheManager())
+        .getFileFromCache(key);
+    if (!mounted) return;
+    // A URL may have arrived while this was in flight; it takes precedence.
+    if (info == null || widget.thumbnailUrl != null) return;
+    // The tile may have been recycled onto a different message mid-lookup.
+    if (_cacheLookupIdentity != key) return;
+    setState(() => _cachedPosterPath = info.file.path);
+    // Measure the newly-available poster so the tile takes its true shape.
+    // _posterIdentity is the cacheKey, which did NOT change here — only the
+    // provider behind it did (null -> FileImage), so the identity guard in
+    // _resolvePoster would skip the re-listen. Clear the binding to force
+    // it, otherwise the poster paints at the placeholder ratio.
+    _boundIdentity = null;
     _resolvePoster();
   }
 
@@ -138,6 +202,12 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
     super.didUpdateWidget(oldWidget);
     final oldIdentity = oldWidget.cacheKey ?? oldWidget.thumbnailUrl;
     if (oldIdentity == _posterIdentity) return;
+
+    // Different poster: any disk copy found for the previous one is no
+    // longer this tile's, so drop it before looking the new one up.
+    _cachedPosterPath = null;
+    _cacheLookupIdentity = null;
+    _lookUpCachedPoster();
 
     // Genuinely a different poster (the optimistic-to-canonical swap
     // replacing a local file with the uploaded one). Deliberately does NOT
