@@ -1466,8 +1466,22 @@ class ChatController extends StateNotifier<ChatState> {
               mimeType: pending.thumbnailMimeType!,
             );
             mediaThumbnailKey = thumbIntent.storageKey;
+            ChatLog.d(
+              '[CHAT] video poster uploaded '
+              'key=${ChatLog.shortId(thumbIntent.storageKey)}',
+            );
           } catch (error) {
-            ChatLog.e('video thumbnail upload failed (non-fatal)', error);
+            // Non-fatal for the SEND, but fatal for the POSTER: with no
+            // thumbnail key the row has nothing for the bubble to resolve,
+            // so the video renders as a blank tile forever, on every device
+            // and across every reinstall.
+            //
+            // Deliberately uses ChatLog.diagnostic rather than ChatLog.e:
+            // this failure is a server-side rejection (feature flag, MIME
+            // allowlist, RLS) whose *reason* is the entire diagnostic value,
+            // and e() shapes it away to a length. Shipping it shaped is what
+            // made this bug survive three rounds of client-side fixes.
+            ChatLog.diagnostic('video thumbnail upload failed', error);
           }
         }
       }
@@ -1495,13 +1509,31 @@ class ChatController extends StateNotifier<ChatState> {
             pending.clientMessageId,
           );
       await _deleteStagedMedia(pending.localMediaPath);
-      await _deleteStagedMedia(pending.localThumbnailPath);
+      // Only reclaim the staged poster once the server actually has a copy.
+      // If the thumbnail upload failed above, this file is the ONLY poster
+      // that exists anywhere — deleting it here is what turned a recoverable
+      // upload failure into a permanently blank tile.
+      final posterLandedOnServer = canonical.mediaThumbnailKey != null;
+      if (posterLandedOnServer) {
+        await _deleteStagedMedia(pending.localThumbnailPath);
+      }
 
       if (!mounted) return;
+      // Carry the local poster onto the canonical message when the server
+      // has none, so the bubble still renders this device's own frame
+      // instead of a grey box. Client-only field, so it never round-trips
+      // to the DB — the other participant correctly sees no poster, which
+      // is the honest reflection of what was actually uploaded.
+      final resolved =
+          posterLandedOnServer
+              ? canonical
+              : canonical.copyWith(
+                localThumbnailPath: pending.localThumbnailPath,
+              );
       state = state.copyWith(
         isSending: false,
         error: null,
-        messages: _replaceOptimistic(canonical),
+        messages: _replaceOptimistic(resolved),
       );
       ChatLog.d(
         '[CHAT] send ok rel=${ChatLog.shortId(relationshipId)} '

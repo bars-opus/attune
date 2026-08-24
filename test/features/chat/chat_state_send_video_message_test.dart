@@ -239,6 +239,40 @@ void main() {
       // sendTextMessage — mirrors a video message that simply has no
       // poster image.
       expect(message.mediaThumbnailKey, isNull);
+
+      // ...but the sender must still SEE a poster. The canonical row has no
+      // thumbnail key, so the locally-extracted frame is the only poster in
+      // existence — it has to survive the optimistic->canonical swap, or the
+      // bubble renders a permanently blank grey tile.
+      expect(message.localThumbnailPath, thumbPath);
+      // And the staged file itself must still be on disk, since deleting it
+      // is what previously made the blank tile unrecoverable across restarts.
+      expect(File(thumbPath).existsSync(), isTrue);
+    });
+
+    test(
+        'a successful thumbnail upload still reclaims the staged poster file',
+        () async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      final b = await boot(repo);
+      final videoPath = await writeFile('valid.mp4');
+      final thumbPath = await writeFile('valid_poster.jpg');
+
+      await b.controller.sendVideoMessage(
+        localPath: videoPath,
+        durationMs: 4200,
+        thumbnailLocalPath: thumbPath,
+        width: 1280,
+        height: 720,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // The server has its own copy now, so the staged file is redundant.
+      // Guards the retention above from becoming an unconditional leak that
+      // grows staging storage on every video ever sent.
+      final message = b.state.messages.single;
+      expect(message.mediaThumbnailKey, isNotNull);
+      expect(File(thumbPath).existsSync(), isFalse);
     });
 
     test(
