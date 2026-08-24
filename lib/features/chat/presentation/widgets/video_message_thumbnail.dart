@@ -82,6 +82,41 @@ class VideoMessageThumbnail extends StatefulWidget {
   /// busy state.
   final bool showBusyOverlay;
 
+  /// Remembers each poster's true ratio across tile rebuilds and restarts,
+  /// keyed by storage path.
+  ///
+  /// The ratio is a property of the poster, not of a widget instance, but it
+  /// was being re-derived by decoding the image every time a tile mounted —
+  /// and since every decode path is asynchronous, frame 1 always painted
+  /// before the answer arrived, at the stored-dimension fallback shape. That
+  /// is the shape half of the flash seen on restart: the tile appeared at
+  /// one size, then snapped to another once the poster decoded.
+  ///
+  /// Static so it outlives the tiles themselves — the whole point is that a
+  /// tile mounting for the first time can still know a shape some earlier
+  /// tile measured. Bounded because a chat's poster count is bounded in
+  /// practice and each entry is a string plus a double; the cap only guards
+  /// a pathological history.
+  static final Map<String, double> ratioCache = {};
+  static const int _ratioCacheLimit = 512;
+
+  /// Records a measured ratio. Public for tests, which cannot decode real
+  /// images under flutter_test and so must seed this directly; production
+  /// only reaches it through the tile's own ImageStreamListener.
+  @visibleForTesting
+  static void debugRememberRatio(String? identity, double ratio) {
+    if (identity == null) return;
+    if (ratioCache.length >= _ratioCacheLimit) {
+      ratioCache.remove(ratioCache.keys.first);
+    }
+    ratioCache[identity] = ratio;
+  }
+
+  /// Drops every remembered ratio, so one test's seeding cannot leak into
+  /// another's expectations through this static map.
+  @visibleForTesting
+  static void debugClearRatioCache() => ratioCache.clear();
+
   @override
   State<VideoMessageThumbnail> createState() => _VideoMessageThumbnailState();
 }
@@ -138,13 +173,14 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
 
   ImageProvider? get _provider {
     final url = widget.thumbnailUrl;
-    if (url == null) {
-      // No URL yet. If a previous session already downloaded this poster,
-      // paint it straight from disk instead of showing the grey placeholder
-      // for the duration of a sign-then-download round trip.
-      final cached = _cachedPosterPath;
-      return cached == null ? null : FileImage(File(cached));
-    }
+    // A local file already on disk always wins, even once a URL arrives.
+    // Both are the same frame, and swapping a painting FileImage for a
+    // CachedNetworkImageProvider costs a fresh async decode — the SECOND
+    // grey flash, landing right as the signed URL resolves. There is
+    // nothing to gain by re-reading bytes we are already displaying.
+    final cached = _cachedPosterPath;
+    if (cached != null) return FileImage(File(cached));
+    if (url == null) return null;
     if (!url.startsWith('http')) return FileImage(File(url));
     // CachedNetworkImageProvider, not NetworkImage: the latter caches in
     // memory only, so every app restart re-downloaded every poster and the
@@ -157,18 +193,29 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // Synchronous, so a poster whose shape is already known paints at the
+    // right size on the FIRST frame rather than after a decode.
+    _decodedRatio ??= _ratioCache[_posterIdentity];
     _lookUpCachedPoster();
     _resolvePoster();
   }
 
+  Map<String, double> get _ratioCache => VideoMessageThumbnail.ratioCache;
+
+  static void _rememberRatio(String? identity, double ratio) =>
+      VideoMessageThumbnail.debugRememberRatio(identity, ratio);
+
   /// Looks for an already-downloaded copy of this poster on disk, keyed by
-  /// the stable storage path. Only runs while no URL is in hand — once one
-  /// arrives, CachedNetworkImageProvider serves the same disk entry itself.
+  /// the stable storage path.
+  ///
+  /// Runs even when a URL IS in hand: a FileImage of a known path decodes
+  /// without a network stack, and [_provider] prefers it, so finding the
+  /// file removes the swap-and-redecode that flashed grey a second time.
   ///
   /// A miss is entirely normal (a poster this device has never fetched) and
   /// leaves the placeholder in place, exactly as before.
   Future<void> _lookUpCachedPoster() async {
-    if (widget.thumbnailUrl != null) return;
+    if (_cachedPosterPath != null) return;
     final key = widget.cacheKey;
     if (key == null) return;
     if (_cacheLookupIdentity == key) return;
@@ -177,8 +224,7 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
     final info = await (widget.cacheManager ?? DefaultCacheManager())
         .getFileFromCache(key);
     if (!mounted) return;
-    // A URL may have arrived while this was in flight; it takes precedence.
-    if (info == null || widget.thumbnailUrl != null) return;
+    if (info == null) return;
     // The tile may have been recycled onto a different message mid-lookup.
     if (_cacheLookupIdentity != key) return;
     setState(() => _cachedPosterPath = info.file.path);
@@ -237,6 +283,9 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
         if (!mounted) return;
         final ratio = image.image.width / image.image.height;
         if (!ratio.isFinite || ratio <= 0) return;
+        // Record before the early-out: the value is worth keeping for the
+        // next tile even when this one already had it.
+        _rememberRatio(_posterIdentity, ratio);
         if (_decodedRatio == ratio) return;
         setState(() => _decodedRatio = ratio);
       },
@@ -266,6 +315,16 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
     super.dispose();
   }
 
+  /// The colour behind a poster that has not painted yet.
+  ///
+  /// Near-black rather than the surface grey: video frames are usually dark,
+  /// and the play glyph and duration chip on top are both white-on-dark. A
+  /// light grey box made any uncovered moment read as a broken tile, where
+  /// a dark one reads as a video that hasn't started — the same choice
+  /// WhatsApp and iMessage make.
+  Color _placeholderColor(ColorScheme colorScheme) =>
+      Color.lerp(colorScheme.surfaceContainerHighest, Colors.black, 0.82)!;
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -294,13 +353,19 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
                   // swapped for the uploaded one after a send completes —
                   // same image, so there is nothing to "reveal".
                   gaplessPlayback: true,
+                  // Paint the decoded frame the instant it is ready, with no
+                  // fade. Image's default frameBuilder animates opacity from
+                  // 0, so even a synchronously-available poster ramps up over
+                  // several frames — read as a flash of the placeholder
+                  // showing through. WhatsApp and iMessage both cut straight
+                  // to the poster.
+                  frameBuilder: (context, child, frame, wasSyncLoaded) => child,
                   errorBuilder:
-                      (context, error, stackTrace) => ColoredBox(
-                        color: colorScheme.surfaceContainerHighest,
-                      ),
+                      (context, error, stackTrace) =>
+                          ColoredBox(color: _placeholderColor(colorScheme)),
                 )
               else
-                ColoredBox(color: colorScheme.surfaceContainerHighest),
+                ColoredBox(color: _placeholderColor(colorScheme)),
 
               // Dim the poster while busy so the ring stays legible over a
               // bright frame.

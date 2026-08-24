@@ -375,7 +375,8 @@ void main() {
       );
     });
 
-    testWidgets('an available URL wins over the disk lookup', (tester) async {
+    testWidgets('a disk copy wins over an available URL, avoiding a '
+        'swap-and-redecode', (tester) async {
       final posterFile = writePoster();
 
       await tester.pumpWidget(
@@ -397,9 +398,10 @@ void main() {
       );
       await tester.pump();
 
-      // With a URL in hand the normal provider handles it (and serves the
-      // same disk entry itself) — the by-key lookup is a fallback for the
-      // no-URL case only, not a second code path competing with it.
+      // Both point at the same bytes, so the local file is strictly better:
+      // swapping a painting FileImage for a CachedNetworkImageProvider costs
+      // a fresh async decode, which is the second grey flash the user saw as
+      // the signed URL resolved.
       final image = tester.widget<Image>(
         find
             .descendant(
@@ -408,8 +410,113 @@ void main() {
             )
             .first,
       );
-      expect(image.image, isA<CachedNetworkImageProvider>());
+      expect(image.image, isA<FileImage>());
+      expect((image.image as FileImage).file.path, posterFile.path);
     });
+  });
+
+  testWidgets('the poster cuts in with no opacity fade', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: VideoMessageThumbnail(
+            thumbnailUrl: 'https://example.com/poster.jpg',
+            cacheKey: 'chat-media/rel-1/poster.jpg',
+            durationMs: 5000,
+            width: 720,
+            height: 1280,
+          ),
+        ),
+      ),
+    );
+
+    final image = tester.widget<Image>(
+      find
+          .descendant(
+            of: find.byType(VideoMessageThumbnail),
+            matching: find.byType(Image),
+          )
+          .first,
+    );
+    // Image's DEFAULT frameBuilder animates opacity from zero, so even a
+    // poster that is ready immediately ramps up over several frames and the
+    // placeholder shows through underneath. Overriding it to return the
+    // child directly is what makes the poster appear at full opacity on the
+    // frame it decodes.
+    expect(image.frameBuilder, isNotNull);
+    final built = image.frameBuilder!(
+      // ignore: use_build_context_synchronously
+      tester.element(find.byType(VideoMessageThumbnail)),
+      const SizedBox(key: ValueKey('decoded-poster')),
+      0,
+      false,
+    );
+    expect(built, isA<SizedBox>());
+    expect((built as SizedBox).key, const ValueKey('decoded-poster'));
+  });
+
+  testWidgets('a remounted tile reuses the remembered poster ratio on its '
+      'FIRST frame, skipping the placeholder shape', (tester) async {
+    // The ratio belongs to the poster, not to a widget instance. Re-deriving
+    // it by decoding on every mount meant frame 1 always painted at the
+    // fallback ratio, because every decode path is asynchronous — the shape
+    // half of the flash the user reported on restart.
+    //
+    // flutter_test cannot decode real images (verified: even a direct
+    // FileImage.resolve never fires its listener here), so the remembered
+    // ratio is seeded through the test seam instead of by decoding, and the
+    // assertion is that a FRESH State picks it up before its first paint.
+    // 1.6 rather than a wider value: the tile clamps to _maxRatio (1.91), and
+    // a clamped expectation would pass even if the remembered ratio were
+    // ignored entirely.
+    VideoMessageThumbnail.debugRememberRatio(
+      'chat-media/rel-1/wide-poster.png',
+      1.6,
+    );
+    addTearDown(VideoMessageThumbnail.debugClearRatioCache);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: VideoMessageThumbnail(
+            thumbnailUrl: null,
+            cacheKey: 'chat-media/rel-1/wide-poster.png',
+            durationMs: 5000,
+            // Square, deliberately disagreeing with the remembered 2:1 so
+            // the two are distinguishable.
+            width: 400,
+            height: 400,
+          ),
+        ),
+      ),
+    );
+
+    // No pump/settle: this is frame 1 of a newly-mounted tile, and it is
+    // already the remembered shape rather than the square fallback.
+    expect(aspectRatioOf(tester), closeTo(1.6, 0.0001));
+  });
+
+  testWidgets('an unknown poster still uses the stored-dimension fallback', (
+    tester,
+  ) async {
+    VideoMessageThumbnail.debugClearRatioCache();
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: VideoMessageThumbnail(
+            thumbnailUrl: null,
+            cacheKey: 'chat-media/rel-1/never-seen.png',
+            durationMs: 5000,
+            width: 400,
+            height: 400,
+          ),
+        ),
+      ),
+    );
+
+    // Guards the seeding above from being mistaken for a global default:
+    // a poster nobody has measured falls back exactly as before.
+    expect(aspectRatioOf(tester), closeTo(1.0, 0.0001));
   });
 
   testWidgets('renders the duration label', (tester) async {
