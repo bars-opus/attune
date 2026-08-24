@@ -329,7 +329,21 @@ class FakeChatRepository implements ChatRepository {
   Future<String?> createSignedMediaUrl(
     String mediaKey, {
     bool forceRefresh = false,
-  }) async => null;
+  }) async {
+    signedUrlRequests.add(mediaKey);
+    // Null by default preserves the behaviour every existing test was
+    // written against (no URL resolves); tests that need a real one opt in
+    // via [signMediaUrls].
+    if (!signMediaUrls) return null;
+    return 'https://signed.test/$mediaKey?token=abc';
+  }
+
+  /// Storage keys passed to [createSignedMediaUrl], in call order.
+  final List<String> signedUrlRequests = [];
+
+  /// When true, [createSignedMediaUrl] returns a usable fake signed URL
+  /// instead of null.
+  bool signMediaUrls = false;
 
   /// Recorded messageIds passed to [markVideoViewed], in call order —
   /// includes calls that go on to throw via [markVideoViewedFailures].

@@ -14,6 +14,7 @@ import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/domain/services/chat_feature_flags.dart';
 import 'package:attune/features/chat/domain/services/chat_image_preparer.dart';
+import 'package:attune/features/chat/domain/services/chat_poster_prewarmer.dart';
 import 'package:attune/features/chat/domain/services/chat_video_preparer.dart';
 import 'package:attune/features/chat/utils/chat_error.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
@@ -38,6 +39,13 @@ final signedMediaUrlProvider = FutureProvider.family<String?, String>((
   mediaKey,
 ) {
   return ref.watch(chatRepositoryProvider).createSignedMediaUrl(mediaKey);
+});
+
+/// Warms video posters into the disk cache ahead of their tiles. Kept at
+/// app scope (not per-conversation) so its already-attempted set survives
+/// navigating between chats.
+final chatPosterPrewarmerProvider = Provider<ChatPosterPrewarmer>((ref) {
+  return ChatPosterPrewarmer(repository: ref.watch(chatRepositoryProvider));
 });
 
 final conversationsRefreshProvider = StateProvider<int>((ref) => 0);
@@ -249,6 +257,11 @@ class ChatController extends StateNotifier<ChatState> {
     final hasWarmCache = restoredMessages.isNotEmpty;
     if (hasWarmCache && mounted) {
       state = state.copyWith(messages: restoredMessages);
+      // Start fetching posters the moment history is on screen, rather than
+      // when each tile mounts a frame or two later. The cached rows carry
+      // mediaThumbnailKey, which is all the prewarmer needs, so this is the
+      // earliest possible point — and it is the one that matters on restart.
+      unawaited(_prewarmPosters(restoredMessages));
     }
 
     await _refreshConversation();
@@ -278,6 +291,21 @@ class ChatController extends StateNotifier<ChatState> {
     // Read is only recorded once the screen reports the conversation is
     // visible and foregrounded (Spec 6.4); do not mark read here.
     unawaited(flushOutbox());
+  }
+
+  /// Pulls video posters into the disk cache ahead of the tiles that show
+  /// them, so a tile's by-key lookup hits on its first frame instead of the
+  /// poster arriving a beat after the list is already on screen.
+  ///
+  /// Fire-and-forget and fully guarded: a prewarm failure must never affect
+  /// the message list, which is why every call site wraps it in unawaited
+  /// and this swallows anything the service lets through.
+  Future<void> _prewarmPosters(List<Message> messages) async {
+    try {
+      await ref.read(chatPosterPrewarmerProvider).prewarm(messages);
+    } catch (error) {
+      ChatLog.e('poster prewarm pass failed (non-fatal)', error);
+    }
   }
 
   /// Reports whether the conversation view is visible and the app is
@@ -388,6 +416,7 @@ class ChatController extends StateNotifier<ChatState> {
             .read(chatCacheServiceProvider)
             .writeMessages(user.id, relationshipId, state.messages),
       );
+      unawaited(_prewarmPosters(state.messages));
       _maybeReceiveHaptic();
     } catch (error) {
       final mapped = ChatError.from(error);
@@ -442,6 +471,7 @@ class ChatController extends StateNotifier<ChatState> {
             .read(chatCacheServiceProvider)
             .writeMessages(user.id, relationshipId, state.messages),
       );
+      unawaited(_prewarmPosters(state.messages));
       _maybeReceiveHaptic();
     } catch (_) {
       // Non-fatal; loadMessages() refresh follows.
