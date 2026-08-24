@@ -163,6 +163,7 @@ class ChatVideoPreparer {
     Duration? trimStart,
     Duration? trimEnd,
     void Function(double)? onProgress,
+    void Function(String posterPath)? onPosterReady,
     Duration? maxDuration,
     int? maxBytes,
   }) async {
@@ -236,6 +237,32 @@ class ChatVideoPreparer {
       throw const ChatVideoRejected('media_too_long');
     }
 
+    // Thumbnail FIRST, before the expensive transcode. It reads from
+    // `localPath` (the original source), never from the compressed output,
+    // so it has no real dependency on compression having run — it only used
+    // to sit after it. Extracting it up front lets the caller paint a real
+    // poster in the bubble while compression is still running (WhatsApp's
+    // behavior: the frame appears the instant you hit send, with progress
+    // drawn on top) instead of showing a blank placeholder for the entire
+    // transcode.
+    final PreparedChatImage preparedThumbnail;
+    try {
+      final thumbnailBytes = await VideoThumbnail.thumbnailData(
+        video: localPath,
+        timeMs: effectiveStart.inMilliseconds,
+        quality: 90,
+      );
+      if (thumbnailBytes == null) {
+        throw const ChatVideoRejected('thumbnail_failed');
+      }
+      final rawThumbPath = await _tempTargetPath('raw_thumb', 'jpg');
+      await File(rawThumbPath).writeAsBytes(thumbnailBytes, flush: true);
+      preparedThumbnail = await const ChatImagePreparer().prepare(rawThumbPath);
+    } on ChatImageRejected {
+      throw const ChatVideoRejected('thumbnail_failed');
+    }
+    onPosterReady?.call(preparedThumbnail.file.path);
+
     // NOTE on quality targets: video_compress's method channel only accepts
     // path/quality/deleteOrigin/startTime/duration/includeAudio/frameRate
     // (see the plugin's own `compressVideo` implementation) — there is no
@@ -287,23 +314,6 @@ class ChatVideoPreparer {
     final outSize = await outFile.length();
     if (outSize <= 0 || outSize > effectiveMaxBytes) {
       throw const ChatVideoRejected('media_compress_failed');
-    }
-
-    final PreparedChatImage preparedThumbnail;
-    try {
-      final thumbnailBytes = await VideoThumbnail.thumbnailData(
-        video: localPath,
-        timeMs: effectiveStart.inMilliseconds,
-        quality: 90,
-      );
-      if (thumbnailBytes == null) {
-        throw const ChatVideoRejected('thumbnail_failed');
-      }
-      final rawThumbPath = await _tempTargetPath('raw_thumb', 'jpg');
-      await File(rawThumbPath).writeAsBytes(thumbnailBytes, flush: true);
-      preparedThumbnail = await const ChatImagePreparer().prepare(rawThumbPath);
-    } on ChatImageRejected {
-      throw const ChatVideoRejected('thumbnail_failed');
     }
 
     // Rotation-correct the dimensions before they're persisted — see

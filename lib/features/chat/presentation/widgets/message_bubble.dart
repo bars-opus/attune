@@ -789,12 +789,23 @@ class _BubbleBody extends StatelessWidget {
                       ),
                 ),
       );
+      // Busy overlay while the image is still on its way out, matching the
+      // video tile and WhatsApp: the picture is fully visible from the
+      // moment you hit send, with a spinner drawn over it until it lands.
+      // Indeterminate — the upload reports no byte-level progress.
+      final imageTile =
+          message.isSending
+              ? Stack(
+                alignment: Alignment.center,
+                children: [thumbnail, const _MediaBusyOverlay()],
+              )
+              : thumbnail;
       children.add(
         onImageTap == null
-            ? thumbnail
+            ? imageTile
             : GestureDetector(
               onTap: () => onImageTap!(message),
-              child: thumbnail,
+              child: imageTile,
             ),
       );
     }
@@ -903,18 +914,14 @@ class _BubbleBody extends StatelessWidget {
           ),
         );
       }
-    } else if (message.isPreparing) {
-      // The instant-show optimistic bubble: appears the moment the trim
-      // window is confirmed, before ChatVideoPreparer's compression has
-      // produced a real playable file/thumbnail — same "show first,
-      // prepare in the background" timing images already get, just with a
-      // visible progress state since video compression is real,
-      // non-instant work (unlike image's near-instant client-side
-      // compress). Swaps to the real VideoMessagePlayer branch below once
-      // isPreparing flips false and the compressed file is threaded
-      // through (see ChatController.sendVideoMessage).
-      children.add(_VideoCompressingTile(progress: message.compressProgress));
-    } else if (message.hasVideo) {
+    } else if (message.isPreparing || message.hasVideo) {
+      // ONE branch for both the still-preparing and the finished states, so
+      // the same VideoMessageThumbnail element stays mounted across the
+      // transition. Two separate branches would swap widget types mid-send,
+      // remounting the tile and re-running its poster measurement — a
+      // visible flicker and a possible shape jump at the exact moment the
+      // user is watching the upload finish.
+      //
       // Poster only — never an inline player. Tapping opens the full-screen
       // viewer, matching WhatsApp/iMessage. Beyond being the expected
       // interaction, this is what makes the tile's aspect ratio STABLE: the
@@ -923,19 +930,33 @@ class _BubbleBody extends StatelessWidget {
       // the decoder's true ratio after, so the bubble visibly jumped shape
       // mid-tap. VideoMessageThumbnail has one source of truth instead —
       // the decoded poster, which has rotation baked in by construction.
+      final isBusy = message.isPreparing || message.isSending;
       children.add(
         SizedBox(
           width: 220,
           child: VideoMessageThumbnail(
             key: ValueKey(message.clientMessageId),
             // Local poster first (the just-sent case, before the canonical
-            // row's signed thumbnail URL exists), then the signed URL.
+            // row's signed thumbnail URL exists), then the signed URL. The
+            // local path now arrives DURING compression (see
+            // ChatVideoPreparer's onPosterReady), so the real frame is on
+            // screen almost immediately rather than after the transcode.
             thumbnailUrl:
                 message.localThumbnailPath ?? message.signedThumbnailUrl,
             durationMs: message.mediaDurationMs ?? 0,
             width: message.mediaWidth ?? 0,
             height: message.mediaHeight ?? 0,
-            onTap: onVideoTap == null ? null : () => onVideoTap!(message),
+            // Progress ring over the poster while compressing and while
+            // uploading — WhatsApp shows one continuous busy state across
+            // both, not two different-looking phases. Null once the send
+            // completes, which removes the ring and restores the play glyph.
+            uploadProgress: isBusy ? message.compressProgress : null,
+            showBusyOverlay: isBusy,
+            // Not tappable until there's something to play.
+            onTap:
+                (message.isPreparing || onVideoTap == null)
+                    ? null
+                    : () => onVideoTap!(message),
           ),
         ),
       );
@@ -1192,84 +1213,36 @@ class _StatusChip extends StatelessWidget {
 /// intentionally doesn't try to build a player around one. [progress] is
 /// null before the first video_compress progress tick arrives, in which
 /// case the indicator just spins indeterminately rather than sitting at 0%.
-class _VideoCompressingTile extends StatelessWidget {
-  const _VideoCompressingTile({required this.progress});
-
-  final double? progress;
+/// Solid-fill placeholder swept by [Shimmer] while a network image loads —
+/// shown only on a genuine first fetch, since CachedNetworkImage skips
+/// straight to the decoded image on every subsequent open (disk cache hit).
+/// Dim + spinner drawn over a media tile that is still being sent. The
+/// media itself stays fully visible underneath — WhatsApp's treatment,
+/// where hitting send puts the real picture on screen immediately and only
+/// layers a progress affordance on top, rather than hiding it behind a
+/// placeholder until the upload finishes.
+class _MediaBusyOverlay extends StatelessWidget {
+  const _MediaBusyOverlay();
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final percent = progress == null ? null : (progress! * 100).round();
     return Semantics(
-      label:
-          percent == null
-              ? 'Preparing video'
-              : 'Preparing video, $percent percent',
+      label: 'Sending',
       child: Container(
         width: 220,
         height: 220,
-        decoration: BoxDecoration(
-          color: Color.alphaBlend(
-            colorScheme.primary.withValues(alpha: 0.06),
-            colorScheme.surfaceContainerHighest,
-          ),
-          borderRadius: BorderRadius.circular(BorderRadiusTokens.md),
-          border: Border.all(
-            color: colorScheme.outline.withValues(alpha: 0.16),
-            width: BorderWidthTokens.hairline,
-          ),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: colorScheme.surface.withValues(alpha: 0.74),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.movie_creation_outlined,
-                  color: colorScheme.primary,
-                  size: IconSizes.md,
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: 128,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
-                  child: LinearProgressIndicator(
-                    minHeight: 4,
-                    value: progress,
-                    backgroundColor: colorScheme.surface.withValues(
-                      alpha: 0.72,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                percent == null ? 'Preparing video' : 'Preparing $percent%',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+        color: Colors.black.withValues(alpha: 0.25),
+        alignment: Alignment.center,
+        child: const SizedBox(
+          width: 40,
+          height: 40,
+          child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white),
         ),
       ),
     );
   }
 }
 
-/// Solid-fill placeholder swept by [Shimmer] while a network image loads —
-/// shown only on a genuine first fetch, since CachedNetworkImage skips
-/// straight to the decoded image on every subsequent open (disk cache hit).
 class _ImagePlaceholder extends StatelessWidget {
   const _ImagePlaceholder();
 

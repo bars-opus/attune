@@ -100,6 +100,118 @@ void main() {
     expect(aspectRatioOf(tester), greaterThanOrEqualTo(0.5));
   });
 
+  group('busy overlay (WhatsApp-style send-in-progress)', () {
+    testWidgets('shows a determinate ring over the poster while compressing', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: VideoMessageThumbnail(
+              thumbnailUrl: null,
+              durationMs: 5000,
+              width: 720,
+              height: 1280,
+              showBusyOverlay: true,
+              uploadProgress: 0.42,
+            ),
+          ),
+        ),
+      );
+
+      final indicator = tester.widget<CircularProgressIndicator>(
+        find.byType(CircularProgressIndicator),
+      );
+      // Determinate: compression reports real percentages.
+      expect(indicator.value, closeTo(0.42, 0.0001));
+      // The play glyph is replaced while busy — tapping wouldn't play
+      // anything yet.
+      expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
+    });
+
+    testWidgets('falls back to an indeterminate ring when there is no '
+        'progress signal (the upload phase)', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: VideoMessageThumbnail(
+              thumbnailUrl: null,
+              durationMs: 5000,
+              width: 720,
+              height: 1280,
+              showBusyOverlay: true,
+              uploadProgress: null,
+            ),
+          ),
+        ),
+      );
+
+      final indicator = tester.widget<CircularProgressIndicator>(
+        find.byType(CircularProgressIndicator),
+      );
+      expect(indicator.value, isNull);
+    });
+
+    testWidgets('restores the play glyph and drops the ring once sent', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: VideoMessageThumbnail(
+              thumbnailUrl: null,
+              durationMs: 5000,
+              width: 720,
+              height: 1280,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    });
+
+    testWidgets('the tile keeps its shape across the busy -> sent transition', (
+      tester,
+    ) async {
+      Widget build({required bool busy}) => MaterialApp(
+        home: Scaffold(
+          body: VideoMessageThumbnail(
+            // Same key both times: this is the real transition, where the
+            // element stays mounted rather than being swapped for a
+            // different widget type mid-send.
+            key: const ValueKey('same-message'),
+            thumbnailUrl: null,
+            durationMs: 5000,
+            width: 720,
+            height: 1280,
+            showBusyOverlay: busy,
+            uploadProgress: busy ? 0.8 : null,
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(build(busy: true));
+      final busyRatio = aspectRatioOf(tester);
+      final elementWhileBusy = tester.element(
+        find.byType(VideoMessageThumbnail),
+      );
+
+      await tester.pumpWidget(build(busy: false));
+      await tester.pumpAndSettle();
+
+      // No shape jump at the moment the user is watching the send finish...
+      expect(aspectRatioOf(tester), busyRatio);
+      // ...and no remount, which would re-run the poster measurement and
+      // flicker.
+      expect(
+        tester.element(find.byType(VideoMessageThumbnail)),
+        same(elementWhileBusy),
+      );
+    });
+  });
+
   testWidgets('renders the duration label', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(

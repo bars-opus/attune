@@ -28,6 +28,8 @@ class VideoMessageThumbnail extends StatefulWidget {
     required this.width,
     required this.height,
     this.onTap,
+    this.uploadProgress,
+    this.showBusyOverlay = false,
   });
 
   /// Poster image — a signed remote URL or a local file path. Null renders
@@ -46,6 +48,18 @@ class VideoMessageThumbnail extends StatefulWidget {
   final int height;
 
   final VoidCallback? onTap;
+
+  /// 0.0-1.0 while this video is still being prepared/sent, drawn as a ring
+  /// over the poster. Null renders an indeterminate spinner instead (the
+  /// upload phase, where there's no byte-level progress to report) — only
+  /// meaningful when [showBusyOverlay] is true.
+  final double? uploadProgress;
+
+  /// Replaces the play glyph with the progress ring + cancel-style centre,
+  /// dimming the poster behind it. True from the moment the message is sent
+  /// until it lands, covering both compression and upload as one continuous
+  /// busy state.
+  final bool showBusyOverlay;
 
   @override
   State<VideoMessageThumbnail> createState() => _VideoMessageThumbnailState();
@@ -180,23 +194,62 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
               else
                 ColoredBox(color: colorScheme.surfaceContainerHighest),
 
-              // Play affordance — WhatsApp's filled circle, which reads as
-              // "opens a player" rather than "toggles inline playback".
-              Center(
-                child: Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    shape: BoxShape.circle,
+              // Dim the poster while busy so the ring stays legible over a
+              // bright frame.
+              if (widget.showBusyOverlay)
+                ColoredBox(color: Colors.black.withValues(alpha: 0.25)),
+
+              if (widget.showBusyOverlay)
+                // Progress ring around a stop-style centre — the poster is
+                // already visible behind it, matching WhatsApp's
+                // send-in-progress treatment.
+                Center(
+                  child: SizedBox(
+                    width: 56,
+                    height: 56,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox.expand(
+                          child: CircularProgressIndicator(
+                            // Determinate during compression (real
+                            // percentages), indeterminate during upload
+                            // where there is no byte-level signal.
+                            value: widget.uploadProgress,
+                            strokeWidth: 3,
+                            color: Colors.white,
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.25,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          Icons.stop_rounded,
+                          size: 20,
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.play_arrow_rounded,
-                    size: 34,
-                    color: Colors.white,
+                )
+              else
+                // Play affordance — WhatsApp's filled circle, which reads as
+                // "opens a player" rather than "toggles inline playback".
+                Center(
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.play_arrow_rounded,
+                      size: 34,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
-              ),
 
               Positioned(
                 left: 8,

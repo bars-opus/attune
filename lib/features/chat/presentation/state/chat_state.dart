@@ -918,6 +918,14 @@ class ChatController extends StateNotifier<ChatState> {
             (m) => m.copyWith(compressProgress: (value / 100).clamp(0.0, 1.0)),
           );
         },
+        // Fires as soon as the poster frame is extracted — before the
+        // transcode, which is the slow part. Painting it on the optimistic
+        // row here is what lets the bubble show the real frame immediately
+        // with progress drawn over it (WhatsApp's behavior) instead of a
+        // blank placeholder for the whole compression.
+        onPosterReady: (posterPath) {
+          updateOptimistic((m) => m.copyWith(localThumbnailPath: posterPath));
+        },
       );
     } on ChatVideoRejected catch (rejected) {
       if (!mounted) return;
