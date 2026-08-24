@@ -931,37 +931,65 @@ class _BubbleBody extends StatelessWidget {
       // mid-tap. VideoMessageThumbnail has one source of truth instead —
       // the decoded poster, which has rotation baked in by construction.
       final isBusy = message.isPreparing || message.isSending;
+      // Local poster first (the just-sent case), then any signed URL we
+      // already hold. On a COLD OPEN both are null: neither is persisted
+      // (localThumbnailPath is client-only; signed URLs expire, so caching
+      // one would be caching a dead link). All the restored row carries is
+      // mediaThumbnailKey — so when there's no URL in hand, resolve one
+      // from that key rather than rendering a blank tile and waiting for
+      // ChatController's hydration pass to eventually supply it. This is
+      // the same resolve-or-fetch treatment the image branch above already
+      // gets via ResolvedMediaUrl, and it's what actually makes posters
+      // appear on open rather than filling in later.
+      final directPosterUrl =
+          message.localThumbnailPath ?? message.signedThumbnailUrl;
+      final posterCacheKey = message.mediaThumbnailKey;
+
+      Widget buildTile(String? posterUrl) => VideoMessageThumbnail(
+        key: ValueKey(message.clientMessageId),
+        thumbnailUrl: posterUrl,
+        // Stable storage path, so a poster survives app restarts on disk
+        // instead of being re-fetched behind a blank box every open, and a
+        // re-signed URL still hits the same cache entry.
+        cacheKey: posterCacheKey,
+        durationMs: message.mediaDurationMs ?? 0,
+        width: message.mediaWidth ?? 0,
+        height: message.mediaHeight ?? 0,
+        // Progress ring over the poster while compressing and while
+        // uploading — WhatsApp shows one continuous busy state across
+        // both, not two different-looking phases. Null once the send
+        // completes, which removes the ring and restores the play glyph.
+        uploadProgress: isBusy ? message.compressProgress : null,
+        showBusyOverlay: isBusy,
+        // Not tappable until there's something to play.
+        onTap:
+            (message.isPreparing || onVideoTap == null)
+                ? null
+                : () => onVideoTap!(message),
+      );
+
       children.add(
         SizedBox(
           width: 220,
-          child: VideoMessageThumbnail(
-            key: ValueKey(message.clientMessageId),
-            // Local poster first (the just-sent case, before the canonical
-            // row's signed thumbnail URL exists), then the signed URL. The
-            // local path now arrives DURING compression (see
-            // ChatVideoPreparer's onPosterReady), so the real frame is on
-            // screen almost immediately rather than after the transcode.
-            thumbnailUrl:
-                message.localThumbnailPath ?? message.signedThumbnailUrl,
-            // Stable storage path, so a poster survives app restarts on
-            // disk instead of being re-fetched behind a blank box every
-            // open, and a re-signed URL still hits the same cache entry.
-            cacheKey: message.mediaThumbnailKey,
-            durationMs: message.mediaDurationMs ?? 0,
-            width: message.mediaWidth ?? 0,
-            height: message.mediaHeight ?? 0,
-            // Progress ring over the poster while compressing and while
-            // uploading — WhatsApp shows one continuous busy state across
-            // both, not two different-looking phases. Null once the send
-            // completes, which removes the ring and restores the play glyph.
-            uploadProgress: isBusy ? message.compressProgress : null,
-            showBusyOverlay: isBusy,
-            // Not tappable until there's something to play.
-            onTap:
-                (message.isPreparing || onVideoTap == null)
-                    ? null
-                    : () => onVideoTap!(message),
-          ),
+          child:
+              (directPosterUrl != null || posterCacheKey == null)
+                  ? buildTile(directPosterUrl)
+                  : ResolvedMediaUrl(
+                    // No URL in hand (the cold-open case) — resolve one
+                    // from the persisted key. signedMediaUrl is passed as
+                    // null deliberately: that's the VIDEO's url, not the
+                    // poster's, and handing it over would paint the video
+                    // file into an Image widget.
+                    signedMediaUrl: null,
+                    mediaKey: posterCacheKey,
+                    // Keep showing the tile (with its placeholder shape and
+                    // play glyph) while resolving, rather than swapping in
+                    // a differently-shaped spinner box that would make the
+                    // bubble jump once the poster lands.
+                    loading: buildTile(null),
+                    error: buildTile(null),
+                    builder: (context, url) => buildTile(url),
+                  ),
         ),
       );
     }

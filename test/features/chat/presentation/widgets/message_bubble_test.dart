@@ -5,6 +5,7 @@ import 'package:attune/features/chat/presentation/providers/voice_playback_provi
 import 'package:attune/features/chat/presentation/screens/ephemeral_video_viewer_screen.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:attune/features/chat/presentation/widgets/video_message_player.dart';
+import 'package:attune/features/chat/presentation/widgets/resolved_media_url.dart';
 import 'package:attune/features/chat/presentation/widgets/video_message_thumbnail.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
@@ -900,6 +901,54 @@ void main() {
       );
 
       expect(find.byType(VideoMessageThumbnail), findsOneWidget);
+      expect(find.text('Video expired'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'a cold-open video row (no poster URL, only the cached thumbnail key) '
+    'still resolves a poster instead of rendering a blank tile',
+    (tester) async {
+      // The cold-open shape, and the bug this guards: NONE of
+      // localThumbnailPath / signedThumbnailUrl / signedMediaUrl are
+      // persisted (client-only, or expiring signatures not worth caching),
+      // so a row restored from the message cache carries only the storage
+      // KEYS. The tile previously read `localThumbnailPath ??
+      // signedThumbnailUrl`, got null for both, and painted a blank box
+      // until hydration eventually re-signed a URL — which is why videos
+      // showed as empty rectangles on app open while text was instant.
+      final message = Message(
+        id: 'm-cold',
+        clientMessageId: 'c-cold',
+        relationshipId: 'r1',
+        senderId: 'other',
+        content: '',
+        createdAt: DateTime(2026, 8, 16),
+        status: MessageStatus.sent,
+        isMine: false,
+        mediaType: 'video',
+        mediaKey: 'chat-media/r1/clip.mp4',
+        mediaThumbnailKey: 'chat-media/r1/poster.jpg',
+        mediaDurationMs: 5000,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: MessageBubble(
+                message: message,
+                conversation: testConversation(),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // The tile renders immediately (never a blank/absent one) and a
+      // resolver is in the tree working from the cached key.
+      expect(find.byType(VideoMessageThumbnail), findsOneWidget);
+      expect(find.byType(ResolvedMediaUrl), findsOneWidget);
       expect(find.text('Video expired'), findsNothing);
     },
   );
