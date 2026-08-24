@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 /// The poster-only video tile shown inside a chat bubble. Tapping it opens
@@ -24,6 +25,7 @@ class VideoMessageThumbnail extends StatefulWidget {
   const VideoMessageThumbnail({
     super.key,
     required this.thumbnailUrl,
+    this.cacheKey,
     required this.durationMs,
     required this.width,
     required this.height,
@@ -37,6 +39,17 @@ class VideoMessageThumbnail extends StatefulWidget {
   /// still a playable video; see the non-fatal thumbnail branch in
   /// ChatController._attemptSend).
   final String? thumbnailUrl;
+
+  /// The poster's STABLE storage path (media_thumbnail_url), used as the
+  /// disk-cache key. Critical, not cosmetic: [thumbnailUrl] is a signed URL
+  /// whose token changes on every re-sign, so caching by URL would miss on
+  /// every app open and re-download every poster. Keying on the storage
+  /// path instead means a poster fetched once stays on disk and paints
+  /// immediately on subsequent opens — the difference between WhatsApp's
+  /// instant thumbnails and a grid of blank boxes that fill in over the
+  /// network. Null falls back to URL-keyed caching.
+  final String? cacheKey;
+
   final int durationMs;
 
   /// Persisted media_width/media_height, used ONLY as the pre-decode
@@ -73,7 +86,10 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
 
   ImageStream? _stream;
   ImageStreamListener? _listener;
-  ImageProvider? _boundProvider;
+
+  /// Content identity of the poster currently being listened to — see
+  /// [_posterIdentity].
+  String? _boundIdentity;
 
   /// Clamped so an extreme source (a 1:5 screen recording, a panorama)
   /// can't produce a bubble that swallows the viewport or collapses to a
@@ -96,9 +112,13 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
   ImageProvider? get _provider {
     final url = widget.thumbnailUrl;
     if (url == null) return null;
-    return url.startsWith('http')
-        ? NetworkImage(url) as ImageProvider
-        : FileImage(File(url));
+    if (!url.startsWith('http')) return FileImage(File(url));
+    // CachedNetworkImageProvider, not NetworkImage: the latter caches in
+    // memory only, so every app restart re-downloaded every poster and the
+    // bubbles filled in one network round-trip at a time. Keyed on the
+    // stable storage path so a re-signed URL still hits the same disk
+    // entry — see the cacheKey field doc.
+    return CachedNetworkImageProvider(url, cacheKey: widget.cacheKey);
   }
 
   @override
@@ -107,28 +127,40 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
     _resolvePoster();
   }
 
+  /// Identity of the poster CONTENT, as opposed to the URL currently
+  /// pointing at it. A signed URL's token changes on every re-sign while
+  /// the underlying image is byte-identical, so keying off the raw URL
+  /// would treat a re-sign as a brand new poster.
+  String? get _posterIdentity => widget.cacheKey ?? widget.thumbnailUrl;
+
   @override
   void didUpdateWidget(VideoMessageThumbnail oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // The optimistic-to-canonical swap replaces a local poster path with a
-    // signed URL for the same message — re-resolve so the ratio tracks the
-    // image actually being shown.
-    if (oldWidget.thumbnailUrl != widget.thumbnailUrl) {
-      _decodedRatio = null;
-      _resolvePoster();
-    }
+    final oldIdentity = oldWidget.cacheKey ?? oldWidget.thumbnailUrl;
+    if (oldIdentity == _posterIdentity) return;
+
+    // Genuinely a different poster (the optimistic-to-canonical swap
+    // replacing a local file with the uploaded one). Deliberately does NOT
+    // clear _decodedRatio: the local and remote posters are the same frame,
+    // so keeping the known ratio holds the tile's shape steady across the
+    // swap instead of momentarily collapsing back to the placeholder
+    // fallback — the grey flash that reappeared right after a send
+    // completed.
+    _resolvePoster();
   }
 
   void _resolvePoster() {
     final provider = _provider;
     if (provider == null) return;
-    // Cheap identity guard: didChangeDependencies fires on every inherited
-    // change, and re-listening to the same provider each time would leak
-    // listeners.
-    if (provider == _boundProvider) return;
+    // Identity guard on the poster's CONTENT, not the provider object:
+    // didChangeDependencies fires on every inherited change, and a
+    // re-signed URL produces a non-equal provider for a byte-identical
+    // image. Comparing providers would re-listen (and re-measure) on every
+    // re-sign; comparing content identity doesn't.
+    if (_boundIdentity != null && _boundIdentity == _posterIdentity) return;
 
     _detach();
-    _boundProvider = provider;
+    _boundIdentity = _posterIdentity;
     final stream = provider.resolve(createLocalImageConfiguration(context));
     final listener = ImageStreamListener(
       (image, _) {
@@ -186,6 +218,12 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
                   // band above the video in the old layout was a
                   // wrong-shaped box, not a fit problem.
                   fit: BoxFit.cover,
+                  // Keep painting the previous frame while a new provider
+                  // resolves, instead of dropping to a blank box. This is
+                  // what removes the grey flash when the local poster is
+                  // swapped for the uploaded one after a send completes —
+                  // same image, so there is nothing to "reveal".
+                  gaplessPlayback: true,
                   errorBuilder:
                       (context, error, stackTrace) => ColoredBox(
                         color: colorScheme.surfaceContainerHighest,

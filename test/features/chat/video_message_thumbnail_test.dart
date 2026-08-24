@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:cached_network_image/cached_network_image.dart';
+
 import 'package:attune/features/chat/presentation/widgets/video_message_thumbnail.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -209,6 +211,69 @@ void main() {
         tester.element(find.byType(VideoMessageThumbnail)),
         same(elementWhileBusy),
       );
+    });
+  });
+
+  group('poster caching / no re-measure on re-sign', () {
+    testWidgets('a remote poster uses a disk-backed provider keyed on the '
+        'stable storage path, not the signed URL', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: VideoMessageThumbnail(
+              thumbnailUrl: 'https://example.com/poster.jpg?token=abc',
+              cacheKey: 'chat-media/rel-1/poster.jpg',
+              durationMs: 5000,
+              width: 720,
+              height: 1280,
+            ),
+          ),
+        ),
+      );
+
+      final image = tester.widget<Image>(
+        find
+            .descendant(
+              of: find.byType(VideoMessageThumbnail),
+              matching: find.byType(Image),
+            )
+            .first,
+      );
+      final provider = image.image as CachedNetworkImageProvider;
+      // Keyed on the storage path so a re-signed URL still hits the same
+      // disk entry — a URL-keyed cache would miss on every app open.
+      expect(provider.cacheKey, 'chat-media/rel-1/poster.jpg');
+      // Holds the previous frame while a new provider resolves, so the
+      // optimistic-to-canonical swap doesn't flash a blank box.
+      expect(image.gaplessPlayback, isTrue);
+    });
+
+    testWidgets('re-signing the URL does not discard the measured ratio', (
+      tester,
+    ) async {
+      Widget build(String url) => MaterialApp(
+        home: Scaffold(
+          body: VideoMessageThumbnail(
+            key: const ValueKey('same-message'),
+            thumbnailUrl: url,
+            // Same underlying image throughout — only the signature moves.
+            cacheKey: 'chat-media/rel-1/poster.jpg',
+            durationMs: 5000,
+            width: 720,
+            height: 1280,
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(build('https://example.com/p.jpg?token=OLD'));
+      final before = aspectRatioOf(tester);
+
+      await tester.pumpWidget(build('https://example.com/p.jpg?token=NEW'));
+      await tester.pump();
+
+      // A re-sign is not a new poster: the tile must not fall back to the
+      // placeholder ratio and visibly resize.
+      expect(aspectRatioOf(tester), before);
     });
   });
 

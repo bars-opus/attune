@@ -943,6 +943,10 @@ class _BubbleBody extends StatelessWidget {
             // screen almost immediately rather than after the transcode.
             thumbnailUrl:
                 message.localThumbnailPath ?? message.signedThumbnailUrl,
+            // Stable storage path, so a poster survives app restarts on
+            // disk instead of being re-fetched behind a blank box every
+            // open, and a re-signed URL still hits the same cache entry.
+            cacheKey: message.mediaThumbnailKey,
             durationMs: message.mediaDurationMs ?? 0,
             width: message.mediaWidth ?? 0,
             height: message.mediaHeight ?? 0,
