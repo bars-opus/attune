@@ -220,6 +220,23 @@ class SessionGameRepository {
     }
   }
 
+  /// Whether the signed-in user is `relationships.user_a` for
+  /// [relationshipId].
+  ///
+  /// answer_a/answer_b are assigned by that column, not by who
+  /// initiated or who is the Mirror subject — submit_session_game_answer
+  /// derives `v_is_a` the same way (`user_a = auth.uid()`). The reveal
+  /// screen needs this to know which slot is "yours" without ever
+  /// reading the other user's id off the client.
+  Future<bool> isUserA(String relationshipId) async {
+    final row = await _safeClient
+        .from('relationships')
+        .select('user_a')
+        .eq('id', relationshipId)
+        .single();
+    return row['user_a'] == _safeClient.auth.currentUser?.id;
+  }
+
   /// The subject's own answer for a Mirror round, or null if not yet
   /// submitted.
   ///

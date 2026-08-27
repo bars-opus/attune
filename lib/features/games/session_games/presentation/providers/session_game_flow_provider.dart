@@ -55,6 +55,7 @@ class SessionGameFlowNotifier extends AsyncNotifier<SessionGameFlowState> {
   late String _sessionId;
   late String _gameType;
   late String _userId;
+  late String _relationshipId;
   List<SessionGameRound> _rounds = const [];
   List<SessionGameQuestion> _questions = const [];
 
@@ -89,6 +90,16 @@ class SessionGameFlowNotifier extends AsyncNotifier<SessionGameFlowState> {
     return _rounds[current.roundIndex].id;
   }
 
+  /// The relationship this session belongs to, or null before start().
+  ///
+  /// Lets the reveal stage resolve which answer slot ("user_a" vs
+  /// "user_b") is the viewer's own, without the client ever learning
+  /// the partner's id.
+  String? get relationshipId {
+    if (state.value == null) return null;
+    return _relationshipId;
+  }
+
   /// Starts a new session and loads its first round.
   ///
   /// [partnerId] must be the caller's actual partner from the
@@ -108,6 +119,7 @@ class SessionGameFlowNotifier extends AsyncNotifier<SessionGameFlowState> {
     state = await AsyncValue.guard(() async {
       _gameType = gameType;
       _userId = userId;
+      _relationshipId = relationshipId;
 
       _sessionId = await _repository.createSession(
         relationshipId: relationshipId,
@@ -179,9 +191,21 @@ class SessionGameFlowNotifier extends AsyncNotifier<SessionGameFlowState> {
   }
 
   /// Moves past the current round, ending the session on the last one.
+  ///
+  /// Called both from the reveal screen's "Next" and from [judge]'s
+  /// tail. From reveal, Mirror's subject must land on the judge step
+  /// rather than the next round or the end — stageAfterReveal() decides
+  /// that; everyone else (and anyone leaving judge) always proceeds to
+  /// the next round or the end.
   Future<void> advance() async {
     final current = state.value;
     if (current == null) return;
+
+    if (current.stage == SessionGameStage.reveal &&
+        current.stageAfterReveal() == SessionGameStage.judge) {
+      state = AsyncData(current.copyWith(stage: SessionGameStage.judge));
+      return;
+    }
 
     if (current.isLastRound) {
       await _repository.completeSession(_sessionId, gameType: _gameType);
