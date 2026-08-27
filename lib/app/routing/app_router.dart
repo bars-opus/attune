@@ -381,6 +381,25 @@ Future<BuildContext?> waitForRouterSettled() async {
   return null;
 }
 
+/// Acknowledges a session-game answer with visible feedback, in place of
+/// the real submit flow.
+///
+/// The full flow — submit through SessionGameRepository.submitAnswer,
+/// poll via SessionGameWaitingScreen, then show SessionGameRevealScreen
+/// once both partners have answered — needs a session-flow controller
+/// that no task has built yet (SessionGameRevealScreen currently has no
+/// caller anywhere in lib/). Until that controller lands, this route
+/// can only confirm the tap was received; it must not fabricate
+/// progress, navigate to the reveal screen with made-up data, or fail
+/// silently.
+void _acknowledgeSessionGameAnswer(BuildContext context) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text('Thanks — the rest of this game is coming soon.'),
+    ),
+  );
+}
+
 GoRouter createAppRouter(RoutingNotifier routingNotifier) {
   return GoRouter(
     navigatorKey: appNavigatorKey,
@@ -1279,7 +1298,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
           }
           return SessionGameRouterScreen(
             question: question,
-            onSubmit: (_) {},
+            onSubmit: (_) => _acknowledgeSessionGameAnswer(context),
           );
         },
       ),
@@ -1295,7 +1314,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
           }
           return SessionGameRouterScreen(
             question: question,
-            onSubmit: (_) {},
+            onSubmit: (_) => _acknowledgeSessionGameAnswer(context),
           );
         },
       ),
@@ -1311,7 +1330,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
           }
           return SessionGameRouterScreen(
             question: question,
-            onSubmit: (_) {},
+            onSubmit: (_) => _acknowledgeSessionGameAnswer(context),
           );
         },
       ),
