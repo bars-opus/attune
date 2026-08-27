@@ -185,7 +185,6 @@ class RouteNames {
   static const String allShopWorkersScreen = '/allShopWorkersScreen';
   static const String ownerDashboardScreen = '/ownerDashboardScreen';
   static const String shopScheduleHub = '/shopScheduleHub';
-  static const String paystackConnectionScreen = '/paystackConnectionScreen';
   static const String paymentSettingsScreen = '/paymentSettingsScreen';
   static const String freelancerCreationDashboard =
       '/freelancerCreationDashboard';

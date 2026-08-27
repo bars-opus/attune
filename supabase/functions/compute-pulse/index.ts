@@ -44,7 +44,11 @@ serve(async (req) => {
     for (const relationship of relationships) {
       const pulseScore = await _computePulseScore(supabase, relationship.id, weekEnding, force_recompute)
       if (pulseScore) {
-        results.push({ relationship_id: relationship.id, ...pulseScore })
+        // pulseScore already carries relationship_id (it is the row that
+        // was upserted), so the explicit key here was silently overwritten
+        // by the spread. Same value either way — but the compiler flagged
+        // it, and a reader could reasonably assume the explicit one won.
+        results.push({ ...pulseScore })
       }
     }
 
@@ -53,9 +57,13 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {
-    console.error('Error:', error.message)
+    // `error` is typed unknown in a catch clause, so .message was a type
+    // error. Beyond the types: the raw message was being returned to the
+    // caller, and a Postgrest failure here can quote row contents — §10
+    // and checklist 4.4/5.5 keep that out of both logs and responses.
+    console.error('compute-pulse failed:', error instanceof Error ? error.name : typeof error)
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: 'Could not compute pulse scores' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
@@ -84,10 +92,18 @@ async function _computePulseScore(
   // ──────────────────────────────────────────────────────────
 
   // 1. Timeline events (last 30 days for scoring)
+  //
+  // The `: { data: any[] | null }` annotations on this query and the
+  // check-ins one below are needed because `supabase` is typed `any` in
+  // this function's signature, so destructured query results carry no
+  // element type and every .filter/.reduce callback over them became an
+  // implicit any. Typing the arrays at the source fixes ~18 errors at
+  // once instead of annotating each callback, and changes no runtime
+  // behaviour.
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
-  const { data: timelineEvents } = await supabase
+  const { data: timelineEvents }: { data: any[] | null } = await supabase
     .from('timeline_events')
     .select('*')
     .eq('relationship_id', relationshipId)
@@ -95,7 +111,7 @@ async function _computePulseScore(
     .is('deleted_at', null)
 
   // 2. Weekly check-ins for this week
-  const { data: checkins } = await supabase
+  const { data: checkins }: { data: any[] | null } = await supabase
     .from('weekly_checkins')
     .select('*')
     .eq('relationship_id', relationshipId)
