@@ -43,6 +43,44 @@ void main() {
       expect(value, greaterThanOrEqualTo(1));
       expect(value, lessThanOrEqualTo(10));
     });
+
+    testWidgets('slider is configured to exactly 1-10 in 9 divisions',
+        (tester) async {
+      // Pins the actual widget configuration, not just an emitted value,
+      // so this fails if someone widens the range (e.g. min: 0, max: 100)
+      // even before anyone drags it.
+      await tester.pumpWidget(
+        wrap(SlidingScaleQuestionScreen(question: question, onSubmit: (_) {})),
+      );
+      final slider = tester.widget<Slider>(find.byType(Slider));
+      expect(slider.min, 1);
+      expect(slider.max, 10);
+      expect(slider.divisions, 9);
+    });
+
+    testWidgets('dragging to each extreme submits 1 and 10', (tester) async {
+      // Exercises real boundaries rather than only the untouched default,
+      // so a widened range would surface as a wrong emitted value too.
+      String? submitted;
+      await tester.pumpWidget(
+        wrap(SlidingScaleQuestionScreen(
+          question: question,
+          onSubmit: (v) => submitted = v,
+        )),
+      );
+
+      await tester.drag(find.byType(Slider), const Offset(-500, 0));
+      await tester.pump();
+      await tester.tap(find.text('Submit'));
+      await tester.pump();
+      expect(submitted, '1');
+
+      await tester.drag(find.byType(Slider), const Offset(500, 0));
+      await tester.pump();
+      await tester.tap(find.text('Submit'));
+      await tester.pump();
+      expect(submitted, '10');
+    });
   });
 
   group('ScenarioQuestionScreen', () {
@@ -80,6 +118,28 @@ void main() {
       await tester.pump();
       expect(submitted, 'b');
     });
+
+    testWidgets('empty options renders no buttons and never submits',
+        (tester) async {
+      // SessionGameQuestion.options defaults to const [], so an
+      // options-free scenario question can reach this screen without a
+      // malformed server response being impossible. The screen must show
+      // a plain unavailable message instead of stranding the user.
+      const emptyQuestion = SessionGameQuestion(
+        id: 'q2-empty',
+        gameType: 'scenario',
+        questionText: 'You are both tired and a disagreement starts.',
+      );
+      var submitCount = 0;
+      await tester.pumpWidget(
+        wrap(ScenarioQuestionScreen(
+          question: emptyQuestion,
+          onSubmit: (_) => submitCount++,
+        )),
+      );
+      expect(find.byType(OutlinedButton), findsNothing);
+      expect(submitCount, 0);
+    });
   });
 
   group('MirrorQuestionScreen', () {
@@ -108,6 +168,23 @@ void main() {
           onSubmit: (_) => submitCount++,
         )),
       );
+      await tester.tap(find.text('Submit'));
+      await tester.pump();
+      expect(submitCount, 0);
+    });
+
+    testWidgets('will not submit a whitespace-only answer', (tester) async {
+      // Whitespace-only is one of the three conditions the server RAISES
+      // on; _controller.text.trim().isEmpty must catch it before onSubmit
+      // is ever called.
+      var submitCount = 0;
+      await tester.pumpWidget(
+        wrap(MirrorQuestionScreen(
+          question: question,
+          onSubmit: (_) => submitCount++,
+        )),
+      );
+      await tester.enterText(find.byType(TextField), '   ');
       await tester.tap(find.text('Submit'));
       await tester.pump();
       expect(submitCount, 0);

@@ -32,17 +32,30 @@ class ScenarioQuestionScreen extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 32),
-          for (final option in question.options)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => onSubmit(option.key),
-                  child: Text(option.text),
+          // `SessionGameQuestion.options` defaults to `const []`, so the
+          // type system does not rule out an options-free scenario
+          // question reaching this screen (e.g. a malformed server
+          // response). Rather than render zero buttons and strand the
+          // user with no way to proceed, show a plain unavailable message
+          // — no fabricated options, no auto-submit, no throw.
+          if (question.options.isEmpty)
+            Text(
+              'This question is unavailable right now.',
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            )
+          else
+            for (final option in question.options)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => onSubmit(option.key),
+                    child: Text(option.text),
+                  ),
                 ),
               ),
-            ),
         ],
       ),
     );
