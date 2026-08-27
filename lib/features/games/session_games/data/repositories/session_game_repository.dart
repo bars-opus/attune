@@ -83,16 +83,33 @@ class SessionGameRepository {
 
   /// Creates a session and its rounds.
   ///
-  /// Rounds are created here rather than by a trigger so the question
-  /// selection is visible and testable. Questions are drawn with an
-  /// explicit ORDER BY — `fetchQuestions` has none, so an unordered
-  /// LIMIT would serve the same rows every time.
+  /// Questions are fetched BEFORE the session row is inserted. The old
+  /// order committed a session, then fetched, then threw if nothing came
+  /// back — stranding a zero-round session the user could neither play
+  /// nor clear.
+  ///
+  /// total_rounds is derived from the questions actually returned, never
+  /// from a caller's argument. Sliding Scale has only 6 seeded
+  /// questions, so a caller asking for 8 would have written
+  /// total_rounds = 8 against 6 real rounds and stranded the controller
+  /// on round 7.
   Future<String> createSession({
     required String relationshipId,
     required String initiatorId,
     required String gameType,
-    required int totalRounds,
+    required String partnerId,
   }) async {
+    const requestedRounds = 8;
+
+    final questions = await fetchQuestions(
+      gameType: gameType,
+      limit: requestedRounds,
+    );
+
+    if (questions.isEmpty) {
+      throw StateError('No questions available for $gameType');
+    }
+
     final session = await _safeClient
         .from('game_sessions')
         .insert({
@@ -101,21 +118,12 @@ class SessionGameRepository {
           'game_type': gameType,
           'tone': 'connecting',
           'status': 'active',
-          'total_rounds': totalRounds,
+          'total_rounds': questions.length,
         })
         .select('id')
         .single();
 
     final sessionId = session['id'] as String;
-
-    final questions = await fetchQuestions(
-      gameType: gameType,
-      limit: totalRounds,
-    );
-
-    if (questions.isEmpty) {
-      throw StateError('No questions available for $gameType');
-    }
 
     await _safeClient.from('game_session_rounds').insert([
       for (var i = 0; i < questions.length; i++)
@@ -123,6 +131,11 @@ class SessionGameRepository {
           'session_id': sessionId,
           'round_number': i + 1,
           'question_id': questions[i].id,
+          // Mirror alternates the subject so each partner is guessed
+          // about half the time. Null for the other games, which have
+          // no subject.
+          if (gameType == 'mirror')
+            'active_partner_id': i.isEven ? initiatorId : partnerId,
         },
     ]);
 
@@ -163,5 +176,60 @@ class SessionGameRepository {
     return rows
         .map((row) => SessionGameRound.fromRow(Map<String, dynamic>.from(row)))
         .toList();
+  }
+
+  /// Records the subject's judgement of their partner's guess.
+  ///
+  /// Goes through judge_mirror_round, which enforces that only the
+  /// round's subject may judge, only after the reveal, and only once.
+  Future<void> judgeRound({
+    required String roundId,
+    required bool wasCorrect,
+  }) async {
+    await _safeClient.rpc(
+      'judge_mirror_round',
+      params: {'p_round_id': roundId, 'p_was_correct': wasCorrect},
+    );
+  }
+
+  /// Marks a session complete and, for Mirror, derives its scores.
+  ///
+  /// finalise_mirror_scores recomputes from SUM(was_correct) rather than
+  /// incrementing, so calling this twice is safe.
+  Future<void> completeSession(
+    String sessionId, {
+    required String gameType,
+  }) async {
+    await _safeClient
+        .from('game_sessions')
+        .update({
+          'status': 'completed',
+          'completed_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', sessionId);
+
+    if (gameType == 'mirror') {
+      await _safeClient.rpc(
+        'finalise_mirror_scores',
+        params: {'p_session_id': sessionId},
+      );
+    }
+  }
+
+  /// The subject's own answer for a Mirror round, or null if not yet
+  /// submitted.
+  ///
+  /// Safe to read directly: mirror_round_truth's RLS lets both partners
+  /// SELECT it, which is deliberate — the truth is what the guess is
+  /// revealed against, so both must see it at reveal. The reveal gate
+  /// lives on the GUESS (get_revealed_round), and the caller must not
+  /// display this before both_answered.
+  Future<String?> fetchMirrorTruth(String roundId) async {
+    final row = await _safeClient
+        .from('mirror_round_truth')
+        .select('truth_text')
+        .eq('round_id', roundId)
+        .maybeSingle();
+    return row?['truth_text'] as String?;
   }
 }
