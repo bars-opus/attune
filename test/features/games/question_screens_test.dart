@@ -151,7 +151,11 @@ void main() {
 
     testWidgets('shows the prompt and a text field', (tester) async {
       await tester.pumpWidget(
-        wrap(MirrorQuestionScreen(question: question, onSubmit: (_) {})),
+        wrap(MirrorQuestionScreen(
+          question: question,
+          onSubmit: (_) {},
+          isSubject: false,
+        )),
       );
       expect(find.text('What is weighing on them most this week?'),
           findsOneWidget);
@@ -166,6 +170,7 @@ void main() {
         wrap(MirrorQuestionScreen(
           question: question,
           onSubmit: (_) => submitCount++,
+          isSubject: false,
         )),
       );
       await tester.tap(find.text('Submit'));
@@ -182,12 +187,90 @@ void main() {
         wrap(MirrorQuestionScreen(
           question: question,
           onSubmit: (_) => submitCount++,
+          isSubject: false,
         )),
       );
       await tester.enterText(find.byType(TextField), '   ');
       await tester.tap(find.text('Submit'));
       await tester.pump();
       expect(submitCount, 0);
+    });
+
+    testWidgets('guesser sees third-person guess copy, no subject framing',
+        (tester) async {
+      // isSubject: false is the guesser's view. They must see the
+      // original third-person hint and none of the subject-only framing
+      // text, or a regression here would blur who is answering about
+      // whom.
+      await tester.pumpWidget(
+        wrap(MirrorQuestionScreen(
+          question: question,
+          onSubmit: (_) {},
+          isSubject: false,
+        )),
+      );
+      expect(
+        find.text('What do you think they would say?'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Answer honestly about yourself'),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+        'subject sees second-person framing and a self-facing input hint',
+        (tester) async {
+      // C3: the SUBJECT's job is to report their own real state, which is
+      // stored as the truth the guess is scored against. The seeded
+      // question is third-person and written for the guesser, so without
+      // this the subject would answer about their partner and every
+      // score downstream would be computed against meaningless data.
+      await tester.pumpWidget(
+        wrap(MirrorQuestionScreen(
+          question: question,
+          onSubmit: (_) {},
+          isSubject: true,
+        )),
+      );
+      expect(
+        find.textContaining('Answer honestly about yourself'),
+        findsOneWidget,
+      );
+      expect(
+        find.text("What's actually true for you right now?"),
+        findsOneWidget,
+      );
+      // The guesser's hint must not also be showing.
+      expect(
+        find.text('What do you think they would say?'),
+        findsNothing,
+      );
+      // The seeded topic question is unchanged either way — it still
+      // supplies the topic, only the framing around it changes.
+      expect(
+        find.text('What is weighing on them most this week?'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('subject can still submit their own answer', (tester) async {
+      String? submitted;
+      await tester.pumpWidget(
+        wrap(MirrorQuestionScreen(
+          question: question,
+          onSubmit: (v) => submitted = v,
+          isSubject: true,
+        )),
+      );
+      await tester.enterText(
+        find.byType(TextField),
+        'Work has been overwhelming',
+      );
+      await tester.tap(find.text('Submit'));
+      await tester.pump();
+      expect(submitted, 'Work has been overwhelming');
     });
   });
 }

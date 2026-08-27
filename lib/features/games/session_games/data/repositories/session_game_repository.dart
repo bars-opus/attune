@@ -81,18 +81,55 @@ class SessionGameRepository {
     );
   }
 
-  /// Creates a session and its rounds.
+  /// Creates a session and its rounds, or joins one already in progress.
   ///
-  /// Rounds are created here rather than by a trigger so the question
-  /// selection is visible and testable. Questions are drawn with an
-  /// explicit ORDER BY — `fetchQuestions` has none, so an unordered
-  /// LIMIT would serve the same rows every time.
+  /// Looks up an existing non-completed session for this
+  /// (relationship_id, game_type) pair first — same shape as
+  /// ThisOrThatRepository.createSession. Without this, two partners each
+  /// opening the game independently create two separate sessions: each
+  /// has exactly one writer, both_answered can never flip on either one,
+  /// and both partners wait forever. Only when no such session exists is
+  /// a new one inserted.
+  ///
+  /// Questions are fetched BEFORE the session row is inserted. The old
+  /// order committed a session, then fetched, then threw if nothing came
+  /// back — stranding a zero-round session the user could neither play
+  /// nor clear.
+  ///
+  /// total_rounds is derived from the questions actually returned, never
+  /// from a caller's argument. Sliding Scale has only 6 seeded
+  /// questions, so a caller asking for 8 would have written
+  /// total_rounds = 8 against 6 real rounds and stranded the controller
+  /// on round 7.
   Future<String> createSession({
     required String relationshipId,
     required String initiatorId,
     required String gameType,
-    required int totalRounds,
+    required String partnerId,
   }) async {
+    final existingSession = await _safeClient
+        .from('game_sessions')
+        .select('id')
+        .eq('relationship_id', relationshipId)
+        .eq('game_type', gameType)
+        .inFilter('status', ['invited', 'active'])
+        .maybeSingle();
+
+    if (existingSession != null) {
+      return existingSession['id'] as String;
+    }
+
+    const requestedRounds = 8;
+
+    final questions = await fetchQuestions(
+      gameType: gameType,
+      limit: requestedRounds,
+    );
+
+    if (questions.isEmpty) {
+      throw StateError('No questions available for $gameType');
+    }
+
     final session = await _safeClient
         .from('game_sessions')
         .insert({
@@ -101,21 +138,12 @@ class SessionGameRepository {
           'game_type': gameType,
           'tone': 'connecting',
           'status': 'active',
-          'total_rounds': totalRounds,
+          'total_rounds': questions.length,
         })
         .select('id')
         .single();
 
     final sessionId = session['id'] as String;
-
-    final questions = await fetchQuestions(
-      gameType: gameType,
-      limit: totalRounds,
-    );
-
-    if (questions.isEmpty) {
-      throw StateError('No questions available for $gameType');
-    }
 
     await _safeClient.from('game_session_rounds').insert([
       for (var i = 0; i < questions.length; i++)
@@ -123,6 +151,11 @@ class SessionGameRepository {
           'session_id': sessionId,
           'round_number': i + 1,
           'question_id': questions[i].id,
+          // Mirror alternates the subject so each partner is guessed
+          // about half the time. Null for the other games, which have
+          // no subject.
+          if (gameType == 'mirror')
+            'active_partner_id': i.isEven ? initiatorId : partnerId,
         },
     ]);
 
@@ -152,16 +185,134 @@ class SessionGameRepository {
   ///
   /// Selects only the non-answer columns. A `select()` with no argument
   /// would return answer_a/answer_b too — RLS permits it — bypassing the
-  /// reveal gate.
+  /// reveal gate. The column list is answer-free by design, not merely
+  /// short: active_partner_id IS included because it is a subject
+  /// identifier, not answer data — it names whose inner state a Mirror
+  /// round is about, never a partner's response. Do not add answer_a or
+  /// answer_b here.
   Future<List<SessionGameRound>> fetchRounds(String sessionId) async {
     final rows = await _safeClient
         .from('game_session_rounds')
-        .select('id, round_number, question_id, both_answered')
+        .select('id, round_number, question_id, both_answered, active_partner_id')
         .eq('session_id', sessionId)
         .order('round_number');
 
     return rows
         .map((row) => SessionGameRound.fromRow(Map<String, dynamic>.from(row)))
         .toList();
+  }
+
+  /// Records the subject's judgement of their partner's guess.
+  ///
+  /// Goes through judge_mirror_round, which enforces that only the
+  /// round's subject may judge, only after the reveal, and only once.
+  Future<void> judgeRound({
+    required String roundId,
+    required bool wasCorrect,
+  }) async {
+    await _safeClient.rpc(
+      'judge_mirror_round',
+      params: {'p_round_id': roundId, 'p_was_correct': wasCorrect},
+    );
+  }
+
+  /// Marks a session complete and, for Mirror, derives its scores.
+  ///
+  /// finalise_mirror_scores recomputes from SUM(was_correct) rather than
+  /// incrementing, so calling this twice is safe.
+  Future<void> completeSession(
+    String sessionId, {
+    required String gameType,
+  }) async {
+    await _safeClient
+        .from('game_sessions')
+        .update({
+          'status': 'completed',
+          'completed_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', sessionId);
+
+    if (gameType == 'mirror') {
+      await _safeClient.rpc(
+        'finalise_mirror_scores',
+        params: {'p_session_id': sessionId},
+      );
+    }
+  }
+
+  /// Whether the signed-in user is `relationships.user_a` for
+  /// [relationshipId].
+  ///
+  /// answer_a/answer_b are assigned by that column, not by who
+  /// initiated or who is the Mirror subject — submit_session_game_answer
+  /// derives `v_is_a` the same way (`user_a = auth.uid()`). The reveal
+  /// screen needs this to know which slot is "yours" without ever
+  /// reading the other user's id off the client.
+  Future<bool> isUserA(String relationshipId) async {
+    final row = await _safeClient
+        .from('relationships')
+        .select('user_a')
+        .eq('id', relationshipId)
+        .single();
+    return row['user_a'] == _safeClient.auth.currentUser?.id;
+  }
+
+  /// The other member of [relationshipId] — same shape as
+  /// ThirtySixQuestionRepository.getPartnerId.
+  ///
+  /// [userId] must be the caller's own id from an authenticated session,
+  /// never a client-supplied value: this is the only place `start()`
+  /// gets a partnerId from, and start()'s own contract requires it be
+  /// the real partner because nothing downstream — not RLS, not the
+  /// repository — checks that it actually belongs to this relationship.
+  Future<String> getPartnerId(String relationshipId, String userId) async {
+    final row = await _safeClient
+        .from('relationships')
+        .select('user_a, user_b')
+        .eq('id', relationshipId)
+        .single();
+
+    final userA = row['user_a'] as String;
+    final userB = row['user_b'] as String;
+    return userA == userId ? userB : userA;
+  }
+
+  /// The subject's own answer for a Mirror round, or null if not yet
+  /// submitted.
+  ///
+  /// Safe to read directly: mirror_round_truth's RLS lets both partners
+  /// SELECT it, which is deliberate — the truth is what the guess is
+  /// revealed against, so both must see it at reveal. The reveal gate
+  /// lives on the GUESS (get_revealed_round), and the caller must not
+  /// display this before both_answered.
+  Future<String?> fetchMirrorTruth(String roundId) async {
+    final row = await _safeClient
+        .from('mirror_round_truth')
+        .select('truth_text')
+        .eq('round_id', roundId)
+        .maybeSingle();
+    return row?['truth_text'] as String?;
+  }
+
+  /// The CALLER'S OWN Mirror score for a completed session, or null if
+  /// finalise_mirror_scores has not produced one (e.g. this user never
+  /// guessed in this session).
+  ///
+  /// No filter is added here beyond session_id: mirror_scores' RLS
+  /// (`USING (user_id = auth.uid())`) already scopes every row to the
+  /// caller, so this query cannot return the partner's score even if
+  /// asked to — a `.eq('user_id', ...)` here would be redundant, and
+  /// widening the select (a join, an `.or()`) is exactly what would
+  /// break that guarantee. This must never recompute from
+  /// mirror_round_truth either: the subject can read every truth row in
+  /// a session in full, so a client-side recomputation from that table
+  /// would leak the same data mirror_scores' RLS exists to withhold.
+  Future<int?> fetchMirrorScore(String sessionId) async {
+    final row = await _safeClient
+        .from('mirror_scores')
+        .select('score')
+        .eq('session_id', sessionId)
+        .maybeSingle();
+    return (row?['score'] as num?)?.toInt();
   }
 }

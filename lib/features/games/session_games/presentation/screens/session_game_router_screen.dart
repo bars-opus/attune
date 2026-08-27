@@ -13,16 +13,29 @@ class SessionGameRouterScreen extends StatelessWidget {
     super.key,
     required this.question,
     required this.onSubmit,
+    required this.isSubject,
   });
 
   final SessionGameQuestion question;
   final ValueChanged<String> onSubmit;
 
+  /// Whether the viewer is this round's subject (Mirror only — always
+  /// false for the other two games, which have no subject). Only Mirror
+  /// reads it: the same seeded question is third-person, written for the
+  /// guesser, so the subject needs different framing to know they are
+  /// answering about themselves, not their partner. Sliding Scale and
+  /// Scenario have no subject-vs-guesser distinction and ignore it.
+  final bool isSubject;
+
   @override
   Widget build(BuildContext context) {
     switch (question.gameType) {
       case 'mirror':
-        return MirrorQuestionScreen(question: question, onSubmit: onSubmit);
+        return MirrorQuestionScreen(
+          question: question,
+          onSubmit: onSubmit,
+          isSubject: isSubject,
+        );
       case 'scenario':
         return ScenarioQuestionScreen(question: question, onSubmit: onSubmit);
       case 'sliding_scale':

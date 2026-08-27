@@ -83,8 +83,7 @@ import 'package:attune/features/games/this_or_that/presentation/screens/this_or_
 import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_games_hub_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_session_router_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/tone_selector_screen.dart';
-import 'package:attune/features/games/session_games/data/models/session_game_question.dart';
-import 'package:attune/features/games/session_games/presentation/screens/session_game_router_screen.dart';
+import 'package:attune/features/games/session_games/presentation/screens/session_game_flow_scaffold.dart';
 import 'package:attune/features/community/presentation/screens/community_feed_screen.dart';
 import 'package:attune/features/quiz/domain/models/attachment_result.dart';
 import 'package:attune/features/quiz/domain/models/communication_style_result.dart';
@@ -379,25 +378,6 @@ Future<BuildContext?> waitForRouterSettled() async {
     }
   }
   return null;
-}
-
-/// Acknowledges a session-game answer with visible feedback, in place of
-/// the real submit flow.
-///
-/// The full flow — submit through SessionGameRepository.submitAnswer,
-/// poll via SessionGameWaitingScreen, then show SessionGameRevealScreen
-/// once both partners have answered — needs a session-flow controller
-/// that no task has built yet (SessionGameRevealScreen currently has no
-/// caller anywhere in lib/). Until that controller lands, this route
-/// can only confirm the tap was received; it must not fabricate
-/// progress, navigate to the reveal screen with made-up data, or fail
-/// silently.
-void _acknowledgeSessionGameAnswer(BuildContext context) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text('Thanks — the rest of this game is coming soon.'),
-    ),
-  );
 }
 
 GoRouter createAppRouter(RoutingNotifier routingNotifier) {
@@ -1289,50 +1269,20 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.mirrorGame,
         name: 'mirrorGame',
-        builder: (context, state) {
-          final question = state.extra as SessionGameQuestion?;
-          if (question == null) {
-            return const Scaffold(
-              body: Center(child: Text('Question unavailable.')),
-            );
-          }
-          return SessionGameRouterScreen(
-            question: question,
-            onSubmit: (_) => _acknowledgeSessionGameAnswer(context),
-          );
-        },
+        builder: (context, state) =>
+            const SessionGameFlowScaffold(gameType: 'mirror'),
       ),
       GoRoute(
         path: RouteNames.slidingScaleGame,
         name: 'slidingScaleGame',
-        builder: (context, state) {
-          final question = state.extra as SessionGameQuestion?;
-          if (question == null) {
-            return const Scaffold(
-              body: Center(child: Text('Question unavailable.')),
-            );
-          }
-          return SessionGameRouterScreen(
-            question: question,
-            onSubmit: (_) => _acknowledgeSessionGameAnswer(context),
-          );
-        },
+        builder: (context, state) =>
+            const SessionGameFlowScaffold(gameType: 'sliding_scale'),
       ),
       GoRoute(
         path: RouteNames.scenarioGame,
         name: 'scenarioGame',
-        builder: (context, state) {
-          final question = state.extra as SessionGameQuestion?;
-          if (question == null) {
-            return const Scaffold(
-              body: Center(child: Text('Question unavailable.')),
-            );
-          }
-          return SessionGameRouterScreen(
-            question: question,
-            onSubmit: (_) => _acknowledgeSessionGameAnswer(context),
-          );
-        },
+        builder: (context, state) =>
+            const SessionGameFlowScaffold(gameType: 'scenario'),
       ),
       GoRoute(
         path: RouteNames.customQuestionList,
