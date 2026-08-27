@@ -3,6 +3,7 @@ import 'package:attune/features/auth/presentation/widgets/logout_action.dart';
 import 'package:attune/features/relationships/data/relationship_lifecycle_service.dart';
 import 'package:attune/features/relationships/presentation/widgets/end_relationship_action.dart';
 import 'package:attune/features/settings/utility/settings_exports.dart';
+import 'package:attune/features/settings/widgets/delete_account_action.dart';
 
 class SettingsDataSource {
   static List<SettingsSection> getSettingsSections(
@@ -309,6 +310,20 @@ class SettingsDataSource {
               onTap: () => LogoutAction.confirmAndSignOut(context),
               iconColor: theme.colorScheme.primary,
               order: 1,
+            ),
+            // GDPR erasure (ATTUNE_MASTER_SPEC.md §10: "User can delete
+            // account and all data at any time"). Ordered last — below
+            // logout — so the irreversible action is the hardest of the
+            // three to hit by accident.
+            SettingsConfig(
+              id: 'deleteAccount',
+              title: 'Delete account',
+              subtitle: 'Permanently delete your account and personal data',
+              icon: Icons.delete_forever_outlined,
+              type: SettingsItemType.destructive,
+              onTap: () => DeleteAccountAction.confirmAndDelete(context),
+              iconColor: theme.colorScheme.error,
+              order: 2,
             ),
           ],
         ),
