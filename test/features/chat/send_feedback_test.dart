@@ -28,7 +28,7 @@ void main() {
 
     await tester.pumpWidget(UncontrolledProviderScope(
       container: container,
-      child: MaterialApp(home: ChatScreen(conversation: convo)),
+      child: withScreenUtil(MaterialApp(home: ChatScreen(conversation: convo))),
     ));
     await tester.pump(const Duration(milliseconds: 30));
 

@@ -10,8 +10,34 @@ import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/settings/data/chat_feel_preference.dart';
+import 'package:attune/core/utils/screen_util_config.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// Wraps [child] in the [ScreenUtilInit] that chat widgets require.
+///
+/// Much of the chat UI sizes itself with flutter_screenutil's `.h`/`.w`
+/// extensions. Those read late static fields that only [ScreenUtilInit]
+/// assigns, so a widget test that pumps a bare MaterialApp throws
+/// `LateInitializationError: Field '_splitScreenMode' has not been
+/// initialized` the moment any such widget builds — which is what made a
+/// large block of the chat suite fail regardless of the behaviour under
+/// test.
+///
+/// Configured from [ScreenUtilConfig] rather than repeating its values, so
+/// sizes computed under test are the sizes the app actually ships —
+/// including `splitScreenMode`, the very field whose absence throws.
+Widget withScreenUtil(Widget child) => ScreenUtilInit(
+  designSize: ScreenUtilConfig.designSize,
+  minTextAdapt: ScreenUtilConfig.minTextAdapt,
+  splitScreenMode: ScreenUtilConfig.splitScreenMode,
+  useInheritedMediaQuery: ScreenUtilConfig.useInheritedMediaQuery,
+  fontSizeResolver: ScreenUtilConfig.resolveFontSize,
+  builder: (_, __) => child,
+  child: child,
+);
 
 /// A hand-written, fully controllable fake [ChatRepository] for controller and
 /// widget tests. It records calls and lets a test script the outcome of each

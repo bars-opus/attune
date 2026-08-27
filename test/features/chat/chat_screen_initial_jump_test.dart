@@ -36,12 +36,12 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: MaterialApp(
+        child: withScreenUtil(MaterialApp(
           home: ChatScreen(
             conversation: convo,
             initialJumpToMessageId: initialJumpToMessageId,
           ),
-        ),
+        )),
       ),
     );
     await tester.pump(const Duration(milliseconds: 60));

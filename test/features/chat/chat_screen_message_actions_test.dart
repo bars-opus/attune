@@ -2,7 +2,6 @@ import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/chat_test_harness.dart';
@@ -27,9 +26,8 @@ void main() {
     repo.conversationOverride = convo;
 
     await tester.pumpWidget(
-      ScreenUtilInit(
-        designSize: const Size(375, 812),
-        child: UncontrolledProviderScope(
+      withScreenUtil(
+        UncontrolledProviderScope(
           container: container,
           child: MaterialApp(home: ChatScreen(conversation: convo)),
         ),

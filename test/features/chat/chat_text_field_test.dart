@@ -1,5 +1,6 @@
 import 'dart:io';
-import 'dart:typed_data';
+
+import 'support/chat_test_harness.dart';import 'dart:typed_data';
 
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:flutter/gestures.dart';
@@ -125,6 +126,7 @@ Future<void> _pump(
   bool enabled = true,
 }) {
   return tester.pumpWidget(
+    withScreenUtil(
     MaterialApp(
       home: Scaffold(
         body: ChatTextField(
@@ -145,6 +147,7 @@ Future<void> _pump(
           enabled: enabled,
         ),
       ),
+    ),
     ),
   );
 }

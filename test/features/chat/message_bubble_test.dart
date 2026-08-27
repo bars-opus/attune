@@ -1,8 +1,8 @@
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
-import 'package:attune/features/chat/domain/entities/message.dart';
+
+import 'support/chat_test_harness.dart';import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Message _mine({
@@ -38,9 +38,8 @@ Message _partner({String content = 'hello'}) {
 
 Future<void> _pump(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(
-    ScreenUtilInit(
-      designSize: const Size(375, 812),
-      child: MaterialApp(home: Scaffold(body: child)),
+    withScreenUtil(
+      MaterialApp(home: Scaffold(body: child)),
     ),
   );
 }
@@ -347,7 +346,11 @@ void main() {
     final harness = tester.state<_TimestampRevealHarnessState>(
       find.byType(_TimestampRevealHarness),
     );
-    expect(harness.revealOffset, 120);
+    // 120px of drag, clamped to UniversalBubble._timestampRevealLimit (112).
+    // This previously asserted the raw 120: the drag genuinely exceeds the
+    // limit, and the old value only went unnoticed because the missing
+    // ScreenUtil init aborted the build before the clamp ever ran.
+    expect(harness.revealOffset, 112);
 
     final timestamp = find.textContaining('3:04');
     expect(timestamp, findsOneWidget);

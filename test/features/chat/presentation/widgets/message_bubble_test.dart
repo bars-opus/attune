@@ -11,7 +11,6 @@ import 'package:attune/features/chat/presentation/widgets/video_message_thumbnai
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -31,7 +30,7 @@ void main() {
     }, currentUserId: 'u1');
 
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: MessageBubble(message: deleted))),
+      withScreenUtil(MaterialApp(home: Scaffold(body: MessageBubble(message: deleted)))),
     );
 
     expect(find.text('This message was deleted'), findsOneWidget);
@@ -50,9 +49,9 @@ void main() {
     }, currentUserId: 'u1');
 
     await tester.pumpWidget(
-      MaterialApp(
+      withScreenUtil(MaterialApp(
         home: Scaffold(body: MessageBubble(message: message, isStarred: true)),
-      ),
+      )),
     );
 
     expect(find.byIcon(Icons.star_rounded), findsOneWidget);
@@ -71,9 +70,9 @@ void main() {
     }, currentUserId: 'u1');
 
     await tester.pumpWidget(
-      MaterialApp(
+      withScreenUtil(MaterialApp(
         home: Scaffold(body: MessageBubble(message: message, isStarred: false)),
-      ),
+      )),
     );
 
     expect(find.byIcon(Icons.star), findsNothing);
@@ -93,7 +92,7 @@ void main() {
     }, currentUserId: 'u1');
 
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: MessageBubble(message: edited))),
+      withScreenUtil(MaterialApp(home: Scaffold(body: MessageBubble(message: edited)))),
     );
 
     expect(find.textContaining('edited'), findsNothing);
@@ -114,14 +113,14 @@ void main() {
     }, currentUserId: 'u1');
 
     await tester.pumpWidget(
-      MaterialApp(
+      withScreenUtil(MaterialApp(
         home: Scaffold(
           body: MessageBubble(
             message: edited,
             onShowEditHistory: (message) => tapped = message,
           ),
         ),
-      ),
+      )),
     );
 
     expect(find.text('edited'), findsNothing);
@@ -141,7 +140,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
+      withScreenUtil(MaterialApp(
         home: Scaffold(
           body: MessageBubble(
             message: message,
@@ -149,7 +148,7 @@ void main() {
             onDelete: () {},
           ),
         ),
-      ),
+      )),
     );
 
     // textContaining, not text: message content now renders via Text.rich
@@ -459,9 +458,8 @@ void main() {
     );
 
     await tester.pumpWidget(
-      ScreenUtilInit(
-        designSize: const Size(375, 812),
-        child: MaterialApp(
+      withScreenUtil(
+        MaterialApp(
           theme: ThemeData(colorScheme: scheme),
           home: Scaffold(
             body: MessageBubble(
@@ -532,7 +530,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
+      withScreenUtil(MaterialApp(
         home: Scaffold(
           body: MessageBubble(
             message: message,
@@ -540,7 +538,7 @@ void main() {
             onRemoveReaction: () => removed = true,
           ),
         ),
-      ),
+      )),
     );
 
     await tester.tap(find.text('❤️'));
@@ -716,11 +714,11 @@ void main() {
     }, currentUserId: 'u1');
 
     await tester.pumpWidget(
-      MaterialApp(
+      withScreenUtil(MaterialApp(
         home: Scaffold(
           body: MessageBubble(message: message, currentUserId: 'u1'),
         ),
-      ),
+      )),
     );
 
     expect(find.textContaining('❤'), findsNothing);
