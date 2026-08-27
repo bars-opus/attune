@@ -122,6 +122,10 @@ class _SessionGameFlowScaffoldState
               return SessionGameWaitingScreen(
                 roundId: notifier.currentRoundId!,
                 onRevealed: notifier.onRevealed,
+                // Same repository the rest of the flow uses, so an
+                // override in tests reaches the poll too rather than
+                // letting it fall back to a live client.
+                repository: ref.read(sessionGameRepositoryProvider),
               );
             case SessionGameStage.reveal:
               return _RevealStage(notifier: notifier);
@@ -143,13 +147,13 @@ class _SessionGameFlowScaffoldState
 /// answer_b are assigned by `relationships.user_a`/`user_b`, not by who
 /// is asking, so that must come from the server rather than being
 /// guessed client-side.
-class _RevealStage extends StatelessWidget {
+class _RevealStage extends ConsumerWidget {
   const _RevealStage({required this.notifier});
 
   final SessionGameFlowNotifier notifier;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final roundId = notifier.currentRoundId;
     final relationshipId = notifier.relationshipId;
     if (roundId == null || relationshipId == null) {
@@ -158,7 +162,7 @@ class _RevealStage extends StatelessWidget {
       );
     }
 
-    final repository = SessionGameRepository();
+    final repository = ref.read(sessionGameRepositoryProvider);
 
     return FutureBuilder<List<dynamic>>(
       future: Future.wait([
@@ -205,13 +209,13 @@ class _RevealStage extends StatelessWidget {
 ///
 /// Mirror-only, and only the round's subject ever reaches this stage
 /// (§8.4) — the flow controller enforces that in stageAfterReveal.
-class _JudgeStage extends StatelessWidget {
+class _JudgeStage extends ConsumerWidget {
   const _JudgeStage({required this.notifier});
 
   final SessionGameFlowNotifier notifier;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final roundId = notifier.currentRoundId;
     if (roundId == null) {
       return const Center(
@@ -219,7 +223,7 @@ class _JudgeStage extends StatelessWidget {
       );
     }
 
-    final repository = SessionGameRepository();
+    final repository = ref.read(sessionGameRepositoryProvider);
 
     return FutureBuilder<List<dynamic>>(
       future: Future.wait([
@@ -262,14 +266,14 @@ class _JudgeStage extends StatelessWidget {
 /// nulls straight through, matching SessionGameEndScreen's existing
 /// "Mirror only" contract. The session id is used, never the round id:
 /// finalise_mirror_scores writes one row per (session_id, user_id).
-class _EndStage extends StatelessWidget {
+class _EndStage extends ConsumerWidget {
   const _EndStage({required this.notifier, required this.gameType});
 
   final SessionGameFlowNotifier notifier;
   final String gameType;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (gameType != 'mirror') {
       return SessionGameEndScreen(
         onDone: () => Navigator.of(context).pop(),
@@ -283,7 +287,7 @@ class _EndStage extends StatelessWidget {
       );
     }
 
-    final repository = SessionGameRepository();
+    final repository = ref.read(sessionGameRepositoryProvider);
 
     return FutureBuilder<int?>(
       future: repository.fetchMirrorScore(sessionId),
