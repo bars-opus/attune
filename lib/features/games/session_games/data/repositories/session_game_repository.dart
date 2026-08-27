@@ -1,4 +1,5 @@
 import 'package:attune/features/games/session_games/data/models/session_game_question.dart';
+import 'package:attune/features/games/session_games/data/models/session_game_round.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// A round's answers, readable only once both partners have submitted.
@@ -32,6 +33,10 @@ class SessionGameRepository {
         .select()
         .eq('game_type', gameType)
         .eq('active', true)
+        // Explicit ordering: without it the LIMIT returns an arbitrary
+        // subset that Postgres may repeat run to run, so a couple would
+        // see the same questions every session.
+        .order('created_at')
         .limit(limit);
 
     return rows
@@ -66,5 +71,89 @@ class SessionGameRepository {
       answerB: row['answer_b'] as String?,
       bothAnswered: row['both_answered'] as bool? ?? false,
     );
+  }
+
+  /// Creates a session and its rounds.
+  ///
+  /// Rounds are created here rather than by a trigger so the question
+  /// selection is visible and testable. Questions are drawn with an
+  /// explicit ORDER BY — `fetchQuestions` has none, so an unordered
+  /// LIMIT would serve the same rows every time.
+  Future<String> createSession({
+    required String relationshipId,
+    required String initiatorId,
+    required String gameType,
+    required int totalRounds,
+  }) async {
+    final session = await _safeClient
+        .from('game_sessions')
+        .insert({
+          'relationship_id': relationshipId,
+          'initiator_id': initiatorId,
+          'game_type': gameType,
+          'tone': 'connecting',
+          'status': 'active',
+          'total_rounds': totalRounds,
+        })
+        .select('id')
+        .single();
+
+    final sessionId = session['id'] as String;
+
+    final questions = await fetchQuestions(
+      gameType: gameType,
+      limit: totalRounds,
+    );
+
+    if (questions.isEmpty) {
+      throw StateError('No questions available for $gameType');
+    }
+
+    await _safeClient.from('game_session_rounds').insert([
+      for (var i = 0; i < questions.length; i++)
+        {
+          'session_id': sessionId,
+          'round_number': i + 1,
+          'question_id': questions[i].id,
+        },
+    ]);
+
+    return sessionId;
+  }
+
+  /// Submits this user's answer for a round.
+  ///
+  /// Goes through the submit_session_game_answer RPC, never a direct
+  /// update. The RPC validates the answer for its game type, refuses a
+  /// resubmission, and is the only thing that may set both_answered —
+  /// a client that wrote the row directly could force an early reveal.
+  ///
+  /// Returns true when this submission completed the round.
+  Future<bool> submitAnswer({
+    required String roundId,
+    required String answer,
+  }) async {
+    final result = await _safeClient.rpc(
+      'submit_session_game_answer',
+      params: {'p_round_id': roundId, 'p_answer': answer},
+    );
+    return result == true;
+  }
+
+  /// Rounds for a session, without answers.
+  ///
+  /// Selects only the non-answer columns. A `select()` with no argument
+  /// would return answer_a/answer_b too — RLS permits it — bypassing the
+  /// reveal gate.
+  Future<List<SessionGameRound>> fetchRounds(String sessionId) async {
+    final rows = await _safeClient
+        .from('game_session_rounds')
+        .select('id, round_number, question_id, both_answered')
+        .eq('session_id', sessionId)
+        .order('round_number');
+
+    return rows
+        .map((row) => SessionGameRound.fromRow(Map<String, dynamic>.from(row)))
+        .toList();
   }
 }
