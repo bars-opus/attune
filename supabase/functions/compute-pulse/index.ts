@@ -344,7 +344,6 @@ async function _computePulseScore(
   connection = gameAdjusted.connection
   alignment = gameAdjusted.alignment
 
-
   // ──────────────────────────────────────────────────────────
   // PER-DIMENSION CONFIDENCE (evidence-points model)
   // ──────────────────────────────────────────────────────────
@@ -357,7 +356,8 @@ async function _computePulseScore(
   const connectionPoints =
     Math.min(positiveEvents.length, 4) * 1 +
     Math.min(checkins?.length ?? 0, 2) * 2 +
-    Math.min(chatSignals.bidsTotal >= 5 ? 1 : 0, 1) * 4.5
+    Math.min(chatSignals.bidsTotal >= 5 ? 1 : 0, 1) * 4.5 +
+    Math.min(gameSignals.sessionsCompleted, 3) * 1
   const connectionConfidence = confidenceFrom(connectionPoints, hasChatSignal)
 
   const conflictHealthPoints =
@@ -368,7 +368,8 @@ async function _computePulseScore(
 
   const alignmentPoints =
     (bothCompletedAttachment ? 3 : 0) +
-    Math.min(checkins?.length ?? 0, 2) * 2
+    Math.min(checkins?.length ?? 0, 2) * 2 +
+    (gameSignals.slidingScalePairs >= 4 ? 2 : 0)
   // Alignment has no chat signal — hasChatSignal never promotes it past
   // what checkins/attachment alone earn, but the confidenceFrom function
   // itself still requires hasChatSignal for the 'high' branch, so
