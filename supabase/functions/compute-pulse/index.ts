@@ -175,6 +175,20 @@ async function _computePulseScore(
     pursueWithdrawRate: chatRow?.pursue_withdraw_rate ?? null,
   }
 
+  const { data: gameSignalRows } = await supabase
+    .rpc('compute_relationship_game_signals', {
+      p_relationship_id: relationshipId,
+      p_window_start: thirtyDaysAgo.toISOString(),
+    })
+  const gameRow = gameSignalRows?.[0] ?? null
+
+  const gameSignals: GameSignals = {
+    sessionsCompleted: gameRow?.sessions_completed ?? 0,
+    slidingScalePairs: gameRow?.sliding_scale_pairs ?? 0,
+    slidingScaleAvgGap: gameRow?.sliding_scale_avg_gap ?? null,
+    mirrorRoundsScored: gameRow?.mirror_rounds_scored ?? 0,
+  }
+
   const pendingBacklog = chatRow?.pending_backlog_count ?? 0
   const coverageDays = chatRow?.first_analysed_at
     ? Math.min(30, (Date.now() - new Date(chatRow.first_analysed_at).getTime()) / 86_400_000)
@@ -322,6 +336,13 @@ async function _computePulseScore(
   communication = chatAdjusted.communication
   connection = chatAdjusted.connection
   emotionalSafety = chatAdjusted.emotionalSafety
+
+  // Game signals (§7: Connection <- engagement, Alignment <- values
+  // overlap). Applied after chat so both contribute; a couple with no
+  // completed games gets an exact no-op here.
+  const gameAdjusted = applyGameSignals({ connection, alignment }, gameSignals)
+  connection = gameAdjusted.connection
+  alignment = gameAdjusted.alignment
 
 
   // ──────────────────────────────────────────────────────────
@@ -565,6 +586,57 @@ export function applyChatSignals(
   }
 
   return { communication, connection, emotionalSafety }
+}
+
+export interface GameSignals {
+  sessionsCompleted: number
+  slidingScalePairs: number
+  slidingScaleAvgGap: number | null
+  mirrorRoundsScored: number
+}
+
+/// Connection and Alignment only. Separate from DimensionState because
+/// that type carries emotionalSafety and no alignment — chat signals and
+/// game signals touch different dimensions.
+export interface GameDimensionState {
+  connection: number
+  alignment: number
+}
+
+/// Blends game signals into the two dimensions §7 says they belong to.
+///
+/// Deliberately does NOT consume mirrorRoundsScored: Mirror accuracy is
+/// per-person, and feeding it into a shared relationship score would
+/// leak an asymmetric signal into a mutually-visible number (§11.1, one
+/// step removed). It is returned by the RPC for diagnostics only.
+export function applyGameSignals(
+  dimensions: GameDimensionState,
+  signals: GameSignals
+): GameDimensionState {
+  let { connection, alignment } = dimensions
+
+  // CONNECTION — engagement. Capped at +10 so volume alone cannot max
+  // the dimension; its other sources are more meaningful.
+  if (signals.sessionsCompleted > 0) {
+    connection = clamp(
+      connection + Math.min(signals.sessionsCompleted * 2, 10),
+      0,
+      100
+    )
+  }
+
+  // ALIGNMENT — values overlap, gated on at least 4 rated statements so
+  // a single answer cannot move the score.
+  if (signals.slidingScalePairs >= 4 && signals.slidingScaleAvgGap != null) {
+    const maxGap = 9
+    const clampedGap = Math.max(0, Math.min(maxGap, signals.slidingScaleAvgGap))
+    // Centred on the mid gap: closer than 4.5 pulls up, wider pulls
+    // down, and the magnitude is capped at +/-15.
+    const delta = ((maxGap / 2 - clampedGap) / (maxGap / 2)) * 15
+    alignment = clamp(alignment + delta, 0, 100)
+  }
+
+  return { connection, alignment }
 }
 
 type Confidence = 'none' | 'low' | 'medium' | 'high'

@@ -509,3 +509,84 @@ Deno.test("computeChatWeight: pendingBacklog gate forces zero weight regardless 
   const chatWeight = pendingBacklog > 50 ? 0 : computeChatWeight(coverageDays)
   assertEquals(chatWeight, 0)
 });
+
+import {
+  applyGameSignals,
+  type GameSignals,
+} from "./index.ts";
+
+const noGames: GameSignals = {
+  sessionsCompleted: 0,
+  slidingScalePairs: 0,
+  slidingScaleAvgGap: null,
+  mirrorRoundsScored: 0,
+};
+
+Deno.test("applyGameSignals: zero game signal is a byte-identical no-op", () => {
+  // The hard requirement from the design: a couple who never plays must
+  // score exactly as they did before games existed. If this ever fails,
+  // shipping the feature silently moves every non-playing couple's
+  // Pulse score.
+  const before = { connection: 62, alignment: 48 };
+  const after = applyGameSignals(before, noGames);
+  assertEquals(after, before);
+});
+
+Deno.test("applyGameSignals: engagement raises Connection", () => {
+  const after = applyGameSignals(
+    { connection: 50, alignment: 50 },
+    { ...noGames, sessionsCompleted: 3 },
+  );
+  assertEquals(after.connection > 50, true);
+  // Engagement says nothing about values overlap.
+  assertEquals(after.alignment, 50);
+});
+
+Deno.test("applyGameSignals: engagement contribution is capped", () => {
+  // An enthusiastic couple must not be able to max Connection through
+  // volume alone — the dimension has other, more meaningful sources.
+  const many = applyGameSignals(
+    { connection: 50, alignment: 50 },
+    { ...noGames, sessionsCompleted: 500 },
+  );
+  assertEquals(many.connection <= 60, true);
+});
+
+Deno.test("applyGameSignals: a small values gap raises Alignment", () => {
+  const aligned = applyGameSignals(
+    { connection: 50, alignment: 50 },
+    { ...noGames, slidingScalePairs: 6, slidingScaleAvgGap: 0.5 },
+  );
+  assertEquals(aligned.alignment > 50, true);
+});
+
+Deno.test("applyGameSignals: a large values gap lowers Alignment", () => {
+  const misaligned = applyGameSignals(
+    { connection: 50, alignment: 50 },
+    { ...noGames, slidingScalePairs: 6, slidingScaleAvgGap: 8.5 },
+  );
+  assertEquals(misaligned.alignment < 50, true);
+});
+
+Deno.test("applyGameSignals: too few rated pairs cannot move Alignment", () => {
+  // One answered statement is not evidence of a values pattern.
+  const thin = applyGameSignals(
+    { connection: 50, alignment: 50 },
+    { ...noGames, slidingScalePairs: 3, slidingScaleAvgGap: 9 },
+  );
+  assertEquals(thin.alignment, 50);
+});
+
+Deno.test("applyGameSignals: output stays within 0-100", () => {
+  const low = applyGameSignals(
+    { connection: 2, alignment: 2 },
+    { ...noGames, slidingScalePairs: 6, slidingScaleAvgGap: 9 },
+  );
+  assertEquals(low.alignment >= 0, true);
+  const high = applyGameSignals(
+    { connection: 98, alignment: 98 },
+    { ...noGames, sessionsCompleted: 50, slidingScalePairs: 6, slidingScaleAvgGap: 0 },
+  );
+  assertEquals(high.connection <= 100, true);
+  assertEquals(high.alignment <= 100, true);
+});
