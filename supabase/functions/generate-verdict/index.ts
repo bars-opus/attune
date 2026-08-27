@@ -229,7 +229,7 @@ async function processJob(supabase: any, job: any) {
       verdict_id: verdict.id,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = describeError(error);
     await supabase
       .from("verdict_generation_jobs")
       .update({
@@ -771,4 +771,26 @@ async function markJobComplete(supabase: any, jobId: string) {
       last_error: null,
     })
     .eq("id", jobId);
+}
+
+/// Renders any thrown value as a diagnostic string.
+///
+/// `String(error)` was used here, which yields the literal "[object
+/// Object]" for a PostgrestError — the most common failure on this path,
+/// and the one whose detail matters most. That string was then persisted
+/// to verdict_generation_jobs.last_error AND returned to the caller, so a
+/// real database failure became unreadable in both places.
+///
+/// Only the message/code/details fields are extracted, never the whole
+/// object: a raw dump of a Postgrest response can carry row contents, and
+/// last_error is a stored column (§10 / checklist 4.4 — no PII in logs).
+function describeError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object") {
+    const e = error as Record<string, unknown>;
+    const parts = [e.message, e.code, e.details]
+      .filter((v): v is string => typeof v === "string" && v.length > 0);
+    if (parts.length > 0) return parts.join(" | ");
+  }
+  return String(error);
 }
