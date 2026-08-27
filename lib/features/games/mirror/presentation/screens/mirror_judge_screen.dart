@@ -47,12 +47,17 @@ class MirrorJudgeScreen extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // Both options are OutlinedButton, deliberately matching
+              // widget types. This measurement feeds the §8.4
+              // attentiveness flag directly: a FilledButton on "Yes"
+              // visually nudges the subject toward the affirmative in
+              // the very judgement that determines the score.
               OutlinedButton(
                 onPressed: () => onJudge(false),
                 child: const Text('Not quite'),
               ),
               const SizedBox(width: 16),
-              FilledButton(
+              OutlinedButton(
                 onPressed: () => onJudge(true),
                 child: const Text('Yes'),
               ),

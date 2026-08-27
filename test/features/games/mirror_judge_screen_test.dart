@@ -40,6 +40,25 @@ void main() {
     expect(judgements, [true, false]);
   });
 
+  testWidgets('Yes and Not quite use the same button type', (tester) async {
+    // I2: a FilledButton on "Yes" visually nudges toward the affirmative
+    // in the exact measurement the §8.4 attentiveness flag reads. Both
+    // must render as the same widget type so neither is visually
+    // preferred.
+    await tester.pumpWidget(
+      wrap(
+        MirrorJudgeScreen(
+          yourTruth: 'truth',
+          theirGuess: 'guess',
+          onJudge: (_) {},
+        ),
+      ),
+    );
+
+    expect(find.byType(FilledButton), findsNothing);
+    expect(find.byType(OutlinedButton), findsNWidgets(2));
+  });
+
   testWidgets('renders no tally, counter or progress indicator', (
     tester,
   ) async {

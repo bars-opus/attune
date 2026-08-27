@@ -1,6 +1,16 @@
+import 'package:attune/features/games/session_games/data/models/session_game_round.dart';
 import 'package:attune/features/games/session_games/domain/session_game_flow_state.dart';
 import 'package:attune/features/games/session_games/presentation/providers/session_game_flow_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+SessionGameRound roundAt(int number, {required bool bothAnswered}) {
+  return SessionGameRound.fromRow({
+    'id': 'r$number',
+    'round_number': number,
+    'question_id': 'q$number',
+    'both_answered': bothAnswered,
+  });
+}
 
 void main() {
   group('isAlreadySubmitted', () {
@@ -44,6 +54,57 @@ void main() {
         isAlreadyJudged(Exception('Only this round\'s subject may judge it')),
         isFalse,
       );
+    });
+  });
+
+  group('initialStageAndIndexFor (C1 resume-not-restart)', () {
+    // createSession now returns an existing in-progress session when the
+    // partner already started one (C1). A joining partner must resume
+    // at the first round they have not yet answered — landing them back
+    // on round 0 would force them to re-answer completed rounds, or
+    // worse, overwrite an in-flight one.
+    test('a brand-new session with no rounds answered starts at round 0',
+        () {
+      final rounds = [
+        roundAt(1, bothAnswered: false),
+        roundAt(2, bothAnswered: false),
+      ];
+      final initial = initialStageAndIndexFor(rounds);
+      expect(initial.stage, SessionGameStage.question);
+      expect(initial.roundIndex, 0);
+    });
+
+    test('a joining partner resumes at the first unanswered round', () {
+      final rounds = [
+        roundAt(1, bothAnswered: true),
+        roundAt(2, bothAnswered: true),
+        roundAt(3, bothAnswered: false),
+        roundAt(4, bothAnswered: false),
+      ];
+      final initial = initialStageAndIndexFor(rounds);
+      expect(initial.stage, SessionGameStage.question);
+      expect(initial.roundIndex, 2);
+    });
+
+    test('every round answered goes straight to end, not round 0', () {
+      final rounds = [
+        roundAt(1, bothAnswered: true),
+        roundAt(2, bothAnswered: true),
+      ];
+      final initial = initialStageAndIndexFor(rounds);
+      expect(initial.stage, SessionGameStage.end);
+    });
+
+    test('a single unanswered round in the middle is found, not just '
+        'the last', () {
+      final rounds = [
+        roundAt(1, bothAnswered: true),
+        roundAt(2, bothAnswered: false),
+        roundAt(3, bothAnswered: true),
+      ];
+      final initial = initialStageAndIndexFor(rounds);
+      expect(initial.stage, SessionGameStage.question);
+      expect(initial.roundIndex, 1);
     });
   });
 

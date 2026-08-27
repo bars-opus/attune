@@ -81,7 +81,15 @@ class SessionGameRepository {
     );
   }
 
-  /// Creates a session and its rounds.
+  /// Creates a session and its rounds, or joins one already in progress.
+  ///
+  /// Looks up an existing non-completed session for this
+  /// (relationship_id, game_type) pair first — same shape as
+  /// ThisOrThatRepository.createSession. Without this, two partners each
+  /// opening the game independently create two separate sessions: each
+  /// has exactly one writer, both_answered can never flip on either one,
+  /// and both partners wait forever. Only when no such session exists is
+  /// a new one inserted.
   ///
   /// Questions are fetched BEFORE the session row is inserted. The old
   /// order committed a session, then fetched, then threw if nothing came
@@ -99,6 +107,18 @@ class SessionGameRepository {
     required String gameType,
     required String partnerId,
   }) async {
+    final existingSession = await _safeClient
+        .from('game_sessions')
+        .select('id')
+        .eq('relationship_id', relationshipId)
+        .eq('game_type', gameType)
+        .inFilter('status', ['invited', 'active'])
+        .maybeSingle();
+
+    if (existingSession != null) {
+      return existingSession['id'] as String;
+    }
+
     const requestedRounds = 8;
 
     final questions = await fetchQuestions(
@@ -272,5 +292,27 @@ class SessionGameRepository {
         .eq('round_id', roundId)
         .maybeSingle();
     return row?['truth_text'] as String?;
+  }
+
+  /// The CALLER'S OWN Mirror score for a completed session, or null if
+  /// finalise_mirror_scores has not produced one (e.g. this user never
+  /// guessed in this session).
+  ///
+  /// No filter is added here beyond session_id: mirror_scores' RLS
+  /// (`USING (user_id = auth.uid())`) already scopes every row to the
+  /// caller, so this query cannot return the partner's score even if
+  /// asked to — a `.eq('user_id', ...)` here would be redundant, and
+  /// widening the select (a join, an `.or()`) is exactly what would
+  /// break that guarantee. This must never recompute from
+  /// mirror_round_truth either: the subject can read every truth row in
+  /// a session in full, so a client-side recomputation from that table
+  /// would leak the same data mirror_scores' RLS exists to withhold.
+  Future<int?> fetchMirrorScore(String sessionId) async {
+    final row = await _safeClient
+        .from('mirror_scores')
+        .select('score')
+        .eq('session_id', sessionId)
+        .maybeSingle();
+    return (row?['score'] as num?)?.toInt();
   }
 }

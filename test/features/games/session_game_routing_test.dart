@@ -1,7 +1,13 @@
 import 'dart:io';
 
 import 'package:attune/app/routing/app_router.dart';
+import 'package:attune/features/games/mirror/presentation/screens/mirror_question_screen.dart';
+import 'package:attune/features/games/session_games/data/models/session_game_question.dart';
+import 'package:attune/features/games/session_games/presentation/screens/session_game_router_screen.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
 void main() {
   test('each session game has a distinct route', () {
@@ -44,5 +50,57 @@ void main() {
     expect(lastRoute, isNot(-1), reason: 'scenarioGame route not found');
     expect(gameRouteBlock.contains('state.extra'), isFalse);
     expect(gameRouteBlock.contains('Question unavailable'), isFalse);
+  });
+
+  group('SessionGameRouterScreen isSubject pass-through', () {
+    // C3: the router is the only thing standing between the flow
+    // controller's isSubject and MirrorQuestionScreen. If it dropped the
+    // value or hardcoded it, the subject would silently fall back to
+    // being asked the guesser's third-person question again.
+    const mirrorQuestion = SessionGameQuestion(
+      id: 'q1',
+      gameType: 'mirror',
+      questionText: 'What is weighing on them most this week?',
+    );
+
+    testWidgets('isSubject: true reaches MirrorQuestionScreen as true',
+        (tester) async {
+      await tester.pumpWidget(
+        wrap(SessionGameRouterScreen(
+          question: mirrorQuestion,
+          onSubmit: (_) {},
+          isSubject: true,
+        )),
+      );
+
+      final mirrorScreen =
+          tester.widget<MirrorQuestionScreen>(find.byType(MirrorQuestionScreen));
+      expect(mirrorScreen.isSubject, isTrue);
+      // Confirms the subject-facing copy actually renders through the
+      // router, not just that a bool field was set.
+      expect(
+        find.textContaining('Answer honestly about yourself'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('isSubject: false reaches MirrorQuestionScreen as false',
+        (tester) async {
+      await tester.pumpWidget(
+        wrap(SessionGameRouterScreen(
+          question: mirrorQuestion,
+          onSubmit: (_) {},
+          isSubject: false,
+        )),
+      );
+
+      final mirrorScreen =
+          tester.widget<MirrorQuestionScreen>(find.byType(MirrorQuestionScreen));
+      expect(mirrorScreen.isSubject, isFalse);
+      expect(
+        find.text('What do you think they would say?'),
+        findsOneWidget,
+      );
+    });
   });
 }

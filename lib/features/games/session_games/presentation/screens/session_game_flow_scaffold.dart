@@ -116,6 +116,7 @@ class _SessionGameFlowScaffoldState
               return SessionGameRouterScreen(
                 question: question,
                 onSubmit: notifier.submit,
+                isSubject: flow.isSubject,
               );
             case SessionGameStage.waiting:
               return SessionGameWaitingScreen(
@@ -127,9 +128,7 @@ class _SessionGameFlowScaffoldState
             case SessionGameStage.judge:
               return _JudgeStage(notifier: notifier);
             case SessionGameStage.end:
-              return SessionGameEndScreen(
-                onDone: () => Navigator.of(context).pop(),
-              );
+              return _EndStage(notifier: notifier, gameType: flow.gameType);
           }
         },
       ),
@@ -250,6 +249,55 @@ class _JudgeStage extends StatelessWidget {
           yourTruth: truth ?? '',
           theirGuess: theirGuess,
           onJudge: notifier.judge,
+        );
+      },
+    );
+  }
+}
+
+/// Fetches the viewer's own Mirror score, if any, and hands it to
+/// [SessionGameEndScreen].
+///
+/// Only Mirror has a score to show — Sliding Scale and Scenario pass
+/// nulls straight through, matching SessionGameEndScreen's existing
+/// "Mirror only" contract. The session id is used, never the round id:
+/// finalise_mirror_scores writes one row per (session_id, user_id).
+class _EndStage extends StatelessWidget {
+  const _EndStage({required this.notifier, required this.gameType});
+
+  final SessionGameFlowNotifier notifier;
+  final String gameType;
+
+  @override
+  Widget build(BuildContext context) {
+    if (gameType != 'mirror') {
+      return SessionGameEndScreen(
+        onDone: () => Navigator.of(context).pop(),
+      );
+    }
+
+    final sessionId = notifier.sessionId;
+    if (sessionId == null) {
+      return SessionGameEndScreen(
+        onDone: () => Navigator.of(context).pop(),
+      );
+    }
+
+    final repository = SessionGameRepository();
+
+    return FutureBuilder<int?>(
+      future: repository.fetchMirrorScore(sessionId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        return SessionGameEndScreen(
+          onDone: () => Navigator.of(context).pop(),
+          yourScore: snapshot.data,
+          // Four, not eight: the subject alternates across 8 rounds, so
+          // each partner guesses only 4 of them.
+          totalRounds: snapshot.data != null ? 4 : null,
         );
       },
     );

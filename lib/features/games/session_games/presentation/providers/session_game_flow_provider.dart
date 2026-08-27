@@ -36,6 +36,30 @@ bool isAlreadyJudged(Object error) =>
 bool subjectOf({required String? subjectId, required String userId}) =>
     subjectId != null && subjectId == userId;
 
+/// Where a joining caller should resume: the first round that is NOT
+/// bothAnswered, or the end stage if every round already is.
+///
+/// Pulled out as a pure function (rather than inlined in start()) so the
+/// "resume, don't restart" behaviour is unit-testable without a
+/// Supabase client. createSession (C1) now returns an existing session
+/// when the partner already started one, so start() can no longer
+/// assume round 0 is where the caller belongs — a joining partner
+/// landing on round 0 of a session already underway would be forced to
+/// re-answer completed rounds, or overwrite an in-flight one.
+({SessionGameStage stage, int roundIndex}) initialStageAndIndexFor(
+  List<SessionGameRound> rounds,
+) {
+  final firstUnanswered = rounds.indexWhere((r) => !r.bothAnswered);
+  if (firstUnanswered == -1) {
+    // Every round answered: the session is finished. roundIndex is 0
+    // rather than the last index because nothing reads it once stage is
+    // end — currentQuestion still resolves against a valid index into a
+    // non-empty _questions list, but the value itself is never shown.
+    return (stage: SessionGameStage.end, roundIndex: 0);
+  }
+  return (stage: SessionGameStage.question, roundIndex: firstUnanswered);
+}
+
 final sessionGameRepositoryProvider = Provider<SessionGameRepository>(
   (ref) => SessionGameRepository(),
 );
@@ -100,7 +124,17 @@ class SessionGameFlowNotifier extends AsyncNotifier<SessionGameFlowState> {
     return _relationshipId;
   }
 
-  /// Starts a new session and loads its first round.
+  /// This session's id, or null before start().
+  ///
+  /// Lets the end stage fetch the caller's own Mirror score without the
+  /// notifier having to carry score-fetching logic itself.
+  String? get sessionId {
+    if (state.value == null) return null;
+    return _sessionId;
+  }
+
+  /// Starts a new session, or joins one already in progress, and loads
+  /// the first round the caller still needs to play.
   ///
   /// [partnerId] must be the caller's actual partner from the
   /// relationship — it is written into `active_partner_id` for Mirror
@@ -109,6 +143,16 @@ class SessionGameFlowNotifier extends AsyncNotifier<SessionGameFlowState> {
   /// production caller of `createSession`, so it is the one place that
   /// enforcement can happen; an untrusted or attacker-supplied value here
   /// would silently strand the round and skew scoring.
+  ///
+  /// createSession now returns an existing session when the partner
+  /// already started one, so this cannot assume round 0 is where the
+  /// caller belongs: a joining partner who lands on round 0 of a session
+  /// already underway would be forced to re-answer already-completed
+  /// rounds, or worse, overwrite an in-flight one. The initial roundIndex
+  /// is therefore the first round that is NOT bothAnswered. If every
+  /// round is already answered the session is finished, and the caller
+  /// goes straight to the end stage rather than to a question screen
+  /// with nothing left to ask.
   Future<void> start({
     required String gameType,
     required String relationshipId,
@@ -134,15 +178,18 @@ class SessionGameFlowNotifier extends AsyncNotifier<SessionGameFlowState> {
         limit: _rounds.length,
       );
 
+      final initial = initialStageAndIndexFor(_rounds);
+
       return SessionGameFlowState(
-        stage: SessionGameStage.question,
-        roundIndex: 0,
+        stage: initial.stage,
+        roundIndex: initial.roundIndex,
         // From the rounds actually created, never assumed — Sliding
         // Scale has only 6 seeded questions.
         totalRounds: _rounds.length,
         gameType: gameType,
         isSubject: subjectOf(
-          subjectId: _rounds.isEmpty ? null : _rounds.first.subjectId,
+          subjectId:
+              _rounds.isEmpty ? null : _rounds[initial.roundIndex].subjectId,
           userId: userId,
         ),
       );
