@@ -33,9 +33,10 @@ class SessionGameRepository {
         .select()
         .eq('game_type', gameType)
         .eq('active', true)
-        // Explicit ordering makes the LIMIT deterministic: without it
-        // Postgres gives no guarantee on which subset an unordered
-        // LIMIT returns. This does NOT provide variety — created_at is
+        // created_at alone is a total tie: every seeded row of a given
+        // game_type is inserted by a single statement, so they all share
+        // one now() value. `id` breaks the tie so the LIMIT is genuinely
+        // deterministic. This does NOT provide variety — the ordering is
         // fixed per row, so every couple gets the same top-N questions
         // in the same order, every session, forever. Real variety needs
         // a separate mechanism: randomised selection, or extending
@@ -43,6 +44,7 @@ class SessionGameRepository {
         // to cover mirror, sliding_scale and scenario. Deliberately out
         // of scope here.
         .order('created_at')
+        .order('id')
         .limit(limit);
 
     return rows

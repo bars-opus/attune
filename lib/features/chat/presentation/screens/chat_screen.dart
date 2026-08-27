@@ -446,13 +446,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       case ChatGameDestination.gamesHub:
       case ChatGameDestination.thirtySixQuestions:
       case ChatGameDestination.neverHaveIEver:
-        await context.pushNamed('gamesHub');
+      // Mirror, Sliding Scale and Scenario route here too: the routes and
+      // screens exist and are tested, but nothing yet passes a
+      // SessionGameQuestion as `extra`, and no session-flow controller
+      // exists to drive submit -> waiting -> reveal -> end. Routing them
+      // to their own routes today lands the user on an error screen, so
+      // they stay pointed at the hub until that controller lands.
       case ChatGameDestination.mirror:
-        await context.pushNamed('mirrorGame');
       case ChatGameDestination.slidingScale:
-        await context.pushNamed('slidingScaleGame');
       case ChatGameDestination.scenario:
-        await context.pushNamed('scenarioGame');
+        await context.pushNamed('gamesHub');
       case ChatGameDestination.thisOrThat:
         await context.pushNamed('thisOrThatGamesHub');
       case ChatGameDestination.truthOrDare:
