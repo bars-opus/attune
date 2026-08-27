@@ -272,7 +272,10 @@ Rules:
   `.trim();
 }
 
-function validateLayerOne(
+/// Exported for the §6.7 golden-transcript evals (index.test.ts). This is
+/// the boundary where raw model output becomes persisted analysis, so it
+/// is the meaningful thing to assert a known input/output pair against.
+export function validateLayerOne(
   parsed: Record<string, unknown> | null,
 ): Record<string, unknown> | null {
   if (!parsed) return null;
