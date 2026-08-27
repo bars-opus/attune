@@ -27,6 +27,26 @@ void main() {
     });
   });
 
+  group('isAlreadyJudged', () {
+    test('recognises the server\'s judge-once guard message', () {
+      expect(
+        isAlreadyJudged(Exception('Round already judged')),
+        isTrue,
+      );
+    });
+
+    test('does not match other server messages', () {
+      // The two "already" messages must not be conflated, or a genuine
+      // permission error would be silently swallowed.
+      expect(isAlreadyJudged(Exception('Answer already submitted')), isFalse);
+      expect(isAlreadyJudged(Exception('Round not found')), isFalse);
+      expect(
+        isAlreadyJudged(Exception('Only this round\'s subject may judge it')),
+        isFalse,
+      );
+    });
+  });
+
   group('subjectOf', () {
     test('the viewer is the subject when the round names them', () {
       expect(subjectOf(subjectId: 'me', userId: 'me'), isTrue);

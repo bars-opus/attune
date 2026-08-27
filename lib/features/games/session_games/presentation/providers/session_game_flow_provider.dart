@@ -16,6 +16,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 bool isAlreadySubmitted(Object error) =>
     error.toString().contains('Answer already submitted');
 
+/// Whether a failure is the server's judge-once guard rather than a real
+/// error.
+///
+/// Like [isAlreadySubmitted], this is not a failure: it is what a user
+/// hits retrying `judge()` after the judgement committed but a later
+/// step (advancing, or `completeSession` on the last round) failed. The
+/// judgement is irreversible server-side, so a retry must be able to
+/// move forward on work that already succeeded rather than getting stuck
+/// re-erroring on it.
+bool isAlreadyJudged(Object error) =>
+    error.toString().contains('Round already judged');
+
 /// Whether the viewer is this round's subject.
 ///
 /// A null subjectId means the game has no subject (Sliding Scale,
@@ -153,7 +165,16 @@ class SessionGameFlowNotifier extends AsyncNotifier<SessionGameFlowState> {
     final roundId = currentRoundId;
     if (current == null || roundId == null) return;
 
-    await _repository.judgeRound(roundId: roundId, wasCorrect: wasCorrect);
+    try {
+      await _repository.judgeRound(roundId: roundId, wasCorrect: wasCorrect);
+    } catch (error) {
+      // The judgement is irreversible server-side, so a retry after a
+      // partial failure (judgeRound committed but advance()'s
+      // completeSession then failed) must be able to move forward
+      // rather than re-erroring on work that already succeeded.
+      // Anything else is a real failure and must still surface.
+      if (!isAlreadyJudged(error)) rethrow;
+    }
     await advance();
   }
 
