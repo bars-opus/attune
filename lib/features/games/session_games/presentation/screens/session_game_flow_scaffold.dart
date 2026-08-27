@@ -1,3 +1,4 @@
+import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/games/mirror/presentation/screens/mirror_judge_screen.dart';
 import 'package:attune/features/games/session_games/data/repositories/session_game_repository.dart';
 import 'package:attune/features/games/session_games/domain/session_game_flow_state.dart';
@@ -6,22 +7,89 @@ import 'package:attune/features/games/session_games/presentation/screens/session
 import 'package:attune/features/games/session_games/presentation/screens/session_game_reveal_screen.dart';
 import 'package:attune/features/games/session_games/presentation/screens/session_game_router_screen.dart';
 import 'package:attune/features/games/session_games/presentation/screens/session_game_waiting_screen.dart';
+import 'package:attune/features/relationships/data/relationship_lifecycle_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Renders whichever stage the flow controller is in.
+const _genericErrorMessage = 'Could not start this game. Please try again.';
+
+/// Renders whichever stage the flow controller is in, starting the
+/// session on first build.
 ///
 /// One scaffold for all three games: they share waiting, reveal and end,
 /// and differ only in how an answer is captured (handled by
 /// SessionGameRouterScreen) and whether a judge step exists (Mirror
 /// only).
-class SessionGameFlowScaffold extends ConsumerWidget {
+///
+/// A ConsumerStatefulWidget rather than a ConsumerWidget: start() must
+/// run exactly once per session, and nothing else in this widget's
+/// build() is a safe place to trigger it — build() reruns on every
+/// provider change, and calling start() from within it would re-create
+/// the session on every rebuild.
+class SessionGameFlowScaffold extends ConsumerStatefulWidget {
   const SessionGameFlowScaffold({super.key, required this.gameType});
 
   final String gameType;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SessionGameFlowScaffold> createState() =>
+      _SessionGameFlowScaffoldState();
+}
+
+class _SessionGameFlowScaffoldState
+    extends ConsumerState<SessionGameFlowScaffold> {
+  bool _starting = false;
+
+  /// Set when there is no relationship/user to start a session with — a
+  /// signed-out or unpaired user reaching this route. Distinct from
+  /// "still starting": that case must keep spinning; this one must
+  /// stop and show the generic message, or the user spins forever.
+  bool _unavailable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Cannot touch a provider synchronously during initState; scheduling
+    // via addPostFrameCallback defers it to just after the first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeStart());
+  }
+
+  Future<void> _maybeStart() async {
+    if (_starting || !mounted) return;
+    _starting = true; // guards a double-start if the widget rebuilds
+
+    final userId = ref.read(currentUserProvider)?.id;
+    final relationshipId = await ref.read(activeRelationshipIdProvider.future);
+    if (!mounted) return;
+
+    if (userId == null || relationshipId == null) {
+      setState(() => _unavailable = true);
+      return;
+    }
+
+    final repository = ref.read(sessionGameRepositoryProvider);
+    final partnerId = await repository.getPartnerId(relationshipId, userId);
+    if (!mounted) return;
+
+    await ref.read(sessionGameFlowProvider.notifier).start(
+          gameType: widget.gameType,
+          relationshipId: relationshipId,
+          userId: userId,
+          // Sourced from the authenticated relationship row, never from
+          // the caller — start()'s own contract requires the real
+          // partner, because nothing downstream validates it.
+          partnerId: partnerId,
+        );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_unavailable) {
+      return const Scaffold(
+        body: Center(child: Text(_genericErrorMessage)),
+      );
+    }
+
     final async = ref.watch(sessionGameFlowProvider);
     final notifier = ref.read(sessionGameFlowProvider.notifier);
 
@@ -31,11 +99,15 @@ class SessionGameFlowScaffold extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => const Center(
           // Never render the raw error: it can carry row contents.
-          child: Text('Could not start this game. Please try again.'),
+          child: Text(_genericErrorMessage),
         ),
         data: (flow) {
           final question = notifier.currentQuestion;
           if (question == null) {
+            // Either the relationship/user is still resolving, or
+            // start() is in flight. _unavailable (checked above) is
+            // what stops this from spinning forever in the one case
+            // where nothing will ever arrive.
             return const Center(child: CircularProgressIndicator());
           }
 

@@ -237,6 +237,26 @@ class SessionGameRepository {
     return row['user_a'] == _safeClient.auth.currentUser?.id;
   }
 
+  /// The other member of [relationshipId] — same shape as
+  /// ThirtySixQuestionRepository.getPartnerId.
+  ///
+  /// [userId] must be the caller's own id from an authenticated session,
+  /// never a client-supplied value: this is the only place `start()`
+  /// gets a partnerId from, and start()'s own contract requires it be
+  /// the real partner because nothing downstream — not RLS, not the
+  /// repository — checks that it actually belongs to this relationship.
+  Future<String> getPartnerId(String relationshipId, String userId) async {
+    final row = await _safeClient
+        .from('relationships')
+        .select('user_a, user_b')
+        .eq('id', relationshipId)
+        .single();
+
+    final userA = row['user_a'] as String;
+    final userB = row['user_b'] as String;
+    return userA == userId ? userB : userA;
+  }
+
   /// The subject's own answer for a Mirror round, or null if not yet
   /// submitted.
   ///
