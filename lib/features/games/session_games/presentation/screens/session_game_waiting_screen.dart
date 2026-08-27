@@ -19,10 +19,15 @@ class SessionGameWaitingScreen extends StatefulWidget {
     required this.onRevealed,
     SessionGameRepository? repository,
   })  : _repository = repository,
-        _testBothAnswered = null,
-        _testPartnerAnswer = null;
+        _testBothAnswered = null;
 
   /// Renders a fixed state without polling, for widget tests.
+  ///
+  /// [partnerAnswer] exists so a test can describe a round's state
+  /// symmetrically (both_answered alongside what was answered) but is
+  /// deliberately NOT stored: this screen renders before the reveal and
+  /// must never hold a partner's answer, even in a dead field, or a
+  /// later reader could wire it into build() and defeat the §8.4 gate.
   const SessionGameWaitingScreen.forTesting({
     super.key,
     required bool bothAnswered,
@@ -31,8 +36,7 @@ class SessionGameWaitingScreen extends StatefulWidget {
   })  : roundId = 'test',
         onRevealed = onRevealed ?? _noop,
         _repository = null,
-        _testBothAnswered = bothAnswered,
-        _testPartnerAnswer = partnerAnswer;
+        _testBothAnswered = bothAnswered;
 
   static void _noop() {}
 
@@ -40,7 +44,6 @@ class SessionGameWaitingScreen extends StatefulWidget {
   final VoidCallback onRevealed;
   final SessionGameRepository? _repository;
   final bool? _testBothAnswered;
-  final String? _testPartnerAnswer;
 
   @override
   State<SessionGameWaitingScreen> createState() =>
