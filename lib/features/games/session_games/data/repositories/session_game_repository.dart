@@ -165,11 +165,15 @@ class SessionGameRepository {
   ///
   /// Selects only the non-answer columns. A `select()` with no argument
   /// would return answer_a/answer_b too — RLS permits it — bypassing the
-  /// reveal gate.
+  /// reveal gate. The column list is answer-free by design, not merely
+  /// short: active_partner_id IS included because it is a subject
+  /// identifier, not answer data — it names whose inner state a Mirror
+  /// round is about, never a partner's response. Do not add answer_a or
+  /// answer_b here.
   Future<List<SessionGameRound>> fetchRounds(String sessionId) async {
     final rows = await _safeClient
         .from('game_session_rounds')
-        .select('id, round_number, question_id, both_answered')
+        .select('id, round_number, question_id, both_answered, active_partner_id')
         .eq('session_id', sessionId)
         .order('round_number');
 

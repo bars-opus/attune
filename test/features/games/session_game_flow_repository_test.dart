@@ -29,6 +29,21 @@ void main() {
       expect(round.subjectId, isNull);
     });
 
+    test('is populated when the row has fetchRounds\' exact column shape', () {
+      // fetchRounds selects id, round_number, question_id, both_answered
+      // and active_partner_id — no more, no less. This proves subjectId
+      // actually comes through that shape, not just a hand-built row
+      // that happens to include a field fetchRounds never selects.
+      final round = SessionGameRound.fromRow(const {
+        'id': 'r4',
+        'round_number': 4,
+        'question_id': 'q4',
+        'both_answered': true,
+        'active_partner_id': 'user-b',
+      });
+      expect(round.subjectId, 'user-b');
+    });
+
     test('still carries no answer fields', () {
       // Regression guard on the reveal gate: a round model that could
       // hold answers would invite a direct table select, which RLS
