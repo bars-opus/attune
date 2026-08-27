@@ -5,6 +5,7 @@ import 'package:attune/core/widgets/bottom_sheet_header.dart';
 import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/core/widgets/search_text_field.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -15,6 +16,9 @@ enum ChatGameDestination {
   thirtySixQuestions,
   paintBall,
   neverHaveIEver,
+  mirror,
+  slidingScale,
+  scenario,
 }
 
 class ChatGamesSheet extends StatefulWidget {
@@ -159,6 +163,29 @@ const _chatGameCategories = <_ChatGameCategory>[
     ],
   ),
   _ChatGameCategory(
+    title: 'Understanding each other',
+    options: [
+      _ChatGameOption(
+        destination: ChatGameDestination.mirror,
+        title: 'Mirror',
+        subtitle: 'How well do you read each other right now?',
+        icon: Icons.psychology_outlined,
+      ),
+      _ChatGameOption(
+        destination: ChatGameDestination.slidingScale,
+        title: 'Sliding Scale',
+        subtitle: 'Where you each land on what matters',
+        icon: Icons.tune_rounded,
+      ),
+      _ChatGameOption(
+        destination: ChatGameDestination.scenario,
+        title: 'Scenario',
+        subtitle: 'What you would each do, and why',
+        icon: Icons.alt_route_rounded,
+      ),
+    ],
+  ),
+  _ChatGameCategory(
     title: 'Fun and playful',
     options: [
       _ChatGameOption(
@@ -274,3 +301,14 @@ class _ChatGameMenuRow extends StatelessWidget {
     );
   }
 }
+
+/// The destinations the catalogue actually exposes.
+///
+/// Exists so a test can prove every enum value has a UI entry — the
+/// catalogue is a const list, so a missing entry is invisible at compile
+/// time and would ship a game no one can launch.
+@visibleForTesting
+Set<ChatGameDestination> chatGameDestinationsInCatalogue() => {
+      for (final category in _chatGameCategories)
+        for (final option in category.options) option.destination,
+    };
