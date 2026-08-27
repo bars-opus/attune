@@ -1,0 +1,187 @@
+import 'package:attune/features/games/session_games/data/models/session_game_question.dart';
+import 'package:attune/features/games/session_games/data/models/session_game_round.dart';
+import 'package:attune/features/games/session_games/data/repositories/session_game_repository.dart';
+import 'package:attune/features/games/session_games/domain/session_game_flow_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+/// Whether a failure is the server's resubmission guard rather than a
+/// real error.
+///
+/// The RPC raises for validation, membership and resubmission alike, and
+/// they all arrive as one undifferentiated exception. "Answer already
+/// submitted" is not a failure at all — it is what a user hits when they
+/// return to a round they already answered after backgrounding the app,
+/// navigating back, or retrying on a flaky connection. Treated as an
+/// error it shows a scary message on a round that is perfectly fine.
+bool isAlreadySubmitted(Object error) =>
+    error.toString().contains('Answer already submitted');
+
+/// Whether the viewer is this round's subject.
+///
+/// A null subjectId means the game has no subject (Sliding Scale,
+/// Scenario), so nobody is — returning true there would give both
+/// partners a judge step that should not exist.
+bool subjectOf({required String? subjectId, required String userId}) =>
+    subjectId != null && subjectId == userId;
+
+final sessionGameRepositoryProvider = Provider<SessionGameRepository>(
+  (ref) => SessionGameRepository(),
+);
+
+final sessionGameFlowProvider =
+    AsyncNotifierProvider<SessionGameFlowNotifier, SessionGameFlowState>(
+  SessionGameFlowNotifier.new,
+);
+
+/// Drives one session: question -> waiting -> reveal -> [judge] -> end.
+///
+/// Owns the session id, its rounds, and the fetched questions, and
+/// supplies the SessionGameQuestion each screen renders. Nothing did
+/// that before, which is why the routes read a null `extra` and every
+/// game rendered "Question unavailable."
+class SessionGameFlowNotifier extends AsyncNotifier<SessionGameFlowState> {
+  late String _sessionId;
+  late String _gameType;
+  late String _userId;
+  List<SessionGameRound> _rounds = const [];
+  List<SessionGameQuestion> _questions = const [];
+
+  SessionGameRepository get _repository =>
+      ref.read(sessionGameRepositoryProvider);
+
+  @override
+  Future<SessionGameFlowState> build() async {
+    // No session until start() is called. The routes render their own
+    // empty state while this is the case.
+    return const SessionGameFlowState(
+      stage: SessionGameStage.question,
+      roundIndex: 0,
+      totalRounds: 0,
+      gameType: '',
+      isSubject: false,
+    );
+  }
+
+  /// The question for the current round, or null before start().
+  SessionGameQuestion? get currentQuestion {
+    final current = state.value;
+    if (current == null || _questions.isEmpty) return null;
+    if (current.roundIndex >= _questions.length) return null;
+    return _questions[current.roundIndex];
+  }
+
+  String? get currentRoundId {
+    final current = state.value;
+    if (current == null || _rounds.isEmpty) return null;
+    if (current.roundIndex >= _rounds.length) return null;
+    return _rounds[current.roundIndex].id;
+  }
+
+  /// Starts a new session and loads its first round.
+  ///
+  /// [partnerId] must be the caller's actual partner from the
+  /// relationship — it is written into `active_partner_id` for Mirror
+  /// rounds, and neither RLS nor the repository validates that it is
+  /// really a member of the relationship. This controller is the only
+  /// production caller of `createSession`, so it is the one place that
+  /// enforcement can happen; an untrusted or attacker-supplied value here
+  /// would silently strand the round and skew scoring.
+  Future<void> start({
+    required String gameType,
+    required String relationshipId,
+    required String userId,
+    required String partnerId,
+  }) async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      _gameType = gameType;
+      _userId = userId;
+
+      _sessionId = await _repository.createSession(
+        relationshipId: relationshipId,
+        initiatorId: userId,
+        gameType: gameType,
+        partnerId: partnerId,
+      );
+
+      _rounds = await _repository.fetchRounds(_sessionId);
+      _questions = await _repository.fetchQuestions(
+        gameType: gameType,
+        limit: _rounds.length,
+      );
+
+      return SessionGameFlowState(
+        stage: SessionGameStage.question,
+        roundIndex: 0,
+        // From the rounds actually created, never assumed — Sliding
+        // Scale has only 6 seeded questions.
+        totalRounds: _rounds.length,
+        gameType: gameType,
+        isSubject: subjectOf(
+          subjectId: _rounds.isEmpty ? null : _rounds.first.subjectId,
+          userId: userId,
+        ),
+      );
+    });
+  }
+
+  Future<void> submit(String answer) async {
+    final current = state.value;
+    final roundId = currentRoundId;
+    if (current == null || roundId == null) return;
+
+    try {
+      await _repository.submitAnswer(roundId: roundId, answer: answer);
+    } catch (error) {
+      // A returning user has already answered this round; that is the
+      // normal path, not a failure. Anything else is real.
+      if (!isAlreadySubmitted(error)) rethrow;
+    }
+
+    state = AsyncData(current.copyWith(stage: current.stageAfterSubmit()));
+  }
+
+  /// Called by the waiting screen once the reveal gate opens.
+  void onRevealed() {
+    final current = state.value;
+    if (current == null) return;
+    state = AsyncData(current.copyWith(stage: SessionGameStage.reveal));
+  }
+
+  Future<void> judge(bool wasCorrect) async {
+    final current = state.value;
+    final roundId = currentRoundId;
+    if (current == null || roundId == null) return;
+
+    await _repository.judgeRound(roundId: roundId, wasCorrect: wasCorrect);
+    await advance();
+  }
+
+  /// Moves past the current round, ending the session on the last one.
+  Future<void> advance() async {
+    final current = state.value;
+    if (current == null) return;
+
+    if (current.isLastRound) {
+      await _repository.completeSession(_sessionId, gameType: _gameType);
+      state = AsyncData(current.copyWith(stage: SessionGameStage.end));
+      return;
+    }
+
+    final nextIndex = current.roundIndex + 1;
+    state = AsyncData(
+      SessionGameFlowState(
+        stage: SessionGameStage.question,
+        roundIndex: nextIndex,
+        totalRounds: current.totalRounds,
+        gameType: current.gameType,
+        // Mirror alternates the subject, so this is recomputed each
+        // round rather than carried forward.
+        isSubject: subjectOf(
+          subjectId: _rounds[nextIndex].subjectId,
+          userId: _userId,
+        ),
+      ),
+    );
+  }
+}
