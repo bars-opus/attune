@@ -446,10 +446,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       case ChatGameDestination.gamesHub:
       case ChatGameDestination.thirtySixQuestions:
       case ChatGameDestination.neverHaveIEver:
-      case ChatGameDestination.mirror:
-      case ChatGameDestination.slidingScale:
-      case ChatGameDestination.scenario:
         await context.pushNamed('gamesHub');
+      case ChatGameDestination.mirror:
+        await context.pushNamed('mirrorGame');
+      case ChatGameDestination.slidingScale:
+        await context.pushNamed('slidingScaleGame');
+      case ChatGameDestination.scenario:
+        await context.pushNamed('scenarioGame');
       case ChatGameDestination.thisOrThat:
         await context.pushNamed('thisOrThatGamesHub');
       case ChatGameDestination.truthOrDare:

@@ -83,6 +83,8 @@ import 'package:attune/features/games/this_or_that/presentation/screens/this_or_
 import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_games_hub_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_session_router_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/tone_selector_screen.dart';
+import 'package:attune/features/games/session_games/data/models/session_game_question.dart';
+import 'package:attune/features/games/session_games/presentation/screens/session_game_router_screen.dart';
 import 'package:attune/features/community/presentation/screens/community_feed_screen.dart';
 import 'package:attune/features/quiz/domain/models/attachment_result.dart';
 import 'package:attune/features/quiz/domain/models/communication_style_result.dart';
@@ -291,6 +293,9 @@ class RouteNames {
   static const String thisOrThatCustomCreate = '/thisOrThatCustomCreate';
   static const String neutralScreen = '/neutralScreen';
   static const String notificationInbox = '/notificationInbox';
+  static const String mirrorGame = '/mirrorGame';
+  static const String slidingScaleGame = '/slidingScaleGame';
+  static const String scenarioGame = '/scenarioGame';
 }
 
 /// GoRouter's `extra` carries exactly one object per route — these small
@@ -1260,6 +1265,54 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
             );
           }
           return ThisOrThatSessionRouterScreen(sessionId: sessionId);
+        },
+      ),
+      GoRoute(
+        path: RouteNames.mirrorGame,
+        name: 'mirrorGame',
+        builder: (context, state) {
+          final question = state.extra as SessionGameQuestion?;
+          if (question == null) {
+            return const Scaffold(
+              body: Center(child: Text('Question unavailable.')),
+            );
+          }
+          return SessionGameRouterScreen(
+            question: question,
+            onSubmit: (_) {},
+          );
+        },
+      ),
+      GoRoute(
+        path: RouteNames.slidingScaleGame,
+        name: 'slidingScaleGame',
+        builder: (context, state) {
+          final question = state.extra as SessionGameQuestion?;
+          if (question == null) {
+            return const Scaffold(
+              body: Center(child: Text('Question unavailable.')),
+            );
+          }
+          return SessionGameRouterScreen(
+            question: question,
+            onSubmit: (_) {},
+          );
+        },
+      ),
+      GoRoute(
+        path: RouteNames.scenarioGame,
+        name: 'scenarioGame',
+        builder: (context, state) {
+          final question = state.extra as SessionGameQuestion?;
+          if (question == null) {
+            return const Scaffold(
+              body: Center(child: Text('Question unavailable.')),
+            );
+          }
+          return SessionGameRouterScreen(
+            question: question,
+            onSubmit: (_) {},
+          );
         },
       ),
       GoRoute(
