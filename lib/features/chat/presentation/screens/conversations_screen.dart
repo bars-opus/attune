@@ -183,75 +183,78 @@ class _ConversationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    return InfoRowWidget(
-      title: conversation.name,
-      subtitle: previewText,
-      imageUrl: conversation.avatarUrl,
-      icon: conversation.avatarUrl == null ? Icons.person_outline : null,
-      subTitleMaxLines: 2,
-      showDivider: false,
-      iconColor: colorScheme.background,
-      backgroundColor: colorScheme.primary,
-      showAvatar: true,
-      disableTrailing: false,
-      showTrailingArrow: false,
-      trailing: Row(
-        children: [
-          if (conversation.unreadCount > 0) ...[
-            Container(
-              padding: EdgeInsetsDirectional.symmetric(
-                horizontal: Spacing.sm,
-                vertical: Spacing.xs,
-              ),
-              decoration: BoxDecoration(
-                color: colorScheme.primary,
-                borderRadius: BorderRadiusTokens.floatingNavAll,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  conversation.unreadCount > 99
-                      // Rolling digits don't make sense once the badge is
-                      // showing a capped, non-exact "99+" rather than the
-                      // real count.
-                      ? Text(
-                        '99+',
-                        style: textTheme.labelLarge?.copyWith(
-                          // fontSize: 12,
-                          color: colorScheme.onPrimary,
+    return Hero(
+      tag: conversation.name,
+      child: InfoRowWidget(
+        title: conversation.name,
+        subtitle: previewText,
+        imageUrl: conversation.avatarUrl,
+        icon: conversation.avatarUrl == null ? Icons.person_outline : null,
+        subTitleMaxLines: 2,
+        showDivider: false,
+        iconColor: colorScheme.background,
+        backgroundColor: colorScheme.primary,
+        showAvatar: true,
+        disableTrailing: false,
+        showTrailingArrow: false,
+        trailing: Row(
+          children: [
+            if (conversation.unreadCount > 0) ...[
+              Container(
+                padding: EdgeInsetsDirectional.symmetric(
+                  horizontal: Spacing.sm,
+                  vertical: Spacing.xs,
+                ),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary,
+                  borderRadius: BorderRadiusTokens.floatingNavAll,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    conversation.unreadCount > 99
+                        // Rolling digits don't make sense once the badge is
+                        // showing a capped, non-exact "99+" rather than the
+                        // real count.
+                        ? Text(
+                          '99+',
+                          style: textTheme.labelLarge?.copyWith(
+                            // fontSize: 12,
+                            color: colorScheme.onPrimary,
+                          ),
+                        )
+                        : AnimatedRollingCounter(
+                          count: conversation.unreadCount,
+                          style: textTheme.labelLarge?.copyWith(
+                            // fontSize: 12,
+                            color: colorScheme.onPrimary,
+                          ),
                         ),
-                      )
-                      : AnimatedRollingCounter(
-                        count: conversation.unreadCount,
-                        style: textTheme.labelLarge?.copyWith(
-                          // fontSize: 12,
-                          color: colorScheme.onPrimary,
-                        ),
-                      ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
+            // Plain status icon instead of a labelled pill — canSend (active
+            // relationship) reads as an open heart; anything else (read-only,
+            // archived) reads as locked/archived, mirroring the icon language
+            // _LockedConversationPreview already uses for the same states.
+            if (!conversation.canSend)
+              Icon(
+                conversation.isArchived
+                    ? Icons.archive_outlined
+                    : conversation.canSend
+                    ? Icons.favorite
+                    : Icons.lock_outline,
+                size: 18,
+                color:
+                    conversation.canSend
+                        ? colorScheme.error
+                        : colorScheme.onSurfaceVariant,
+              ),
           ],
-          // Plain status icon instead of a labelled pill — canSend (active
-          // relationship) reads as an open heart; anything else (read-only,
-          // archived) reads as locked/archived, mirroring the icon language
-          // _LockedConversationPreview already uses for the same states.
-          if (!conversation.canSend)
-            Icon(
-              conversation.isArchived
-                  ? Icons.archive_outlined
-                  : conversation.canSend
-                  ? Icons.favorite
-                  : Icons.lock_outline,
-              size: 18,
-              color:
-                  conversation.canSend
-                      ? colorScheme.error
-                      : colorScheme.onSurfaceVariant,
-            ),
-        ],
+        ),
+        onTap: onTap,
       ),
-      onTap: onTap,
     );
   }
 }

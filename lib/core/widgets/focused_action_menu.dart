@@ -45,7 +45,7 @@ Future<void> showFocusedActionMenu({
     // time-to-FIRST-feedback (the haptic + backdrop + bubble scale all
     // start at t=0, satisfying that), not that the whole entrance must
     // finish within 200ms.
-    transitionDuration: const Duration(milliseconds: 220),
+    transitionDuration: const Duration(milliseconds: 260),
     pageBuilder: (dialogContext, animation, secondaryAnimation) {
       return _FocusedActionMenuOverlay(
         anchorRect: anchorRect,
@@ -104,12 +104,12 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
 
   // Captured in didChangeDependencies (below) — the standard place to
   // safely read ModalRoute.of(context) for a State — rather than at pop
-  // time: onOpenFullPicker (fired eagerly, before the 500ms reverse delay
+  // time: onOpenFullPicker (fired eagerly, before the reverse delay
   // in _handlePop below) pushes its own route, the full picker's bottom
   // sheet, on top of this one, and a bare Navigator.of(context).pop() at
   // that point closes whichever route is topmost. Without capturing THIS
   // route up front, the delayed pop below closes the picker sheet instead
-  // of this menu — it opens, then silently vanishes 500ms later.
+  // of this menu — it would open, then silently vanish moments later.
   ModalRoute<void>? _ownRoute;
 
   @override
@@ -150,28 +150,11 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
       (widget.quickReactions.length + 1) * _reactionItemWidth +
       _reactionRowPadding;
 
-  // Staged entrance, matching the real iMessage sequence: the action menu
-  // (Reply/Copy/...) scales+fades in first, THEN the reaction row's own
-  // container, THEN — once the row itself is in — each emoji inside it in
-  // turn, left-to-right, as a quick ripple. Built with this codebase's own
-  // AnimatedScaleFade (already used for chat's reply-preview strip and
-  // forums' equivalent — see chat_screen.dart/debate_room_screen.dart) via
-  // its staggerIndex/staggerDelay, rather than hand-rolled Interval-slicing
-  // of the dialog route's shared `animation`: each stage below is its own
-  // independent, self-contained AnimatedScaleFade instance (own
-  // AnimationController, autoStart on mount), which is simpler to reason
-  // about than threading N different Interval windows through one shared
-  // animation, at the cost of no longer riding the SAME animation as the
-  // backdrop blur/bubble scale below (those two still do, unchanged) and
-  // no reverse-on-dismiss stagger (dismiss just uses the dialog route's
-  // own default close, matching this feature's the-open-animation-is-what-
-  // matters scope).
-  //
-  // staggerDelay is per-INDEX, not per-stage — the whole sequence (menu,
-  // then row, then each emoji) is one continuous stagger sharing one
-  // duration, indices 0..N in visual order.
-  static const Duration _entranceDuration = Duration(milliseconds: 500);
-  static const double _staggerDelay = 0.12;
+  // One compact motion rhythm drives the menu, row, emoji, and action items.
+  // The short overlap is deliberate: modern iMessage feels like one surface
+  // unfolding, not several cards waiting for each other to finish.
+  static const Duration _entranceDuration = Duration(milliseconds: 360);
+  static const double _staggerDelay = 0.05;
   static const int _menuStaggerIndex = 0;
   static const int _reactionRowStaggerIndex = 1;
 
@@ -180,17 +163,20 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
   int _emojiStaggerIndex(int emojiPosition) =>
       _reactionRowStaggerIndex + 1 + emojiPosition;
 
+  int _actionStaggerIndex(int actionPosition) => 1 + actionPosition;
+
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final safeAreaBottom = MediaQuery.of(context).padding.bottom;
-    final estimatedMenuHeight = widget.actions.length * _estimatedItemHeight +
+    final estimatedMenuHeight =
+        widget.actions.length * _estimatedItemHeight +
         _reactionRowHeight +
         _gap;
 
     final fitsBelow =
         widget.anchorRect.bottom + _gap + estimatedMenuHeight <=
-            screenSize.height - safeAreaBottom;
+        screenSize.height - safeAreaBottom;
 
     final menuWidth = 240.0;
     // The reaction row is a SEPARATE card from the 240px action list and is
@@ -204,13 +190,16 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
     final reactionRowMaxWidth = maxCardWidth;
     // clamp's lower bound must not exceed its upper bound, which it would on a
     // viewport narrower than menuWidth — take the min explicitly instead.
-    final widestCardWidth = _estimatedReactionRowWidth > menuWidth
-        ? (_estimatedReactionRowWidth < maxCardWidth
-            ? _estimatedReactionRowWidth
-            : maxCardWidth)
-        : menuWidth;
-    final maxLeft =
-        (screenSize.width - widestCardWidth - 8.0).clamp(8.0, double.infinity);
+    final widestCardWidth =
+        _estimatedReactionRowWidth > menuWidth
+            ? (_estimatedReactionRowWidth < maxCardWidth
+                ? _estimatedReactionRowWidth
+                : maxCardWidth)
+            : menuWidth;
+    final maxLeft = (screenSize.width - widestCardWidth - 8.0).clamp(
+      8.0,
+      double.infinity,
+    );
     final clampedLeft = widget.anchorRect.left.clamp(8.0, maxLeft);
 
     // Every staged AnimatedScaleFade below reads this so a single flag
@@ -219,8 +208,11 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
     final reversing = _dismissing;
 
     final reactionRow = Material(
-      borderRadius: BorderRadius.circular(24),
-      elevation: 8,
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.96),
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.black.withValues(alpha: 0.22),
+      borderRadius: BorderRadius.circular(28),
+      elevation: 12,
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: reactionRowMaxWidth),
@@ -233,51 +225,62 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
               children: [
                 for (var i = 0; i < widget.quickReactions.length; i++)
                   AnimatedScaleFade(
+                    key: ValueKey('focused-reaction-$i'),
                     duration: _entranceDuration,
                     curve: Curves.easeOutBack,
                     beginScale: 0.4,
                     staggerIndex: _emojiStaggerIndex(i),
                     staggerDelay: _staggerDelay,
                     reverse: reversing,
-                    child: InkWell(
-                      onTap: () {
-                        final emoji = widget.quickReactions[i].emoji;
-                        Navigator.of(context).maybePop().then((_) {
-                          widget.onReact(emoji);
-                        });
-                      },
-                      borderRadius: BorderRadius.circular(22),
-                      child: SizedBox(
-                        width: 44,
-                        height: 44,
-                        child: Center(
-                          child: Text(
-                            widget.quickReactions[i].emoji,
-                            style: const TextStyle(fontSize: 22),
+                    child: _PressScale(
+                      pressedScale: 0.84,
+                      child: InkWell(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          final emoji = widget.quickReactions[i].emoji;
+                          Navigator.of(context).maybePop().then((_) {
+                            widget.onReact(emoji);
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(22),
+                        child: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: Center(
+                            child: Text(
+                              widget.quickReactions[i].emoji,
+                              style: const TextStyle(fontSize: 22),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                 AnimatedScaleFade(
+                  key: const ValueKey('focused-reaction-more'),
                   duration: _entranceDuration,
                   curve: Curves.easeOutBack,
                   beginScale: 0.4,
-                  staggerIndex:
-                      _emojiStaggerIndex(widget.quickReactions.length),
+                  staggerIndex: _emojiStaggerIndex(
+                    widget.quickReactions.length,
+                  ),
                   staggerDelay: _staggerDelay,
                   reverse: reversing,
-                  child: InkWell(
-                    onTap: () {
-                      Navigator.of(context).maybePop().then((_) {
-                        widget.onOpenFullPicker();
-                      });
-                    },
-                    borderRadius: BorderRadius.circular(22),
-                    child: const SizedBox(
-                      width: 44,
-                      height: 44,
-                      child: Center(child: Icon(Icons.add, size: 22)),
+                  child: _PressScale(
+                    pressedScale: 0.84,
+                    child: InkWell(
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        Navigator.of(context).maybePop().then((_) {
+                          widget.onOpenFullPicker();
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(22),
+                      child: const SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: Center(child: Icon(Icons.add, size: 22)),
+                      ),
                     ),
                   ),
                 ),
@@ -305,22 +308,26 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
         child: AnimatedBuilder(
           animation: widget.animation,
           builder: (context, child) {
+            final focusProgress = Curves.easeOutCubic.transform(
+              widget.animation.value,
+            );
             return Stack(
               children: [
                 ClipRect(
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                     child: Container(
-                      color: Colors.black
-                          .withValues(alpha: 0.3 * widget.animation.value),
+                      color: Colors.black.withValues(
+                        alpha: 0.3 * widget.animation.value,
+                      ),
                     ),
                   ),
                 ),
                 Positioned.fromRect(
                   rect: widget.anchorRect,
                   child: IgnorePointer(
-                    child: Transform.scale(
-                      scale: 1.0 + 0.05 * widget.animation.value,
+                    child: Transform.translate(
+                      offset: Offset(0, -5 * focusProgress),
                       // The snapshot is a bare widget subtree lifted out of
                       // the page below and re-rendered under this dialog
                       // route, where there is no enclosing Material. Text
@@ -332,9 +339,12 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                       // Material restores the normal DefaultTextStyle
                       // inheritance so the snapshot re-derives exactly the
                       // layout the real bubble already has.
-                      child: Material(
-                        type: MaterialType.transparency,
-                        child: widget.anchorSnapshot,
+                      child: Transform.scale(
+                        scale: 1.0 + 0.035 * focusProgress,
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: widget.anchorSnapshot,
+                        ),
                       ),
                     ),
                   ),
@@ -342,9 +352,10 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                 Positioned(
                   left: clampedLeft,
                   top: fitsBelow ? widget.anchorRect.bottom + _gap : null,
-                  bottom: fitsBelow
-                      ? null
-                      : screenSize.height - widget.anchorRect.top + _gap,
+                  bottom:
+                      fitsBelow
+                          ? null
+                          : screenSize.height - widget.anchorRect.top + _gap,
                   child: GestureDetector(
                     // Swallow taps on the menu itself so they don't fall
                     // through to the scrim's dismiss-on-tap-outside handler —
@@ -358,38 +369,64 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                         // The reaction row animates in on its own stagger
                         // index (_reactionRowStaggerIndex), starting after
                         // the action menu below has begun — matching the
-                        // real sequence: menu first, then the row, then
-                        // (inside the row) each emoji in turn. On dismiss
-                        // (reversing) this same index makes it exit FIRST.
+                        // sequence: the menu begins, then this row joins 18ms
+                        // later, followed by its emoji ripple. On dismiss
+                        // this same index makes the row exit before the menu.
                         AnimatedScaleFade(
+                          key: const ValueKey('focused-reaction-row'),
                           duration: _entranceDuration,
                           curve: Curves.easeOutBack,
+                          beginScale: 0.78,
                           staggerIndex: _reactionRowStaggerIndex,
                           staggerDelay: _staggerDelay,
                           reverse: reversing,
                           child: reactionRow,
                         ),
                         const SizedBox(height: _gap),
-                        // The action menu (Reply/Copy/...) is the FIRST stage
-                        // to animate in (staggerIndex 0) — everything else
-                        // (the reaction row and its own per-emoji ripple)
-                        // follows this rather than running alongside it. On
-                        // dismiss this same index makes it exit LAST.
+                        // The action-menu surface starts first. Its rows and
+                        // the reaction surface then overlap in a compact
+                        // cascade. On dismiss, index 0 makes it exit last.
                         AnimatedScaleFade(
+                          key: const ValueKey('focused-action-menu'),
                           duration: _entranceDuration,
                           curve: Curves.easeOutBack,
+                          beginScale: 0.92,
                           staggerIndex: _menuStaggerIndex,
                           staggerDelay: _staggerDelay,
                           reverse: reversing,
                           child: Material(
-                            borderRadius: BorderRadius.circular(14),
-                            elevation: 8,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surface.withValues(alpha: 0.97),
+                            surfaceTintColor: Colors.transparent,
+                            shadowColor: Colors.black.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(18),
+                            elevation: 12,
                             clipBehavior: Clip.antiAlias,
                             child: SizedBox(
                               width: menuWidth,
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
-                                children: widget.actions,
+                                children: [
+                                  for (
+                                    var i = 0;
+                                    i < widget.actions.length;
+                                    i++
+                                  )
+                                    AnimatedScaleFade(
+                                      key: ValueKey('focused-action-$i'),
+                                      duration: _entranceDuration,
+                                      curve: Curves.easeOutCubic,
+                                      beginScale: 0.97,
+                                      staggerIndex: _actionStaggerIndex(i),
+                                      staggerDelay: _staggerDelay,
+                                      reverse: reversing,
+                                      child: _PressScale(
+                                        pressedScale: 0.975,
+                                        child: widget.actions[i],
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                           ),
@@ -402,6 +439,45 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+/// Adds the small compress-and-release response that makes a held control
+/// feel physical while leaving the child's own InkWell/tap semantics intact.
+class _PressScale extends StatefulWidget {
+  const _PressScale({required this.child, required this.pressedScale});
+
+  final Widget child;
+  final double pressedScale;
+
+  @override
+  State<_PressScale> createState() => _PressScaleState();
+}
+
+class _PressScaleState extends State<_PressScale> {
+  var _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (_) => _setPressed(true),
+      onPointerUp: (_) => _setPressed(false),
+      onPointerCancel: (_) => _setPressed(false),
+      child: AnimatedScale(
+        scale: _pressed ? widget.pressedScale : 1,
+        duration:
+            _pressed
+                ? const Duration(milliseconds: 90)
+                : const Duration(milliseconds: 210),
+        curve: _pressed ? Curves.easeOutCubic : Curves.easeOutBack,
+        child: widget.child,
       ),
     );
   }

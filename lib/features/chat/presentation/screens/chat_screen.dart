@@ -1,16 +1,12 @@
 import 'dart:async';
 
-import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
-import 'package:attune/core/ui/motion/glow_pulse.dart';
 import 'package:attune/core/ui/motion/motion_tokens.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/ui/presence/breathing_dots.dart';
-import 'package:attune/core/utils/animations/animated_scale_fade.dart';
-import 'package:attune/app/routing/app_router.dart';
-import 'package:attune/core/widgets/card_inkwell.dart';
+import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
@@ -18,24 +14,23 @@ import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/providers/chat_experience_providers.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/state/typing_controller.dart';
+import 'package:attune/features/chat/presentation/widgets/attune_chat_wallpaper.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
+import 'package:attune/features/chat/presentation/widgets/chat_media_group.dart';
 import 'package:attune/features/conflict_translator/data/models/translator_request.dart';
 import 'package:attune/features/conflict_translator/presentation/providers/translator_providers.dart'
     as translator_providers;
 import 'package:attune/features/conflict_translator/presentation/screens/translator_sheet.dart';
+import 'package:attune/features/games/presentation/widgets/chat_games_sheet.dart';
 import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/core/services/media/image_picker_service.dart';
 import 'package:attune/core/services/media/voice_recorder_service.dart';
-import 'package:attune/core/widgets/feedback/export_extensions.dart';
+import 'package:attune/core/widgets/profile_avatar.dart';
 import 'package:attune/features/chat/data/repositories/chat_repository.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:gap/gap.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:video_compress/video_compress.dart';
 
@@ -62,6 +57,7 @@ class ChatScreen extends ConsumerStatefulWidget {
 class _ChatScreenState extends ConsumerState<ChatScreen>
     with WidgetsBindingObserver {
   final _controller = TextEditingController();
+  final _composerFocusNode = FocusNode();
   final _scrollController = ScrollController();
   final _imagePicker = ImagePickerService();
   final DateTime _messageListCutoff = DateTime.now();
@@ -80,11 +76,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   String? _replyToMessageId;
   String? _replyToQuotedText;
 
-  /// One GlobalKey per message, registered fresh on every build (never
-  /// only-if-absent, so a key never survives past the message it was
-  /// created for) — mirrors DebateRoomScreen._postKeys, adapted from that
-  /// screen's SliverList to this screen's ListView.builder. Used by
-  /// _jumpToMessage to scroll a currently-built message into view.
+  /// Maps every loaded message id to its currently rendered row. Media-group
+  /// members may share the representative row's key. Used by _jumpToMessage
+  /// to scroll a currently-built message into view.
   final Map<String, GlobalKey> _messageKeys = {};
 
   /// The message currently flashed as a jump target, and a timer to clear
@@ -114,6 +108,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     WidgetsBinding.instance.removeObserver(this);
     _controller.removeListener(_onDraftChanged);
     _controller.dispose();
+    _composerFocusNode.dispose();
     _scrollController.dispose();
     _highlightTimer?.cancel();
     super.dispose();
@@ -201,6 +196,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               ? '${contentPreview.substring(0, 60)}...'
               : contentPreview;
     });
+    _composerFocusNode.requestFocus();
   }
 
   void _clearReplyTarget() {
@@ -408,9 +404,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     await context.pushNamed('ephemeralCamera', extra: widget.conversation);
   }
 
-  // Placeholders — file attach and in-chat games are not built yet. Wired
-  // now so the composer's '+' sheet and trailing icons have somewhere to
-  // go; swap these for the real flows when each feature ships.
+  // Placeholder — file attach is not built yet. Wired now so the composer's
+  // '+' sheet has somewhere to go; swap this for the real flow when it ships.
   void _attachFile() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('File sharing is coming soon.')),
@@ -418,9 +413,52 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   void _openGames() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Chat games are coming soon.')),
+    FocusScope.of(context).unfocus();
+    setState(() => _headerExpanded = false);
+    unawaited(
+      BottomSheetUtils.showDocumentationBottomSheet<void>(
+        context: context,
+        backgroundColor: Theme.of(context).colorScheme.neutral,
+
+        maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+        padding: Spacing.md,
+        widget: ChatGamesSheet(
+          onSelect: (destination) {
+            Navigator.of(context).pop();
+            unawaited(_openGameRoute(destination));
+          },
+        ),
+      ),
     );
+  }
+
+  void _toggleHeaderExpanded() {
+    FocusScope.of(context).unfocus();
+    setState(() => _headerExpanded = !_headerExpanded);
+  }
+
+  void _closeHeaderExpanded() {
+    if (_headerExpanded) setState(() => _headerExpanded = false);
+  }
+
+  Future<void> _openGameRoute(ChatGameDestination destination) async {
+    switch (destination) {
+      case ChatGameDestination.gamesHub:
+      case ChatGameDestination.thirtySixQuestions:
+      case ChatGameDestination.neverHaveIEver:
+        await context.pushNamed('gamesHub');
+      case ChatGameDestination.thisOrThat:
+        await context.pushNamed('thisOrThatGamesHub');
+      case ChatGameDestination.truthOrDare:
+        await context.pushNamed('truthOrDareGame');
+      case ChatGameDestination.paintBall:
+        await context.pushNamed(
+          'paintBallLobby',
+          pathParameters: {
+            'relationshipId': widget.conversation.relationshipId,
+          },
+        );
+    }
   }
 
   Future<void> _onVoiceMessageRecorded(VoiceRecording recording) async {
@@ -627,228 +665,262 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
-      child: Scaffold(
-        appBar: AppBar(
-          centerTitle: false,
-          title: InkWell(
-            onTap: () => unawaited(_openPulse()),
-            child: _ConversationHeaderCard(
-              conversation: conversation,
-              snapshot: headerSnapshot,
-              isExpanded: _headerExpanded,
-              expandedEnabled: headerDrawerEnabled.valueOrNull == true,
-              onToggleExpanded: () {
-                setState(() => _headerExpanded = !_headerExpanded);
-              },
-              onOpenPulse: () => unawaited(_openPulse()),
-              onOpenInsights: () => unawaited(_openInsights()),
-              isOnline: isOnline,
-              lastSyncedAt: state.lastSyncedAt,
-            ),
-          ),
-        ),
-        body: Stack(
-          children: [
-            // Message list fills the whole body; the composer floats on top
-            // (see the Positioned block below) rather than being stacked in
-            // flow beneath it, so bubbles keep scrolling visibly behind the
-            // composer instead of stopping short above it — matches
-            // DebateRoomScreen's floating composer treatment.
-            Column(
-              children: [
-                _ConversationStateBanner(
+      child: Stack(
+        children: [
+          Scaffold(
+            backgroundColor: Theme.of(context).colorScheme.neutral,
+            appBar: AppBar(
+              toolbarHeight: 72,
+              backgroundColor: Theme.of(context).colorScheme.neutral,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              centerTitle: false,
+              titleSpacing: 0,
+              title: InkWell(
+                onTap: () => unawaited(_openPulse()),
+                child: _ConversationHeaderCard(
                   conversation: conversation,
-                  state: state,
+                  isExpanded: _headerExpanded,
+                  expandedEnabled: headerDrawerEnabled.valueOrNull == true,
+                  onToggleExpanded: _toggleHeaderExpanded,
                   isOnline: isOnline,
+                  lastSyncedAt: state.lastSyncedAt,
                 ),
-                if (state.error != null)
-                  MaterialBanner(
-                    content: Text(state.error!),
-                    actions: [
-                      TextButton(
-                        onPressed: () => notifier.loadMessages(),
-                        child: const Text('Retry'),
+              ),
+
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(0.5),
+                child: AppDivider(),
+              ),
+            ),
+            body: Stack(
+              children: [
+                // Message list fills the whole body; the composer floats on top
+                // (see the Positioned block below) rather than being stacked in
+                // flow beneath it, so bubbles keep scrolling visibly behind the
+                // composer instead of stopping short above it — matches
+                // DebateRoomScreen's floating composer treatment.
+                Column(
+                  children: [
+                    if (state.pinnedMessages.isNotEmpty)
+                      _PinnedMessagesBanner(
+                        pinnedMessages: state.pinnedMessages,
+                        onTap:
+                            (message) => unawaited(
+                              _jumpToMessage(message.id, state.messages),
+                            ),
                       ),
-                    ],
-                  ),
-                if (state.pinnedMessages.isNotEmpty)
-                  _PinnedMessagesBanner(
-                    pinnedMessages: state.pinnedMessages,
-                    onTap:
-                        (message) => unawaited(
-                          _jumpToMessage(message.id, state.messages),
+                    _ConversationStateBanner(
+                      conversation: conversation,
+                      state: state,
+                      isOnline: isOnline,
+                    ),
+                    if (state.error != null)
+                      MaterialBanner(
+                        content: Text(state.error!),
+                        actions: [
+                          TextButton(
+                            onPressed: () => notifier.loadMessages(),
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    Expanded(
+                      child: AttuneChatWallpaper(
+                        child: _MessageList(
+                          conversation: widget.conversation,
+                          state: state,
+                          scrollController: _scrollController,
+                          firstBuildCutoff: _messageListCutoff,
+                          animatedMessageIds: _animatedMessageIds,
+                          messageKeys: _messageKeys,
+                          highlightedMessageId: _highlightedMessageId,
+                          onReply: _setReplyTarget,
+                          onJumpToParent: _jumpToMessage,
                         ),
-                  ),
-                Expanded(
-                  child: _MessageList(
-                    conversation: widget.conversation,
-                    state: state,
-                    scrollController: _scrollController,
-                    firstBuildCutoff: _messageListCutoff,
-                    animatedMessageIds: _animatedMessageIds,
-                    messageKeys: _messageKeys,
-                    highlightedMessageId: _highlightedMessageId,
-                    onReply: _setReplyTarget,
-                    onJumpToParent: _jumpToMessage,
+                      ),
+                    ),
+                    Gap(Spacing.md),
+                  ],
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: SafeArea(
+                    top: false,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final typing =
+                                ref
+                                    .watch(
+                                      typingControllerProvider(
+                                        conversation.relationshipId,
+                                      ),
+                                    )
+                                    .partnerTyping;
+                            if (!typing) return const SizedBox.shrink();
+                            return Padding(
+                              key: const ValueKey('typing_indicator'),
+                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    '${conversation.name} is typing',
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const BreathingDots(size: 6),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                        if (conversation.canSend && _replyToMessageId != null)
+                          AnimatedScaleFade(
+                            duration: const Duration(milliseconds: 600),
+                            curve: Curves.easeOutBack,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                              child: CardInkWell(
+                                padding: const EdgeInsets.only(left: 12),
+                                margin: EdgeInsets.zero,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(left: 12),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: RichText(
+                                          text: TextSpan(
+                                            children: [
+                                              TextSpan(
+                                                text: 'Replying to',
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodySmall?.copyWith(
+                                                  color:
+                                                      Theme.of(
+                                                        context,
+                                                      ).colorScheme.primary,
+                                                ),
+                                              ),
+                                              TextSpan(
+                                                text:
+                                                    '\n${_replyToQuotedText ?? ''}',
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodySmall?.copyWith(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurface
+                                                      .withValues(alpha: 0.8),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          textAlign: TextAlign.start,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.close, size: 16),
+                                        onPressed: _clearReplyTarget,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (conversation.canSend)
+                          ChatTextField(
+                            controller: _controller,
+                            onSend: () {
+                              unawaited(_send());
+                            },
+                            focusNode: _composerFocusNode,
+                            onAttachImage:
+                                imageSharingEnabled.valueOrNull == true
+                                    ? () {
+                                      unawaited(_attachImage());
+                                    }
+                                    : null,
+                            onAttachVideo:
+                                videoAttachEnabled
+                                    ? () {
+                                      unawaited(_attachVideo());
+                                    }
+                                    : null,
+                            onCaptureVideo:
+                                captureVideoEnabled
+                                    ? () {
+                                      unawaited(_attachEphemeralCamera());
+                                    }
+                                    : null,
+                            onOpenTranslator:
+                                translatorEnabled.valueOrNull == true
+                                    ? () {
+                                      unawaited(_openTranslator());
+                                    }
+                                    : null,
+                            onAttachFile: _attachFile,
+                            onOpenGames: _openGames,
+                            showAttachImage:
+                                imageSharingEnabled.valueOrNull == true,
+                            showAttachVideo: videoAttachEnabled,
+                            showCaptureVideo: captureVideoEnabled,
+                            showGames: true,
+                            showTranslator:
+                                translatorEnabled.valueOrNull == true,
+                            showVoiceMessage:
+                                voiceMessagesEnabled.valueOrNull == true,
+                            onVoiceMessageRecorded:
+                                voiceMessagesEnabled.valueOrNull == true
+                                    ? (recording) {
+                                      unawaited(
+                                        _onVoiceMessageRecorded(recording),
+                                      );
+                                    }
+                                    : null,
+                            enabled: !state.isSending,
+                          )
+                        else
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                            child: Text(
+                              conversation.readOnlyReason ??
+                                  'This conversation is read-only.',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: SafeArea(
-                top: false,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final typing =
-                            ref
-                                .watch(
-                                  typingControllerProvider(
-                                    conversation.relationshipId,
-                                  ),
-                                )
-                                .partnerTyping;
-                        if (!typing) return const SizedBox.shrink();
-                        return Padding(
-                          key: const ValueKey('typing_indicator'),
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                          child: Row(
-                            children: [
-                              Text(
-                                '${conversation.name} is typing',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              const SizedBox(width: 8),
-                              const BreathingDots(size: 6),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                    if (conversation.canSend && _replyToMessageId != null)
-                      AnimatedScaleFade(
-                        duration: const Duration(milliseconds: 600),
-                        curve: Curves.easeOutBack,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                          child: CardInkWell(
-                            padding: const EdgeInsets.only(left: 12),
-                            margin: EdgeInsets.zero,
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 12),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: RichText(
-                                      text: TextSpan(
-                                        children: [
-                                          TextSpan(
-                                            text: 'Replying to',
-                                            style: Theme.of(
-                                              context,
-                                            ).textTheme.bodySmall?.copyWith(
-                                              color:
-                                                  Theme.of(
-                                                    context,
-                                                  ).colorScheme.primary,
-                                            ),
-                                          ),
-                                          TextSpan(
-                                            text:
-                                                '\n${_replyToQuotedText ?? ''}',
-                                            style: Theme.of(
-                                              context,
-                                            ).textTheme.bodySmall?.copyWith(
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .onSurface
-                                                  .withValues(alpha: 0.8),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      textAlign: TextAlign.start,
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.close, size: 16),
-                                    onPressed: _clearReplyTarget,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (conversation.canSend)
-                      ChatTextField(
-                        controller: _controller,
-                        onSend: () {
-                          unawaited(_send());
-                        },
-                        onAttachImage:
-                            imageSharingEnabled.valueOrNull == true
-                                ? () {
-                                  unawaited(_attachImage());
-                                }
-                                : null,
-                        onAttachVideo:
-                            videoAttachEnabled
-                                ? () {
-                                  unawaited(_attachVideo());
-                                }
-                                : null,
-                        onCaptureVideo:
-                            captureVideoEnabled
-                                ? () {
-                                  unawaited(_attachEphemeralCamera());
-                                }
-                                : null,
-                        onOpenTranslator:
-                            translatorEnabled.valueOrNull == true
-                                ? () {
-                                  unawaited(_openTranslator());
-                                }
-                                : null,
-                        onAttachFile: _attachFile,
-                        onOpenGames: _openGames,
-                        showAttachImage:
-                            imageSharingEnabled.valueOrNull == true,
-                        showAttachVideo: videoAttachEnabled,
-                        showCaptureVideo: captureVideoEnabled,
-                        showGames: true,
-                        showTranslator: translatorEnabled.valueOrNull == true,
-                        showVoiceMessage:
-                            voiceMessagesEnabled.valueOrNull == true,
-                        onVoiceMessageRecorded:
-                            voiceMessagesEnabled.valueOrNull == true
-                                ? (recording) {
-                                  unawaited(_onVoiceMessageRecorded(recording));
-                                }
-                                : null,
-                        enabled: !state.isSending,
-                      )
-                    else
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                        child: Text(
-                          conversation.readOnlyReason ??
-                              'This conversation is read-only.',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                  ],
-                ),
+          ),
+          if (headerDrawerEnabled.valueOrNull == true && _headerExpanded)
+            Positioned.fill(
+              child: _ConversationHeaderOverlay(
+                snapshot: headerSnapshot,
+                onDismiss: _closeHeaderExpanded,
+                onOpenPulse: () {
+                  _closeHeaderExpanded();
+                  unawaited(_openPulse());
+                },
+                onOpenInsights: () {
+                  _closeHeaderExpanded();
+                  unawaited(_openInsights());
+                },
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -949,23 +1021,17 @@ class _ConversationStateBanner extends StatelessWidget {
 class _ConversationHeaderCard extends StatelessWidget {
   const _ConversationHeaderCard({
     required this.conversation,
-    required this.snapshot,
     required this.isExpanded,
     required this.expandedEnabled,
     required this.onToggleExpanded,
-    required this.onOpenPulse,
-    required this.onOpenInsights,
     required this.isOnline,
     required this.lastSyncedAt,
   });
 
   final Conversation conversation;
-  final AsyncValue<ChatHeaderSnapshot> snapshot;
   final bool isExpanded;
   final bool expandedEnabled;
   final VoidCallback onToggleExpanded;
-  final VoidCallback onOpenPulse;
-  final VoidCallback onOpenInsights;
   final bool isOnline;
   final DateTime? lastSyncedAt;
 
@@ -973,7 +1039,6 @@ class _ConversationHeaderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final pulse = snapshot.valueOrNull?.pulse;
     final subtitle =
         !isOnline
             ? 'Offline'
@@ -981,96 +1046,90 @@ class _ConversationHeaderCard extends StatelessWidget {
             ? 'Syncing'
             : 'Synced ${_relativeSyncLabel(lastSyncedAt!)}';
 
-    return
-    // Row(
-    //   children: [
-    //     GlowPulse(
-    //       active:
-    //           conversation.availability == ConversationAvailability.active &&
-    //           isOnline,
-    //       child: CircleAvatar(
-    //         backgroundImage:
-    //             conversation.avatarUrl == null
-    //                 ? null
-    //                 : NetworkImage(conversation.avatarUrl!),
-    //         child:
-    //             conversation.avatarUrl == null
-    //                 ? Text(_initialForName(conversation.name))
-    //                 : null,
-    //       ),
-    //     ),
-    //     Gap(Spacing.sm.w),
-    //     RichText(
-    //       text: TextSpan(
-    //         children: [
-    //           TextSpan(
-    //             text: conversation.name,
-    //             style: textTheme.titleLarge?.copyWith(
-    //               fontWeight: FontWeight.w600,
-    //               color: colorScheme.onSurface.withValues(alpha: 0.8),
-    //             ),
-    //           ),
-    //           TextSpan(
-    //             text: '\n$subtitle',
-    //             style: textTheme.bodySmall?.copyWith(
-    //               fontWeight: FontWeight.w600,
-    //               color: colorScheme.onSurface.withOpacity(.4),
-    //             ),
-    //           ),
-    //         ],
-    //       ),
-    //       textAlign: TextAlign.start,
-    //     ),
-    //   ],
-    // );
-    Column(
-      children: [
-        Row(
-          children: [
-            GlowPulse(
-              active:
-                  conversation.availability ==
-                      ConversationAvailability.active &&
-                  isOnline,
-              child: CircleAvatar(
-                backgroundImage:
-                    conversation.avatarUrl == null
-                        ? null
-                        : NetworkImage(conversation.avatarUrl!),
-                child:
-                    conversation.avatarUrl == null
-                        ? Text(_initialForName(conversation.name))
-                        : null,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return Hero(
+      tag: conversation.name,
+      child: Row(
+        children: [
+          ProfileAvatar(
+            avatarUrl: conversation.avatarUrl ?? '',
+            currentUserId: '',
+            size: 40.h,
+            enableHero: false,
+          ),
+          Gap(Spacing.sm.w),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
                 children: [
-                  Text(
-                    conversation.name,
-                    style: Theme.of(context).textTheme.titleMedium,
+                  TextSpan(
+                    text: conversation.name,
+                    style: textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface.withValues(alpha: 0.8),
+                    ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+
+                  // conversation.availability == ConversationAvailability.active &&
+                  isOnline
+                      ? TextSpan(
+                        text: '\nOnline ',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.primary,
+                        ),
+                      )
+                      : TextSpan(
+                        text: subtitle,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurface.withValues(alpha: 0.4),
+                        ),
+                      ),
                 ],
               ),
             ),
-            _PulseBadge(pulse: pulse),
-            if (expandedEnabled)
-              IconButton(
-                onPressed: onToggleExpanded,
-                icon: Icon(
+          ),
+          if (expandedEnabled)
+            AppIconButton(
+              icon:
                   isExpanded
                       ? Icons.expand_less_rounded
                       : Icons.expand_more_rounded,
-                ),
-                tooltip: isExpanded ? 'Hide chat details' : 'Show chat details',
-              ),
-          ],
-        ),
-        if (expandedEnabled && isExpanded) ...[
+              onPressed: onToggleExpanded,
+              tooltip: isExpanded ? 'Hide chat details' : 'Show chat details',
+            ),
+
+          AppIconButton(
+            icon: Icons.more_vert,
+            onPressed: onToggleExpanded,
+            tooltip: isExpanded ? 'Hide chat details' : 'Show chat details',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConversationHeaderExpandedSection extends StatelessWidget {
+  const _ConversationHeaderExpandedSection({
+    required this.snapshot,
+    required this.onOpenPulse,
+    required this.onOpenInsights,
+  });
+
+  final AsyncValue<ChatHeaderSnapshot> snapshot;
+  final VoidCallback onOpenPulse;
+  final VoidCallback onOpenInsights;
+
+  @override
+  Widget build(BuildContext context) {
+    final pulse = snapshot.valueOrNull?.pulse;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      child: Column(
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _PulseBadge(pulse: pulse),
+          ),
           const SizedBox(height: 12),
           snapshot.when(
             data:
@@ -1093,7 +1152,99 @@ class _ConversationHeaderCard extends StatelessWidget {
                 ),
           ),
         ],
-      ],
+      ),
+    );
+  }
+}
+
+class _ConversationHeaderOverlay extends StatelessWidget {
+  const _ConversationHeaderOverlay({
+    required this.snapshot,
+    required this.onDismiss,
+    required this.onOpenPulse,
+    required this.onOpenInsights,
+  });
+
+  final AsyncValue<ChatHeaderSnapshot> snapshot;
+  final VoidCallback onDismiss;
+  final VoidCallback onOpenPulse;
+  final VoidCallback onOpenInsights;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Material(
+      color: Colors.transparent,
+      child: GestureDetector(
+        onTap: onDismiss,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.82),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(Spacing.md),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: AnimatedScaleFade(
+                  duration: const Duration(milliseconds: 600),
+                  curve: Curves.easeOutBack,
+                  child: GestureDetector(
+                    onTap: () {},
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: 640.w),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: colorScheme.surface,
+                          borderRadius: BorderRadius.circular(24.r),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.24),
+                              blurRadius: 28,
+                              offset: const Offset(0, 18),
+                            ),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(Spacing.md),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Chat details',
+                                      style: textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    onPressed: onDismiss,
+                                    icon: const Icon(Icons.close_rounded),
+                                    tooltip: 'Close chat details',
+                                  ),
+                                ],
+                              ),
+                              _ConversationHeaderExpandedSection(
+                                snapshot: snapshot,
+                                onOpenPulse: onOpenPulse,
+                                onOpenInsights: onOpenInsights,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1252,7 +1403,7 @@ class _DrawerCard extends StatelessWidget {
   }
 }
 
-class _MessageList extends ConsumerWidget {
+class _MessageList extends ConsumerStatefulWidget {
   const _MessageList({
     required this.conversation,
     required this.state,
@@ -1301,7 +1452,78 @@ class _MessageList extends ConsumerWidget {
   onJumpToParent;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_MessageList> createState() => _MessageListState();
+}
+
+class _MessageListState extends ConsumerState<_MessageList>
+    with SingleTickerProviderStateMixin {
+  static const _timestampReturnDuration = Duration(milliseconds: 220);
+
+  final ValueNotifier<double> _timestampRevealOffset = ValueNotifier(0);
+  final Map<String, GlobalKey> _rowKeys = {};
+  late final AnimationController _timestampReturnController;
+  Animation<double>? _timestampReturnAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _timestampReturnController = AnimationController(
+      vsync: this,
+      duration: _timestampReturnDuration,
+    );
+  }
+
+  @override
+  void dispose() {
+    _timestampReturnAnimation?.removeListener(_onTimestampReturnTick);
+    _timestampReturnController.dispose();
+    _timestampRevealOffset.dispose();
+    super.dispose();
+  }
+
+  void _setTimestampRevealOffset(double offset) {
+    if (offset <= 0) {
+      _closeTimestampReveal();
+      return;
+    }
+    _timestampReturnController.stop();
+    if (_timestampRevealOffset.value == offset) return;
+    _timestampRevealOffset.value = offset;
+  }
+
+  void _closeTimestampReveal() {
+    if (_timestampRevealOffset.value == 0) return;
+    _timestampReturnAnimation?.removeListener(_onTimestampReturnTick);
+    _timestampReturnAnimation = Tween<double>(
+      begin: _timestampRevealOffset.value,
+      end: 0,
+    ).animate(
+      CurvedAnimation(
+        parent: _timestampReturnController,
+        curve: Curves.easeOutCubic,
+      ),
+    )..addListener(_onTimestampReturnTick);
+    _timestampReturnController.forward(from: 0);
+  }
+
+  void _onTimestampReturnTick() {
+    if (!mounted) return;
+    final value = _timestampReturnAnimation!.value;
+    _timestampRevealOffset.value = value.abs() < 0.1 ? 0 : value;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final conversation = widget.conversation;
+    final state = widget.state;
+    final scrollController = widget.scrollController;
+    final firstBuildCutoff = widget.firstBuildCutoff;
+    final animatedMessageIds = widget.animatedMessageIds;
+    final messageKeys = widget.messageKeys;
+    final highlightedMessageId = widget.highlightedMessageId;
+    final onReply = widget.onReply;
+    final onJumpToParent = widget.onJumpToParent;
+
     // Chat feel preference (Spec §1.1 tone floor, §3.7): expressive turns the
     // shimmer sweep and reconnect cascade up slightly; calm (default) keeps
     // both a whisper-subtle. Content-blind — only the enum is read here.
@@ -1309,7 +1531,12 @@ class _MessageList extends ConsumerWidget {
         ref.watch(chatExpressivenessProvider) == ChatExpressiveness.expressive;
 
     if (state.isLoading && state.messages.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      // Keep the wallpaper visible while the first page (and any cached video
+      // posters) is restored. The real empty-conversation prompt is rendered
+      // below only after loading completes, so it cannot flash during startup.
+      return const SizedBox.expand(
+        key: ValueKey('chat_initial_loading_wallpaper'),
+      );
     }
 
     if (state.conversation.isArchived) {
@@ -1341,338 +1568,420 @@ class _MessageList extends ConsumerWidget {
     // divides the viewport by messageKeys.length.
     final currentIds = state.messages.map((m) => m.id).toSet();
     messageKeys.removeWhere((id, _) => !currentIds.contains(id));
-
-    return NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        if (notification.metrics.pixels >=
-            notification.metrics.maxScrollExtent - 200) {
-          ref
-              .read(chatControllerProvider(conversation).notifier)
-              .loadMoreMessages();
-        }
-        if (notification.metrics.pixels <= 120) {
-          ref
-              .read(chatControllerProvider(conversation).notifier)
-              .markAsReadDebounced();
-        }
-        return false;
-      },
-      child: Scrollbar(
-        controller: scrollController,
-        child: ListView.builder(
+    _rowKeys.removeWhere((id, _) => !currentIds.contains(id));
+    final mediaRuns = ChatMediaRunLayout.fromMessages(state.messages);
+    return Listener(
+      onPointerUp: (_) => _closeTimestampReveal(),
+      onPointerCancel: (_) => _closeTimestampReveal(),
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification.metrics.pixels >=
+              notification.metrics.maxScrollExtent - 200) {
+            ref
+                .read(chatControllerProvider(conversation).notifier)
+                .loadMoreMessages();
+          }
+          if (notification.metrics.pixels <= 120) {
+            ref
+                .read(chatControllerProvider(conversation).notifier)
+                .markAsReadDebounced();
+          }
+          return false;
+        },
+        child: Scrollbar(
           controller: scrollController,
-          reverse: true,
-          // Reserves room so the newest message doesn't sit behind the
-          // floating composer, now Positioned on top of this list rather than
-          // stacked in flow beneath it. Generous estimate covering the tallest
-          // composer state (multi-line text growing the field to maxLines:5)
-          // plus safe-area/keyboard-adjacent breathing room.
-          padding: const EdgeInsets.only(bottom: 88),
-          itemCount: state.messages.length + (state.isLoadingMore ? 1 : 0),
-          itemBuilder: (context, index) {
-            if (index == state.messages.length) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
-                child: Center(child: CircularProgressIndicator()),
+          child: ListView.builder(
+            controller: scrollController,
+            reverse: true,
+            // Reserves room so the newest message doesn't sit behind the
+            // floating composer, now Positioned on top of this list rather than
+            // stacked in flow beneath it. Generous estimate covering the tallest
+            // composer state (multi-line text growing the field to maxLines:5)
+            // plus safe-area/keyboard-adjacent breathing room.
+            padding: const EdgeInsets.fromLTRB(8, 10, 8, 96),
+            itemCount: state.messages.length + (state.isLoadingMore ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (index == state.messages.length) {
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              if (mediaRuns.hiddenIndices.contains(index)) {
+                return const SizedBox.shrink();
+              }
+
+              final message = state.messages[index];
+              final mediaGroup = mediaRuns.runs[index] ?? const <Message>[];
+              // Keep the rendered row stable while timestamp drag updates
+              // rebuild the visible list. Replacing this key on every pointer
+              // delta disposes the active GestureDetector mid-gesture, making
+              // the reveal stop after its first movement.
+              final messageKey = _rowKeys.putIfAbsent(
+                message.id,
+                GlobalKey.new,
               );
-            }
+              messageKeys[message.id] = messageKey;
+              for (final groupedMessage in mediaGroup) {
+                messageKeys[groupedMessage.id] = messageKey;
+              }
+              // A bubble is "first of its day" if its local date differs from the
+              // next-older message's local date (list is newest-first). Only
+              // genuinely-new first-of-day messages shimmer — cached history on
+              // open does not, since `isNew` reuses the same play-once cutoff as
+              // SettleIn below. Content-blind: only dates are compared.
+              final older =
+                  index + 1 < state.messages.length
+                      ? state.messages[index + 1]
+                      : null;
+              bool sameLocalDay(DateTime a, DateTime b) =>
+                  a.year == b.year && a.month == b.month && a.day == b.day;
+              final isFirstOfDay =
+                  older == null ||
+                  !sameLocalDay(message.createdAt, older.createdAt);
+              // Consecutive messages from the same sender sit close together
+              // (grouped); the normal, larger gap only appears right before the
+              // sender switches — i.e. above the first bubble of a new run,
+              // exactly like WhatsApp/iMessage grouping. A day boundary always
+              // forces the larger gap too (the date separator needs the
+              // breathing room regardless of who sent either message).
+              final isGrouped =
+                  older != null &&
+                  older.isMine == message.isMine &&
+                  !isFirstOfDay;
+              final newer = index > 0 ? state.messages[index - 1] : null;
+              final isLastOfDay =
+                  newer == null ||
+                  !sameLocalDay(message.createdAt, newer.createdAt);
+              final isGroupedWithPrevious =
+                  newer != null &&
+                  newer.isMine == message.isMine &&
+                  !isLastOfDay;
+              final isNew = message.createdAt.isAfter(firstBuildCutoff);
+              // Play-once ledger: animate only the first time this message is ever
+              // built on this screen. Without it, list recycling replays entry
+              // animations whenever a new message scrolls back into view.
+              final shouldAnimate =
+                  isNew &&
+                  !animatedMessageIds.contains(message.clientMessageId);
+              if (shouldAnimate) {
+                animatedMessageIds.add(message.clientMessageId);
+              }
 
-            final message = state.messages[index];
-            final messageKey = messageKeys[message.id] = GlobalKey();
-            // A bubble is "first of its day" if its local date differs from the
-            // next-older message's local date (list is newest-first). Only
-            // genuinely-new first-of-day messages shimmer — cached history on
-            // open does not, since `isNew` reuses the same play-once cutoff as
-            // SettleIn below. Content-blind: only dates are compared.
-            final older =
-                index + 1 < state.messages.length
-                    ? state.messages[index + 1]
-                    : null;
-            bool sameLocalDay(DateTime a, DateTime b) =>
-                a.year == b.year && a.month == b.month && a.day == b.day;
-            final isFirstOfDay =
-                older == null ||
-                !sameLocalDay(message.createdAt, older.createdAt);
-            // Consecutive messages from the same sender sit close together
-            // (grouped); the normal, larger gap only appears right before the
-            // sender switches — i.e. above the first bubble of a new run,
-            // exactly like WhatsApp/iMessage grouping. A day boundary always
-            // forces the larger gap too (the date separator needs the
-            // breathing room regardless of who sent either message).
-            final isGrouped =
-                older != null &&
-                older.isMine == message.isMine &&
-                !isFirstOfDay;
-            final isNew = message.createdAt.isAfter(firstBuildCutoff);
-            // Play-once ledger: animate only the first time this message is ever
-            // built on this screen. Without it, list recycling replays entry
-            // animations whenever a new message scrolls back into view.
-            final shouldAnimate =
-                isNew && !animatedMessageIds.contains(message.clientMessageId);
-            if (shouldAnimate) {
-              animatedMessageIds.add(message.clientMessageId);
-            }
-
-            // A reply's parent is only known to be deleted/mine if it is
-            // actually in the currently-loaded window; an unloaded parent
-            // stays deleted=false, isMine=null (MessageBubble documents both
-            // assumptions — null means "don't know," not "not mine").
-            var parentDeleted = false;
-            bool? parentIsMine;
-            if (message.replyToMessageId != null) {
-              for (final candidate in state.messages) {
-                if (candidate.id == message.replyToMessageId) {
-                  parentDeleted = candidate.isDeleted;
-                  parentIsMine = candidate.isMine;
-                  break;
+              // A reply's parent is only known to be deleted/mine if it is
+              // actually in the currently-loaded window; an unloaded parent
+              // stays deleted=false, isMine=null (MessageBubble documents both
+              // assumptions — null means "don't know," not "not mine").
+              var parentDeleted = false;
+              bool? parentIsMine;
+              if (message.replyToMessageId != null) {
+                for (final candidate in state.messages) {
+                  if (candidate.id == message.replyToMessageId) {
+                    parentDeleted = candidate.isDeleted;
+                    parentIsMine = candidate.isMine;
+                    break;
+                  }
                 }
               }
-            }
 
-            Widget bubble = MessageBubble(
-              message: message,
-              conversation: conversation,
-              parentIsMine: parentIsMine,
-              isGrouped: isGrouped,
-              onImageTap: (tapped) async {
-                // state.messages is newest-first (ListView's reverse: true);
-                // ImageViewerScreen wants chronological (oldest-to-newest)
-                // order to swipe forward through a photo history the same
-                // direction a user reads the conversation, so reverse the
-                // filtered subset here.
-                final images =
-                    state.messages
-                        .where((m) => m.hasImage)
-                        .toList()
-                        .reversed
-                        .toList();
-                final index = images.indexWhere(
-                  (m) => m.clientMessageId == tapped.clientMessageId,
-                );
-                if (index == -1) return;
-                // "Go to message" pops the viewer with that image's message
-                // id; jump to and flash it in THIS chat screen (already
-                // open — no need to push a second one).
-                final jumpToId = await context.pushNamed<String>(
-                  'imageViewer',
-                  extra: ImageViewerRouteArgs(
-                    images: images,
-                    initialIndex: index,
-                  ),
-                );
-                if (jumpToId != null) {
-                  await onJumpToParent(jumpToId, state.messages);
-                }
-              },
-              onVideoTap: (tapped) async {
-                // Mirrors onImageTap exactly. isViewOnce excluded — an
-                // ephemeral video has its own separate
-                // EphemeralVideoViewerScreen flow (tap-to-view-once,
-                // markVideoViewed, expiry) and must never appear in this
-                // regular, replayable video gallery.
-                final videos =
-                    state.messages
-                        .where((m) => m.hasVideo && !m.isViewOnce)
-                        .toList()
-                        .reversed
-                        .toList();
-                final index = videos.indexWhere(
-                  (m) => m.clientMessageId == tapped.clientMessageId,
-                );
-                if (index == -1) return;
-                final jumpToId = await context.pushNamed<String>(
-                  'videoViewer',
-                  extra: VideoViewerRouteArgs(
-                    videos: videos,
-                    initialIndex: index,
-                  ),
-                );
-                if (jumpToId != null) {
-                  await onJumpToParent(jumpToId, state.messages);
-                }
-              },
-              onRetry:
-                  message.isFailed
-                      ? () => ref
-                          .read(chatControllerProvider(conversation).notifier)
-                          .retryMessage(message)
-                      : null,
-              onRemove:
-                  message.isFailed
-                      ? () => ref
-                          .read(chatControllerProvider(conversation).notifier)
-                          .removeFailedMessage(message)
-                      : null,
-              onReply:
-                  state.conversation.canSend &&
-                          !message.id.startsWith('_local_')
-                      ? () => onReply(message.id, message.content)
-                      : null,
-              onJumpToParent:
-                  message.replyToMessageId == null
-                      ? null
-                      : () => onJumpToParent(
-                        message.replyToMessageId!,
-                        state.messages,
+              Widget bubble = ValueListenableBuilder<double>(
+                valueListenable: _timestampRevealOffset,
+                builder:
+                    (context, timestampRevealOffset, _) => MessageBubble(
+                      message: message,
+                      mediaGroup: mediaGroup,
+                      conversation: conversation,
+                      showStatus: index == 0 && message.isMine,
+                      showLatestTimestamp: index == 0,
+                      showTimestamp: true,
+                      timestampRevealOffset: timestampRevealOffset,
+                      onTimestampRevealChanged: _setTimestampRevealOffset,
+                      parentIsMine: parentIsMine,
+                      isGrouped: isGrouped,
+                      isGroupedWithPrevious: isGroupedWithPrevious,
+                      onImageTap: (tapped) async {
+                        // state.messages is newest-first (ListView's reverse: true);
+                        // ImageViewerScreen wants chronological (oldest-to-newest)
+                        // order to swipe forward through a photo history the same
+                        // direction a user reads the conversation, so reverse the
+                        // filtered subset here.
+                        final images =
+                            state.messages
+                                .where((m) => m.hasImage)
+                                .toList()
+                                .reversed
+                                .toList();
+                        final index = images.indexWhere(
+                          (m) => m.clientMessageId == tapped.clientMessageId,
+                        );
+                        if (index == -1) return;
+                        // "Go to message" pops the viewer with that image's message
+                        // id; jump to and flash it in THIS chat screen (already
+                        // open — no need to push a second one).
+                        final jumpToId = await context.pushNamed<String>(
+                          'imageViewer',
+                          extra: ImageViewerRouteArgs(
+                            images: images,
+                            initialIndex: index,
+                          ),
+                        );
+                        if (jumpToId != null) {
+                          await onJumpToParent(jumpToId, state.messages);
+                        }
+                      },
+                      onVideoTap: (tapped) async {
+                        // Mirrors onImageTap exactly. isViewOnce excluded — an
+                        // ephemeral video has its own separate
+                        // EphemeralVideoViewerScreen flow (tap-to-view-once,
+                        // markVideoViewed, expiry) and must never appear in this
+                        // regular, replayable video gallery.
+                        final videos =
+                            state.messages
+                                .where((m) => m.hasVideo && !m.isViewOnce)
+                                .toList()
+                                .reversed
+                                .toList();
+                        final index = videos.indexWhere(
+                          (m) => m.clientMessageId == tapped.clientMessageId,
+                        );
+                        if (index == -1) return;
+                        final jumpToId = await context.pushNamed<String>(
+                          'videoViewer',
+                          extra: VideoViewerRouteArgs(
+                            videos: videos,
+                            initialIndex: index,
+                          ),
+                        );
+                        if (jumpToId != null) {
+                          await onJumpToParent(jumpToId, state.messages);
+                        }
+                      },
+                      onRetry:
+                          message.isFailed
+                              ? () => ref
+                                  .read(
+                                    chatControllerProvider(
+                                      conversation,
+                                    ).notifier,
+                                  )
+                                  .retryMessage(message)
+                              : null,
+                      onRemove:
+                          message.isFailed
+                              ? () => ref
+                                  .read(
+                                    chatControllerProvider(
+                                      conversation,
+                                    ).notifier,
+                                  )
+                                  .removeFailedMessage(message)
+                              : null,
+                      onReply:
+                          state.conversation.canSend &&
+                                  !message.id.startsWith('_local_')
+                              ? () => onReply(message.id, message.content)
+                              : null,
+                      onJumpToParent:
+                          message.replyToMessageId == null
+                              ? null
+                              : () => onJumpToParent(
+                                message.replyToMessageId!,
+                                state.messages,
+                              ),
+                      isHighlighted: highlightedMessageId == message.id,
+                      // Actions are only offered on server-backed messages in an
+                      // active, sendable conversation: a local optimistic row has no
+                      // server id to delete/edit/star/pin, and a read-only
+                      // conversation (e.g. an ended relationship viewed via Previous
+                      // Relationships) must not offer mutating actions the RPCs will
+                      // now correctly reject server-side — this client gate is a
+                      // UX correction, not the security boundary (the RPCs are
+                      // authoritative; see fix round 1's migration change).
+                      currentUserId:
+                          state.conversation.canSend &&
+                                  !message.id.startsWith('_local_')
+                              ? ref.read(currentUserProvider)?.id
+                              : null,
+                      isStarred: state.starredMessageIds.contains(message.id),
+                      isPinned: state.pinnedMessages.any(
+                        (p) => p.id == message.id,
                       ),
-              isHighlighted: highlightedMessageId == message.id,
-              // Actions are only offered on server-backed messages in an
-              // active, sendable conversation: a local optimistic row has no
-              // server id to delete/edit/star/pin, and a read-only
-              // conversation (e.g. an ended relationship viewed via Previous
-              // Relationships) must not offer mutating actions the RPCs will
-              // now correctly reject server-side — this client gate is a
-              // UX correction, not the security boundary (the RPCs are
-              // authoritative; see fix round 1's migration change).
-              currentUserId:
-                  state.conversation.canSend &&
-                          !message.id.startsWith('_local_')
-                      ? ref.read(currentUserProvider)?.id
-                      : null,
-              isStarred: state.starredMessageIds.contains(message.id),
-              isPinned: state.pinnedMessages.any((p) => p.id == message.id),
-              parentDeleted: parentDeleted,
-              onCopy: () {
-                Clipboard.setData(ClipboardData(text: message.content));
-                context.showSuccessSnackbar('Copied to clipboard');
-              },
-              // Star/unstar/unpin are all fire-and-forget from the menu, but
-              // each awaits a network call that can throw — swallowing the
-              // failure silently would leave an unhandled async error, so each
-              // reports it the same way onPin does.
-              onStar: () async {
-                try {
-                  await ref
-                      .read(chatControllerProvider(conversation).notifier)
-                      .starMessage(message.id);
-                } catch (e, st) {
-                  debugPrint('starMessage failed: $e\n$st');
-                  if (context.mounted) {
-                    context.showErrorSnackbar("Couldn't star — try again.");
-                  }
-                }
-              },
-              onUnstar: () async {
-                try {
-                  await ref
-                      .read(chatControllerProvider(conversation).notifier)
-                      .unstarMessage(message.id);
-                } catch (e, st) {
-                  debugPrint('unstarMessage failed: $e\n$st');
-                  if (context.mounted) {
-                    context.showErrorSnackbar("Couldn't unstar — try again.");
-                  }
-                }
-              },
-              onPin: () async {
-                try {
-                  await ref
-                      .read(chatControllerProvider(conversation).notifier)
-                      .pinMessage(message);
-                } catch (e, st) {
-                  debugPrint('pinMessage failed: $e\n$st');
-                  if (context.mounted) {
-                    context.showErrorSnackbar(
-                      "Couldn't pin — you may already have 3 pinned messages.",
-                    );
-                  }
-                }
-              },
-              onUnpin: () async {
-                try {
-                  await ref
-                      .read(chatControllerProvider(conversation).notifier)
-                      .unpinMessage(message);
-                } catch (e, st) {
-                  debugPrint('unpinMessage failed: $e\n$st');
-                  if (context.mounted) {
-                    context.showErrorSnackbar("Couldn't unpin — try again.");
-                  }
-                }
-              },
-              onReact: (emoji) async {
-                try {
-                  await ref
-                      .read(chatControllerProvider(conversation).notifier)
-                      .reactToMessage(message, emoji);
-                } catch (e, st) {
-                  debugPrint('reactToMessage failed: $e\n$st');
-                  if (context.mounted) {
-                    context.showErrorSnackbar("Couldn't react — try again.");
-                  }
-                }
-              },
-              onRemoveReaction: () async {
-                try {
-                  await ref
-                      .read(chatControllerProvider(conversation).notifier)
-                      .removeReactionFrom(message);
-                } catch (e, st) {
-                  debugPrint('removeReactionFrom failed: $e\n$st');
-                  if (context.mounted) {
-                    context.showErrorSnackbar(
-                      "Couldn't remove reaction — try again.",
-                    );
-                  }
-                }
-              },
-              onEdit:
-                  () => _showEditDialog(context, ref, conversation, message),
-              onDelete:
-                  () => _confirmAndDelete(context, ref, conversation, message),
-              onShowEditHistory:
-                  (target) => _showEditHistorySheet(context, ref, target),
-            );
-            if (isFirstOfDay && shouldAnimate) {
-              bubble = Shimmer(
-                period:
-                    expressive ? kShimmerSweepExpressive : kShimmerSweepCalm,
-                child: bubble,
+                      parentDeleted: parentDeleted,
+                      onCopy: () {
+                        Clipboard.setData(ClipboardData(text: message.content));
+                        context.showSuccessSnackbar('Copied to clipboard');
+                      },
+                      // Star/unstar/unpin are all fire-and-forget from the menu, but
+                      // each awaits a network call that can throw — swallowing the
+                      // failure silently would leave an unhandled async error, so each
+                      // reports it the same way onPin does.
+                      onStar: () async {
+                        try {
+                          await ref
+                              .read(
+                                chatControllerProvider(conversation).notifier,
+                              )
+                              .starMessage(message.id);
+                        } catch (e, st) {
+                          debugPrint('starMessage failed: $e\n$st');
+                          if (context.mounted) {
+                            context.showErrorSnackbar(
+                              "Couldn't star — try again.",
+                            );
+                          }
+                        }
+                      },
+                      onUnstar: () async {
+                        try {
+                          await ref
+                              .read(
+                                chatControllerProvider(conversation).notifier,
+                              )
+                              .unstarMessage(message.id);
+                        } catch (e, st) {
+                          debugPrint('unstarMessage failed: $e\n$st');
+                          if (context.mounted) {
+                            context.showErrorSnackbar(
+                              "Couldn't unstar — try again.",
+                            );
+                          }
+                        }
+                      },
+                      onPin: () async {
+                        try {
+                          await ref
+                              .read(
+                                chatControllerProvider(conversation).notifier,
+                              )
+                              .pinMessage(message);
+                        } catch (e, st) {
+                          debugPrint('pinMessage failed: $e\n$st');
+                          if (context.mounted) {
+                            context.showErrorSnackbar(
+                              "Couldn't pin — you may already have 3 pinned messages.",
+                            );
+                          }
+                        }
+                      },
+                      onUnpin: () async {
+                        try {
+                          await ref
+                              .read(
+                                chatControllerProvider(conversation).notifier,
+                              )
+                              .unpinMessage(message);
+                        } catch (e, st) {
+                          debugPrint('unpinMessage failed: $e\n$st');
+                          if (context.mounted) {
+                            context.showErrorSnackbar(
+                              "Couldn't unpin — try again.",
+                            );
+                          }
+                        }
+                      },
+                      onReact: (emoji) async {
+                        try {
+                          await ref
+                              .read(
+                                chatControllerProvider(conversation).notifier,
+                              )
+                              .reactToMessage(message, emoji);
+                        } catch (e, st) {
+                          debugPrint('reactToMessage failed: $e\n$st');
+                          if (context.mounted) {
+                            context.showErrorSnackbar(
+                              "Couldn't react — try again.",
+                            );
+                          }
+                        }
+                      },
+                      onRemoveReaction: () async {
+                        try {
+                          await ref
+                              .read(
+                                chatControllerProvider(conversation).notifier,
+                              )
+                              .removeReactionFrom(message);
+                        } catch (e, st) {
+                          debugPrint('removeReactionFrom failed: $e\n$st');
+                          if (context.mounted) {
+                            context.showErrorSnackbar(
+                              "Couldn't remove reaction — try again.",
+                            );
+                          }
+                        }
+                      },
+                      onEdit:
+                          () => _showEditDialog(
+                            context,
+                            ref,
+                            conversation,
+                            message,
+                          ),
+                      onDelete:
+                          () => _confirmAndDelete(
+                            context,
+                            ref,
+                            conversation,
+                            message,
+                          ),
+                      onShowEditHistory:
+                          (target) =>
+                              _showEditHistorySheet(context, ref, target),
+                    ),
               );
-            }
-
-            // A batch of messages arriving together (e.g. after a reconnect via
-            // _catchUpFromCursor) should cascade in rather than pop
-            // simultaneously: offset each new bubble's settle duration by its
-            // position within the newest-first list. The index is clamped so a
-            // large batch never produces an absurdly long settle. Cached
-            // history (`isNew == false`) always uses the base duration.
-            final stepMs =
-                expressive ? kCascadeStepExpressiveMs : kCascadeStepCalmMs;
-            final staggeredDuration =
-                shouldAnimate
-                    ? kSettleDuration +
-                        Duration(milliseconds: stepMs * index.clamp(0, 6))
-                    : kSettleDuration;
-
-            return KeyedSubtree(
-              key: messageKey,
-              child: Padding(
-                // This list is reverse: true with state.messages newest-first,
-                // so `older` (index+1) renders physically ABOVE this message
-                // on screen — a top-padding here is exactly the gap between
-                // this bubble and its older neighbor above it. isGrouped
-                // (same sender, same day) collapses that gap to the bubbles'
-                // own tight built-in spacing; a sender switch or a day
-                // boundary restores the normal breathing room.
-                padding: EdgeInsets.only(top: isGrouped ? 0 : 10),
-                child: SettleIn(
-                  key: ValueKey(message.clientMessageId),
-                  // Only animate a message the first time it is built after
-                  // arriving live (cached history never replays on open, and
-                  // recycled items never replay on scroll-back — Spec §2
-                  // play-once).
-                  animate: shouldAnimate,
-                  duration: staggeredDuration,
-                  beginOffset:
-                      message.isMine
-                          ? const Offset(0, 0.12)
-                          : const Offset(0, 0.10),
+              if (isFirstOfDay && shouldAnimate) {
+                bubble = Shimmer(
+                  period:
+                      expressive ? kShimmerSweepExpressive : kShimmerSweepCalm,
                   child: bubble,
+                );
+              }
+
+              // A batch of messages arriving together (e.g. after a reconnect via
+              // _catchUpFromCursor) should cascade in rather than pop
+              // simultaneously: offset each new bubble's settle duration by its
+              // position within the newest-first list. The index is clamped so a
+              // large batch never produces an absurdly long settle. Cached
+              // history (`isNew == false`) always uses the base duration.
+              final stepMs =
+                  expressive ? kCascadeStepExpressiveMs : kCascadeStepCalmMs;
+              final staggeredDuration =
+                  shouldAnimate
+                      ? kSettleDuration +
+                          Duration(milliseconds: stepMs * index.clamp(0, 6))
+                      : kSettleDuration;
+
+              return KeyedSubtree(
+                key: messageKey,
+                child: Padding(
+                  // This list is reverse: true with state.messages newest-first,
+                  // so `older` (index+1) renders physically ABOVE this message
+                  // on screen — a top-padding here is exactly the gap between
+                  // this bubble and its older neighbor above it. Same-sender
+                  // messages keep only a hairline gap so their squared inner
+                  // corners still read as one connected stack; a sender switch
+                  // or day boundary restores the normal breathing room.
+                  padding: EdgeInsets.only(top: isGrouped ? 3 : 12),
+                  child: SettleIn(
+                    key: ValueKey(message.clientMessageId),
+                    // Only animate a message the first time it is built after
+                    // arriving live (cached history never replays on open, and
+                    // recycled items never replay on scroll-back — Spec §2
+                    // play-once).
+                    animate: shouldAnimate,
+                    duration: staggeredDuration,
+                    beginOffset:
+                        message.isMine
+                            ? const Offset(0, 0.12)
+                            : const Offset(0, 0.10),
+                    child: bubble,
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -1862,52 +2171,68 @@ class _PinnedMessagesBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Container(
+    return Material(
       color: colorScheme.surfaceContainerHighest,
-      child: SizedBox(
-        height: 40,
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          itemCount: pinnedMessages.length,
-          itemBuilder: (context, index) {
-            final message = pinnedMessages[index];
-            return InkWell(
-              onTap: () => onTap(message),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.push_pin, size: 16, color: colorScheme.primary),
-                    const SizedBox(width: 6),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 200),
-                      child: Text(
-                        message.isDeleted
-                            ? 'This message was deleted'
-                            : message.content,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: colorScheme.outlineVariant, width: 0.5),
+          ),
+        ),
+        child: SizedBox(
+          height: 40.h,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: pinnedMessages.length,
+            itemBuilder: (context, index) {
+              final message = pinnedMessages[index];
+              final isLast = index == pinnedMessages.length - 1;
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  InkWell(
+                    onTap: () => onTap(message),
+                    splashColor: colorScheme.primary.withValues(alpha: 0.12),
+                    highlightColor: colorScheme.primary.withValues(alpha: 0.08),
+                    child: Padding(
+                      padding: const EdgeInsets.all(Spacing.sm),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.push_pin,
+                            size: 16,
+                            color: colorScheme.primary,
+                          ),
+                          const SizedBox(width: 6),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 200),
+                            child: Text(
+                              message.isDeleted
+                                  ? 'This message was deleted'
+                                  : message.content,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-            );
-          },
+                  ),
+                  if (!isLast)
+                    Container(
+                      width: 1,
+                      height: 24,
+                      color: colorScheme.outlineVariant,
+                    ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
   }
-}
-
-String _initialForName(String value) {
-  final trimmed = value.trim();
-  if (trimmed.isEmpty) return 'P';
-  return trimmed.characters.first.toUpperCase();
 }
 
 String _relativeSyncLabel(DateTime value) {

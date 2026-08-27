@@ -3,6 +3,7 @@ import 'package:attune/app/theme/app_colors.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
+import 'package:attune/core/utils/animations/animated_scale_fade.dart';
 import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/core/widgets/focused_action_menu.dart';
 import 'package:attune/core/widgets/universal_bubble.dart';
@@ -10,11 +11,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.dart';
+import 'package:attune/features/chat/presentation/widgets/chat_media_group.dart';
 import 'package:attune/features/chat/presentation/widgets/resolved_media_url.dart';
 import 'package:attune/features/chat/presentation/widgets/video_message_thumbnail.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_message_player.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
@@ -53,6 +56,7 @@ class MessageBubble extends StatelessWidget {
     this.onVideoTap,
     this.isGrouped = false,
     this.isGroupedWithPrevious = false,
+    this.mediaGroup = const [],
   });
 
   final Message message;
@@ -73,6 +77,10 @@ class MessageBubble extends StatelessWidget {
   /// ChatScreen passes this from the next-newer message in its newest-first
   /// list so grouped runs can square the touching bottom-side corner too.
   final bool isGroupedWithPrevious;
+
+  /// Consecutive ordinary photo/video messages represented by this bubble.
+  /// The first item is [message] and remains the action/reply/status target.
+  final List<Message> mediaGroup;
 
   /// Needed to push EphemeralVideoViewerScreen, which requires the full
   /// Conversation (not just relationshipId) to build its own
@@ -183,8 +191,12 @@ class MessageBubble extends StatelessWidget {
       groupedAbove: isGrouped,
       groupedBelow: isGroupedWithPrevious,
     );
-    final onBubbleColor =
-        isMine ? colorScheme.onPrimary : colorScheme.onSurface;
+    final isMediaGroup = mediaGroup.length > 1;
+    final onBubbleColor = isMine ? colorScheme.onPrimary : colorScheme.surface;
+    // ignore: deprecated_member_use
+    final receiverBubbleTextColor = colorScheme.onBackground;
+    final replyBubbleTextColor =
+        isMine ? onBubbleColor : receiverBubbleTextColor;
     final canOpenActions =
         currentUserId != null && !message.isDeleted && !message.isPreparing;
     final hasVisibleFooter =
@@ -192,16 +204,20 @@ class MessageBubble extends StatelessWidget {
         (showStatus && isMine) ||
         (message.isFailed && (onRetry != null || onRemove != null));
 
-    final bubbleAdornments = _buildBubbleAdornments(
-      context,
+    final reactionAdornments = _buildReactionAdornments(
       message,
       currentUserId,
-      isStarred: isStarred,
       onRemoveReaction: onRemoveReaction,
     );
+    final starAdornment =
+        isStarred ? _StarAdornment(colorScheme: colorScheme) : null;
 
-    const timestampRevealColumnWidth = 112.0;
+    const timestampRevealColumnWidth = 84.0;
     final timestampRevealBottomInset = hasVisibleFooter ? 24.0 : 0.0;
+    final timestampRevealProgress = ((timestampRevealOffset - 12) / 60).clamp(
+      0.0,
+      1.0,
+    );
 
     // The timestamp reveal belongs to the full message row, not the bubble's
     // shrink-wrapped width. Keeping it row-level gives every visible message
@@ -210,10 +226,35 @@ class MessageBubble extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: Padding(
-        padding: EdgeInsets.only(bottom: bubbleAdornments == null ? 0 : 16),
+        padding: EdgeInsets.only(
+          top: reactionAdornments == null ? 0 : 16,
+          bottom: starAdornment == null ? 0 : 16,
+        ),
         child: Stack(
           clipBehavior: Clip.none,
           children: [
+            // This sits in the same visual plane as the wallpaper. As every
+            // bubble translates left, the clock is progressively uncovered
+            // rather than painted on an opaque panel above the conversation.
+            if (showTimestamp && timestampRevealOffset > 0)
+              Positioned(
+                right: 8,
+                top: 0,
+                bottom: timestampRevealBottomInset,
+                width: timestampRevealColumnWidth,
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: timestampRevealProgress,
+                    child: Transform.translate(
+                      offset: Offset(10 * (1 - timestampRevealProgress), 0),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: _RevealTimestamp(message: message),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             Align(
               alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
               child: IntrinsicWidth(
@@ -222,18 +263,22 @@ class MessageBubble extends StatelessWidget {
                   children: [
                     UniversalBubble(
                       isMine: isMine,
-                      bubbleColor: bubbleColor,
-                      bubbleGradient: bubbleGradient,
+                      bubbleColor:
+                          isMediaGroup ? Colors.transparent : bubbleColor,
+                      bubbleGradient: isMediaGroup ? null : bubbleGradient,
                       onBubbleColor: onBubbleColor,
-                      leading: !isMine ? const SizedBox(width: 8) : null,
+                      leading: null,
                       showCardBorder: false,
-                      showShadow: false,
+                      showShadow: !isMediaGroup,
                       bubbleBorderRadius: 24,
                       bubbleBorderRadiusOverride: bubbleRadius,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
+                      contentPadding:
+                          isMediaGroup
+                              ? EdgeInsets.zero
+                              : const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 10,
+                              ),
                       verticalPadding:
                           isGrouped || isGroupedWithPrevious ? 0 : 4,
                       footerSpacing: hasVisibleFooter ? 4 : 0,
@@ -243,6 +288,7 @@ class MessageBubble extends StatelessWidget {
                               ? -timestampRevealOffset
                               : null,
                       startReveal: null,
+                      replyIconColor: colorScheme.primary,
                       onEndRevealDragChanged: onTimestampRevealChanged,
                       quotedText:
                           parentDeleted
@@ -252,9 +298,13 @@ class MessageBubble extends StatelessWidget {
                       // little smaller reads as a preview/citation rather than a
                       // second full-size message, while UniversalBubble's own 12px
                       // fallback read too small next to the bumped-up content text.
-                      quoteTextStyle: Theme.of(
-                        context,
-                      ).textTheme.bodyMedium?.copyWith(color: onBubbleColor),
+                      quoteBackgroundColor:
+                          isMine
+                              ? Colors.black.withValues(alpha: 0.18)
+                              : receiverBubbleTextColor.withValues(alpha: 0.08),
+                      quoteForegroundColor: replyBubbleTextColor,
+                      quoteTextStyle: Theme.of(context).textTheme.bodyMedium
+                          ?.copyWith(color: replyBubbleTextColor),
                       // "You" when replying to your own message; the partner's real
                       // chat name otherwise (falls back to "Partner" if conversation
                       // wasn't passed — matches this file's existing nullable-
@@ -344,7 +394,9 @@ class MessageBubble extends StatelessWidget {
                             ),
                           _BubbleBody(
                             message: message,
+                            mediaGroup: mediaGroup,
                             isMine: isMine,
+                            bubbleColor: bubbleColor,
                             conversation: conversation,
                             onImageTap: onImageTap,
                             onVideoTap: onVideoTap,
@@ -370,39 +422,29 @@ class MessageBubble extends StatelessWidget {
                               )
                               : const SizedBox.shrink(),
                     ),
-                    if (bubbleAdornments != null)
+                    if (reactionAdornments != null)
+                      Positioned(
+                        top: -12,
+                        // Let the reaction's two small tail dots clear the
+                        // message fill entirely. The main reaction still
+                        // overlaps the corner, while the tail sits beyond
+                        // the bubble's start/end edge like an iMessage
+                        // tapback thought bubble.
+                        left: isMine ? -14 : null,
+                        right: isMine ? null : -14,
+                        child: reactionAdornments,
+                      ),
+                    if (starAdornment != null)
                       Positioned(
                         bottom: -12,
-                        left: isMine ? 10 : null,
-                        right: isMine ? null : 10,
-                        child: bubbleAdornments,
+                        left: isMine ? -14 : null,
+                        right: isMine ? null : -14,
+                        child: starAdornment,
                       ),
                   ],
                 ),
               ),
             ),
-            // Keep the timestamp above the translated bubble. Incoming
-            // bubbles naturally leave this lane clear, but a wide outgoing
-            // bubble can otherwise cover the clock's hour/minute and leave
-            // only AM/PM visible during the same drag distance.
-            if (showTimestamp && timestampRevealOffset > 0)
-              Positioned(
-                right: 8,
-                top: 0,
-                bottom: timestampRevealBottomInset,
-                width: timestampRevealColumnWidth,
-                child: IgnorePointer(
-                  child: ColoredBox(
-                    color: Theme.of(context).colorScheme.surface,
-                    child: Center(
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: _RevealTimestamp(message: message),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
           ],
         ),
       ),
@@ -468,8 +510,11 @@ class _RevealTimestamp extends StatelessWidget {
           softWrap: false,
           overflow: TextOverflow.visible,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w500,
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight:
+                Theme.of(context).brightness == Brightness.light
+                    ? FontWeight.w600
+                    : FontWeight.w500,
           ),
         ),
       ),
@@ -481,65 +526,32 @@ Color _bubbleFill(BuildContext context, {required bool isMine}) {
   final colorScheme = Theme.of(context).colorScheme;
   if (isMine) return colorScheme.primary;
 
-  final tint = colorScheme.primary.withValues(
-    alpha: Theme.of(context).brightness == Brightness.dark ? 0.08 : 0.02,
-  );
-  final base =
-      Theme.of(context).brightness == Brightness.dark
-          ? colorScheme.surfaceContainerHighest
-          : const Color(0xFFF0F1F4);
-  return Color.alphaBlend(tint, base);
+  return Theme.of(context).brightness == Brightness.dark
+      ? const Color(0xFF202322)
+      : const Color(0xFFFFFFFF);
 }
 
 Gradient? _bubbleGradient(BuildContext context, {required bool isMine}) {
-  if (!isMine) return null;
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-  final appColors = AppColors(isDark);
-  return LinearGradient(
-    colors:
-        isDark
-            ? [appColors.primaryDark, appColors.primary]
-            : [appColors.primaryDark, appColors.primary, appColors.moderate],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
+  return null;
 }
 
-/// One small pill per distinct emoji on [message], or null if there are
-/// none. Same emoji from multiple reactors collapses into ONE pill with a
-/// small count badge (never multiple pills for the same emoji). Display
-/// Tapping your own reaction pill removes it; partner-only pills remain
-/// display-only.
+/// One iMessage-style tapback bubble per distinct emoji on [message], or null
+/// if there are none. Same emoji from multiple reactors collapses into one
+/// bubble with a count. Tapping your own reaction removes it; partner-only
+/// reactions remain display-only.
 ///
-/// [currentUserId] decides each pill's background, following the bubble
-/// fill convention: primary when you're one of that emoji's reactors (even
-/// if your partner also reacted — your own reaction takes visual
-/// priority), the partner bubble color when only they reacted, and the
-/// neutral default when currentUserId isn't known (matches this file's
-/// existing null-means-unknown gating elsewhere).
-Widget? _buildBubbleAdornments(
-  BuildContext context,
+/// [currentUserId] decides the reaction color: your reactions use primary,
+/// and your partner's use the same receiver surface as their chat bubbles.
+Widget? _buildReactionAdornments(
   Message message,
   String? currentUserId, {
-  required bool isStarred,
   VoidCallback? onRemoveReaction,
 }) {
-  if (message.reactions.isEmpty && !isStarred) return null;
-  final colorScheme = Theme.of(context).colorScheme;
-
-  // Your own reaction pill uses the OTHER theme's primary shade (dark
-  // mode's brighter green in light mode, and vice versa) rather than this
-  // theme's own colorScheme.primary — the mine bubble fill is already that
-  // same colorScheme.primary, so reusing it here would make your reaction
-  // pill blend into your own bubble instead of standing out against it.
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-  final myReactionColor = isDark ? LightColors.primary : DarkColors.primary;
-  final onMyReactionColor =
-      isDark ? LightColors.white : LightColors.textPrimary;
+  if (message.reactions.isEmpty) return null;
 
   return Wrap(
-    spacing: 4,
-    runSpacing: 4,
+    spacing: 2,
+    runSpacing: 2,
     children: [
       for (final entry in message.reactions.entries)
         if (entry.value.isNotEmpty)
@@ -547,47 +559,160 @@ Widget? _buildBubbleAdornments(
             builder: (context) {
               final containsMine =
                   currentUserId != null && entry.value.contains(currentUserId);
-              return CardInkWell(
-                onTap:
-                    containsMine && onRemoveReaction != null
-                        ? onRemoveReaction
-                        : null,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                margin: EdgeInsets.zero,
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
-                elevation: ElevationTokens.none,
-                enableFeedback: containsMine && onRemoveReaction != null,
-                color:
-                    currentUserId == null
-                        ? colorScheme.surface
-                        : containsMine
-                        ? myReactionColor
-                        : colorScheme.surface,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(entry.key, style: const TextStyle(fontSize: 16)),
-                    if (entry.value.length > 1) ...[
-                      const SizedBox(width: 3),
-                      Text(
-                        '${entry.value.length}',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color:
-                              containsMine
-                                  ? onMyReactionColor
-                                  : colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ],
+              final reactors = entry.value.toList()..sort();
+              return AnimatedScaleFade(
+                key: ValueKey(
+                  'reaction-${message.clientMessageId}-${entry.key}-${reactors.join(',')}',
+                ),
+                duration: const Duration(milliseconds: 420),
+                curve: Curves.easeOutBack,
+                beginScale: 0.45,
+                child: _ReactionAdornment(
+                  emoji: entry.key,
+                  count: entry.value.length,
+                  isMine: containsMine,
+                  tailOnRight: !message.isMine,
+                  onTap:
+                      containsMine && onRemoveReaction != null
+                          ? onRemoveReaction
+                          : null,
                 ),
               );
             },
           ),
-      if (isStarred) _StarAdornment(colorScheme: colorScheme),
     ],
   );
+}
+
+class _ReactionAdornment extends StatelessWidget {
+  const _ReactionAdornment({
+    required this.emoji,
+    required this.count,
+    required this.isMine,
+    required this.tailOnRight,
+    this.onTap,
+  });
+
+  final String emoji;
+  final int count;
+  final bool isMine;
+  final bool tailOnRight;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final fill =
+        isMine ? colorScheme.primary : _bubbleFill(context, isMine: false);
+    final foreground = isMine ? colorScheme.onPrimary : colorScheme.onSurface;
+
+    return Semantics(
+      button: onTap != null,
+      label: '${isMine ? 'Your' : 'Partner'} reaction $emoji',
+      child: SizedBox(
+        width: count > 1 ? 54 : 46,
+        height: 44,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              top: 0,
+              left: tailOnRight ? 0 : null,
+              right: tailOnRight ? null : 0,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x18000000),
+                      blurRadius: 4,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: Material(
+                  key: ValueKey(
+                    'reaction-${isMine ? 'mine' : 'partner'}-$emoji',
+                  ),
+                  color: fill,
+                  borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: onTap,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 36),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: count > 1 ? 7 : 6,
+                          vertical: 5,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(emoji, style: const TextStyle(fontSize: 20)),
+                            if (count > 1) ...[
+                              const SizedBox(width: 3),
+                              Text(
+                                '$count',
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.labelSmall?.copyWith(
+                                  color: foreground,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: 4,
+              left: tailOnRight ? null : 8,
+              right: tailOnRight ? 8 : null,
+              child: _ReactionTailDot(size: 9, fill: fill),
+            ),
+            Positioned(
+              bottom: 0,
+              left: tailOnRight ? null : 2,
+              right: tailOnRight ? 2 : null,
+              child: _ReactionTailDot(size: 6, fill: fill),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReactionTailDot extends StatelessWidget {
+  const _ReactionTailDot({required this.size, required this.fill});
+
+  final double size;
+  final Color fill;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      padding: const EdgeInsets.all(1.5),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        shape: BoxShape.circle,
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(color: fill, shape: BoxShape.circle),
+      ),
+    );
+  }
 }
 
 class _StarAdornment extends StatelessWidget {
@@ -702,14 +827,18 @@ class _BubbleBody extends StatelessWidget {
   const _BubbleBody({
     required this.message,
     required this.isMine,
+    required this.bubbleColor,
     required this.conversation,
     required this.onBubbleColor,
+    this.mediaGroup = const [],
     this.onImageTap,
     this.onVideoTap,
   });
 
   final Message message;
+  final List<Message> mediaGroup;
   final bool isMine;
+  final Color bubbleColor;
   final Conversation? conversation;
   final void Function(Message message)? onImageTap;
   final void Function(Message message)? onVideoTap;
@@ -741,53 +870,72 @@ class _BubbleBody extends StatelessWidget {
       );
     }
 
+    if (mediaGroup.length > 1) {
+      return ChatMediaGroup(
+        messages: mediaGroup,
+        isMine: isMine,
+        bubbleColor: bubbleColor,
+        onImageTap: onImageTap,
+        onVideoTap: onVideoTap,
+      );
+    }
+
     final children = <Widget>[];
     if (message.hasImage) {
       final thumbnail = ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child:
-            message.localMediaPath != null
-                ? Image(
-                  image: FileImage(File(message.localMediaPath!)),
-                  width: 220,
-                  height: 220,
-                  fit: BoxFit.cover,
-                  errorBuilder:
-                      (context, error, stackTrace) => const _ImageLoadError(),
-                )
-                : ResolvedMediaUrl(
-                  signedMediaUrl: message.signedMediaUrl,
-                  mediaKey: message.mediaKey,
-                  loading: const Shimmer(
-                    sweeps: null,
-                    child: _ImagePlaceholder(),
+        // Keyed on clientMessageId — ImageViewerScreen's own _ZoomableImage
+        // Hero-wraps its full image with the same tag, so tapping this
+        // thumbnail flies it into the full-screen view instead of just
+        // cutting to it. clientMessageId is stable and unique per message,
+        // unlike mediaKey (null while still preparing/sending) or the
+        // message id (only assigned once the server round-trip lands).
+        child: Hero(
+          tag: message.clientMessageId,
+          child:
+              message.localMediaPath != null
+                  ? Image(
+                    image: FileImage(File(message.localMediaPath!)),
+                    width: 220,
+                    height: 220,
+                    fit: BoxFit.cover,
+                    errorBuilder:
+                        (context, error, stackTrace) => const _ImageLoadError(),
+                  )
+                  : ResolvedMediaUrl(
+                    signedMediaUrl: message.signedMediaUrl,
+                    mediaKey: message.mediaKey,
+                    loading: const Shimmer(
+                      sweeps: null,
+                      child: _ImagePlaceholder(),
+                    ),
+                    error: const _ImageLoadError(),
+                    builder:
+                        (context, url) => CachedNetworkImage(
+                          imageUrl: url,
+                          // The signed URL's token/expiry changes on every
+                          // fetch (createSignedMediaUrl re-signs with a
+                          // fresh ~10min TTL each call), so caching by the
+                          // URL string itself would never hit — every
+                          // reopen looks like a brand-new image. mediaKey
+                          // is the stable storage path underneath, so this
+                          // key survives across signed-URL refreshes and
+                          // actually serves from disk on repeat opens.
+                          cacheKey: message.mediaKey,
+                          width: 220,
+                          height: 220,
+                          fit: BoxFit.cover,
+                          fadeInDuration: const Duration(milliseconds: 150),
+                          placeholder:
+                              (context, url) => const Shimmer(
+                                sweeps: null,
+                                child: _ImagePlaceholder(),
+                              ),
+                          errorWidget:
+                              (context, url, error) => const _ImageLoadError(),
+                        ),
                   ),
-                  error: const _ImageLoadError(),
-                  builder:
-                      (context, url) => CachedNetworkImage(
-                        imageUrl: url,
-                        // The signed URL's token/expiry changes on every
-                        // fetch (createSignedMediaUrl re-signs with a
-                        // fresh ~10min TTL each call), so caching by the
-                        // URL string itself would never hit — every
-                        // reopen looks like a brand-new image. mediaKey
-                        // is the stable storage path underneath, so this
-                        // key survives across signed-URL refreshes and
-                        // actually serves from disk on repeat opens.
-                        cacheKey: message.mediaKey,
-                        width: 220,
-                        height: 220,
-                        fit: BoxFit.cover,
-                        fadeInDuration: const Duration(milliseconds: 150),
-                        placeholder:
-                            (context, url) => const Shimmer(
-                              sweeps: null,
-                              child: _ImagePlaceholder(),
-                            ),
-                        errorWidget:
-                            (context, url, error) => const _ImageLoadError(),
-                      ),
-                ),
+        ),
       );
       // Busy overlay while the image is still on its way out, matching the
       // video tile and WhatsApp: the picture is fully visible from the
@@ -1006,7 +1154,9 @@ class _BubbleBody extends StatelessWidget {
           // bodyLarge (17px) matches how WhatsApp/iMessage actually size
           // message text; bodyMedium (14px, AppTextTheme's paragraph
           // default) reads small for a chat bubble specifically.
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: color, fontSize: 14.h),
         ),
       );
     }

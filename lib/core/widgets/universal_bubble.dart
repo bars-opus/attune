@@ -77,6 +77,19 @@ class UniversalBubble extends StatefulWidget {
     this.showShadow = false,
     this.showCardBorder = false,
     this.verticalPadding = 4,
+    this.bubbleBorderRadius = 18,
+    this.bubbleBorderRadiusOverride,
+    this.contentPadding = const EdgeInsets.symmetric(
+      horizontal: 14,
+      vertical: 10,
+    ),
+    this.bubbleGradient,
+    this.startReveal,
+    this.endReveal,
+    this.dragOffsetOverride,
+    this.onEndRevealDragChanged,
+    this.footerSpacing = 4,
+    this.showFooter = true,
   });
 
   /// True puts the bubble on the right, false on the left.
@@ -248,6 +261,46 @@ class UniversalBubble extends StatefulWidget {
   /// extra gap is removed).
   final double verticalPadding;
 
+  /// Corner radius for the filled bubble surface. MessageBubble overrides
+  /// this for Instagram-style pills; other callers keep the prior 18px look.
+  final double bubbleBorderRadius;
+
+  /// Optional per-corner radius for grouped message runs. When omitted the
+  /// bubble uses [bubbleBorderRadius] on every corner.
+  final BorderRadius? bubbleBorderRadiusOverride;
+
+  /// Padding inside the filled bubble surface. Kept configurable so chat can
+  /// move toward a denser messaging pill without changing forum bubbles.
+  final EdgeInsetsGeometry contentPadding;
+
+  /// Optional fill gradient for callers that need richer bubble surfaces.
+  /// Defaults to null so existing uses keep their solid [bubbleColor].
+  final Gradient? bubbleGradient;
+
+  /// Widget revealed behind the bubble during a rightward drag. Null keeps
+  /// the original reply-icon reveal.
+  final Widget? startReveal;
+
+  /// Widget revealed behind the bubble during a leftward drag. Chat uses
+  /// this for iMessage-style timestamps; null keeps the existing action pane.
+  final Widget? endReveal;
+
+  /// Paint/layout offset controlled by a parent. Used by ChatScreen so one
+  /// leftward drag can reveal timestamps for every visible message together.
+  final double? dragOffsetOverride;
+
+  /// Called with the absolute leftward reveal amount while dragging left.
+  final ValueChanged<double>? onEndRevealDragChanged;
+
+  /// Vertical gap between the filled bubble and footer. Chat sets this to
+  /// zero when no visible footer is present.
+  final double footerSpacing;
+
+  /// Whether to lay out [footer] at all. A zero-sized footer widget can still
+  /// interact with column spacing and parent measurement, so chat turns the
+  /// whole footer block off when no metadata should be visible.
+  final bool showFooter;
+
   @override
   State<UniversalBubble> createState() => _UniversalBubbleState();
 }
@@ -256,6 +309,8 @@ class _UniversalBubbleState extends State<UniversalBubble>
     with SingleTickerProviderStateMixin {
   static const double _fireThreshold = 60;
   static const double _maxDrag = 75;
+  static const double _timestampRevealLimit = 112;
+  static const double _timestampRevealDragGain = 1;
   static const Duration _springBackDuration = Duration(milliseconds: 200);
 
   /// Matches the old ActionPane's extentRatio: 0.25.
@@ -322,6 +377,10 @@ class _UniversalBubbleState extends State<UniversalBubble>
         ? (widget.quoteMineBorderColor ?? colorScheme.error)
         : (widget.quotePartnerBorderColor ?? colorScheme.primary);
   }
+
+  BorderRadius get _bubbleBorderRadius =>
+      widget.bubbleBorderRadiusOverride ??
+      BorderRadius.circular(widget.bubbleBorderRadius);
 
   /// The quote-mark icon, mirrored horizontally on your own bubble so it
   /// visually "faces" the text column beside it — Icons.format_quote only
@@ -447,10 +506,11 @@ class _UniversalBubbleState extends State<UniversalBubble>
     final snapshot = DecoratedBox(
       decoration: BoxDecoration(
         color: widget.bubbleColor,
-        borderRadius: BorderRadius.circular(18),
+        gradient: widget.bubbleGradient,
+        borderRadius: _bubbleBorderRadius,
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: widget.contentPadding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -591,7 +651,16 @@ class _UniversalBubbleState extends State<UniversalBubble>
   /// that flag at the start of every gesture, including the closing one, which
   /// would drop the reserve at the exact moment it is needed.
   double get _endPaneTranslationReserve =>
-      _dragOffset < 0 ? _endPaneRevealWidth : 0;
+      widget.endActions != null && _effectiveDragOffset < 0
+          ? _endPaneRevealWidth
+          : 0;
+
+  double get _effectiveDragOffset => widget.dragOffsetOverride ?? _dragOffset;
+
+  bool get _hasEndDrag =>
+      widget.endActions != null ||
+      widget.endReveal != null ||
+      widget.onEndRevealDragChanged != null;
 
   @override
   void dispose() {
@@ -635,8 +704,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
             : (details.delta.dx > 0 ? _DragMode.reply : _DragMode.endPane);
     if (_activeDragMode == _DragMode.reply && widget.onReply != null) {
       _onReplyDragUpdate(details);
-    } else if (_activeDragMode == _DragMode.endPane &&
-        widget.endActions != null) {
+    } else if (_activeDragMode == _DragMode.endPane && _hasEndDrag) {
       _onEndPaneDragUpdate(details);
     }
   }
@@ -650,17 +718,43 @@ class _UniversalBubbleState extends State<UniversalBubble>
     _activeDragMode = null;
   }
 
+  void _onHorizontalDragCancel() {
+    if (_activeDragMode == _DragMode.reply) {
+      _animateSpringBackFrom(_dragOffset);
+    } else if (_activeDragMode == _DragMode.endPane) {
+      if (widget.endActions == null) {
+        widget.onEndRevealDragChanged?.call(0);
+        setState(() => _dragOffset = 0);
+      } else {
+        _closeEndPane();
+      }
+    }
+    _activeDragMode = null;
+  }
+
   void _onEndPaneDragUpdate(DragUpdateDetails details) {
-    if (widget.endActions == null) return;
-    final rawOffset = _dragOffset + details.delta.dx;
+    if (!_hasEndDrag) return;
+    final dragDelta =
+        widget.endActions == null
+            ? details.delta.dx * _timestampRevealDragGain
+            : details.delta.dx;
+    final rawOffset = _dragOffset + dragDelta;
     final clamped = rawOffset > 0 ? 0.0 : rawOffset;
+    final revealLimit =
+        widget.endActions == null ? _timestampRevealLimit : _endPaneRevealWidth;
     setState(() {
-      _dragOffset = clamped.clamp(-_endPaneRevealWidth, 0.0);
+      _dragOffset = clamped.clamp(-revealLimit, 0.0);
     });
+    widget.onEndRevealDragChanged?.call(_dragOffset.abs());
   }
 
   void _onEndPaneDragEnd(DragEndDetails details) {
-    if (widget.endActions == null) return;
+    if (!_hasEndDrag) return;
+    if (widget.endActions == null) {
+      widget.onEndRevealDragChanged?.call(0);
+      setState(() => _dragOffset = 0);
+      return;
+    }
     final shouldOpen = _dragOffset.abs() >= _endPaneRevealWidth / 2;
     if (shouldOpen) {
       _openEndPane();
@@ -753,6 +847,8 @@ class _UniversalBubbleState extends State<UniversalBubble>
 
   @override
   Widget build(BuildContext context) {
+    final effectiveDragOffset = _effectiveDragOffset;
+    final highlightInset = widget.isHighlighted ? 2.0 : 0.0;
     return Align(
       alignment: widget.isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Padding(
@@ -769,18 +865,31 @@ class _UniversalBubbleState extends State<UniversalBubble>
           onHorizontalDragStart: _onHorizontalDragStart,
           onHorizontalDragUpdate: _onHorizontalDragUpdate,
           onHorizontalDragEnd: _onHorizontalDragEnd,
+          onHorizontalDragCancel: _onHorizontalDragCancel,
           behavior: HitTestBehavior.opaque,
           child: Stack(
             alignment: Alignment.centerLeft,
             children: [
-              if (_dragOffset > 0)
+              if (effectiveDragOffset > 0 && widget.startReveal != null)
+                Positioned(
+                  left: _endPaneTranslationReserve,
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: (effectiveDragOffset.abs() / _fireThreshold)
+                          .clamp(0.0, 1.0),
+                      alwaysIncludeSemantics: true,
+                      child: widget.startReveal,
+                    ),
+                  ),
+                )
+              else if (effectiveDragOffset > 0)
                 Positioned(
                   // Offset by the reserved translation slot (see
                   // _endPaneTranslationReserve) so the icon still sits at the
                   // bubble's own left edge, not the widened Stack's.
                   left: _endPaneTranslationReserve,
                   child: Opacity(
-                    opacity: (_dragOffset.abs() / _fireThreshold).clamp(
+                    opacity: (effectiveDragOffset.abs() / _fireThreshold).clamp(
                       0.0,
                       1.0,
                     ),
@@ -788,10 +897,8 @@ class _UniversalBubbleState extends State<UniversalBubble>
                       scale:
                           0.7 +
                           0.3 *
-                              (_dragOffset.abs() / _fireThreshold).clamp(
-                                0.0,
-                                1.0,
-                              ),
+                              (effectiveDragOffset.abs() / _fireThreshold)
+                                  .clamp(0.0, 1.0),
                       child: Icon(
                         Icons.reply,
                         color:
@@ -799,6 +906,22 @@ class _UniversalBubbleState extends State<UniversalBubble>
                             (widget.isMine
                                 ? widget.bubbleColor
                                 : widget.onBubbleColor),
+                      ),
+                    ),
+                  ),
+                ),
+              if (effectiveDragOffset < 0 && widget.endReveal != null)
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: (effectiveDragOffset.abs() / _fireThreshold)
+                          .clamp(0.0, 1.0),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: widget.endReveal,
                       ),
                     ),
                   ),
@@ -853,7 +976,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
                       // the visually correct width mid-reply-swipe: the end
                       // pane has no business showing while the user is
                       // dragging the other way.
-                      width: _dragOffset < 0 ? -_dragOffset : 0,
+                      width: effectiveDragOffset < 0 ? -effectiveDragOffset : 0,
                       child: ClipRect(
                         child: OverflowBox(
                           // minWidth: 0 with an unbounded max lets the
@@ -906,7 +1029,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
               Padding(
                 padding: EdgeInsets.only(left: _endPaneTranslationReserve),
                 child: Transform.translate(
-                  offset: Offset(_dragOffset, 0),
+                  offset: Offset(effectiveDragOffset, 0),
                   // IntrinsicWidth: the enclosing Stack expands to fill
                   // whatever width it is handed regardless of this child's own
                   // size — without this every bubble renders full-width and
@@ -944,10 +1067,10 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                               ? (widget.highlightColor ??
                                                   widget.bubbleColor)
                                               : Colors.transparent,
-                                      width: 2,
+                                      width: widget.isHighlighted ? 2 : 0,
                                     ),
                                   ),
-                                  padding: const EdgeInsets.all(2),
+                                  padding: EdgeInsets.all(highlightInset),
                                   child: GestureDetector(
                                     onLongPress:
                                         widget.onLongPress == null
@@ -958,7 +1081,8 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                       key: _bubbleFillKey,
                                       decoration: BoxDecoration(
                                         color: widget.bubbleColor,
-                                        borderRadius: BorderRadius.circular(18),
+                                        gradient: widget.bubbleGradient,
+                                        borderRadius: _bubbleBorderRadius,
                                         border:
                                             widget.showCardBorder
                                                 ? Border.all(
@@ -971,42 +1095,33 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                                   width: 0.3,
                                                 )
                                                 : null,
-                                        // Same shadow SHAPE CardInkWell's own
-                                        // Card gets from ElevationTokens.xs
-                                        // (1dp) — Material's real umbra/
-                                        // penumbra/ambient stack (same
-                                        // offsets/blur/spread as
-                                        // kElevationToShadow[1]) — but each
-                                        // layer's alpha is halved, since the
-                                        // full-strength preset read heavier
-                                        // than wanted here.
+                                        // A restrained 1dp-style lift for
+                                        // chat bubbles. Kept faint so grouped
+                                        // message runs still feel connected.
                                         boxShadow:
                                             widget.showShadow
                                                 ? const [
                                                   BoxShadow(
-                                                    offset: Offset(0, 2),
+                                                    offset: Offset(0, 1),
                                                     blurRadius: 1,
                                                     spreadRadius: -1,
-                                                    color: Color(0x1A000000),
+                                                    color: Color(0x0F000000),
                                                   ),
                                                   BoxShadow(
                                                     offset: Offset(0, 1),
                                                     blurRadius: 1,
-                                                    color: Color(0x12000000),
+                                                    color: Color(0x0A000000),
                                                   ),
                                                   BoxShadow(
                                                     offset: Offset(0, 1),
-                                                    blurRadius: 3,
-                                                    color: Color(0x0F000000),
+                                                    blurRadius: 2,
+                                                    color: Color(0x08000000),
                                                   ),
                                                 ]
                                                 : null,
                                       ),
                                       child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 14,
-                                          vertical: 10,
-                                        ),
+                                        padding: widget.contentPadding,
                                         child: Column(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
@@ -1134,13 +1249,15 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                   ),
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: widget.maxWidth,
+                              if (widget.showFooter) ...[
+                                SizedBox(height: widget.footerSpacing),
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: widget.maxWidth,
+                                  ),
+                                  child: widget.footer,
                                 ),
-                                child: widget.footer,
-                              ),
+                              ],
                             ],
                           ),
                         ),

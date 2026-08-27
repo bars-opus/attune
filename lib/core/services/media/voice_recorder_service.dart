@@ -83,6 +83,20 @@ class VoiceRecorderService {
   final List<double> _bucketPeaks = List.filled(waveformPointCount, 0.0);
   int _readingCount = 0;
 
+  /// Live 0.0-1.0 level of the most recent amplitude reading, republished
+  /// every ~100ms while recording.
+  ///
+  /// The downsampled [_bucketPeaks] array is a *whole-recording* summary
+  /// only readable at [stop] — it can't drive a live waveform, which is
+  /// why the recording UI used to paint a hardcoded constant. This
+  /// notifier is the live counterpart: same readings, same dBFS
+  /// normalization, published as they arrive.
+  ///
+  /// A ValueNotifier rather than a Stream so the recording bar can rebuild
+  /// only the waveform via ValueListenableBuilder, instead of setState-ing
+  /// the whole composer ten times a second.
+  final ValueNotifier<double> currentLevel = ValueNotifier<double>(0.0);
+
   Future<bool> requestPermission() async {
     final status = await Permission.microphone.request();
     return status.isGranted;
@@ -91,7 +105,10 @@ class VoiceRecorderService {
   Future<void> start() async {
     _bucketPeaks.fillRange(0, waveformPointCount, 0.0);
     _readingCount = 0;
+    currentLevel.value = 0.0;
     _startedAt = DateTime.now();
+    _pausedTotal = Duration.zero;
+    _pausedAt = null;
     _completedRecording = null;
 
     final dir = await getTemporaryDirectory();
@@ -164,6 +181,8 @@ class VoiceRecorderService {
     _bucketPeaks.fillRange(0, waveformPointCount, 0.0);
     _readingCount = 0;
     _completedRecording = null;
+    _pausedTotal = Duration.zero;
+    _pausedAt = null;
     _currentPath = path;
     _startedAt = startedAt;
   }
@@ -188,6 +207,14 @@ class VoiceRecorderService {
     const minDb = -50.0;
     final db = raw.clamp(minDb, 0.0);
     final normalized = ((db - minDb) / -minDb * 255).clamp(0.0, 255.0);
+
+    // Published from inside the shared normalization path (rather than
+    // from _onAmplitude) so the live waveform and the final recorded
+    // waveform are guaranteed to be the same numbers — and so the
+    // debugFeedAmplitude test seam drives both identically.
+    // Guarded against a late in-flight amplitude reading arriving after
+    // dispose() — writing a disposed ValueNotifier throws.
+    if (!_levelDisposed) currentLevel.value = normalized / 255;
 
     final bucketIndex =
         (_readingCount * waveformPointCount ~/ _expectedTotalReadings)
@@ -252,12 +279,21 @@ class VoiceRecorderService {
       throw const VoiceRecordingException('recording_stop_failed');
     }
 
+    // Close any still-open pause span BEFORE reading `elapsed`. Stopping
+    // while paused is an ordinary action (pause, then tap send), and
+    // leaving the span open would let it keep accruing against the
+    // recording — understating durationMs by the length of the pause.
+    _closeOpenPause();
+
     final path = _currentPath;
     final startedAt = _startedAt;
     if (path == null || startedAt == null) {
       throw const VoiceRecordingException('recording_missing');
     }
-    final durationMs = DateTime.now().difference(startedAt).inMilliseconds;
+    // Excludes paused spans — see `elapsed`'s doc. Uses the same getter
+    // the UI ticker reads, so the sent duration always matches the timer
+    // the user watched.
+    final durationMs = elapsed.inMilliseconds;
 
     return VoiceRecording(
       localPath: path,
@@ -293,6 +329,10 @@ class VoiceRecorderService {
     }
     _currentPath = null;
     _startedAt = null;
+    // Reset alongside the rest of the per-recording state, so a reused
+    // instance can never inherit a previous session's pause accounting.
+    _pausedTotal = Duration.zero;
+    _pausedAt = null;
   }
 
   void dispose() {
@@ -301,5 +341,81 @@ class VoiceRecorderService {
     unawaited(_amplitudeSubscription?.cancel());
     _amplitudeSubscription = null;
     unawaited(_recorder.dispose());
+    // Guarded: dispose() is contractually idempotent here (a widget's
+    // dispose may run after the service already stopped and disposed —
+    // see the repeated-dispose test), but ValueNotifier.dispose() throws
+    // on a second call. Everything else above is already a safe no-op
+    // when repeated.
+    if (!_levelDisposed) {
+      _levelDisposed = true;
+      currentLevel.dispose();
+    }
+  }
+
+  bool _levelDisposed = false;
+
+  // Pause bookkeeping. Duration is computed from wall-clock
+  // (DateTime.now() - _startedAt), so any time spent paused would
+  // otherwise be counted as recorded audio — producing a durationMs longer
+  // than the actual file, which desyncs the player's progress bar and can
+  // push a recording past maxDuration's downstream check. _pausedTotal
+  // accumulates completed pause spans; _pausedAt marks an open one.
+  Duration _pausedTotal = Duration.zero;
+  DateTime? _pausedAt;
+
+  bool get isPaused => _pausedAt != null;
+
+  /// Suspends capture without finalizing the recording. No-op if already
+  /// paused or not recording.
+  Future<void> pause() async {
+    if (_pausedAt != null || _startedAt == null) return;
+    try {
+      await _recorder.pause();
+    } catch (error) {
+      throw const VoiceRecordingException('recording_pause_failed');
+    }
+    _pausedAt = DateTime.now();
+    if (!_levelDisposed) currentLevel.value = 0.0;
+  }
+
+  /// Resumes a paused recording. No-op if not paused.
+  Future<void> resume() async {
+    if (_pausedAt == null) return;
+    try {
+      await _recorder.resume();
+    } catch (error) {
+      throw const VoiceRecordingException('recording_resume_failed');
+    }
+    _closeOpenPause();
+  }
+
+  /// Folds an in-progress pause span into [_pausedTotal] and clears it.
+  /// Idempotent — a no-op when not paused.
+  void _closeOpenPause() {
+    final pausedAt = _pausedAt;
+    if (pausedAt == null) return;
+    _pausedTotal += DateTime.now().difference(pausedAt);
+    _pausedAt = null;
+  }
+
+  /// Elapsed *recorded* time — wall-clock since start, minus any time
+  /// spent paused (including an in-progress pause). The single source of
+  /// truth for both the UI's ticker and [_performStop]'s durationMs, so
+  /// the displayed timer and the persisted duration can never disagree.
+  Duration get elapsed {
+    final startedAt = _startedAt;
+    if (startedAt == null) return Duration.zero;
+    final openPause =
+        _pausedAt == null
+            ? Duration.zero
+            : DateTime.now().difference(_pausedAt!);
+    final value =
+        DateTime.now().difference(startedAt) - _pausedTotal - openPause;
+    // Floored at zero: a device clock adjustment mid-recording can make
+    // the wall-clock difference smaller than the accumulated pause total,
+    // which would otherwise yield a NEGATIVE durationMs — silently
+    // corrupting the sent message's metadata and any player that divides
+    // by it.
+    return value < Duration.zero ? Duration.zero : value;
   }
 }

@@ -144,37 +144,48 @@ class _ZoomableImageState extends State<_ZoomableImage>
         minScale: 1.0,
         maxScale: 5.0,
         child: Center(
-          child:
-              message.localMediaPath != null
-                  ? Image.file(
-                    File(message.localMediaPath!),
-                    fit: BoxFit.contain,
-                    errorBuilder:
-                        (context, error, stackTrace) => const _ViewerError(),
-                  )
-                  : ResolvedMediaUrl(
-                    signedMediaUrl: message.signedMediaUrl,
-                    mediaKey: message.mediaKey,
-                    loading: const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
-                    ),
-                    error: const _ViewerError(),
-                    builder:
-                        (context, url) => CachedNetworkImage(
-                          imageUrl: url,
-                          cacheKey: message.mediaKey,
-                          fit: BoxFit.contain,
-                          placeholder:
-                              (context, url) => const Center(
-                                child: Shimmer(
-                                  sweeps: null,
-                                  child: SizedBox(width: 220, height: 220),
+          // Keyed on clientMessageId — the same identity both known source
+          // widgets (MessageBubble's chat thumbnail, ChatIdentityCard's
+          // recent-photos strip) tag their own Hero with, so whichever one
+          // this screen was pushed from flies its thumbnail into this full
+          // image. ChatMediaScreen's grid tiles don't carry a matching Hero
+          // (out of scope for now), so a push from there is just a normal,
+          // un-animated route change — Hero only activates when both ends
+          // of a navigation carry the same tag.
+          child: Hero(
+            tag: message.clientMessageId,
+            child:
+                message.localMediaPath != null
+                    ? Image.file(
+                      File(message.localMediaPath!),
+                      fit: BoxFit.contain,
+                      errorBuilder:
+                          (context, error, stackTrace) => const _ViewerError(),
+                    )
+                    : ResolvedMediaUrl(
+                      signedMediaUrl: message.signedMediaUrl,
+                      mediaKey: message.mediaKey,
+                      loading: const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      ),
+                      error: const _ViewerError(),
+                      builder:
+                          (context, url) => CachedNetworkImage(
+                            imageUrl: url,
+                            cacheKey: message.mediaKey,
+                            fit: BoxFit.contain,
+                            placeholder:
+                                (context, url) => const Center(
+                                  child: Shimmer(
+                                    sweeps: null,
+                                    child: SizedBox(width: 220, height: 220),
+                                  ),
                                 ),
-                              ),
-                          errorWidget:
-                              (context, url, error) => const _ViewerError(),
-                        ),
-                  ),
+                            errorWidget:
+                                (context, url, error) => const _ViewerError(),
+                          ),
+                    ),
+          ),
         ),
       ),
     );

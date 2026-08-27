@@ -369,11 +369,25 @@ class FakeChatRepository implements ChatRepository {
 
   @override
   Future<int> fetchStreak(String relationshipId) async => streakValue;
+
+  /// Every call to [setRelationshipChatName], in call order.
+  final List<({String relationshipId, String chatName})> setChatNameCalls = [];
+
+  /// When set, [setRelationshipChatName] throws this instead of
+  /// succeeding. The call is still recorded first, so a test can assert
+  /// both that the write was attempted and that the failure surfaced.
+  Object? setChatNameError;
+
   @override
   Future<void> setRelationshipChatName({
     required String relationshipId,
     required String chatName,
-  }) async {}
+  }) async {
+    setChatNameCalls.add((relationshipId: relationshipId, chatName: chatName));
+    final error = setChatNameError;
+    if (error != null) throw error;
+  }
+
   @override
   Future<RelationshipAvatarUploadIntent> createRelationshipAvatarUploadIntent({
     required String relationshipId,
@@ -496,16 +510,24 @@ class FakeChatRepository implements ChatRepository {
   Future<List<Message>> getMediaMessages(
     String relationshipId, {
     required String mediaType,
-  }) async =>
-      serverMessages.values
-          .where(
-            (m) =>
-                m.relationshipId == relationshipId &&
-                m.mediaType == mediaType &&
-                !m.isDeleted &&
-                !m.isViewOnce,
-          )
-          .toList();
+  }) async {
+    final matches =
+        serverMessages.values
+            .where(
+              (m) =>
+                  m.relationshipId == relationshipId &&
+                  m.mediaType == mediaType &&
+                  !m.isDeleted &&
+                  !m.isViewOnce,
+            )
+            .toList();
+    // Newest-first, matching SupabaseChatRepository's own
+    // .order('created_at', ascending: false) — callers (chat media gallery,
+    // the chat identity card's recent-photos strip) rely on this ordering
+    // contract, not just on "these are the matching rows".
+    matches.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return matches;
+  }
 
   @override
   Future<List<Message>> searchMessages(

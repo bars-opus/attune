@@ -60,3 +60,6 @@ app.*.map.json
 
 # Portable tool cache (CocoaPods spec repos etc.) — not source, do not track
 .tool-home/
+
+# Test coverage output (flutter test --coverage)
+coverage/

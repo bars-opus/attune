@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:attune/features/chat/domain/services/chat_poster_prewarmer.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -159,6 +160,12 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
   static const double _minRatio = 0.5; // tall portrait
   static const double _maxRatio = 1.91; // wide landscape
 
+  @override
+  void initState() {
+    super.initState();
+    _cachedPosterPath = ChatPosterPrewarmer.readyPosterPathFor(widget.cacheKey);
+  }
+
   double get _aspectRatio {
     final decoded = _decodedRatio;
     if (decoded != null) return decoded.clamp(_minRatio, _maxRatio);
@@ -251,7 +258,7 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
 
     // Different poster: any disk copy found for the previous one is no
     // longer this tile's, so drop it before looking the new one up.
-    _cachedPosterPath = null;
+    _cachedPosterPath = ChatPosterPrewarmer.readyPosterPathFor(widget.cacheKey);
     _cacheLookupIdentity = null;
     _lookUpCachedPoster();
 

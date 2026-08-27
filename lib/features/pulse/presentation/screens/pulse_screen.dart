@@ -85,9 +85,17 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
       onRefresh: _refreshPulse,
       child: CustomScrollView(
         slivers: [
+          // Required whenever this scrollable lives inside PulseTab's
+          // NestedScrollView (its only current host — see PulseTab's own
+          // doc comment) — redirects the header's layout extent here so
+          // this list doesn't render as if it starts under the header while
+          // its own scroll offset still reads as zero.
+          SliverOverlapInjector(
+            handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+          ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
+              padding: EdgeInsets.all(Spacing.md.w),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

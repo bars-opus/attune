@@ -41,6 +41,43 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
 
+    # permission_handler_apple compiles EVERY permission out by default:
+    # PermissionHandlerEnums.h does `#ifndef PERMISSION_MICROPHONE / #define
+    # PERMISSION_MICROPHONE 0`, and each strategy is wrapped in
+    # `#if PERMISSION_<NAME>`. With the macro at 0,
+    # AudioVideoPermissionStrategy hits `completionHandler(
+    # PermissionStatusDenied); return;` and NEVER calls
+    # AVCaptureDevice.requestAccessForMediaType — so iOS is never asked, no
+    # system prompt appears, and the app never shows up under
+    # Settings > Privacy > Microphone (iOS only lists apps that actually
+    # requested a permission). Adding NS*UsageDescription to Info.plist is
+    # necessary but NOT sufficient on its own; these macros are the other
+    # half.
+    #
+    # Only the permissions this app genuinely requests are enabled — each
+    # one left at 0 keeps that strategy's code (and the App Store's
+    # corresponding privacy expectations) out of the binary entirely.
+    target.build_configurations.each do |config|
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
+        '$(inherited)',
+      ]
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] += [
+        # record: voice messages in chat (VoiceRecorderService).
+        'PERMISSION_MICROPHONE=1',
+        # camera: ephemeral capture + image_picker's fromCamera path.
+        'PERMISSION_CAMERA=1',
+        # image_picker / image_cropper gallery reads, plus the add-only
+        # variant matching NSPhotoLibraryAddUsageDescription in Info.plist
+        # (saving media back to the library).
+        'PERMISSION_PHOTOS=1',
+        'PERMISSION_PHOTOS_ADD_ONLY=1',
+        # geolocator: optional partner location sharing (LocationService).
+        'PERMISSION_LOCATION=1',
+        # onesignal_flutter requests notification permission on startup.
+        'PERMISSION_NOTIFICATIONS=1',
+      ]
+    end
+
     # flutter_native_splash (pinned at 2.4.4 — later versions need a newer
     # `meta` than this project's Flutter SDK provides, see pubspec.yaml) and
     # geocoding_ios ship PrivacyInfo.xcprivacy as a plain source file rather

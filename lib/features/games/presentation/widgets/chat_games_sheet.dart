@@ -1,0 +1,276 @@
+import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/utils/animations/animated_scale_fade.dart';
+import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/widgets/bottom_sheet_header.dart';
+import 'package:attune/core/widgets/card_inkwell.dart';
+import 'package:attune/core/widgets/info_row_widget.dart';
+import 'package:attune/core/widgets/search_text_field.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+
+enum ChatGameDestination {
+  gamesHub,
+  thisOrThat,
+  truthOrDare,
+  thirtySixQuestions,
+  paintBall,
+  neverHaveIEver,
+}
+
+class ChatGamesSheet extends StatefulWidget {
+  const ChatGamesSheet({super.key, required this.onSelect});
+
+  final ValueChanged<ChatGameDestination> onSelect;
+
+  @override
+  State<ChatGamesSheet> createState() => _ChatGamesSheetState();
+}
+
+class _ChatGamesSheetState extends State<ChatGamesSheet> {
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  List<_ChatGameCategory> get _filteredCategories {
+    final query = _controller.text.trim().toLowerCase();
+    if (query.isEmpty) return _chatGameCategories;
+
+    return [
+      for (final category in _chatGameCategories)
+        _ChatGameCategory(
+          title: category.title,
+          options:
+              category.options
+                  .where((option) => option.matches(query, category.title))
+                  .toList(),
+        ),
+    ].where((category) => category.options.isNotEmpty).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filteredCategories = _filteredCategories;
+
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Column(
+        children: [
+          const BottomSheetHeader(title: 'Games'),
+          SearchFormField(
+            controller: _controller,
+            focusNode: _focusNode,
+            autofocus: false,
+            hintText: 'Search games',
+            onChanged: (_) => setState(() {}),
+            onClearPressed: () => setState(() {}),
+          ),
+          SizedBox(height: Spacing.xl.h),
+          Expanded(
+            child:
+                filteredCategories.isEmpty
+                    ? EmptyStateWidget(
+                      icon: Icons.search_off_rounded,
+                      title: 'No games found',
+                      subtitle:
+                          _controller.text.trim().isEmpty
+                              ? 'Try searching by game name or category.'
+                              : 'No available game matches "${_controller.text.trim()}".',
+                    )
+                    // _EmptyGamesSearchState(query: _controller.text.trim())
+                    : ListView.builder(
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.only(bottom: Spacing.xxl.h),
+                      itemCount: filteredCategories.length,
+                      itemBuilder: (context, categoryIndex) {
+                        final category = filteredCategories[categoryIndex];
+                        final precedingOptionCount = filteredCategories
+                            .take(categoryIndex)
+                            .fold<int>(
+                              0,
+                              (total, item) => total + item.options.length,
+                            );
+
+                        return _ChatGameCategorySection(
+                          category: category,
+                          startAnimationIndex: precedingOptionCount,
+                          onSelect: widget.onSelect,
+                        );
+                      },
+                    ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChatGameCategory {
+  const _ChatGameCategory({required this.title, required this.options});
+
+  final String title;
+  final List<_ChatGameOption> options;
+}
+
+class _ChatGameOption {
+  const _ChatGameOption({
+    required this.destination,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    this.showMore = false,
+  });
+
+  final ChatGameDestination destination;
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool showMore;
+
+  bool matches(String query, String categoryTitle) {
+    return title.toLowerCase().contains(query) ||
+        subtitle.toLowerCase().contains(query) ||
+        categoryTitle.toLowerCase().contains(query);
+  }
+}
+
+const _chatGameCategories = <_ChatGameCategory>[
+  _ChatGameCategory(
+    title: 'Getting to know each other',
+    options: [
+      _ChatGameOption(
+        destination: ChatGameDestination.thirtySixQuestions,
+        title: '36 Questions',
+        subtitle: 'A guided closeness journey',
+        icon: Icons.favorite_border_rounded,
+      ),
+      _ChatGameOption(
+        destination: ChatGameDestination.thisOrThat,
+        title: 'This or That',
+        subtitle: 'Quick choices, shared reveals',
+        icon: Icons.compare_arrows_rounded,
+        showMore: true,
+      ),
+    ],
+  ),
+  _ChatGameCategory(
+    title: 'Fun and playful',
+    options: [
+      _ChatGameOption(
+        destination: ChatGameDestination.truthOrDare,
+        title: 'Truth or Dare',
+        subtitle: 'Playful prompts for two',
+        icon: Icons.casino_outlined,
+        showMore: true,
+      ),
+      _ChatGameOption(
+        destination: ChatGameDestination.neverHaveIEver,
+        title: 'Never Have I Ever',
+        subtitle: 'Light confessions and laughs',
+        icon: Icons.waving_hand_outlined,
+      ),
+    ],
+  ),
+  _ChatGameCategory(
+    title: 'Arcade',
+    options: [
+      _ChatGameOption(
+        destination: ChatGameDestination.paintBall,
+        title: 'Paint Ball',
+        subtitle: 'Turn-based color battle',
+        icon: Icons.sports_esports_outlined,
+      ),
+    ],
+  ),
+];
+
+class _ChatGameCategorySection extends StatelessWidget {
+  const _ChatGameCategorySection({
+    required this.category,
+    required this.startAnimationIndex,
+    required this.onSelect,
+  });
+
+  final _ChatGameCategory category;
+  final int startAnimationIndex;
+  final ValueChanged<ChatGameDestination> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: Spacing.lg.h),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(Spacing.sm.w, 0, Spacing.sm.w, 8.h),
+            child: Text(
+              category.title,
+              style: textTheme.labelLarge?.copyWith(
+                color: colorScheme.onSurface.withValues(alpha: 0.62),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          for (var index = 0; index < category.options.length; index++)
+            _ChatGameMenuRow(
+              option: category.options[index],
+              onTap: () => onSelect(category.options[index].destination),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChatGameMenuRow extends StatelessWidget {
+  const _ChatGameMenuRow({required this.option, required this.onTap});
+
+  final _ChatGameOption option;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return CardInkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(100),
+      color: colorScheme.surface,
+      padding: const EdgeInsets.symmetric(
+        vertical: Spacing.md,
+        horizontal: Spacing.lg,
+      ),
+      margin: const EdgeInsets.only(bottom: Spacing.xs),
+      child: InfoRowWidget(
+        iconColor: colorScheme.onSurface,
+        subtitle: option.subtitle,
+        subTitleFontColor: Colors.grey,
+        titleFontColor: colorScheme.onSurface,
+        title: option.title,
+        icon: option.icon,
+        avatarRadius: 25.h,
+        padAvatarTop: true,
+        showAvatar: false,
+        showTrailingArrow: true,
+        showDivider: false,
+        trailing:
+            option.showMore
+                ? Icon(
+                  Icons.more_horiz_rounded,
+                  color: colorScheme.onSurface.withValues(alpha: 0.72),
+                  size: 28.h,
+                )
+                : const SizedBox.shrink(),
+      ),
+    );
+  }
+}

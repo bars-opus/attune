@@ -309,126 +309,155 @@ class InfoRowWidget extends StatelessWidget {
     // Core row content structure (shared across all interaction types)
     final rowContent = Padding(
       padding: padding ?? EdgeInsets.zero,
-      child: Row(
-        crossAxisAlignment:
-            pinRowAvatar ? CrossAxisAlignment.start : CrossAxisAlignment.center,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Leading icon/avatar with consistent spacing
-          Padding(
-            padding:
-                padAvatarTop
-                    ? const EdgeInsets.only(top: Spacing.md)
-                    : EdgeInsets.zero,
-            child: _buildIconOrAvatar(context, colorScheme),
-          ),
-          if (iconSize != 0) Gap(Spacing.md.w),
+      // IntrinsicHeight: Center only works on a child with a BOUNDED height
+      // to center within. A loose Row child (no Expanded/SizedBox) sizes to
+      // its own content and centering it does nothing — which is why the
+      // trailing icon still sat wherever the Row's top-aligned
+      // crossAxisAlignment put it. This gives every child in the Row the
+      // row's own resolved height (driven by the title+subtitle column, the
+      // tallest sibling), so the Center wrapped around the trailing icon
+      // below has something real to center against.
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment:
+              pinRowAvatar
+                  ? CrossAxisAlignment.start
+                  : CrossAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Leading icon/avatar with consistent spacing
+            Padding(
+              padding:
+                  padAvatarTop
+                      ? const EdgeInsets.only(top: Spacing.md)
+                      : EdgeInsets.zero,
+              child: _buildIconOrAvatar(context, colorScheme),
+            ),
+            if (iconSize != 0) Gap(Spacing.md.w),
 
-          // Text content area with flexible alignment.
-          //
-          // Deliberately NOT a SingleChildScrollView, even a
-          // NeverScrollableScrollPhysics one: that registers a Scrollable
-          // per row, so a screen of these (Settings is 8) ends up with many
-          // scrollables and anything resolving "the" scrollable — including
-          // tester.scrollUntilVisible — breaks. ClipRect contains overflow
-          // without pretending to be scrollable.
-          Expanded(
-            child: ClipRect(
-              child: SingleChildScrollView(
-                physics: NeverScrollableScrollPhysics(),
-                child: Column(
-                  mainAxisAlignment: textMainAxisAlignment,
-                  crossAxisAlignment: titleAlignment,
-                  children: [
-                    // Small gap for visual separation
-                    Gap(Spacing.xs.h),
-                    // Primary title with line limiting
-                    if (title.isNotEmpty)
-                      Text(
-                        title,
-                        style:
-                            titleStyle ??
-                            textTheme.titleSmall?.copyWith(
-                              color: titleFontColor ?? colorScheme.onBackground,
-                              fontSize: titleFontSize.sp,
-                              fontWeight: FontWeight.w500,
-                            ),
-                        maxLines: titleMaxLines ?? 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    // Small gap between title and subtitle
-                    if (subtitle.isNotEmpty)
-                      if (title.isNotEmpty) Gap(Spacing.xs.h),
-                    // Optional subtitle (only if non-empty)
-                    if (subtitle.isNotEmpty)
-                      Text(
-                        subtitle,
-                        style:
-                            subtitleStyle ??
-                            textTheme.bodyMedium?.copyWith(
-                              // fontSize: subTitleFontSize.sp,
-                              color:
-                                  subTitleFontColor ??
-                                  colorScheme.onBackground.withOpacity(
-                                    OpacityTokens.medium,
-                                  ),
-                            ),
-                        maxLines: subTitleMaxLines ?? 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    if (bottomWidget != null) bottomWidget!,
-                    // Optional divider below content
-                    if (showDivider) AppDivider(),
-                  ],
+            // Text content area with flexible alignment.
+            //
+            // Deliberately NOT a SingleChildScrollView, even a
+            // NeverScrollableScrollPhysics one: that registers a Scrollable
+            // per row, so a screen of these (Settings is 8) ends up with many
+            // scrollables and anything resolving "the" scrollable — including
+            // tester.scrollUntilVisible — breaks. ClipRect contains overflow
+            // without pretending to be scrollable.
+            Expanded(
+              child: ClipRect(
+                child: SingleChildScrollView(
+                  physics: NeverScrollableScrollPhysics(),
+                  child: Column(
+                    mainAxisAlignment: textMainAxisAlignment,
+                    crossAxisAlignment: titleAlignment,
+                    children: [
+                      // Small gap for visual separation
+                      Gap(Spacing.xs.h),
+                      // Primary title with line limiting
+                      if (title.isNotEmpty)
+                        Text(
+                          title,
+                          style:
+                              titleStyle ??
+                              textTheme.titleSmall?.copyWith(
+                                color: titleFontColor ?? colorScheme.onSurface,
+                                fontSize: titleFontSize.sp,
+                                fontWeight: FontWeight.w500,
+                              ),
+                          maxLines: titleMaxLines ?? 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      // Small gap between title and subtitle
+                      if (subtitle.isNotEmpty)
+                        if (title.isNotEmpty) Gap(Spacing.xs.h),
+                      // Optional subtitle (only if non-empty)
+                      if (subtitle.isNotEmpty)
+                        Text(
+                          subtitle,
+                          style:
+                              subtitleStyle ??
+                              textTheme.bodyMedium?.copyWith(
+                                fontSize: subTitleFontSize,
+                                color:
+                                    subTitleFontColor ??
+                                    colorScheme.onSurface.withValues(
+                                      alpha: OpacityTokens.medium,
+                                    ),
+                              ),
+                          maxLines: subTitleMaxLines ?? 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      if (bottomWidget != null) bottomWidget!,
+                      // Optional divider below content
+                      if (showDivider) AppDivider(),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
 
-          // Trailing content area with conditional logic
-          if (!disableTrailing) ...[
-            // Custom trailing widget (highest priority)
-            if (effectiveTrailing != null) ...[
-              Gap(Spacing.md.w),
-              effectiveTrailing,
-            ]
-            // Auto-generated chevron for tappable rows
-            else if (showTrailingArrow) ...[
-              Gap(Spacing.md.w),
-              Icon(
-                Icons.chevron_right,
-                size: IconSizes.md.h,
-                color: colorScheme.onBackground.withOpacity(0.3),
-              ),
-            ]
-            // Auto-generated "open" icon for tappable rows without custom trailing
-            else if (onTap != null && !isToggleItem) ...[
-              // ✅ Don't show for toggles
-              Gap(Spacing.md.w),
-              Icon(
-                Icons.open_in_new,
-                size: IconSizes.sm.h,
-                color: colorScheme.onBackground.withOpacity(0.3),
-              ),
+            // Trailing content area with conditional logic
+            //
+            // Centered independent of pinRowAvatar: the outer Row's
+            // crossAxisAlignment goes to .start whenever the avatar is
+            // pinned (the default), which top-aligns everything in the
+            // row — including this trailing icon, leaving it sitting high
+            // against a multi-line title+subtitle instead of centered on
+            // the row's full height. Wrapping just the trailing content in
+            // its own Center fixes that without touching the avatar's own
+            // pin behavior or any other row relying on it.
+            if (!disableTrailing) ...[
+              // Custom trailing widget (highest priority)
+              if (effectiveTrailing != null) ...[
+                Gap(Spacing.md.w),
+                Center(child: effectiveTrailing),
+              ]
+              // Auto-generated chevron for tappable rows
+              else if (showTrailingArrow) ...[
+                Gap(Spacing.md.w),
+                Center(
+                  child: Icon(
+                    Icons.chevron_right,
+                    size: IconSizes.md.h,
+                    color: colorScheme.onSurface.withValues(alpha: 0.3),
+                  ),
+                ),
+              ]
+              // Auto-generated "open" icon for tappable rows without custom trailing
+              else if (onTap != null && !isToggleItem) ...[
+                // ✅ Don't show for toggles
+                Gap(Spacing.md.w),
+                Center(
+                  child: Icon(
+                    Icons.open_in_new,
+                    size: IconSizes.sm.h,
+                    color: colorScheme.onSurface.withValues(alpha: 0.3),
+                  ),
+                ),
+              ],
             ],
           ],
-        ],
+        ),
       ),
     );
 
     // ✅ IMPORTANT: Don't wrap toggle items in InkWell - switches handle their own interaction
-    return isToggleItem
-        ? rowContent // Toggles handle their own interaction via Switch widget
-        : (onTap != null
-            ? InkWell(
-              // Material Design ripple feedback for tappable rows
-              onTap: onTap,
-              splashColor: colorScheme.primary.withOpacity(0.12),
-              highlightColor: colorScheme.primary.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(BorderRadiusTokens.md),
-              child: rowContent,
-            )
-            : rowContent); // Display-only rows get no interactive wrapper
+    if (isToggleItem || onTap == null) {
+      return rowContent;
+    }
+
+    final tappableRow = InkWell(
+      // Material Design ripple feedback for tappable rows
+      onTap: onTap,
+      splashColor: colorScheme.primary.withValues(alpha: 0.12),
+      highlightColor: colorScheme.primary.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(BorderRadiusTokens.md),
+      child: rowContent,
+    );
+
+    return Material.maybeOf(context) == null
+        ? Material(type: MaterialType.transparency, child: tappableRow)
+        : tappableRow;
   }
 
   // ✅ NEW: Build toggle switch for boolean settings
@@ -443,7 +472,8 @@ class InfoRowWidget extends StatelessWidget {
   // Builds the leading icon or avatar with consistent styling
   Widget _buildIconOrAvatar(BuildContext context, ColorScheme colorScheme) {
     final icoColor = iconColor ?? colorScheme.primary;
-    final bgColor = backgroundColor ?? colorScheme.primary.withOpacity(0.1);
+    final bgColor =
+        backgroundColor ?? colorScheme.primary.withValues(alpha: 0.1);
     final size = iconSize ?? (showAvatar ? 20.h : 24.h);
     final notAvatarImage = isNotAvatarImage ?? false;
 

@@ -5,6 +5,7 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/auth/log_in/presentation/screens/login_profile.dart';
 import 'package:attune/features/auth/data/passwordless_auth_service.dart';
 import 'package:attune/features/chat/presentation/widgets/authenticated_chat_workspace.dart';
+import 'package:attune/core/repositories/repository_helpers.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_sync_service.dart';
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
@@ -91,6 +92,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         _gateData = _loadGateDataSync();
       });
       _reconcileGateData();
+      // Signing in is the single most important moment to reconcile the
+      // relationship mode, and it used to be the one moment that didn't.
+      // The post-frame call in initState below runs while the user is
+      // still signed out (no userId -> immediate return), so without this
+      // a sign-in on a fresh install left `mode` null — stranding a user
+      // whose relationship is active on the server behind the
+      // invite/pairing screen until an unrelated app resume happened to
+      // fire the sync. The store was just re-scoped to the new user above,
+      // so this reads and writes the right scope.
+      _syncRelationshipMode();
     });
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _syncRelationshipMode(),
@@ -129,32 +140,61 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // succeed.
     try {
       final store = _gateData.store;
-      // Only a genuinely unset mode (signed in, onboarding not complete
-      // yet) has nothing to reconcile. `personal` used to short-circuit
-      // here too, but that made a bad cached `personal` — e.g. written by
-      // OnboardingStore.resolveIsComplete's own local backfill
-      // (`mode ?? OnboardingMode.personal`) when local `mode` was null but
-      // the server already considered onboarding complete — a permanent
-      // trap: the server query below never ran, so a real active
-      // relationship could never self-heal a stale `personal` cache no
-      // matter how many times the app relaunched. Querying every time for
-      // a genuinely personal-mode user costs one extra read per
-      // launch/resume, which is cheap next to "couples chat never
-      // unlocks."
-      if (store.mode == null) return;
+      // No local mode is short-circuited here — reconciliation always asks
+      // the server. Two earlier guards each created a permanent trap:
+      //
+      //   `personal` short-circuit: a bad cached `personal` (written by
+      //   OnboardingStore.resolveIsComplete's old local backfill,
+      //   `mode ?? OnboardingMode.personal`) meant the query below never
+      //   ran, so a real active relationship could never self-heal.
+      //
+      //   `null` short-circuit: a fresh install / cleared prefs / sign-in
+      //   on a new device has NO local mode, which is exactly when the
+      //   server is the only thing that knows the user is in a
+      //   relationship. resolveIsComplete deliberately no longer invents a
+      //   mode (see its doc), leaving it null until "something that
+      //   actually knows the real value" sets it — this sync IS that
+      //   something, so returning early here left the user stranded on the
+      //   invite/pairing screen for a relationship they never ended.
+      //
+      // The signed-out case is already handled by the userId check below,
+      // which is the only state with genuinely nothing to reconcile.
+      // Querying every launch/resume costs one indexed read, which is
+      // cheap next to "couples chat never unlocks."
 
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser?.id;
       if (userId == null) return;
 
-      final row =
-          await supabase
-              .from('relationships')
-              .select('status')
-              .or('user_a.eq.$userId,user_b.eq.$userId')
-              .order('created_at', ascending: false)
-              .limit(1)
-              .maybeSingle();
+      // Wrapped in the shared repo helper for a per-attempt timeout,
+      // retry-on-transient (it does NOT retry auth/validation failures),
+      // and structured logging — checklist 1.2/3.9/3.10. This matters more
+      // now that the query runs on EVERY launch, resume, and sign-in
+      // rather than only when a mode was already cached: an untimed call
+      // on a dead network would otherwise hang this reconciliation
+      // indefinitely.
+      final row = await runRepoQuery(
+        () => supabase
+            .from('relationships')
+            .select('status')
+            .or('user_a.eq.$userId,user_b.eq.$userId')
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle(),
+        opName: 'syncRelationshipMode',
+        // Never surfaced: this is a background reconciliation with no
+        // user-visible failure path (the catch below swallows it and the
+        // next launch/resume retries). Required by the helper's signature.
+        userMessage: 'Could not check your relationship status.',
+      );
+
+      // The store was captured before the await above, but auth can change
+      // while the query is in flight (sign-out, or switching accounts).
+      // Writing the resolved mode into a store still scoped to the
+      // previous user would persistently corrupt THAT user's cached mode,
+      // so re-verify the scope still matches the user this result is
+      // about before committing it.
+      if (!mounted || _scopeUserId != userId) return;
 
       final resolved = resolveModeFromRelationshipStatus(
         row?['status'] as String?,

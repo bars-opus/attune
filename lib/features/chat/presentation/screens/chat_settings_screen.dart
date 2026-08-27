@@ -1,14 +1,8 @@
 // lib/features/chat/presentation/screens/chat_settings_screen.dart
 
-import 'dart:async';
-
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/core/services/media/image_picker_service.dart';
-import 'package:attune/core/widgets/profile_avatar.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
-import 'package:attune/features/chat/domain/services/chat_image_preparer.dart';
-import 'package:attune/features/chat/domain/services/relationship_chat_name_validator.dart';
-import 'package:attune/features/chat/presentation/state/chat_state.dart';
+import 'package:attune/features/chat/presentation/widgets/chat_identity_card.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_settings_static_rows.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,6 +14,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// opens Pulse instead). Not gated to "the person who set it" — either
 /// partner may edit at any time the relationship is active, per the spec's
 /// explicit "no per-partner override" decision.
+///
+/// The identity card (avatar/name) itself lives in [ChatIdentityCard] —
+/// PulseTab surfaces that same widget directly under its AppBar, above the
+/// Settings/Pulse/Timeline tabs, so this screen composes it rather than
+/// owning that state inline. This screen is currently reached only as a
+/// standalone fallback (route `chatSettings` — nothing pushes it directly
+/// today; PulseTab embeds this screen inline for the Settings tab instead),
+/// so it keeps the full identity + rows layout for that path.
 ///
 /// Also hosts two other chat-content entry points, moved here from the
 /// general Settings screen because they're genuinely chat-scoped (not
@@ -33,221 +35,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 ///   history' from chat settings"), shown only when
 ///   chatHistoricalImportEnabledProvider is true (currently seeded false —
 ///   Month 5 gate, §11.3 — so this row is invisible until that flag flips).
-class ChatSettingsScreen extends ConsumerStatefulWidget {
+class ChatSettingsScreen extends ConsumerWidget {
   const ChatSettingsScreen({super.key, required this.conversation});
 
   final Conversation conversation;
 
   @override
-  ConsumerState<ChatSettingsScreen> createState() => _ChatSettingsScreenState();
-}
-
-class _ChatSettingsScreenState extends ConsumerState<ChatSettingsScreen> {
-  final _imagePicker = ImagePickerService();
-  late final TextEditingController _nameController;
-
-  bool _isSavingName = false;
-  bool _isUploadingPhoto = false;
-  String? _errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController(text: widget.conversation.name);
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _saveName() async {
-    final validation = validateRelationshipChatName(_nameController.text);
-    if (!validation.isValid) {
-      setState(() => _errorMessage = validation.errorMessage);
-      return;
-    }
-
-    setState(() {
-      _isSavingName = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final repository = ref.read(chatRepositoryProvider);
-      await repository.setRelationshipChatName(
-        relationshipId: widget.conversation.relationshipId,
-        chatName: validation.trimmedName!,
-      );
-      if (!mounted) return;
-      ref.read(conversationsRefreshProvider.notifier).state++;
-      context.showSuccessSnackbar('Chat name updated.');
-    } catch (_) {
-      if (!mounted) return;
-      // Checklist 5.5: generic, no internal error text surfaced.
-      setState(() => _errorMessage = "Couldn't update the name — try again.");
-    } finally {
-      if (mounted) setState(() => _isSavingName = false);
-    }
-  }
-
-  Future<void> _changePhoto() async {
-    final picked = await _imagePicker.pickImage(
-      fromCamera: false,
-      crop: true,
-      lockAspectRatio: true,
-    );
-    if (picked == null || !mounted) return;
-
-    final PreparedChatImage prepared;
-    try {
-      prepared = await const ChatImagePreparer().prepare(picked.path);
-    } on ChatImageRejected catch (_) {
-      if (!mounted) return;
-      setState(
-        () =>
-            _errorMessage =
-                "That photo couldn't be used — try a different one.",
-      );
-      return;
-    }
-    if (!mounted) return;
-
-    setState(() {
-      _isUploadingPhoto = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final repository = ref.read(chatRepositoryProvider);
-      final intent = await repository.createRelationshipAvatarUploadIntent(
-        relationshipId: widget.conversation.relationshipId,
-        mimeType: prepared.mimeType,
-      );
-      await repository.uploadRelationshipAvatarImage(
-        intent: intent,
-        localPath: prepared.file.path,
-        mimeType: prepared.mimeType,
-      );
-      await repository.applyRelationshipAvatar(
-        relationshipId: widget.conversation.relationshipId,
-        intentId: intent.intentId,
-      );
-      if (!mounted) return;
-      ref.read(conversationsRefreshProvider.notifier).state++;
-      context.showSuccessSnackbar('Chat photo updated.');
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _errorMessage = "Couldn't update the photo — try again.");
-    } finally {
-      if (mounted) setState(() => _isUploadingPhoto = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final isBusy = _isSavingName || _isUploadingPhoto;
-
+  Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
-
       child: Scaffold(
         body: ListView(
           padding: EdgeInsets.symmetric(horizontal: Spacing.md.h),
           children: [
-            // Gap(Spacing.md.h),
-            CardInkWell(
-              child: Column(
-                children: [
-                  Gap(Spacing.xl.h),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      GestureDetector(
-                        onTap: isBusy ? null : _changePhoto,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            ProfileAvatar(
-                              avatarUrl: widget.conversation.avatarUrl ?? '',
-                              size: 50.h,
-                              currentUserId: widget.conversation.relationshipId,
-                              // No navigation transition animates this avatar in from
-                              // elsewhere, and reusing conversation.relationshipId as
-                              // a Hero tag risks colliding with a real per-user
-                              // ProfileAvatar Hero elsewhere in the tree.
-                              enableHero: false,
-                            ),
-                            if (_isUploadingPhoto)
-                              const CircularLoadingIndicator(),
-                          ],
-                        ),
-                      ),
-                      Gap(Spacing.md.w),
-                      Expanded(
-                        child: AppTextFormField(
-                          fillColor: colorScheme.neutral,
-                          controller: _nameController,
-                          label: 'Coupples name',
-                          hintText: 'e.g. Japerl34',
-                          enabled: !isBusy,
-                          textInputAction: TextInputAction.done,
-                          onFieldSubmitted: (_) => _saveName(),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Gap(Spacing.sm.h),
-                  // Center(
-                  //   child: AppTextButton(
-                  //     fontSize: 12.h,
-                  //     alignment: Alignment.center,
-                  //     onPressed: isBusy ? null : _changePhoto,
-                  //     text: 'Change photo',
-                  //   ),
-                  // ),
-                  // Gap(Spacing.xl.h),
-                  SemanticContainerWidget(
-                    title: '',
-                    content:
-                        'Visible to both of you. Either partner can change this at any time.',
-
-                    icon: Icons.favorite,
-                    isSkeleton: true,
-                    backgroundColor: colorScheme.primary.withValues(
-                      alpha: 0.08,
-                    ),
-                    borderColor: colorScheme.primary,
-                    iconColor: colorScheme.primary,
-                    textTheme: textTheme,
-                  ),
-
-                  if (_errorMessage != null) ...[
-                    Gap(Spacing.smMd.h),
-                    Text(
-                      _errorMessage!,
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colorScheme.error,
-                      ),
-                    ),
-                  ],
-                  // Gap(Spacing.lg.h),
-                  // AppButton(
-                  //   label: 'Save',
-                  //   isLoading: _isSavingName,
-                  //   onPressed: isBusy ? null : _saveName,
-                  // ),
-                  Gap(Spacing.xl.h),
-                  //
-                  // Gap(Spacing.sm.h),
-                ],
-              ),
-            ),
-            ChatSettingsStaticRows(conversation: widget.conversation),
+            ChatIdentityCard(conversation: conversation),
+            ChatSettingsStaticRows(conversation: conversation),
             Gap(Spacing.xl.h),
           ],
         ),

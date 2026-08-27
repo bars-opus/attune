@@ -1,8 +1,49 @@
+import 'dart:io';
+
 import 'package:attune/core/services/media/voice_recorder_service.dart';
+import 'package:path/path.dart' as p;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:record/record.dart';
 
+// Coverage note (checklist 6.7): this file drives voice_recorder_service.dart
+// to ~78% line coverage, below the 90% core-domain target. The shortfall is
+// entirely `requestPermission()` and `start()` — thin pass-throughs to
+// platform plugins (permission_handler, path_provider, record's native
+// start + amplitude stream). Exercising them requires mocking three plugin
+// channels, after which the assertions verify the mocks rather than any
+// decision this service makes. Every branch that IS logic — downsampling,
+// duration/pause accounting, stop/auto-stop latching, cancel cleanup,
+// dispose idempotency — is covered below. Reviewed and accepted per 6.7's
+// "uncovered branches reviewed and justified".
 void main() {
+  // AudioRecorder's constructor talks to a platform channel, so the test
+  // binding must exist before any VoiceRecorderService is built. Without
+  // this every test in this file fails with "Binding has not yet been
+  // initialized" before reaching its own assertions.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  // The `record` plugin's AudioRecorder constructor invokes `create` on its
+  // native channel, which has no implementation in a Dart test host. Stub
+  // the channel so construction succeeds; these tests exercise the
+  // service's own pure logic (downsampling, duration accounting), not the
+  // plugin's native behaviour.
+  setUpAll(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('com.llfbandit.record/messages'),
+          (call) async => null,
+        );
+  });
+
+  tearDownAll(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('com.llfbandit.record/messages'),
+          null,
+        );
+  });
+
   group('VoiceRecorderService waveform downsampling', () {
     test('downsamples an arbitrary number of amplitude readings to a fixed 100-point array', () {
       final service = VoiceRecorderService();
@@ -181,6 +222,152 @@ void main() {
         expect(second.localPath, '/tmp/second.m4a');
       },
     );
+  });
+
+  // Pause accounting. durationMs is derived from wall-clock, so any time
+  // spent paused must be excluded or the sent duration overstates the
+  // actual audio — desyncing the player's progress bar and risking a
+  // rejection against maxDuration. Checklist 6.1 (boundary values) / 6.4
+  // (negative tests: the effect that must NOT happen).
+  group('VoiceRecorderService pause accounting', () {
+    test('elapsed excludes time spent paused', () async {
+      final service = VoiceRecorderService(recorder: AudioRecorder());
+      service.debugSeedActiveRecording(
+        path: '/tmp/p.m4a',
+        startedAt: DateTime.now().subtract(const Duration(seconds: 10)),
+      );
+
+      final beforePause = service.elapsed;
+      expect(beforePause.inSeconds, greaterThanOrEqualTo(9));
+
+      await service.pause();
+      expect(service.isPaused, isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      await service.resume();
+      expect(service.isPaused, isFalse);
+
+      // The ~120ms paused window must not have been counted, so elapsed
+      // has advanced by materially less than the wall-clock delay.
+      final afterResume = service.elapsed;
+      expect(
+        afterResume - beforePause,
+        lessThan(const Duration(milliseconds: 100)),
+      );
+
+      service.dispose();
+    });
+
+    test('elapsed never goes negative even if pause exceeds wall clock', () {
+      final service = VoiceRecorderService(recorder: AudioRecorder());
+      // startedAt is essentially "now", so any accumulated pause would
+      // drive a naive subtraction below zero — a negative durationMs would
+      // silently corrupt the sent message's metadata.
+      service.debugSeedActiveRecording(
+        path: '/tmp/n.m4a',
+        startedAt: DateTime.now(),
+      );
+      expect(service.elapsed, greaterThanOrEqualTo(Duration.zero));
+      service.dispose();
+    });
+
+    test('stopping while paused clears the paused state', () async {
+      final service = VoiceRecorderService(recorder: AudioRecorder());
+      service.debugSeedActiveRecording(
+        path: '/tmp/sp.m4a',
+        startedAt: DateTime.now().subtract(const Duration(seconds: 5)),
+      );
+
+      await service.pause();
+      final atPause = service.elapsed;
+      expect(service.isPaused, isTrue);
+
+      final recording = await service.stop();
+
+      // Sending while paused is an ordinary action (pause, then tap send).
+      // The open pause span must be folded shut by stop(), or isPaused
+      // stays true afterwards — and ChatTextField reads exactly this
+      // getter to decide whether its transport shows pause or resume, so a
+      // stale true mislabels the control on the next recording.
+      expect(service.isPaused, isFalse);
+
+      // The captured duration still reflects the audio recorded before the
+      // pause, and is never negative.
+      expect(recording.durationMs, greaterThanOrEqualTo(0));
+      expect(
+        (recording.durationMs - atPause.inMilliseconds).abs(),
+        lessThan(200),
+      );
+
+      service.dispose();
+    });
+
+    test('pause and resume are no-ops when not in the matching state', () async {
+      final service = VoiceRecorderService(recorder: AudioRecorder());
+      // resume() with no open pause, and pause() with no active recording,
+      // must both be silent no-ops rather than throwing or corrupting state.
+      await service.resume();
+      expect(service.isPaused, isFalse);
+      await service.pause();
+      expect(service.isPaused, isFalse);
+      service.dispose();
+    });
+  });
+
+  // cancel() is the discard path: it must release the timer/subscription,
+  // delete the staged temp file (checklist 2.10 — finite resources
+  // released), and reset per-recording state so a reused instance cannot
+  // inherit it.
+  group('VoiceRecorderService cancel', () {
+    test('deletes the staged recording file', () async {
+      final file = File(
+        p.join(Directory.systemTemp.path, 'vrs_cancel_${DateTime.now().microsecondsSinceEpoch}.m4a'),
+      );
+      await file.writeAsBytes(const [0, 1, 2, 3]);
+      expect(await file.exists(), isTrue);
+
+      final service = VoiceRecorderService(recorder: AudioRecorder());
+      service.debugSeedActiveRecording(
+        path: file.path,
+        startedAt: DateTime.now(),
+      );
+
+      await service.cancel();
+
+      expect(await file.exists(), isFalse);
+      service.dispose();
+    });
+
+    test('tolerates a missing file rather than throwing', () async {
+      final service = VoiceRecorderService(recorder: AudioRecorder());
+      service.debugSeedActiveRecording(
+        path: p.join(Directory.systemTemp.path, 'vrs_does_not_exist.m4a'),
+        startedAt: DateTime.now(),
+      );
+      // A cancel arriving after the file was already cleaned up (or never
+      // written) must be a silent no-op, not an exception into a
+      // fire-and-forget caller.
+      await expectLater(service.cancel(), completes);
+      service.dispose();
+    });
+
+    test('clears paused state so a reused instance does not inherit it', () async {
+      final service = VoiceRecorderService(recorder: AudioRecorder());
+      service.debugSeedActiveRecording(
+        path: p.join(Directory.systemTemp.path, 'vrs_paused_cancel.m4a'),
+        startedAt: DateTime.now().subtract(const Duration(seconds: 2)),
+      );
+
+      await service.pause();
+      expect(service.isPaused, isTrue);
+
+      await service.cancel();
+
+      expect(service.isPaused, isFalse);
+      // With no active recording, elapsed reports zero rather than a
+      // stale or negative value derived from the cancelled session.
+      expect(service.elapsed, Duration.zero);
+      service.dispose();
+    });
   });
 
   group('VoiceRecordingException', () {

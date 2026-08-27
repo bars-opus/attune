@@ -51,16 +51,23 @@ class ImagePickerService {
         File(pickedFile.path),
       );
 
-      // Crop if requested
+      // Crop if requested.
+      //
+      // A null result here means the user CANCELLED the cropper, which is
+      // a cancellation of the whole pick — not "keep the original". Every
+      // caller treats a non-null return as "the user confirmed a photo"
+      // and uploads it immediately, so falling through to return the
+      // uncropped original silently saved a photo the user had just
+      // backed out of. (_cropImage returns the original, not null, when
+      // the cropper itself ERRORS — that stays a usable fallback.)
       if (crop) {
         final cropped = await _cropImage(
           permanentFile,
           cropRatio: cropRatio,
           lockAspectRatio: lockAspectRatio,
         );
-        if (cropped != null) {
-          return await _compressImage(cropped);
-        }
+        if (cropped == null) return null;
+        return await _compressImage(cropped);
       }
 
       // Always compress
@@ -126,9 +133,10 @@ class ImagePickerService {
     try {
       final croppedFile = await ImageCropper().cropImage(
         sourcePath: imageFile.path,
-        aspectRatio: lockAspectRatio
-            ? (cropRatio ?? const CropAspectRatio(ratioX: 1, ratioY: 1))
-            : null,
+        aspectRatio:
+            lockAspectRatio
+                ? (cropRatio ?? const CropAspectRatio(ratioX: 1, ratioY: 1))
+                : null,
         uiSettings: [
           AndroidUiSettings(
             toolbarTitle: 'Crop Image',

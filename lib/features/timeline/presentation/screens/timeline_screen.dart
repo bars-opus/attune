@@ -128,8 +128,26 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
               ref.invalidate(timelineEventsProvider(_focusedMonth));
             },
             child: CustomScrollView(
-              controller: _scrollController,
+              // Standalone (showAppBar: true, own route/Scaffold) keeps its
+              // own explicit controller. Embedded (showAppBar: false, the
+              // only way PulseTab hosts this) must NOT pass one:
+              // NestedScrollView's own doc is explicit that its `body` is
+              // built expecting descendants to default to the
+              // PrimaryScrollController it provides — an explicit
+              // controller here would opt this scrollable out of that
+              // coordination entirely, silently reproducing the exact
+              // "header doesn't scroll with this tab" bug being fixed.
+              controller: widget.showAppBar ? _scrollController : null,
               slivers: [
+                if (!widget.showAppBar)
+                  // Required only when embedded inside PulseTab's
+                  // NestedScrollView — calling this with no NestedScrollView
+                  // ancestor (the standalone route) would assert.
+                  SliverOverlapInjector(
+                    handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
+                      context,
+                    ),
+                  ),
                 SliverToBoxAdapter(
                   child: remindersAsync.when(
                     data: (reminders) {
@@ -141,6 +159,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            Gap(Spacing.md.h),
                             Text(
                               'Upcoming',
                               style: Theme.of(context).textTheme.titleSmall

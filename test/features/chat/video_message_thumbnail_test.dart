@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:attune/features/chat/presentation/widgets/video_message_thumbnail.dart';
+import 'package:attune/features/chat/domain/services/chat_poster_prewarmer.dart';
 import 'package:flutter/material.dart';
 import 'package:file/local.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -39,6 +40,9 @@ double aspectRatioOf(WidgetTester tester) {
 }
 
 void main() {
+  setUp(ChatPosterPrewarmer.debugClearReadyPosterPaths);
+  tearDown(ChatPosterPrewarmer.debugClearReadyPosterPaths);
+
   testWidgets(
     'falls back to the persisted dimensions before the poster decodes',
     (tester) async {
@@ -300,6 +304,39 @@ void main() {
     /// miss for anything else — the shape of a real cache after a restart.
     _FakeCacheManager fakeCacheWith(String key, File file) =>
         _FakeCacheManager({key: file});
+
+    testWidgets('a discovered cache path paints an image on the first frame', (
+      tester,
+    ) async {
+      final posterFile = writePoster();
+      const key = 'chat-media/rel-1/ready-poster.jpg';
+      ChatPosterPrewarmer.debugRememberReadyPosterPath(key, posterFile.path);
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: VideoMessageThumbnail(
+              thumbnailUrl: null,
+              cacheKey: key,
+              durationMs: 5000,
+              width: 720,
+              height: 1280,
+            ),
+          ),
+        ),
+      );
+
+      final image = tester.widget<Image>(
+        find
+            .descendant(
+              of: find.byType(VideoMessageThumbnail),
+              matching: find.byType(Image),
+            )
+            .first,
+      );
+      expect(image.image, isA<FileImage>());
+      expect((image.image as FileImage).file.path, posterFile.path);
+    });
 
     testWidgets('a cache hit paints the poster with no URL in hand', (
       tester,
@@ -594,5 +631,7 @@ class _FakeCacheManager implements BaseCacheManager {
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
-      throw UnimplementedError('${invocation.memberName} is not used by the tile');
+      throw UnimplementedError(
+        '${invocation.memberName} is not used by the tile',
+      );
 }

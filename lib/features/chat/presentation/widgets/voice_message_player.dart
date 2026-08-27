@@ -127,41 +127,80 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
         ? 0.0
         : _position.inMilliseconds / total.inMilliseconds;
 
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        IconButton(
-          onPressed: _togglePlayback,
-          icon: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
+        Semantics(
+          button: true,
+          label: _isPlaying ? 'Pause voice message' : 'Play voice message',
+          child: InkWell(
+            onTap: _togglePlayback,
+            customBorder: const CircleBorder(),
+            child: SizedBox(
+              width: 40,
+              height: 40,
+              child: Icon(
+                _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                size: 30,
+                color: colorScheme.onSurface,
+              ),
+            ),
+          ),
         ),
+        const SizedBox(width: 4),
+        // Scrub by dragging as well as tapping: on a ~140px waveform a
+        // tap-only target makes precise seeking within a multi-minute
+        // message impractical.
         GestureDetector(
           key: const ValueKey('voice_message_waveform'),
-          onTapUp: (details) {
-            final box = context.findRenderObject() as RenderBox?;
-            if (box == null) return;
-            final localX = details.localPosition.dx;
-            final fraction = (localX / box.size.width).clamp(0.0, 1.0);
-            unawaited(_seekToFraction(fraction));
-          },
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (details) => _seekFromLocalX(details.localPosition.dx),
+          onHorizontalDragStart:
+              (details) => _seekFromLocalX(details.localPosition.dx),
+          onHorizontalDragUpdate:
+              (details) => _seekFromLocalX(details.localPosition.dx),
           child: SizedBox(
             width: 140,
-            height: 32,
+            height: 34,
             child: CustomPaint(
               painter: _WaveformPainter(
                 waveform: widget.waveform,
                 progressFraction: progressFraction,
-                color: Theme.of(context).colorScheme.primary,
+                color: colorScheme.primary,
+                trackColor: colorScheme.onSurfaceVariant,
               ),
             ),
           ),
         ),
         const SizedBox(width: 8),
         Text(
-          _formatDuration(_isPlaying || _position > Duration.zero ? _position : total),
+          _formatDuration(
+            _isPlaying || _position > Duration.zero ? _position : total,
+          ),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
         ),
       ],
     );
   }
+
+  /// Maps an x offset within the waveform to a seek position.
+  ///
+  /// Divides by the waveform's own fixed width rather than the enclosing
+  /// render box's: the gesture's localPosition is already relative to the
+  /// waveform (the GestureDetector wraps only that SizedBox), while the
+  /// State's context covers the whole row including the play button and
+  /// duration label. Using the box width here would compress the mapping
+  /// and seek short on every tap.
+  void _seekFromLocalX(double localX) {
+    unawaited(_seekToFraction((localX / _waveformWidth).clamp(0.0, 1.0)));
+  }
+
+  static const double _waveformWidth = 140;
 }
 
 class _WaveformPainter extends CustomPainter {
@@ -169,32 +208,63 @@ class _WaveformPainter extends CustomPainter {
     required this.waveform,
     required this.progressFraction,
     required this.color,
+    required this.trackColor,
   });
 
   final List<int> waveform;
   final double progressFraction;
   final Color color;
+  final Color trackColor;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (waveform.isEmpty) return;
-    final barWidth = size.width / waveform.length;
-    final progressIndex = (waveform.length * progressFraction).round();
 
-    for (var i = 0; i < waveform.length; i++) {
-      final normalizedHeight = (waveform[i] / 255).clamp(0.05, 1.0);
-      final barHeight = size.height * normalizedHeight;
-      final paint = Paint()
-        ..color = i < progressIndex ? color : color.withValues(alpha: 0.3);
-      final x = i * barWidth;
-      canvas.drawRect(
-        Rect.fromLTWH(
-          x,
-          (size.height - barHeight) / 2,
-          barWidth * 0.6,
-          barHeight,
-        ),
+    // The recorder always emits waveformPointCount (100) samples, which at
+    // a typical bubble width would be sub-pixel bars. Aggregate them into
+    // as many bars as actually fit, so each one is a legible, rounded
+    // stroke rather than a hairline.
+    const stride = 4.0;
+    final barCount = (size.width / stride).floor().clamp(1, waveform.length);
+    final perBar = waveform.length / barCount;
+    final progressIndex = (barCount * progressFraction).round();
+    final centerY = size.height / 2;
+
+    for (var i = 0; i < barCount; i++) {
+      // Peak (not mean) within the group — mean flattens speech into a
+      // uniform band and loses the shape that makes a waveform readable.
+      var peak = 0;
+      final start = (i * perBar).floor();
+      final end = ((i + 1) * perBar).ceil().clamp(0, waveform.length);
+      for (var j = start; j < end; j++) {
+        if (waveform[j] > peak) peak = waveform[j];
+      }
+
+      final normalized = (peak / 255).clamp(0.12, 1.0);
+      final barHeight = size.height * normalized;
+      final paint =
+          Paint()
+            ..color =
+                i < progressIndex ? color : trackColor.withValues(alpha: 0.35)
+            ..strokeCap = StrokeCap.round
+            ..strokeWidth = 2.5;
+
+      final x = i * stride + stride / 2;
+      canvas.drawLine(
+        Offset(x, centerY - barHeight / 2),
+        Offset(x, centerY + barHeight / 2),
         paint,
+      );
+    }
+
+    // Playhead knob — gives the scrub gesture something to grab onto and
+    // makes the current position readable at a glance when paused.
+    if (progressFraction > 0) {
+      final knobX = (size.width * progressFraction).clamp(0.0, size.width);
+      canvas.drawCircle(
+        Offset(knobX, centerY),
+        5,
+        Paint()..color = color,
       );
     }
   }
@@ -202,5 +272,7 @@ class _WaveformPainter extends CustomPainter {
   @override
   bool shouldRepaint(_WaveformPainter oldDelegate) =>
       oldDelegate.progressFraction != progressFraction ||
-      oldDelegate.waveform != waveform;
+      oldDelegate.waveform != waveform ||
+      oldDelegate.color != color ||
+      oldDelegate.trackColor != trackColor;
 }

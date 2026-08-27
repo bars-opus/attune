@@ -2,6 +2,7 @@ import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/chat_test_harness.dart';
@@ -26,9 +27,12 @@ void main() {
     repo.conversationOverride = convo;
 
     await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: MaterialApp(home: ChatScreen(conversation: convo)),
+      ScreenUtilInit(
+        designSize: const Size(375, 812),
+        child: UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(home: ChatScreen(conversation: convo)),
+        ),
       ),
     );
     await tester.pump(const Duration(milliseconds: 60));
@@ -199,13 +203,8 @@ void main() {
 
     expect(repo.editMessageCalls.single.messageId, 'm1');
     expect(repo.editMessageCalls.single.newContent, 'the typo');
-    // The "edited" affordance is wired to the edit-history sheet.
-    expect(find.text('edited'), findsOneWidget);
-    await tester.tap(find.text('edited'));
-    await tester.pumpAndSettle();
-    expect(find.text('Edit history'), findsOneWidget);
-    // The current content always closes out the history list.
-    expect(find.text('Current'), findsOneWidget);
+    expect(find.text('the typo'), findsOneWidget);
+    expect(find.text('edited'), findsNothing);
 
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
@@ -246,43 +245,103 @@ void main() {
     await tearDownChat(tester, container);
   });
 
-  testWidgets('tapping a quick reaction in the focused menu reaches the repository', (tester) async {
+  testWidgets(
+    'tapping a quick reaction in the focused menu reaches the repository',
+    (tester) async {
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      repo.seedIncoming(
+        id: 'm1',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'hello there',
+        createdAt: DateTime.now(),
+      );
+      final container = await pumpChat(tester, repo);
+
+      await tester.longPress(find.text('hello there'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('❤️'));
+      await tester.pumpAndSettle();
+
+      expect(repo.reactionsByMessage['m1']?['user-a'], '❤️');
+      await tearDownChat(tester, container);
+    },
+  );
+
+  testWidgets(
+    'reacted message shows the pill immediately (no restart needed)',
+    (tester) async {
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      repo.seedIncoming(
+        id: 'm1',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'hello there',
+        createdAt: DateTime.now(),
+      );
+      final container = await pumpChat(tester, repo);
+
+      await tester.longPress(find.text('hello there'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('👍'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('👍'), findsOneWidget);
+      await tearDownChat(tester, container);
+    },
+  );
+
+  testWidgets('timestamp reveal remains active across list rebuilds', (
+    tester,
+  ) async {
     final repo = FakeChatRepository(currentUserId: 'user-a');
+    final now = DateTime.now();
     repo.seedIncoming(
-      id: 'm1',
+      id: 'mine',
+      relationshipId: 'rel-1',
+      senderId: 'user-a',
+      content: 'drag this message',
+      createdAt: now,
+    );
+    repo.seedIncoming(
+      id: 'partner',
       relationshipId: 'rel-1',
       senderId: 'partner',
-      content: 'hello there',
-      createdAt: DateTime.now(),
+      content: 'partner message',
+      createdAt: now.subtract(const Duration(minutes: 1)),
     );
     final container = await pumpChat(tester, repo);
 
-    await tester.longPress(find.text('hello there'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('❤️'));
-    await tester.pumpAndSettle();
-
-    expect(repo.reactionsByMessage['m1']?['user-a'], '❤️');
-    await tearDownChat(tester, container);
-  });
-
-  testWidgets('reacted message shows the pill immediately (no restart needed)', (tester) async {
-    final repo = FakeChatRepository(currentUserId: 'user-a');
-    repo.seedIncoming(
-      id: 'm1',
-      relationshipId: 'rel-1',
-      senderId: 'partner',
-      content: 'hello there',
-      createdAt: DateTime.now(),
+    final mine = find.byWidgetPredicate(
+      (widget) => widget is Row && widget.key == const ValueKey('seed-mine'),
     );
-    final container = await pumpChat(tester, repo);
+    final partner = find.byWidgetPredicate(
+      (widget) => widget is Row && widget.key == const ValueKey('seed-partner'),
+    );
+    final mineBefore = tester.getRect(mine);
+    final partnerBefore = tester.getRect(partner);
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('drag this message')),
+    );
 
-    await tester.longPress(find.text('hello there'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('👍'));
-    await tester.pumpAndSettle();
+    await gesture.moveBy(const Offset(-24, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(-76, 0));
+    await tester.pump();
 
-    expect(find.text('👍'), findsOneWidget);
+    final mineAfter = tester.getRect(mine);
+    final partnerAfter = tester.getRect(partner);
+    // The first 24 logical pixels are Flutter's horizontal touch slop. Once
+    // the recognizer wins the arena, the full second segment must arrive.
+    expect(mineAfter.left - mineBefore.left, closeTo(-76, 0.01));
+    expect(partnerAfter.left - partnerBefore.left, closeTo(-76, 0.01));
+
+    await gesture.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+    expect(tester.getRect(mine).left, closeTo(mineBefore.left, 0.01));
+    expect(tester.getRect(partner).left, closeTo(partnerBefore.left, 0.01));
+
     await tearDownChat(tester, container);
   });
 }

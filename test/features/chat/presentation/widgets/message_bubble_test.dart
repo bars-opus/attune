@@ -1,4 +1,5 @@
 import 'package:attune/app/routing/app_router.dart';
+import 'package:attune/core/utils/animations/animated_scale_fade.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/providers/voice_playback_provider.dart';
@@ -10,6 +11,7 @@ import 'package:attune/features/chat/presentation/widgets/video_message_thumbnai
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -378,7 +380,7 @@ void main() {
   // reproduce the deactivation, so no local test is added for it.
 
   testWidgets(
-    'shows a reaction pill with the emoji and count when the message has reactions',
+    'shows a reaction bubble with the emoji and count when the message has reactions',
     (tester) async {
       final message = Message.fromRow({
         'id': 'm-react',
@@ -407,7 +409,7 @@ void main() {
   );
 
   testWidgets(
-    'shows one pill per distinct emoji, no count badge when only one reactor',
+    'shows one bubble per distinct emoji, no count when only one reactor',
     (tester) async {
       final message = Message.fromRow({
         'id': 'm-react2',
@@ -437,7 +439,82 @@ void main() {
     },
   );
 
-  testWidgets('tapping your own reaction pill removes the reaction', (
+  testWidgets('reaction colors identify mine and partner and pop into view', (
+    tester,
+  ) async {
+    final scheme = ColorScheme.fromSeed(seedColor: const Color(0xFF18794E));
+    var removed = false;
+    final message = Message.fromRow({
+      'id': 'm-react-colors',
+      'client_message_id': 'c-react-colors',
+      'relationship_id': 'r1',
+      'sender_id': 'u1',
+      'content': 'hello',
+      'created_at': DateTime.now().toIso8601String(),
+    }, currentUserId: 'u1').copyWith(
+      reactions: {
+        '❤️': {'u1'},
+        '👍': {'u2'},
+      },
+    );
+
+    await tester.pumpWidget(
+      ScreenUtilInit(
+        designSize: const Size(375, 812),
+        child: MaterialApp(
+          theme: ThemeData(colorScheme: scheme),
+          home: Scaffold(
+            body: MessageBubble(
+              message: message,
+              currentUserId: 'u1',
+              isStarred: true,
+              onRemoveReaction: () => removed = true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final mySurface = tester.widget<Material>(
+      find.byKey(const ValueKey('reaction-mine-❤️')),
+    );
+    final partnerSurface = tester.widget<Material>(
+      find.byKey(const ValueKey('reaction-partner-👍')),
+    );
+    expect(mySurface.color, scheme.primary);
+    expect(partnerSurface.color, Colors.white);
+
+    final positioned = tester.widgetList<Positioned>(find.byType(Positioned));
+    expect(
+      positioned.any(
+        (widget) => widget.top == -12 && widget.left == -14,
+      ),
+      isTrue,
+      reason: 'reactions stay attached to the top edge',
+    );
+    expect(
+      positioned.any(
+        (widget) => widget.bottom == -12 && widget.left == -14,
+      ),
+      isTrue,
+      reason: 'the star remains independently attached to the bottom edge',
+    );
+
+    final animation = tester.widget<AnimatedScaleFade>(
+      find.byType(AnimatedScaleFade).first,
+    );
+    expect(animation.beginScale, 0.45);
+    expect(animation.duration, const Duration(milliseconds: 420));
+    expect(animation.curve, Curves.easeOutBack);
+
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('❤️'));
+    expect(removed, isTrue);
+  });
+
+  testWidgets('tapping your own reaction bubble removes the reaction', (
     tester,
   ) async {
     var removed = false;

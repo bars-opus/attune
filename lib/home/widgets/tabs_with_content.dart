@@ -25,6 +25,16 @@ class TabsWithContent extends StatefulWidget {
   final String? appBartext;
   final String? headertext;
 
+  /// Extra content placed above the tab bar, inside the same scrolling
+  /// sequence as everything else — only meaningful with
+  /// [useNestedScrollMode]. Renders as its own sliver ABOVE the existing
+  /// headertext/showCloseIcon/appBartext row (which stays independent so
+  /// existing callers of those are unaffected), so a caller can add e.g. a
+  /// title plus a custom content card that scrolls away together with the
+  /// tab bar and content beneath it, without needing a second, separately
+  /// coordinated scroll view of their own.
+  final Widget? header;
+
   final double? tabHeight;
   final VoidCallback? appBarOnPressed;
   final void Function(TabController)? onControllerCreated;
@@ -55,6 +65,7 @@ class TabsWithContent extends StatefulWidget {
     this.onTabChangeRequest,
     this.tabHeight,
     this.headertext,
+    this.header,
   });
 
   @override
@@ -83,15 +94,16 @@ class _TabsWithContentState extends State<TabsWithContent>
   ScrollPhysics? get _tabViewPhysics =>
       _swipeEnabled ? null : const NeverScrollableScrollPhysics();
 
-  bool Function(int)? get _onTabTap => widget.onTabChangeRequest != null
-      ? (index) {
-          final fromIndex = _currentIndex;
-          if (fromIndex == index) return true;
-          final allow = widget.onTabChangeRequest!(fromIndex, index);
-          if (allow) _tabController.animateTo(index);
-          return allow;
-        }
-      : null;
+  bool Function(int)? get _onTabTap =>
+      widget.onTabChangeRequest != null
+          ? (index) {
+            final fromIndex = _currentIndex;
+            if (fromIndex == index) return true;
+            final allow = widget.onTabChangeRequest!(fromIndex, index);
+            if (allow) _tabController.animateTo(index);
+            return allow;
+          }
+          : null;
 
   @override
   void initState() {
@@ -172,37 +184,50 @@ class _TabsWithContentState extends State<TabsWithContent>
       );
     }
 
+    // Whether the close-icon/headertext/appBartext row has anything to
+    // show — a caller using only `header` (no headertext/showCloseIcon/
+    // appBartext) has nothing for this row to render, so skip it rather
+    // than lay out an empty Row every scroll frame.
+    final hasLegacyHeaderRow =
+        widget.showCloseIcon ||
+        widget.headertext != null ||
+        widget.appBartext != null ||
+        widget.appBarOnPressed != null;
+
     // NestedScrollView mode — no Scaffold wrapper needed; bounds come from parent.
     return CustomScrollView(
       slivers: [
-        SliverToBoxAdapter(
-          child: Row(
-            mainAxisAlignment:
-                widget.showCloseIcon || widget.headertext != null
-                    ? MainAxisAlignment.spaceBetween
-                    : MainAxisAlignment.end,
-            children: [
-              if (widget.headertext != null)
-                Text(
-                  widget.headertext!,
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.onSurface.withValues(alpha: 0.8),
+        if (widget.header != null) SliverToBoxAdapter(child: widget.header),
+        if (hasLegacyHeaderRow)
+          SliverToBoxAdapter(
+            child: Row(
+              mainAxisAlignment:
+                  widget.showCloseIcon || widget.headertext != null
+                      ? MainAxisAlignment.spaceBetween
+                      : MainAxisAlignment.end,
+              children: [
+                if (widget.headertext != null)
+                  Text(
+                    widget.headertext!,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface.withValues(alpha: 0.8),
+                    ),
                   ),
-                ),
-              if (widget.showCloseIcon)
-                AppIconButton(
-                  icon: Icons.close,
-                  onPressed: widget.onClosePressed ?? () => Navigator.pop(context),
-                ),
-              if (widget.appBartext != null || widget.appBarOnPressed != null)
-                AppTextButton(
-                  text: widget.appBartext ?? 'Done',
-                  onPressed: widget.appBarOnPressed,
-                ),
-            ],
+                if (widget.showCloseIcon)
+                  AppIconButton(
+                    icon: Icons.close,
+                    onPressed:
+                        widget.onClosePressed ?? () => Navigator.pop(context),
+                  ),
+                if (widget.appBartext != null || widget.appBarOnPressed != null)
+                  AppTextButton(
+                    text: widget.appBartext ?? 'Done',
+                    onPressed: widget.appBarOnPressed,
+                  ),
+              ],
+            ),
           ),
-        ),
 
         // Tab bar in its own sliver so SimpleTabs is measured with a
         // min-size Column — avoiding the infinite-height assertion that
@@ -223,8 +248,7 @@ class _TabsWithContentState extends State<TabsWithContent>
                 scrollable: widget.scrollable,
                 onTabTap: _onTabTap,
               ),
-              if (widget.showContent)
-                SizedBox(height: widget.contentSpacing.h),
+              if (widget.showContent) SizedBox(height: widget.contentSpacing.h),
             ],
           ),
         ),
@@ -237,9 +261,10 @@ class _TabsWithContentState extends State<TabsWithContent>
             child: TabBarView(
               controller: _tabController,
               physics: _tabViewPhysics,
-              children: widget.tabs
-                  .map((tab) => tab.content ?? const SizedBox())
-                  .toList(),
+              children:
+                  widget.tabs
+                      .map((tab) => tab.content ?? const SizedBox())
+                      .toList(),
             ),
           ),
       ],

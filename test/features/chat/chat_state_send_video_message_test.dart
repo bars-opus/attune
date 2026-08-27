@@ -1,9 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
+import 'package:attune/features/chat/domain/services/chat_poster_prewarmer.dart';
 import 'package:attune/features/chat/domain/services/chat_video_preparer.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
+import 'package:file/file.dart' as file_system;
+import 'package:file/local.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -34,6 +39,65 @@ class _Booted {
       container.read(chatControllerProvider(conversation));
 }
 
+class _PosterSeedCacheManager implements BaseCacheManager {
+  _PosterSeedCacheManager(this.targetPath);
+
+  final String targetPath;
+
+  @override
+  Future<FileInfo?> getFileFromCache(
+    String key, {
+    bool ignoreMemCache = false,
+  }) async => null;
+
+  @override
+  Future<file_system.File> putFileStream(
+    String url,
+    Stream<List<int>> source, {
+    String? key,
+    String? eTag,
+    Duration maxAge = const Duration(days: 30),
+    String fileExtension = 'file',
+  }) async {
+    final target = const LocalFileSystem().file(targetPath);
+    final sink = target.openWrite();
+    await sink.addStream(source);
+    await sink.close();
+    return target;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} is not used');
+}
+
+class _BlockingPosterCacheManager implements BaseCacheManager {
+  _BlockingPosterCacheManager(this.posterPath);
+
+  final String posterPath;
+  final lookupStarted = Completer<void>();
+  final releaseLookup = Completer<void>();
+
+  @override
+  Future<FileInfo?> getFileFromCache(
+    String key, {
+    bool ignoreMemCache = false,
+  }) async {
+    if (!lookupStarted.isCompleted) lookupStarted.complete();
+    await releaseLookup.future;
+    return FileInfo(
+      const LocalFileSystem().file(posterPath),
+      FileSource.Cache,
+      DateTime.now().add(const Duration(days: 7)),
+      key,
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} is not used');
+}
+
 void main() {
   const userId = 'user-a';
   const relId = 'rel-1';
@@ -41,11 +105,13 @@ void main() {
   late Directory tempDir;
 
   setUp(() async {
+    ChatPosterPrewarmer.debugClearReadyPosterPaths();
     tempDir = await Directory.systemTemp.createTemp('video_msg_test');
     PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir);
   });
 
   tearDown(() async {
+    ChatPosterPrewarmer.debugClearReadyPosterPaths();
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
     }
@@ -54,8 +120,25 @@ void main() {
   Future<_Booted> boot(
     FakeChatRepository repo, {
     Conversation? conversation,
+    BaseCacheManager? posterCache,
   }) async {
-    final container = buildChatContainer(repository: repo, userId: userId);
+    final effectivePosterCache =
+        posterCache ??
+        _PosterSeedCacheManager(
+          p.join(tempDir.path, 'poster_cache_${identityHashCode(repo)}.jpg'),
+        );
+    final container = buildChatContainer(
+      repository: repo,
+      userId: userId,
+      extraOverrides: [
+        chatPosterPrewarmerProvider.overrideWithValue(
+          ChatPosterPrewarmer(
+            repository: repo,
+            cacheManager: effectivePosterCache,
+          ),
+        ),
+      ],
+    );
     addTearDown(container.dispose);
     final convo = conversation ?? activeConversation(relId);
     repo.conversationOverride = convo;
@@ -74,24 +157,87 @@ void main() {
     return path;
   }
 
+  test(
+      'cold history does not publish a recent video before its cached poster '
+      'is ready for first paint', () async {
+    const posterKey = 'chat-media/rel-1/recent-poster.jpg';
+    final posterPath = await writeFile('recent_cached_poster.jpg');
+    final posterCache = _BlockingPosterCacheManager(posterPath);
+    final repo = FakeChatRepository(currentUserId: userId);
+    final conversation = activeConversation(relId);
+    repo.conversationOverride = conversation;
+    repo.serverMessages['recent-video'] = Message(
+      id: 'recent-video',
+      clientMessageId: 'cid-recent-video',
+      relationshipId: relId,
+      senderId: userId,
+      content: '',
+      createdAt: DateTime.now(),
+      mediaKey: 'chat-media/rel-1/recent.mp4',
+      mediaType: 'video',
+      mediaThumbnailKey: posterKey,
+      mediaDurationMs: 4200,
+      mediaWidth: 1280,
+      mediaHeight: 720,
+      status: MessageStatus.sent,
+      isMine: true,
+    );
+    final container = buildChatContainer(
+      repository: repo,
+      userId: userId,
+      extraOverrides: [
+        chatPosterPrewarmerProvider.overrideWithValue(
+          ChatPosterPrewarmer(
+            repository: repo,
+            cacheManager: posterCache,
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(() {
+      if (!posterCache.releaseLookup.isCompleted) {
+        posterCache.releaseLookup.complete();
+      }
+    });
+
+    container.read(chatControllerProvider(conversation).notifier);
+    await posterCache.lookupStarted.future;
+
+    final whileDiscovering = container.read(
+      chatControllerProvider(conversation),
+    );
+    expect(whileDiscovering.messages, isEmpty);
+
+    posterCache.releaseLookup.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    final loaded = container.read(chatControllerProvider(conversation));
+    expect(loaded.messages.single.id, 'recent-video');
+    expect(
+      ChatPosterPrewarmer.readyPosterPathFor(posterKey),
+      posterPath,
+    );
+  });
+
   group('sendVideoMessage', () {
     test('missing local video file sets state.error and does not queue',
         () async {
-      final repo = FakeChatRepository(currentUserId: userId);
-      final b = await boot(repo);
-      final thumbPath = await writeFile('poster.jpg');
+        final repo = FakeChatRepository(currentUserId: userId);
+        final b = await boot(repo);
+        final thumbPath = await writeFile('poster.jpg');
 
-      await b.controller.sendVideoMessage(
-        localPath: p.join(tempDir.path, 'does_not_exist.mp4'),
-        durationMs: 2000,
-        thumbnailLocalPath: thumbPath,
-        width: 1280,
-        height: 720,
-      );
+        await b.controller.sendVideoMessage(
+          localPath: p.join(tempDir.path, 'does_not_exist.mp4'),
+          durationMs: 2000,
+          thumbnailLocalPath: thumbPath,
+          width: 1280,
+          height: 720,
+        );
 
-      expect(b.state.messages, isEmpty);
-      expect(b.state.error, isNotNull);
-      expect(repo.sendCallCount, 0);
+        expect(b.state.messages, isEmpty);
+        expect(b.state.error, isNotNull);
+        expect(repo.sendCallCount, 0);
     });
 
     test(
@@ -136,22 +282,22 @@ void main() {
     test(
         'duration under min returns silently with no error and no queued message',
         () async {
-      final repo = FakeChatRepository(currentUserId: userId);
-      final b = await boot(repo);
-      final videoPath = await writeFile('too_short.mp4');
-      final thumbPath = await writeFile('poster_short.jpg');
+        final repo = FakeChatRepository(currentUserId: userId);
+        final b = await boot(repo);
+        final videoPath = await writeFile('too_short.mp4');
+        final thumbPath = await writeFile('poster_short.jpg');
 
-      await b.controller.sendVideoMessage(
-        localPath: videoPath,
-        durationMs: ChatVideoPreparer.minDuration.inMilliseconds - 100,
-        thumbnailLocalPath: thumbPath,
-        width: 1280,
-        height: 720,
-      );
+        await b.controller.sendVideoMessage(
+          localPath: videoPath,
+          durationMs: ChatVideoPreparer.minDuration.inMilliseconds - 100,
+          thumbnailLocalPath: thumbPath,
+          width: 1280,
+          height: 720,
+        );
 
-      expect(b.state.messages, isEmpty);
-      expect(b.state.error, isNull);
-      expect(repo.sendCallCount, 0);
+        expect(b.state.messages, isEmpty);
+        expect(b.state.error, isNull);
+        expect(repo.sendCallCount, 0);
     });
 
     test(
@@ -253,26 +399,36 @@ void main() {
     test(
         'a successful thumbnail upload still reclaims the staged poster file',
         () async {
-      final repo = FakeChatRepository(currentUserId: userId);
-      final b = await boot(repo);
-      final videoPath = await writeFile('valid.mp4');
-      final thumbPath = await writeFile('valid_poster.jpg');
+        final repo = FakeChatRepository(currentUserId: userId);
+        final cachedPosterPath = p.join(tempDir.path, 'cached_poster.jpg');
+        final b = await boot(
+          repo,
+          posterCache: _PosterSeedCacheManager(cachedPosterPath),
+        );
+        final videoPath = await writeFile('valid.mp4');
+        final thumbPath = await writeFile('valid_poster.jpg');
 
-      await b.controller.sendVideoMessage(
-        localPath: videoPath,
-        durationMs: 4200,
-        thumbnailLocalPath: thumbPath,
-        width: 1280,
-        height: 720,
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+        await b.controller.sendVideoMessage(
+          localPath: videoPath,
+          durationMs: 4200,
+          thumbnailLocalPath: thumbPath,
+          width: 1280,
+          height: 720,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
 
-      // The server has its own copy now, so the staged file is redundant.
-      // Guards the retention above from becoming an unconditional leak that
-      // grows staging storage on every video ever sent.
-      final message = b.state.messages.single;
-      expect(message.mediaThumbnailKey, isNotNull);
-      expect(File(thumbPath).existsSync(), isFalse);
+        // The server has its own copy now, so the staged file is redundant.
+        // Guards the retention above from becoming an unconditional leak that
+        // grows staging storage on every video ever sent.
+        final message = b.state.messages.single;
+        expect(message.mediaThumbnailKey, isNotNull);
+        expect(File(thumbPath).existsSync(), isFalse);
+        expect(message.localThumbnailPath, cachedPosterPath);
+        expect(File(cachedPosterPath).existsSync(), isTrue);
+        expect(
+          ChatPosterPrewarmer.readyPosterPathFor(message.mediaThumbnailKey),
+          cachedPosterPath,
+        );
     });
 
     test(

@@ -5,9 +5,11 @@ import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/core/ui/motion/scale_pop.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/widgets/bottom_sheet_header.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'voice_recording_bar.dart';
+import 'voice_recording_lock_overlay.dart';
 
 class ChatTextField extends StatefulWidget {
   const ChatTextField({
@@ -47,15 +49,15 @@ class ChatTextField extends StatefulWidget {
   final void Function(VoiceRecording recording)? onVoiceMessageRecorded;
 
   /// Opens the ephemeral (view-once) "streak" camera capture flow. Surfaced
-  /// as a dedicated trailing icon (next to mic/games) rather than inside the
-  /// '+' attach sheet, since it's a capture action, not a library pick.
+  /// as the dedicated leading camera icon rather than inside the '+' attach
+  /// sheet, since it's a capture action, not a library pick.
   final VoidCallback? onCaptureVideo;
 
   /// File attach — placeholder for now, wired into the '+' sheet.
   final VoidCallback? onAttachFile;
 
-  /// Games entry point — placeholder for now, both the trailing icon and the
-  /// '+' sheet's "Games" row call this.
+  /// Games entry point — placeholder for now, surfaced as its own composer
+  /// action rather than hidden inside the '+' sheet.
   final VoidCallback? onOpenGames;
 
   final bool showAttachImage;
@@ -160,6 +162,102 @@ class _ComposerIcon extends StatelessWidget {
   }
 }
 
+class _ChatAttachSheet extends StatelessWidget {
+  const _ChatAttachSheet({
+    required this.showPhotos,
+    required this.showVideo,
+    required this.showFiles,
+    required this.onAttachImage,
+    required this.onAttachVideo,
+    required this.onAttachFile,
+  });
+
+  final bool showPhotos;
+  final bool showVideo;
+  final bool showFiles;
+  final VoidCallback? onAttachImage;
+  final VoidCallback? onAttachVideo;
+  final VoidCallback? onAttachFile;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const BottomSheetHeader(title: ''),
+          Gap(Spacing.lg),
+          if (showPhotos)
+            _ChatAttachRow(
+              title: 'Photos',
+              subtitle: 'Choose an image from your library',
+              icon: Icons.photo_outlined,
+              onTap: onAttachImage,
+            ),
+          if (showVideo)
+            _ChatAttachRow(
+              title: 'Video',
+              subtitle: 'Share a video from your library',
+              icon: Icons.videocam_outlined,
+              onTap: onAttachVideo,
+            ),
+          if (showFiles)
+            _ChatAttachRow(
+              title: 'Files',
+              subtitle: 'Attach a document or file',
+              icon: Icons.insert_drive_file_outlined,
+              onTap: onAttachFile,
+            ),
+
+          _ChatAttachRow(
+            title: 'Location',
+            subtitle: 'Attach location',
+            icon: Icons.location_on_outlined,
+            onTap: onAttachFile,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChatAttachRow extends StatelessWidget {
+  const _ChatAttachRow({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
+      child: InfoRowWidget(
+        title: title,
+        subtitle: ' ',
+        icon: icon,
+        iconColor: colorScheme.primary,
+        showAvatar: false,
+        disableTrailing: true,
+        showTrailingArrow: false,
+        showDivider: false,
+        onTap: () {
+          Navigator.of(context).pop();
+          onTap?.call();
+        },
+      ),
+    );
+  }
+}
+
 class _ChatTextFieldState extends State<ChatTextField> {
   int _sendPulse = 0;
   VoiceRecorderService? _recorder;
@@ -167,12 +265,33 @@ class _ChatTextFieldState extends State<ChatTextField> {
   bool _isCancelling = false;
   Duration _elapsed = Duration.zero;
   Timer? _elapsedTicker;
-  DateTime? _recordingStartedAt;
 
-  // Drag-up-to-cancel threshold, in logical pixels from the initial press
+  /// Held vs locked. In the locked stage the finger is up and the bar's own
+  /// delete/pause/send controls drive the recording instead of the gesture.
+  VoiceRecordingStage _stage = VoiceRecordingStage.held;
+  bool _isPaused = false;
+
+  /// How far the finger has travelled toward the lock (0.0-1.0), driving
+  /// the lock pill's fill/rise.
+  double _lockProgress = 0.0;
+
+  /// Rolling live-amplitude history for the recording waveform. Capped at
+  /// [_maxLevels] because only the newest samples are ever drawn — an
+  /// unbounded list would grow for the full 5-minute maximum recording
+  /// while the extra samples stayed permanently off-screen.
+  final List<double> _levels = <double>[];
+  static const int _maxLevels = 96;
+
+  // Drag-LEFT-to-cancel threshold, in logical pixels from the initial press
   // point. Chosen to be comfortably beyond an accidental small finger
-  // wobble during a normal hold, but well within a deliberate upward drag.
+  // wobble during a normal hold, but well within a deliberate drag.
   static const double _cancelDragThreshold = 80.0;
+
+  /// Upward drag distance that locks the recording. Larger than the cancel
+  /// threshold's counterpart because locking is the stickier, harder-to-
+  /// undo outcome — an accidental lock strands the user in a recording
+  /// they have to explicitly delete.
+  static const double _lockDragThreshold = 100.0;
 
   bool get _hasText => widget.controller.text.trim().isNotEmpty;
 
@@ -186,7 +305,11 @@ class _ChatTextFieldState extends State<ChatTextField> {
   void dispose() {
     widget.controller.removeListener(_onChanged);
     _elapsedTicker?.cancel();
-    _recorder?.dispose();
+    // Detach the level listener before disposing — the service disposes its
+    // ValueNotifier, and a listener still attached to it would fire against
+    // a disposed notifier.
+    final recorder = _recorder;
+    if (recorder != null) _releaseRecorder(recorder);
     super.dispose();
   }
 
@@ -203,51 +326,18 @@ class _ChatTextFieldState extends State<ChatTextField> {
   }
 
   void _handleAttachTap(BuildContext context) {
-    showModalBottomSheet<void>(
+    BottomSheetUtils.showDocumentationBottomSheet<void>(
       context: context,
-      builder:
-          (sheetContext) => SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.showAttachImage)
-                  ListTile(
-                    leading: const Icon(Icons.photo_outlined),
-                    title: const Text('Photos'),
-                    onTap: () {
-                      Navigator.of(sheetContext).pop();
-                      widget.onAttachImage?.call();
-                    },
-                  ),
-                if (widget.showAttachVideo)
-                  ListTile(
-                    leading: const Icon(Icons.videocam_outlined),
-                    title: const Text('Video'),
-                    onTap: () {
-                      Navigator.of(sheetContext).pop();
-                      widget.onAttachVideo?.call();
-                    },
-                  ),
-                ListTile(
-                  leading: const Icon(Icons.insert_drive_file_outlined),
-                  title: const Text('Files'),
-                  onTap: () {
-                    Navigator.of(sheetContext).pop();
-                    widget.onAttachFile?.call();
-                  },
-                ),
-                if (widget.showGames)
-                  ListTile(
-                    leading: const Icon(Icons.sports_esports_outlined),
-                    title: const Text('Games'),
-                    onTap: () {
-                      Navigator.of(sheetContext).pop();
-                      widget.onOpenGames?.call();
-                    },
-                  ),
-              ],
-            ),
-          ),
+      maxHeight: 360.h,
+      padding: Spacing.md,
+      widget: _ChatAttachSheet(
+        showPhotos: widget.showAttachImage,
+        showVideo: widget.showAttachVideo,
+        showFiles: widget.onAttachFile != null,
+        onAttachImage: widget.onAttachImage,
+        onAttachVideo: widget.onAttachVideo,
+        onAttachFile: widget.onAttachFile,
+      ),
     );
   }
 
@@ -286,50 +376,139 @@ class _ChatTextFieldState extends State<ChatTextField> {
       return;
     }
 
-    _recordingStartedAt = DateTime.now();
+    // Elapsed comes from the service (which subtracts paused spans) rather
+    // than a local wall-clock difference, so the timer the user watches and
+    // the durationMs eventually persisted can never disagree.
     _elapsedTicker = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (!mounted) return;
-      setState(() {
-        _elapsed = DateTime.now().difference(_recordingStartedAt!);
-      });
+      setState(() => _elapsed = recorder.elapsed);
     });
+
+    recorder.currentLevel.addListener(_onLevel);
 
     setState(() {
       _recorder = recorder;
       _isRecording = true;
       _isCancelling = false;
+      _stage = VoiceRecordingStage.held;
+      _isPaused = false;
+      _lockProgress = 0.0;
+      _levels.clear();
       _elapsed = Duration.zero;
     });
   }
 
+  /// Appends one live amplitude sample, dropping the oldest once the
+  /// on-screen capacity is exceeded.
+  void _onLevel() {
+    final recorder = _recorder;
+    if (recorder == null || !mounted) return;
+    setState(() {
+      _levels.add(recorder.currentLevel.value);
+      if (_levels.length > _maxLevels) _levels.removeAt(0);
+    });
+  }
+
+  /// Detaches this widget from a recorder and releases it. Centralized
+  /// because every teardown path (cancel, send, dispose, error) must
+  /// remove the level listener before disposing — a listener left attached
+  /// to a disposed notifier throws on the next sample.
+  void _releaseRecorder(VoiceRecorderService recorder) {
+    recorder.currentLevel.removeListener(_onLevel);
+    recorder.dispose();
+    if (identical(_recorder, recorder)) _recorder = null;
+  }
+
   void _onLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
     if (!_isRecording) return;
-    final isCancelling = -details.offsetFromOrigin.dy > _cancelDragThreshold;
-    if (isCancelling != _isCancelling) {
-      setState(() => _isCancelling = isCancelling);
+    // Once locked the finger is irrelevant — the bar's own controls take
+    // over, and further drag must not re-arm cancel.
+    if (_stage == VoiceRecordingStage.locked) return;
+
+    final offset = details.offsetFromOrigin;
+    final up = -offset.dy;
+
+    // Cancel is a LEFTWARD drag (matching the "slide to cancel ‹" hint and
+    // WhatsApp's own gesture); lock is an UPWARD one. Previously cancel was
+    // bound to the upward drag, which is the same direction as the lock —
+    // the two would have been indistinguishable.
+    final isCancelling = -offset.dx > _cancelDragThreshold;
+    final lockProgress = (up / _lockDragThreshold).clamp(0.0, 1.0);
+
+    if (up >= _lockDragThreshold && !isCancelling) {
+      _lockRecording();
+      return;
     }
+
+    if (isCancelling != _isCancelling || lockProgress != _lockProgress) {
+      setState(() {
+        _isCancelling = isCancelling;
+        _lockProgress = lockProgress;
+      });
+    }
+  }
+
+  /// Promotes a held recording to the locked stage: the finger can lift
+  /// and recording continues under the bar's delete/pause/send controls.
+  void _lockRecording() {
+    if (_stage == VoiceRecordingStage.locked) return;
+    setState(() {
+      _stage = VoiceRecordingStage.locked;
+      _isCancelling = false;
+      _lockProgress = 1.0;
+    });
   }
 
   Future<void> _onLongPressEnd(LongPressEndDetails details) async {
     if (!_isRecording) return;
-    final recorder = _recorder;
-    final wasCancelling = _isCancelling;
-    _elapsedTicker?.cancel();
-    _elapsedTicker = null;
+    // Locked: lifting the finger is exactly what locking is FOR. Recording
+    // continues; the bar's delete/pause/send controls own it from here.
+    if (_stage == VoiceRecordingStage.locked) return;
 
-    setState(() {
-      _isRecording = false;
-      _isCancelling = false;
-    });
-
-    if (recorder == null) return;
-
-    if (wasCancelling) {
-      await recorder.cancel();
-      recorder.dispose();
-      _recorder = null;
+    if (_isCancelling) {
+      await _cancelRecording();
       return;
     }
+    await _finishRecording();
+  }
+
+  /// Discards the recording and its file. Shared by the slide-to-cancel
+  /// gesture and the locked stage's delete button.
+  Future<void> _cancelRecording() async {
+    final recorder = _recorder;
+    _stopTicker();
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _isCancelling = false;
+        _stage = VoiceRecordingStage.held;
+        _isPaused = false;
+        _lockProgress = 0.0;
+        _levels.clear();
+      });
+    }
+    if (recorder == null) return;
+    await recorder.cancel();
+    _releaseRecorder(recorder);
+  }
+
+  /// Stops and hands off the recording. Shared by releasing the hold and
+  /// the locked stage's send button.
+  Future<void> _finishRecording() async {
+    final recorder = _recorder;
+    _stopTicker();
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _isCancelling = false;
+        _stage = VoiceRecordingStage.held;
+        _isPaused = false;
+        _lockProgress = 0.0;
+        _levels.clear();
+      });
+    }
+
+    if (recorder == null) return;
 
     try {
       final recording = await recorder.stop();
@@ -350,176 +529,168 @@ class _ChatTextFieldState extends State<ChatTextField> {
         );
       }
     } finally {
-      recorder.dispose();
-      _recorder = null;
+      _releaseRecorder(recorder);
     }
+  }
+
+  /// Locked-stage pause/resume. A failure here leaves the recording
+  /// running rather than desyncing the UI from the recorder's real state.
+  Future<void> _togglePause() async {
+    final recorder = _recorder;
+    if (recorder == null) return;
+    try {
+      if (recorder.isPaused) {
+        await recorder.resume();
+      } else {
+        await recorder.pause();
+      }
+    } on VoiceRecordingException {
+      return;
+    }
+    if (mounted) setState(() => _isPaused = recorder.isPaused);
+  }
+
+  void _stopTicker() {
+    _elapsedTicker?.cancel();
+    _elapsedTicker = null;
   }
 
   @override
   Widget build(BuildContext context) {
-    final showAttachSheet = widget.showAttachImage || widget.showAttachVideo;
-    return SafeArea(
-      top: false,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          if (showAttachSheet)
-            _ComposerIcon(
-              icon: Icons.add,
-              onTap: widget.enabled ? () => _handleAttachTap(context) : null,
-              tooltip: 'Add',
-            ),
-          if (widget.showTranslator)
-            AnimatedSize(
-              duration:
-                  reduceMotionOf(context)
-                      ? Duration.zero
-                      : const Duration(milliseconds: 200),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.centerLeft,
-              child: AnimatedOpacity(
-                duration:
-                    reduceMotionOf(context)
-                        ? Duration.zero
-                        : const Duration(milliseconds: 150),
-                opacity: _hasText ? 1.0 : 0.0,
-                child:
-                    _hasText
-                        ? _ComposerIcon(
-                          icon: Icons.help_outline_rounded,
-                          onTap:
-                              widget.enabled ? widget.onOpenTranslator : null,
-                          tooltip: 'Help me say this',
-                        )
-                        : const SizedBox(height: _ComposerIcon._tapSize),
-              ),
-            ),
-          Expanded(
-            child:
-                _isRecording
-                    ? VoiceRecordingBar(
-                      elapsed: _elapsed,
-                      // Live per-frame amplitude isn't wired to this bar in
-                      // this task — VoiceRecorderService exposes the final
-                      // downsampled waveform via stop(), not a live stream
-                      // consumable outside the service. A constant mid-level
-                      // fill keeps the bar visually alive without
-                      // overengineering a live-amplitude plumbing path that
-                      // the design spec didn't require for the recording BAR
-                      // specifically (only the SENT bubble's waveform must
-                      // reflect real amplitude data).
-                      amplitude: 0.5,
-                      isCancelling: _isCancelling,
-                    )
-                    : TweenAnimationBuilder<double>(
-                      tween: Tween<double>(
-                        begin: ElevationTokens.sm,
-                        end: _hasText ? 0 : ElevationTokens.sm,
-                      ),
-                      duration:
-                          reduceMotionOf(context)
-                              ? Duration.zero
-                              : const Duration(milliseconds: 220),
-                      curve: Curves.easeOutCubic,
-                      builder: (context, elevation, child) {
-                        // Interpolates Material's own elevation shadow
-                        // (kElevationToShadow — the same subtle, tight,
-                        // near-zero-spread double-shadow Card.elevation uses)
-                        // between two whole-number presets, since the lookup
-                        // table only has integer keys. A flat, hand-tuned
-                        // BoxShadow (higher opacity, wider blur/spread) read
-                        // too heavy next to send button next to it.
-                        final lower = elevation.floor().clamp(0, 24);
-                        final upper = elevation.ceil().clamp(0, 24);
-                        final t = elevation - lower;
-                        final lowerShadows =
-                            kElevationToShadow[lower] ?? const [];
-                        final upperShadows =
-                            kElevationToShadow[upper] ?? const [];
-                        final shadows =
-                            lowerShadows.isEmpty || upperShadows.isEmpty
-                                ? (t < 0.5 ? lowerShadows : upperShadows)
-                                : List<BoxShadow>.generate(
-                                  lowerShadows.length,
-                                  (i) =>
-                                      BoxShadow.lerp(
-                                        lowerShadows[i],
-                                        upperShadows[i],
-                                        t,
-                                      )!,
-                                );
-                        return Container(
-                          margin: const EdgeInsets.only(right: Spacing.md),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(
-                              BorderRadiusTokens.xl,
+    final showAttachSheet =
+        widget.showAttachImage ||
+        widget.showAttachVideo ||
+        widget.onAttachFile != null;
+    final colorScheme = Theme.of(context).colorScheme;
+    final leadingAction =
+        widget.showCaptureVideo
+            ? _ComposerIcon(
+              icon: Icons.camera_alt_rounded,
+              onTap: widget.enabled ? widget.onCaptureVideo : null,
+              tooltip: 'Camera',
+              filled: true,
+              fillColor: colorScheme.primary,
+              iconColor: colorScheme.onPrimary,
+            )
+            : null;
+
+    final composer = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+      child:
+            _isRecording
+                ? VoiceRecordingBar(
+                  elapsed: _elapsed,
+                  amplitude: _levels.isEmpty ? 0.0 : _levels.last,
+                  levels: _levels,
+                  isCancelling: _isCancelling,
+                  stage: _stage,
+                  isPaused: _isPaused,
+                  onCancel: () => unawaited(_cancelRecording()),
+                  onTogglePause: () => unawaited(_togglePause()),
+                  onSend: () => unawaited(_finishRecording()),
+                )
+                : Container(
+                  constraints: const BoxConstraints(minHeight: 54),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface,
+                    border: Border.all(color: colorScheme.onSurface, width: .2),
+                    borderRadius: BorderRadius.circular(
+                      BorderRadiusTokens.full,
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      if (leadingAction != null) ...[
+                        leadingAction,
+                        const SizedBox(width: 6),
+                      ],
+                      Expanded(
+                        child: TextField(
+                          controller: widget.controller,
+                          focusNode: widget.focusNode,
+                          enabled: widget.enabled,
+                          minLines: 1,
+                          maxLines: 5,
+                          textInputAction: TextInputAction.newline,
+                          onSubmitted: (_) => _handleSend(),
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(fontSize: 18, height: 1.25),
+                          decoration: InputDecoration(
+                            hintText: widget.hintText,
+                            hintStyle: Theme.of(
+                              context,
+                            ).textTheme.bodyLarge?.copyWith(
+                              color: colorScheme.onSurface.withValues(
+                                alpha: 0.5,
+                              ),
+                              fontSize: 14,
                             ),
-                            boxShadow: shadows,
+                            isDense: true,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: Spacing.sm,
+                              horizontal: Spacing.sm,
+                            ),
                           ),
-                          child: child,
-                        );
-                      },
-                      // CardInkWell's own elevation stays 0 — the animated
-                      // shadow above replaces it, since Card's elevation
-                      // can't be tweened smoothly (it snaps between fixed
-                      // Material shadow presets, which read as a glitch when
-                      // toggled on every keystroke).
-                      child: CardInkWell(
-                        color: _hasText ? Colors.transparent : null,
-                        borderRadius: BorderRadius.circular(
-                          BorderRadiusTokens.xl,
                         ),
-                        padding: const EdgeInsets.all(0),
-                        margin: EdgeInsets.zero,
-                        elevation: 0,
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: AppTextFormField(
-                                controller: widget.controller,
-                                focusNode: widget.focusNode,
-                                hintText: widget.hintText,
-                                minLines: 1,
-                                maxLines: 5,
-                                showBorder: true,
-                                focusedBorderColor: widget.sendButtonColor,
-                                onFieldSubmitted: (_) => _handleSend(),
-                                label: '',
-                              ),
-                            ),
-                            // Trailing icons moved inside the pill, alongside
-                            // the field, as an experiment — was previously a
-                            // separate Row sibling outside CardInkWell.
-                            if (widget.showGames && !_hasText)
-                              _ComposerIcon(
-                                icon: Icons.sports_esports_outlined,
-                                onTap:
-                                    widget.enabled ? widget.onOpenGames : null,
-                                tooltip: 'Games',
-                              ),
-                            if (widget.showCaptureVideo && !_hasText)
-                              _ComposerIcon(
-                                icon: Icons.camera_alt_outlined,
-                                onTap:
-                                    widget.enabled
-                                        ? widget.onCaptureVideo
-                                        : null,
-                                tooltip: 'Streak',
-                              ),
-                            if (widget.showVoiceMessage && !_hasText)
-                              Semantics(
-                                button: true,
-                                label: 'Hold to record a voice message',
-                                child: GestureDetector(
-                                  onLongPressStart:
-                                      (_) => unawaited(_startRecording()),
-                                  onLongPressMoveUpdate: _onLongPressMoveUpdate,
-                                  onLongPressEnd:
-                                      (details) =>
-                                          unawaited(_onLongPressEnd(details)),
-                                  child: _ComposerIcon(
-                                    icon: null,
-                                    onTap: widget.enabled ? () {} : null,
+                      ),
+                      if (widget.showTranslator)
+                        AnimatedSize(
+                          duration:
+                              reduceMotionOf(context)
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 200),
+                          curve: Curves.easeOutCubic,
+                          alignment: Alignment.centerLeft,
+                          child: AnimatedOpacity(
+                            duration:
+                                reduceMotionOf(context)
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 150),
+                            opacity: _hasText ? 1.0 : 0.0,
+                            child:
+                                _hasText
+                                    ? _ComposerIcon(
+                                      icon: Icons.help_outline_rounded,
+                                      onTap:
+                                          widget.enabled
+                                              ? widget.onOpenTranslator
+                                              : null,
+                                      tooltip: 'Help me say this',
+                                    )
+                                    : const SizedBox(
+                                      height: _ComposerIcon._tapSize,
+                                    ),
+                          ),
+                        ),
+                      if (!_hasText && widget.showVoiceMessage)
+                        Semantics(
+                          button: true,
+                          label: 'Hold to record a voice message',
+                          child: GestureDetector(
+                            onLongPressStart:
+                                (_) => unawaited(_startRecording()),
+                            onLongPressMoveUpdate: _onLongPressMoveUpdate,
+                            onLongPressEnd:
+                                (details) =>
+                                    unawaited(_onLongPressEnd(details)),
+                            behavior: HitTestBehavior.opaque,
+                            child: Opacity(
+                              opacity: widget.enabled ? 1.0 : 0.38,
+                              child: SizedBox(
+                                width: _ComposerIcon._tapSize,
+                                height: _ComposerIcon._tapSize,
+                                child: Center(
+                                  child: IconTheme.merge(
+                                    data: IconThemeData(
+                                      color: colorScheme.onSurfaceVariant,
+                                      size: 24,
+                                    ),
                                     child: IconCrossfade(
                                       child: Icon(
                                         Icons.mic_none_rounded,
@@ -528,34 +699,65 @@ class _ChatTextFieldState extends State<ChatTextField> {
                                     ),
                                   ),
                                 ),
-                              )
-                            else
-                              _ComposerIcon(
-                                icon: null,
-                                onTap:
-                                    widget.enabled && _hasText
-                                        ? _handleSend
-                                        : null,
-                                tooltip: 'Send message',
-                                filled: true,
-                                fillColor:
-                                    widget.sendButtonColor ?? Colors.green,
-                                iconColor:
-                                    widget.onSendButtonColor ?? Colors.white,
-                                child: IconCrossfade(
-                                  child: ScalePop(
-                                    key: const ValueKey('send'),
-                                    trigger: _sendPulse,
-                                    child: const Icon(Icons.send_rounded),
-                                  ),
-                                ),
                               ),
-                            const SizedBox(width: 4),
-                          ],
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-          ),
+                      if (!_hasText && widget.showGames)
+                        _ComposerIcon(
+                          icon: Icons.sports_esports_outlined,
+                          onTap: widget.enabled ? widget.onOpenGames : null,
+                          tooltip: 'Games',
+                        ),
+                      if (!_hasText && showAttachSheet)
+                        _ComposerIcon(
+                          icon: Icons.add_circle_outline_rounded,
+                          onTap:
+                              widget.enabled
+                                  ? () => _handleAttachTap(context)
+                                  : null,
+                          tooltip: 'More',
+                        ),
+                      if (_hasText || !widget.showVoiceMessage)
+                        _ComposerIcon(
+                          icon: null,
+                          onTap:
+                              widget.enabled && _hasText ? _handleSend : null,
+                          tooltip: 'Send message',
+                          filled: _hasText,
+                          fillColor:
+                              widget.sendButtonColor ?? colorScheme.primary,
+                          iconColor: widget.onSendButtonColor,
+                          child: IconCrossfade(
+                            child: ScalePop(
+                              key: const ValueKey('send'),
+                              trigger: _sendPulse,
+                              child: const Icon(Icons.send_rounded),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+    );
+
+    return SafeArea(
+      top: false,
+      child: Stack(
+        // The lock pill deliberately overflows the composer's top edge, the
+        // way WhatsApp floats it over the message list.
+        clipBehavior: Clip.none,
+        alignment: Alignment.bottomRight,
+        children: [
+          composer,
+          // Held stage only: once locked the pill has served its purpose,
+          // and the bar's own controls replace it.
+          if (_isRecording && _stage == VoiceRecordingStage.held)
+            Positioned(
+              right: 14,
+              bottom: 62,
+              child: VoiceRecordingLockOverlay(progress: _lockProgress),
+            ),
         ],
       ),
     );

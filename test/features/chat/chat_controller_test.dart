@@ -14,13 +14,19 @@ class _Booted {
   final ProviderContainer container;
   final Conversation conversation;
 
-  ChatState get state =>
-      container.read(chatControllerProvider(conversation));
+  ChatState get state => container.read(chatControllerProvider(conversation));
 }
 
 void main() {
   const userId = 'user-a';
   const relId = 'rel-1';
+
+  test('initial state stays loading until the first history load resolves', () {
+    final state = ChatState.initial(activeConversation(relId));
+
+    expect(state.messages, isEmpty);
+    expect(state.isLoading, isTrue);
+  });
 
   Future<_Booted> boot(
     FakeChatRepository repo, {
@@ -31,13 +37,43 @@ void main() {
     final convo = conversation ?? activeConversation(relId);
     // Keep refresh consistent with the conversation under test.
     repo.conversationOverride = convo;
-    final controller = container.read(
-      chatControllerProvider(convo).notifier,
-    );
+    final controller = container.read(chatControllerProvider(convo).notifier);
     // Let _init() (cache read, refresh, load, subscribe) settle.
     await Future<void>.delayed(const Duration(milliseconds: 20));
     return _Booted(controller, container, convo);
   }
+
+  group('chat identity refresh', () {
+    test(
+      'bumping conversationsRefreshProvider re-reads the conversation, so a '
+      'name/photo edit made elsewhere shows without leaving the screen',
+      () async {
+        final repo = FakeChatRepository(currentUserId: userId);
+        final b = await boot(repo);
+
+        expect(b.state.conversation.name, 'Partner');
+        expect(b.state.conversation.avatarUrl, isNull);
+
+        // Simulates the identity sheet on PulseTab writing a new name/photo
+        // and signalling it the only way it can — this counter. Without the
+        // controller listening, state.conversation (what the chat header
+        // renders) would keep the value captured at _init until the screen
+        // was left and re-entered.
+        repo.conversationOverride = b.conversation.copyWith(
+          name: 'Japerl34',
+          avatarUrl: 'relationship-avatars/rel-1/new.jpg',
+        );
+        b.container.read(conversationsRefreshProvider.notifier).state++;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(b.state.conversation.name, 'Japerl34');
+        expect(
+          b.state.conversation.avatarUrl,
+          'relationship-avatars/rel-1/new.jpg',
+        );
+      },
+    );
+  });
 
   group('send', () {
     test('optimistic message becomes sent on success', () async {
@@ -66,10 +102,7 @@ void main() {
 
     test('read-only conversation blocks sending', () async {
       final repo = FakeChatRepository(currentUserId: userId);
-      final b = await boot(
-        repo,
-        conversation: readOnlyConversation(relId),
-      );
+      final b = await boot(repo, conversation: readOnlyConversation(relId));
 
       await b.controller.sendMessage('nope');
       expect(b.state.messages, isEmpty);
@@ -90,26 +123,28 @@ void main() {
       expect(msg.status, MessageStatus.queued);
     });
 
-    test('retry after a transient failure sends exactly one canonical row',
-        () async {
-      final repo = FakeChatRepository(currentUserId: userId)
-        ..nextSendError = Exception('network down');
-      final b = await boot(repo);
+    test(
+      'retry after a transient failure sends exactly one canonical row',
+      () async {
+        final repo = FakeChatRepository(currentUserId: userId)
+          ..nextSendError = Exception('network down');
+        final b = await boot(repo);
 
-      await b.controller.sendMessage('retry me');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      final queued = b.state.messages.single;
-      expect(queued.status, MessageStatus.queued);
+        await b.controller.sendMessage('retry me');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        final queued = b.state.messages.single;
+        expect(queued.status, MessageStatus.queued);
 
-      // nextSendError is one-shot; retry now succeeds.
-      await b.controller.retryMessage(queued);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+        // nextSendError is one-shot; retry now succeeds.
+        await b.controller.retryMessage(queued);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      final messages = b.state.messages;
-      expect(messages, hasLength(1));
-      expect(messages.single.status, MessageStatus.sent);
-      expect(repo.sendCallCount, 2); // one fail + one success
-    });
+        final messages = b.state.messages;
+        expect(messages, hasLength(1));
+        expect(messages.single.status, MessageStatus.sent);
+        expect(repo.sendCallCount, 2); // one fail + one success
+      },
+    );
 
     test('permanent failure (unauthorized) marks message failed', () async {
       final repo = FakeChatRepository(currentUserId: userId)
@@ -122,8 +157,7 @@ void main() {
       await b.controller.sendMessage('denied');
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      expect(b.state.messages.single.status,
-          MessageStatus.failed);
+      expect(b.state.messages.single.status, MessageStatus.failed);
     });
 
     test('removeFailedMessage clears it from the list', () async {
@@ -202,21 +236,23 @@ void main() {
   });
 
   group('message actions', () {
-    test('deleteMessage removes the message content from state optimistically',
-        () async {
-      final repo = FakeChatRepository(currentUserId: userId);
-      final b = await boot(repo);
+    test(
+      'deleteMessage removes the message content from state optimistically',
+      () async {
+        final repo = FakeChatRepository(currentUserId: userId);
+        final b = await boot(repo);
 
-      await b.controller.sendMessage('to be deleted');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      final sent = b.state.messages.single;
+        await b.controller.sendMessage('to be deleted');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        final sent = b.state.messages.single;
 
-      await b.controller.deleteMessage(sent);
+        await b.controller.deleteMessage(sent);
 
-      final updated = b.state.messages.firstWhere((m) => m.id == sent.id);
-      expect(updated.isDeleted, isTrue);
-      expect(repo.deleteMessageCalls, contains(sent.id));
-    });
+        final updated = b.state.messages.firstWhere((m) => m.id == sent.id);
+        expect(updated.isDeleted, isTrue);
+        expect(repo.deleteMessageCalls, contains(sent.id));
+      },
+    );
 
     test('editMessage updates content and sets editedAt', () async {
       final repo = FakeChatRepository(currentUserId: userId);
@@ -249,170 +285,218 @@ void main() {
     });
 
     test(
-        'a message starred in a prior session is seeded as starred on chat open',
-        () async {
-      final repo = FakeChatRepository(currentUserId: userId);
-      final priorStar = repo.seedIncoming(
-        id: 'msg-prior-star',
-        relationshipId: relId,
-        senderId: userId,
-        content: 'starred last session',
-        createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      );
-      // Simulate a star recorded in a previous session, before this
-      // controller (and its in-memory starredMessageIds) ever existed.
-      repo.starredMessageIds.add(priorStar.id);
+      'a message starred in a prior session is seeded as starred on chat open',
+      () async {
+        final repo = FakeChatRepository(currentUserId: userId);
+        final priorStar = repo.seedIncoming(
+          id: 'msg-prior-star',
+          relationshipId: relId,
+          senderId: userId,
+          content: 'starred last session',
+          createdAt: DateTime.now().subtract(const Duration(days: 1)),
+        );
+        // Simulate a star recorded in a previous session, before this
+        // controller (and its in-memory starredMessageIds) ever existed.
+        repo.starredMessageIds.add(priorStar.id);
 
-      final b = await boot(repo);
+        final b = await boot(repo);
 
-      expect(b.state.starredMessageIds, contains(priorStar.id));
-    });
+        expect(b.state.starredMessageIds, contains(priorStar.id));
+      },
+    );
 
-    test('pinMessage and unpinMessage update pinnedMessages from the server',
-        () async {
-      final repo = FakeChatRepository(currentUserId: userId);
-      final b = await boot(repo);
+    test(
+      'pinMessage and unpinMessage update pinnedMessages from the server',
+      () async {
+        final repo = FakeChatRepository(currentUserId: userId);
+        final b = await boot(repo);
 
-      await b.controller.sendMessage('pin me');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      final sent = b.state.messages.single;
+        await b.controller.sendMessage('pin me');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        final sent = b.state.messages.single;
 
-      await b.controller.pinMessage(sent);
-      expect(b.state.pinnedMessages.map((m) => m.id), contains(sent.id));
+        await b.controller.pinMessage(sent);
+        expect(b.state.pinnedMessages.map((m) => m.id), contains(sent.id));
 
-      await b.controller.unpinMessage(sent);
-      expect(b.state.pinnedMessages.map((m) => m.id), isNot(contains(sent.id)));
-    });
+        await b.controller.unpinMessage(sent);
+        expect(
+          b.state.pinnedMessages.map((m) => m.id),
+          isNot(contains(sent.id)),
+        );
+      },
+    );
   });
 
   group('reactions', () {
-    test('reactToMessage patches the message in state with the new reaction', () async {
-      final repo = FakeChatRepository(currentUserId: 'user-a');
-      final conversation = activeConversation('rel-1');
-      repo.conversationOverride = conversation;
-      repo.seedIncoming(
-        id: 'm1',
-        relationshipId: 'rel-1',
-        senderId: 'partner',
-        content: 'hello',
-        createdAt: DateTime.now(),
-      );
-      final container = buildChatContainer(repository: repo, userId: 'user-a');
-      addTearDown(container.dispose);
-      final notifier = container.read(chatControllerProvider(conversation).notifier);
-      // Let _init() (cache read, refresh, load, subscribe) settle before the
-      // test's own loadMessages() call, same as boot() above.
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await notifier.loadMessages();
+    test(
+      'reactToMessage patches the message in state with the new reaction',
+      () async {
+        final repo = FakeChatRepository(currentUserId: 'user-a');
+        final conversation = activeConversation('rel-1');
+        repo.conversationOverride = conversation;
+        repo.seedIncoming(
+          id: 'm1',
+          relationshipId: 'rel-1',
+          senderId: 'partner',
+          content: 'hello',
+          createdAt: DateTime.now(),
+        );
+        final container = buildChatContainer(
+          repository: repo,
+          userId: 'user-a',
+        );
+        addTearDown(container.dispose);
+        final notifier = container.read(
+          chatControllerProvider(conversation).notifier,
+        );
+        // Let _init() (cache read, refresh, load, subscribe) settle before the
+        // test's own loadMessages() call, same as boot() above.
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await notifier.loadMessages();
 
-      final message = container.read(chatControllerProvider(conversation)).messages.first;
-      await notifier.reactToMessage(message, '❤️');
+        final message =
+            container.read(chatControllerProvider(conversation)).messages.first;
+        await notifier.reactToMessage(message, '❤️');
 
-      final updated = container.read(chatControllerProvider(conversation)).messages.first;
-      expect(updated.reactions['❤️'], contains('user-a'));
-    });
+        final updated =
+            container.read(chatControllerProvider(conversation)).messages.first;
+        expect(updated.reactions['❤️'], contains('user-a'));
+      },
+    );
 
-    test('removeReactionFrom clears the caller\'s reaction from state', () async {
-      final repo = FakeChatRepository(currentUserId: 'user-a');
-      final conversation = activeConversation('rel-1');
-      repo.conversationOverride = conversation;
-      repo.seedIncoming(
-        id: 'm1',
-        relationshipId: 'rel-1',
-        senderId: 'partner',
-        content: 'hello',
-        createdAt: DateTime.now(),
-      );
-      final container = buildChatContainer(repository: repo, userId: 'user-a');
-      addTearDown(container.dispose);
-      final notifier = container.read(chatControllerProvider(conversation).notifier);
-      // Let _init() (cache read, refresh, load, subscribe) settle before the
-      // test's own loadMessages() call, same as boot() above.
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await notifier.loadMessages();
+    test(
+      'removeReactionFrom clears the caller\'s reaction from state',
+      () async {
+        final repo = FakeChatRepository(currentUserId: 'user-a');
+        final conversation = activeConversation('rel-1');
+        repo.conversationOverride = conversation;
+        repo.seedIncoming(
+          id: 'm1',
+          relationshipId: 'rel-1',
+          senderId: 'partner',
+          content: 'hello',
+          createdAt: DateTime.now(),
+        );
+        final container = buildChatContainer(
+          repository: repo,
+          userId: 'user-a',
+        );
+        addTearDown(container.dispose);
+        final notifier = container.read(
+          chatControllerProvider(conversation).notifier,
+        );
+        // Let _init() (cache read, refresh, load, subscribe) settle before the
+        // test's own loadMessages() call, same as boot() above.
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await notifier.loadMessages();
 
-      final message = container.read(chatControllerProvider(conversation)).messages.first;
-      await notifier.reactToMessage(message, '👍');
-      final reacted = container.read(chatControllerProvider(conversation)).messages.first;
-      await notifier.removeReactionFrom(reacted);
+        final message =
+            container.read(chatControllerProvider(conversation)).messages.first;
+        await notifier.reactToMessage(message, '👍');
+        final reacted =
+            container.read(chatControllerProvider(conversation)).messages.first;
+        await notifier.removeReactionFrom(reacted);
 
-      final cleared = container.read(chatControllerProvider(conversation)).messages.first;
-      expect(cleared.reactions['👍'] ?? {}, isNot(contains('user-a')));
-    });
+        final cleared =
+            container.read(chatControllerProvider(conversation)).messages.first;
+        expect(cleared.reactions['👍'] ?? {}, isNot(contains('user-a')));
+      },
+    );
 
-    test('switching to a different emoji removes the caller from the old bucket, not just adds to the new one', () async {
-      // Regression guard: the one-reaction-per-person invariant (enforced
-      // server-side by message_reactions' PRIMARY KEY (message_id, user_id))
-      // requires _withReaction to clear every OTHER bucket for this user
-      // before adding to the new one. A regression that only added to the
-      // new bucket (skipping the _withoutReaction step) would leave the
-      // caller as a phantom reactor under BOTH emoji simultaneously — this
-      // test fails red against that exact shape.
-      final repo = FakeChatRepository(currentUserId: 'user-a');
-      final conversation = activeConversation('rel-1');
-      repo.conversationOverride = conversation;
-      repo.seedIncoming(
-        id: 'm1',
-        relationshipId: 'rel-1',
-        senderId: 'partner',
-        content: 'hello',
-        createdAt: DateTime.now(),
-      );
-      final container = buildChatContainer(repository: repo, userId: 'user-a');
-      addTearDown(container.dispose);
-      final notifier = container.read(chatControllerProvider(conversation).notifier);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await notifier.loadMessages();
+    test(
+      'switching to a different emoji removes the caller from the old bucket, not just adds to the new one',
+      () async {
+        // Regression guard: the one-reaction-per-person invariant (enforced
+        // server-side by message_reactions' PRIMARY KEY (message_id, user_id))
+        // requires _withReaction to clear every OTHER bucket for this user
+        // before adding to the new one. A regression that only added to the
+        // new bucket (skipping the _withoutReaction step) would leave the
+        // caller as a phantom reactor under BOTH emoji simultaneously — this
+        // test fails red against that exact shape.
+        final repo = FakeChatRepository(currentUserId: 'user-a');
+        final conversation = activeConversation('rel-1');
+        repo.conversationOverride = conversation;
+        repo.seedIncoming(
+          id: 'm1',
+          relationshipId: 'rel-1',
+          senderId: 'partner',
+          content: 'hello',
+          createdAt: DateTime.now(),
+        );
+        final container = buildChatContainer(
+          repository: repo,
+          userId: 'user-a',
+        );
+        addTearDown(container.dispose);
+        final notifier = container.read(
+          chatControllerProvider(conversation).notifier,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await notifier.loadMessages();
 
-      final message = container.read(chatControllerProvider(conversation)).messages.first;
-      await notifier.reactToMessage(message, '❤️');
-      final firstReaction = container.read(chatControllerProvider(conversation)).messages.first;
-      await notifier.reactToMessage(firstReaction, '👍');
+        final message =
+            container.read(chatControllerProvider(conversation)).messages.first;
+        await notifier.reactToMessage(message, '❤️');
+        final firstReaction =
+            container.read(chatControllerProvider(conversation)).messages.first;
+        await notifier.reactToMessage(firstReaction, '👍');
 
-      final switched = container.read(chatControllerProvider(conversation)).messages.first;
-      expect(switched.reactions['❤️'] ?? {}, isNot(contains('user-a')));
-      expect(switched.reactions['👍'], contains('user-a'));
-    });
+        final switched =
+            container.read(chatControllerProvider(conversation)).messages.first;
+        expect(switched.reactions['❤️'] ?? {}, isNot(contains('user-a')));
+        expect(switched.reactions['👍'], contains('user-a'));
+      },
+    );
 
-    test('a reload re-applies server reactions over a stale reaction-less copy already in state', () async {
-      // Regression guard for the "reactions vanish after an app restart" bug.
-      // On cold start _init() seeds state from the on-disk cache (written
-      // before the reaction existed, so reactions is empty) and THEN calls
-      // loadMessages(), whose server rows do carry the reaction. If
-      // _mergeMessages lets the pre-existing state entry win the id collision,
-      // the freshly-hydrated reaction is discarded — and the stripped result
-      // is written straight back to the cache, so the loss re-persists on
-      // every subsequent launch.
-      final repo = FakeChatRepository(currentUserId: 'user-a');
-      final conversation = activeConversation('rel-1');
-      repo.conversationOverride = conversation;
-      repo.seedIncoming(
-        id: 'm1',
-        relationshipId: 'rel-1',
-        senderId: 'partner',
-        content: 'hello',
-        createdAt: DateTime.now(),
-      );
-      final container = buildChatContainer(repository: repo, userId: 'user-a');
-      addTearDown(container.dispose);
-      final notifier = container.read(chatControllerProvider(conversation).notifier);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await notifier.loadMessages();
+    test(
+      'a reload re-applies server reactions over a stale reaction-less copy already in state',
+      () async {
+        // Regression guard for the "reactions vanish after an app restart" bug.
+        // On cold start _init() seeds state from the on-disk cache (written
+        // before the reaction existed, so reactions is empty) and THEN calls
+        // loadMessages(), whose server rows do carry the reaction. If
+        // _mergeMessages lets the pre-existing state entry win the id collision,
+        // the freshly-hydrated reaction is discarded — and the stripped result
+        // is written straight back to the cache, so the loss re-persists on
+        // every subsequent launch.
+        final repo = FakeChatRepository(currentUserId: 'user-a');
+        final conversation = activeConversation('rel-1');
+        repo.conversationOverride = conversation;
+        repo.seedIncoming(
+          id: 'm1',
+          relationshipId: 'rel-1',
+          senderId: 'partner',
+          content: 'hello',
+          createdAt: DateTime.now(),
+        );
+        final container = buildChatContainer(
+          repository: repo,
+          userId: 'user-a',
+        );
+        addTearDown(container.dispose);
+        final notifier = container.read(
+          chatControllerProvider(conversation).notifier,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await notifier.loadMessages();
 
-      // The reaction exists server-side (as it would after a previous session
-      // wrote it), but the copy sitting in state has no reactions on it —
-      // exactly the shape a restore-from-cache produces.
-      await repo.addReaction(
-        relationshipId: 'rel-1',
-        messageId: 'm1',
-        emoji: '❤️',
-      );
+        // The reaction exists server-side (as it would after a previous session
+        // wrote it), but the copy sitting in state has no reactions on it —
+        // exactly the shape a restore-from-cache produces.
+        await repo.addReaction(
+          relationshipId: 'rel-1',
+          messageId: 'm1',
+          emoji: '❤️',
+        );
 
-      await notifier.loadMessages();
+        await notifier.loadMessages();
 
-      final reloaded = container.read(chatControllerProvider(conversation)).messages
-          .firstWhere((m) => m.id == 'm1');
-      expect(reloaded.reactions['❤️'], contains('user-a'));
-    });
+        final reloaded = container
+            .read(chatControllerProvider(conversation))
+            .messages
+            .firstWhere((m) => m.id == 'm1');
+        expect(reloaded.reactions['❤️'], contains('user-a'));
+      },
+    );
   });
 }

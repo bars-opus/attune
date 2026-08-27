@@ -1,4 +1,46 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Runtime permissions the app actually requests. Without the
+         declaration here, Android denies the request outright and the
+         permission never appears under App info > Permissions — the same
+         symptom the missing NSMicrophoneUsageDescription caused on iOS.
+
+         Only capabilities genuinely used are declared; each is annotated
+         with what uses it so an unused one can be removed with confidence
+         rather than left "just in case" (every extra permission is
+         something the Play listing has to justify). -->
+
+    <!-- record: voice messages in chat (VoiceRecorderService). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+
+    <!-- camera: ephemeral photo/video capture (EphemeralCameraScreen), and
+         image_picker's fromCamera path. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+
+    <!-- image_picker / file_picker gallery reads. READ_MEDIA_* are the
+         Android 13+ (API 33) replacements; READ_EXTERNAL_STORAGE is kept
+         with maxSdkVersion so older devices still work without asking for
+         broad storage access on new ones. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
+
+    <!-- geolocator: optional partner location sharing (LocationService).
+         COARSE is declared alongside FINE because Android 12+ lets the user
+         grant only approximate location, and a FINE-only declaration gives
+         them no way to accept that weaker option. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
+    <!-- Networking (Supabase, media upload/download, Claude API). -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- onesignal_flutter, which calls OneSignal.Notifications
+         .requestPermission() on startup (OneSignalService). Required from
+         Android 13 (API 33) onward. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <application
         android:label="attune"
         android:name="${applicationName}"

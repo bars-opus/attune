@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/domain/services/chat_poster_prewarmer.dart';
+import 'package:file/file.dart' as file_system;
 import 'package:file/local.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,17 +13,23 @@ import 'support/chat_test_harness.dart';
 /// work the prewarmer actually did, rather than on its return value (it
 /// deliberately returns nothing and swallows failures).
 class _RecordingCacheManager implements BaseCacheManager {
-  _RecordingCacheManager({this.alreadyCached = const {}, this.onDownload});
+  _RecordingCacheManager({
+    Map<String, File> alreadyCached = const {},
+    this.onDownload,
+    this.seedTargetPath,
+  }) : alreadyCached = Map.of(alreadyCached);
 
   /// Keys that a previous session already left on disk.
   final Map<String, File> alreadyCached;
 
   /// Lets a test make a specific download fail.
   final void Function(String key)? onDownload;
+  final String? seedTargetPath;
 
   final List<String> cacheLookups = [];
   final List<String> downloadedKeys = [];
   final List<String> downloadedUrls = [];
+  final List<String> seededKeys = [];
 
   @override
   Future<FileInfo?> getFileFromCache(
@@ -59,9 +66,31 @@ class _RecordingCacheManager implements BaseCacheManager {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError(
-    '${invocation.memberName} is not used by the prewarmer',
-  );
+  Future<file_system.File> putFileStream(
+    String url,
+    Stream<List<int>> source, {
+    String? key,
+    String? eTag,
+    Duration maxAge = const Duration(days: 30),
+    String fileExtension = 'file',
+  }) async {
+    final path = seedTargetPath;
+    if (path == null) throw StateError('No seed target configured');
+    final target = const LocalFileSystem().file(path);
+    final sink = target.openWrite();
+    await sink.addStream(source);
+    await sink.close();
+    final stableKey = key ?? url;
+    seededKeys.add(stableKey);
+    alreadyCached[stableKey] = File(path);
+    return target;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError(
+        '${invocation.memberName} is not used by the prewarmer',
+      );
 }
 
 Message videoMessage(String id, {String? thumbKey, bool isViewOnce = false}) {
@@ -85,29 +114,76 @@ void main() {
   late FakeChatRepository repo;
 
   setUp(() {
+    ChatPosterPrewarmer.debugClearReadyPosterPaths();
     repo = FakeChatRepository(currentUserId: 'me')
       // The prewarmer's whole job is signing-then-downloading, so it needs
       // real URLs back rather than the harness's default null.
       ..signMediaUrls = true;
   });
 
-  test('downloads a poster that is not on disk, keyed by its storage path',
-      () async {
-    final cache = _RecordingCacheManager();
+  tearDown(ChatPosterPrewarmer.debugClearReadyPosterPaths);
+
+  test(
+    'discovers an existing cache path for synchronous first paint',
+    () async {
+      final dir = Directory.systemTemp.createTempSync('poster_discovery');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final existing = File('${dir.path}/poster.jpg')..writeAsStringSync('x');
+      const key = 'chat-media/rel-1/discovered-poster.jpg';
+      final prewarmer = ChatPosterPrewarmer(
+        repository: repo,
+        cacheManager: _RecordingCacheManager(alreadyCached: {key: existing}),
+      );
+
+      await prewarmer.discoverCached([videoMessage('m1', thumbKey: key)]);
+
+      expect(ChatPosterPrewarmer.readyPosterPathFor(key), existing.path);
+      expect(repo.signedUrlRequests, isEmpty);
+    },
+  );
+
+  test('seeds a generated local poster under its stable storage key', () async {
+    final dir = Directory.systemTemp.createTempSync('poster_seed');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final source = File('${dir.path}/staged.jpg')..writeAsStringSync('poster');
+    final targetPath = '${dir.path}/cached.jpg';
+    const key = 'chat-media/rel-1/seeded-poster.jpg';
+    final cache = _RecordingCacheManager(seedTargetPath: targetPath);
     final prewarmer = ChatPosterPrewarmer(
       repository: repo,
       cacheManager: cache,
     );
 
-    await prewarmer.prewarm([
-      videoMessage('m1', thumbKey: 'chat-media/rel-1/m1-poster.jpg'),
-    ]);
+    final cachedPath = await prewarmer.cacheLocalPoster(
+      key: key,
+      localPath: source.path,
+    );
 
-    // Stored under the STABLE storage key rather than the signed URL, which
-    // is what lets the tile's own by-key lookup find it and what keeps a
-    // later re-sign hitting the same entry.
-    expect(cache.downloadedKeys, ['chat-media/rel-1/m1-poster.jpg']);
+    expect(cachedPath, targetPath);
+    expect(cache.seededKeys, [key]);
+    expect(File(targetPath).readAsStringSync(), 'poster');
+    expect(ChatPosterPrewarmer.readyPosterPathFor(key), targetPath);
   });
+
+  test(
+    'downloads a poster that is not on disk, keyed by its storage path',
+    () async {
+      final cache = _RecordingCacheManager();
+      final prewarmer = ChatPosterPrewarmer(
+        repository: repo,
+        cacheManager: cache,
+      );
+
+      await prewarmer.prewarm([
+        videoMessage('m1', thumbKey: 'chat-media/rel-1/m1-poster.jpg'),
+      ]);
+
+      // Stored under the STABLE storage key rather than the signed URL, which
+      // is what lets the tile's own by-key lookup find it and what keeps a
+      // later re-sign hitting the same entry.
+      expect(cache.downloadedKeys, ['chat-media/rel-1/m1-poster.jpg']);
+    },
+  );
 
   test('skips a poster already on disk without re-signing it', () async {
     final dir = Directory.systemTemp.createTempSync('prewarm');
@@ -174,8 +250,7 @@ void main() {
     expect(cache.downloadedKeys, hasLength(1));
   });
 
-  test('a failing download never throws and does not block the rest',
-      () async {
+  test('a failing download never throws and does not block the rest', () async {
     final cache = _RecordingCacheManager(
       onDownload: (key) {
         if (key.contains('m1')) throw Exception('network down');
@@ -203,10 +278,11 @@ void main() {
       cacheManager: cache,
     );
 
-    // Ascending by age the way the list holds them: oldest first, newest
-    // last (the bottom of the chat, which is what's on screen at open).
+    // ChatState stores messages newest-first, matching the server query and
+    // the reverse ListView's data contract. m39 is newest and therefore sits
+    // at index 0; m0 is the oldest entry at the end of the list.
     final messages = [
-      for (var i = 0; i < 40; i++)
+      for (var i = 39; i >= 0; i--)
         videoMessage('m$i', thumbKey: 'chat-media/rel-1/m$i-poster.jpg'),
     ];
 
@@ -215,12 +291,9 @@ void main() {
     // Capped, so opening a media-heavy chat doesn't put 40 signing requests
     // on the wire at once...
     expect(cache.downloadedKeys.length, lessThan(40));
-    // ...and the newest poster (bottom of the list, visible immediately) is
-    // fetched while the oldest is left for the tile's own path.
-    expect(
-      cache.downloadedKeys,
-      contains('chat-media/rel-1/m39-poster.jpg'),
-    );
+    // ...and the newest poster is fetched while the oldest is left for the
+    // tile's own path.
+    expect(cache.downloadedKeys, contains('chat-media/rel-1/m39-poster.jpg'));
     expect(
       cache.downloadedKeys,
       isNot(contains('chat-media/rel-1/m0-poster.jpg')),

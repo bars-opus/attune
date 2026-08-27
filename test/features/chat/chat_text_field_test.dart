@@ -46,7 +46,8 @@ class _GrantedPermissionHandlerPlatform extends PermissionHandlerPlatform
 /// Fakes the `record` package's platform singleton so `AudioRecorder.start()`
 /// / `.stop()` succeed under `flutter test` instead of hitting a
 /// MissingPluginException — same rationale as the permission fake above.
-class _FakeRecordPlatform extends RecordPlatform with MockPlatformInterfaceMixin {
+class _FakeRecordPlatform extends RecordPlatform
+    with MockPlatformInterfaceMixin {
   @override
   Future<void> create(String recorderId) async {}
 
@@ -61,8 +62,7 @@ class _FakeRecordPlatform extends RecordPlatform with MockPlatformInterfaceMixin
   Future<Stream<Uint8List>> startStream(
     String recorderId,
     RecordConfig config,
-  ) async =>
-      const Stream<Uint8List>.empty();
+  ) async => const Stream<Uint8List>.empty();
 
   @override
   Future<String?> stop(String recorderId) async => null;
@@ -94,8 +94,10 @@ class _FakeRecordPlatform extends RecordPlatform with MockPlatformInterfaceMixin
       Amplitude(current: -30, max: -10);
 
   @override
-  Future<bool> isEncoderSupported(String recorderId, AudioEncoder encoder) async =>
-      true;
+  Future<bool> isEncoderSupported(
+    String recorderId,
+    AudioEncoder encoder,
+  ) async => true;
 
   @override
   Future<List<InputDevice>> listInputDevices(String recorderId) async => [];
@@ -111,12 +113,15 @@ Future<void> _pump(
   VoidCallback? onOpenTranslator,
   VoidCallback? onAttachImage,
   VoidCallback? onAttachVideo,
+  VoidCallback? onAttachFile,
   VoidCallback? onCaptureVideo,
+  VoidCallback? onOpenGames,
   bool showTranslator = false,
   bool showAttachImage = false,
   bool showAttachVideo = false,
   bool showVoiceMessage = false,
   bool showCaptureVideo = false,
+  bool showGames = false,
   bool enabled = true,
 }) {
   return tester.pumpWidget(
@@ -128,12 +133,15 @@ Future<void> _pump(
           onOpenTranslator: onOpenTranslator,
           onAttachImage: onAttachImage,
           onAttachVideo: onAttachVideo,
+          onAttachFile: onAttachFile,
           onCaptureVideo: onCaptureVideo,
+          onOpenGames: onOpenGames,
           showTranslator: showTranslator,
           showAttachImage: showAttachImage,
           showAttachVideo: showAttachVideo,
           showVoiceMessage: showVoiceMessage,
           showCaptureVideo: showCaptureVideo,
+          showGames: showGames,
           enabled: enabled,
         ),
       ),
@@ -170,8 +178,9 @@ void main() {
     }
   });
 
-  testWidgets('send is disabled when empty and enabled once text is entered',
-      (tester) async {
+  testWidgets('send is disabled when empty and enabled once text is entered', (
+    tester,
+  ) async {
     final controller = TextEditingController();
     var sent = 0;
     await _pump(
@@ -194,8 +203,9 @@ void main() {
     expect(sent, 1);
   });
 
-  testWidgets('translator entry only appears with non-empty text (Spec 10)',
-      (tester) async {
+  testWidgets('translator entry only appears with non-empty text (Spec 10)', (
+    tester,
+  ) async {
     final controller = TextEditingController();
     await _pump(
       tester,
@@ -217,16 +227,14 @@ void main() {
     expect(find.byIcon(Icons.help_outline_rounded), findsNothing);
   });
 
-  testWidgets('attach-image button visibility follows its flag', (tester) async {
+  testWidgets('attach-image button visibility follows its flag', (
+    tester,
+  ) async {
     final controller = TextEditingController();
-    await _pump(
-      tester,
-      controller: controller,
-      showAttachImage: false,
-    );
-    // The '+' attach icon only renders when showAttachImage OR
-    // showAttachVideo is true (see showAttachSheet in ChatTextField.build).
-    expect(find.byIcon(Icons.add), findsNothing);
+    await _pump(tester, controller: controller, showAttachImage: false);
+    // The circular '+' attach icon only renders when media/files are
+    // available for the attachment sheet.
+    expect(find.byIcon(Icons.add_circle_outline_rounded), findsNothing);
 
     await _pump(
       tester,
@@ -234,7 +242,7 @@ void main() {
       showAttachImage: true,
       onAttachImage: () {},
     );
-    expect(find.byIcon(Icons.add), findsOneWidget);
+    expect(find.byIcon(Icons.add_circle_outline_rounded), findsOneWidget);
   });
 
   testWidgets('disabled composer prevents send even with text', (tester) async {
@@ -251,164 +259,211 @@ void main() {
     expect(sent, 0);
   });
 
-  testWidgets('shows mic icon (not send) when text is empty and voice messages are on',
-      (tester) async {
-    final controller = TextEditingController();
-    await _pump(
-      tester,
-      controller: controller,
-      showVoiceMessage: true,
-    );
-    expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.send_rounded), findsNothing);
-  });
+  testWidgets(
+    'shows mic icon (not send) when text is empty and voice messages are on',
+    (tester) async {
+      final controller = TextEditingController();
+      await _pump(tester, controller: controller, showVoiceMessage: true);
+      expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.send_rounded), findsNothing);
+    },
+  );
 
-  testWidgets('shows send icon (not mic) once text is entered, even with voice messages on',
-      (tester) async {
-    final controller = TextEditingController();
-    await _pump(
-      tester,
-      controller: controller,
-      showVoiceMessage: true,
-    );
-    await tester.enterText(find.byType(TextField), 'hello');
-    await tester.pump();
-    expect(find.byIcon(Icons.send_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.mic_none_rounded), findsNothing);
-  });
+  testWidgets(
+    'shows send icon (not mic) once text is entered, even with voice messages on',
+    (tester) async {
+      final controller = TextEditingController();
+      await _pump(tester, controller: controller, showVoiceMessage: true);
+      await tester.enterText(find.byType(TextField), 'hello');
+      await tester.pump();
+      expect(find.byIcon(Icons.send_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.mic_none_rounded), findsNothing);
+    },
+  );
 
-  testWidgets('mic stays absent when showVoiceMessage is false, regardless of text',
-      (tester) async {
-    final controller = TextEditingController();
-    await _pump(tester, controller: controller, showVoiceMessage: false);
-    expect(find.byIcon(Icons.mic_none_rounded), findsNothing);
-    // send is present-but-disabled while empty, per the existing test above
-    expect(find.byIcon(Icons.send_rounded), findsOneWidget);
-  });
+  testWidgets(
+    'mic stays absent when showVoiceMessage is false, regardless of text',
+    (tester) async {
+      final controller = TextEditingController();
+      await _pump(tester, controller: controller, showVoiceMessage: false);
+      expect(find.byIcon(Icons.mic_none_rounded), findsNothing);
+      // send is present-but-disabled while empty when no voice shortcut is
+      // available, per the existing test above.
+      expect(find.byIcon(Icons.send_rounded), findsOneWidget);
+    },
+  );
 
-  testWidgets('long-pressing the mic starts recording and shows the waveform bar',
-      (tester) async {
-    final controller = TextEditingController();
-    await _pump(tester, controller: controller, showVoiceMessage: true);
-
-    // tester.longPress() presses AND releases in one call (a down/up pair
-    // separated by kLongPressTimeout), which would also fire
-    // onLongPressEnd before this test gets to assert. Press and hold
-    // manually via TestGesture instead, so the recording is still in
-    // progress when we check.
-    final gesture = await tester.startGesture(
-      tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
-    );
-    await tester.pump(kLongPressTimeout + kPressTimeout);
-    // Let the async permission-request/start chain resolve and rebuild.
-    await tester.pump();
-
-    expect(find.byType(TextField), findsNothing); // replaced by the waveform view
-
-    // Release so the test's pending timers (elapsed ticker) are cleaned up
-    // rather than leaking into pumpWidget's teardown/leak checks.
-    await gesture.up();
-    await tester.pump();
-  });
-
-  testWidgets('attach ("+") icon opens a sheet with just Photos + Files when only showAttachImage is true (video off)',
-      (tester) async {
-    var attachImageCalled = 0;
+  testWidgets('idle composer shows camera left and mic, games, add right', (
+    tester,
+  ) async {
     await _pump(
       tester,
       controller: TextEditingController(),
-      showAttachImage: true,
-      onAttachImage: () => attachImageCalled++,
-      showAttachVideo: false,
-    );
-
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Photos'), findsOneWidget);
-    expect(find.text('Video'), findsNothing);
-
-    await tester.tap(find.text('Photos'));
-    await tester.pumpAndSettle();
-
-    expect(attachImageCalled, 1);
-  });
-
-  testWidgets('attach icon opens a Photos/Video sheet when both showAttachImage and showAttachVideo are true',
-      (tester) async {
-    await _pump(
-      tester,
-      controller: TextEditingController(),
+      showCaptureVideo: true,
+      onCaptureVideo: () {},
+      showVoiceMessage: true,
+      showGames: true,
+      onOpenGames: () {},
       showAttachImage: true,
       onAttachImage: () {},
       showAttachVideo: true,
       onAttachVideo: () {},
+      onAttachFile: () {},
     );
 
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Photos'), findsOneWidget);
-    expect(find.text('Video'), findsOneWidget);
-  });
-
-  testWidgets('tapping Video in the sheet calls onAttachVideo and dismisses the sheet',
-      (tester) async {
-    var attachVideoCalled = 0;
-    await _pump(
-      tester,
-      controller: TextEditingController(),
-      showAttachImage: true,
-      onAttachImage: () {},
-      showAttachVideo: true,
-      onAttachVideo: () => attachVideoCalled++,
-    );
-
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Video'));
-    await tester.pumpAndSettle();
-
-    expect(attachVideoCalled, 1);
-    expect(find.text('Video'), findsNothing);
+    expect(find.byIcon(Icons.camera_alt_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.sports_esports_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.add_circle_outline_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.image_outlined), findsNothing);
+    expect(find.byIcon(Icons.videocam_outlined), findsNothing);
+    expect(find.byIcon(Icons.insert_drive_file_outlined), findsNothing);
   });
 
   testWidgets(
-      'streak camera icon absent by default, existing attach/voice icons unaffected',
-      (tester) async {
-    final controller = TextEditingController();
-    await _pump(
-      tester,
-      controller: controller,
-      showAttachImage: true,
-      onAttachImage: () {},
-      showAttachVideo: true,
-      onAttachVideo: () {},
-      showVoiceMessage: true,
-      // showCaptureVideo/onCaptureVideo deliberately omitted — this is
-      // the additive-only guarantee: the new pair must default to
-      // absent/off without disturbing any of the three pre-existing
-      // pairs.
-    );
+    'long-pressing the mic starts recording and shows the waveform bar',
+    (tester) async {
+      final controller = TextEditingController();
+      await _pump(tester, controller: controller, showVoiceMessage: true);
 
-    expect(find.byIcon(Icons.camera_alt_outlined), findsNothing);
-    expect(find.byIcon(Icons.add), findsOneWidget);
-    expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
-  });
+      // tester.longPress() presses AND releases in one call (a down/up pair
+      // separated by kLongPressTimeout), which would also fire
+      // onLongPressEnd before this test gets to assert. Press and hold
+      // manually via TestGesture instead, so the recording is still in
+      // progress when we check.
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(kLongPressTimeout + kPressTimeout);
+      // Let the async permission-request/start chain resolve and rebuild.
+      await tester.pump();
 
-  testWidgets('camera icon appears and calls onCaptureVideo when showCaptureVideo is true',
-      (tester) async {
-    var captureVideoCalled = 0;
-    final controller = TextEditingController();
-    await _pump(
-      tester,
-      controller: controller,
-      showCaptureVideo: true,
-      onCaptureVideo: () => captureVideoCalled++,
-    );
+      expect(
+        find.byType(TextField),
+        findsNothing,
+      ); // replaced by the waveform view
 
-    expect(find.byIcon(Icons.camera_alt_outlined), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.camera_alt_outlined));
-    expect(captureVideoCalled, 1);
-  });
+      // Release so the test's pending timers (elapsed ticker) are cleaned up
+      // rather than leaking into pumpWidget's teardown/leak checks.
+      await gesture.up();
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'attach ("+") icon opens a sheet with just Photos + Files when only showAttachImage is true (video off)',
+    (tester) async {
+      var attachImageCalled = 0;
+      await _pump(
+        tester,
+        controller: TextEditingController(),
+        showAttachImage: true,
+        onAttachImage: () => attachImageCalled++,
+        onAttachFile: () {},
+        showAttachVideo: false,
+      );
+
+      await tester.tap(find.byIcon(Icons.add_circle_outline_rounded));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Photos'), findsOneWidget);
+      expect(find.text('Files'), findsOneWidget);
+      expect(find.text('Video'), findsNothing);
+      expect(find.text('Games'), findsNothing);
+
+      await tester.tap(find.text('Photos'));
+      await tester.pumpAndSettle();
+
+      expect(attachImageCalled, 1);
+    },
+  );
+
+  testWidgets(
+    'attach icon opens a Photos/Video sheet when both showAttachImage and showAttachVideo are true',
+    (tester) async {
+      await _pump(
+        tester,
+        controller: TextEditingController(),
+        showAttachImage: true,
+        onAttachImage: () {},
+        showAttachVideo: true,
+        onAttachVideo: () {},
+        onAttachFile: () {},
+      );
+
+      await tester.tap(find.byIcon(Icons.add_circle_outline_rounded));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Photos'), findsOneWidget);
+      expect(find.text('Video'), findsOneWidget);
+      expect(find.text('Files'), findsOneWidget);
+      expect(find.text('Games'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'tapping Video in the sheet calls onAttachVideo and dismisses the sheet',
+    (tester) async {
+      var attachVideoCalled = 0;
+      await _pump(
+        tester,
+        controller: TextEditingController(),
+        showAttachImage: true,
+        onAttachImage: () {},
+        showAttachVideo: true,
+        onAttachVideo: () => attachVideoCalled++,
+        onAttachFile: () {},
+      );
+
+      await tester.tap(find.byIcon(Icons.add_circle_outline_rounded));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Video'));
+      await tester.pumpAndSettle();
+
+      expect(attachVideoCalled, 1);
+      expect(find.text('Video'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'streak camera icon absent by default, existing attach/voice icons unaffected',
+    (tester) async {
+      final controller = TextEditingController();
+      await _pump(
+        tester,
+        controller: controller,
+        showAttachImage: true,
+        onAttachImage: () {},
+        showAttachVideo: true,
+        onAttachVideo: () {},
+        showVoiceMessage: true,
+        // showCaptureVideo/onCaptureVideo deliberately omitted — this is
+        // the additive-only guarantee: the new pair must default to
+        // absent/off without disturbing any of the three pre-existing
+        // pairs.
+      );
+
+      expect(find.byIcon(Icons.camera_alt_rounded), findsNothing);
+      expect(find.byIcon(Icons.add_circle_outline_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'camera icon appears and calls onCaptureVideo when showCaptureVideo is true',
+    (tester) async {
+      var captureVideoCalled = 0;
+      final controller = TextEditingController();
+      await _pump(
+        tester,
+        controller: controller,
+        showCaptureVideo: true,
+        onCaptureVideo: () => captureVideoCalled++,
+      );
+
+      expect(find.byIcon(Icons.camera_alt_rounded), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.camera_alt_rounded));
+      expect(captureVideoCalled, 1);
+    },
+  );
 }

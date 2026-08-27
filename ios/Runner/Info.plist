@@ -58,5 +58,28 @@
 				</array>
 			</dict>
 		</array>
+		<!-- Permission usage descriptions.
+
+		     iOS REQUIRES one of these for every permission the app requests:
+		     without the matching key, the request is denied immediately
+		     without ever showing a prompt, and the permission never appears
+		     in Settings > Attune (iOS only lists permissions an app has
+		     actually asked for). That is why tapping the microphone showed
+		     "needs microphone access" but Settings had no Microphone row.
+
+		     Each string is shown verbatim in the system prompt, so it names
+		     the specific feature rather than the capability in the
+		     abstract — App Review rejects generic wording, and a vague
+		     reason is also the most common cause of a user declining. -->
+		<key>NSMicrophoneUsageDescription</key>
+		<string>Attune uses your microphone so you can record and send voice messages in chat.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>Attune uses your camera so you can take photos and videos to share with your partner in chat.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Attune needs access to your photos so you can share them in chat and set your couple photo.</string>
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>Attune saves photos and videos you choose to keep back to your photo library.</string>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>Attune uses your location so you and your partner can optionally share where you are with each other.</string>
 	</dict>
 </plist>

@@ -33,182 +33,193 @@ class ChatSettingsStaticRows extends ConsumerWidget {
     );
     final conversation = this.conversation;
 
-    return Column(
-      children: [
-        CardInkWell(
-          child: Column(
-            children: [
-              InfoRowWidget(
-                title: 'Shared location',
-                subtitle:
-                    'Location would be automatically shared between both partners',
-                icon: Icons.location_on_outlined,
-                isToggleItem: true,
-                showAvatar: false,
-                showTrailingArrow: true,
-                showDivider: false,
-                toggleValue: true,
-                iconColor: Colors.grey,
-                // InfoRowWidget's own assertion requires onToggleChanged to
-                // be non-null whenever isToggleItem is true — a null
-                // conversation-gated callback here (matching every other
-                // row's null-while-loading pattern) would fail that
-                // assertion instead of just disabling the row. This toggle
-                // doesn't persist anywhere yet regardless of conversation
-                // state (see the empty callback body), so there's nothing
-                // meaningfully different to gate here.
-                onToggleChanged: (value) {},
-              ),
-              const AppDivider(),
-              InfoRowWidget(
-                title: 'End relationship',
-                subtitle: 'End this relationship if you have brocken up.',
-                icon: Icons.heart_broken_outlined,
-                iconColor: Colors.grey,
-                showAvatar: false,
-                showTrailingArrow: true,
-                showDivider: false,
-                onTap:
-                    conversation == null
-                        ? null
-                        : () => context.pushNamed(
-                          'starredMessages',
-                          extra: conversation,
-                        ),
-              ),
-            ],
-          ),
-        ),
-        CardInkWell(
-          child: Column(
-            children: [
-              InfoRowWidget(
-                title: 'Search',
-                subtitle: 'Look for a message in this chat',
-                icon: Icons.search,
-                showTrailingArrow: true,
-                iconColor: Colors.grey,
-                showAvatar: false,
-                showDivider: false,
-                onTap:
-                    conversation == null
-                        ? null
-                        : () async {
-                          // Reached from Chat settings (not an already-open
-                          // ChatScreen), so a tapped result pops this
-                          // settings screen too and pushes a fresh
-                          // ChatScreen with jumpTo — same shape as
-                          // ChatMediaScreen's own "Go to message" handling
-                          // below.
-                          final jumpToId = await context.pushNamed<String>(
-                            'chatMessageSearch',
+    return Padding(
+      padding: const EdgeInsets.all(Spacing.md),
+      child: Column(
+        children: [
+          CardInkWell(
+            child: Column(
+              children: [
+                InfoRowWidget(
+                  title: 'Shared location',
+                  subtitle:
+                      'Location would be automatically shared between both partners',
+                  icon: Icons.location_on_outlined,
+                  isToggleItem: true,
+                  showAvatar: false,
+                  showTrailingArrow: true,
+                  showDivider: false,
+                  toggleValue: true,
+                  iconColor: Colors.grey,
+                  // InfoRowWidget's own assertion requires onToggleChanged to
+                  // be non-null whenever isToggleItem is true — a null
+                  // conversation-gated callback here (matching every other
+                  // row's null-while-loading pattern) would fail that
+                  // assertion instead of just disabling the row. This toggle
+                  // doesn't persist anywhere yet regardless of conversation
+                  // state (see the empty callback body), so there's nothing
+                  // meaningfully different to gate here.
+                  onToggleChanged: (value) {},
+                ),
+                const AppDivider(),
+                InfoRowWidget(
+                  title: 'End relationship',
+                  subtitle: 'End this relationship if you have brocken up.',
+                  icon: Icons.heart_broken_outlined,
+                  iconColor: Colors.grey,
+                  showAvatar: false,
+                  showTrailingArrow: true,
+                  showDivider: false,
+                  onTap:
+                      conversation == null
+                          ? null
+                          : () => context.pushNamed(
+                            'starredMessages',
                             extra: conversation,
-                          );
-                          if (jumpToId != null && context.mounted) {
-                            context.pop();
-                            context.pushNamed(
-                              'chatScreen',
-                              queryParameters: {'jumpTo': jumpToId},
+                          ),
+                ),
+              ],
+            ),
+          ),
+          CardInkWell(
+            child: Column(
+              children: [
+                InfoRowWidget(
+                  title: 'Search',
+                  subtitle: 'Look for a message in this chat',
+                  icon: Icons.search,
+                  showTrailingArrow: true,
+                  iconColor: Colors.grey,
+                  showAvatar: false,
+                  showDivider: false,
+                  onTap:
+                      conversation == null
+                          ? null
+                          : () async {
+                            // Reached from Chat settings (not an already-open
+                            // ChatScreen), so a tapped result pops this
+                            // settings screen too and pushes a fresh
+                            // ChatScreen with jumpTo — same shape as
+                            // ChatMediaScreen's own "Go to message" handling
+                            // below.
+                            final jumpToId = await context.pushNamed<String>(
+                              'chatMessageSearch',
                               extra: conversation,
                             );
-                          }
-                        },
-              ),
-              const AppDivider(),
-              InfoRowWidget(
-                title: 'Media, docs and links',
-                subtitle: 'Media exachanged in these chat',
-                icon: Icons.image_outlined,
-                showTrailingArrow: true,
-                iconColor: Colors.grey,
-                showAvatar: false,
-                showDivider: false,
-                onTap:
-                    conversation == null
-                        ? null
-                        : () =>
-                            context.pushNamed('chatMedia', extra: conversation),
-              ),
-              const AppDivider(),
-              InfoRowWidget(
-                title: 'Starred messages',
-                subtitle: 'Messages you\'ve starred, just for you',
-                icon: Icons.star_border,
-                showAvatar: false,
-                showTrailingArrow: true,
-                iconColor: Colors.grey,
-                showDivider: false,
-                onTap:
-                    conversation == null
-                        ? null
-                        : () => context.pushNamed(
-                          'starredMessages',
-                          extra: conversation,
-                        ),
-              ),
-            ],
+                            if (jumpToId != null && context.mounted) {
+                              context.pop();
+                              context.pushNamed(
+                                'chatScreen',
+                                queryParameters: {'jumpTo': jumpToId},
+                                extra: conversation,
+                              );
+                            }
+                          },
+                ),
+                const AppDivider(),
+                InfoRowWidget(
+                  title: 'Media, docs and links',
+                  subtitle: 'Media exachanged in these chat',
+                  icon: Icons.image_outlined,
+                  showTrailingArrow: true,
+                  iconColor: Colors.grey,
+                  showAvatar: false,
+                  showDivider: false,
+                  onTap:
+                      conversation == null
+                          ? null
+                          : () => context.pushNamed(
+                            'chatMedia',
+                            extra: conversation,
+                          ),
+                ),
+                const AppDivider(),
+                InfoRowWidget(
+                  title: 'Starred messages',
+                  subtitle: 'Messages you\'ve starred, just for you',
+                  icon: Icons.star_border,
+                  showAvatar: false,
+                  showTrailingArrow: true,
+                  iconColor: Colors.grey,
+                  showDivider: false,
+                  onTap:
+                      conversation == null
+                          ? null
+                          : () => context.pushNamed(
+                            'starredMessages',
+                            extra: conversation,
+                          ),
+                ),
+              ],
+            ),
           ),
-        ),
-        CardInkWell(
-          child: Column(
-            children: [
-              InfoRowWidget(
-                title: 'Export chat history',
-                iconColor: const Color.fromRGBO(158, 158, 158, 1),
-                subtitle: 'Export read-only chat from Attune',
-                icon: Icons.arrow_upward,
-                showAvatar: false,
-                showDivider: false,
-                onTap:
-                    conversation == null
-                        ? null
-                        : historicalImportEnabled.valueOrNull == true
-                        ? () => unawaited(
-                          context.pushNamed('chatImport', extra: conversation),
-                        )
-                        : () {
-                          context.showErrorSnackbar(
-                            'Cannot import chats rightnow',
-                          );
-                        },
-              ),
-              const AppDivider(),
-              InfoRowWidget(
-                title: 'Import chat history',
-                iconColor: Colors.grey,
-                subtitle:
-                    'Bring in a previous conversation from other platforms like WhatsApp',
-                icon: Icons.arrow_downward,
-                showAvatar: false,
-                showDivider: false,
-                onTap:
-                    conversation == null
-                        ? null
-                        : historicalImportEnabled.valueOrNull == true
-                        ? () => unawaited(
-                          context.pushNamed('chatImport', extra: conversation),
-                        )
-                        : () {
-                          context.showErrorSnackbar(
-                            'Cannot import chats rightnow',
-                          );
-                        },
-              ),
-              const AppDivider(),
-              InfoRowWidget(
-                title: 'Previous relationships',
-                showTrailingArrow: true,
-                subtitle: 'Read-only chat history from past relationships',
-                icon: Icons.history,
-                iconColor: Colors.grey,
-                showAvatar: false,
-                showDivider: false,
-                onTap: () => context.pushNamed('previousRelationships'),
-              ),
-            ],
+          CardInkWell(
+            child: Column(
+              children: [
+                InfoRowWidget(
+                  title: 'Export chat history',
+                  iconColor: const Color.fromRGBO(158, 158, 158, 1),
+                  subtitle: 'Export read-only chat from Attune',
+                  icon: Icons.arrow_upward,
+                  showAvatar: false,
+                  showDivider: false,
+                  onTap:
+                      conversation == null
+                          ? null
+                          : historicalImportEnabled.valueOrNull == true
+                          ? () => unawaited(
+                            context.pushNamed(
+                              'chatImport',
+                              extra: conversation,
+                            ),
+                          )
+                          : () {
+                            context.showErrorSnackbar(
+                              'Cannot import chats rightnow',
+                            );
+                          },
+                ),
+                const AppDivider(),
+                InfoRowWidget(
+                  title: 'Import chat history',
+                  iconColor: Colors.grey,
+                  subtitle:
+                      'Bring in a previous conversation from other platforms like WhatsApp',
+                  icon: Icons.arrow_downward,
+                  showAvatar: false,
+                  showDivider: false,
+                  onTap:
+                      conversation == null
+                          ? null
+                          : historicalImportEnabled.valueOrNull == true
+                          ? () => unawaited(
+                            context.pushNamed(
+                              'chatImport',
+                              extra: conversation,
+                            ),
+                          )
+                          : () {
+                            context.showErrorSnackbar(
+                              'Cannot import chats rightnow',
+                            );
+                          },
+                ),
+                const AppDivider(),
+                InfoRowWidget(
+                  title: 'Previous relationships',
+                  showTrailingArrow: true,
+                  subtitle: 'Read-only chat history from past relationships',
+                  icon: Icons.history,
+                  iconColor: Colors.grey,
+                  showAvatar: false,
+                  showDivider: false,
+                  onTap: () => context.pushNamed('previousRelationships'),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

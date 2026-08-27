@@ -186,8 +186,9 @@ final ephemeralVideoExpiredProvider = Provider.autoDispose
         chatControllerProvider(args.conversation).select((s) => s.messages),
       );
       for (final message in messages) {
-        if (message.id == args.messageId)
+        if (message.id == args.messageId) {
           return message.isEphemeralVideoExpired;
+        }
       }
       return false;
     });
@@ -204,6 +205,14 @@ class ChatController extends StateNotifier<ChatState> {
       if (previous?.id != null && previous?.id != next?.id) {
         unawaited(_handleAccountChange(previous!.id));
       }
+    });
+    // Chat identity (name/photo) is edited elsewhere — the identity sheet
+    // on PulseTab — and signals the change by bumping this counter. The
+    // header reads state.conversation, which otherwise only refreshes on
+    // _init or a realtime event, so an avatar/name edit didn't show here
+    // until the screen was left and re-entered.
+    ref.listen(conversationsRefreshProvider, (previous, next) {
+      if (previous != next) unawaited(_refreshConversation());
     });
     _init();
   }
@@ -256,6 +265,13 @@ class ChatController extends StateNotifier<ChatState> {
     final restoredMessages = _mergeInitialMessages(cached, restoredPending);
     final hasWarmCache = restoredMessages.isNotEmpty;
     if (hasWarmCache && mounted) {
+      // Cache-manager metadata is asynchronous. Discover local poster paths
+      // before these rows become paintable so video tiles can start with a
+      // FileImage instead of necessarily showing one placeholder frame.
+      await ref
+          .read(chatPosterPrewarmerProvider)
+          .discoverCached(restoredMessages);
+      if (!mounted) return;
       state = state.copyWith(messages: restoredMessages);
       // Start fetching posters the moment history is on screen, rather than
       // when each tile mounts a frame or two later. The cached rows carry
@@ -403,6 +419,14 @@ class ChatController extends StateNotifier<ChatState> {
         limit: ref.read(chatConfigProvider).messagePageSize,
       );
 
+      if (!mounted) return;
+      // A freshly-fetched row must not become paintable until any poster
+      // already stored on this device has been registered for synchronous
+      // first-frame lookup. This is local cache metadata only: no signing or
+      // network download is awaited here. Without it, the newest video paints
+      // one placeholder frame after reopening even though its poster bytes
+      // are already on disk.
+      await ref.read(chatPosterPrewarmerProvider).discoverCached(messages);
       if (!mounted) return;
       state = state.copyWith(
         isLoading: false,
@@ -1544,7 +1568,12 @@ class ChatController extends StateNotifier<ChatState> {
       // that exists anywhere — deleting it here is what turned a recoverable
       // upload failure into a permanently blank tile.
       final posterLandedOnServer = canonical.mediaThumbnailKey != null;
-      if (posterLandedOnServer) {
+      final cachedLocalPosterPath = await _promotePosterToCache(
+        pending,
+        canonical,
+      );
+      if (posterLandedOnServer &&
+          (cachedLocalPosterPath != null || pending.isViewOnce)) {
         await _deleteStagedMedia(pending.localThumbnailPath);
       }
 
@@ -1555,10 +1584,15 @@ class ChatController extends StateNotifier<ChatState> {
       // to the DB — the other participant correctly sees no poster, which
       // is the honest reflection of what was actually uploaded.
       final resolved =
-          posterLandedOnServer
+          pending.isViewOnce
               ? canonical
               : canonical.copyWith(
-                localThumbnailPath: pending.localThumbnailPath,
+                // A successful cache seed provides a durable local file. If
+                // either upload or seeding failed, keep staging as this
+                // device's fallback instead of deleting its only immediate
+                // frame.
+                localThumbnailPath:
+                    cachedLocalPosterPath ?? pending.localThumbnailPath,
               );
       state = state.copyWith(
         isSending: false,
@@ -1589,11 +1623,24 @@ class ChatController extends StateNotifier<ChatState> {
                 pending.clientMessageId,
               );
           await _deleteStagedMedia(pending.localMediaPath);
-          await _deleteStagedMedia(pending.localThumbnailPath);
+          final cachedLocalPosterPath = await _promotePosterToCache(
+            pending,
+            canonical,
+          );
+          if (cachedLocalPosterPath != null || pending.isViewOnce) {
+            await _deleteStagedMedia(pending.localThumbnailPath);
+          }
           if (!mounted) return;
+          final resolved =
+              pending.isViewOnce
+                  ? canonical
+                  : canonical.copyWith(
+                    localThumbnailPath:
+                        cachedLocalPosterPath ?? pending.localThumbnailPath,
+                  );
           state = state.copyWith(
             isSending: false,
-            messages: _replaceOptimistic(canonical),
+            messages: _replaceOptimistic(resolved),
           );
           return;
         }
@@ -1604,6 +1651,23 @@ class ChatController extends StateNotifier<ChatState> {
     } finally {
       _inFlightClientIds.remove(pending.clientMessageId);
     }
+  }
+
+  Future<String?> _promotePosterToCache(
+    PendingSend pending,
+    Message canonical,
+  ) async {
+    if (pending.isViewOnce) return null;
+    final key = canonical.mediaThumbnailKey;
+    final localPath = pending.localThumbnailPath;
+    if (key == null || localPath == null) return null;
+
+    // Seed the SAME stable cache entry that signed poster URLs use before
+    // deleting staging. This turns optimistic -> canonical into local
+    // FileImage -> local FileImage, with no blank provider frame between.
+    return ref
+        .read(chatPosterPrewarmerProvider)
+        .cacheLocalPoster(key: key, localPath: localPath);
   }
 
   Future<void> _handleSendFailure(
@@ -2045,7 +2109,7 @@ class ChatState {
   factory ChatState.initial(Conversation conversation) {
     return ChatState(
       conversation: conversation,
-      isLoading: false,
+      isLoading: true,
       isLoadingMore: false,
       isSending: false,
       hasMore: false,

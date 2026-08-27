@@ -3,58 +3,72 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('opens the overlay showing the anchor snapshot and the given actions',
-      (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
-                anchorSnapshot: const Text('bubble snapshot'),
-                actions: [
-                  ListTile(title: const Text('Action A'), onTap: () {}),
-                ],
-                quickReactions: const [],
-                onReact: (_) {},
-                onOpenFullPicker: () {},
-              ),
-              child: const Text('trigger'),
+  testWidgets(
+    'opens the overlay showing the anchor snapshot and the given actions',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder:
+                  (context) => ElevatedButton(
+                    onPressed:
+                        () => showFocusedActionMenu(
+                          context: context,
+                          anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                          anchorSnapshot: const Text('bubble snapshot'),
+                          actions: [
+                            ListTile(
+                              title: const Text('Action A'),
+                              onTap: () {},
+                            ),
+                          ],
+                          quickReactions: const [],
+                          onReact: (_) {},
+                          onOpenFullPicker: () {},
+                        ),
+                    child: const Text('trigger'),
+                  ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.tap(find.text('trigger'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('trigger'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('bubble snapshot'), findsOneWidget);
-    expect(find.text('Action A'), findsOneWidget);
-  });
+      expect(find.text('bubble snapshot'), findsOneWidget);
+      expect(find.text('Action A'), findsOneWidget);
+    },
+  );
 
-  testWidgets('tapping the scrim dismisses without firing any action', (tester) async {
+  testWidgets('tapping the scrim dismisses without firing any action', (
+    tester,
+  ) async {
     var fired = false;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
-                anchorSnapshot: const Text('bubble snapshot'),
-                actions: [
-                  ListTile(title: const Text('Action A'), onTap: () => fired = true),
-                ],
-                quickReactions: const [],
-                onReact: (_) {},
-                onOpenFullPicker: () {},
-              ),
-              child: const Text('trigger'),
-            ),
+            builder:
+                (context) => ElevatedButton(
+                  onPressed:
+                      () => showFocusedActionMenu(
+                        context: context,
+                        anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                        anchorSnapshot: const Text('bubble snapshot'),
+                        actions: [
+                          ListTile(
+                            title: const Text('Action A'),
+                            onTap: () => fired = true,
+                          ),
+                        ],
+                        quickReactions: const [],
+                        onReact: (_) {},
+                        onOpenFullPicker: () {},
+                      ),
+                  child: const Text('trigger'),
+                ),
           ),
         ),
       ),
@@ -73,59 +87,64 @@ void main() {
   });
 
   testWidgets(
-      'tapping an action that pops its own route fires onTap and closes the overlay',
-      (tester) async {
-    // Contract: each action item is responsible for popping its own route
-    // on tap, same as message_actions_sheet.dart's real ListTiles already
-    // do — the menu wrapper deliberately swallows taps that land on it
-    // (see _FocusedActionMenuOverlay's menu-level GestureDetector) so an
-    // action's own tap never falls through to the scrim's dismiss handler
-    // and double-fires. An action that does NOT pop itself is expected to
-    // leave the overlay open — that's this test's contrast case, not a bug
-    // in the overlay.
-    var fired = false;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
-                anchorSnapshot: const Text('bubble snapshot'),
-                actions: [
-                  Builder(
-                    builder: (actionContext) => ListTile(
-                      title: const Text('Action A'),
-                      onTap: () {
-                        Navigator.of(actionContext).pop();
-                        fired = true;
-                      },
-                    ),
+    'tapping an action that pops its own route fires onTap and closes the overlay',
+    (tester) async {
+      // Contract: each action item is responsible for popping its own route
+      // on tap, same as message_actions_sheet.dart's real ListTiles already
+      // do — the menu wrapper deliberately swallows taps that land on it
+      // (see _FocusedActionMenuOverlay's menu-level GestureDetector) so an
+      // action's own tap never falls through to the scrim's dismiss handler
+      // and double-fires. An action that does NOT pop itself is expected to
+      // leave the overlay open — that's this test's contrast case, not a bug
+      // in the overlay.
+      var fired = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder:
+                  (context) => ElevatedButton(
+                    onPressed:
+                        () => showFocusedActionMenu(
+                          context: context,
+                          anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                          anchorSnapshot: const Text('bubble snapshot'),
+                          actions: [
+                            Builder(
+                              builder:
+                                  (actionContext) => ListTile(
+                                    title: const Text('Action A'),
+                                    onTap: () {
+                                      Navigator.of(actionContext).pop();
+                                      fired = true;
+                                    },
+                                  ),
+                            ),
+                          ],
+                          quickReactions: const [],
+                          onReact: (_) {},
+                          onOpenFullPicker: () {},
+                        ),
+                    child: const Text('trigger'),
                   ),
-                ],
-                quickReactions: const [],
-                onReact: (_) {},
-                onOpenFullPicker: () {},
-              ),
-              child: const Text('trigger'),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.tap(find.text('trigger'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Action A'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('trigger'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Action A'));
+      await tester.pumpAndSettle();
 
-    expect(fired, isTrue);
-    expect(find.text('Action A'), findsNothing);
-  });
+      expect(fired, isTrue);
+      expect(find.text('Action A'), findsNothing);
+    },
+  );
 
-  testWidgets('menu flips above the bubble when there is no room below',
-      (tester) async {
+  testWidgets('menu flips above the bubble when there is no room below', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -135,24 +154,26 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                // Anchored near the very bottom of an 800-tall viewport —
-                // no room below for a multi-item action list.
-                anchorRect: const Rect.fromLTWH(20, 760, 200, 30),
-                anchorSnapshot: const Text('bubble snapshot'),
-                actions: [
-                  ListTile(title: const Text('Action A'), onTap: () {}),
-                  ListTile(title: const Text('Action B'), onTap: () {}),
-                  ListTile(title: const Text('Action C'), onTap: () {}),
-                ],
-                quickReactions: const [],
-                onReact: (_) {},
-                onOpenFullPicker: () {},
-              ),
-              child: const Text('trigger'),
-            ),
+            builder:
+                (context) => ElevatedButton(
+                  onPressed:
+                      () => showFocusedActionMenu(
+                        context: context,
+                        // Anchored near the very bottom of an 800-tall viewport —
+                        // no room below for a multi-item action list.
+                        anchorRect: const Rect.fromLTWH(20, 760, 200, 30),
+                        anchorSnapshot: const Text('bubble snapshot'),
+                        actions: [
+                          ListTile(title: const Text('Action A'), onTap: () {}),
+                          ListTile(title: const Text('Action B'), onTap: () {}),
+                          ListTile(title: const Text('Action C'), onTap: () {}),
+                        ],
+                        quickReactions: const [],
+                        onReact: (_) {},
+                        onOpenFullPicker: () {},
+                      ),
+                  child: const Text('trigger'),
+                ),
           ),
         ),
       ),
@@ -169,341 +190,465 @@ void main() {
   });
 
   testWidgets(
-      'the bubble scale animates mid-transition, not just at rest and settled',
-      (tester) async {
-    // Regression guard: showGeneralDialog's pageBuilder runs once per
-    // route, not once per animation frame — a widget that reads
-    // animation.value directly in a plain build() method (rather than
-    // inside an AnimatedBuilder or similar) would silently freeze at
-    // whatever value animation.value happened to be on that single
-    // build, with every other test in this file (which all use
-    // pumpAndSettle and only assert the FINAL state) unable to tell the
-    // difference. Pumping a partial frame is the only way to prove the
-    // animated properties actually move during the transition, not just
-    // that they land on the right value once it's over.
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
-                anchorSnapshot: const Text('bubble snapshot'),
-                actions: [
-                  ListTile(title: const Text('Action A'), onTap: () {}),
-                ],
-                quickReactions: const [],
-                onReact: (_) {},
-                onOpenFullPicker: () {},
-              ),
-              child: const Text('trigger'),
+    'the bubble scale animates mid-transition, not just at rest and settled',
+    (tester) async {
+      // Regression guard: showGeneralDialog's pageBuilder runs once per
+      // route, not once per animation frame — a widget that reads
+      // animation.value directly in a plain build() method (rather than
+      // inside an AnimatedBuilder or similar) would silently freeze at
+      // whatever value animation.value happened to be on that single
+      // build, with every other test in this file (which all use
+      // pumpAndSettle and only assert the FINAL state) unable to tell the
+      // difference. Pumping a partial frame is the only way to prove the
+      // animated properties actually move during the transition, not just
+      // that they land on the right value once it's over.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder:
+                  (context) => ElevatedButton(
+                    onPressed:
+                        () => showFocusedActionMenu(
+                          context: context,
+                          anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                          anchorSnapshot: const Text('bubble snapshot'),
+                          actions: [
+                            ListTile(
+                              title: const Text('Action A'),
+                              onTap: () {},
+                            ),
+                          ],
+                          quickReactions: const [],
+                          onReact: (_) {},
+                          onOpenFullPicker: () {},
+                        ),
+                    child: const Text('trigger'),
+                  ),
             ),
           ),
         ),
-      ),
-    );
-
-    await tester.tap(find.text('trigger'));
-    // First pump starts the route transition; a second pump partway
-    // through the 220ms duration samples an in-flight frame.
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 110));
-
-    final transform = tester.widget<Transform>(
-      find
-          .ancestor(
-            of: find.text('bubble snapshot'),
-            matching: find.byType(Transform),
-          )
-          .first,
-    );
-    // storage[0] is the X-scale component of the transform matrix — 1.0
-    // at rest, moving toward 1.05 as the transition progresses. Anything
-    // greater than 1.0 here proves the animation is genuinely ticking,
-    // not frozen at its initial (pre-animation) value.
-    expect(transform.transform.storage[0], greaterThan(1.0));
-
-    // Let the transition finish so the test doesn't leave a pending
-    // timer/animation behind.
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets(
-      'the menu scales in alongside the fade, not just fades at a fixed size',
-      (tester) async {
-    // Regression guard: a plain FadeTransition with no accompanying scale
-    // reads as flat/barely-there on a real device, especially next to the
-    // more prominent blur+bubble-scale happening at the same time. This
-    // asserts the menu's own AnimatedScaleFade genuinely animates its
-    // scale mid-transition (same "not just at rest and settled" discipline
-    // as the bubble-scale test above) — a value that never changes would
-    // stay frozen at its rest scale the whole time.
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
-                anchorSnapshot: const Text('bubble snapshot'),
-                actions: [
-                  ListTile(title: const Text('Action A'), onTap: () {}),
-                ],
-                quickReactions: const [],
-                onReact: (_) {},
-                onOpenFullPicker: () {},
-              ),
-              child: const Text('trigger'),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    await tester.tap(find.text('trigger'));
-    await tester.pump();
-    // The menu is staggerIndex 0 (no delay) on a 500ms AnimatedScaleFade —
-    // 200ms in is comfortably mid-transition, well before it settles.
-    await tester.pump(const Duration(milliseconds: 200));
-
-    final menuTransform = tester.widget<Transform>(
-      find
-          .ancestor(
-            of: find.text('Action A'),
-            matching: find.byType(Transform),
-          )
-          .first,
-    );
-    // Rest scale is 1.0 and AnimatedScaleFade's default beginScale is 0.0,
-    // so any value strictly less than 1.0 mid-transition proves it is
-    // genuinely animating, not frozen at its settled value. (easeOutBack
-    // overshoots past 1.0 before settling, so this does not assert an
-    // upper bound — only that it has not yet reached exactly 1.0.)
-    expect(menuTransform.transform.storage[0], isNot(1.0));
-
-    await tester.pumpAndSettle();
-
-    final settledTransform = tester.widget<Transform>(
-      find
-          .ancestor(
-            of: find.text('Action A'),
-            matching: find.byType(Transform),
-          )
-          .first,
-    );
-    expect(settledTransform.transform.storage[0], closeTo(1.0, 0.001));
-  });
-
-  testWidgets(
-      'the anchor snapshot inherits normal text styling, not the no-Material debug fallback',
-      (tester) async {
-    // Regression guard: a Text with no Material ancestor falls back to
-    // Flutter's debug-only style (fontFamily: 'monospace', fontSize: 48)
-    // — tall enough to overflow a realistically-sized bubble rect. This
-    // bug shipped undetected in this file's other four tests because none
-    // of them asserted on the snapshot's rendered style, only its
-    // presence (findsOneWidget) — and the hardcoded 60px-tall anchorRect
-    // used elsewhere in this file happened to be generous enough to hide
-    // the overflow. This test uses a REALISTIC bubble height (20px, a
-    // single line of normal body text) specifically so the debug
-    // fallback's 48px would overflow it if the Material wrapper regressed.
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                anchorRect: const Rect.fromLTWH(20, 100, 200, 20),
-                anchorSnapshot: const Text('bubble snapshot'),
-                actions: [
-                  ListTile(title: const Text('Action A'), onTap: () {}),
-                ],
-                quickReactions: const [],
-                onReact: (_) {},
-                onOpenFullPicker: () {},
-              ),
-              child: const Text('trigger'),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    await tester.tap(find.text('trigger'));
-    await tester.pumpAndSettle();
-
-    // No overflow exception — the debug fallback's 48px text would
-    // overflow this 20px-tall rect and throw during layout.
-    expect(tester.takeException(), isNull);
-
-    final textWidget = tester.widget<Text>(find.text('bubble snapshot'));
-    final resolvedStyle = DefaultTextStyle.of(
-      tester.element(find.text('bubble snapshot')),
-    ).style.merge(textWidget.style);
-
-    // The debug fallback is specifically 48.0/monospace — anything
-    // meaningfully smaller and non-monospace proves real DefaultTextStyle
-    // inheritance is active, not the no-Material fallback.
-    expect(resolvedStyle.fontFamily, isNot('monospace'));
-    expect(resolvedStyle.fontSize ?? 14, lessThan(30));
-  });
-
-  testWidgets(
-      'the menu stays within the screen width when the bubble sits near the right edge',
-      (tester) async {
-    // Regression guard: Positioned(left: anchorRect.left, ...) with no
-    // clamping, combined with the menu's fixed 240px width, rendered up to
-    // 94px (39%) off the right edge of a realistic 390-wide phone for a
-    // short own-message bubble — the single most common message shape.
-    // This anchorRect approximates that case: a short bubble's rect sitting
-    // near the right edge of a 390-wide screen.
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                anchorRect: const Rect.fromLTWH(244, 372, 100, 40),
-                anchorSnapshot: const Text('ok'),
-                actions: [
-                  ListTile(title: const Text('Action A'), onTap: () {}),
-                ],
-                quickReactions: const [],
-                onReact: (_) {},
-                onOpenFullPicker: () {},
-              ),
-              child: const Text('trigger'),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    await tester.tap(find.text('trigger'));
-    await tester.pumpAndSettle();
-
-    final menuRenderBox = tester.renderObject<RenderBox>(
-      find.byWidgetPredicate((w) => w is SizedBox && w.width == 240),
-    );
-    final menuRect = menuRenderBox.localToGlobal(Offset.zero) & menuRenderBox.size;
-
-    expect(menuRect.left, greaterThanOrEqualTo(0));
-    expect(menuRect.right, lessThanOrEqualTo(390));
-    // Sanity: prove the fixture actually reproduces the pre-fix overflow
-    // shape (anchorRect.left + 240 > 390) rather than accidentally fitting
-    // on its own — if this fails, the fixture no longer exercises the bug.
-    expect(244.0 + 240.0, greaterThan(390.0));
-  });
-
-  testWidgets('tapping a quick reaction calls onReact with that emoji and dismisses',
-      (tester) async {
-    String? reacted;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
-                anchorSnapshot: const Text('bubble snapshot'),
-                actions: [ListTile(title: const Text('Action A'), onTap: () {})],
-                quickReactions: const [
-                  ReactionQuickOption(emoji: '❤️'),
-                  ReactionQuickOption(emoji: '👍'),
-                ],
-                onReact: (emoji) => reacted = emoji,
-                onOpenFullPicker: () {},
-              ),
-              child: const Text('trigger'),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    await tester.tap(find.text('trigger'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('❤️'));
-    await tester.pumpAndSettle();
-
-    expect(reacted, '❤️');
-    // Dismissed: the action list from this call is no longer in the tree.
-    expect(find.text('Action A'), findsNothing);
-  });
-
-  testWidgets('each quick-reaction tap target meets the 44x44 accessibility minimum',
-      (tester) async {
-    // Algorithm Quality Review Checklist 5.6 (accessibility): a touch
-    // target smaller than 44x44 logical pixels fails the minimum
-    // tap-target size guideline. Found during Task 8's checklist
-    // verification — the original 22px glyph + 6px padding sizing
-    // measured ~34px, below the minimum.
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
-                anchorSnapshot: const Text('bubble snapshot'),
-                actions: [ListTile(title: const Text('Action A'), onTap: () {})],
-                quickReactions: const [
-                  ReactionQuickOption(emoji: '❤️'),
-                  ReactionQuickOption(emoji: '👍'),
-                ],
-                onReact: (_) {},
-                onOpenFullPicker: () {},
-              ),
-              child: const Text('trigger'),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    await tester.tap(find.text('trigger'));
-    await tester.pumpAndSettle();
-
-    for (final target in [find.text('❤️'), find.text('👍'), find.byIcon(Icons.add)]) {
-      final size = tester.getSize(
-        find.ancestor(of: target, matching: find.byType(InkWell)),
       );
-      expect(size.width, greaterThanOrEqualTo(44));
-      expect(size.height, greaterThanOrEqualTo(44));
-    }
+
+      await tester.tap(find.text('trigger'));
+      // First pump starts the route transition; a second pump partway
+      // through the 220ms duration samples an in-flight frame.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 110));
+
+      final transform = tester.widget<Transform>(
+        find
+            .ancestor(
+              of: find.text('bubble snapshot'),
+              matching: find.byType(Transform),
+            )
+            .first,
+      );
+      // storage[0] is the X-scale component of the transform matrix — 1.0
+      // at rest, moving toward 1.05 as the transition progresses. Anything
+      // greater than 1.0 here proves the animation is genuinely ticking,
+      // not frozen at its initial (pre-animation) value.
+      expect(transform.transform.storage[0], greaterThan(1.0));
+
+      // Let the transition finish so the test doesn't leave a pending
+      // timer/animation behind.
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'the menu scales in alongside the fade, not just fades at a fixed size',
+    (tester) async {
+      // Regression guard: a plain FadeTransition with no accompanying scale
+      // reads as flat/barely-there on a real device, especially next to the
+      // more prominent blur+bubble-scale happening at the same time. This
+      // asserts the menu's own AnimatedScaleFade genuinely animates its
+      // scale mid-transition (same "not just at rest and settled" discipline
+      // as the bubble-scale test above) — a value that never changes would
+      // stay frozen at its rest scale the whole time.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder:
+                  (context) => ElevatedButton(
+                    onPressed:
+                        () => showFocusedActionMenu(
+                          context: context,
+                          anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                          anchorSnapshot: const Text('bubble snapshot'),
+                          actions: [
+                            ListTile(
+                              title: const Text('Action A'),
+                              onTap: () {},
+                            ),
+                          ],
+                          quickReactions: const [],
+                          onReact: (_) {},
+                          onOpenFullPicker: () {},
+                        ),
+                    child: const Text('trigger'),
+                  ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('trigger'));
+      await tester.pump();
+      // Sample early in the tighter 360ms spring before it settles.
+      await tester.pump(const Duration(milliseconds: 40));
+
+      final menuTransform = tester.widget<Transform>(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('focused-action-menu')),
+              matching: find.byType(Transform),
+            )
+            .first,
+      );
+      // Rest scale is 1.0 and the menu begins at 0.92, so a non-1 value here
+      // proves the spring is genuinely in flight rather than only fading.
+      expect(menuTransform.transform.storage[0], isNot(1.0));
+
+      await tester.pumpAndSettle();
+
+      final settledTransform = tester.widget<Transform>(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('focused-action-menu')),
+              matching: find.byType(Transform),
+            )
+            .first,
+      );
+      expect(settledTransform.transform.storage[0], closeTo(1.0, 0.001));
+    },
+  );
+
+  testWidgets(
+    'the anchor snapshot inherits normal text styling, not the no-Material debug fallback',
+    (tester) async {
+      // Regression guard: a Text with no Material ancestor falls back to
+      // Flutter's debug-only style (fontFamily: 'monospace', fontSize: 48)
+      // — tall enough to overflow a realistically-sized bubble rect. This
+      // bug shipped undetected in this file's other four tests because none
+      // of them asserted on the snapshot's rendered style, only its
+      // presence (findsOneWidget) — and the hardcoded 60px-tall anchorRect
+      // used elsewhere in this file happened to be generous enough to hide
+      // the overflow. This test uses a REALISTIC bubble height (20px, a
+      // single line of normal body text) specifically so the debug
+      // fallback's 48px would overflow it if the Material wrapper regressed.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder:
+                  (context) => ElevatedButton(
+                    onPressed:
+                        () => showFocusedActionMenu(
+                          context: context,
+                          anchorRect: const Rect.fromLTWH(20, 100, 200, 20),
+                          anchorSnapshot: const Text('bubble snapshot'),
+                          actions: [
+                            ListTile(
+                              title: const Text('Action A'),
+                              onTap: () {},
+                            ),
+                          ],
+                          quickReactions: const [],
+                          onReact: (_) {},
+                          onOpenFullPicker: () {},
+                        ),
+                    child: const Text('trigger'),
+                  ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('trigger'));
+      await tester.pumpAndSettle();
+
+      // No overflow exception — the debug fallback's 48px text would
+      // overflow this 20px-tall rect and throw during layout.
+      expect(tester.takeException(), isNull);
+
+      final textWidget = tester.widget<Text>(find.text('bubble snapshot'));
+      final resolvedStyle = DefaultTextStyle.of(
+        tester.element(find.text('bubble snapshot')),
+      ).style.merge(textWidget.style);
+
+      // The debug fallback is specifically 48.0/monospace — anything
+      // meaningfully smaller and non-monospace proves real DefaultTextStyle
+      // inheritance is active, not the no-Material fallback.
+      expect(resolvedStyle.fontFamily, isNot('monospace'));
+      expect(resolvedStyle.fontSize ?? 14, lessThan(30));
+    },
+  );
+
+  testWidgets(
+    'the menu stays within the screen width when the bubble sits near the right edge',
+    (tester) async {
+      // Regression guard: Positioned(left: anchorRect.left, ...) with no
+      // clamping, combined with the menu's fixed 240px width, rendered up to
+      // 94px (39%) off the right edge of a realistic 390-wide phone for a
+      // short own-message bubble — the single most common message shape.
+      // This anchorRect approximates that case: a short bubble's rect sitting
+      // near the right edge of a 390-wide screen.
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder:
+                  (context) => ElevatedButton(
+                    onPressed:
+                        () => showFocusedActionMenu(
+                          context: context,
+                          anchorRect: const Rect.fromLTWH(244, 372, 100, 40),
+                          anchorSnapshot: const Text('ok'),
+                          actions: [
+                            ListTile(
+                              title: const Text('Action A'),
+                              onTap: () {},
+                            ),
+                          ],
+                          quickReactions: const [],
+                          onReact: (_) {},
+                          onOpenFullPicker: () {},
+                        ),
+                    child: const Text('trigger'),
+                  ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('trigger'));
+      await tester.pumpAndSettle();
+
+      final menuRenderBox = tester.renderObject<RenderBox>(
+        find.byWidgetPredicate((w) => w is SizedBox && w.width == 240),
+      );
+      final menuRect =
+          menuRenderBox.localToGlobal(Offset.zero) & menuRenderBox.size;
+
+      expect(menuRect.left, greaterThanOrEqualTo(0));
+      expect(menuRect.right, lessThanOrEqualTo(390));
+      // Sanity: prove the fixture actually reproduces the pre-fix overflow
+      // shape (anchorRect.left + 240 > 390) rather than accidentally fitting
+      // on its own — if this fails, the fixture no longer exercises the bug.
+      expect(244.0 + 240.0, greaterThan(390.0));
+    },
+  );
+
+  testWidgets(
+    'tapping a quick reaction calls onReact with that emoji and dismisses',
+    (tester) async {
+      String? reacted;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder:
+                  (context) => ElevatedButton(
+                    onPressed:
+                        () => showFocusedActionMenu(
+                          context: context,
+                          anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                          anchorSnapshot: const Text('bubble snapshot'),
+                          actions: [
+                            ListTile(
+                              title: const Text('Action A'),
+                              onTap: () {},
+                            ),
+                          ],
+                          quickReactions: const [
+                            ReactionQuickOption(emoji: '❤️'),
+                            ReactionQuickOption(emoji: '👍'),
+                          ],
+                          onReact: (emoji) => reacted = emoji,
+                          onOpenFullPicker: () {},
+                        ),
+                    child: const Text('trigger'),
+                  ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('trigger'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('❤️'));
+      await tester.pumpAndSettle();
+
+      expect(reacted, '❤️');
+      // Dismissed: the action list from this call is no longer in the tree.
+      expect(find.text('Action A'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'each quick-reaction tap target meets the 44x44 accessibility minimum',
+    (tester) async {
+      // Algorithm Quality Review Checklist 5.6 (accessibility): a touch
+      // target smaller than 44x44 logical pixels fails the minimum
+      // tap-target size guideline. Found during Task 8's checklist
+      // verification — the original 22px glyph + 6px padding sizing
+      // measured ~34px, below the minimum.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder:
+                  (context) => ElevatedButton(
+                    onPressed:
+                        () => showFocusedActionMenu(
+                          context: context,
+                          anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                          anchorSnapshot: const Text('bubble snapshot'),
+                          actions: [
+                            ListTile(
+                              title: const Text('Action A'),
+                              onTap: () {},
+                            ),
+                          ],
+                          quickReactions: const [
+                            ReactionQuickOption(emoji: '❤️'),
+                            ReactionQuickOption(emoji: '👍'),
+                          ],
+                          onReact: (_) {},
+                          onOpenFullPicker: () {},
+                        ),
+                    child: const Text('trigger'),
+                  ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('trigger'));
+      await tester.pumpAndSettle();
+
+      for (final target in [
+        find.text('❤️'),
+        find.text('👍'),
+        find.byIcon(Icons.add),
+      ]) {
+        final size = tester.getSize(
+          find.ancestor(of: target, matching: find.byType(InkWell)),
+        );
+        expect(size.width, greaterThanOrEqualTo(44));
+        expect(size.height, greaterThanOrEqualTo(44));
+      }
+    },
+  );
+
+  testWidgets('emoji and action rows compress while held and spring back', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder:
+                (context) => ElevatedButton(
+                  onPressed:
+                      () => showFocusedActionMenu(
+                        context: context,
+                        anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                        anchorSnapshot: const Text('bubble snapshot'),
+                        actions: [
+                          ListTile(title: const Text('Action A'), onTap: () {}),
+                        ],
+                        quickReactions: const [
+                          ReactionQuickOption(emoji: '❤️'),
+                        ],
+                        onReact: (_) {},
+                        onOpenFullPicker: () {},
+                      ),
+                  child: const Text('trigger'),
+                ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('trigger'));
+    await tester.pumpAndSettle();
+
+    final emojiGesture = await tester.startGesture(
+      tester.getCenter(find.text('❤️')),
+    );
+    await tester.pump();
+    expect(
+      tester
+          .widget<AnimatedScale>(
+            find
+                .ancestor(
+                  of: find.text('❤️'),
+                  matching: find.byType(AnimatedScale),
+                )
+                .first,
+          )
+          .scale,
+      0.84,
+    );
+    await emojiGesture.cancel();
+    await tester.pump();
+
+    final actionGesture = await tester.startGesture(
+      tester.getCenter(find.text('Action A')),
+    );
+    await tester.pump();
+    expect(
+      tester
+          .widget<AnimatedScale>(
+            find
+                .ancestor(
+                  of: find.text('Action A'),
+                  matching: find.byType(AnimatedScale),
+                )
+                .first,
+          )
+          .scale,
+      0.975,
+    );
+    await actionGesture.cancel();
+    await tester.pumpAndSettle();
   });
 
-  testWidgets('tapping the "+" calls onOpenFullPicker and dismisses',
-      (tester) async {
+  testWidgets('tapping the "+" calls onOpenFullPicker and dismisses', (
+    tester,
+  ) async {
     var openedPicker = false;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
-                anchorSnapshot: const Text('bubble snapshot'),
-                actions: [ListTile(title: const Text('Action A'), onTap: () {})],
-                quickReactions: const [ReactionQuickOption(emoji: '❤️')],
-                onReact: (_) {},
-                onOpenFullPicker: () => openedPicker = true,
-              ),
-              child: const Text('trigger'),
-            ),
+            builder:
+                (context) => ElevatedButton(
+                  onPressed:
+                      () => showFocusedActionMenu(
+                        context: context,
+                        anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                        anchorSnapshot: const Text('bubble snapshot'),
+                        actions: [
+                          ListTile(title: const Text('Action A'), onTap: () {}),
+                        ],
+                        quickReactions: const [
+                          ReactionQuickOption(emoji: '❤️'),
+                        ],
+                        onReact: (_) {},
+                        onOpenFullPicker: () => openedPicker = true,
+                      ),
+                  child: const Text('trigger'),
+                ),
           ),
         ),
       ),
@@ -519,72 +664,81 @@ void main() {
   });
 
   testWidgets(
-      'a full tapback row stays within the screen width near the right edge',
-      (tester) async {
-    // Regression guard: the reaction row is a SEPARATE card from the 240px
-    // action list and is sized by its own content, so a realistic six-emoji
-    // tapback set measures ~257px — wider than menuWidth. Clamping the
-    // menu's left edge against menuWidth alone let the wider row hang ~8px
-    // off the right edge of a 390-wide phone. The pre-existing right-edge
-    // test above cannot catch this: it asserts on the 240px SizedBox (the
-    // action list), not on the reaction row.
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    'a full tapback row stays within the screen width near the right edge',
+    (tester) async {
+      // Regression guard: the reaction row is a SEPARATE card from the 240px
+      // action list and is sized by its own content, so a realistic six-emoji
+      // tapback set measures ~257px — wider than menuWidth. Clamping the
+      // menu's left edge against menuWidth alone let the wider row hang ~8px
+      // off the right edge of a 390-wide phone. The pre-existing right-edge
+      // test above cannot catch this: it asserts on the 240px SizedBox (the
+      // action list), not on the reaction row.
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                anchorRect: const Rect.fromLTWH(244, 372, 100, 40),
-                anchorSnapshot: const Text('ok'),
-                actions: [ListTile(title: const Text('Action A'), onTap: () {})],
-                quickReactions: const [
-                  ReactionQuickOption(emoji: '❤️'),
-                  ReactionQuickOption(emoji: '👍'),
-                  ReactionQuickOption(emoji: '😂'),
-                  ReactionQuickOption(emoji: '😮'),
-                  ReactionQuickOption(emoji: '😢'),
-                  ReactionQuickOption(emoji: '🙏'),
-                ],
-                onReact: (_) {},
-                onOpenFullPicker: () {},
-              ),
-              child: const Text('trigger'),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder:
+                  (context) => ElevatedButton(
+                    onPressed:
+                        () => showFocusedActionMenu(
+                          context: context,
+                          anchorRect: const Rect.fromLTWH(244, 372, 100, 40),
+                          anchorSnapshot: const Text('ok'),
+                          actions: [
+                            ListTile(
+                              title: const Text('Action A'),
+                              onTap: () {},
+                            ),
+                          ],
+                          quickReactions: const [
+                            ReactionQuickOption(emoji: '❤️'),
+                            ReactionQuickOption(emoji: '👍'),
+                            ReactionQuickOption(emoji: '😂'),
+                            ReactionQuickOption(emoji: '😮'),
+                            ReactionQuickOption(emoji: '😢'),
+                            ReactionQuickOption(emoji: '🙏'),
+                          ],
+                          onReact: (_) {},
+                          onOpenFullPicker: () {},
+                        ),
+                    child: const Text('trigger'),
+                  ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.tap(find.text('trigger'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('trigger'));
+      await tester.pumpAndSettle();
 
-    expect(tester.takeException(), isNull);
+      expect(tester.takeException(), isNull);
 
-    final rowBox = tester.renderObject<RenderBox>(
-      find
-          .ancestor(
-            of: find.byIcon(Icons.add),
-            matching: find.byType(Material),
-          )
-          .first,
-    );
-    final rowRect = rowBox.localToGlobal(Offset.zero) & rowBox.size;
+      final rowBox = tester.renderObject<RenderBox>(
+        find
+            .ancestor(
+              of: find.byIcon(Icons.add),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      final rowRect = rowBox.localToGlobal(Offset.zero) & rowBox.size;
 
-    expect(rowRect.left, greaterThanOrEqualTo(0));
-    expect(rowRect.right, lessThanOrEqualTo(390));
-    // Sanity: prove the fixture reproduces the overflow shape — the row is
-    // genuinely wider than the 240px action list it is clamped alongside.
-    expect(rowRect.width, greaterThan(240));
-  });
+      expect(rowRect.left, greaterThanOrEqualTo(0));
+      expect(rowRect.right, lessThanOrEqualTo(390));
+      // Sanity: prove the fixture reproduces the overflow shape — the row is
+      // genuinely wider than the 240px action list it is clamped alongside.
+      expect(rowRect.width, greaterThan(240));
+    },
+  );
 
-  testWidgets('an over-long reaction row scrolls instead of overflowing',
-      (tester) async {
+  testWidgets('an over-long reaction row scrolls instead of overflowing', (
+    tester,
+  ) async {
     // The row's width is unbounded in its own right, so a caller passing an
     // unusually long emoji list must not paint off-screen or throw a layout
     // overflow — it is capped to the usable width and scrolls horizontally.
@@ -597,21 +751,25 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                anchorRect: const Rect.fromLTWH(200, 300, 100, 40),
-                anchorSnapshot: const Text('ok'),
-                actions: [ListTile(title: const Text('Action A'), onTap: () {})],
-                quickReactions: List.generate(
-                  20,
-                  (_) => const ReactionQuickOption(emoji: '❤️'),
+            builder:
+                (context) => ElevatedButton(
+                  onPressed:
+                      () => showFocusedActionMenu(
+                        context: context,
+                        anchorRect: const Rect.fromLTWH(200, 300, 100, 40),
+                        anchorSnapshot: const Text('ok'),
+                        actions: [
+                          ListTile(title: const Text('Action A'), onTap: () {}),
+                        ],
+                        quickReactions: List.generate(
+                          20,
+                          (_) => const ReactionQuickOption(emoji: '❤️'),
+                        ),
+                        onReact: (_) {},
+                        onOpenFullPicker: () {},
+                      ),
+                  child: const Text('trigger'),
                 ),
-                onReact: (_) {},
-                onOpenFullPicker: () {},
-              ),
-              child: const Text('trigger'),
-            ),
           ),
         ),
       ),
@@ -637,184 +795,179 @@ void main() {
   });
 
   testWidgets(
-      'the menu, then the reaction row, then each emoji in turn — staged, not simultaneous',
-      (tester) async {
-    // Matches the real iMessage sequence (confirmed by direct observation,
-    // not assumed): the action menu animates in FIRST, the reaction row's
-    // own container starts after the menu has begun (not simultaneously),
-    // and once the row itself is animating, each emoji inside staggers in
-    // left-to-right as its own quick ripple. Each stage is its own
-    // AnimatedScaleFade with staggerIndex * staggerDelay * duration as its
-    // start delay: with duration 500ms and staggerDelay 0.12, that's 60ms
-    // per index — menu (index 0) starts at 0ms, row (index 1) at 60ms,
-    // first emoji (index 2) at 120ms, last of 4 row items (index 5) at
-    // 300ms. This asserts genuine ordering via real sample points, not
-    // just that each piece eventually reaches full opacity.
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
-                anchorSnapshot: const Text('bubble snapshot'),
-                actions: [
-                  ListTile(title: const Text('Action A'), onTap: () {}),
-                ],
-                quickReactions: const [
-                  ReactionQuickOption(emoji: '❤️'),
-                  ReactionQuickOption(emoji: '👍'),
-                  ReactionQuickOption(emoji: '👎'),
-                ],
-                onReact: (_) {},
-                onOpenFullPicker: () {},
-              ),
-              child: const Text('trigger'),
+    'the menu unfolds in one overlapping reaction and action cascade',
+    (tester) async {
+      // The updated motion keeps ordering but deliberately overlaps stages:
+      // menu at 0ms, row/action A at 18ms, first emoji at 36ms, then the rest
+      // at 18ms intervals. It reads as one unfolding surface rather than four
+      // separate, long animations.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder:
+                  (context) => ElevatedButton(
+                    onPressed:
+                        () => showFocusedActionMenu(
+                          context: context,
+                          anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                          anchorSnapshot: const Text('bubble snapshot'),
+                          actions: [
+                            ListTile(
+                              title: const Text('Action A'),
+                              onTap: () {},
+                            ),
+                          ],
+                          quickReactions: const [
+                            ReactionQuickOption(emoji: '❤️'),
+                            ReactionQuickOption(emoji: '👍'),
+                            ReactionQuickOption(emoji: '👎'),
+                          ],
+                          onReact: (_) {},
+                          onOpenFullPicker: () {},
+                        ),
+                    child: const Text('trigger'),
+                  ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.tap(find.text('trigger'));
-    await tester.pump();
+      await tester.tap(find.text('trigger'));
+      await tester.pump();
 
-    // AnimatedScaleFade wraps its child in Opacity (not FadeTransition),
-    // so these read the innermost Opacity ancestor of each landmark Text.
-    double opacityAncestorOf(Finder target) => tester
-        .widget<Opacity>(
-          find.ancestor(of: target, matching: find.byType(Opacity)).first,
-        )
-        .opacity;
+      double keyedOpacity(String key) =>
+          tester
+              .widget<Opacity>(
+                find
+                    .descendant(
+                      of: find.byKey(ValueKey(key)),
+                      matching: find.byType(Opacity),
+                    )
+                    .first,
+              )
+              .opacity;
 
-    double menuOpacity() => opacityAncestorOf(find.text('Action A'));
-    // The row's own AnimatedScaleFade wraps the WHOLE reactionRow Material,
-    // so any Text inside it (e.g. the first emoji) has the row's Opacity
-    // as its outer/second ancestor — the emoji's own per-item
-    // AnimatedScaleFade is the closer/first one.
-    double rowOpacity() {
-      final chain = find
-          .ancestor(of: find.text('❤️'), matching: find.byType(Opacity))
-          .evaluate()
-          .map((e) => (e.widget as Opacity).opacity)
-          .toList();
-      return chain[1];
-    }
+      double menuOpacity() => keyedOpacity('focused-action-menu');
+      double rowOpacity() => keyedOpacity('focused-reaction-row');
+      double firstEmojiOpacity() => keyedOpacity('focused-reaction-0');
+      double lastEmojiOpacity() => keyedOpacity('focused-reaction-2');
 
-    double firstEmojiOpacity() => opacityAncestorOf(find.text('❤️'));
-    double lastEmojiOpacity() => opacityAncestorOf(find.text('👎'));
+      // At 10ms only the menu container has started.
+      await tester.pump(const Duration(milliseconds: 10));
+      expect(menuOpacity(), greaterThan(0.0));
+      expect(rowOpacity(), 0.0);
+      expect(firstEmojiOpacity(), 0.0);
 
-    // At 40ms: only the menu (0ms delay) has started; the row (60ms delay)
-    // and every emoji (120ms+ delay) have not.
-    await tester.pump(const Duration(milliseconds: 40));
-    expect(menuOpacity(), greaterThan(0.0));
-    expect(rowOpacity(), 0.0);
-    expect(firstEmojiOpacity(), 0.0);
+      // At 25ms the row has joined, while its first emoji is still waiting.
+      await tester.pump(const Duration(milliseconds: 15));
+      expect(rowOpacity(), greaterThan(0.0));
+      expect(firstEmojiOpacity(), 0.0);
 
-    // At 90ms: the row (60ms delay) has started; the first emoji (120ms
-    // delay) has not.
-    await tester.pump(const Duration(milliseconds: 50));
-    expect(rowOpacity(), greaterThan(0.0));
-    expect(firstEmojiOpacity(), 0.0);
+      // At 45ms the first emoji is moving but the final item has not begun.
+      await tester.pump(const Duration(milliseconds: 20));
+      expect(firstEmojiOpacity(), greaterThan(0.0));
+      expect(lastEmojiOpacity(), 0.0);
 
-    // At 150ms: the first emoji (120ms delay) has started; the last row
-    // item (300ms delay) has not — proves the per-emoji stagger itself is
-    // real, not all four popping in together the moment the row starts.
-    await tester.pump(const Duration(milliseconds: 60));
-    expect(firstEmojiOpacity(), greaterThan(0.0));
-    expect(lastEmojiOpacity(), 0.0);
-
-    await tester.pumpAndSettle();
-    expect(menuOpacity(), 1.0);
-    expect(rowOpacity(), 1.0);
-    expect(firstEmojiOpacity(), 1.0);
-    expect(lastEmojiOpacity(), 1.0);
-  });
+      await tester.pumpAndSettle();
+      expect(menuOpacity(), 1.0);
+      expect(rowOpacity(), 1.0);
+      expect(firstEmojiOpacity(), 1.0);
+      expect(lastEmojiOpacity(), 1.0);
+    },
+  );
 
   testWidgets(
-      'dismissing plays the same stagger in reverse — row and emoji exit before the menu',
-      (tester) async {
-    // Matches the real iMessage sequence in reverse: whatever animated in
-    // LAST (the reaction row, and the emoji inside it) animates OUT
-    // first, and whatever animated in FIRST (the action menu) animates
-    // out last. Each AnimatedScaleFade reuses its own entrance
-    // staggerIndex under reverse:true — with the SAME Interval mapping
-    // run backwards, the item with the largest delay (the row, then each
-    // emoji) reaches opacity 0 soonest, and the item with delay 0 (the
-    // menu) is the last to reach 0.
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showFocusedActionMenu(
-                context: context,
-                anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
-                anchorSnapshot: const Text('bubble snapshot'),
-                actions: [
-                  ListTile(title: const Text('Action A'), onTap: () {}),
-                ],
-                quickReactions: const [
-                  ReactionQuickOption(emoji: '❤️'),
-                  ReactionQuickOption(emoji: '👍'),
-                ],
-                onReact: (_) {},
-                onOpenFullPicker: () {},
-              ),
-              child: const Text('trigger'),
+    'dismissing plays the same stagger in reverse — row and emoji exit before the menu',
+    (tester) async {
+      // Matches the real iMessage sequence in reverse: whatever animated in
+      // LAST (the reaction row, and the emoji inside it) animates OUT
+      // first, and whatever animated in FIRST (the action menu) animates
+      // out last. Each AnimatedScaleFade reuses its own entrance
+      // staggerIndex under reverse:true — with the SAME Interval mapping
+      // run backwards, the item with the largest delay (the row, then each
+      // emoji) reaches opacity 0 soonest, and the item with delay 0 (the
+      // menu) is the last to reach 0.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder:
+                  (context) => ElevatedButton(
+                    onPressed:
+                        () => showFocusedActionMenu(
+                          context: context,
+                          anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                          anchorSnapshot: const Text('bubble snapshot'),
+                          actions: [
+                            ListTile(
+                              title: const Text('Action A'),
+                              onTap: () {},
+                            ),
+                          ],
+                          quickReactions: const [
+                            ReactionQuickOption(emoji: '❤️'),
+                            ReactionQuickOption(emoji: '👍'),
+                          ],
+                          onReact: (_) {},
+                          onOpenFullPicker: () {},
+                        ),
+                    child: const Text('trigger'),
+                  ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.tap(find.text('trigger'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('trigger'));
+      await tester.pumpAndSettle();
 
-    double opacityAncestorOf(Finder target) => tester
-        .widget<Opacity>(
-          find.ancestor(of: target, matching: find.byType(Opacity)).first,
-        )
-        .opacity;
+      double opacityAncestorOf(Finder target) =>
+          tester
+              .widget<Opacity>(
+                find.ancestor(of: target, matching: find.byType(Opacity)).first,
+              )
+              .opacity;
 
-    double menuOpacity() => opacityAncestorOf(find.text('Action A'));
-    double rowOpacity() {
-      final chain = find
-          .ancestor(of: find.text('❤️'), matching: find.byType(Opacity))
-          .evaluate()
-          .map((e) => (e.widget as Opacity).opacity)
-          .toList();
-      return chain[1];
-    }
+      double menuOpacity() => opacityAncestorOf(find.text('Action A'));
+      double rowOpacity() {
+        final chain =
+            find
+                .ancestor(of: find.text('❤️'), matching: find.byType(Opacity))
+                .evaluate()
+                .map((e) => (e.widget as Opacity).opacity)
+                .toList();
+        return chain[1];
+      }
 
-    double emojiOpacity() => opacityAncestorOf(find.text('❤️'));
+      double emojiOpacity() => opacityAncestorOf(find.text('❤️'));
 
-    // Fully settled in before dismissing.
-    expect(menuOpacity(), 1.0);
-    expect(rowOpacity(), 1.0);
-    expect(emojiOpacity(), 1.0);
+      // Fully settled in before dismissing.
+      expect(menuOpacity(), 1.0);
+      expect(rowOpacity(), 1.0);
+      expect(emojiOpacity(), 1.0);
 
-    // Tap the scrim to dismiss — this now goes through PopScope's
-    // onPopInvokedWithResult rather than popping immediately.
-    await tester.tapAt(const Offset(5, 5));
-    await tester.pump();
+      // Tap the scrim to dismiss — this now goes through PopScope's
+      // onPopInvokedWithResult rather than popping immediately.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pump();
 
-    // With duration 500ms and staggerDelay 0.12 (60ms/index): menu index
-    // 0, row index 1 (60ms), first emoji index 2 (120ms). Reversing the
-    // SAME Interval means the emoji (largest delay) unwinds fastest and
-    // the menu (delay 0) unwinds slowest. At 100ms in: the emoji and row
-    // should already be visibly fading (opacity dropping below 1.0)
-    // while the menu — animating out last — is still at or very close to
-    // full opacity.
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(emojiOpacity(), lessThan(1.0));
-    expect(rowOpacity(), lessThan(1.0));
-    expect(menuOpacity(), greaterThanOrEqualTo(rowOpacity()));
+      // With duration 360ms and staggerDelay 0.05 (18ms/index): menu index
+      // 0, row index 1, first emoji index 2. Reversing the same Interval
+      // means the emoji (largest delay) unwinds fastest and the menu (delay
+      // 0) unwinds slowest. At 100ms in, the emoji and row
+      // should already be visibly fading (opacity dropping below 1.0)
+      // while the menu — animating out last — is still at or very close to
+      // full opacity.
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(emojiOpacity(), lessThan(1.0));
+      expect(rowOpacity(), lessThan(1.0));
+      expect(menuOpacity(), greaterThanOrEqualTo(rowOpacity()));
 
-    // Let the reverse stagger and the delayed pop finish.
-    await tester.pumpAndSettle();
-    expect(find.text('Action A'), findsNothing);
-    expect(find.text('bubble snapshot'), findsNothing);
-  });
+      // Let the reverse stagger and the delayed pop finish.
+      await tester.pumpAndSettle();
+      expect(find.text('Action A'), findsNothing);
+      expect(find.text('bubble snapshot'), findsNothing);
+    },
+  );
 }
