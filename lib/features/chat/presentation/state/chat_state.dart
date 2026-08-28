@@ -1686,6 +1686,24 @@ class ChatController extends StateNotifier<ChatState> {
       error.cause,
     );
 
+    // ChatLog.e shapes the cause to a length so message bodies cannot leak,
+    // which leaves an infrastructure failure — an RLS denial, a CHECK
+    // violation, a disabled feature flag, a storage rejection — logged as
+    // `<len=34>` and indistinguishable from any other error. The user sees
+    // a banner and the console says nothing usable.
+    //
+    // These two carry no user text: PostgrestException and StorageException
+    // describe the REQUEST (keys, constraints, policies), so they are safe
+    // to print intact and are usually the entire diagnostic value.
+    final cause = error.cause;
+    if (cause is PostgrestException || cause is StorageException) {
+      ChatLog.diagnostic(
+        'send failed cid=${ChatLog.shortId(pending.clientMessageId)} '
+        'media=${pending.mediaType ?? 'text'}',
+        cause,
+      );
+    }
+
     // Bounded exponential backoff with equal jitter (Spec 4.2, 7.2): half the
     // window is fixed, half is randomized so many clients flushing after an
     // outage do not retry in lockstep. Window caps at 2^6 = 64s.
