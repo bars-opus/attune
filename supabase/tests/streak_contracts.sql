@@ -90,4 +90,113 @@ BEGIN
   END IF;
 END $$;
 
+-- 4. Views decrement, and clips are destroyed only at ZERO.
+--
+-- mark_video_viewed deletes the object on FIRST view, which is right for
+-- strict view-once and fatal for a budget. Streaks need their own path.
+DO $$
+DECLARE v_msg uuid; v_left int;
+BEGIN
+  INSERT INTO public.messages
+    (relationship_id, sender_id, client_message_id, content,
+     streak_views_remaining)
+  VALUES ('5e000000-0000-0000-0000-000000000001',
+          '5f000000-0000-0000-0000-0000000000a1',
+          gen_random_uuid(), 'streak parent', 3)
+  RETURNING id INTO v_msg;
+
+  INSERT INTO public.streak_clips (message_id, clip_index, media_url, duration_ms)
+  VALUES (v_msg, 0, 'chat/clip-0', 60000);
+
+  -- The RECIPIENT views it.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', '5f000000-0000-0000-0000-0000000000b2',
+                      'role', 'authenticated')::text, true);
+
+  v_left := public.mark_streak_viewed(v_msg);
+  IF v_left <> 2 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: expected 2 views left, got %', v_left;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.streak_clips WHERE message_id = v_msg) THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: clips destroyed while views still remained';
+  END IF;
+
+  v_left := public.mark_streak_viewed(v_msg);
+  v_left := public.mark_streak_viewed(v_msg);
+  IF v_left <> 0 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: expected 0 views left, got %', v_left;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM public.streak_clips WHERE message_id = v_msg) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: clips survived a spent budget';
+  END IF;
+
+  -- Spent: a further view must not go negative.
+  v_left := public.mark_streak_viewed(v_msg);
+  IF v_left <> 0 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: budget went below zero (%)', v_left;
+  END IF;
+
+  PERFORM set_config('request.jwt.claims', '', true);
+END $$;
+
+-- 5. The SENDER re-opening their own streak does not spend the
+--    recipient's budget.
+DO $$
+DECLARE v_msg uuid; v_left int;
+BEGIN
+  INSERT INTO public.messages
+    (relationship_id, sender_id, client_message_id, content,
+     streak_views_remaining)
+  VALUES ('5e000000-0000-0000-0000-000000000001',
+          '5f000000-0000-0000-0000-0000000000a1',
+          gen_random_uuid(), 'streak parent', 2)
+  RETURNING id INTO v_msg;
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', '5f000000-0000-0000-0000-0000000000a1',
+                      'role', 'authenticated')::text, true);
+  v_left := public.mark_streak_viewed(v_msg);
+
+  IF v_left <> 2 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the sender spent the recipient budget (% left)', v_left;
+  END IF;
+
+  PERFORM set_config('request.jwt.claims', '', true);
+END $$;
+
+-- 6. A non-member cannot view, or even probe, another couple's streak.
+DO $$
+DECLARE v_msg uuid; v_ok boolean := false;
+BEGIN
+  INSERT INTO auth.users (id) VALUES ('5f000000-0000-0000-0000-0000000000c3')
+  ON CONFLICT (id) DO NOTHING;
+
+  INSERT INTO public.messages
+    (relationship_id, sender_id, client_message_id, content,
+     streak_views_remaining)
+  VALUES ('5e000000-0000-0000-0000-000000000001',
+          '5f000000-0000-0000-0000-0000000000a1',
+          gen_random_uuid(), 'streak parent', 1)
+  RETURNING id INTO v_msg;
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', '5f000000-0000-0000-0000-0000000000c3',
+                      'role', 'authenticated')::text, true);
+  BEGIN
+    PERFORM public.mark_streak_viewed(v_msg);
+    v_ok := true;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+
+  IF v_ok THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a non-member viewed a streak';
+  END IF;
+
+  PERFORM set_config('request.jwt.claims', '', true);
+END $$;
+
 ROLLBACK;
