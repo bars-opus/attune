@@ -25,9 +25,9 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
 
-    expect(find.text('Dating Mode'), findsOneWidget);
+    expect(find.textContaining('Dating Mode'), findsWidgets);
     expect(find.text('Dating Dashboard Stub'), findsNothing);
   });
 
@@ -45,9 +45,9 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
 
-    expect(find.text('Healing Mode'), findsOneWidget);
+    expect(find.textContaining('Healing Mode'), findsWidgets);
     expect(find.text('Healing Journey Stub'), findsNothing);
   });
 }

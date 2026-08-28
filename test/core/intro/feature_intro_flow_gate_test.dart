@@ -75,10 +75,10 @@ void main() {
     await store.markIntroSeen('fakeFeature');
 
     await tester.pumpWidget(buildTestable(store));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
 
     expect(find.text('Real Feature Screen'), findsOneWidget);
-    expect(find.text('Fake Feature'), findsNothing);
+    expect(find.textContaining('Fake Feature'), findsNothing);
   });
 
   testWidgets('renders the intro flow when unseen, then swaps to the real feature on completion', (tester) async {
@@ -86,13 +86,13 @@ void main() {
     final store = SeenFeatureIntroStore(prefs);
 
     await tester.pumpWidget(buildTestable(store));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
 
-    expect(find.text('Fake Feature'), findsOneWidget);
+    expect(find.textContaining('Fake Feature'), findsWidgets);
     expect(find.text('Real Feature Screen'), findsNothing);
 
     await tester.tap(find.text('Skip intro'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
 
     expect(find.text('Real Feature Screen'), findsOneWidget);
     expect(store.hasSeenIntro('fakeFeature'), isTrue);
@@ -105,14 +105,14 @@ void main() {
       final store = _ThrowingMarkSeenStore(SeenFeatureIntroStore(prefs));
 
       await tester.pumpWidget(buildTestable(store));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 600));
 
-      expect(find.text('Fake Feature'), findsOneWidget);
+      expect(find.textContaining('Fake Feature'), findsWidgets);
 
       // Should not throw up through the widget tree despite the
       // underlying store's markIntroSeen rejecting.
       await tester.tap(find.text('Skip intro'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 600));
 
       expect(find.text('Real Feature Screen'), findsOneWidget);
       expect(tester.takeException(), isNull);

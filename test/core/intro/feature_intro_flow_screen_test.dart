@@ -72,9 +72,9 @@ void main() {
 
   testWidgets('starts on page 1 with brief intro content, no Back control', (tester) async {
     await tester.pumpWidget(buildTestable(onComplete: () {}));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
 
-    expect(find.text('Fake Feature'), findsOneWidget);
+    expect(find.text('Welcome\nTo Fake Feature'), findsOneWidget);
     expect(find.text('This is the brief intro paragraph.'), findsOneWidget);
     expect(find.text('Back'), findsNothing);
   });
@@ -86,49 +86,47 @@ void main() {
     // otherwise flutter_test's hit-test pre-check on the still-animating
     // button (and the PageView scroll animation) can misfire as a false
     // positive, or the tap can land before the button's final position.
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
 
     await tester.tap(find.text('Continue'), warnIfMissed: false);
-    await tester.pumpAndSettle();
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(milliseconds: 600));
 
     expect(find.text('Fake content title'), findsOneWidget);
   });
 
-  testWidgets('Continue advances page 2 to page 3 (FAQ), Back returns to page 2', (tester) async {
+  testWidgets('Continue advances page 2 to page 3 (FAQ)', (tester) async {
+    // Forward-only since de817695's redesign: the Back control was
+    // replaced by the progress bar, so this covers the advance and the
+    // absence of a way back, rather than a return trip.
     await tester.pumpWidget(buildTestable(onComplete: () {}));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
 
     await tester.tap(find.text('Continue'), warnIfMissed: false);
-    await tester.pumpAndSettle();
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(milliseconds: 600));
     await tester.tap(find.text('Continue'), warnIfMissed: false);
-    await tester.pumpAndSettle();
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(milliseconds: 600));
 
     expect(find.text('Is this a real FAQ?'), findsOneWidget);
-
-    await tester.tap(find.text('Back'), warnIfMissed: false);
-    await tester.pumpAndSettle();
-    await tester.pumpAndSettle();
-
-    expect(find.text('Fake content title'), findsOneWidget);
+    expect(find.text('Back'), findsNothing);
   });
 
   testWidgets('final CTA on page 3 calls onComplete', (tester) async {
     var completed = false;
     await tester.pumpWidget(buildTestable(onComplete: () => completed = true));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
 
     await tester.tap(find.text('Continue'), warnIfMissed: false);
-    await tester.pumpAndSettle();
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(milliseconds: 600));
     await tester.tap(find.text('Continue'), warnIfMissed: false);
-    await tester.pumpAndSettle();
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(milliseconds: 600));
     await tester.tap(find.text('Get started'), warnIfMissed: false);
-    await tester.pumpAndSettle();
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(milliseconds: 600));
 
     expect(completed, isTrue);
   });
@@ -136,10 +134,10 @@ void main() {
   testWidgets('Skip on page 1 calls onComplete immediately', (tester) async {
     var completed = false;
     await tester.pumpWidget(buildTestable(onComplete: () => completed = true));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
 
     await tester.tap(find.text('Skip intro'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
 
     expect(completed, isTrue);
   });
