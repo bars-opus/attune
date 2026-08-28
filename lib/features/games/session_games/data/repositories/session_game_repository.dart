@@ -277,6 +277,22 @@ class SessionGameRepository {
     return userA == userId ? userB : userA;
   }
 
+  /// Leaves a stuck session so the couple can start that game again.
+  ///
+  /// createSession returns any session whose status is 'invited' or
+  /// 'active', so without this a half-finished round meant the game was
+  /// unreachable until the seven-day sweep caught it.
+  ///
+  /// Goes through an RPC rather than updating game_sessions directly:
+  /// that table's RLS is FOR ALL for relationship members, so a client
+  /// write could set any status at all.
+  Future<void> abandonSession(String sessionId) async {
+    await _safeClient.rpc(
+      'abandon_session_game',
+      params: {'p_session_id': sessionId},
+    );
+  }
+
   /// The subject's own answer for a Mirror round, or null if not yet
   /// submitted.
   ///

@@ -134,3 +134,64 @@ BEGIN
     END IF;
   END LOOP;
 END $$;
+
+-- 7. abandon_session_game: a couple can leave a stuck game immediately
+--    rather than waiting seven days for the sweep.
+DO $$
+DECLARE v_rel uuid := '6e000000-0000-0000-0000-000000000001';
+        v_a uuid := '6f000000-0000-0000-0000-0000000000a1';
+        v_b uuid := '6f000000-0000-0000-0000-0000000000b2';
+        v_outsider uuid := '6f000000-0000-0000-0000-0000000000c3';
+        v_session uuid; v_status text; v_ok boolean;
+BEGIN
+  INSERT INTO auth.users(id) VALUES (v_outsider) ON CONFLICT DO NOTHING;
+  INSERT INTO public.users(id, phone, display_name)
+  VALUES (v_outsider, '+233280000003', 'Outsider') ON CONFLICT DO NOTHING;
+
+  INSERT INTO public.game_sessions
+    (relationship_id, game_type, status, initiator_id, tone, total_rounds)
+  VALUES (v_rel, 'mirror', 'active', v_a, 'connecting', 8)
+  RETURNING id INTO v_session;
+
+  -- A non-member cannot abandon someone else's game.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', v_outsider, 'role','authenticated')::text, true);
+  v_ok := false;
+  BEGIN
+    PERFORM public.abandon_session_game(v_session);
+    v_ok := true;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+  IF v_ok THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a non-member abandoned a session';
+  END IF;
+
+  -- Either partner can. (The partner who did NOT start it, deliberately:
+  -- being stuck is usually the other person's doing.)
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', v_b, 'role','authenticated')::text, true);
+  PERFORM public.abandon_session_game(v_session);
+
+  SELECT status INTO v_status FROM public.game_sessions WHERE id = v_session;
+  IF v_status <> 'abandoned' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: session is % after abandon', v_status;
+  END IF;
+
+  -- Abandoning again is a no-op, not an error: a double tap must not fail.
+  PERFORM public.abandon_session_game(v_session);
+
+  -- A completed session must NOT be reopened or re-marked by this RPC.
+  INSERT INTO public.game_sessions
+    (relationship_id, game_type, status, initiator_id, tone, total_rounds)
+  VALUES (v_rel, 'scenario', 'completed', v_a, 'connecting', 6)
+  RETURNING id INTO v_session;
+
+  PERFORM public.abandon_session_game(v_session);
+  SELECT status INTO v_status FROM public.game_sessions WHERE id = v_session;
+  IF v_status <> 'completed' THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: abandon rewrote a completed session to %', v_status;
+  END IF;
+
+  PERFORM set_config('request.jwt.claims', '', true);
+END $$;

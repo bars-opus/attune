@@ -82,6 +82,46 @@ class _SessionGameFlowScaffoldState
         );
   }
 
+  /// Confirms, then abandons the session so the couple can start again.
+  ///
+  /// Confirmed rather than immediate: leaving cannot be undone, and a
+  /// mis-tap would end a round they are partway through.
+  Future<void> _confirmLeave() async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Leave this game?'),
+        content: const Text(
+          'Your answers so far are discarded, and you can start the game '
+          'again whenever you like.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Stay'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+    if (leave != true || !mounted) return;
+
+    final sessionId = ref.read(sessionGameFlowProvider.notifier).sessionId;
+    if (sessionId != null) {
+      try {
+        await ref.read(sessionGameRepositoryProvider).abandonSession(sessionId);
+      } catch (_) {
+        // Leaving is best-effort: the seven-day sweep is the backstop, and
+        // a failure here must not trap the user on this screen.
+      }
+    }
+    if (!mounted) return;
+    Navigator.of(context).maybePop();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_unavailable) {
@@ -94,7 +134,19 @@ class _SessionGameFlowScaffoldState
     final notifier = ref.read(sessionGameFlowProvider.notifier);
 
     return Scaffold(
-      appBar: AppBar(),
+      appBar: AppBar(
+        actions: [
+          // The escape hatch. createSession hands back any 'invited' or
+          // 'active' session, so a half-finished round made the game
+          // unreachable until the seven-day sweep caught it — with no way
+          // for the couple to start over.
+          IconButton(
+            icon: const Icon(Icons.close_rounded),
+            tooltip: 'Leave this game',
+            onPressed: _confirmLeave,
+          ),
+        ],
+      ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => const Center(
