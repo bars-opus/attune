@@ -163,6 +163,11 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
   int _emojiStaggerIndex(int emojiPosition) =>
       _reactionRowStaggerIndex + 1 + emojiPosition;
 
+  Duration _emojiDuration(int emojiPosition) =>
+      Duration(milliseconds: 220 + emojiPosition.clamp(0, 6) * 22);
+
+  static const double _emojiStaggerDelay = 0.065;
+
   int _actionStaggerIndex(int actionPosition) => 1 + actionPosition;
 
   @override
@@ -226,11 +231,11 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                 for (var i = 0; i < widget.quickReactions.length; i++)
                   AnimatedScaleFade(
                     key: ValueKey('focused-reaction-$i'),
-                    duration: _entranceDuration,
-                    curve: Curves.easeOutBack,
-                    beginScale: 0.4,
+                    duration: _emojiDuration(i),
+                    curve: Curves.easeOutCubic,
+                    beginScale: 0.55,
                     staggerIndex: _emojiStaggerIndex(i),
-                    staggerDelay: _staggerDelay,
+                    staggerDelay: _emojiStaggerDelay,
                     reverse: reversing,
                     child: _PressScale(
                       pressedScale: 0.84,
@@ -258,13 +263,13 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                   ),
                 AnimatedScaleFade(
                   key: const ValueKey('focused-reaction-more'),
-                  duration: _entranceDuration,
-                  curve: Curves.easeOutBack,
-                  beginScale: 0.4,
+                  duration: _emojiDuration(widget.quickReactions.length),
+                  curve: Curves.easeOutCubic,
+                  beginScale: 0.55,
                   staggerIndex: _emojiStaggerIndex(
                     widget.quickReactions.length,
                   ),
-                  staggerDelay: _staggerDelay,
+                  staggerDelay: _emojiStaggerDelay,
                   reverse: reversing,
                   child: _PressScale(
                     pressedScale: 0.84,

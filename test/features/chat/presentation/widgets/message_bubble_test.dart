@@ -1,4 +1,5 @@
 import 'package:attune/app/routing/app_router.dart';
+import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:attune/core/utils/animations/animated_scale_fade.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
@@ -479,8 +480,8 @@ void main() {
     final partnerSurface = tester.widget<Material>(
       find.byKey(const ValueKey('reaction-partner-👍')),
     );
-    expect(mySurface.color, scheme.primary);
-    expect(partnerSurface.color, Colors.white);
+    expect(mySurface.color, ChatColorScheme.light.senderBubble);
+    expect(partnerSurface.color, ChatColorScheme.light.receiverBubble);
 
     final positioned = tester.widgetList<Positioned>(find.byType(Positioned));
     expect(

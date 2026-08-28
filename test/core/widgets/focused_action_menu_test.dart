@@ -852,6 +852,18 @@ void main() {
       double rowOpacity() => keyedOpacity('focused-reaction-row');
       double firstEmojiOpacity() => keyedOpacity('focused-reaction-0');
       double lastEmojiOpacity() => keyedOpacity('focused-reaction-2');
+      double keyedScale(String key) =>
+          tester
+              .widget<Transform>(
+                find
+                    .descendant(
+                      of: find.byKey(ValueKey(key)),
+                      matching: find.byType(Transform),
+                    )
+                    .first,
+              )
+              .transform
+              .storage[0];
 
       // At 10ms only the menu container has started.
       await tester.pump(const Duration(milliseconds: 10));
@@ -868,6 +880,18 @@ void main() {
       await tester.pump(const Duration(milliseconds: 20));
       expect(firstEmojiOpacity(), greaterThan(0.0));
       expect(lastEmojiOpacity(), 0.0);
+
+      // The enlargement moves left-to-right: earlier emoji are visibly
+      // further along while later emoji retain progressively longer timing.
+      await tester.pump(const Duration(milliseconds: 55));
+      expect(
+        keyedScale('focused-reaction-0'),
+        greaterThan(keyedScale('focused-reaction-1')),
+      );
+      expect(
+        keyedScale('focused-reaction-1'),
+        greaterThan(keyedScale('focused-reaction-2')),
+      );
 
       await tester.pumpAndSettle();
       expect(menuOpacity(), 1.0);

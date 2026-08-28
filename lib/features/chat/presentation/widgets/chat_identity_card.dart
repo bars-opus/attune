@@ -116,11 +116,7 @@ class _ChatIdentityCardState extends ConsumerState<ChatIdentityCard> {
             avatarRadius: 50.h,
             showDivider: false,
             padAvatarTop: true,
-            trailing: Icon(
-              Icons.edit,
-              size: IconSizes.md.h,
-              color: colorScheme.primary,
-            ),
+            trailing: AppIconButton(icon: Icons.edit, size: IconSizes.md.h),
             showTrailingArrow: false,
             onTap:
                 () => ChatIdentityEditSheet.show(context, widget.conversation),

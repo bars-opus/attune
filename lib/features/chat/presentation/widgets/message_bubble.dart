@@ -1,5 +1,5 @@
 import 'package:attune/app/routing/app_router.dart';
-import 'package:attune/app/theme/app_colors.dart';
+import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
@@ -184,6 +184,7 @@ class MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final isMine = message.isMine;
     final colorScheme = Theme.of(context).colorScheme;
+    final chatColors = Theme.of(context).chatColors;
     final bubbleColor = _bubbleFill(context, isMine: isMine);
     final bubbleGradient = _bubbleGradient(context, isMine: isMine);
     final bubbleRadius = _groupedBubbleRadius(
@@ -192,11 +193,9 @@ class MessageBubble extends StatelessWidget {
       groupedBelow: isGroupedWithPrevious,
     );
     final isMediaGroup = mediaGroup.length > 1;
-    final onBubbleColor = isMine ? colorScheme.onPrimary : colorScheme.surface;
-    // ignore: deprecated_member_use
-    final receiverBubbleTextColor = colorScheme.onBackground;
-    final replyBubbleTextColor =
-        isMine ? onBubbleColor : receiverBubbleTextColor;
+    final onBubbleColor =
+        isMine ? chatColors.onSenderBubble : chatColors.onReceiverBubble;
+    final replyBubbleTextColor = onBubbleColor;
     final canOpenActions =
         currentUserId != null && !message.isDeleted && !message.isPreparing;
     final hasVisibleFooter =
@@ -301,7 +300,9 @@ class MessageBubble extends StatelessWidget {
                       quoteBackgroundColor:
                           isMine
                               ? Colors.black.withValues(alpha: 0.18)
-                              : receiverBubbleTextColor.withValues(alpha: 0.08),
+                              : chatColors.onReceiverBubble.withValues(
+                                alpha: 0.08,
+                              ),
                       quoteForegroundColor: replyBubbleTextColor,
                       quoteTextStyle: Theme.of(context).textTheme.bodyMedium
                           ?.copyWith(color: replyBubbleTextColor),
@@ -322,15 +323,8 @@ class MessageBubble extends StatelessWidget {
                       // null-means-unknown gate as quoteAuthorLabel.
                       quoteAuthorIsMine:
                           message.quotedText == null ? null : parentIsMine,
-                      quoteMineBorderColor: colorScheme.error,
-                      // Not colorScheme.primary — that's the same green as the "mine"
-                      // bubble fill, so it wouldn't read as a distinct accent there.
-                      // Blue reads clearly against both bubble fills (green mine /
-                      // surfaceContainerHighest theirs).
-                      quotePartnerBorderColor:
-                          AppColors(
-                            Theme.of(context).brightness == Brightness.dark,
-                          ).info,
+                      quoteMineBorderColor: chatColors.relationshipAccent,
+                      quotePartnerBorderColor: chatColors.pattern,
                       onJumpToParent:
                           message.quotedText == null ? null : onJumpToParent,
                       isHighlighted: isHighlighted,
@@ -413,7 +407,7 @@ class MessageBubble extends StatelessWidget {
                                 showStatus: showStatus,
                                 showTime: showLatestTimestamp,
                                 showEdited: false,
-                                onBubbleColor: colorScheme.onSurfaceVariant,
+                                onBubbleColor: chatColors.metadata,
                                 onRetry: onRetry,
                                 onRemove: onRemove,
                                 onShowEditHistory: onShowEditHistory,
@@ -523,12 +517,8 @@ class _RevealTimestamp extends StatelessWidget {
 }
 
 Color _bubbleFill(BuildContext context, {required bool isMine}) {
-  final colorScheme = Theme.of(context).colorScheme;
-  if (isMine) return colorScheme.primary;
-
-  return Theme.of(context).brightness == Brightness.dark
-      ? const Color(0xFF202322)
-      : const Color(0xFFFFFFFF);
+  final chatColors = Theme.of(context).chatColors;
+  return isMine ? chatColors.senderBubble : chatColors.receiverBubble;
 }
 
 Gradient? _bubbleGradient(BuildContext context, {required bool isMine}) {
@@ -540,8 +530,8 @@ Gradient? _bubbleGradient(BuildContext context, {required bool isMine}) {
 /// bubble with a count. Tapping your own reaction removes it; partner-only
 /// reactions remain display-only.
 ///
-/// [currentUserId] decides the reaction color: your reactions use primary,
-/// and your partner's use the same receiver surface as their chat bubbles.
+/// [currentUserId] decides the reaction color: each reaction uses the same
+/// sender/receiver surface as the person who made it.
 Widget? _buildReactionAdornments(
   Message message,
   String? currentUserId, {
@@ -601,10 +591,10 @@ class _ReactionAdornment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final fill =
-        isMine ? colorScheme.primary : _bubbleFill(context, isMine: false);
-    final foreground = isMine ? colorScheme.onPrimary : colorScheme.onSurface;
+    final chatColors = Theme.of(context).chatColors;
+    final fill = isMine ? chatColors.senderBubble : chatColors.receiverBubble;
+    final foreground =
+        isMine ? chatColors.onSenderBubble : chatColors.onReceiverBubble;
 
     return Semantics(
       button: onTap != null,
@@ -622,7 +612,7 @@ class _ReactionAdornment extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
-                  color: colorScheme.surface,
+                  color: chatColors.background,
                   borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
                   boxShadow: const [
                     BoxShadow(
@@ -847,10 +837,7 @@ class _BubbleBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        isMine
-            ? Theme.of(context).colorScheme.onPrimary
-            : Theme.of(context).colorScheme.onSurface;
+    final color = onBubbleColor;
 
     if (message.isSystemNotice) {
       return Text(
@@ -1282,11 +1269,7 @@ class _MessageMeta extends StatelessWidget {
           message: message,
           onRetry: onRetry,
           iconColor: onBubbleColor,
-          // Same green-on-green contrast problem the quote border color
-          // hit earlier: mine bubble fill is already colorScheme.primary,
-          // so the "read" tick needs a color distinct from both that
-          // fill AND onBubbleColor used for every other status here.
-          readColor: isMine ? colorScheme.onPrimary : colorScheme.primary,
+          readColor: colorScheme.primary,
         ),
       if (message.isFailed && onRetry != null)
         TextButton(onPressed: onRetry, child: const Text('Retry')),

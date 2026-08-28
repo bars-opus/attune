@@ -1,5 +1,6 @@
 import 'package:attune/app/theme/app_colors.dart';
 import 'package:attune/app/theme/app_text_theme.dart';
+import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:flutter/material.dart';
 // =============================================================================
 // EXTENSION: AppThemeExtension
@@ -86,6 +87,7 @@ class AppTheme {
   static ThemeData get _lightThemeBase => ThemeData(
     useMaterial3: true,
     brightness: Brightness.light,
+    extensions: const <ThemeExtension<dynamic>>[ChatColorScheme.light],
     colorScheme: ColorScheme.light(
       primary: LightColors.primary,
       secondary: LightColors.primaryLight,
@@ -251,6 +253,7 @@ class AppTheme {
   static ThemeData get _darkThemeBase => ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
+    extensions: const <ThemeExtension<dynamic>>[ChatColorScheme.dark],
     colorScheme: ColorScheme.dark(
       primary: DarkColors.primary,
       secondary: DarkColors.primaryLight,

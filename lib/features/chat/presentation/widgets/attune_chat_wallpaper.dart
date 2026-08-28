@@ -1,24 +1,21 @@
+import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:flutter/material.dart';
 
 class AttuneChatWallpaper extends StatelessWidget {
   const AttuneChatWallpaper({super.key, required this.child});
 
   static const _assetPath = 'assets/images/attune_chat_wallpaper_tile.png';
-  static const _lightOpacity = 0.12;
-  static const _darkOpacity = 0.10;
 
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final isDark = colorScheme.brightness == Brightness.dark;
-    final opacity = isDark ? _darkOpacity : _lightOpacity;
-    final patternColor = isDark ? Colors.white : Colors.black;
+    final chatColors = Theme.of(context).chatColors;
 
     return Stack(
       fit: StackFit.expand,
       children: [
+        ExcludeSemantics(child: ColoredBox(color: chatColors.background)),
         ExcludeSemantics(
           child: IgnorePointer(
             child: RepaintBoundary(
@@ -39,7 +36,9 @@ class AttuneChatWallpaper extends StatelessWidget {
                       alignment: Alignment.topLeft,
                       filterQuality: FilterQuality.low,
                       colorFilter: ColorFilter.mode(
-                        patternColor.withValues(alpha: opacity),
+                        chatColors.pattern.withValues(
+                          alpha: chatColors.patternOpacity,
+                        ),
                         BlendMode.srcIn,
                       ),
                     ),
