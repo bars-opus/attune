@@ -454,6 +454,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         await context.pushNamed('slidingScaleGame');
       case ChatGameDestination.scenario:
         await context.pushNamed('scenarioGame');
+      case ChatGameDestination.loveMap:
+        await context.pushNamed('loveMap');
       case ChatGameDestination.thisOrThat:
         await context.pushNamed('thisOrThatGamesHub');
       case ChatGameDestination.truthOrDare:

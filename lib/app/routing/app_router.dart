@@ -83,6 +83,7 @@ import 'package:attune/features/games/this_or_that/presentation/screens/this_or_
 import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_games_hub_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_session_router_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/tone_selector_screen.dart';
+import 'package:attune/features/games/love_map/presentation/screens/love_map_screen.dart';
 import 'package:attune/features/games/session_games/presentation/screens/session_game_flow_scaffold.dart';
 import 'package:attune/features/community/presentation/screens/community_feed_screen.dart';
 import 'package:attune/features/quiz/domain/models/attachment_result.dart';
@@ -295,6 +296,7 @@ class RouteNames {
   static const String mirrorGame = '/mirrorGame';
   static const String slidingScaleGame = '/slidingScaleGame';
   static const String scenarioGame = '/scenarioGame';
+  static const String loveMap = '/loveMap';
 }
 
 /// GoRouter's `extra` carries exactly one object per route — these small
@@ -1283,6 +1285,11 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         name: 'scenarioGame',
         builder: (context, state) =>
             const SessionGameFlowScaffold(gameType: 'scenario'),
+      ),
+      GoRoute(
+        path: RouteNames.loveMap,
+        name: 'loveMap',
+        builder: (context, state) => const LoveMapScreen(),
       ),
       GoRoute(
         path: RouteNames.customQuestionList,

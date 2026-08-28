@@ -19,6 +19,7 @@ enum ChatGameDestination {
   mirror,
   slidingScale,
   scenario,
+  loveMap,
 }
 
 class ChatGamesSheet extends StatefulWidget {
@@ -182,6 +183,12 @@ const _chatGameCategories = <_ChatGameCategory>[
         title: 'Scenario',
         subtitle: 'What you would each do, and why',
         icon: Icons.alt_route_rounded,
+      ),
+      _ChatGameOption(
+        destination: ChatGameDestination.loveMap,
+        title: 'Love Map',
+        subtitle: 'Their inner world, a few prompts at a time',
+        icon: Icons.explore_outlined,
       ),
     ],
   ),
