@@ -402,7 +402,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _attachEphemeralCamera() async {
-    await context.pushNamed('ephemeralCamera', extra: widget.conversation);
+    // The streak camera, not the ephemeral one: it is the same
+    // press-and-hold gesture plus segmentation, a progress ring and a
+    // review step. EphemeralCameraScreen stays registered for now rather
+    // than being deleted mid-testing.
+    await context.pushNamed('streakCamera', extra: widget.conversation);
   }
 
   // Placeholder — file attach is not built yet. Wired now so the composer's

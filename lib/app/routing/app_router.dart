@@ -124,6 +124,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:attune/features/chat/presentation/screens/streak_camera_screen.dart';
 
 class RouteNames {
   static const String intro = '/intro';
@@ -152,6 +153,7 @@ class RouteNames {
   static const String imageCaption = '/image-caption';
   static const String videoTrim = '/video-trim';
   static const String ephemeralCamera = '/ephemeral-camera';
+  static const String streakCamera = '/streak-camera';
   static const String imageViewer = '/image-viewer';
   static const String videoViewer = '/video-viewer';
   static const String ephemeralVideoViewer = '/ephemeral-video-viewer';
@@ -1461,6 +1463,19 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
             );
           }
           return EphemeralCameraScreen(conversation: conversation);
+        },
+      ),
+      GoRoute(
+        path: RouteNames.streakCamera,
+        name: 'streakCamera',
+        builder: (context, state) {
+          final conversation = state.extra as Conversation?;
+          if (conversation == null) {
+            return const Scaffold(
+              body: Center(child: Text('Conversation unavailable.')),
+            );
+          }
+          return StreakCameraScreen(conversation: conversation);
         },
       ),
       GoRoute(
