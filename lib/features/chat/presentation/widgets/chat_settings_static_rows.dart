@@ -4,6 +4,7 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/providers/chat_experience_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/features/settings/data/streak_replay_preference.dart';
 
 /// The three CardInkWell sections of ChatSettingsScreen below the
 /// avatar/name identity card — Shared location/End relationship, Search/
@@ -33,6 +34,8 @@ class ChatSettingsStaticRows extends ConsumerWidget {
     );
     final conversation = this.conversation;
 
+    final allowStreakReplays = ref.watch(streakReplayPreferenceProvider);
+
     return Padding(
       padding: const EdgeInsets.all(Spacing.md),
       child: Column(
@@ -40,6 +43,24 @@ class ChatSettingsStaticRows extends ConsumerWidget {
           CardInkWell(
             child: Column(
               children: [
+                InfoRowWidget(
+                  key: const ValueKey('streak_replays_toggle'),
+                  title: 'Allow streak replays',
+                  subtitle:
+                      'They can rewatch your streaks up to 3 times instead of once',
+                  icon: Icons.replay_rounded,
+                  isToggleItem: true,
+                  showAvatar: false,
+                  showTrailingArrow: false,
+                  showDivider: true,
+                  toggleValue: allowStreakReplays,
+                  iconColor: Colors.grey,
+                  onToggleChanged: (value) => unawaited(
+                    ref
+                        .read(streakReplayPreferenceProvider.notifier)
+                        .setAllowReplays(value),
+                  ),
+                ),
                 InfoRowWidget(
                   title: 'Shared location',
                   subtitle:

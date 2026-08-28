@@ -1,4 +1,6 @@
+import 'package:attune/features/chat/domain/services/streak_recording_session.dart';
 import 'package:attune/features/chat/presentation/widgets/streak_bubble.dart';
+import 'package:attune/features/chat/presentation/widgets/streak_review_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -75,5 +77,50 @@ void main() {
     )));
 
     expect(find.byType(Image), findsNothing);
+  });
+
+  testWidgets('the review sheet offers only send and cancel — no caption',
+      (tester) async {
+    var sent = false;
+    var cancelled = false;
+
+    await tester.pumpWidget(_wrap(StreakReviewSheet(
+      segments: const [
+        StreakSegment(path: '/tmp/a.mp4', duration: Duration(seconds: 60)),
+      ],
+      onSend: () => sent = true,
+      onDiscard: () => cancelled = true,
+    )));
+
+    // No caption field and no replay toggle: replays are a persistent
+    // chat setting, and the capture flow stays record -> send or cancel.
+    expect(find.byType(TextField), findsNothing);
+    expect(find.byType(SwitchListTile), findsNothing);
+
+    expect(find.text('Send'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+
+    await tester.tap(find.text('Send'));
+    await tester.pump();
+    expect(sent, isTrue);
+    expect(cancelled, isFalse);
+  });
+
+  testWidgets('cancel discards without sending', (tester) async {
+    var sent = false;
+    var cancelled = false;
+
+    await tester.pumpWidget(_wrap(StreakReviewSheet(
+      segments: const [
+        StreakSegment(path: '/tmp/a.mp4', duration: Duration(seconds: 30)),
+      ],
+      onSend: () => sent = true,
+      onDiscard: () => cancelled = true,
+    )));
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pump();
+    expect(cancelled, isTrue);
+    expect(sent, isFalse);
   });
 }

@@ -80,12 +80,18 @@ void main() {
     expect(calls, 1, reason: 'more than one call site can double-charge');
   });
 
-  test('the caption renders only in the viewer', () {
-    // It must not leak into the chat row or the conversations list.
+  test('streaks carry no caption at all', () {
+    // Captions were removed to keep capture to record -> send or cancel.
+    // The viewer must not have grown one back, and the preview must still
+    // return a bare label.
     final viewer = File(
       'lib/features/chat/presentation/screens/streak_viewer_screen.dart',
     ).readAsStringSync();
-    expect(viewer, contains('widget.caption'));
+    expect(
+      viewer,
+      isNot(contains('caption')),
+      reason: 'the viewer has no caption to render',
+    );
 
     final preview = File(
       'lib/features/chat/domain/utils/conversation_preview.dart',

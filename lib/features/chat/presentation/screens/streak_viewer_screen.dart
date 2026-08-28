@@ -15,16 +15,9 @@ final streakRepositoryProvider = Provider<StreakRepository>(
 /// once per clip, or a three-clip streak would burn a three-view budget
 /// in a single watch.
 class StreakViewerScreen extends ConsumerStatefulWidget {
-  const StreakViewerScreen({
-    super.key,
-    required this.messageId,
-    this.caption,
-  });
+  const StreakViewerScreen({super.key, required this.messageId});
 
   final String messageId;
-
-  /// Rendered as an overlay while viewing, and nowhere else.
-  final String? caption;
 
   @override
   ConsumerState<StreakViewerScreen> createState() => _StreakViewerScreenState();
@@ -112,7 +105,6 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    final caption = widget.caption;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -153,27 +145,6 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
                 ),
               ),
 
-            // The caption lives HERE and nowhere else: it is view-time
-            // state, never part of the chat row or the conversations list.
-            if (caption != null && caption.isNotEmpty)
-              Positioned(
-                left: 24,
-                right: 24,
-                bottom: 64,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    caption,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
-              ),
           ],
         ),
       ),

@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/services/streak_recording_session.dart';
 import 'package:attune/features/chat/presentation/widgets/streak_record_button.dart';
+import 'package:attune/features/chat/presentation/widgets/streak_review_sheet.dart';
+import 'package:attune/features/settings/data/streak_replay_preference.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -169,7 +171,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
       _ticker?.cancel();
       if (mounted) setState(() => _isRecording = false);
       unawaited(HapticFeedback.heavyImpact());
-      _openReview();
+      unawaited(_openReview());
       return;
     }
 
@@ -213,15 +215,44 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     // A partial final segment is kept: it is what the user recorded, and
     // dropping it would make the last thing they said disappear.
     _segments.add(StreakSegment(path: file.path, duration: held));
-    _openReview();
+    unawaited(_openReview());
   }
 
-  void _openReview() {
-    // The review sheet owns caption, replay toggle and send from here.
-    // Deliberately a separate surface: the camera's job ends once the
-    // clips exist.
+  /// Offers send or cancel. A streak must not fly away the instant a
+  /// finger lifts — a mis-hold would otherwise be unrecallable.
+  Future<void> _openReview() async {
+    if (!mounted || _segments.isEmpty) return;
+
+    final send = await showModalBottomSheet<bool>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      builder: (sheetContext) => StreakReviewSheet(
+        segments: _segments,
+        onSend: () => Navigator.of(sheetContext).pop(true),
+        onDiscard: () => Navigator.of(sheetContext).pop(false),
+      ),
+    );
+
     if (!mounted) return;
-    setState(() {});
+
+    if (send != true) {
+      await _discardAll();
+      if (mounted) context.pop();
+      return;
+    }
+
+    // Whether replays are allowed is a persistent chat setting, read at
+    // send time rather than chosen here.
+    final allowReplays = ref.read(streakReplayPreferenceProvider);
+    await _send(allowReplays: allowReplays);
+  }
+
+  Future<void> _send({required bool allowReplays}) async {
+    // The upload path is wired in the send-integration task; the clips and
+    // the budget are what it needs, and both are settled here.
+    if (!mounted) return;
+    context.pop();
   }
 
   /// Deletes every staged file. A recorded-but-unsent streak must leave
