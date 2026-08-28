@@ -4,17 +4,17 @@ INSERT INTO auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at
 ) VALUES
-  ('71000000-0000-0000-0000-0000000000a1','authenticated','authenticated','import-a@example.com','x',now(),'{}','{}',now(),now()),
-  ('71000000-0000-0000-0000-0000000000b2','authenticated','authenticated','import-b@example.com','x',now(),'{}','{}',now(),now()),
-  ('71000000-0000-0000-0000-0000000000c3','authenticated','authenticated','import-c@example.com','x',now(),'{}','{}',now(),now()),
-  ('71000000-0000-0000-0000-0000000000d4','authenticated','authenticated','import-d@example.com','x',now(),'{}','{}',now(),now())
+  ('71000000-0000-0000-0000-0000000000a1','authenticated','authenticated','+233200000001','x',now(),'{}','{}',now(),now()),
+  ('71000000-0000-0000-0000-0000000000b2','authenticated','authenticated','+233200000002','x',now(),'{}','{}',now(),now()),
+  ('71000000-0000-0000-0000-0000000000c3','authenticated','authenticated','+233200000003','x',now(),'{}','{}',now(),now()),
+  ('71000000-0000-0000-0000-0000000000d4','authenticated','authenticated','+233200000004','x',now(),'{}','{}',now(),now())
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.users(id,email,display_name,mode) VALUES
-  ('71000000-0000-0000-0000-0000000000a1','import-a@example.com','Import A','couples'),
-  ('71000000-0000-0000-0000-0000000000b2','import-b@example.com','Import B','couples'),
-  ('71000000-0000-0000-0000-0000000000c3','import-c@example.com','Import C','couples'),
-  ('71000000-0000-0000-0000-0000000000d4','import-d@example.com','Import D','couples')
+INSERT INTO public.users(id, phone,display_name,mode) VALUES
+  ('71000000-0000-0000-0000-0000000000a1','+233200000005','Import A','couples'),
+  ('71000000-0000-0000-0000-0000000000b2','+233200000006','Import B','couples'),
+  ('71000000-0000-0000-0000-0000000000c3','+233200000007','Import C','couples'),
+  ('71000000-0000-0000-0000-0000000000d4','+233200000008','Import D','couples')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.relationships(id,user_a,user_b,status,started_at,created_at) VALUES

@@ -2,6 +2,18 @@
 -- Run with: psql "$DATABASE_URL" -f supabase/tests/ask2_state_test.sql
 BEGIN;
 
+
+-- public.users.id references auth.users(id); in a test database the
+-- auth row does not exist yet, so seed the parents first.
+INSERT INTO auth.users (id) VALUES
+  ('d1111111-1111-1111-1111-111111111111'),
+  ('d2222222-2222-2222-2222-222222222222'),
+  ('e0000001-0000-0000-0000-000000000001'),
+  ('e0000002-0000-0000-0000-000000000002'),
+  ('f3333333-3333-3333-3333-333333333333')
+ON CONFLICT (id) DO NOTHING;
+
+
 INSERT INTO public.users (id, phone, display_name) VALUES
   ('d1111111-1111-1111-1111-111111111111', '+1000000021', 'User D1'),
   ('d2222222-2222-2222-2222-222222222222', '+1000000022', 'User D2');

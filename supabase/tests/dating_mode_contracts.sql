@@ -55,19 +55,19 @@ BEGIN
     id, aud, role, email, encrypted_password, email_confirmed_at,
     raw_app_meta_data, raw_user_meta_data, created_at, updated_at
   ) VALUES
-    (a, 'authenticated','authenticated','dating-a@example.com','x',now(),'{}','{}',now(),now()),
-    (b, 'authenticated','authenticated','dating-b@example.com','x',now(),'{}','{}',now(),now()),
-    (c, 'authenticated','authenticated','dating-c@example.com','x',now(),'{}','{}',now(),now()),
-    (d, 'authenticated','authenticated','dating-d@example.com','x',now(),'{}','{}',now(),now())
+    (a, 'authenticated','authenticated','+233200000001','x',now(),'{}','{}',now(),now()),
+    (b, 'authenticated','authenticated','+233200000002','x',now(),'{}','{}',now(),now()),
+    (c, 'authenticated','authenticated','+233200000003','x',now(),'{}','{}',now(),now()),
+    (d, 'authenticated','authenticated','+233200000004','x',now(),'{}','{}',now(),now())
   ON CONFLICT (id) DO NOTHING;
 
   -- B and D carry verified phones so the C4 phone-HMAC exclusion is exercisable.
-  INSERT INTO public.users(id, email, phone, display_name, mode) VALUES
-    (a, 'dating-a@example.com', NULL,          'Dating A','dating'),
-    (b, 'dating-b@example.com', '+233200000002','Dating B','dating'),
-    (c, 'dating-c@example.com', NULL,          'Dating C','dating'),
-    (d, 'dating-d@example.com', '+233200000004','Dating D','dating')
-  ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email, phone=EXCLUDED.phone, display_name=EXCLUDED.display_name;
+  INSERT INTO public.users(id, phone, display_name, mode) VALUES
+    (a, '+233200000001', 'Dating A','dating'),
+    (b, '+233200000002', 'Dating B','dating'),
+    (c, '+233200000003', 'Dating C','dating'),
+    (d, '+233200000004', 'Dating D','dating')
+  ON CONFLICT (id) DO UPDATE SET phone=EXCLUDED.phone, display_name=EXCLUDED.display_name;
 
   -- Enrollments: A/B/D active current candidates, C only opted-in (not active).
   INSERT INTO public.dating_enrollments(user_id, state, activated_at) VALUES

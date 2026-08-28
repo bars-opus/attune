@@ -2,6 +2,19 @@
 -- Run with: psql "$DATABASE_URL" -f supabase/tests/ask2_eligibility_test.sql
 BEGIN;
 
+
+-- public.users.id references auth.users(id); in a test database the
+-- auth row does not exist yet, so seed the parents first.
+INSERT INTO auth.users (id) VALUES
+  ('a1111111-1111-1111-1111-111111111111'),
+  ('b2222222-2222-2222-2222-222222222222'),
+  ('c0000001-0000-0000-0000-000000000001'),
+  ('c0000002-0000-0000-0000-000000000002'),
+  ('c0000003-0000-0000-0000-000000000003'),
+  ('c0000004-0000-0000-0000-000000000004')
+ON CONFLICT (id) DO NOTHING;
+
+
 INSERT INTO public.users (id, phone, display_name) VALUES
   ('a1111111-1111-1111-1111-111111111111', '+1000000011', 'User A'),
   ('b2222222-2222-2222-2222-222222222222', '+1000000012', 'User B');

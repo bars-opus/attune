@@ -8,19 +8,18 @@ BEGIN
     raw_app_meta_data, raw_user_meta_data, created_at, updated_at
   )
   VALUES
-    ('00000000-0000-0000-0000-0000000000a1', 'authenticated', 'authenticated', 'chat-a@example.com', 'x', now(), '{}'::jsonb, '{}'::jsonb, now(), now()),
-    ('00000000-0000-0000-0000-0000000000b2', 'authenticated', 'authenticated', 'chat-b@example.com', 'x', now(), '{}'::jsonb, '{}'::jsonb, now(), now()),
-    ('00000000-0000-0000-0000-0000000000c3', 'authenticated', 'authenticated', 'chat-c@example.com', 'x', now(), '{}'::jsonb, '{}'::jsonb, now(), now())
+    ('00000000-0000-0000-0000-0000000000a1', 'authenticated', 'authenticated', '+233200000001', 'x', now(), '{}'::jsonb, '{}'::jsonb, now(), now()),
+    ('00000000-0000-0000-0000-0000000000b2', 'authenticated', 'authenticated', '+233200000002', 'x', now(), '{}'::jsonb, '{}'::jsonb, now(), now()),
+    ('00000000-0000-0000-0000-0000000000c3', 'authenticated', 'authenticated', '+233200000003', 'x', now(), '{}'::jsonb, '{}'::jsonb, now(), now())
   ON CONFLICT (id) DO NOTHING;
 
-  INSERT INTO public.users (id, email, display_name, mode)
+  INSERT INTO public.users(id, phone, display_name, mode)
   VALUES
-    ('00000000-0000-0000-0000-0000000000a1', 'chat-a@example.com', 'User A', 'couples'),
-    ('00000000-0000-0000-0000-0000000000b2', 'chat-b@example.com', 'User B', 'couples'),
-    ('00000000-0000-0000-0000-0000000000c3', 'chat-c@example.com', 'User C', 'couples')
+    ('00000000-0000-0000-0000-0000000000a1', '+233200000004', 'User A', 'couples'),
+    ('00000000-0000-0000-0000-0000000000b2', '+233200000005', 'User B', 'couples'),
+    ('00000000-0000-0000-0000-0000000000c3', '+233200000006', 'User C', 'couples')
   ON CONFLICT (id) DO UPDATE
-  SET email = EXCLUDED.email,
-      display_name = EXCLUDED.display_name;
+  SET display_name = EXCLUDED.display_name;
 
   INSERT INTO public.relationships (
     id, user_a, user_b, status, started_at, created_at

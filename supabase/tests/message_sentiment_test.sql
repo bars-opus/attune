@@ -2,6 +2,16 @@
 -- Run with: psql "$DATABASE_URL" -f supabase/tests/message_sentiment_test.sql
 BEGIN;
 
+
+-- public.users.id references auth.users(id); in a test database the
+-- auth row does not exist yet, so seed the parents first.
+INSERT INTO auth.users (id) VALUES
+  ('11111111-1111-1111-1111-111111111111'),
+  ('22222222-2222-2222-2222-222222222222'),
+  ('33333333-3333-3333-3333-333333333333')
+ON CONFLICT (id) DO NOTHING;
+
+
 -- A valid sentiment value is accepted.
 INSERT INTO public.users (id, phone, display_name) VALUES
   ('11111111-1111-1111-1111-111111111111', '+1000000001', 'Test A'),

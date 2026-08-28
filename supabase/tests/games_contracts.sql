@@ -25,18 +25,18 @@ BEGIN
     id, aud, role, email, encrypted_password, email_confirmed_at,
     raw_app_meta_data, raw_user_meta_data, created_at, updated_at
   ) VALUES
-    (a,'authenticated','authenticated','games-a@example.com','x',now(),'{}','{}',now(),now()),
-    (b,'authenticated','authenticated','games-b@example.com','x',now(),'{}','{}',now(),now()),
-    (c,'authenticated','authenticated','games-c@example.com','x',now(),'{}','{}',now(),now()),
-    (d,'authenticated','authenticated','games-d@example.com','x',now(),'{}','{}',now(),now())
+    (a,'authenticated','authenticated','+233200000001','x',now(),'{}','{}',now(),now()),
+    (b,'authenticated','authenticated','+233200000002','x',now(),'{}','{}',now(),now()),
+    (c,'authenticated','authenticated','+233200000003','x',now(),'{}','{}',now(),now()),
+    (d,'authenticated','authenticated','+233200000004','x',now(),'{}','{}',now(),now())
   ON CONFLICT (id) DO NOTHING;
 
-  INSERT INTO public.users(id,email,display_name,mode) VALUES
-    (a,'games-a@example.com','User A','couples'),
-    (b,'games-b@example.com','User B','couples'),
-    (c,'games-c@example.com','User C','couples'),
-    (d,'games-d@example.com','User D','couples')
-  ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email, display_name=EXCLUDED.display_name;
+  INSERT INTO public.users(id, phone,display_name,mode) VALUES
+    (a,'+233200000005','User A','couples'),
+    (b,'+233200000006','User B','couples'),
+    (c,'+233200000007','User C','couples'),
+    (d,'+233200000008','User D','couples')
+  ON CONFLICT (id) DO UPDATE SET display_name=EXCLUDED.display_name;
 
   INSERT INTO public.relationships(id,user_a,user_b,status,started_at,created_at)
   VALUES (v_rel,a,b,'active',CURRENT_DATE,now())
