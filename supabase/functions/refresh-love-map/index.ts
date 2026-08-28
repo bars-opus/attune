@@ -26,23 +26,71 @@ const PROMPTS_PER_RUN = 3
  *  answered. Mirrors kLoveMapReAskInterval on the client. */
 const RE_ASK_DAYS = 182
 
-/** Detected chat topics -> Love Map value domains. Anything unmapped simply
- *  contributes no preference, and selection falls back to plain rotation. */
-const TOPIC_TO_DOMAIN: Record<string, string> = {
+/** root_need_detected is a fixed six-value enum written by analyse-session
+ *  (respect | fairness | affection | security | autonomy | rest). An exact
+ *  lookup is right for it. */
+const ROOT_NEED_TO_DOMAIN: Record<string, string> = {
+  respect: 'fears',
+  fairness: 'stressors',
+  affection: 'fears',
+  security: 'fears',
+  autonomy: 'dreams',
+  rest: 'stressors',
+}
+
+/** dominant_topic is NOT an enum: analyse-session asks the model for a free
+ *  "max 5 words, semantic label", so real values look like "his mother
+ *  visiting again" or "splitting the rent". An exact-match lookup on single
+ *  words would essentially never fire, so this matches by keyword
+ *  containment instead. Keys stay single lowercase words for that reason. */
+const TOPIC_KEYWORD_TO_DOMAIN: Record<string, string> = {
   work: 'stressors',
+  job: 'stressors',
+  career: 'stressors',
   money: 'stressors',
-  finances: 'stressors',
-  family: 'history',
-  parents: 'history',
-  future: 'dreams',
-  plans: 'dreams',
-  children: 'dreams',
-  trust: 'fears',
-  jealousy: 'fears',
-  insecurity: 'fears',
-  distance: 'fears',
+  rent: 'stressors',
+  finance: 'stressors',
+  bills: 'stressors',
   health: 'stressors',
+  tired: 'stressors',
   time: 'stressors',
+  busy: 'stressors',
+  family: 'history',
+  mother: 'history',
+  father: 'history',
+  parent: 'history',
+  childhood: 'history',
+  past: 'history',
+  future: 'dreams',
+  plan: 'dreams',
+  children: 'dreams',
+  kids: 'dreams',
+  marriage: 'dreams',
+  move: 'dreams',
+  travel: 'dreams',
+  trust: 'fears',
+  jealous: 'fears',
+  insecur: 'fears',
+  distance: 'fears',
+  doubt: 'fears',
+  afraid: 'fears',
+}
+
+/** Maps one analysis row's signals onto Love Map domains. */
+export function domainsFor(
+  dominantTopic: string | null,
+  rootNeed: string | null,
+): string[] {
+  const out: string[] = []
+
+  const need = rootNeed?.toLowerCase().trim()
+  if (need && ROOT_NEED_TO_DOMAIN[need]) out.push(ROOT_NEED_TO_DOMAIN[need])
+
+  const topic = dominantTopic?.toLowerCase() ?? ''
+  for (const [keyword, domain] of Object.entries(TOPIC_KEYWORD_TO_DOMAIN)) {
+    if (topic.includes(keyword)) out.push(domain)
+  }
+  return out
 }
 
 serve(async (req) => {
@@ -87,10 +135,9 @@ serve(async (req) => {
         .limit(50)
 
       const domains = new Set<string>()
-      for (const s of sessions ?? []) {
-        for (const raw of [s.dominant_topic, s.root_need_detected]) {
-          const mapped = raw ? TOPIC_TO_DOMAIN[String(raw).toLowerCase()] : null
-          if (mapped) domains.add(mapped)
+      for (const row of sessions ?? []) {
+        for (const d of domainsFor(row.dominant_topic, row.root_need_detected)) {
+          domains.add(d)
         }
       }
 
