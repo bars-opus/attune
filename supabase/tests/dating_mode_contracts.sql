@@ -79,14 +79,21 @@ BEGIN
     SET state=EXCLUDED.state, activated_at=EXCLUDED.activated_at;
 
   -- Profiles: A/B/D active+approved (ready); C draft.
-  INSERT INTO public.dating_profiles(user_id, display_name, city_region_code, relationship_intention, bio, profile_state, moderation_state)
+  -- verification_state must be set explicitly: it defaults to 'unverified'
+  -- and dating_profile_ready requires 'verified', so leaving it out made
+  -- every candidate fail dating_candidate_is_current and every
+  -- act_on_dating_introduction call raise introduction_unavailable --
+  -- before reaching the double-blind contracts this file exists to test.
+  INSERT INTO public.dating_profiles(user_id, display_name, city_region_code, relationship_intention, bio, profile_state, moderation_state, verification_state)
   VALUES
-    (a, 'Dating A','Accra','Intentional dating',NULL,'active','approved'),
-    (b, 'Dating B','Kumasi','Intentional dating',NULL,'active','approved'),
-    (d, 'Dating D','Takoradi','Intentional dating',NULL,'active','approved'),
-    (c, 'Dating C','Tamale','Intentional dating',NULL,'draft','approved')
+    (a, 'Dating A','Accra','Intentional dating',NULL,'active','approved','verified'),
+    (b, 'Dating B','Kumasi','Intentional dating',NULL,'active','approved','verified'),
+    (d, 'Dating D','Takoradi','Intentional dating',NULL,'active','approved','verified'),
+    (c, 'Dating C','Tamale','Intentional dating',NULL,'draft','approved','verified')
   ON CONFLICT (user_id) DO UPDATE
-    SET profile_state=EXCLUDED.profile_state, moderation_state=EXCLUDED.moderation_state;
+    SET profile_state=EXCLUDED.profile_state,
+        moderation_state=EXCLUDED.moderation_state,
+        verification_state=EXCLUDED.verification_state;
 
   -- Preferences (dating_profile_ready needs non-empty gender/region/intention).
   INSERT INTO public.dating_preferences(user_id, min_age, max_age, gender_preferences, region_preferences, intention_preferences)
@@ -164,6 +171,19 @@ BEGIN
      0.5)
   ON CONFLICT (id) DO NOTHING;
 END
+$$;
+
+CREATE OR REPLACE FUNCTION public.test_clear_dating_auth()
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  -- RESET ROLE alone is not enough: request.jwt.claims survives it, so
+  -- auth.role() keeps returning 'authenticated' and backend-only guards
+  -- (dating_former_partner_exclusion) refuse the call.
+  PERFORM set_config('request.jwt.claims', '', true);
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+  PERFORM set_config('request.jwt.claim.role', '', true);
+  RESET ROLE;
+END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.test_set_dating_auth(p_user_id uuid)
@@ -284,7 +304,7 @@ DO $$ BEGIN
     'b-likes-a', '00000000-0000-0000-0000-000000ab0000', 'interested');
 END $$;
 
-RESET ROLE;
+SELECT public.test_clear_dating_auth();
 DO $$ DECLARE v int; BEGIN
   SELECT count(*) INTO v FROM public.dating_matches
   WHERE introduction_id = '00000000-0000-0000-0000-000000ab0000' AND state = 'active';
@@ -382,7 +402,7 @@ END $$;
 -- ---------------------------------------------------------------------------
 -- 7. Function-privilege + payload-shape guards.
 -- ---------------------------------------------------------------------------
-RESET ROLE;
+SELECT public.test_clear_dating_auth();
 DO $$
 BEGIN
   IF has_function_privilege('authenticated','public.block_dating_user(text,uuid)','EXECUTE') THEN

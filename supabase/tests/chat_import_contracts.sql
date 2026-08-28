@@ -120,6 +120,12 @@ WITH result AS (
 )
 UPDATE import_test_state s SET job_id = result.job_id FROM result;
 
+-- message_safety_outbox has RLS enabled with no policies: no client role may
+-- read it (chat_system_contracts asserts exactly that denial). Verifying the
+-- import enqueued Safety therefore has to run as the owning role, not as
+-- `authenticated`, or the rows are invisible and the check fails for the
+-- wrong reason.
+RESET ROLE;
 DO $$
 DECLARE v_job uuid := (SELECT job_id FROM import_test_state);
 BEGIN

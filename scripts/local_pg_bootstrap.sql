@@ -19,6 +19,17 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA extensions;
 CREATE OR REPLACE FUNCTION public.gen_random_uuid()
 RETURNS uuid LANGUAGE sql AS $$ SELECT extensions.gen_random_uuid(); $$;
 
+-- Supabase exposes pgcrypto's digest/hmac unqualified as well as under
+-- extensions. Migrations and RPCs call both spellings.
+CREATE OR REPLACE FUNCTION public.digest(text, text)
+RETURNS bytea LANGUAGE sql IMMUTABLE AS $$ SELECT extensions.digest($1, $2); $$;
+CREATE OR REPLACE FUNCTION public.digest(bytea, text)
+RETURNS bytea LANGUAGE sql IMMUTABLE AS $$ SELECT extensions.digest($1, $2); $$;
+CREATE OR REPLACE FUNCTION public.hmac(text, text, text)
+RETURNS bytea LANGUAGE sql IMMUTABLE AS $$ SELECT extensions.hmac($1, $2, $3); $$;
+CREATE OR REPLACE FUNCTION public.hmac(bytea, bytea, text)
+RETURNS bytea LANGUAGE sql IMMUTABLE AS $$ SELECT extensions.hmac($1, $2, $3); $$;
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
@@ -68,17 +79,21 @@ RETURNS uuid
 LANGUAGE sql STABLE
 AS $$
   SELECT NULLIF(
-    current_setting('request.jwt.claims', true)::json->>'sub', ''
+    NULLIF(current_setting('request.jwt.claims', true), '')::json->>'sub', ''
   )::uuid;
 $$;
 
+-- Returns NULL when there is no JWT, matching Supabase. The default must
+-- NOT be 'authenticated': guards like dating_former_partner_exclusion's
+-- test `auth.role() IS NOT NULL AND auth.role() = 'authenticated'` to mean
+-- "a client is calling", and a non-null default makes every backend call
+-- look like a client one.
 CREATE OR REPLACE FUNCTION auth.role()
 RETURNS text
 LANGUAGE sql STABLE
 AS $$
-  SELECT COALESCE(
-    NULLIF(current_setting('request.jwt.claims', true)::json->>'role', ''),
-    'authenticated'
+  SELECT NULLIF(
+    NULLIF(current_setting('request.jwt.claims', true), '')::json->>'role', ''
   );
 $$;
 
@@ -87,7 +102,7 @@ RETURNS text
 LANGUAGE sql STABLE
 AS $$
   SELECT NULLIF(
-    current_setting('request.jwt.claims', true)::json->>'email', ''
+    NULLIF(current_setting('request.jwt.claims', true), '')::json->>'email', ''
   );
 $$;
 
