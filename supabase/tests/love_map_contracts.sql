@@ -277,4 +277,74 @@ BEGIN
   END IF;
 END $$;
 
+-- 9. END-TO-END: a whole round as two real people play it. The pieces are
+--    asserted individually above; this walks the sequence in order, which
+--    is the only thing that proves they compose.
+DO $$
+DECLARE v_rel uuid := '7e000000-0000-0000-0000-000000000001';
+        v_ama uuid := '7f000000-0000-0000-0000-0000000000a1';
+        v_kofi uuid := '7f000000-0000-0000-0000-0000000000b2';
+        v_round uuid; v_flipped boolean; v_visible text;
+        v_truth text; v_judged boolean; v_scores int;
+BEGIN
+  -- The weekly job opens a round; Ama is the subject.
+  INSERT INTO public.game_session_rounds
+    (relationship_id, round_number, question_id, both_answered, active_partner_id)
+  VALUES (v_rel, 70,
+          (SELECT id FROM public.game_questions
+            WHERE game_type='love_map' AND active ORDER BY id LIMIT 1),
+          false, v_ama)
+  RETURNING id INTO v_round;
+
+  -- Kofi guesses first.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', v_kofi, 'role','authenticated')::text, true);
+  v_flipped := public.submit_session_game_answer(v_round, 'She worries about her mother');
+  IF v_flipped THEN
+    RAISE EXCEPTION 'E2E: the gate opened on one writer';
+  END IF;
+
+  -- Ama cannot see his guess yet.
+  SELECT COALESCE(answer_a, answer_b) INTO v_visible
+  FROM public.get_revealed_round(v_round);
+  IF v_visible IS NOT NULL THEN
+    RAISE EXCEPTION 'E2E: the guess was visible before the reveal';
+  END IF;
+
+  -- Ama answers; her text is the truth, and the gate opens.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', v_ama, 'role','authenticated')::text, true);
+  v_flipped := public.submit_session_game_answer(v_round, 'Honestly it is money');
+  IF NOT v_flipped THEN
+    RAISE EXCEPTION 'E2E: the gate did not open once both had written';
+  END IF;
+
+  SELECT COALESCE(answer_a, answer_b) INTO v_visible
+  FROM public.get_revealed_round(v_round);
+  IF v_visible IS DISTINCT FROM 'She worries about her mother' THEN
+    RAISE EXCEPTION 'E2E: the guess is not visible after the reveal';
+  END IF;
+
+  SELECT truth_text INTO v_truth
+  FROM public.mirror_round_truth WHERE round_id = v_round;
+  IF v_truth IS DISTINCT FROM 'Honestly it is money' THEN
+    RAISE EXCEPTION 'E2E: the subject''s answer did not become the truth';
+  END IF;
+
+  -- Ama judges: he read her wrong.
+  PERFORM public.judge_mirror_round(v_round, false);
+  SELECT was_correct INTO v_judged
+  FROM public.mirror_round_truth WHERE round_id = v_round;
+  IF v_judged IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'E2E: the judgement was not recorded';
+  END IF;
+
+  -- And nothing was scored: Love Map accumulates, it does not grade.
+  PERFORM set_config('request.jwt.claims', '', true);
+  SELECT count(*) INTO v_scores FROM public.mirror_scores;
+  IF v_scores <> 0 THEN
+    RAISE EXCEPTION 'E2E: Love Map wrote % score rows', v_scores;
+  END IF;
+END $$;
+
 ROLLBACK;
