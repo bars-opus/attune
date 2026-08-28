@@ -27,6 +27,7 @@ class ChatTextField extends StatefulWidget {
     this.showAttachVideo = false,
     this.showTranslator = false,
     this.showVoiceMessage = false,
+    this.recorderFactory,
     this.showCaptureVideo = false,
     this.showGames = false,
     this.enabled = true,
@@ -64,6 +65,10 @@ class ChatTextField extends StatefulWidget {
   final bool showAttachVideo;
   final bool showTranslator;
   final bool showVoiceMessage;
+
+  /// Builds the recorder. Injectable so widget tests can drive the
+  /// press/lock/cancel gestures without a microphone.
+  final VoiceRecorderService Function()? recorderFactory;
   final bool showCaptureVideo;
   final bool showGames;
   final bool enabled;
@@ -262,6 +267,11 @@ class _ChatTextFieldState extends State<ChatTextField> {
   int _sendPulse = 0;
   VoiceRecorderService? _recorder;
   bool _isRecording = false;
+
+  /// True between the press and start() completing. The gesture can end
+  /// inside that window, which must not be dropped.
+  bool _startInFlight = false;
+  bool _releasedDuringStart = false;
   bool _isCancelling = false;
   Duration _elapsed = Duration.zero;
   Timer? _elapsedTicker;
@@ -342,9 +352,12 @@ class _ChatTextFieldState extends State<ChatTextField> {
   }
 
   Future<void> _startRecording() async {
-    if (!widget.enabled || _isRecording) return;
+    if (!widget.enabled || _isRecording || _startInFlight) return;
+    _startInFlight = true;
+    _releasedDuringStart = false;
+    _dragOffset = Offset.zero;
 
-    final recorder = VoiceRecorderService();
+    final recorder = (widget.recorderFactory ?? VoiceRecorderService.new)();
     final granted = await recorder.requestPermission();
     if (!granted) {
       if (!mounted) return;
@@ -361,6 +374,7 @@ class _ChatTextFieldState extends State<ChatTextField> {
           ),
         ),
       );
+      _startInFlight = false;
       return;
     }
 
@@ -373,6 +387,7 @@ class _ChatTextFieldState extends State<ChatTextField> {
           content: Text('Could not start recording. Please try again.'),
         ),
       );
+      _startInFlight = false;
       return;
     }
 
@@ -396,6 +411,17 @@ class _ChatTextFieldState extends State<ChatTextField> {
       _levels.clear();
       _elapsed = Duration.zero;
     });
+
+    _startInFlight = false;
+
+    // The finger came up while start() was still awaiting permission or the
+    // plugin. Without this the end handler already returned (it saw
+    // _isRecording == false) and nothing would ever stop the recorder --
+    // the mic would stay live with no UI attached to it.
+    if (_releasedDuringStart) {
+      _releasedDuringStart = false;
+      await _finishRecording();
+    }
   }
 
   /// Appends one live amplitude sample, dropping the oldest once the
@@ -419,13 +445,21 @@ class _ChatTextFieldState extends State<ChatTextField> {
     if (identical(_recorder, recorder)) _recorder = null;
   }
 
-  void _onLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
+  /// Accumulated drag from the press origin. Pan reports deltas, where
+  /// long-press reported an absolute offset from origin.
+  Offset _dragOffset = Offset.zero;
+
+  void _onRecordPointerMove(Offset delta) {
+    _dragOffset += delta;
+    _applyRecordDrag(_dragOffset);
+  }
+
+  void _applyRecordDrag(Offset offset) {
     if (!_isRecording) return;
     // Once locked the finger is irrelevant — the bar's own controls take
     // over, and further drag must not re-arm cancel.
     if (_stage == VoiceRecordingStage.locked) return;
 
-    final offset = details.offsetFromOrigin;
     final up = -offset.dy;
 
     // Cancel is a LEFTWARD drag (matching the "slide to cancel ‹" hint and
@@ -459,7 +493,13 @@ class _ChatTextFieldState extends State<ChatTextField> {
     });
   }
 
-  Future<void> _onLongPressEnd(LongPressEndDetails details) async {
+  Future<void> _onRecordDragEnd() async {
+    // Released before start() finished: remember it, and _startRecording
+    // finishes the recording as soon as it has one to finish.
+    if (_startInFlight) {
+      _releasedDuringStart = true;
+      return;
+    }
     if (!_isRecording) return;
     // Locked: lifting the finger is exactly what locking is FOR. Recording
     // continues; the bar's delete/pause/send controls own it from here.
@@ -672,13 +712,26 @@ class _ChatTextFieldState extends State<ChatTextField> {
                         Semantics(
                           button: true,
                           label: 'Hold to record a voice message',
-                          child: GestureDetector(
-                            onLongPressStart:
-                                (_) => unawaited(_startRecording()),
-                            onLongPressMoveUpdate: _onLongPressMoveUpdate,
-                            onLongPressEnd:
-                                (details) =>
-                                    unawaited(_onLongPressEnd(details)),
+                          // Press, not long-press: the mic is a
+                          // press-and-hold control, so binding start to
+                          // onLongPressStart gave it a ~500ms dead zone in
+                          // which the user is already holding, sees nothing,
+                          // and gets no recording at all if they release.
+                          // A raw pan recognizer starts on touch-down and
+                          // reports drags in the same gesture, which is what
+                          // lock (up) and cancel (left) need.
+                          // A raw Listener rather than GestureDetector's
+                          // pan callbacks: pan does not report an end for a
+                          // press with no movement, so a quick
+                          // press-and-release never stopped the recorder.
+                          // Pointer events always pair down with up/cancel.
+                          child: Listener(
+                            onPointerDown: (_) => unawaited(_startRecording()),
+                            onPointerMove:
+                                (event) => _onRecordPointerMove(event.delta),
+                            onPointerUp: (_) => unawaited(_onRecordDragEnd()),
+                            onPointerCancel:
+                                (_) => unawaited(_onRecordDragEnd()),
                             behavior: HitTestBehavior.opaque,
                             child: Opacity(
                               opacity: widget.enabled ? 1.0 : 0.38,
