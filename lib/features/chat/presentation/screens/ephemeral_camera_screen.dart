@@ -177,7 +177,17 @@ class EphemeralCameraScreenState extends ConsumerState<EphemeralCameraScreen> {
         // debugResolveMaxBytes), not just incidentally satisfied by the
         // client-side 10s recording cap.
         maxDuration: const Duration(seconds: 10),
-        maxBytes: 2 * 1024 * 1024,
+        // 12MB, not 2MB. The transcoder targets 720p at the ENCODER'S
+        // default bitrate -- video_compress exposes no bitrate parameter
+        // (see ChatVideoPreparer's own note), so 10s lands around 2.5-6MB
+        // and routinely blew a 2MB ceiling. That rejection surfaced as
+        // "Could not prepare video" AFTER the compress step, so it looked
+        // like a transcode failure rather than a limit that was simply set
+        // below what the encoder can produce.
+        //
+        // Still far under the 25MB default: ephemeral clips are short and
+        // should stay small, just not smaller than the encoder can deliver.
+        maxBytes: 12 * 1024 * 1024,
       );
       if (!mounted) return;
       await ref
@@ -238,7 +248,35 @@ class EphemeralCameraScreenState extends ConsumerState<EphemeralCameraScreen> {
         fit: StackFit.expand,
         children: [
           if (controller != null && controller.value.isInitialized)
-            CameraPreview(controller)
+            // CameraPreview sat directly in a StackFit.expand Stack, which
+            // stretched the sensor image to the screen's shape and made
+            // everything look elongated. Cover-crop instead: scale to fill,
+            // preserving the true aspect ratio and trimming the overflow,
+            // which is what every camera UI (Snapchat included) does.
+            //
+            // controller.value.aspectRatio is width/height in the sensor's
+            // own orientation -- landscape for a portrait preview -- so it
+            // is inverted here before comparing against the screen.
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final previewRatio = 1 / controller.value.aspectRatio;
+                return ClipRect(
+                  child: OverflowBox(
+                    maxWidth: double.infinity,
+                    maxHeight: double.infinity,
+                    alignment: Alignment.center,
+                    child: FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width: constraints.maxWidth,
+                        height: constraints.maxWidth / previewRatio,
+                        child: CameraPreview(controller),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            )
           else
             const Center(child: CircularProgressIndicator()),
           Positioned(
