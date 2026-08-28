@@ -27,6 +27,7 @@ import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/core/services/media/image_picker_service.dart';
 import 'package:attune/core/services/media/voice_recorder_service.dart';
+import 'package:attune/core/ui/motion/glow_pulse.dart';
 import 'package:attune/core/widgets/profile_avatar.dart';
 import 'package:attune/features/chat/data/repositories/chat_repository.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -1056,11 +1057,18 @@ class _ConversationHeaderCard extends StatelessWidget {
       tag: conversation.name,
       child: Row(
         children: [
-          ProfileAvatar(
-            avatarUrl: conversation.avatarUrl ?? '',
-            currentUserId: '',
-            size: 40.h,
-            enableHero: false,
+          // Breathes a few times when the partner is here, then settles
+          // to a static glow — a moment, not a session-long loop.
+          GlowPulse(
+            active:
+                conversation.availability == ConversationAvailability.active &&
+                isOnline,
+            child: ProfileAvatar(
+              avatarUrl: conversation.avatarUrl ?? '',
+              currentUserId: '',
+              size: 40.h,
+              enableHero: false,
+            ),
           ),
           Gap(Spacing.sm.w),
           Expanded(
