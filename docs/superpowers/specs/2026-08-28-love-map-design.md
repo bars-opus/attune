@@ -268,7 +268,9 @@ What the app guarantees is narrower and still worth having:
 | Flutter widget | the card renders coverage and never an accuracy figure |
 | Flutter widget | the subject sees self-facing copy; the guesser sees third-person |
 | Flutter unit | refresh falls back to plain rotation when no topic is detected |
-| Flutter unit | a question is never selected twice for the same relationship |
+| Flutter unit | a question is not re-selected within six months of `seen_at`, and becomes eligible after |
+| Flutter widget | on a repeat, the guesser is never shown the previous answer before guessing |
+| Flutter widget | on a repeat, the subject sees their own previous answer only after the reveal |
 
 The SQL rows are load-bearing rather than routine: this design widens
 policies on a table that already enforces the §8.4 reveal gate, and
@@ -281,26 +283,55 @@ has nothing to run against. Writing them unverified would repeat the
 mistake that produced C2. Implementation of the SQL layer should not
 be considered complete until they have actually been run.
 
-## Open questions for the product owner
+## Resolved decisions
 
-1. **Does Love Map feed Pulse?** Every other game does, via
-   `compute_relationship_game_signals`, which keys on completed
-   sessions. Love Map has none. Options: leave it out of Pulse
-   entirely (simplest, and defensible — it is a connection tool, not
-   a diagnostic); or feed a coverage-growth signal rather than an
-   accuracy one. *Recommended: leave it out for now* and revisit once
-   there is real usage data. Feeding an accuracy signal would
-   contradict the no-score decision above.
+These were the spec's open questions; all three are now settled.
 
-2. **How many seeded questions at launch?** The coverage bar needs a
-   denominator. 60 across four domains (fears, dreams, stressors,
-   history) gives roughly five months at three per week. Fewer makes
-   the map feel finishable, which §8.4 explicitly does not want.
+### Love Map does not feed Pulse
 
-3. **What happens at 100% coverage?** With a fixed bank the map
-   eventually fills. Either the bank grows over time, or answered
-   questions re-surface after some months on the grounds that a
-   partner's fears change — which is arguably the entire point of a
-   map that "tracks their *evolving* inner world." *Recommended: re-ask
-   on a long interval*, which also makes the accumulating design
-   genuinely endless rather than merely long.
+`compute_relationship_game_signals` keys on completed sessions and
+Love Map has none, so it contributes no Pulse signal at launch.
+
+This is consistent rather than merely convenient: feeding an accuracy
+signal would require the running total the no-score rule forbids, and
+a coverage signal would add a Pulse weight nobody has calibrated.
+Revisit once there is real usage data.
+
+### 60 seeded questions across four domains
+
+15 each in fears, dreams, stressors and history — roughly five months
+at three per week. The coverage bar's denominator is therefore 60.
+
+Fewer would make the map feel finishable, which §8.4 explicitly does
+not want; more is authoring effort better spent after the mechanic is
+proven.
+
+### Answered questions re-surface after six months
+
+The bank is fixed, so a map that never repeats would eventually fill
+and stall. Instead a question becomes eligible again six months after
+it was answered.
+
+This is the design working as intended rather than a workaround:
+§8.4 asks Love Map to track an *evolving* inner world, and what
+someone fears or wants in July is not what they feared in January.
+Re-asking is how the map stays a map instead of becoming a completed
+questionnaire.
+
+Two rules keep the repeat honest:
+
+- The **guesser is never shown the previous answer** before guessing.
+  It is the same hidden-reveal requirement as any other round; a
+  visible prior answer would turn recall into a lookup.
+- The **subject sees their own previous answer only after the
+  reveal**, framed as "six months ago you said…". That comparison is
+  the value of re-asking, and it is self-facing data, so §11.1 permits
+  it.
+
+`game_questions_seen` already carries `seen_at`, so eligibility is a
+predicate on that column rather than new state.
+
+## Open questions
+
+None outstanding. The three that were open — Pulse, bank size, and
+exhaustion behaviour — are resolved above.
