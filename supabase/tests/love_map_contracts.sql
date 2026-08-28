@@ -71,10 +71,11 @@ BEGIN
   EXCEPTION WHEN check_violation THEN NULL;
   END;
 
-  -- With a domain: accepted.
+  -- With a domain: accepted. Marked inactive so it does not contaminate
+  -- the seeded-bank count asserted below.
   INSERT INTO public.game_questions
-    (game_type, tone, question_text, value_domain)
-  VALUES ('love_map', 'connecting', 'a well-formed love map prompt', 'fears');
+    (game_type, tone, question_text, value_domain, active)
+  VALUES ('love_map', 'connecting', 'a well-formed love map prompt', 'fears', false);
 END $$;
 
 -- 3. Regression: the pre-existing game types still hold their own branches.
@@ -250,6 +251,29 @@ BEGIN
   SELECT prosrc INTO v_src FROM pg_proc WHERE proname = 'finalise_mirror_scores';
   IF v_src LIKE '%love_map%' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: finalise_mirror_scores sees love_map';
+  END IF;
+END $$;
+
+-- 8. The coverage denominator is 60, 15 per domain. The progress bar is
+--    meaningless if this drifts.
+DO $$
+DECLARE v_total int; v_bad text;
+BEGIN
+  SELECT count(*) INTO v_total
+  FROM public.game_questions WHERE game_type = 'love_map' AND active;
+  IF v_total <> 60 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: expected 60 love_map questions, found %', v_total;
+  END IF;
+
+  SELECT string_agg(value_domain || '=' || n, ', ') INTO v_bad
+  FROM (
+    SELECT value_domain, count(*) AS n
+    FROM public.game_questions
+    WHERE game_type = 'love_map' AND active
+    GROUP BY value_domain HAVING count(*) <> 15
+  ) x;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: uneven domains: %', v_bad;
   END IF;
 END $$;
 
