@@ -590,4 +590,49 @@ BEGIN
   IF v <> 0 THEN RAISE EXCEPTION 'outsider expected streak 0, got %', v; END IF;
 END $$;
 
+-- The receipt round trip, from the SENDER's side.
+--
+-- Every existing assertion here checks the recipient's call succeeds. None
+-- checked that the sender can then SEE it -- which is the entire purpose of
+-- a receipt. If RLS or a column grant hid delivered_at/read_at from the
+-- sender, every test above would still pass while ticks never appeared.
+DO $$
+DECLARE v_delivered boolean; v_read boolean;
+BEGIN
+  -- A (the sender) sees no receipt on a fresh message.
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
+  SELECT delivered_at IS NOT NULL, read_at IS NOT NULL
+    INTO v_delivered, v_read
+  FROM public.messages WHERE id = '20000000-0000-0000-0000-000000000001';
+
+  -- B marks it delivered.
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000b2');
+  PERFORM public.mark_delivered(ARRAY['20000000-0000-0000-0000-000000000001'::uuid]);
+
+  -- A must now see delivered.
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
+  SELECT delivered_at IS NOT NULL INTO v_delivered
+  FROM public.messages WHERE id = '20000000-0000-0000-0000-000000000001';
+  IF NOT v_delivered THEN
+    RAISE EXCEPTION 'the sender cannot see their own delivery receipt';
+  END IF;
+
+  -- B reads the conversation.
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000b2');
+  PERFORM public.mark_conversation_read('10000000-0000-0000-0000-000000000001');
+
+  -- A must now see read, and read must imply delivered.
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
+  SELECT delivered_at IS NOT NULL, read_at IS NOT NULL
+    INTO v_delivered, v_read
+  FROM public.messages WHERE id = '20000000-0000-0000-0000-000000000001';
+  IF NOT v_read THEN
+    RAISE EXCEPTION 'the sender cannot see their own read receipt';
+  END IF;
+  IF NOT v_delivered THEN
+    RAISE EXCEPTION 'read_at is set but delivered_at is not (spec 5.2)';
+  END IF;
+END
+$$;
+
 ROLLBACK;
