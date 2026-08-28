@@ -170,6 +170,8 @@ Playback is sequential: clip 1 → 2 → 3, then the view is spent.
 |---|---|
 | Flutter unit | the state machine: split at 60s, no split under it, stop at 5 segments, release mid-segment keeps the partial clip |
 | Flutter unit | a release during the async start does not orphan a recording (the bug fixed in `511f4665` — same shape) |
+| Flutter unit | a partial final segment is kept, and the 500ms minimum applies only to the first |
+| Flutter unit | every segment records with audio enabled |
 | Flutter widget | no previews under one segment; previews appear from the second |
 | Flutter widget | the progress ring resets at each split |
 | Flutter widget | discarding the review deletes every staged file |
@@ -179,15 +181,44 @@ Playback is sequential: clip 1 → 2 → 3, then the view is spent.
 | SQL contract | a non-member cannot read another couple's streak clips |
 | SQL contract | `messages_media_type_check` and the intents constraint both accept `'streak'` and stay in step |
 
+## Resolved decisions
+
+These were the spec's open questions; all three are now settled.
+
+### No per-clip deletion in review
+
+Snapchat allows removing individual segments before sending. This
+version sends the whole queue or discards it.
+
+Deferred rather than rejected: it complicates both the review UI and the
+queue model, and the core flow should be proven first. Worth revisiting
+once people are actually recording multi-segment streaks — if nobody
+records more than two clips, per-clip deletion solves a problem that
+does not exist.
+
+### A partial final segment is kept
+
+Releasing at 1m20s leaves a second clip of twenty seconds. It is sent.
+
+It is what the user recorded, and silently dropping it would lose
+content they watched themselves capture. The alternative — discarding
+anything under some minimum — would make the last thing said disappear
+for no reason the user could see.
+
+The existing 500ms minimum still applies to the FIRST segment, since a
+stray tap should not send an empty streak.
+
+### Segments record audio
+
+The same as the existing ephemeral camera (`enableAudio: true`). A
+streak is someone talking to their partner, so a muted visual-only
+format would remove most of what makes it worth sending.
+
+This means each segment carries an audio track through the transcode,
+which counts against the per-clip size ceiling — sized accordingly in
+the plan rather than assumed away.
+
 ## Open questions
 
-1. **Per-clip deletion before sending.** Snapchat allows removing
-   individual segments in review. Worth having, but it complicates the
-   review UI and the queue model. *Recommended: ship without it*, add
-   once the core flow is proven.
-2. **What happens to a partial final segment?** Releasing at 1m20s
-   leaves clip 2 at twenty seconds. *Recommended: keep it* — it is what
-   the user recorded, and discarding it would silently lose content.
-3. **Audio.** Segments are recorded with audio, as the ephemeral camera
-   already does. Confirm this is wanted for streaks rather than a muted
-   visual-only format.
+None outstanding. The three that were open — per-clip deletion, partial
+final segments, and audio — are resolved above.
