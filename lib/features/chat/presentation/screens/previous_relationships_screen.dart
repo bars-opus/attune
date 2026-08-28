@@ -4,6 +4,7 @@ import 'package:attune/features/chat/presentation/providers/chat_ui_providers.da
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:attune/features/chat/domain/utils/conversation_preview.dart';
 
 /// Read-only history: relationships that have ended, each still reachable
 /// as a read-only thread. Kept off the main Chat tab (see
@@ -51,24 +52,8 @@ class PreviousRelationshipsScreen extends ConsumerWidget {
     context.push(RouteNames.chatScreen, extra: conversation);
   }
 
-  String _previewText(Conversation conversation) {
-    final message = conversation.lastMessage;
-    if (message == null) return 'No messages yet';
-    if (message.isDeleted) return 'This message was deleted';
-    if (message.mediaType == 'image' && message.content.trim().isEmpty) {
-      return 'Photo';
-    }
-    if (message.mediaType == 'image' && message.content.trim().isNotEmpty) {
-      return 'Photo: ${message.content}';
-    }
-    if (message.mediaType == 'video' && message.content.trim().isEmpty) {
-      return 'Video';
-    }
-    if (message.mediaType == 'video' && message.content.trim().isNotEmpty) {
-      return 'Video: ${message.content}';
-    }
-    return message.content;
-  }
+  String _previewText(Conversation conversation) =>
+      conversationPreviewText(conversation);
 }
 
 class _PreviousConversationCard extends StatelessWidget {
