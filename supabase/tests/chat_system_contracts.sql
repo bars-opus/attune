@@ -74,7 +74,11 @@ BEGIN
       '00000000-0000-0000-0000-0000000000a1',
       '30000000-0000-0000-0000-000000000001',
       'hello from A',
-      now(),
+      -- Undelivered: the "recipient can mark delivered" case below asserts
+      -- one row updates, which is only true of a message that has not been
+      -- delivered yet. Seeding delivered_at = now() here made that test pass
+      -- only because mark_delivered rewrote already-delivered rows.
+      NULL,
       NULL,
       true,
       now()
@@ -551,13 +555,28 @@ SELECT public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
 DO $$
 DECLARE v int;
 BEGIN
-  -- ensure both members have a message today and yesterday
+  -- Each member inserts only their OWN messages: messages' RLS forbids
+  -- writing on a partner's behalf, so a single combined INSERT as user A
+  -- is rejected by the policy -- correctly.
   INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content, created_at)
   VALUES
    ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1', gen_random_uuid(), 'a today', now()),
+   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1', gen_random_uuid(), 'a yest', now() - interval '1 day');
+END $$;
+
+SELECT public.test_set_auth('00000000-0000-0000-0000-0000000000b2');
+DO $$
+BEGIN
+  INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content, created_at)
+  VALUES
    ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b2', gen_random_uuid(), 'b today', now()),
-   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1', gen_random_uuid(), 'a yest', now() - interval '1 day'),
    ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b2', gen_random_uuid(), 'b yest', now() - interval '1 day');
+END $$;
+
+SELECT public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
+DO $$
+DECLARE v int;
+BEGIN
   SELECT public.chat_conversation_streak('10000000-0000-0000-0000-000000000001', 0) INTO v;
   IF v < 2 THEN RAISE EXCEPTION 'expected streak >= 2, got %', v; END IF;
 END $$;

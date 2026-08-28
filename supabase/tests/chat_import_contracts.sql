@@ -1,5 +1,6 @@
 BEGIN;
 
+
 INSERT INTO auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -27,14 +28,20 @@ UPDATE public.feature_flags SET enabled = true WHERE key = 'chat_historical_impo
 CREATE OR REPLACE FUNCTION public.test_set_chat_import_auth(p_user_id uuid)
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
+  -- request.jwt.claims (JSON), not the legacy singular
+  -- request.jwt.claim.sub: auth.uid() parses the former, so setting only
+  -- the latter left every call unauthenticated and this whole file could
+  -- never reach the contracts it means to test.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', p_user_id::text, 'role', 'authenticated')::text,
+    true);
   EXECUTE 'SET LOCAL ROLE authenticated';
-  PERFORM set_config('request.jwt.claim.sub', p_user_id::text, true);
-  PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
 END;
 $$;
 
 SELECT public.test_set_chat_import_auth('71000000-0000-0000-0000-0000000000a1');
 CREATE TEMP TABLE import_test_state(request_id uuid, job_id uuid);
+
 INSERT INTO import_test_state(request_id)
 SELECT public.create_chat_import_request(
   '72000000-0000-0000-0000-000000000001',
