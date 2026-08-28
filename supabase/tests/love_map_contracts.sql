@@ -96,4 +96,48 @@ BEGIN
   END;
 END $$;
 
+-- 4. The reveal gate holds for sessionless rounds: a Love Map guess is
+--    withheld until both_answered, exactly as for a session round.
+DO $$
+DECLARE v_rel uuid := '7e000000-0000-0000-0000-000000000001';
+        v_round uuid; v_a text; v_rows int;
+BEGIN
+  INSERT INTO public.game_session_rounds
+    (relationship_id, round_number, both_answered, answer_a)
+  VALUES (v_rel, 50, false, 'a guess that must stay hidden')
+  RETURNING id INTO v_round;
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub','7f000000-0000-0000-0000-0000000000a1',
+                      'role','authenticated')::text, true);
+
+  SELECT count(*) INTO v_rows FROM public.get_revealed_round(v_round);
+  IF v_rows = 0 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a member cannot read a sessionless round at all';
+  END IF;
+
+  SELECT answer_a INTO v_a FROM public.get_revealed_round(v_round);
+  IF v_a IS NOT NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a guess leaked before both_answered';
+  END IF;
+
+  -- After the gate opens the guess is visible.
+  UPDATE public.game_session_rounds SET both_answered = true WHERE id = v_round;
+  SELECT answer_a INTO v_a FROM public.get_revealed_round(v_round);
+  IF v_a IS DISTINCT FROM 'a guess that must stay hidden' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the guess is still hidden after reveal';
+  END IF;
+
+  -- A non-member sees nothing, gate open or not.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub','7f000000-0000-0000-0000-0000000000c3',
+                      'role','authenticated')::text, true);
+  SELECT count(*) INTO v_rows FROM public.get_revealed_round(v_round);
+  IF v_rows <> 0 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a non-member read a sessionless round';
+  END IF;
+
+  PERFORM set_config('request.jwt.claims', '', true);
+END $$;
+
 ROLLBACK;
