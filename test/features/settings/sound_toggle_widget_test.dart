@@ -33,7 +33,11 @@ void main() {
     expect(container.read(messageSoundsEnabledProvider), isTrue);
 
     final switchFinder = find.byKey(const ValueKey('message_sounds_switch'));
-    await tester.scrollUntilVisible(switchFinder, 200);
+    await tester.scrollUntilVisible(
+      switchFinder,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(switchFinder);

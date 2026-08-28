@@ -31,7 +31,11 @@ void main() {
     await tester.pumpAndSettle();
 
     final finder = find.byKey(const ValueKey('expressive_moments_switch'));
-    await tester.scrollUntilVisible(finder, 200);
+    await tester.scrollUntilVisible(
+      finder,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
     expect(container.read(chatExpressivenessProvider), ChatExpressiveness.calm);
     await tester.tap(finder);
