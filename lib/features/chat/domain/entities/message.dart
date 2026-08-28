@@ -19,6 +19,12 @@ class Message {
   final int? mediaWidth;
   final int? mediaHeight;
   final bool isViewOnce;
+
+  /// Views the recipient has left on a streak. Null for every other
+  /// message type.
+  final int? streakViewsRemaining;
+
+  bool get isStreak => mediaType == 'streak';
   final DateTime? viewedAt;
   final bool isSystemNotice;
   final String source;
@@ -74,6 +80,7 @@ class Message {
     this.mediaWidth,
     this.mediaHeight,
     this.isViewOnce = false,
+    this.streakViewsRemaining,
     this.viewedAt,
     this.isSystemNotice = false,
     this.source = 'native',
@@ -115,6 +122,8 @@ class Message {
       mediaWidth: (row['media_width'] as num?)?.toInt(),
       mediaHeight: (row['media_height'] as num?)?.toInt(),
       isViewOnce: (row['is_view_once'] as bool?) ?? false,
+      streakViewsRemaining:
+          (row['streak_views_remaining'] as num?)?.toInt(),
       viewedAt: _parseDateTime(row['viewed_at']),
       isSystemNotice: (row['is_system_notice'] as bool?) ?? false,
       source: (row['source'] as String?) ?? 'native',

@@ -21,6 +21,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
+import 'package:attune/features/chat/presentation/widgets/streak_bubble.dart';
+import 'package:attune/features/chat/presentation/screens/streak_viewer_screen.dart';
 
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
@@ -982,7 +984,26 @@ class _BubbleBody extends StatelessWidget {
             ),
       );
     }
-    if (message.isEphemeralVideoExpired) {
+    if (message.isStreak) {
+      final remaining = message.streakViewsRemaining ?? 0;
+      children.add(
+        StreakBubble(
+          viewsRemaining: remaining,
+          // The sender always sees "Play": the budget belongs to the
+          // recipient, and showing a countdown on your own streak would
+          // report their viewing back to you.
+          hasBeenPlayed: !message.isMine && message.viewedAt != null,
+          onTap: () {
+            if (remaining <= 0) return;
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => StreakViewerScreen(messageId: message.id),
+              ),
+            );
+          },
+        ),
+      );
+    } else if (message.isEphemeralVideoExpired) {
       children.add(
         Row(
           mainAxisSize: MainAxisSize.min,

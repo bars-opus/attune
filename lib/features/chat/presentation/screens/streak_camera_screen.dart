@@ -2,7 +2,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:attune/features/chat/domain/entities/conversation.dart';
+import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/chat/data/repositories/streak_repository.dart';
+import 'package:attune/features/chat/domain/services/chat_video_preparer.dart';
 import 'package:attune/features/chat/domain/services/streak_recording_session.dart';
+import 'package:attune/features/chat/presentation/screens/streak_viewer_screen.dart';
+import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/widgets/streak_record_button.dart';
 import 'package:attune/features/chat/presentation/widgets/streak_review_sheet.dart';
 import 'package:attune/features/settings/data/streak_replay_preference.dart';
@@ -42,6 +47,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
   /// True between the press and startVideoRecording() completing. The
   /// gesture can end inside that window, and dropping it would leave the
   /// camera recording with no UI attached (the bug fixed in 511f4665).
+  bool _isSending = false;
   bool _startInFlight = false;
   bool _releasedDuringStart = false;
 
@@ -96,7 +102,9 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
 
   Future<void> _onPressStart() async {
     final controller = _controller;
-    if (controller == null || _isRecording || _startInFlight) return;
+    if (controller == null || _isRecording || _startInFlight || _isSending) {
+      return;
+    }
 
     _startInFlight = true;
     _releasedDuringStart = false;
@@ -249,10 +257,63 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
   }
 
   Future<void> _send({required bool allowReplays}) async {
-    // The upload path is wired in the send-integration task; the clips and
-    // the budget are what it needs, and both are settled here.
-    if (!mounted) return;
-    context.pop();
+    setState(() => _isSending = true);
+
+    final user = ref.read(currentUserProvider);
+    if (user == null) {
+      if (mounted) context.pop();
+      return;
+    }
+
+    final repository = ref.read(chatRepositoryProvider);
+    final streaks = ref.read(streakRepositoryProvider);
+
+    try {
+      await streaks.sendStreak(
+        relationshipId: widget.conversation.relationshipId,
+        senderId: user.id,
+        clips: streakClipUploads(_segments),
+        viewsRemaining: streakViewBudget(allowReplays: allowReplays),
+        uploadClip: (localPath) async {
+          // Each clip is transcoded and uploaded on its own intent: the
+          // server validates one object per intent, so a shared intent
+          // would be consumed by the first clip and reject the rest.
+          final prepared = await const ChatVideoPreparer().prepare(
+            localPath: localPath,
+            maxDuration: kStreakSegmentDuration,
+            maxBytes: 12 * 1024 * 1024,
+          );
+
+          final intent = await repository.createMediaUploadIntent(
+            relationshipId: widget.conversation.relationshipId,
+            mimeType: prepared.mimeType,
+            mediaType: 'streak',
+          );
+          await repository.uploadChatMedia(
+            intent: intent,
+            localPath: prepared.file.path,
+            mimeType: prepared.mimeType,
+          );
+          return intent.storageKey;
+        },
+      );
+
+      // Staged files are only safe to delete once every clip has landed.
+      await _discardAll();
+      if (mounted) context.pop();
+    } on ChatVideoRejected {
+      if (!mounted) return;
+      setState(() => _isSending = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That streak could not be sent.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isSending = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That streak could not be sent.')),
+      );
+    }
   }
 
   /// Deletes every staged file. A recorded-but-unsent streak must leave
@@ -363,6 +424,15 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
               ),
             ),
           ),
+
+          // Transcoding several clips takes real time; without a blocking
+          // overlay the camera looks idle and invites a second recording
+          // on top of an in-flight send.
+          if (_isSending)
+            const ColoredBox(
+              color: Colors.black54,
+              child: Center(child: CircularProgressIndicator()),
+            ),
 
           Positioned(
             left: 0,

@@ -44,24 +44,6 @@ class ChatSettingsStaticRows extends ConsumerWidget {
             child: Column(
               children: [
                 InfoRowWidget(
-                  key: const ValueKey('streak_replays_toggle'),
-                  title: 'Allow streak replays',
-                  subtitle:
-                      'They can rewatch your streaks up to 3 times instead of once',
-                  icon: Icons.replay_rounded,
-                  isToggleItem: true,
-                  showAvatar: false,
-                  showTrailingArrow: false,
-                  showDivider: true,
-                  toggleValue: allowStreakReplays,
-                  iconColor: Colors.grey,
-                  onToggleChanged: (value) => unawaited(
-                    ref
-                        .read(streakReplayPreferenceProvider.notifier)
-                        .setAllowReplays(value),
-                  ),
-                ),
-                InfoRowWidget(
                   title: 'Shared location',
                   subtitle:
                       'Location would be automatically shared between both partners',
@@ -69,7 +51,7 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                   isToggleItem: true,
                   showAvatar: false,
                   showTrailingArrow: true,
-                  showDivider: false,
+                  showDivider: true,
                   toggleValue: true,
                   iconColor: Colors.grey,
                   // InfoRowWidget's own assertion requires onToggleChanged to
@@ -82,7 +64,7 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                   // meaningfully different to gate here.
                   onToggleChanged: (value) {},
                 ),
-                const AppDivider(),
+
                 InfoRowWidget(
                   title: 'End relationship',
                   subtitle: 'End this relationship if you have brocken up.',
@@ -112,7 +94,7 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                   showTrailingArrow: true,
                   iconColor: Colors.grey,
                   showAvatar: false,
-                  showDivider: false,
+                  showDivider: true,
                   onTap:
                       conversation == null
                           ? null
@@ -137,7 +119,7 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                             }
                           },
                 ),
-                const AppDivider(),
+
                 InfoRowWidget(
                   title: 'Media, docs and links',
                   subtitle: 'Media exachanged in these chat',
@@ -145,7 +127,7 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                   showTrailingArrow: true,
                   iconColor: Colors.grey,
                   showAvatar: false,
-                  showDivider: false,
+                  showDivider: true,
                   onTap:
                       conversation == null
                           ? null
@@ -154,7 +136,7 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                             extra: conversation,
                           ),
                 ),
-                const AppDivider(),
+
                 InfoRowWidget(
                   title: 'Starred messages',
                   subtitle: 'Messages you\'ve starred, just for you',
@@ -183,7 +165,7 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                   subtitle: 'Export read-only chat from Attune',
                   icon: Icons.arrow_upward,
                   showAvatar: false,
-                  showDivider: false,
+                  showDivider: true,
                   onTap:
                       conversation == null
                           ? null
@@ -200,7 +182,7 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                             );
                           },
                 ),
-                const AppDivider(),
+
                 InfoRowWidget(
                   title: 'Import chat history',
                   iconColor: Colors.grey,
@@ -208,7 +190,7 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                       'Bring in a previous conversation from other platforms like WhatsApp',
                   icon: Icons.arrow_downward,
                   showAvatar: false,
-                  showDivider: false,
+                  showDivider: true,
                   onTap:
                       conversation == null
                           ? null
@@ -225,7 +207,7 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                             );
                           },
                 ),
-                const AppDivider(),
+
                 InfoRowWidget(
                   title: 'Previous relationships',
                   showTrailingArrow: true,
@@ -236,6 +218,26 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                   showDivider: false,
                   onTap: () => context.pushNamed('previousRelationships'),
                 ),
+                if (conversation != null)
+                  InfoRowWidget(
+                    key: const ValueKey('streak_replays_toggle'),
+                    title: 'Allow streak replays',
+                    subtitle:
+                        'They can rewatch your streaks up to 3 times instead of once',
+                    icon: Icons.replay_rounded,
+                    isToggleItem: true,
+                    showAvatar: false,
+                    showTrailingArrow: false,
+                    showDivider: false,
+                    toggleValue: allowStreakReplays,
+                    iconColor: Colors.grey,
+                    onToggleChanged:
+                        (value) => unawaited(
+                          ref
+                              .read(streakReplayPreferenceProvider.notifier)
+                              .setAllowReplays(value),
+                        ),
+                  ),
               ],
             ),
           ),
