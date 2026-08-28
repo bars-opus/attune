@@ -106,3 +106,31 @@ BEGIN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a fresh session was expired (%)', v_status;
   END IF;
 END $$;
+
+-- 6. this_or_that and truth_or_dare have UI abandon paths, so they are not
+--    locked out the way the session games were. But a user who never taps
+--    it -- app killed, phone lost, partner ghosted -- leaves an 'active'
+--    session that createSession keeps handing back, with no server-side
+--    sweep to clear it. The safety net must cover them too.
+DO $$
+DECLARE v_rel uuid := '6e000000-0000-0000-0000-000000000001';
+        v_a uuid := '6f000000-0000-0000-0000-0000000000a1';
+        v_session uuid; v_status text; v_type text;
+BEGIN
+  FOREACH v_type IN ARRAY ARRAY['this_or_that', 'truth_or_dare'] LOOP
+    INSERT INTO public.game_sessions
+      (relationship_id, game_type, status, initiator_id, tone, total_rounds,
+       created_at)
+    VALUES (v_rel, v_type, 'active', v_a, 'connecting', 10,
+            now() - interval '10 days')
+    RETURNING id INTO v_session;
+
+    PERFORM public.expire_stale_session_games();
+
+    SELECT status INTO v_status FROM public.game_sessions WHERE id = v_session;
+    IF v_status <> 'abandoned' THEN
+      RAISE EXCEPTION
+        'CONTRACT VIOLATED: a 10-day-idle % session is still %', v_type, v_status;
+    END IF;
+  END LOOP;
+END $$;
