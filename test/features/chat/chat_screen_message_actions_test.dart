@@ -3,6 +3,7 @@ import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import 'support/chat_test_harness.dart';
 
@@ -29,7 +30,25 @@ void main() {
       withScreenUtil(
         UncontrolledProviderScope(
           container: container,
-          child: MaterialApp(home: ChatScreen(conversation: convo)),
+          // MaterialApp.router, not MaterialApp: the header's tap handler
+          // calls pushNamed, so a bare MaterialApp throws "No GoRouter
+          // found in context" when a gesture reaches it.
+          child: MaterialApp.router(
+            routerConfig: GoRouter(
+              initialLocation: '/',
+              routes: [
+                GoRoute(
+                  path: '/',
+                  builder: (_, __) => ChatScreen(conversation: convo),
+                ),
+                GoRoute(
+                  path: '/pulse',
+                  name: 'pulse',
+                  builder: (_, __) => const Scaffold(body: Text('Pulse stub')),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

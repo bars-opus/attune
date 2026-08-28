@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
 
 Future<void> pumpUntilFound(
   WidgetTester tester,
@@ -17,6 +19,31 @@ Future<void> pumpUntilFound(
     await tester.pump(const Duration(milliseconds: 100));
     if (finder.evaluate().isNotEmpty) return;
   }
+}
+
+/// A signed-out Supabase client.
+///
+/// ForumsSection.initState reads `supabaseClientProvider.auth.currentUser`
+/// to pick its default tab, which asserts on the uninitialised singleton
+/// in tests. Only `.auth.currentUser` is exercised; anything else throws
+/// so an unnoticed new call site fails loudly rather than silently
+/// returning null.
+class _AnonymousAuth implements GoTrueClient {
+  @override
+  User? get currentUser => null;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('no Supabase auth call should be issued');
+}
+
+class _AnonymousSupabase implements SupabaseClient {
+  @override
+  final GoTrueClient auth = _AnonymousAuth();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('no Supabase call should be issued');
 }
 
 void main() {
@@ -31,6 +58,7 @@ void main() {
         overrides: [
           currentUserIdProvider.overrideWithValue(null),
           sharedPreferencesProvider.overrideWithValue(prefs),
+          supabaseClientProvider.overrideWithValue(_AnonymousSupabase()),
         ],
         child: ScreenUtilConfig.builder(
           builder:

@@ -3,10 +3,11 @@ import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:attune/core/widgets/buttons/app_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('phone CTA opens legal sheet without widget errors', (
+  testWidgets('phone CTA opens the login sheet without widget errors', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(375, 812);
@@ -24,7 +25,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('End User License Agreement'), findsOneWidget);
+    // The EULA is deliberately NOT here: 5930082c moved acceptance to
+    // once-per-user after OTP verification, because whether someone is
+    // new or returning is unknowable before it. The CTA opens the login
+    // sheet instead.
+    expect(find.text('End User License Agreement'), findsNothing);
+    expect(
+      find.textContaining('browsing Attune as a guest'),
+      findsOneWidget,
+      reason: 'the phone CTA must open the login sheet',
+    );
   });
 }
 
@@ -35,14 +45,17 @@ class _TestApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ScreenUtilInit(
-      designSize: const Size(375, 812),
-      builder:
-          (_, __) => MaterialApp(
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            home: Scaffold(body: child),
-          ),
+    // LoginScreen, opened by the phone CTA, reads providers.
+    return ProviderScope(
+      child: ScreenUtilInit(
+        designSize: const Size(375, 812),
+        builder:
+            (_, __) => MaterialApp(
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              home: Scaffold(body: child),
+            ),
+      ),
     );
   }
 }

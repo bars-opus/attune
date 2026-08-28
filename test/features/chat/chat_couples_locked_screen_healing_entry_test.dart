@@ -76,6 +76,15 @@ void main() {
     await tester.pumpWidget(_buildTestApp(hasActiveSoloJourney: false));
     await tester.pumpAndSettle();
 
+    // The screen's body is a ListView, so the card is not built until it
+    // scrolls into view.
+    await tester.scrollUntilVisible(
+      find.text('Healing from a breakup?'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
     expect(find.text('Healing from a breakup?'), findsOneWidget);
   });
 
@@ -83,6 +92,13 @@ void main() {
     'tapping the card with an existing solo journey navigates directly, no sheet',
     (tester) async {
       await tester.pumpWidget(_buildTestApp(hasActiveSoloJourney: true));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('Healing from a breakup?'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Healing from a breakup?'));
