@@ -140,4 +140,117 @@ BEGIN
   PERFORM set_config('request.jwt.claims', '', true);
 END $$;
 
+-- 5. The Love Map write path: the subject's text becomes the TRUTH, the
+--    partner's becomes a guess, and both_answered flips only when both
+--    have written.
+DO $$
+DECLARE v_rel uuid := '7e000000-0000-0000-0000-000000000001';
+        v_a uuid := '7f000000-0000-0000-0000-0000000000a1';
+        v_b uuid := '7f000000-0000-0000-0000-0000000000b2';
+        v_round uuid; v_flipped boolean; v_truth text;
+BEGIN
+  INSERT INTO public.game_session_rounds
+    (relationship_id, round_number, both_answered, active_partner_id)
+  VALUES (v_rel, 60, false, v_a)
+  RETURNING id INTO v_round;
+
+  -- The guesser writes first: lands in an answer slot, never the truth.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', v_b, 'role','authenticated')::text, true);
+  v_flipped := public.submit_session_game_answer(v_round, 'my guess about A');
+
+  IF EXISTS (SELECT 1 FROM public.mirror_round_truth WHERE round_id = v_round) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a guesser wrote a truth row';
+  END IF;
+  IF v_flipped THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: both_answered flipped on one writer';
+  END IF;
+
+  -- The subject writes: lands in mirror_round_truth and opens the gate.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', v_a, 'role','authenticated')::text, true);
+  v_flipped := public.submit_session_game_answer(v_round, 'what is really true');
+
+  SELECT truth_text INTO v_truth
+  FROM public.mirror_round_truth WHERE round_id = v_round;
+  IF v_truth IS DISTINCT FROM 'what is really true' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the subject''s answer is not the truth row';
+  END IF;
+  IF NOT v_flipped THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: both_answered did not flip after both wrote';
+  END IF;
+
+  PERFORM set_config('request.jwt.claims', '', true);
+END $$;
+
+-- 6. Only the subject may judge, and only after the reveal -- on a
+--    sessionless round, which judge_mirror_round has never seen before.
+--    The plan asserts this function needs no change; an untested assertion
+--    is the C2 shape.
+DO $$
+DECLARE v_rel uuid := '7e000000-0000-0000-0000-000000000001';
+        v_a uuid := '7f000000-0000-0000-0000-0000000000a1';
+        v_b uuid := '7f000000-0000-0000-0000-0000000000b2';
+        v_round uuid; v_ok boolean;
+BEGIN
+  INSERT INTO public.game_session_rounds
+    (relationship_id, round_number, both_answered, active_partner_id)
+  VALUES (v_rel, 61, false, v_a)
+  RETURNING id INTO v_round;
+  INSERT INTO public.mirror_round_truth (round_id, subject_id, truth_text)
+  VALUES (v_round, v_a, 'my truth');
+
+  -- Before the reveal: even the subject is refused.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', v_a, 'role','authenticated')::text, true);
+  v_ok := false;
+  BEGIN
+    PERFORM public.judge_mirror_round(v_round, true);
+    v_ok := true;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+  IF v_ok THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: judged before both_answered';
+  END IF;
+
+  UPDATE public.game_session_rounds SET both_answered = true WHERE id = v_round;
+
+  -- After the reveal: the guesser is still refused.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', v_b, 'role','authenticated')::text, true);
+  v_ok := false;
+  BEGIN
+    PERFORM public.judge_mirror_round(v_round, true);
+    v_ok := true;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+  IF v_ok THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a non-subject judged the round';
+  END IF;
+
+  -- The subject, after the reveal: allowed.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', v_a, 'role','authenticated')::text, true);
+  PERFORM public.judge_mirror_round(v_round, true);
+
+  PERFORM set_config('request.jwt.claims', '', true);
+END $$;
+
+-- 7. Love Map never scores: no mirror_scores row may exist for it, and
+--    Pulse must never come to reference it.
+DO $$
+DECLARE v_src text;
+BEGIN
+  SELECT prosrc INTO v_src FROM pg_proc
+  WHERE proname = 'compute_relationship_game_signals';
+  IF v_src LIKE '%love_map%' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: Pulse signals now reference love_map';
+  END IF;
+
+  SELECT prosrc INTO v_src FROM pg_proc WHERE proname = 'finalise_mirror_scores';
+  IF v_src LIKE '%love_map%' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: finalise_mirror_scores sees love_map';
+  END IF;
+END $$;
+
 ROLLBACK;
