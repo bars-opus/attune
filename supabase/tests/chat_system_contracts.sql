@@ -635,4 +635,48 @@ BEGIN
 END
 $$;
 
+-- Voice notes must be insertable.
+--
+-- messages_media_type_check allowed only ('image','video'), so every voice
+-- note failed at insert with 23514 -- while the UPLOAD INTENT table's own
+-- constraint accepted audio happily. 20260815130000 widened the intents
+-- table and was assumed to have widened messages too; it had not. The
+-- intent succeeded and the file uploaded, so only the final insert failed,
+-- which is why this read as a mysterious client error rather than a schema
+-- gap.
+--
+-- Asserted against the constraint definitions rather than by inserting a
+-- row: the insert trigger additionally requires a live upload intent AND a
+-- matching storage object, which no client role may create here. The
+-- constraint is the thing that was wrong.
+DO $$
+DECLARE v_messages text; v_intents text;
+BEGIN
+  SELECT pg_get_constraintdef(oid) INTO v_messages
+  FROM pg_constraint WHERE conname = 'messages_media_type_check';
+
+  SELECT pg_get_constraintdef(oid) INTO v_intents
+  FROM pg_constraint
+  WHERE conname = 'message_media_upload_intents_media_type_check';
+
+  IF v_messages IS NULL THEN
+    RAISE EXCEPTION 'messages_media_type_check is missing entirely';
+  END IF;
+
+  IF v_messages NOT LIKE '%audio%' THEN
+    RAISE EXCEPTION
+      'messages_media_type_check rejects audio, so no voice note can be sent: %',
+      v_messages;
+  END IF;
+
+  -- The two must stay in step. Drift between them is what made this fail
+  -- so obscurely: the upload path succeeds and the insert then does not.
+  IF v_intents IS NOT NULL AND (v_intents LIKE '%audio%') <> (v_messages LIKE '%audio%') THEN
+    RAISE EXCEPTION
+      'media_type constraints have drifted -- intents: % / messages: %',
+      v_intents, v_messages;
+  END IF;
+END
+$$;
+
 ROLLBACK;
