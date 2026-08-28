@@ -18,6 +18,13 @@ const MAX_ENTRIES_FOR_PATTERNS = 20;
 
 const RUNTIME_PATTERNS = [
   /you should (tell|confront|ask|leave)/i,
+  // §11 #8: permanently banned from all AI outputs. The prompt already
+  // asks for this, but a prompt is a request -- the model can still emit
+  // one. This summary is returned straight to the caller, so it needs the
+  // guarantee rather than the request. A match makes callGeminiJson return
+  // null and the caller falls back to fixed boilerplate, so filtering here
+  // fails closed.
+  /\b(toxic|narcissist|codependent|disorder|broken)\b/i,
 ];
 
 serve(async (req) => {

@@ -83,6 +83,31 @@ void main() {
       }
     });
 
+    test('analyse-journal-entry filters its output, not just its prompt', () {
+      // Its summary is returned straight to the caller, so a prompt
+      // instruction is the only thing between a banned word and a user.
+      // The runtime filter fails closed — a match returns null and the
+      // caller falls back to fixed boilerplate — so the words belong in
+      // it, not only in the prompt.
+      final src = File('supabase/functions/analyse-journal-entry/index.ts')
+          .readAsStringSync();
+
+      final block = RegExp(r'RUNTIME_PATTERNS\s*=\s*\[(.*?)\];',
+              dotAll: true)
+          .firstMatch(src)
+          ?.group(1);
+      expect(block, isNotNull, reason: 'RUNTIME_PATTERNS block not found');
+
+      for (final w in bannedWords) {
+        expect(
+          block,
+          contains(w),
+          reason: '"\$w" is not filtered from the journal summary, which is '
+              'returned directly to the user',
+        );
+      }
+    });
+
     test('the disclaimer is fixed client-side, never model output', () {
       // §8.5: "disclaimer: fixed string appended by client code (never
       // model output)".
