@@ -19,10 +19,15 @@ String conversationPreviewText(Conversation conversation) {
     'image': 'Photo',
     'video': 'Video',
     'audio': 'Voice message',
+    'streak': 'Streak',
   };
 
   final label = labels[message.mediaType];
   if (label != null) {
+    // A streak reveals nothing before it is opened — not even whether it
+    // HAS a caption, since that is itself information about the message.
+    // Every other media type appends its caption as usual.
+    if (message.mediaType == 'streak') return label;
     return caption.isEmpty ? label : '$label: $caption';
   }
 
