@@ -2,6 +2,7 @@ import 'package:attune/core/services/media/voice_recorder_service.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_lock_pill.dart';
+import 'package:attune/features/chat/presentation/widgets/voice_mic_halo.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_recording_bar.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_recording_scrim.dart';
 import 'package:flutter/material.dart';
@@ -135,7 +136,15 @@ void main() {
       await tester.pump(const Duration(milliseconds: 60));
       await tester.pump(const Duration(milliseconds: 300));
 
-      final recording = tester.getCenter(find.byIcon(Icons.mic_rounded));
+      // Scoped to the scrim: the composer keeps an invisible copy of the
+      // mic to hold the gesture and the slot, so a bare byIcon finder
+      // matches two widgets.
+      final recording = tester.getCenter(
+        find.descendant(
+          of: find.byType(VoiceRecordingScrim),
+          matching: find.byType(VoiceMicHalo),
+        ),
+      );
       expect(
         (recording.dx - idle.dx).abs(),
         lessThan(1.0),
@@ -251,6 +260,70 @@ void main() {
       );
     });
 
+    testWidgets('the mic and lock pill are drawn ABOVE the black backdrop', (
+      tester,
+    ) async {
+      // The scrim covers the whole screen, so anything left in the
+      // composer is behind the black -- dimmed, and reading as disabled
+      // while it is the very control the finger is holding.
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final scrim = find.byType(VoiceRecordingScrim);
+      expect(
+        find.descendant(of: scrim, matching: find.byType(VoiceMicHalo)),
+        findsOneWidget,
+        reason: 'the mic and its ring belong on the scrim',
+      );
+      expect(
+        find.descendant(of: scrim, matching: find.byType(VoiceLockPill)),
+        findsOneWidget,
+        reason: 'the lock pill belongs on the scrim',
+      );
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
+    testWidgets('the mic on the scrim keeps its composer position', (
+      tester,
+    ) async {
+      // The finger is already on that button: drawing it anywhere else
+      // would leave the gesture reading from one place and the visible
+      // control sitting in another.
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final idle = tester.getCenter(find.byIcon(Icons.mic_none_rounded));
+      final gesture = await tester.startGesture(idle);
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final onScrim = tester.getCenter(
+        find.descendant(
+          of: find.byType(VoiceRecordingScrim),
+          matching: find.byType(VoiceMicHalo),
+        ),
+      );
+      expect(
+        (onScrim.dx - idle.dx).abs(),
+        lessThan(1.0),
+        reason: 'mic drawn at $onScrim, pressed at $idle',
+      );
+      expect((onScrim.dy - idle.dy).abs(), lessThan(1.0));
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
     testWidgets('the lock pill sits directly above the mic', (tester) async {
       final recorder = _FakeRecorder();
       await tester.pumpWidget(_harness(recorder, FakeHaptics()));
@@ -261,7 +334,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 60));
       await tester.pump(const Duration(milliseconds: 400));
 
-      final mic = tester.getCenter(find.byIcon(Icons.mic_rounded));
+      final mic = tester.getCenter(
+        find.descendant(
+          of: find.byType(VoiceRecordingScrim),
+          matching: find.byType(VoiceMicHalo),
+        ),
+      );
       final pill = tester.getCenter(find.byType(VoiceLockPill));
 
       expect(

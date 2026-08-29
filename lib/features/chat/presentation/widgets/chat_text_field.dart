@@ -12,7 +12,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'voice_recording_bar.dart';
 import 'voice_recording_scrim.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_mic_halo.dart';
-import 'package:attune/features/chat/presentation/widgets/voice_lock_pill.dart';
 
 class ChatTextField extends StatefulWidget {
   const ChatTextField({
@@ -329,6 +328,10 @@ class _ChatTextFieldState extends State<ChatTextField>
   late final AnimationController _scrimController;
   OverlayEntry? _scrimEntry;
 
+  /// Measures where the mic actually sits, so the scrim can draw it at the
+  /// same point rather than at a computed guess.
+  final GlobalKey _micKey = GlobalKey();
+
   /// The scrim reads its live values from here rather than from a rebuild
   /// of this State. An OverlayEntry is a separate element subtree, so
   /// marking it dirty from this widget's build() is the framework's
@@ -358,11 +361,17 @@ class _ChatTextFieldState extends State<ChatTextField>
     if (_scrimEntry != null) return;
     final overlay = Overlay.maybeOf(context);
     if (overlay == null) return;
+
+    final box = _micKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final micRect = box.localToGlobal(Offset.zero) & box.size;
+
     final entry = OverlayEntry(
       builder:
           (_) => VoiceRecordingScrim(
             animation: _scrimController,
             data: _scrimData,
+            micRect: micRect,
           ),
     );
     _scrimEntry = entry;
@@ -380,6 +389,10 @@ class _ChatTextFieldState extends State<ChatTextField>
       amplitude: _levels.isEmpty ? 0.0 : _levels.last,
       levels: List<double>.unmodifiable(_levels),
       isCancelling: _isCancelling,
+      progress:
+          _elapsed.inMilliseconds /
+          VoiceRecorderService.maxDuration.inMilliseconds,
+      lockProgress: _lockProgress,
     );
   }
 
@@ -719,7 +732,11 @@ class _ChatTextFieldState extends State<ChatTextField>
     // beside the bar. Previously the bar replaced the entire icon
     // row, so the mic, its halo and its progress ring were not on
     // screen at all while recording.
+    // Reads the mic's laid-out position. Null before first layout, which
+    // is why the scrim is raised after the recording state is set rather
+    // than before.
     final micSlot = Semantics(
+      key: _micKey,
       button: true,
       label: 'Hold to record a voice message',
       // Press, not long-press: the mic is a
@@ -787,9 +804,7 @@ class _ChatTextFieldState extends State<ChatTextField>
               ? _RecordingComposer(
                 // Mirrors the idle row's trailing icons exactly: games,
                 // plus the send button it shows when the mic is hidden.
-                trailingSlots:
-                    (widget.showGames ? 1 : 0) +
-                    (widget.showVoiceMessage ? 0 : 1),
+                trailingSlots: _trailingIconCount,
                 elapsed: _elapsed,
                 amplitude: _levels.isEmpty ? 0.0 : _levels.last,
                 levels: _levels,
@@ -916,39 +931,10 @@ class _ChatTextFieldState extends State<ChatTextField>
               ),
     );
 
-    return SafeArea(
-      top: false,
-      child: Stack(
-        // The lock pill deliberately overflows the composer's top edge, the
-        // way WhatsApp floats it over the message list.
-        clipBehavior: Clip.none,
-        alignment: Alignment.bottomRight,
-        children: [
-          composer,
-          // Held stage only: once locked the pill has served its purpose,
-          // and the bar's own controls replace it.
-          if (_isRecording && _stage == VoiceRecordingStage.held)
-            Positioned(
-              // Centred on the mic rather than at a fixed inset: the pill
-              // is the target of an upward drag that STARTS on the mic, so
-              // any horizontal offset between them reads as the gesture
-              // pointing somewhere the finger is not going.
-              //
-              // Right edge (12 outer + 6 inner padding) to the mic's
-              // centre: half the mic's own hit box, plus every trailing
-              // icon after it.
-              right:
-                  12.0 +
-                  6.0 +
-                  _ComposerIcon._tapSize / 2 +
-                  _trailingIconCount * _ComposerIcon._tapSize -
-                  VoiceLockPill.width / 2,
-              bottom: 62,
-              child: VoiceLockPill(dragProgress: _lockProgress),
-            ),
-        ],
-      ),
-    );
+    // No Stack and no lock pill here any more: the scrim draws the pill
+    // (and the mic) above the backdrop, positioned from the mic's measured
+    // rect rather than from an arithmetic guess at its inset.
+    return SafeArea(top: false, child: composer);
   }
 }
 

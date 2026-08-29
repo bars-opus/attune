@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 
 import 'package:attune/core/utils/exports/export_screens.dart';
 
+import 'voice_lock_pill.dart';
+import 'voice_mic_halo.dart';
 import 'voice_recording_bar.dart';
 
 /// The dimmed backdrop shown while a voice note is being recorded, using
@@ -19,6 +21,7 @@ import 'voice_recording_bar.dart';
 /// Against a dark scrim the recording UI needs no surface of its own, so
 /// the counter, the waveform and the slide-to-cancel hint sit directly on
 /// the backdrop in white.
+
 /// The live values the scrim draws, pushed from the composer through a
 /// notifier so the overlay rebuilds on its own schedule.
 @immutable
@@ -28,12 +31,22 @@ class VoiceScrimData {
     this.amplitude = 0.0,
     this.levels = const <double>[],
     this.isCancelling = false,
+    this.progress = 0.0,
+    this.lockProgress = 0.0,
   });
 
   final Duration elapsed;
   final double amplitude;
   final List<double> levels;
   final bool isCancelling;
+
+  /// Fraction of the maximum recording length elapsed, drawn as the ring
+  /// around the mic.
+  final double progress;
+
+  /// How far the finger has travelled toward the lock (0..1), driving the
+  /// pill's fill and rise.
+  final double lockProgress;
 }
 
 class VoiceRecordingScrim extends StatelessWidget {
@@ -41,10 +54,16 @@ class VoiceRecordingScrim extends StatelessWidget {
     super.key,
     required this.animation,
     required this.data,
+    required this.micRect,
   });
 
   final Animation<double> animation;
   final ValueListenable<VoiceScrimData> data;
+
+  /// Where the composer's mic sits in global coordinates. The mic is drawn
+  /// here rather than left in the composer so it sits ABOVE the backdrop —
+  /// under it the control the finger is holding reads as dimmed out.
+  final Rect micRect;
 
   @override
   Widget build(BuildContext context) {
@@ -56,6 +75,8 @@ class VoiceRecordingScrim extends StatelessWidget {
         final amplitude = data.value.amplitude;
         final levels = data.value.levels;
         final isCancelling = data.value.isCancelling;
+        final progress = data.value.progress;
+        final lockProgress = data.value.lockProgress;
         return IgnorePointer(
           // The composer beneath owns the gesture: this is a backdrop, not
           // a target. Swallowing pointers here would kill the very drag
@@ -70,6 +91,27 @@ class VoiceRecordingScrim extends StatelessWidget {
                       color: Colors.black.withValues(alpha: 0.55 * t),
                     ),
                   ),
+                ),
+              ),
+              // Drawn at the mic's real position so the visible control and
+              // the gesture's origin stay the same point.
+              Positioned.fromRect(
+                rect: micRect,
+                child: Center(
+                  child: VoiceMicHalo(
+                    amplitude: amplitude,
+                    isRecording: true,
+                    progress: progress,
+                    child: const Icon(Icons.mic_rounded, size: 24),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: micRect.center.dx - VoiceLockPill.width / 2,
+                top: micRect.top - 62,
+                child: Opacity(
+                  opacity: t,
+                  child: VoiceLockPill(dragProgress: lockProgress),
                 ),
               ),
               Positioned.fill(
