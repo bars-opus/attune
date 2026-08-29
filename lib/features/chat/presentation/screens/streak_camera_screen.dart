@@ -180,7 +180,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
       _ticker?.cancel();
       if (mounted) setState(() => _isRecording = false);
       unawaited(HapticFeedback.heavyImpact());
-      unawaited(_openReview());
+      unawaited(_openReviewGuarded());
       return;
     }
 
@@ -224,12 +224,31 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     // A partial final segment is kept: it is what the user recorded, and
     // dropping it would make the last thing they said disappear.
     _segments.add(StreakSegment(path: file.path, duration: held));
-    unawaited(_openReview());
+    unawaited(_openReviewGuarded());
   }
 
   /// Offers send or cancel. A streak must not fly away the instant a
   /// finger lifts — a mis-hold would otherwise be unrecallable.
+  /// Wraps the review flow so nothing is lost.
+  ///
+  /// This runs under unawaited() from the gesture handlers, so any
+  /// exception escaping it disappears with no console output whatsoever —
+  /// which is exactly what made a failing send look like silence.
+  Future<void> _openReviewGuarded() async {
+    try {
+      await _openReview();
+    } catch (error, stack) {
+      ChatLog.diagnostic('streak review failed', '$error\n$stack');
+      if (!mounted) return;
+      setState(() => _isSending = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That streak could not be sent.')),
+      );
+    }
+  }
+
   Future<void> _openReview() async {
+    ChatLog.diagnostic('streak review', 'segments=${_segments.length}');
     if (!mounted || _segments.isEmpty) return;
 
     final send = await showModalBottomSheet<bool>(
@@ -254,6 +273,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     // Whether replays are allowed is a persistent chat setting, read at
     // send time rather than chosen here.
     final allowReplays = ref.read(streakReplayPreferenceProvider);
+    ChatLog.diagnostic('streak send start', 'replays=$allowReplays');
     await _send(allowReplays: allowReplays);
   }
 
@@ -285,6 +305,8 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
             maxBytes: 12 * 1024 * 1024,
           );
 
+          ChatLog.diagnostic('streak clip prepared',
+              '${prepared.byteSize}B ${prepared.mimeType}');
           final intent = await repository.createMediaUploadIntent(
             relationshipId: widget.conversation.relationshipId,
             mimeType: prepared.mimeType,
@@ -299,6 +321,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
         },
       );
 
+      ChatLog.diagnostic('streak send ok', 'clips=${_segments.length}');
       // Staged files are only safe to delete once every clip has landed.
       await _discardAll();
       if (mounted) context.pop();
