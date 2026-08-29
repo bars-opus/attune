@@ -322,6 +322,16 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
       );
 
       ChatLog.diagnostic('streak send ok', 'clips=${_segments.length}');
+
+      // Pull the new row in explicitly rather than waiting on realtime.
+      // sendStreak writes straight to the server with no optimistic
+      // message, and this screen pops immediately — so without this the
+      // sender stares at a chat that does not yet contain what they just
+      // sent, until some later event happens to refresh it.
+      await ref
+          .read(chatControllerProvider(widget.conversation).notifier)
+          .loadMessages(silent: true);
+
       // Staged files are only safe to delete once every clip has landed.
       await _discardAll();
       if (mounted) context.pop();
