@@ -16,11 +16,18 @@ class VoiceMicHalo extends StatelessWidget {
     required this.amplitude,
     required this.isRecording,
     required this.child,
+    this.progress = 0,
   });
 
   /// 0..1 of the current input level.
   final double amplitude;
   final bool isRecording;
+
+  /// 0..1 through the recorder's own maximum. Voice notes cap at five
+  /// minutes, and without this the user only learns they were close when
+  /// the recorder cuts them off.
+  final double progress;
+
   final Widget child;
 
   static const double _disc = 48;
@@ -50,6 +57,18 @@ class VoiceMicHalo extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: primary.withValues(alpha: 0.22),
+          ),
+        ),
+        // Between the halo and the disc, so the sweep reads as the
+        // button's own edge rather than a separate ring floating near it.
+        SizedBox(
+          width: _disc + 8,
+          height: _disc + 8,
+          child: CircularProgressIndicator(
+            value: progress.clamp(0.0, 1.0),
+            strokeWidth: 3,
+            backgroundColor: primary.withValues(alpha: 0.25),
+            valueColor: AlwaysStoppedAnimation(primary),
           ),
         ),
         Container(

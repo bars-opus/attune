@@ -64,6 +64,32 @@ void main() {
             'nothing the disc does not',
       );
     });
+
+    testWidgets('a progress ring shows how much of the cap is used',
+        (tester) async {
+      // Voice notes cap at five minutes. Without a ring the user has no
+      // idea how close they are until the recorder cuts them off.
+      await tester.pumpWidget(_wrap(const VoiceMicHalo(
+        amplitude: 0.3,
+        isRecording: true,
+        progress: 0.5,
+        child: Icon(Icons.mic_rounded),
+      )));
+
+      final ring = tester.widget<CircularProgressIndicator>(
+        find.byType(CircularProgressIndicator),
+      );
+      expect(ring.value, 0.5);
+    });
+
+    testWidgets('no ring when idle', (tester) async {
+      await tester.pumpWidget(_wrap(const VoiceMicHalo(
+        amplitude: 0,
+        isRecording: false,
+        child: Icon(Icons.mic_none_rounded),
+      )));
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
   });
 
   group('the lock pill', () {

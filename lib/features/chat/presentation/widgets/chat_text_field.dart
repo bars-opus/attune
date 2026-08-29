@@ -302,7 +302,12 @@ class _ChatTextFieldState extends State<ChatTextField> {
   /// threshold's counterpart because locking is the stickier, harder-to-
   /// undo outcome — an accidental lock strands the user in a recording
   /// they have to explicitly delete.
-  static const double _lockDragThreshold = 100.0;
+  /// Matches where VoiceLockPill is actually drawn (62px above the
+  /// composer). The threshold was 100px against a pill at 62, so the
+  /// finger reached the padlock and nothing happened -- it locked only
+  /// 38px PAST the visible target, which reads as the gesture not
+  /// working at all.
+  static const double _lockDragThreshold = 62.0;
 
   bool get _hasText => widget.controller.text.trim().isNotEmpty;
 
@@ -709,6 +714,15 @@ class _ChatTextFieldState extends State<ChatTextField> {
                                     ),
                           ),
                         ),
+                      if (!_hasText && showAttachSheet)
+                        _ComposerIcon(
+                          icon: Icons.add_circle_outline_rounded,
+                          onTap:
+                              widget.enabled
+                                  ? () => _handleAttachTap(context)
+                                  : null,
+                          tooltip: 'More',
+                        ),
                       if (!_hasText && widget.showVoiceMessage)
                         Semantics(
                           button: true,
@@ -744,6 +758,11 @@ class _ChatTextFieldState extends State<ChatTextField> {
                                     amplitude:
                                         _levels.isEmpty ? 0.0 : _levels.last,
                                     isRecording: _isRecording,
+                                    progress:
+                                        _elapsed.inMilliseconds /
+                                        VoiceRecorderService
+                                            .maxDuration
+                                            .inMilliseconds,
                                     child: IconTheme.merge(
                                       data: IconThemeData(
                                         color: colorScheme.onSurfaceVariant,
@@ -769,15 +788,6 @@ class _ChatTextFieldState extends State<ChatTextField> {
                           icon: Icons.sports_esports_outlined,
                           onTap: widget.enabled ? widget.onOpenGames : null,
                           tooltip: 'Games',
-                        ),
-                      if (!_hasText && showAttachSheet)
-                        _ComposerIcon(
-                          icon: Icons.add_circle_outline_rounded,
-                          onTap:
-                              widget.enabled
-                                  ? () => _handleAttachTap(context)
-                                  : null,
-                          tooltip: 'More',
                         ),
                       if (_hasText || !widget.showVoiceMessage)
                         _ComposerIcon(
