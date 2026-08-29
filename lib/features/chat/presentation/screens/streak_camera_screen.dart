@@ -557,36 +557,42 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
           // Leaving the camera is now explicit: cancel returns to a live
           // viewfinder rather than exiting, so without this there would be
           // no way out once a take is staged.
-          // Below the status bar and notch rather than tight against the
-          // top edge, and a larger target: these are the only two controls
-          // on a full-bleed viewfinder.
-          Positioned(
-            top: Spacing.xxl,
-            left: Spacing.md,
-            child: IconButton(
-              iconSize: 32,
-              onPressed: _isRecording || _isSending ? null : _closeCamera,
-              icon: const Icon(Icons.close_rounded, color: Colors.white),
-              tooltip: 'Close camera',
-            ),
-          ),
-
-          Positioned(
-            top: Spacing.xxl,
-            right: Spacing.md,
-            child: IconButton(
-              iconSize: 32,
-              // Enabled DURING recording too: the camera plugin supports
-              // switching lenses mid-take on both platforms, and turning
-              // the camera round without stopping is most of the point of
-              // a hands-free streak.
-              onPressed: _isSending ? null : _flipCamera,
-              icon: const Icon(
-                Icons.flip_camera_ios_outlined,
-                color: Colors.white,
+          // Both hidden while a take is under review: the send sheet owns
+          // that moment, and closing or flipping mid-decision would either
+          // discard the take silently or spin up a camera nobody is
+          // looking at.
+          if (preview == null) ...[
+            // Below the status bar and notch rather than tight against the
+            // top edge, and a larger target: these are the only two controls
+            // on a full-bleed viewfinder.
+            Positioned(
+              top: Spacing.xxl,
+              left: Spacing.md,
+              child: IconButton(
+                iconSize: 32,
+                onPressed: _isRecording || _isSending ? null : _closeCamera,
+                icon: const Icon(Icons.close_rounded, color: Colors.white),
+                tooltip: 'Close camera',
               ),
             ),
-          ),
+
+            Positioned(
+              top: Spacing.xxl,
+              right: Spacing.md,
+              child: IconButton(
+                iconSize: 32,
+                // Enabled DURING recording too: the camera plugin supports
+                // switching lenses mid-take on both platforms, and turning
+                // the camera round without stopping is most of the point of
+                // a hands-free streak.
+                onPressed: _isSending ? null : _flipCamera,
+                icon: const Icon(
+                  Icons.flip_camera_ios_outlined,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
 
           // No blocking overlay: the record button itself becomes the
           // loading indicator while sending, and refuses presses, so a

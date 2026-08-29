@@ -101,5 +101,17 @@ void main() {
         reason: 'flipping must not be blocked during a take',
       );
     });
+
+    test('the close and flip controls hide during review', () {
+      // The send sheet owns that moment: closing would discard the take
+      // silently, and flipping would spin up a camera nobody is looking
+      // at behind the preview.
+      expect(
+        src,
+        contains('if (preview == null) ...['),
+        reason: 'both top controls must be gated on there being no take '
+            'under review',
+      );
+    });
   });
 }

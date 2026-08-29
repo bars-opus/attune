@@ -1542,10 +1542,15 @@ class ChatController extends StateNotifier<ChatState> {
       final repository = ref.read(chatRepositoryProvider);
       String? mediaKey;
       String? mediaThumbnailKey;
+      // Every type that carries a file. A type missing here uploads
+      // nothing, leaves mediaKey null, and its insert then fails
+      // messages_payload_present with no content either — which is
+      // exactly how streaks broke.
       final isMediaSend =
           (pending.mediaType == 'image' ||
               pending.mediaType == 'audio' ||
-              pending.mediaType == 'video') &&
+              pending.mediaType == 'video' ||
+              pending.mediaType == 'streak') &&
           pending.localMediaPath != null &&
           pending.mediaMimeType != null;
       if (isMediaSend) {
