@@ -296,7 +296,11 @@ class _ChatTextFieldState extends State<ChatTextField> {
   // Drag-LEFT-to-cancel threshold, in logical pixels from the initial press
   // point. Chosen to be comfortably beyond an accidental small finger
   // wobble during a normal hold, but well within a deliberate drag.
-  static const double _cancelDragThreshold = 80.0;
+  /// Deliberately BELOW the lock threshold. A leftward swipe carries
+  /// upward drift, so a cancel that completes later than the lock never
+  /// fires at all -- the recording locks and then sends, which is the
+  /// opposite of what the user asked for.
+  static const double _cancelDragThreshold = 56.0;
 
   /// Upward drag distance that locks the recording. Larger than the cancel
   /// threshold's counterpart because locking is the stickier, harder-to-
@@ -620,17 +624,83 @@ class _ChatTextFieldState extends State<ChatTextField> {
             )
             : null;
 
+    // Extracted so the recording composer can place the SAME mic
+    // beside the bar. Previously the bar replaced the entire icon
+    // row, so the mic, its halo and its progress ring were not on
+    // screen at all while recording.
+    final micSlot =
+        Semantics(
+          button: true,
+          label: 'Hold to record a voice message',
+          // Press, not long-press: the mic is a
+          // press-and-hold control, so binding start to
+          // onLongPressStart gave it a ~500ms dead zone in
+          // which the user is already holding, sees nothing,
+          // and gets no recording at all if they release.
+          // A raw pan recognizer starts on touch-down and
+          // reports drags in the same gesture, which is what
+          // lock (up) and cancel (left) need.
+          // A raw Listener rather than GestureDetector's
+          // pan callbacks: pan does not report an end for a
+          // press with no movement, so a quick
+          // press-and-release never stopped the recorder.
+          // Pointer events always pair down with up/cancel.
+          child: Listener(
+            onPointerDown: (_) => unawaited(_startRecording()),
+            onPointerMove:
+                (event) => _onRecordPointerMove(event.delta),
+            onPointerUp: (_) => unawaited(_onRecordDragEnd()),
+            onPointerCancel:
+                (_) => unawaited(_onRecordDragEnd()),
+            behavior: HitTestBehavior.opaque,
+            child: Opacity(
+              opacity: widget.enabled ? 1.0 : 0.38,
+              child: SizedBox(
+                width: _ComposerIcon._tapSize,
+                height: _ComposerIcon._tapSize,
+                child: Center(
+                  child: VoiceMicHalo(
+                    amplitude:
+                        _levels.isEmpty ? 0.0 : _levels.last,
+                    isRecording: _isRecording,
+                    progress:
+                        _elapsed.inMilliseconds /
+                        VoiceRecorderService
+                            .maxDuration
+                            .inMilliseconds,
+                    child: IconTheme.merge(
+                      data: IconThemeData(
+                        color: colorScheme.onSurfaceVariant,
+                        size: 24,
+                      ),
+                      child: IconCrossfade(
+                        child: Icon(
+                          _isRecording
+                              ? Icons.mic_rounded
+                              : Icons.mic_none_rounded,
+                          key: ValueKey(_isRecording),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
     final composer = Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
       child:
             _isRecording
-                ? VoiceRecordingBar(
+                ? _RecordingComposer(
                   elapsed: _elapsed,
                   amplitude: _levels.isEmpty ? 0.0 : _levels.last,
                   levels: _levels,
                   isCancelling: _isCancelling,
                   stage: _stage,
                   isPaused: _isPaused,
+                  micSlot: micSlot,
                   onCancel: () => unawaited(_cancelRecording()),
                   onTogglePause: () => unawaited(_togglePause()),
                   onSend: () => unawaited(_finishRecording()),
@@ -724,65 +794,7 @@ class _ChatTextFieldState extends State<ChatTextField> {
                           tooltip: 'More',
                         ),
                       if (!_hasText && widget.showVoiceMessage)
-                        Semantics(
-                          button: true,
-                          label: 'Hold to record a voice message',
-                          // Press, not long-press: the mic is a
-                          // press-and-hold control, so binding start to
-                          // onLongPressStart gave it a ~500ms dead zone in
-                          // which the user is already holding, sees nothing,
-                          // and gets no recording at all if they release.
-                          // A raw pan recognizer starts on touch-down and
-                          // reports drags in the same gesture, which is what
-                          // lock (up) and cancel (left) need.
-                          // A raw Listener rather than GestureDetector's
-                          // pan callbacks: pan does not report an end for a
-                          // press with no movement, so a quick
-                          // press-and-release never stopped the recorder.
-                          // Pointer events always pair down with up/cancel.
-                          child: Listener(
-                            onPointerDown: (_) => unawaited(_startRecording()),
-                            onPointerMove:
-                                (event) => _onRecordPointerMove(event.delta),
-                            onPointerUp: (_) => unawaited(_onRecordDragEnd()),
-                            onPointerCancel:
-                                (_) => unawaited(_onRecordDragEnd()),
-                            behavior: HitTestBehavior.opaque,
-                            child: Opacity(
-                              opacity: widget.enabled ? 1.0 : 0.38,
-                              child: SizedBox(
-                                width: _ComposerIcon._tapSize,
-                                height: _ComposerIcon._tapSize,
-                                child: Center(
-                                  child: VoiceMicHalo(
-                                    amplitude:
-                                        _levels.isEmpty ? 0.0 : _levels.last,
-                                    isRecording: _isRecording,
-                                    progress:
-                                        _elapsed.inMilliseconds /
-                                        VoiceRecorderService
-                                            .maxDuration
-                                            .inMilliseconds,
-                                    child: IconTheme.merge(
-                                      data: IconThemeData(
-                                        color: colorScheme.onSurfaceVariant,
-                                        size: 24,
-                                      ),
-                                      child: IconCrossfade(
-                                        child: Icon(
-                                          _isRecording
-                                              ? Icons.mic_rounded
-                                              : Icons.mic_none_rounded,
-                                          key: ValueKey(_isRecording),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
+                        micSlot,
                       if (!_hasText && widget.showGames)
                         _ComposerIcon(
                           icon: Icons.sports_esports_outlined,
@@ -831,6 +843,63 @@ class _ChatTextFieldState extends State<ChatTextField> {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// The composer while a voice note is being recorded: the bar on the
+/// left, the mic still in its own place on the right.
+///
+/// Previously VoiceRecordingBar replaced the entire icon row, which meant
+/// the mic — and therefore its halo and progress ring — was not rendered
+/// at all mid-recording. Keeping it in place also means the button under
+/// the user's finger never moves, which is what makes swipe-to-lock and
+/// slide-to-cancel feel anchored.
+class _RecordingComposer extends StatelessWidget {
+  const _RecordingComposer({
+    required this.elapsed,
+    required this.amplitude,
+    required this.levels,
+    required this.isCancelling,
+    required this.stage,
+    required this.isPaused,
+    required this.micSlot,
+    this.onCancel,
+    this.onTogglePause,
+    this.onSend,
+  });
+
+  final Duration elapsed;
+  final double amplitude;
+  final List<double> levels;
+  final bool isCancelling;
+  final VoiceRecordingStage stage;
+  final bool isPaused;
+  final Widget micSlot;
+  final VoidCallback? onCancel;
+  final VoidCallback? onTogglePause;
+  final VoidCallback? onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: VoiceRecordingBar(
+            elapsed: elapsed,
+            amplitude: amplitude,
+            levels: levels,
+            isCancelling: isCancelling,
+            stage: stage,
+            isPaused: isPaused,
+            onCancel: onCancel,
+            onTogglePause: onTogglePause,
+            onSend: onSend,
+          ),
+        ),
+        const SizedBox(width: Spacing.sm),
+        micSlot,
+      ],
     );
   }
 }
