@@ -91,15 +91,25 @@ class StreakRecordButton extends StatelessWidget {
     return Listener(
       onPointerDown: (_) {
         if (_isBusy) return;
+
         // A locked take is stopped by TAPPING, not by a press-and-hold,
-        // so the press handlers stand down entirely.
+        // so the press handlers stand down entirely. Medium, matching the
+        // lock that started it: both are moments the user chose, where
+        // the press that begins a take is incidental.
         if (isLocked) {
+          HapticFeedback.mediumImpact();
           onStop?.call();
           return;
         }
+
+        // Fired BEFORE onPressStart, and independent of whether recording
+        // actually begins. A stuck flag downstream should cost the take,
+        // never the feedback that the tap landed — silence reads as a
+        // dead button.
+        //
         // Light rather than medium: this fires the instant a finger lands
-        // on the button, many times a session. A heavier tap would become
-        // wearing very quickly.
+        // on the button, many times a session, and a heavier tap becomes
+        // wearing quickly.
         HapticFeedback.lightImpact();
         onPressStart();
       },

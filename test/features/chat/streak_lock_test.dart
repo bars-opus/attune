@@ -140,5 +140,38 @@ void main() {
       expect(reset, contains('_isSending = false'));
       expect(reset, contains('_isLocked = false'));
     });
+
+    test('a press recovers from a stale sending flag', () {
+      // _isSending is cleared on several paths, and missing any one of
+      // them left the camera permanently unable to record -- no error, no
+      // way back except leaving the screen. Nothing is staged at press
+      // time, so there is no in-flight send to protect.
+      expect(src, contains('streak press while sending'));
+    });
+
+    test('stopping a locked take is haptic', () {
+      final button = File(
+        'lib/features/chat/presentation/widgets/streak_record_button.dart',
+      ).readAsStringSync();
+
+      // Three moments deserve one: starting a take, locking it, stopping
+      // it. Only the first two had one.
+      final locked = RegExp(
+        r'if \(isLocked\) \{[\s\S]{0,200}?HapticFeedback',
+      ).hasMatch(button);
+      expect(locked, isTrue, reason: 'the stop tap must be felt');
+    });
+
+    test('the press haptic is not gated on the take actually starting', () {
+      final button = File(
+        'lib/features/chat/presentation/widgets/streak_record_button.dart',
+      ).readAsStringSync();
+
+      // Silence reads as a dead button. A stuck flag downstream should
+      // cost the recording, never the feedback that the tap landed.
+      final order = button.indexOf('HapticFeedback.lightImpact()') <
+          button.indexOf('onPressStart()');
+      expect(order, isTrue, reason: 'haptic fires before the start attempt');
+    });
   });
 }

@@ -138,8 +138,16 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
 
   Future<void> _onPressStart() async {
     final controller = _controller;
-    if (controller == null || _isRecording || _startInFlight || _isSending) {
-      return;
+    if (controller == null || _isRecording || _startInFlight) return;
+
+    // _isSending gates a real upload, but it is set before the transcode
+    // and cleared on several paths -- if any of them is missed the camera
+    // becomes permanently unable to record, with no error and no way back
+    // except leaving the screen. Recover rather than refuse: nothing is
+    // staged at this point, so there is no in-flight send to protect.
+    if (_isSending) {
+      ChatLog.diagnostic('streak press while sending', 'clearing stale flag');
+      setState(() => _isSending = false);
     }
 
     _startInFlight = true;
