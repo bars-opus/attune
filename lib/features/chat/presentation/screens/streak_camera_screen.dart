@@ -271,6 +271,17 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     unawaited(_openReviewGuarded());
   }
 
+  /// Ends a locked take.
+  ///
+  /// Separate from _onPressEnd, which returns early while locked -- that
+  /// guard is what lets the finger lift, and routing the stop button
+  /// through it made stopping impossible until the 60s cap fired.
+  Future<void> _stopLockedRecording() async {
+    if (!_isRecording || !_isLocked) return;
+    setState(() => _isLocked = false);
+    await _onPressEnd();
+  }
+
   /// Offers send or cancel. A streak must not fly away the instant a
   /// finger lifts — a mis-hold would otherwise be unrecallable.
   /// Wraps the review flow so nothing is lost.
@@ -380,6 +391,19 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
 
   /// Discards anything staged and leaves the camera.
   Future<void> _closeCamera() async {
+    // Stop the camera first: popping with a recording still running
+    // leaves the controller writing to a file nobody will ever read.
+    if (_isRecording) {
+      _ticker?.cancel();
+      _isLocked = false;
+      try {
+        await _controller?.stopVideoRecording();
+      } on CameraException {
+        // Already stopped, or the controller is gone. Either way the
+        // screen is closing.
+      }
+      if (mounted) setState(() => _isRecording = false);
+    }
     await _resetCapture();
     if (!mounted) return;
     context.pop();
@@ -421,6 +445,14 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     await _discardAll();
     if (!mounted) return;
     setState(() {
+      // _isSending is set before the transcode and cleared only on the
+      // error paths -- the success path pops the screen, so it never
+      // needed clearing there. Cancelling instead KEEPS the screen, and
+      // a stuck flag then made the button permanently busy: no haptic,
+      // no recording, on every take after the first.
+      _isSending = false;
+      _isLocked = false;
+      _lockDrag = 0;
       _segmentElapsed = Duration.zero;
       _segmentStartedAt = null;
     });
@@ -523,7 +555,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
             Positioned(
               left: 0,
               right: 0,
-              bottom: Spacing.xxl * 2 + 112,
+              bottom: Spacing.xxl * 2 + 168,
               child: Center(child: StreakLockHint(dragProgress: _lockDrag)),
             ),
 
@@ -598,7 +630,12 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
               left: Spacing.md,
               child: IconButton(
                 iconSize: 32,
-                onPressed: _isRecording || _isSending ? null : _closeCamera,
+                // A LOCKED take must stay abandonable: nothing is holding
+              // it, so disabling this left no way out but waiting a
+              // minute. Only a finger-held take blocks closing.
+              onPressed: (_isRecording && !_isLocked) || _isSending
+                  ? null
+                  : _closeCamera,
                 icon: const Icon(Icons.close_rounded, color: Colors.white),
                 tooltip: 'Close camera',
               ),
@@ -671,7 +708,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
                           onPressStart: () => unawaited(_onPressStart()),
                           onPressEnd: () => unawaited(_onPressEnd()),
                           isLocked: _isLocked,
-                          onStop: () => unawaited(_onPressEnd()),
+                          onStop: () => unawaited(_stopLockedRecording()),
                         ),
                       ),
             ),

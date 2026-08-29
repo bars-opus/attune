@@ -85,5 +85,41 @@ void main() {
       final resets = RegExp(r'_isLocked = false').allMatches(src).length;
       expect(resets, greaterThanOrEqualTo(2));
     });
+
+    test('the stop button ends a locked take', () {
+      // onStop routed to _onPressEnd, which returns early WHEN LOCKED --
+      // the same guard that makes locking work made the stop button
+      // inert, so a locked take could only end by hitting the 60s cap.
+      expect(
+        src,
+        contains('Future<void> _stopLockedRecording()'),
+        reason: 'stopping needs a path that is not gated on the lock',
+      );
+      expect(src, contains('onStop: () => unawaited(_stopLockedRecording())'));
+    });
+
+    test('closing works while locked', () {
+      // The close button was disabled whenever _isRecording, which a
+      // locked take is -- leaving no way out but waiting a minute.
+      expect(
+        src,
+        isNot(contains('onPressed: _isRecording || _isSending ? null : _closeCamera')),
+        reason: 'a locked take must still be abandonable',
+      );
+    });
+
+    test('resetting clears the busy flags', () {
+      // _isSending is set before the transcode and cleared only on error.
+      // The success path pops, so it never mattered there -- but cancel
+      // KEEPS the screen, and a stuck flag left the button permanently
+      // busy: no haptic and no recording on every take after the first.
+      final reset = RegExp(
+        r'Future<void> _resetCapture\(\) async \{[\s\S]{0,600}?\n  \}',
+      ).firstMatch(src)?.group(0);
+
+      expect(reset, isNotNull, reason: '_resetCapture not found');
+      expect(reset, contains('_isSending = false'));
+      expect(reset, contains('_isLocked = false'));
+    });
   });
 }

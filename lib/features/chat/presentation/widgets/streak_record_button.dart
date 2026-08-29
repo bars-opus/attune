@@ -64,15 +64,15 @@ class StreakRecordButton extends StatelessWidget {
   final VoidCallback onPressEnd;
 
   /// The touch target, sized for a thumb regardless of what is drawn.
-  static const double _target = 112;
+  static const double _target = 128;
 
   static const double _idleDiameter = 72;
 
   /// The disc grows into place as recording starts, rather than appearing
   /// at its final size — paired with the arc's entrance it reads as the
   /// control opening up rather than swapping shape.
-  static const double _discDiameter = 72;
-  static const double _discFrom = 56;
+  static const double _discDiameter = 84;
+  static const double _discFrom = 64;
 
   /// Gap between the disc and the arc ringing it.
   static const double _gap = Spacing.lg;
