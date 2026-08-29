@@ -13,6 +13,11 @@ const double kVoiceLockDragDistance = 96;
 class VoiceLockPill extends StatelessWidget {
   const VoiceLockPill({super.key, required this.dragProgress});
 
+  /// Fixed so the composer can centre the pill on the mic. A pill whose
+  /// width depended on its content could not be aligned to the button the
+  /// drag starts from.
+  static const double width = 44;
+
   /// 0..1 toward the lock threshold.
   final double dragProgress;
 
@@ -23,21 +28,17 @@ class VoiceLockPill extends StatelessWidget {
 
     return IgnorePointer(
       child: AnimatedContainer(
+        width: width,
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
         // Rises toward the travelling finger, so the gesture confirms
         // itself before it completes.
         transform: Matrix4.translationValues(0, -12 * t, 0),
-        padding: const EdgeInsets.symmetric(
-          horizontal: Spacing.sm,
-          vertical: Spacing.md,
-        ),
+        padding: const EdgeInsets.symmetric(vertical: Spacing.md),
         decoration: BoxDecoration(
           color: Color.lerp(colorScheme.surface, colorScheme.primary, t),
           borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
-          boxShadow: const [
-            BoxShadow(blurRadius: 12, color: Colors.black26),
-          ],
+          boxShadow: const [BoxShadow(blurRadius: 12, color: Colors.black26)],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

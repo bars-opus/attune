@@ -60,12 +60,13 @@ class LottieDoodleField extends StatelessWidget {
         // The stride is computed to land AT the cap rather than by
         // dividing and rounding up — ceil() overshoots badly on a field
         // only slightly larger than the cap, thinning 48 down to 24.
-        final placements = all.length <= kMaxLottieDoodles
-            ? all
-            : [
-                for (var i = 0; i < kMaxLottieDoodles; i++)
-                  all[(i * all.length ~/ kMaxLottieDoodles)],
-              ];
+        final placements =
+            all.length <= kMaxLottieDoodles
+                ? all
+                : [
+                  for (var i = 0; i < kMaxLottieDoodles; i++)
+                    all[(i * all.length ~/ kMaxLottieDoodles)],
+                ];
 
         return Opacity(
           opacity: opacity,
@@ -86,10 +87,9 @@ class LottieDoodleField extends StatelessWidget {
                         repeat: placement.isAnimated && !reduceMotion,
                         delegates: LottieDelegates(
                           values: [
-                            ValueDelegate.colorFilter(
-                              const ['**'],
-                              value: ColorFilter.mode(color, BlendMode.srcIn),
-                            ),
+                            ValueDelegate.colorFilter(const [
+                              '**',
+                            ], value: ColorFilter.mode(color, BlendMode.srcIn)),
                           ],
                         ),
                       ),

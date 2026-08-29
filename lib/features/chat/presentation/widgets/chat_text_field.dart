@@ -10,6 +10,7 @@ import 'package:attune/core/widgets/bottom_sheet_header.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'voice_recording_bar.dart';
+import 'voice_recording_scrim.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_mic_halo.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_lock_pill.dart';
 
@@ -113,7 +114,6 @@ class ChatTextField extends StatefulWidget {
 /// full, comfortable ~40x40 tap target via a transparent HitTestBehavior.
 class _ComposerIcon extends StatelessWidget {
   const _ComposerIcon({
-    super.key,
     required this.icon,
     required this.onTap,
     this.tooltip,
@@ -271,7 +271,8 @@ class _ChatAttachRow extends StatelessWidget {
   }
 }
 
-class _ChatTextFieldState extends State<ChatTextField> {
+class _ChatTextFieldState extends State<ChatTextField>
+    with SingleTickerProviderStateMixin {
   int _sendPulse = 0;
   VoiceRecorderService? _recorder;
   bool _isRecording = false;
@@ -322,16 +323,85 @@ class _ChatTextFieldState extends State<ChatTextField> {
 
   bool get _hasText => widget.controller.text.trim().isNotEmpty;
 
+  /// Drives the recording scrim's fade. An OverlayEntry rather than a
+  /// route: a route pushed mid-gesture moves the pointer to a new
+  /// Navigator layer and breaks the drag lock and cancel both read from.
+  late final AnimationController _scrimController;
+  OverlayEntry? _scrimEntry;
+
+  /// The scrim reads its live values from here rather than from a rebuild
+  /// of this State. An OverlayEntry is a separate element subtree, so
+  /// marking it dirty from this widget's build() is the framework's
+  /// "markNeedsBuild during build" error; a notifier lets the overlay
+  /// rebuild itself on its own schedule.
+  final ValueNotifier<VoiceScrimData> _scrimData = ValueNotifier(
+    const VoiceScrimData(),
+  );
+
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_onChanged);
+    _scrimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+      reverseDuration: const Duration(milliseconds: 180),
+    );
+  }
+
+  /// Icons the idle row draws AFTER the mic — games, plus the send button
+  /// shown when the mic is hidden.
+  int get _trailingIconCount =>
+      (widget.showGames ? 1 : 0) + (widget.showVoiceMessage ? 0 : 1);
+
+  void _showScrim() {
+    if (_scrimEntry != null) return;
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    final entry = OverlayEntry(
+      builder:
+          (_) => VoiceRecordingScrim(
+            animation: _scrimController,
+            data: _scrimData,
+          ),
+    );
+    _scrimEntry = entry;
+    overlay.insert(entry);
+    _syncScrim();
+    _scrimController.forward();
+  }
+
+  /// Pushes the live values the scrim draws. Writing a notifier rather
+  /// than marking the entry dirty keeps this safe to call from build.
+  void _syncScrim() {
+    if (_scrimEntry == null) return;
+    _scrimData.value = VoiceScrimData(
+      elapsed: _elapsed,
+      amplitude: _levels.isEmpty ? 0.0 : _levels.last,
+      levels: List<double>.unmodifiable(_levels),
+      isCancelling: _isCancelling,
+    );
+  }
+
+  Future<void> _hideScrim() async {
+    final entry = _scrimEntry;
+    if (entry == null) return;
+    _scrimEntry = null;
+    await _scrimController.reverse();
+    entry.remove();
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_onChanged);
     _elapsedTicker?.cancel();
+    // Removed directly, not via _hideScrim: an overlay entry outlives this
+    // State unless taken down here, and awaiting a reverse during dispose
+    // would tick a disposed controller.
+    _scrimEntry?.remove();
+    _scrimEntry = null;
+    _scrimController.dispose();
+    _scrimData.dispose();
     // Detach the level listener before disposing — the service disposes its
     // ValueNotifier, and a listener still attached to it would fire against
     // a disposed notifier.
@@ -415,9 +485,12 @@ class _ChatTextFieldState extends State<ChatTextField> {
     _elapsedTicker = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (!mounted) return;
       setState(() => _elapsed = recorder.elapsed);
+      _syncScrim();
     });
 
     recorder.currentLevel.addListener(_onLevel);
+
+    _showScrim();
 
     setState(() {
       _recorder = recorder;
@@ -451,6 +524,7 @@ class _ChatTextFieldState extends State<ChatTextField> {
       _levels.add(recorder.currentLevel.value);
       if (_levels.length > _maxLevels) _levels.removeAt(0);
     });
+    _syncScrim();
   }
 
   /// Detaches this widget from a recorder and releases it. Centralized
@@ -501,6 +575,7 @@ class _ChatTextFieldState extends State<ChatTextField> {
         _isCancelling = isCancelling;
         _lockProgress = lockProgress;
       });
+      _syncScrim();
     }
   }
 
@@ -613,9 +688,12 @@ class _ChatTextFieldState extends State<ChatTextField> {
     if (mounted) setState(() => _isPaused = recorder.isPaused);
   }
 
+  /// Called by both stop paths — cancel and finish — and nowhere else,
+  /// so taking the scrim down here means neither path can leave it up.
   void _stopTicker() {
     _elapsedTicker?.cancel();
     _elapsedTicker = null;
+    unawaited(_hideScrim());
   }
 
   @override
@@ -701,7 +779,11 @@ class _ChatTextFieldState extends State<ChatTextField> {
     final composer = Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
       child:
-          _isRecording
+          // Held stage keeps the ordinary icon row: the scrim above now
+          // carries the counter, waveform and slide-to-cancel hint, so a
+          // second bar down here would compete with it. The locked stage
+          // still needs the bar for its delete/pause/send controls.
+          _isRecording && _stage == VoiceRecordingStage.locked
               ? _RecordingComposer(
                 // Mirrors the idle row's trailing icons exactly: games,
                 // plus the send button it shows when the mic is hidden.
@@ -847,7 +929,20 @@ class _ChatTextFieldState extends State<ChatTextField> {
           // and the bar's own controls replace it.
           if (_isRecording && _stage == VoiceRecordingStage.held)
             Positioned(
-              right: 14,
+              // Centred on the mic rather than at a fixed inset: the pill
+              // is the target of an upward drag that STARTS on the mic, so
+              // any horizontal offset between them reads as the gesture
+              // pointing somewhere the finger is not going.
+              //
+              // Right edge (12 outer + 6 inner padding) to the mic's
+              // centre: half the mic's own hit box, plus every trailing
+              // icon after it.
+              right:
+                  12.0 +
+                  6.0 +
+                  _ComposerIcon._tapSize / 2 +
+                  _trailingIconCount * _ComposerIcon._tapSize -
+                  VoiceLockPill.width / 2,
               bottom: 62,
               child: VoiceLockPill(dragProgress: _lockProgress),
             ),
@@ -924,18 +1019,10 @@ class _RecordingComposer extends StatelessWidget {
         // on that button — moving it under the touch makes the lock and
         // cancel drags read from a shifted origin.
         for (var i = 0; i < trailingSlots; i++)
-          if (i == 0 && stage == VoiceRecordingStage.held)
-            _ComposerIcon(
-              key: const ValueKey('voice-held-send'),
-              icon: Icons.arrow_upward_rounded,
-              onTap: onSend,
-              tooltip: 'Send',
-            )
-          else
-            const SizedBox(
-              width: _ComposerIcon._tapSize,
-              height: _ComposerIcon._tapSize,
-            ),
+          const SizedBox(
+            width: _ComposerIcon._tapSize,
+            height: _ComposerIcon._tapSize,
+          ),
       ],
     );
   }

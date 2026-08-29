@@ -158,23 +158,25 @@ class StreakRecordButton extends StatelessWidget {
                 tween: Tween(begin: _discFrom, end: _discDiameter),
                 duration: const Duration(milliseconds: 260),
                 curve: Curves.easeOutBack,
-                builder: (context, size, _) => Container(
-                  key: const ValueKey('streak-record-fill'),
-                  width: size,
-                  height: size,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: primary,
-                  ),
-                  child: isLocked
-                      ? const Icon(
-                          Icons.stop_rounded,
-                          key: ValueKey('streak-record-stop'),
-                          color: Colors.white,
-                          size: 30,
-                        )
-                      : null,
-                ),
+                builder:
+                    (context, size, _) => Container(
+                      key: const ValueKey('streak-record-fill'),
+                      width: size,
+                      height: size,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: primary,
+                      ),
+                      child:
+                          isLocked
+                              ? const Icon(
+                                Icons.stop_rounded,
+                                key: ValueKey('streak-record-stop'),
+                                color: Colors.white,
+                                size: 30,
+                              )
+                              : null,
+                    ),
               ),
               // Scale and fade the arc in as recording starts, and out
               // again when it stops: it appearing instantly at full size
@@ -185,12 +187,13 @@ class StreakRecordButton extends StatelessWidget {
                 tween: Tween(begin: 0.7, end: 1),
                 duration: const Duration(milliseconds: 260),
                 curve: Curves.easeOutBack,
-                builder: (context, scale, child) => Opacity(
-                  // Fades over the first half of the growth, so the arc is
-                  // solid well before it settles.
-                  opacity: ((scale - 0.7) / 0.15).clamp(0.0, 1.0),
-                  child: Transform.scale(scale: scale, child: child),
-                ),
+                builder:
+                    (context, scale, child) => Opacity(
+                      // Fades over the first half of the growth, so the arc is
+                      // solid well before it settles.
+                      opacity: ((scale - 0.7) / 0.15).clamp(0.0, 1.0),
+                      child: Transform.scale(scale: scale, child: child),
+                    ),
                 child: SizedBox(
                   key: const ValueKey('streak-record-arc'),
                   width: _arcDiameter,

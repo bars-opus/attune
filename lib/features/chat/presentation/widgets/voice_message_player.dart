@@ -24,8 +24,7 @@ class VoiceMessagePlayer extends ConsumerStatefulWidget {
   final List<int> waveform;
 
   @override
-  ConsumerState<VoiceMessagePlayer> createState() =>
-      _VoiceMessagePlayerState();
+  ConsumerState<VoiceMessagePlayer> createState() => _VoiceMessagePlayerState();
 }
 
 class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
@@ -45,7 +44,8 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
         _isPlaying = false;
         _position = Duration.zero;
       });
-      if (ref.read(currentlyPlayingVoiceMessageIdProvider) == widget.messageId) {
+      if (ref.read(currentlyPlayingVoiceMessageIdProvider) ==
+          widget.messageId) {
         ref.read(currentlyPlayingVoiceMessageIdProvider.notifier).state = null;
       }
     });
@@ -98,9 +98,10 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
     // from message.localMediaPath (a local file path) before the upload
     // completes and signedMediaUrl becomes available — UrlSource would fail
     // on a raw file path, so branch on the source shape instead.
-    final source = widget.audioUrl.startsWith('http')
-        ? UrlSource(widget.audioUrl)
-        : DeviceFileSource(widget.audioUrl);
+    final source =
+        widget.audioUrl.startsWith('http')
+            ? UrlSource(widget.audioUrl)
+            : DeviceFileSource(widget.audioUrl);
     await _player.play(source);
     setState(() => _isPlaying = true);
   }
@@ -115,7 +116,10 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
   @override
   Widget build(BuildContext context) {
     // Another bubble became the currently-playing one — pause this one.
-    ref.listen<String?>(currentlyPlayingVoiceMessageIdProvider, (previous, next) {
+    ref.listen<String?>(currentlyPlayingVoiceMessageIdProvider, (
+      previous,
+      next,
+    ) {
       if (next != widget.messageId && _isPlaying) {
         _player.pause();
         setState(() => _isPlaying = false);
@@ -123,9 +127,10 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
     });
 
     final total = Duration(milliseconds: widget.durationMs);
-    final progressFraction = total.inMilliseconds == 0
-        ? 0.0
-        : _position.inMilliseconds / total.inMilliseconds;
+    final progressFraction =
+        total.inMilliseconds == 0
+            ? 0.0
+            : _position.inMilliseconds / total.inMilliseconds;
 
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -261,11 +266,7 @@ class _WaveformPainter extends CustomPainter {
     // makes the current position readable at a glance when paused.
     if (progressFraction > 0) {
       final knobX = (size.width * progressFraction).clamp(0.0, size.width);
-      canvas.drawCircle(
-        Offset(knobX, centerY),
-        5,
-        Paint()..color = color,
-      );
+      canvas.drawCircle(Offset(knobX, centerY), 5, Paint()..color = color);
     }
   }
 

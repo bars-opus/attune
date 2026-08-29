@@ -456,11 +456,7 @@ class _PosterFallback extends StatelessWidget {
 }
 
 class _CountBadge extends StatelessWidget {
-  const _CountBadge({
-    super.key,
-    required this.current,
-    required this.total,
-  });
+  const _CountBadge({super.key, required this.current, required this.total});
 
   final int current;
   final int total;

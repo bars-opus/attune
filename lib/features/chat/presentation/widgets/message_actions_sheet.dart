@@ -50,14 +50,15 @@ List<Widget> buildMessageActionItems({
     required VoidCallback onSelected,
   }) {
     return Builder(
-      builder: (tileContext) => ListTile(
-        leading: leading,
-        title: title,
-        onTap: () {
-          Navigator.of(tileContext).pop();
-          onSelected();
-        },
-      ),
+      builder:
+          (tileContext) => ListTile(
+            leading: leading,
+            title: title,
+            onTap: () {
+              Navigator.of(tileContext).pop();
+              onSelected();
+            },
+          ),
     );
   }
 

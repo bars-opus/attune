@@ -1,10 +1,12 @@
 import 'dart:io';
 
-import 'support/chat_test_harness.dart';import 'dart:typed_data';
+import 'support/chat_test_harness.dart';
+import 'dart:typed_data';
 
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:attune/features/chat/presentation/widgets/voice_recording_scrim.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:permission_handler_platform_interface/permission_handler_platform_interface.dart';
@@ -127,27 +129,27 @@ Future<void> _pump(
 }) {
   return tester.pumpWidget(
     withScreenUtil(
-    MaterialApp(
-      home: Scaffold(
-        body: ChatTextField(
-          controller: controller,
-          onSend: onSend ?? () {},
-          onOpenTranslator: onOpenTranslator,
-          onAttachImage: onAttachImage,
-          onAttachVideo: onAttachVideo,
-          onAttachFile: onAttachFile,
-          onCaptureVideo: onCaptureVideo,
-          onOpenGames: onOpenGames,
-          showTranslator: showTranslator,
-          showAttachImage: showAttachImage,
-          showAttachVideo: showAttachVideo,
-          showVoiceMessage: showVoiceMessage,
-          showCaptureVideo: showCaptureVideo,
-          showGames: showGames,
-          enabled: enabled,
+      MaterialApp(
+        home: Scaffold(
+          body: ChatTextField(
+            controller: controller,
+            onSend: onSend ?? () {},
+            onOpenTranslator: onOpenTranslator,
+            onAttachImage: onAttachImage,
+            onAttachVideo: onAttachVideo,
+            onAttachFile: onAttachFile,
+            onCaptureVideo: onCaptureVideo,
+            onOpenGames: onOpenGames,
+            showTranslator: showTranslator,
+            showAttachImage: showAttachImage,
+            showAttachVideo: showAttachVideo,
+            showVoiceMessage: showVoiceMessage,
+            showCaptureVideo: showCaptureVideo,
+            showGames: showGames,
+            enabled: enabled,
+          ),
         ),
       ),
-    ),
     ),
   );
 }
@@ -324,7 +326,7 @@ void main() {
   });
 
   testWidgets(
-    'long-pressing the mic starts recording and shows the waveform bar',
+    'pressing and holding the mic starts recording and raises the scrim',
     (tester) async {
       final controller = TextEditingController();
       await _pump(tester, controller: controller, showVoiceMessage: true);
@@ -341,15 +343,17 @@ void main() {
       // Let the async permission-request/start chain resolve and rebuild.
       await tester.pump();
 
-      expect(
-        find.byType(TextField),
-        findsNothing,
-      ); // replaced by the waveform view
+      // The recording UI now lives on a dimmed overlay above the composer
+      // (the same treatment as the focused message-action menu), rather
+      // than a bar that replaced the text field in place.
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(VoiceRecordingScrim), findsOneWidget);
 
       // Release so the test's pending timers (elapsed ticker) are cleaned up
       // rather than leaking into pumpWidget's teardown/leak checks.
       await gesture.up();
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
     },
   );
 

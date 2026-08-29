@@ -91,13 +91,15 @@ List<DoodlePlacement> packDoodles({
       final rect = Rect.fromLTWH(left, top, size, size);
       if (rect.right > area.width || rect.bottom > area.height) continue;
 
-      placed.add(DoodlePlacement(
-        rect: rect,
-        assetIndex: order[cursor % assetCount],
-        turns: random.nextInt(4),
-        isAnimated: random.nextDouble() < _animatedFraction,
-        phase: random.nextDouble(),
-      ));
+      placed.add(
+        DoodlePlacement(
+          rect: rect,
+          assetIndex: order[cursor % assetCount],
+          turns: random.nextInt(4),
+          isAnimated: random.nextDouble() < _animatedFraction,
+          phase: random.nextDouble(),
+        ),
+      );
       cursor++;
     }
   }

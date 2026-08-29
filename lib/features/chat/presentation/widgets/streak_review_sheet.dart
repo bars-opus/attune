@@ -25,9 +25,10 @@ class StreakReviewSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final seconds = segments
-        .fold<Duration>(Duration.zero, (sum, s) => sum + s.duration)
-        .inSeconds;
+    final seconds =
+        segments
+            .fold<Duration>(Duration.zero, (sum, s) => sum + s.duration)
+            .inSeconds;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),

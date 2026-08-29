@@ -136,9 +136,11 @@ class _VideoPrepareProgressDialogState
       Navigator.of(context).pop(_DialogResult.rejected(rejected));
     } catch (_) {
       if (!mounted || _cancelling) return;
-      Navigator.of(
-        context,
-      ).pop(const _DialogResult.rejected(ChatVideoRejected('media_compress_failed')));
+      Navigator.of(context).pop(
+        const _DialogResult.rejected(
+          ChatVideoRejected('media_compress_failed'),
+        ),
+      );
     }
   }
 

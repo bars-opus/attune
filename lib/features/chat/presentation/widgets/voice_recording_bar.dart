@@ -256,6 +256,10 @@ class _PulsingDotState extends State<_PulsingDot>
   }
 }
 
+/// Public alias so the recording scrim draws the SAME waveform as the
+/// composer bar rather than a second implementation that would drift.
+typedef VoiceScrimWaveform = _LiveWaveform;
+
 /// Right-anchored live waveform: newest sample at the right edge, older
 /// samples scrolling off the left. Only the visible tail is painted.
 class _LiveWaveform extends StatelessWidget {

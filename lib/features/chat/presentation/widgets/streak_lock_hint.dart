@@ -67,13 +67,13 @@ class _StreakLockHintState extends State<StreakLockHint> {
               child: Text(
                 'Swipe up to record hands-free',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.white,
-                      shadows: const [
-                        // The viewfinder behind is arbitrary, so the text
-                        // carries its own contrast.
-                        Shadow(blurRadius: 8, color: Colors.black87),
-                      ],
-                    ),
+                  color: Colors.white,
+                  shadows: const [
+                    // The viewfinder behind is arbitrary, so the text
+                    // carries its own contrast.
+                    Shadow(blurRadius: 8, color: Colors.black87),
+                  ],
+                ),
               ),
             ),
           ),

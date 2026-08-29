@@ -108,7 +108,11 @@ class StreakBubble extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.play_arrow_rounded, size: 22, color: colorScheme.primary),
+            Icon(
+              Icons.play_arrow_rounded,
+              size: 22,
+              color: colorScheme.primary,
+            ),
             const SizedBox(width: 6),
             Text(label, style: textTheme.bodyMedium),
             // Only meaningful once replays exist AND one has been used;
