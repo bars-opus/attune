@@ -19,6 +19,7 @@ import 'package:go_router/go_router.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/animated_rolling_counter.dart';
+import 'package:video_player/video_player.dart';
 
 /// Press-and-hold streak capture, auto-splitting into 60-second segments.
 ///
@@ -51,6 +52,12 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
   /// gesture can end inside that window, and dropping it would leave the
   /// camera recording with no UI attached (the bug fixed in 511f4665).
   bool _isSending = false;
+
+  /// Plays back what was just captured while the send sheet is open.
+  /// Reviewing over a LIVE viewfinder would show the user the room they
+  /// are standing in rather than the take they are deciding on.
+  VideoPlayerController? _previewController;
+
   bool _startInFlight = false;
   bool _releasedDuringStart = false;
 
@@ -72,8 +79,11 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
       await _startPreview();
     } on CameraException {
       if (mounted) {
-        setState(() => _permissionError =
-            'Attune needs camera access to record a streak.');
+        setState(
+          () =>
+              _permissionError =
+                  'Attune needs camera access to record a streak.',
+        );
       }
     }
   }
@@ -173,10 +183,9 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     _segmentStartedAt = null;
 
     final file = await controller.stopVideoRecording();
-    _segments.add(StreakSegment(
-      path: file.path,
-      duration: kStreakSegmentDuration,
-    ));
+    _segments.add(
+      StreakSegment(path: file.path, duration: kStreakSegmentDuration),
+    );
 
     if (StreakRecordingSession.shouldStopAt(_segments.length)) {
       _ticker?.cancel();
@@ -253,22 +262,31 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     ChatLog.diagnostic('streak review', 'segments=${_segments.length}');
     if (!mounted || _segments.isEmpty) return;
 
+    await _startPreview_(_segments.first.path);
+    if (!mounted) return;
+
     final send = await showModalBottomSheet<bool>(
       context: context,
       isDismissible: false,
       enableDrag: false,
-      builder: (sheetContext) => StreakReviewSheet(
-        segments: _segments,
-        onSend: () => Navigator.of(sheetContext).pop(true),
-        onDiscard: () => Navigator.of(sheetContext).pop(false),
-      ),
+      // Transparent so the captured clip stays visible behind the sheet:
+      // the whole point of the review is seeing what you are sending.
+      backgroundColor: Colors.transparent,
+      builder:
+          (sheetContext) => StreakReviewSheet(
+            segments: _segments,
+            onSend: () => Navigator.of(sheetContext).pop(true),
+            onDiscard: () => Navigator.of(sheetContext).pop(false),
+          ),
     );
 
     if (!mounted) return;
 
     if (send != true) {
-      await _discardAll();
-      if (mounted) context.pop();
+      // Cancel means "not that take", not "leave the camera". Reset to a
+      // live viewfinder ready to record again -- popping here would make
+      // a rejected take cost the user their whole session.
+      await _resetCapture();
       return;
     }
 
@@ -311,8 +329,10 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
             maxBytes: 25 * 1024 * 1024,
           );
 
-          ChatLog.diagnostic('streak clip prepared',
-              '${prepared.byteSize}B ${prepared.mimeType}');
+          ChatLog.diagnostic(
+            'streak clip prepared',
+            '${prepared.byteSize}B ${prepared.mimeType}',
+          );
           final intent = await repository.createMediaUploadIntent(
             relationshipId: widget.conversation.relationshipId,
             mimeType: prepared.mimeType,
@@ -339,6 +359,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
           .loadMessages(silent: true);
 
       // Staged files are only safe to delete once every clip has landed.
+      await _disposePreview();
       await _discardAll();
       if (mounted) context.pop();
     } on ChatVideoRejected catch (rejected) {
@@ -361,6 +382,54 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
         const SnackBar(content: Text('That streak could not be sent.')),
       );
     }
+  }
+
+  /// Discards anything staged and leaves the camera.
+  Future<void> _closeCamera() async {
+    await _resetCapture();
+    if (!mounted) return;
+    context.pop();
+  }
+
+  /// Opens the captured clip for review.
+  Future<void> _startPreview_(String path) async {
+    await _disposePreview();
+    final controller = VideoPlayerController.file(File(path));
+    try {
+      await controller.initialize();
+    } catch (error) {
+      // A preview that will not open must not block the send: the clip
+      // itself is already on disk and valid.
+      ChatLog.diagnostic('streak preview failed', error);
+      await controller.dispose();
+      return;
+    }
+    if (!mounted) {
+      await controller.dispose();
+      return;
+    }
+    // Looping, because a clip that plays once and freezes on a black last
+    // frame reads as a crash mid-review.
+    await controller.setLooping(true);
+    await controller.play();
+    setState(() => _previewController = controller);
+  }
+
+  Future<void> _disposePreview() async {
+    final controller = _previewController;
+    _previewController = null;
+    await controller?.dispose();
+  }
+
+  /// Back to a live camera with nothing staged.
+  Future<void> _resetCapture() async {
+    await _disposePreview();
+    await _discardAll();
+    if (!mounted) return;
+    setState(() {
+      _segmentElapsed = Duration.zero;
+      _segmentStartedAt = null;
+    });
   }
 
   /// Deletes every staged file. A recorded-but-unsent streak must leave
@@ -386,6 +455,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _previewController?.dispose();
     _controller?.dispose();
     super.dispose();
   }
@@ -396,8 +466,9 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
       return Scaffold(body: Center(child: Text(_permissionError!)));
     }
     final controller = _controller;
-    final progress = _segmentElapsed.inMilliseconds /
-        kStreakSegmentDuration.inMilliseconds;
+    final preview = _previewController;
+    final progress =
+        _segmentElapsed.inMilliseconds / kStreakSegmentDuration.inMilliseconds;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -429,6 +500,29 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
               },
             ),
 
+          // The captured take, over the live camera. Same cover-crop as the
+          // viewfinder so the framing the user reviews is the framing they
+          // recorded.
+          if (preview != null && preview.value.isInitialized)
+            Positioned.fill(
+              key: const ValueKey('streak-capture-preview'),
+              child: ClipRect(
+                child: OverflowBox(
+                  maxWidth: double.infinity,
+                  maxHeight: double.infinity,
+                  alignment: Alignment.center,
+                  child: FittedBox(
+                    fit: BoxFit.cover,
+                    child: SizedBox(
+                      width: preview.value.size.width,
+                      height: preview.value.size.height,
+                      child: VideoPlayer(preview),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
           // Elapsed seconds, centred. A streak is capped at a minute, so
           // the number itself is the whole story — no bar, no ring, just
           // how long you have been talking. Rolls rather than jumps so a
@@ -442,14 +536,14 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
                     count: _segmentElapsed.inSeconds,
                     suffix: 's',
                     style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          shadows: const [
-                            // The viewfinder behind this is arbitrary, so
-                            // the digits need their own contrast.
-                            Shadow(blurRadius: 12, color: Colors.black54),
-                          ],
-                        ),
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      shadows: const [
+                        // The viewfinder behind this is arbitrary, so
+                        // the digits need their own contrast.
+                        Shadow(blurRadius: 12, color: Colors.black54),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -484,6 +578,19 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
               ),
             ),
 
+          // Leaving the camera is now explicit: cancel returns to a live
+          // viewfinder rather than exiting, so without this there would be
+          // no way out once a take is staged.
+          Positioned(
+            top: 16,
+            left: 16,
+            child: IconButton(
+              onPressed: _isRecording || _isSending ? null : _closeCamera,
+              icon: const Icon(Icons.close_rounded, color: Colors.white),
+              tooltip: 'Close camera',
+            ),
+          ),
+
           Positioned(
             top: 16,
             right: 16,
@@ -506,17 +613,21 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
             // the ring sat awkwardly close to the screen's edge.
             bottom: Spacing.xxl * 2,
             child: Center(
-              child: StreakRecordButton(
-                progress: progress.clamp(0.0, 1.0),
-                isRecording: _isRecording,
-                isSending: _isSending,
-                // Nothing else marks the wait: the screen is deliberately
-                // just the (black) preview until the camera is ready.
-                isPreparing: controller == null ||
-                    !controller.value.isInitialized,
-                onPressStart: () => unawaited(_onPressStart()),
-                onPressEnd: () => unawaited(_onPressEnd()),
-              ),
+              child:
+                  preview != null
+                      ? const SizedBox.shrink()
+                      : StreakRecordButton(
+                        progress: progress.clamp(0.0, 1.0),
+                        isRecording: _isRecording,
+                        isSending: _isSending,
+                        // Nothing else marks the wait: the screen is deliberately
+                        // just the (black) preview until the camera is ready.
+                        isPreparing:
+                            controller == null ||
+                            !controller.value.isInitialized,
+                        onPressStart: () => unawaited(_onPressStart()),
+                        onPressEnd: () => unawaited(_onPressEnd()),
+                      ),
             ),
           ),
         ],
