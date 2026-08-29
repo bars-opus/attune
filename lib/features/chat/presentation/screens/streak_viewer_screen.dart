@@ -24,7 +24,12 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
   List<StreakClip> _clips = const [];
   int _index = 0;
   VideoPlayerController? _controller;
-  bool _loading = true;
+  /// True only when there is genuinely nothing to play — the clips are
+  /// spent, expired, or the fetch failed. Deliberately NOT a "finished
+  /// loading" flag: the previous version cleared one as soon as the clips
+  /// arrived, before the controller existed, so the widget fell through
+  /// to the unavailable branch and flashed an error before playing.
+  bool _unavailable = false;
   bool _viewSpent = false;
 
   @override
@@ -38,13 +43,18 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
       final clips =
           await ref.read(streakRepositoryProvider).fetchClips(widget.messageId);
       if (!mounted) return;
-      setState(() {
-        _clips = clips;
-        _loading = false;
-      });
-      if (clips.isNotEmpty) await _playAt(0);
+
+      if (clips.isEmpty) {
+        setState(() => _unavailable = true);
+        return;
+      }
+
+      // No setState between the fetch and the first play: a frame drawn
+      // in between is one the user sees as neither loading nor playing.
+      _clips = clips;
+      await _playAt(0);
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _unavailable = true);
     }
   }
 
@@ -65,6 +75,7 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
     if (signed == null) {
       // The clips are gone (spent, or past the 30-minute window). Close
       // rather than sitting on a black screen.
+      if (mounted) setState(() => _unavailable = true);
       await _finish();
       return;
     }
@@ -123,22 +134,26 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (_loading)
-              const Center(child: CircularProgressIndicator())
-            else if (controller != null && controller.value.isInitialized)
+            // Two states while opening, matching the ephemeral video
+            // viewer: a ready controller plays, anything else spins. The
+            // unavailable message is reserved for the case where there is
+            // actually nothing to play, so it can never appear mid-open.
+            if (controller != null && controller.value.isInitialized)
               Center(
                 child: AspectRatio(
                   aspectRatio: controller.value.aspectRatio,
                   child: VideoPlayer(controller),
                 ),
               )
-            else
+            else if (_unavailable)
               const Center(
                 child: Text(
                   'This streak is no longer available.',
                   style: TextStyle(color: Colors.white),
                 ),
-              ),
+              )
+            else
+              const Center(child: CircularProgressIndicator()),
 
             // Clip position, so a multi-clip streak does not feel like it
             // stalled between segments.
