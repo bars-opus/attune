@@ -137,7 +137,16 @@ class VoiceRecordingScrim extends StatelessWidget {
               child: IgnorePointer(
                 child: Opacity(
                   opacity: t,
-                  child: VoiceLockPill(dragProgress: lockProgress),
+                  // Rises out from behind the ring. The app's existing
+                  // ShakeTransition already does exactly this: a positive
+                  // vertical offset tweened to zero starts the child low
+                  // and settles it in place.
+                  child: ShakeTransition(
+                    axis: Axis.vertical,
+                    offset: 56,
+                    duration: const Duration(milliseconds: 620),
+                    child: VoiceLockPill(dragProgress: lockProgress),
+                  ),
                 ),
               ),
             ),
@@ -185,79 +194,86 @@ class VoiceRecordingScrim extends StatelessWidget {
               height: 48,
               child: Opacity(
                 opacity: t,
-                child: Row(
-                  children: [
-                    const SizedBox(width: Spacing.md),
-                    // A tap target as well as a label for the drag: a
-                    // finger already holding the mic cannot always reach a
-                    // clean swipe.
-                    GestureDetector(
-                      key: const ValueKey('voice-scrim-delete'),
-                      behavior: HitTestBehavior.opaque,
-                      onTap: onCancel,
-                      child: Container(
-                        width: 44,
-                        height: 44,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          // Opaque white: the red belongs to the glyph,
-                          // which needs a solid ground to read against the
-                          // blurred scrim behind it.
-                          color: Colors.white,
-                        ),
-                        child: const Icon(
-                          Icons.delete_outline_rounded,
-                          color: _danger,
-                          size: 22,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: Spacing.sm),
-                    Expanded(
-                      child: IgnorePointer(
-                        child: AnimatedOpacity(
-                          duration: const Duration(milliseconds: 150),
-                          opacity: isCancelling ? 1.0 : 0.75,
-                          child: Row(
-                            // Left-aligned, so the text reads as this
-                            // button's caption rather than drifting into
-                            // the middle of the row.
-                            mainAxisAlignment: MainAxisAlignment.start,
-                            children: [
-                              if (!isCancelling)
-                                const Icon(
-                                  Icons.keyboard_arrow_left_rounded,
-                                  size: 18,
-                                  color: Colors.white,
-                                ),
-                              Flexible(
-                                child: Text(
-                                  isCancelling
-                                      ? 'Release to cancel'
-                                      : 'slide to cancel',
-                                  key: const ValueKey(
-                                    'voice-scrim-cancel-hint',
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.bodyMedium?.copyWith(
-                                    color:
-                                        isCancelling ? _danger : Colors.white,
-                                    fontWeight:
-                                        isCancelling
-                                            ? FontWeight.w600
-                                            : FontWeight.w400,
-                                  ),
-                                ),
-                              ),
-                            ],
+                // Slides leftward out of the ring: a positive horizontal
+                // offset starts the row to the right and travels it to
+                // rest, which is the direction the cancel drag goes.
+                child: ShakeTransition(
+                  offset: 160,
+                  duration: const Duration(milliseconds: 620),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: Spacing.md),
+                      // A tap target as well as a label for the drag: a
+                      // finger already holding the mic cannot always reach a
+                      // clean swipe.
+                      GestureDetector(
+                        key: const ValueKey('voice-scrim-delete'),
+                        behavior: HitTestBehavior.opaque,
+                        onTap: onCancel,
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            // Opaque white: the red belongs to the glyph,
+                            // which needs a solid ground to read against the
+                            // blurred scrim behind it.
+                            color: Colors.white,
+                          ),
+                          child: const Icon(
+                            Icons.delete_outline_rounded,
+                            color: _danger,
+                            size: 22,
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: Spacing.sm),
+                      Expanded(
+                        child: IgnorePointer(
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 150),
+                            opacity: isCancelling ? 1.0 : 0.75,
+                            child: Row(
+                              // Left-aligned, so the text reads as this
+                              // button's caption rather than drifting into
+                              // the middle of the row.
+                              mainAxisAlignment: MainAxisAlignment.start,
+                              children: [
+                                if (!isCancelling)
+                                  const Icon(
+                                    Icons.keyboard_arrow_left_rounded,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                Flexible(
+                                  child: Text(
+                                    isCancelling
+                                        ? 'Release to cancel'
+                                        : 'slide to cancel',
+                                    key: const ValueKey(
+                                      'voice-scrim-cancel-hint',
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium?.copyWith(
+                                      color:
+                                          isCancelling ? _danger : Colors.white,
+                                      fontWeight:
+                                          isCancelling
+                                              ? FontWeight.w600
+                                              : FontWeight.w400,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

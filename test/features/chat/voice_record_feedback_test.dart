@@ -469,6 +469,92 @@ void main() {
       expect(recorder.stopped, isFalse, reason: 'discard is not a send');
     });
 
+    testWidgets('the cancel row slides in from the ring, the pill from below', (
+      tester,
+    ) async {
+      // Both use the app's existing ShakeTransition: horizontal for the
+      // cancel row (positive offset = starts right, travels left toward
+      // the hint's resting place) and vertical for the pill (positive =
+      // starts low, rises). Asserted by position mid-flight rather than by
+      // widget type, so a ShakeTransition wired with the wrong axis or a
+      // zero offset still fails.
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      // One frame in: the entrance has begun but is nowhere near settled.
+      await tester.pump(const Duration(milliseconds: 16));
+
+      final earlyDelete = tester.getCenter(
+        find.byKey(const ValueKey('voice-scrim-delete')),
+      );
+      final earlyPill = tester.getCenter(find.byType(VoiceLockPill));
+
+      // Let both entrances finish.
+      await tester.pump(const Duration(milliseconds: 1200));
+
+      final restDelete = tester.getCenter(
+        find.byKey(const ValueKey('voice-scrim-delete')),
+      );
+      final restPill = tester.getCenter(find.byType(VoiceLockPill));
+
+      expect(
+        earlyDelete.dx,
+        greaterThan(restDelete.dx + 20),
+        reason: 'delete must travel leftward: $earlyDelete -> $restDelete',
+      );
+      expect(
+        earlyPill.dy,
+        greaterThan(restPill.dy + 20),
+        reason: 'pill must rise: $earlyPill -> $restPill',
+      );
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
+    testWidgets('the entrances replay on a SECOND recording', (tester) async {
+      // ShakeTransition is a TweenAnimationBuilder, which animates from
+      // its begin value only on first build. If the overlay's element is
+      // reused across recordings the second take shows no motion at all --
+      // the exact failure the streak uptick had.
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      Future<Offset> recordAndSampleDelete() async {
+        final g = await tester.startGesture(
+          tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+        );
+        await tester.pump(const Duration(milliseconds: 60));
+        await tester.pump(const Duration(milliseconds: 16));
+        final early = tester.getCenter(
+          find.byKey(const ValueKey('voice-scrim-delete')),
+        );
+        await tester.pump(const Duration(milliseconds: 1200));
+        final rest = tester.getCenter(
+          find.byKey(const ValueKey('voice-scrim-delete')),
+        );
+        await g.up();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 600));
+        return Offset(early.dx - rest.dx, 0);
+      }
+
+      final firstTravel = await recordAndSampleDelete();
+      final secondTravel = await recordAndSampleDelete();
+
+      expect(firstTravel.dx, greaterThan(20));
+      expect(
+        secondTravel.dx,
+        greaterThan(20),
+        reason: 'second recording did not animate: $secondTravel',
+      );
+    });
+
     testWidgets('the delete icon sits on a plain white disc', (tester) async {
       final recorder = _FakeRecorder();
       await tester.pumpWidget(_harness(recorder, FakeHaptics()));
