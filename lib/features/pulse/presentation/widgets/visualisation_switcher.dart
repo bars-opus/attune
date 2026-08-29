@@ -26,7 +26,9 @@ class VisualisationSwitcher extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _buildOption('ring', Icons.circle_outlined, 'Ring', context),
+          Gap(Spacing.xs.w),
           _buildOption('radar', Icons.auto_awesome, 'Radar', context),
+          Gap(Spacing.xs.w),
           _buildOption('number', Icons.numbers, 'Number', context),
         ],
       ),
@@ -39,7 +41,10 @@ class VisualisationSwitcher extends ConsumerWidget {
     String label,
     BuildContext context,
   ) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+
+    final colorScheme = theme.colorScheme;
+
     final isSelected = currentVisualisation == value;
 
     return GestureDetector(
@@ -49,14 +54,14 @@ class VisualisationSwitcher extends ConsumerWidget {
       child: Container(
         padding: EdgeInsets.symmetric(
           horizontal: Spacing.md.w,
-          vertical: Spacing.sm.h,
+          vertical: Spacing.xs.h,
         ),
         decoration: BoxDecoration(
           color:
               isSelected
                   ? colorScheme.primary.withOpacity(0.1)
-                  : Colors.transparent,
-          borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
+                  : colorScheme.neutral,
+          borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
         ),
         child: Row(
           children: [
@@ -71,7 +76,9 @@ class VisualisationSwitcher extends ConsumerWidget {
             Gap(Spacing.xs.w),
             Text(
               label,
-              style: TextStyle(
+
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
                 color:
                     isSelected
                         ? colorScheme.primary

@@ -45,9 +45,9 @@ class _PulseTabState extends ConsumerState<PulseTab>
   );
 
   static const _tabs = [
-    AppTabItem(label: 'Settings', icon: Icons.settings_outlined),
     AppTabItem(label: 'Pulse', icon: Icons.monitor_heart_outlined),
     AppTabItem(label: 'Timeline', icon: Icons.timeline),
+    AppTabItem(label: 'Settings', icon: Icons.settings_outlined),
   ];
 
   @override
@@ -80,7 +80,7 @@ class _PulseTabState extends ConsumerState<PulseTab>
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: Spacing.md.h),
                   child: conversationAsync.when(
-                    loading: () =>  const SizedBox.shrink(),
+                    loading: () => const SizedBox.shrink(),
                     error: (_, _) => const SizedBox.shrink(),
                     data:
                         (conversation) =>
@@ -122,9 +122,9 @@ class _PulseTabState extends ConsumerState<PulseTab>
           body: TabBarView(
             controller: _tabController,
             children: [
-              _ChatSettingsRowsTab(conversationAsync: conversationAsync),
               const PulseScreen(),
               const TimelineScreen(),
+              _ChatSettingsRowsTab(conversationAsync: conversationAsync),
             ],
           ),
         ),

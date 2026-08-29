@@ -30,11 +30,39 @@ class TrendChart extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          '4-week trend',
-          style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '4-week trend',
+              style: textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+
+            GestureDetector(
+              onTap: () {},
+              child: Row(
+                children: [
+                  Text(
+                    'Learn more',
+                    style: textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                  Gap(Spacing.md.w),
+                  Icon(
+                    Icons.chevron_right,
+                    size: IconSizes.md.h,
+                    color: colorScheme.primary,
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        Gap(Spacing.md.h),
+
         SizedBox(
           height: chartHeight,
           child: Row(

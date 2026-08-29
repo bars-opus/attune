@@ -77,6 +77,7 @@ dependencies:
   geojson: ^1.0.0
   connectivity_plus: ^4.0.2
   flutter_svg: ^2.0.9
+  lottie: ^3.0.0
   flutter_animate: ^4.5.0
   vibration: ^1.8.4
   audioplayers: ^6.1.0
@@ -191,6 +192,8 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/images/chat_doodles/
+    - assets/lottie/
     - assets/config/
     - assets/sounds/
 

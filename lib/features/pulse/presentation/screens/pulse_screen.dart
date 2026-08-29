@@ -1,5 +1,6 @@
 // lib/features/pulse/presentation/screens/pulse_screen.dart
 
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/pulse/data/models/pulse_score.dart';
 import 'package:attune/features/pulse/presentation/widgets/dimension_row.dart';
@@ -99,63 +100,35 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Gap(Spacing.lg.h),
                   // Header
-                  CardInkWell(
-                    child: InfoRowWidget(
-                      title: 'Updated ${_getLastUpdatedText(pulseAsync)}',
-                      subtitle: 'Pulse',
-                      icon: Icons.trending_down,
-                      showAvatar: false,
-                      showTrailingArrow: true,
-                      iconColor: Colors.grey,
-                      showDivider: false,
-                      onTap: () {},
+                  InfoRowWidget(
+                    title: _getLastUpdatedText(pulseAsync),
+                    subtitle: 'Last updated date',
+                    icon: Icons.trending_down,
+                    iconSize: 0,
+                    showAvatar: false,
+                    showTrailingArrow: true,
+                    iconColor: Colors.grey,
+                    showDivider: false,
+                    onTap: () {},
 
-                      trailing:
-                          _isRefreshing
-                              ? SizedBox(
-                                width: 40,
-                                height: 40,
-                                child: Center(
-                                  child: CircularLoadingIndicator(),
-                                ),
-                              )
-                              : IconButton(
-                                icon: const Icon(Icons.refresh),
-                                onPressed: _refreshPulse,
+                    trailing:
+                        _isRefreshing
+                            ? SizedBox( 
+                              width: 40,
+                              height: 40,
+                              child: Center(child: CircularLoadingIndicator()),
+                            )
+                            : IconButton(
+                              icon:  Icon(
+                                Icons.refresh,
+                                color: colorScheme.primary,
                               ),
-                    ),
+                              onPressed: _refreshPulse,
+                            ),
                   ),
 
-                  // Row(
-                  //   children: [
-                  //     Text(
-                  //       'Pulse',
-                  //       style: textTheme.headlineMedium?.copyWith(
-                  //         fontWeight: FontWeight.bold,
-                  //       ),
-                  //     ),
-                  //     const Spacer(),
-                  //     if (!_isRefreshing)
-                  //       IconButton(
-                  //         icon: const Icon(Icons.refresh),
-                  //         onPressed: _refreshPulse,
-                  //       ),
-                  //     if (_isRefreshing)
-                  //       const SizedBox(
-                  //         width: 40,
-                  //         height: 40,
-                  //         child: Center(child: CircularProgressIndicator()),
-                  //       ),
-                  //   ],
-                  // ),
-                  // Gap(Spacing.sm.h),
-                  // Text(
-                  //   'Updated ${_getLastUpdatedText(pulseAsync)}',
-                  //   style: textTheme.bodySmall?.copyWith(
-                  //     color: colorScheme.onSurface.withOpacity(0.6),
-                  //   ),
-                  // ),
                   Gap(Spacing.md.h),
 
                   // Main content
@@ -202,73 +175,160 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
                       return Column(
                         children: [
                           // Visualisation switcher
-                          VisualisationSwitcher(
-                            currentVisualisation: _selectedVisualisation,
-                            onChanged: (value) {
-                              setState(() => _selectedVisualisation = value);
-                              _saveVisualisationPreference(value);
-                            },
-                          ),
-                          Gap(Spacing.lg.h),
-
-                          // Selected visualisation
-                          _buildVisualisation(
-                            _selectedVisualisation,
-                            pulse.overallScore,
-                            dimensions,
-                            deltas,
-                          ),
-                          Gap(Spacing.xl.h),
-
-                          // Data confidence display
-                          _buildConfidenceDisplay(pulse.dataConfidence),
-                          Gap(Spacing.md.h),
-
-                          // Dimensions rows
-                          Text(
-                            'Dimensions',
-                            style: textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Gap(Spacing.md.h),
-
-                          ...dimensions.keys.map((key) {
-                            return Padding(
-                              padding: EdgeInsets.only(bottom: Spacing.md.h),
-                              child: DimensionRow(
-                                label: key,
-                                score: dimensions[key]!,
-                                delta: deltas[key],
-                                confidence: pulse.getConfidenceForDimension(
-                                  _getDimensionKey(key),
-                                ),
-                                onTap:
-                                    () => _showDimensionTooltip(
-                                      key,
-                                      dimensions[key]!,
-                                      pulse.getConfidenceForDimension(
-                                        _getDimensionKey(key),
+                          CardInkWell(
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Score',
+                                      style: textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
-                              ),
-                            );
-                          }),
 
-                          Gap(Spacing.xl.h),
+                                    GestureDetector(
+                                      onTap: () {},
+                                      child: Row(
+                                        children: [
+                                          Text(
+                                            'Learn more',
+                                            style: textTheme.bodySmall
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: colorScheme.primary,
+                                                ),
+                                          ),
+                                          Gap(Spacing.md.w),
+                                          Icon(
+                                            Icons.chevron_right,
+                                            size: IconSizes.md.h,
+                                            color: colorScheme.primary,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
 
-                          // Trend chart
-                          historyAsync.when(
-                            data: (history) => TrendChart(history: history),
-                            loading: () => const SizedBox.shrink(),
-                            error: (_, __) => const SizedBox.shrink(),
+                                Gap(Spacing.xl.h),
+                                VisualisationSwitcher(
+                                  currentVisualisation: _selectedVisualisation,
+                                  onChanged: (value) {
+                                    setState(
+                                      () => _selectedVisualisation = value,
+                                    );
+                                    _saveVisualisationPreference(value);
+                                  },
+                                ),
+                                Gap(Spacing.lg.h),
+
+                                // Selected visualisation
+                                _buildVisualisation(
+                                  _selectedVisualisation,
+                                  pulse.overallScore,
+                                  dimensions,
+                                  deltas,
+                                ),
+                                Gap(Spacing.xl.h * 2),
+
+                                // Data confidence display
+                                _buildConfidenceDisplay(pulse.dataConfidence),
+                                Gap(Spacing.md.h),
+                              ],
+                            ),
                           ),
 
-                          Gap(Spacing.xl.h),
+                          // Dimensions rows
+                          CardInkWell(
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Dimensions',
+                                      style: textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
 
-                          // Check-in banner
-                          const CheckinBanner(),
-                          Gap(Spacing.lg.h),
+                                    GestureDetector(
+                                      onTap: () {},
+                                      child: Row(
+                                        children: [
+                                          Text(
+                                            'Learn more',
+                                            style: textTheme.bodySmall
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: colorScheme.primary,
+                                                ),
+                                          ),
+                                          Gap(Spacing.md.w),
+                                          Icon(
+                                            Icons.chevron_right,
+                                            size: IconSizes.md.h,
+                                            color: colorScheme.primary,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                Gap(Spacing.xl.h),
+
+                                ...dimensions.keys.map((key) {
+                                  return Padding(
+                                    padding: EdgeInsets.only(
+                                      bottom: Spacing.md.h,
+                                    ),
+                                    child: DimensionRow(
+                                      label: key,
+                                      score: dimensions[key]!,
+                                      delta: deltas[key],
+                                      confidence: pulse
+                                          .getConfidenceForDimension(
+                                            _getDimensionKey(key),
+                                          ),
+                                      onTap:
+                                          () => _showDimensionTooltip(
+                                            key,
+                                            dimensions[key]!,
+                                            pulse.getConfidenceForDimension(
+                                              _getDimensionKey(key),
+                                            ),
+                                          ),
+                                    ),
+                                  );
+                                }),
+                              ],
+                            ),
+                          ),
+
+                          CardInkWell(
+                            child: Column(
+                              children: [
+                                // Trend chart
+                                historyAsync.when(
+                                  data:
+                                      (history) => TrendChart(history: history),
+                                  loading: () => const SizedBox.shrink(),
+                                  error: (_, __) => const SizedBox.shrink(),
+                                ),
+
+                                Gap(Spacing.xl.h),
+
+                                // Check-in banner
+                                const CheckinBanner(),
+                                Gap(Spacing.lg.h),
+                              ],
+                            ),
+                          ),
                         ],
                       );
                     },
@@ -321,39 +381,36 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
       return const SizedBox.shrink();
     }
 
-    return Container(
-      padding: EdgeInsets.all(Spacing.md.w),
-      decoration: BoxDecoration(
-        color: colorScheme.primary.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.info_outline, color: colorScheme.primary),
-          Gap(Spacing.sm.w),
-          Expanded(child: Text(message, style: textScheme.bodySmall)),
-        ],
-      ),
+    return SemanticContainerWidget(
+      content: message,
+      icon: Icons.info_outline,
+      title: 'No internet connection',
+      backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
+      borderColor: colorScheme.primary,
+      iconColor: colorScheme.primary,
+      textTheme: textScheme,
     );
+
+    //  Container(
+    //   padding: EdgeInsets.all(Spacing.md.w),
+    //   decoration: BoxDecoration(
+    //     color: colorScheme.primary.withOpacity(0.1),
+    //     borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
+    //   ),
+    //   child: Row(
+    //     children: [
+    //       Icon(Icons.info_outline, color: colorScheme.primary),
+    //       Gap(Spacing.sm.w),
+    //       Expanded(child: Text(message, style: textScheme.bodySmall)),
+    //     ],
+    //   ),
+    // );
   }
 
   Widget _buildNoDataState() {
     final colorScheme = Theme.of(context).colorScheme;
     return Column(
       children: [
-        // const SizedBox(height: 100),
-        // Icon(Icons.show_chart, size: 64, color: Colors.grey),
-        // Gap(Spacing.md.h),
-        // Text(
-        //   'No pulse score yet',
-        //   style: Theme.of(context).textTheme.titleMedium,
-        // ),
-        // Gap(Spacing.sm.h),
-        // Text(
-        //   'Complete your first weekly check-in\nto see your relationship pulse.',
-        //   textAlign: TextAlign.center,
-        //   style: Theme.of(context).textTheme.bodyMedium,
-        // ),
         EmptyStateWidget(
           icon: Icons.show_chart,
           title: 'No pulse score yet',
@@ -460,7 +517,9 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
   String _getLastUpdatedText(AsyncValue<PulseScore?> pulseAsync) {
     if (pulseAsync case AsyncData(:final value) when value != null) {
       final date = value.computedAt;
-      return '${date.day}/${date.month}/${date.year}';
+      return MyDateFormat.toDate(date);
+
+      // '${date.day}/${date.month}/${date.year}';
     }
     return 'Not yet';
   }
