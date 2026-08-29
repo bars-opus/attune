@@ -1,3 +1,4 @@
+import 'package:attune/core/widgets/animated_rolling_counter.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_recording_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,7 +8,7 @@ void main() {
       MaterialApp(home: Scaffold(body: Center(child: child)));
 
   group('held stage', () {
-    testWidgets('shows elapsed time formatted as mm:ss', (tester) async {
+    testWidgets('shows elapsed seconds on a rolling counter', (tester) async {
       await tester.pumpWidget(
         wrap(
           const VoiceRecordingBar(
@@ -17,7 +18,10 @@ void main() {
           ),
         ),
       );
-      expect(find.text('01:23'), findsOneWidget);
+      // Seconds on an AnimatedRollingCounter now, not mm:ss text: the
+      // digits roll so a glance registers the change without re-reading
+      // them. 1m23s reads as 83s.
+      expect(find.byType(AnimatedRollingCounter), findsOneWidget);
       expect(find.text('slide to cancel'), findsOneWidget);
     });
 

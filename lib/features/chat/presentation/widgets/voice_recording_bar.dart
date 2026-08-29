@@ -1,5 +1,6 @@
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:flutter/material.dart';
+import 'package:attune/core/widgets/animated_rolling_counter.dart';
 
 /// Which stage of the recording gesture the composer is in.
 ///
@@ -55,12 +56,6 @@ class VoiceRecordingBar extends StatelessWidget {
   final VoidCallback? onTogglePause;
   final VoidCallback? onSend;
 
-  String _formatElapsed(Duration d) {
-    final minutes = d.inMinutes.toString().padLeft(2, '0');
-    final seconds = (d.inSeconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -89,6 +84,10 @@ class VoiceRecordingBar extends StatelessWidget {
         ),
         child: Row(
           children: [
+            // Discarding stays on the left where it was; the trailing
+            // pause/send pair is unchanged. Wiring a stop icon to onSend
+            // here would have given the locked bar TWO send controls and
+            // no way to throw a take away.
             if (isLocked)
               _RecordingIconButton(
                 icon: Icons.delete_outline_rounded,
@@ -97,14 +96,21 @@ class VoiceRecordingBar extends StatelessWidget {
                 onTap: onCancel,
               )
             else
-              _PulsingDot(color: accent, isAnimating: !isPaused),
+              _PulsingDot(
+                key: const ValueKey('voice-recording-dot'),
+                color: accent,
+                isAnimating: !isPaused,
+              ),
             SizedBox(width: isLocked ? 0 : Spacing.sm),
             SizedBox(
               // Fixed width so the waveform beside it doesn't reflow on
               // every tick as the digits change width.
-              width: 44,
-              child: Text(
-                _formatElapsed(elapsed),
+              width: 52,
+              child: AnimatedRollingCounter(
+                // Rolls rather than jumps, so a glance registers the
+                // change without re-reading the digits.
+                count: elapsed.inSeconds,
+                suffix: 's',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colorScheme.onSurface,
                   fontFeatures: const [FontFeature.tabularFigures()],
@@ -197,7 +203,11 @@ class VoiceRecordingBar extends StatelessWidget {
 /// The blinking record indicator. Stops animating while paused so the
 /// paused state is legible at a glance rather than only from the icon.
 class _PulsingDot extends StatefulWidget {
-  const _PulsingDot({required this.color, required this.isAnimating});
+  const _PulsingDot({
+    super.key,
+    required this.color,
+    required this.isAnimating,
+  });
 
   final Color color;
   final bool isAnimating;
