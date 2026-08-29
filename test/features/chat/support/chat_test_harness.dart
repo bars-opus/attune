@@ -127,6 +127,7 @@ class FakeChatRepository implements ChatRepository {
     String? replyToMessageId,
     String? quotedText,
     bool isViewOnce = false,
+    int? streakViewsRemaining,
     bool isSystemNotice = false,
   }) async {
     sendCallCount++;

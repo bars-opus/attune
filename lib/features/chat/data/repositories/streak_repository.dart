@@ -1,4 +1,5 @@
 import 'package:attune/features/chat/domain/services/streak_recording_session.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -48,11 +49,36 @@ List<StreakClipUpload> streakClipUploads(List<StreakSegment> segments) => [
         ),
     ];
 
+final streakRepositoryProvider = Provider<StreakRepository>(
+  (ref) => StreakRepository(),
+);
+
 class StreakRepository {
   StreakRepository({SupabaseClient? client}) : _client = client;
 
   final SupabaseClient? _client;
   SupabaseClient get _safeClient => _client ?? Supabase.instance.client;
+
+  /// Attaches the clip row to a streak message that has just been
+  /// inserted.
+  ///
+  /// Separate from the message insert because the outbox owns that write:
+  /// _attemptSend inserts the message, reconciles duplicates and retries,
+  /// and a streak only needs its clip hung off whatever row that produced.
+  Future<void> attachClip({
+    required String messageId,
+    required String mediaUrl,
+    required int durationMs,
+  }) async {
+    await _safeClient.from('streak_clips').insert({
+      'message_id': messageId,
+      // Single-clip streaks, so the index is always zero. Kept explicit
+      // rather than defaulted: playback orders by it.
+      'clip_index': 0,
+      'media_url': mediaUrl,
+      'duration_ms': durationMs,
+    });
+  }
 
   /// Spends one view, returning what remains.
   ///

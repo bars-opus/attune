@@ -6,10 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 
-final streakRepositoryProvider = Provider<StreakRepository>(
-  (ref) => StreakRepository(),
-);
-
 /// Plays a streak's clips in order, then spends one view.
 ///
 /// The view is spent ONCE per viewing, on completion or dismissal — never

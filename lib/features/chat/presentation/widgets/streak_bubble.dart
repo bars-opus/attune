@@ -14,6 +14,7 @@ class StreakBubble extends StatelessWidget {
     required this.onTap,
     this.isMine = false,
     this.openedByRecipient = false,
+    this.isSending = false,
   });
 
   /// Views left for the recipient. 0 means spent.
@@ -26,6 +27,10 @@ class StreakBubble extends StatelessWidget {
 
   /// Whether the viewer sent this streak.
   final bool isMine;
+
+  /// Still uploading. The upload now happens behind this bubble rather
+  /// than on the camera screen, so this is where the user watches it.
+  final bool isSending;
 
   /// Whether the recipient has opened it. Only meaningful to the sender:
   /// it is what ends their replay window, and their only read receipt.
@@ -44,6 +49,24 @@ class StreakBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
+
+    if (isSending) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation(colorScheme.primary),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text('Sending…', style: textTheme.bodyMedium),
+        ],
+      );
+    }
 
     if (_isSpent) {
       return Row(

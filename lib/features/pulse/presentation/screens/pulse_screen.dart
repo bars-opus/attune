@@ -114,7 +114,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
                     onTap: () {},
 
                     trailing:
-                        _isRefreshing
+                         _isRefreshing
                             ? SizedBox( 
                               width: 40,
                               height: 40,

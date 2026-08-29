@@ -264,6 +264,7 @@ class SupabaseChatRepository implements ChatRepository {
     String? replyToMessageId,
     String? quotedText,
     bool isViewOnce = false,
+    int? streakViewsRemaining,
     bool isSystemNotice = false,
   }) async {
     final user = _currentUser;
@@ -291,6 +292,10 @@ class SupabaseChatRepository implements ChatRepository {
               'reply_to_message_id': replyToMessageId,
               'quoted_text': quotedText,
               'is_view_once': isViewOnce,
+              // Omitted for every other type: the column defaults to 1,
+              // and writing null would violate its NOT NULL.
+              if (streakViewsRemaining != null)
+                'streak_views_remaining': streakViewsRemaining,
               'is_system_notice': isSystemNotice,
             })
             .select(_messageColumns)

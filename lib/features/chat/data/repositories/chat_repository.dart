@@ -36,6 +36,7 @@ abstract class ChatRepository {
     String? replyToMessageId,
     String? quotedText,
     bool isViewOnce = false,
+    int? streakViewsRemaining,
     bool isSystemNotice = false,
   });
   Future<Message?> findMessageByClientId({

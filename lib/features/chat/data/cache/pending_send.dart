@@ -15,6 +15,12 @@ class PendingSend {
   final int? mediaWidth;
   final int? mediaHeight;
   final bool isViewOnce;
+
+  /// Views the recipient gets on a streak. Null for every other message
+  /// type — a budget on a non-streak is meaningless, and defaulting it
+  /// would quietly turn a video into a one-view message if its media type
+  /// were ever mis-set.
+  final int? streakViewsRemaining;
   final DateTime createdAt;
   final int attempts;
   final DateTime? nextAttemptAt;
@@ -38,6 +44,7 @@ class PendingSend {
     this.mediaWidth,
     this.mediaHeight,
     this.isViewOnce = false,
+    this.streakViewsRemaining,
     required this.createdAt,
     this.attempts = 0,
     this.nextAttemptAt,
@@ -68,6 +75,7 @@ class PendingSend {
       mediaWidth: mediaWidth,
       mediaHeight: mediaHeight,
       isViewOnce: isViewOnce,
+      streakViewsRemaining: streakViewsRemaining,
       createdAt: createdAt,
       attempts: attempts ?? this.attempts,
       nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
@@ -94,6 +102,7 @@ class PendingSend {
       'mediaWidth': mediaWidth,
       'mediaHeight': mediaHeight,
       'isViewOnce': isViewOnce,
+      'streakViewsRemaining': streakViewsRemaining,
       'createdAt': createdAt.toIso8601String(),
       'attempts': attempts,
       'nextAttemptAt': nextAttemptAt?.toIso8601String(),
@@ -122,6 +131,8 @@ class PendingSend {
       mediaWidth: (json['mediaWidth'] as num?)?.toInt(),
       mediaHeight: (json['mediaHeight'] as num?)?.toInt(),
       isViewOnce: (json['isViewOnce'] as bool?) ?? false,
+      streakViewsRemaining:
+          (json['streakViewsRemaining'] as num?)?.toInt(),
       createdAt: DateTime.parse(json['createdAt'] as String),
       attempts: (json['attempts'] as num?)?.toInt() ?? 0,
       nextAttemptAt:

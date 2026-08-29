@@ -2,11 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:attune/features/chat/domain/entities/conversation.dart';
-import 'package:attune/features/auth/providers/auth_provider.dart';
-import 'package:attune/features/chat/data/repositories/streak_repository.dart';
 import 'package:attune/features/chat/domain/services/chat_video_preparer.dart';
 import 'package:attune/features/chat/domain/services/streak_recording_session.dart';
-import 'package:attune/features/chat/presentation/screens/streak_viewer_screen.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/widgets/streak_record_button.dart';
 import 'package:attune/features/chat/presentation/widgets/streak_review_sheet.dart';
@@ -316,90 +313,51 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
   }
 
   Future<void> _send({required bool allowReplays}) async {
+    final segment = _segments.isEmpty ? null : _segments.first;
+    if (segment == null) return;
+
+    // Hand the clip to the outbox and leave. The upload, its retries and
+    // its failure handling all belong to _attemptSend, and the optimistic
+    // bubble is where the user watches it — holding them on the camera
+    // through a 25MB upload bought nothing.
+    // Transcode BEFORE queueing. _attemptSend uploads whatever path it is
+    // given verbatim, so handing it raw camera output would push a file
+    // several times larger than the ceiling allows.
     setState(() => _isSending = true);
-
-    final user = ref.read(currentUserProvider);
-    if (user == null) {
-      if (mounted) context.pop();
-      return;
-    }
-
-    final repository = ref.read(chatRepositoryProvider);
-    final streaks = ref.read(streakRepositoryProvider);
-
+    final PreparedChatVideo prepared;
     try {
-      await streaks.sendStreak(
-        relationshipId: widget.conversation.relationshipId,
-        senderId: user.id,
-        clips: streakClipUploads(_segments),
-        viewsRemaining: streakViewBudget(allowReplays: allowReplays),
-        uploadClip: (localPath) async {
-          // Each clip is transcoded and uploaded on its own intent: the
-          // server validates one object per intent, so a shared intent
-          // would be consumed by the first clip and reject the rest.
-          final prepared = await const ChatVideoPreparer().prepare(
-            localPath: localPath,
-            maxDuration: kStreakSegmentDuration,
-            // 25MB, matching the server trigger. A 60s 720p clip with
-            // audio measures around 11MB, and busier footage goes past
-            // it — 12MB passed every short test clip and failed real
-            // full-length streaks.
-            maxBytes: 25 * 1024 * 1024,
-          );
-
-          ChatLog.diagnostic(
-            'streak clip prepared',
-            '${prepared.byteSize}B ${prepared.mimeType}',
-          );
-          final intent = await repository.createMediaUploadIntent(
-            relationshipId: widget.conversation.relationshipId,
-            mimeType: prepared.mimeType,
-            mediaType: 'streak',
-          );
-          await repository.uploadChatMedia(
-            intent: intent,
-            localPath: prepared.file.path,
-            mimeType: prepared.mimeType,
-          );
-          return intent.storageKey;
-        },
+      prepared = await const ChatVideoPreparer().prepare(
+        localPath: segment.path,
+        maxDuration: kStreakSegmentDuration,
+        maxBytes: 25 * 1024 * 1024,
       );
-
-      ChatLog.diagnostic('streak send ok', 'clips=${_segments.length}');
-
-      // Pull the new row in explicitly rather than waiting on realtime.
-      // sendStreak writes straight to the server with no optimistic
-      // message, and this screen pops immediately — so without this the
-      // sender stares at a chat that does not yet contain what they just
-      // sent, until some later event happens to refresh it.
-      await ref
-          .read(chatControllerProvider(widget.conversation).notifier)
-          .loadMessages(silent: true);
-
-      // Staged files are only safe to delete once every clip has landed.
-      await _disposePreview();
-      await _discardAll();
-      if (mounted) context.pop();
     } on ChatVideoRejected catch (rejected) {
-      // The rejection code IS the diagnostic: media_too_large,
-      // media_compress_failed, media_too_short and so on are entirely
-      // different failures behind one message.
       ChatLog.diagnostic('streak prepare rejected', rejected);
       if (!mounted) return;
       setState(() => _isSending = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('That streak could not be sent.')),
       );
-    } catch (error) {
-      // Swallowing this is what hid the voice-note outage for weeks: the
-      // user saw a banner and the console said nothing usable.
-      ChatLog.diagnostic('streak send failed', error);
-      if (!mounted) return;
-      setState(() => _isSending = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('That streak could not be sent.')),
-      );
+      return;
     }
+    if (!mounted) return;
+
+    ChatLog.diagnostic('streak queued', '${prepared.byteSize}B');
+    unawaited(
+      ref
+          .read(chatControllerProvider(widget.conversation).notifier)
+          .sendStreakMessage(
+            localPath: prepared.file.path,
+            durationMs: prepared.durationMs,
+            viewsRemaining: streakViewBudget(allowReplays: allowReplays),
+          ),
+    );
+
+    // The staged file now belongs to the outbox, so clear the local
+    // reference WITHOUT deleting it — _attemptSend still needs to read it.
+    await _disposePreview();
+    _segments.clear();
+    if (mounted) context.pop();
   }
 
   /// Discards anything staged and leaves the camera.

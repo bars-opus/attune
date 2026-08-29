@@ -23,6 +23,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
+import 'package:attune/features/chat/data/repositories/streak_repository.dart';
 
 final chatRepositoryProvider = Provider<ChatRepository>((ref) {
   return ref.watch(supabaseChatRepositoryProvider);
@@ -759,6 +760,67 @@ class ChatController extends StateNotifier<ChatState> {
       localMediaPath: localPath,
       mediaDurationMs: durationMs,
       waveform: waveform,
+    );
+    state = state.copyWith(
+      isSending: true,
+      error: null,
+      messages: [optimistic, ...state.messages],
+    );
+
+    await _attemptSend(pending);
+  }
+
+  /// Queues a streak, mirroring sendEphemeralVideoMessage's shape.
+  ///
+  /// Returns as soon as the row is queued: the upload happens behind the
+  /// optimistic bubble, and _attemptSend owns retry and backoff. The
+  /// camera therefore pops immediately rather than holding the user
+  /// through a 25MB upload.
+  Future<void> sendStreakMessage({
+    required String localPath,
+    required int durationMs,
+    required int viewsRemaining,
+  }) async {
+    if (!state.conversation.canSend) return;
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    final file = File(localPath);
+    if (!await file.exists()) {
+      if (mounted) {
+        state = state.copyWith(error: 'That streak is no longer available.');
+      }
+      return;
+    }
+
+    final clientMessageId = const Uuid().v4();
+    final optimisticId = '_local_$clientMessageId';
+    final now = DateTime.now();
+
+    final pending = PendingSend(
+      clientMessageId: clientMessageId,
+      relationshipId: relationshipId,
+      senderId: user.id,
+      text: '',
+      localMediaPath: localPath,
+      mediaMimeType: 'video/mp4',
+      mediaType: 'streak',
+      mediaDurationMs: durationMs,
+      streakViewsRemaining: viewsRemaining,
+      createdAt: now,
+    );
+    await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
+
+    final optimistic = Message.optimistic(
+      id: optimisticId,
+      clientMessageId: clientMessageId,
+      relationshipId: relationshipId,
+      senderId: user.id,
+      content: '',
+      createdAt: now,
+      mediaType: 'streak',
+      localMediaPath: localPath,
+      mediaDurationMs: durationMs,
     );
     state = state.copyWith(
       isSending: true,
@@ -1552,9 +1614,22 @@ class ChatController extends StateNotifier<ChatState> {
         mediaWidth: pending.mediaWidth,
         mediaHeight: pending.mediaHeight,
         isViewOnce: pending.isViewOnce,
+        streakViewsRemaining: pending.streakViewsRemaining,
         replyToMessageId: pending.replyToMessageId,
         quotedText: pending.quotedText,
       );
+
+      // A streak's clip row hangs off the message that just landed, using
+      // the storage key already resolved for the upload. Additive: every
+      // other media type skips this entirely.
+      if (pending.mediaType == 'streak' && mediaKey != null) {
+        await ref.read(streakRepositoryProvider).attachClip(
+              messageId: canonical.id,
+              mediaUrl: mediaKey,
+              durationMs: pending.mediaDurationMs ?? 0,
+            );
+      }
+
       await ref
           .read(chatCacheServiceProvider)
           .removeOutbox(

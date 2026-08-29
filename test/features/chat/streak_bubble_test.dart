@@ -177,4 +177,38 @@ void main() {
     expect(find.text('Tap to play'), findsOneWidget);
     expect(find.text('2 left'), findsOneWidget);
   });
+
+  testWidgets('an in-flight streak says Sending, not Play', (tester) async {
+    var tapped = false;
+    await tester.pumpWidget(_wrap(StreakBubble(
+      viewsRemaining: 1,
+      hasBeenPlayed: false,
+      isMine: true,
+      isSending: true,
+      onTap: () => tapped = true,
+    )));
+
+    expect(find.text('Sending…'), findsOneWidget);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
+
+    await tester.tap(find.byType(StreakBubble));
+    await tester.pump();
+    expect(
+      tapped,
+      isFalse,
+      reason: 'there is nothing to play until the upload lands',
+    );
+  });
+
+  testWidgets('once sent it becomes playable', (tester) async {
+    await tester.pumpWidget(_wrap(StreakBubble(
+      viewsRemaining: 1,
+      hasBeenPlayed: false,
+      isMine: true,
+      onTap: () {},
+    )));
+
+    expect(find.text('Sending…'), findsNothing);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+  });
 }

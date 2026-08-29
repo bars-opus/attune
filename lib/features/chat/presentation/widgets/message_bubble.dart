@@ -991,6 +991,9 @@ class _BubbleBody extends StatelessWidget {
           viewsRemaining: remaining,
           hasBeenPlayed: !message.isMine && message.viewedAt != null,
           isMine: message.isMine,
+          // An optimistic row has no server id yet; the upload is still
+          // in flight behind this bubble.
+          isSending: message.id.startsWith('_local_'),
           // viewed_at is set only by a RECIPIENT view — a sender replay
           // deliberately leaves it null — so this is exactly "has the
           // recipient opened it".
