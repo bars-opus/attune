@@ -148,10 +148,11 @@ class VoiceRecordingScrim extends StatelessWidget {
                       amplitude: amplitude,
                       isRecording: true,
                       progress: progress,
+                      // The composer's own send glyph: two different
+                      // arrows for the same action in one feature reads as
+                      // two different actions.
                       child: Icon(
-                        isLocked
-                            ? Icons.arrow_upward_rounded
-                            : Icons.mic_rounded,
+                        isLocked ? Icons.send_rounded : Icons.mic_rounded,
                       ),
                     ),
                   ),
@@ -197,10 +198,8 @@ class VoiceRecordingScrim extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     IgnorePointer(
-                      child: AnimatedRollingCounter(
-                        key: const ValueKey('voice-scrim-counter'),
-                        count: elapsed.inSeconds,
-                        suffix: 's',
+                      child: _ScrimDuration(
+                        elapsed: elapsed,
                         style: Theme.of(
                           context,
                         ).textTheme.displaySmall?.copyWith(
@@ -348,6 +347,52 @@ class VoiceRecordingScrim extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// The elapsed timer, as m:ss once past a minute.
+///
+/// A single rolling counter of seconds reached "300s" at the recorder's
+/// five-minute ceiling, which reads as a raw number rather than a
+/// duration. Two counters keep the rolling animation on each segment.
+class _ScrimDuration extends StatelessWidget {
+  const _ScrimDuration({required this.elapsed, this.style});
+
+  final Duration elapsed;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final minutes = elapsed.inMinutes;
+    final seconds = elapsed.inSeconds % 60;
+
+    if (minutes == 0) {
+      return AnimatedRollingCounter(
+        key: const ValueKey('voice-scrim-counter'),
+        count: elapsed.inSeconds,
+        style: style,
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedRollingCounter(
+          key: const ValueKey('voice-scrim-counter-minutes'),
+          count: minutes,
+          style: style,
+        ),
+        Text(':', style: style),
+        // Zero-padded: "1:5" reads as one-and-a-half minutes to as many
+        // people as read it as one minute five.
+        if (seconds < 10) Text('0', style: style),
+        AnimatedRollingCounter(
+          key: const ValueKey('voice-scrim-counter'),
+          count: seconds,
+          style: style,
+        ),
+      ],
     );
   }
 }

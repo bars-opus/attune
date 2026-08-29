@@ -663,14 +663,41 @@ void main() {
       await tester.pump(const Duration(milliseconds: 1200));
 
       expect(find.byType(VoiceRecordingBar), findsNothing);
-      expect(
-        find.byIcon(Icons.send_rounded),
-        findsNothing,
-        reason: 'the bar carried a second send',
-      );
+      // Exactly one send glyph on screen — the scrim's. The bar used to
+      // carry a second one at a different position.
+      expect(find.byIcon(Icons.send_rounded), findsOneWidget);
       expect(find.byKey(const ValueKey('voice-scrim-send')), findsOneWidget);
       expect(find.byKey(const ValueKey('voice-scrim-pause')), findsOneWidget);
       expect(find.byKey(const ValueKey('voice-scrim-delete')), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
+    testWidgets('the send glyph matches the composer\'s own send icon', (
+      tester,
+    ) async {
+      // Two different arrows for the same action in the same feature reads
+      // as two different actions.
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await gesture.moveBy(const Offset(0, -80));
+      await tester.pump(const Duration(milliseconds: 16));
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 1200));
+
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('voice-scrim-send')),
+          matching: find.byIcon(Icons.send_rounded),
+        ),
+        findsOneWidget,
+        reason: 'must be the composer\'s Icons.send_rounded',
+      );
 
       await tester.pump(const Duration(milliseconds: 400));
     });
