@@ -14,6 +14,7 @@ class _FakeRecorder extends VoiceRecorderService {
   bool started = false;
   bool stopped = false;
   bool cancelled = false;
+  bool paused = false;
 
   @override
   Future<bool> requestPermission() async => true;
@@ -33,6 +34,15 @@ class _FakeRecorder extends VoiceRecorderService {
 
   @override
   Future<void> cancel() async => cancelled = true;
+
+  @override
+  Future<void> pause() async => paused = true;
+
+  @override
+  Future<void> resume() async => paused = false;
+
+  @override
+  bool get isPaused => paused;
 
   @override
   Duration get elapsed => const Duration(seconds: 1);
@@ -553,6 +563,116 @@ void main() {
         greaterThan(20),
         reason: 'second recording did not animate: $secondTravel',
       );
+    });
+
+    testWidgets('locking turns the ring into send and reveals pause', (
+      tester,
+    ) async {
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 1200));
+
+      // Held: the ring is a mic, and there is no pause control.
+      expect(find.byKey(const ValueKey('voice-scrim-pause')), findsNothing);
+      expect(find.byKey(const ValueKey('voice-scrim-send')), findsNothing);
+
+      await gesture.moveBy(const Offset(0, -80));
+      await tester.pump(const Duration(milliseconds: 16));
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 1200));
+
+      // Locked: the ring becomes send, and pause appears below the wave.
+      final send = find.byKey(const ValueKey('voice-scrim-send'));
+      final pause = find.byKey(const ValueKey('voice-scrim-pause'));
+      expect(send, findsOneWidget);
+      expect(pause, findsOneWidget);
+
+      // The lock pill has served its purpose and is gone.
+      expect(find.byType(VoiceLockPill), findsNothing);
+
+      expect(
+        tester.getCenter(pause).dy,
+        greaterThan(200),
+        reason: 'pause sits below the waveform, not beside the ring',
+      );
+
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
+    testWidgets('the locked ring sends, and pause toggles to play', (
+      tester,
+    ) async {
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await gesture.moveBy(const Offset(0, -80));
+      await tester.pump(const Duration(milliseconds: 16));
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 1200));
+
+      // Pause swaps to a resume glyph and actually pauses the recorder.
+      await tester.tap(find.byKey(const ValueKey('voice-scrim-pause')));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(recorder.paused, isTrue);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('voice-scrim-pause')),
+          matching: find.byIcon(Icons.play_arrow_rounded),
+        ),
+        findsOneWidget,
+        reason: 'a paused recording offers resume, not another pause',
+      );
+
+      await tester.tap(find.byKey(const ValueKey('voice-scrim-pause')));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(recorder.paused, isFalse);
+
+      // The ring sends.
+      await tester.tap(find.byKey(const ValueKey('voice-scrim-send')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(recorder.stopped, isTrue);
+      expect(recorder.cancelled, isFalse);
+    });
+
+    testWidgets('the locked stage has exactly one of each control', (
+      tester,
+    ) async {
+      // The scrim owns send, pause and delete now. Leaving the composer's
+      // bar in place would give the locked stage two of each, and the two
+      // sends would sit at different places on screen.
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await gesture.moveBy(const Offset(0, -80));
+      await tester.pump(const Duration(milliseconds: 16));
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 1200));
+
+      expect(find.byType(VoiceRecordingBar), findsNothing);
+      expect(
+        find.byIcon(Icons.send_rounded),
+        findsNothing,
+        reason: 'the bar carried a second send',
+      );
+      expect(find.byKey(const ValueKey('voice-scrim-send')), findsOneWidget);
+      expect(find.byKey(const ValueKey('voice-scrim-pause')), findsOneWidget);
+      expect(find.byKey(const ValueKey('voice-scrim-delete')), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 400));
     });
 
     testWidgets('the delete icon sits on a plain white disc', (tester) async {
