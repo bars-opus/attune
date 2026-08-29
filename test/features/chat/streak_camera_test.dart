@@ -25,16 +25,19 @@ import 'package:flutter_test/flutter_test.dart';
 }
 
 void main() {
-  test('a three-minute hold produces three segments', () {
+  test('a long hold still produces exactly one clip', () {
+    // Multi-segment queueing was removed: a streak is one clip of at most
+    // a minute, and holding longer simply stops rather than starting a
+    // second.
     final r = _hold(const Duration(minutes: 3));
-    expect(r.completed, 3);
-    expect(r.stopped, isFalse);
-    expect(StreakRecordingSession.showPreviews(r.completed), isTrue);
+    expect(r.completed, 1);
+    expect(r.stopped, isTrue);
+    expect(StreakRecordingSession.showPreviews(r.completed), isFalse);
   });
 
-  test('recording stops at the five-segment cap', () {
+  test('recording stops at the minute', () {
     final r = _hold(const Duration(minutes: 10));
-    expect(r.completed, 5, reason: 'ten minutes must not queue ten clips');
+    expect(r.completed, 1, reason: 'ten minutes must not queue ten clips');
     expect(r.stopped, isTrue);
   });
 

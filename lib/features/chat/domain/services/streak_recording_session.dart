@@ -3,11 +3,12 @@
 /// optimises for a rapid highlight reel.
 const Duration kStreakSegmentDuration = Duration(seconds: 60);
 
-/// Hard ceiling. At this many completed segments recording STOPS and
-/// review opens — the alternative (a rolling window dropping the oldest)
-/// silently discards what the user recorded, with nothing in the UI able
-/// to explain where it went.
-const int kStreakMaxSegments = 5;
+/// One segment per streak. A minute is enough to say something, and
+/// queueing several clips meant a review step deciding between them, a
+/// preview strip, and a multi-clip player — all to send what is meant to
+/// be a quick, casual thing. Recording simply stops at the minute and the
+/// send/cancel sheet opens.
+const int kStreakMaxSegments = 1;
 
 /// Guards a stray tap on the FIRST segment only.
 const Duration kStreakMinFirstSegment = Duration(milliseconds: 500);
@@ -32,9 +33,10 @@ class StreakRecordingSession {
   static bool shouldStopAt(int completedSegments) =>
       completedSegments >= kStreakMaxSegments;
 
-  /// Previews appear only once a SECOND segment exists: a lone thumbnail
-  /// for a lone clip is noise.
-  static bool showPreviews(int completedSegments) => completedSegments >= 2;
+  /// Never: a streak is a single clip, so there is nothing to preview
+  /// against. Kept as a named rule rather than deleted so the camera does
+  /// not grow an ad-hoc condition if segments ever return.
+  static bool showPreviews(int completedSegments) => false;
 
   /// Whether to throw the whole recording away on release.
   ///

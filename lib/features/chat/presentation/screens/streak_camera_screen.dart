@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/widgets/animated_rolling_counter.dart';
 
 /// Press-and-hold streak capture, auto-splitting into 60-second segments.
 ///
@@ -303,7 +304,11 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
           final prepared = await const ChatVideoPreparer().prepare(
             localPath: localPath,
             maxDuration: kStreakSegmentDuration,
-            maxBytes: 12 * 1024 * 1024,
+            // 25MB, matching the server trigger. A 60s 720p clip with
+            // audio measures around 11MB, and busier footage goes past
+            // it — 12MB passed every short test clip and failed real
+            // full-length streaks.
+            maxBytes: 25 * 1024 * 1024,
           );
 
           ChatLog.diagnostic('streak clip prepared',
@@ -422,6 +427,32 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
                   ),
                 );
               },
+            ),
+
+          // Elapsed seconds, centred. A streak is capped at a minute, so
+          // the number itself is the whole story — no bar, no ring, just
+          // how long you have been talking. Rolls rather than jumps so a
+          // glance registers the change without re-reading the digits.
+          if (_isRecording)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: AnimatedRollingCounter(
+                    key: const ValueKey('streak-elapsed'),
+                    count: _segmentElapsed.inSeconds,
+                    suffix: 's',
+                    style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          shadows: const [
+                            // The viewfinder behind this is arbitrary, so
+                            // the digits need their own contrast.
+                            Shadow(blurRadius: 12, color: Colors.black54),
+                          ],
+                        ),
+                  ),
+                ),
+              ),
             ),
 
           // Segment previews, only once a SECOND segment exists — a lone

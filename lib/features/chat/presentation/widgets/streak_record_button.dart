@@ -63,7 +63,7 @@ class StreakRecordButton extends StatelessWidget {
   /// Gap between the disc and the arc ringing it.
   static const double _gap = Spacing.lg;
 
-  static const double _arcStroke = 6;
+  static const double _arcStroke = 9;
   static const double _ringStroke = 5;
 
   double get _arcDiameter => _discDiameter + _gap * 2;
@@ -104,11 +104,18 @@ class StreakRecordButton extends StatelessWidget {
                 width: _idleDiameter,
                 height: _idleDiameter,
                 child: CircularProgressIndicator(
-                  // Indeterminate: an upload's duration is unknown, and a
-                  // fake determinate bar would be a lie.
+                  // Indeterminate: neither camera init nor an upload has a
+                  // knowable duration, and a fake determinate bar would be
+                  // a lie.
                   strokeWidth: _ringStroke,
                   backgroundColor: Colors.white24,
-                  valueColor: AlwaysStoppedAnimation(primary),
+                  // White while warming up, primary while sending. The
+                  // first is a neutral "not ready yet"; the second marks
+                  // the user's own action being carried out, and colouring
+                  // both the same would make them indistinguishable.
+                  valueColor: AlwaysStoppedAnimation(
+                    isSending ? primary : Colors.white,
+                  ),
                 ),
               )
             else if (isRecording) ...[
@@ -123,15 +130,31 @@ class StreakRecordButton extends StatelessWidget {
                   color: primary,
                 ),
               ),
-              SizedBox(
-                key: const ValueKey('streak-record-arc'),
-                width: _arcDiameter,
-                height: _arcDiameter,
-                child: CircularProgressIndicator(
-                  value: progress,
-                  strokeWidth: _arcStroke,
-                  backgroundColor: Colors.white24,
-                  valueColor: AlwaysStoppedAnimation(primary),
+              // Scale and fade the arc in as recording starts, and out
+              // again when it stops: it appearing instantly at full size
+              // reads as a glitch, where growing out of the disc reads as
+              // the recording beginning.
+              TweenAnimationBuilder<double>(
+                key: const ValueKey('streak-record-arc-entrance'),
+                tween: Tween(begin: 0.7, end: 1),
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutBack,
+                builder: (context, scale, child) => Opacity(
+                  // Fades over the first half of the growth, so the arc is
+                  // solid well before it settles.
+                  opacity: ((scale - 0.7) / 0.15).clamp(0.0, 1.0),
+                  child: Transform.scale(scale: scale, child: child),
+                ),
+                child: SizedBox(
+                  key: const ValueKey('streak-record-arc'),
+                  width: _arcDiameter,
+                  height: _arcDiameter,
+                  child: CircularProgressIndicator(
+                    value: progress,
+                    strokeWidth: _arcStroke,
+                    backgroundColor: Colors.white24,
+                    valueColor: AlwaysStoppedAnimation(primary),
+                  ),
                 ),
               ),
             ] else

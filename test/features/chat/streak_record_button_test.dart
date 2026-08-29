@@ -262,6 +262,28 @@ void main() {
       isNull,
       reason: 'camera init has no measurable progress',
     );
+    expect(
+      arc.valueColor?.value,
+      Colors.white,
+      reason: 'warming up is neutral; primary is reserved for the send, so '
+          'the two waits are told apart at a glance',
+    );
+  });
+
+  testWidgets('the sending sweep uses the app primary', (tester) async {
+    await tester.pumpWidget(_wrap(StreakRecordButton(
+      progress: 0,
+      isRecording: false,
+      isSending: true,
+      onPressStart: () {},
+      onPressEnd: () {},
+    )));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final arc = tester.widget<CircularProgressIndicator>(
+      find.byType(CircularProgressIndicator),
+    );
+    expect(arc.valueColor?.value, _primary);
   });
 
   testWidgets('a preparing button ignores presses', (tester) async {

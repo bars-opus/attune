@@ -17,20 +17,17 @@ void main() {
   });
 
   group('the segment cap', () {
-    test('stops once five segments are complete', () {
-      expect(StreakRecordingSession.shouldStopAt(4), isFalse);
-      expect(StreakRecordingSession.shouldStopAt(5), isTrue);
+    test('stops after ONE segment — a streak is a single clip', () {
+      expect(StreakRecordingSession.shouldStopAt(0), isFalse);
+      expect(StreakRecordingSession.shouldStopAt(1), isTrue);
     });
   });
 
   group('previews', () {
-    test('none for a single segment — a lone thumbnail is noise', () {
+    test('never shown — there is only ever one clip', () {
       expect(StreakRecordingSession.showPreviews(0), isFalse);
       expect(StreakRecordingSession.showPreviews(1), isFalse);
-    });
-
-    test('appear from the second segment', () {
-      expect(StreakRecordingSession.showPreviews(2), isTrue);
+      expect(StreakRecordingSession.showPreviews(2), isFalse);
     });
   });
 
