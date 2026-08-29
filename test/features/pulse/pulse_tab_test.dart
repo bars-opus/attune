@@ -139,7 +139,14 @@ void main() {
     await tester.pumpWidget(buildHarness());
     await tester.pumpAndSettle();
 
-    // Settings is already the initial tab (index 0).
+    // Settings is no longer the initial tab: 31b97499 reordered them to
+    // Pulse / Timeline / Settings. Navigate to it by LABEL rather than
+    // index, so a future reorder moves this test with it instead of
+    // silently exercising whichever tab happens to sit at a hardcoded
+    // position.
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+
     expect(tester.takeException(), isNull);
     // Confirms ChatSettingsStaticRows' real content rendered — i.e. this
     // test is actually exercising the plain-Column-with-no-scroll shape the

@@ -82,7 +82,7 @@ void main() {
     final container = await pumpChat(tester, repo);
 
     await tester.longPress(find.text('hello there'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
 
     // currentUserId is wired through, so the sheet actually opens.
     expect(find.text('Copy'), findsOneWidget);
@@ -90,7 +90,7 @@ void main() {
     expect(find.text('Pin'), findsOneWidget);
 
     await tester.tapAt(const Offset(10, 10));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
     await tearDownChat(tester, container);
   });
 
@@ -106,9 +106,9 @@ void main() {
     final container = await pumpChat(tester, repo);
 
     await tester.longPress(find.text('hello there'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('Star'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(repo.starredMessageIds, contains('m1'));
     await tearDownChat(tester, container);
@@ -128,9 +128,10 @@ void main() {
     expect(find.byIcon(Icons.push_pin), findsNothing);
 
     await tester.longPress(find.text('pin me please'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('Pin'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(seconds: 1));
 
     expect(repo.pinnedMessageIds, contains('m1'));
     // The banner's pin icon plus the bubble text now duplicated in the strip.
@@ -172,22 +173,22 @@ void main() {
     final container = await pumpChat(tester, repo);
 
     await tester.longPress(find.text('oops'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('Delete'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('Delete message?'), findsOneWidget);
     // Cancelling must not delete.
     await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
     expect(repo.deleteMessageCalls, isEmpty);
 
     await tester.longPress(find.text('oops'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('Delete'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.widgetWithText(TextButton, 'Delete'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(repo.deleteMessageCalls, contains('m1'));
     expect(find.text('This message was deleted'), findsOneWidget);
@@ -209,14 +210,14 @@ void main() {
     final container = await pumpChat(tester, repo);
 
     await tester.longPress(find.text('teh typo'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('Edit'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('Edit message'), findsOneWidget);
     await tester.enterText(find.byType(TextField).last, 'the typo');
     await tester.tap(find.text('Save'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(repo.editMessageCalls.single.messageId, 'm1');
     expect(repo.editMessageCalls.single.newContent, 'the typo');
@@ -224,7 +225,7 @@ void main() {
     expect(find.text('edited'), findsNothing);
 
     await tester.tapAt(const Offset(10, 10));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
     await tearDownChat(tester, container);
   });
 
@@ -250,7 +251,7 @@ void main() {
     );
 
     await tester.longPress(find.text('just sent this'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
 
     // No sheet at all — not merely Edit/Delete withheld.
     expect(find.text('Copy'), findsNothing);
@@ -276,9 +277,9 @@ void main() {
       final container = await pumpChat(tester, repo);
 
       await tester.longPress(find.text('hello there'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 400));
       await tester.tap(find.text('❤️'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 400));
 
       expect(repo.reactionsByMessage['m1']?['user-a'], '❤️');
       await tearDownChat(tester, container);
@@ -299,9 +300,9 @@ void main() {
       final container = await pumpChat(tester, repo);
 
       await tester.longPress(find.text('hello there'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 400));
       await tester.tap(find.text('👍'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 400));
 
       expect(find.text('👍'), findsOneWidget);
       await tearDownChat(tester, container);

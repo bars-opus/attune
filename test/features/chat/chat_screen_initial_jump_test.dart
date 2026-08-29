@@ -78,7 +78,7 @@ void main() {
       repo,
       initialJumpToMessageId: 'm3',
     );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('message 3'), findsOneWidget);
     await tearDownChat(tester, container);
@@ -112,7 +112,7 @@ void main() {
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('message 0'), findsOneWidget);
     await tearDownChat(tester, container);
@@ -130,7 +130,7 @@ void main() {
       createdAt: DateTime.now(),
     );
     final container = await pumpChat(tester, repo);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(tester.takeException(), isNull);
     expect(find.text('hello there'), findsOneWidget);
