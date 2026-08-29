@@ -17,6 +17,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
+import 'package:attune/app/theme/design_tokens.dart';
 
 /// Press-and-hold streak capture, auto-splitting into 60-second segments.
 ///
@@ -466,23 +467,20 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
             ),
           ),
 
-          // Transcoding several clips takes real time; without a blocking
-          // overlay the camera looks idle and invites a second recording
-          // on top of an in-flight send.
-          if (_isSending)
-            const ColoredBox(
-              color: Colors.black54,
-              child: Center(child: CircularProgressIndicator()),
-            ),
-
+          // No blocking overlay: the record button itself becomes the
+          // loading indicator while sending, and refuses presses, so a
+          // second spinner would only compete with it.
           Positioned(
             left: 0,
             right: 0,
-            bottom: 48,
+            // Clear of the home indicator and the very bottom edge, where
+            // the ring sat awkwardly close to the screen's edge.
+            bottom: Spacing.xxl * 2,
             child: Center(
               child: StreakRecordButton(
                 progress: progress.clamp(0.0, 1.0),
                 isRecording: _isRecording,
+                isSending: _isSending,
                 onPressStart: () => unawaited(_onPressStart()),
                 onPressEnd: () => unawaited(_onPressEnd()),
               ),

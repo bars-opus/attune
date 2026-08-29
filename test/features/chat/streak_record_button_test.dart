@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/chat/presentation/widgets/streak_record_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -71,6 +72,31 @@ void main() {
       );
     });
 
+    testWidgets('the arc sits clear of the disc, not on its edge',
+        (tester) async {
+      await tester.pumpWidget(_wrap(StreakRecordButton(
+        progress: 0.4,
+        isRecording: true,
+        onPressStart: () {},
+        onPressEnd: () {},
+      )));
+
+      final disc = tester.getSize(
+        find.byKey(const ValueKey('streak-record-fill')),
+      );
+      final arc = tester.getSize(
+        find.byKey(const ValueKey('streak-record-arc')),
+      );
+
+      // A visible gap on every side, so the arc reads as a ring AROUND
+      // the disc rather than a stroke drawn on top of its edge.
+      expect(
+        (arc.width - disc.width) / 2,
+        greaterThanOrEqualTo(Spacing.md),
+        reason: 'the padding between disc and arc should be at least md',
+      );
+    });
+
     testWidgets('the arc tracks segment progress', (tester) async {
       await tester.pumpWidget(_wrap(StreakRecordButton(
         progress: 0.4,
@@ -85,13 +111,15 @@ void main() {
       expect(arc.value, 0.4);
       expect(
         arc.strokeWidth,
-        greaterThanOrEqualTo(8),
-        reason: 'the reference arc is thick and readable at a glance, not '
-            'a hairline',
+        greaterThanOrEqualTo(4),
+        reason: 'readable at a glance, not a hairline — thinner than the '
+            'earlier design because the arc now rings the disc with a gap '
+            'rather than sitting on its edge',
       );
     });
 
-    testWidgets('the fill grows when recording starts', (tester) async {
+    testWidgets('the recording control is larger overall than idle',
+        (tester) async {
       await tester.pumpWidget(_wrap(StreakRecordButton(
         progress: 0,
         isRecording: false,
@@ -109,14 +137,16 @@ void main() {
         onPressEnd: () {},
       )));
       await tester.pump(const Duration(milliseconds: 300));
+      // The DISC is smaller than the idle ring now that the arc rings it
+      // with a gap; what grows is the control as a whole.
       final active = tester.getSize(
-        find.byKey(const ValueKey('streak-record-fill')),
+        find.byKey(const ValueKey('streak-record-arc')),
       );
 
       expect(
         active.width,
         greaterThan(idle.width),
-        reason: 'the recording disc reads as larger than the idle ring',
+        reason: 'recording reads as a larger control than the idle ring',
       );
     });
   });
@@ -159,5 +189,57 @@ void main() {
       isNot(contains('onPanEnd')),
       reason: 'pan does not report an end for a press with no movement',
     );
+  });
+
+  testWidgets('sending turns the ring into the loading indicator',
+      (tester) async {
+    await tester.pumpWidget(_wrap(StreakRecordButton(
+      progress: 0,
+      isRecording: false,
+      isSending: true,
+      onPressStart: () {},
+      onPressEnd: () {},
+    )));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // An indeterminate sweep on the button itself — the screen should not
+    // also stack a separate spinner somewhere else.
+    final arc = tester.widget<CircularProgressIndicator>(
+      find.byType(CircularProgressIndicator),
+    );
+    expect(arc.value, isNull, reason: 'an upload has no known progress');
+
+    expect(find.byType(StreakRecordButton), findsOneWidget);
+  });
+
+  testWidgets('a sending button ignores presses', (tester) async {
+    var started = false;
+    await tester.pumpWidget(_wrap(StreakRecordButton(
+      progress: 0,
+      isRecording: false,
+      isSending: true,
+      onPressStart: () => started = true,
+      onPressEnd: () {},
+    )));
+
+    final gesture = await tester
+        .startGesture(tester.getCenter(find.byType(StreakRecordButton)));
+    await tester.pump(const Duration(milliseconds: 50));
+    await gesture.up();
+
+    expect(
+      started,
+      isFalse,
+      reason: 'recording again mid-upload would queue a second send',
+    );
+  });
+
+  test('pressing fires a light haptic', () {
+    // Not observable in a widget test — HapticFeedback goes out over a
+    // platform channel with no recorded effect on the tree.
+    final src = File(
+      'lib/features/chat/presentation/widgets/streak_record_button.dart',
+    ).readAsStringSync();
+    expect(src, contains('HapticFeedback.lightImpact()'));
   });
 }

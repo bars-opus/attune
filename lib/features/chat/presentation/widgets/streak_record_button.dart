@@ -1,17 +1,23 @@
+import 'package:attune/app/theme/design_tokens.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// The streak capture control.
 ///
-/// Two states, matching the reference:
+/// Three states:
 ///
 ///   IDLE — a hollow ring on the dark camera surface. An outline rather
 ///     than a disc, so the viewfinder stays readable behind it and the
 ///     button reads as "ready" rather than "active".
 ///
-///   RECORDING — a large filled disc in the app's primary colour, with a
-///     thick progress arc sweeping around it over the segment's duration.
-///     A full sweep is the signal that a segment just closed, which
-///     matters because the user is watching their subject, not the button.
+///   RECORDING — a filled disc in the app's primary colour with a
+///     progress arc ringing it, separated by a clear gap so the two read
+///     as distinct shapes rather than one thick stroke.
+///
+///   SENDING — the same ring, sweeping indeterminately. The upload has no
+///     measurable progress, and the control the user just pressed is the
+///     honest place to show that something is happening; a second spinner
+///     elsewhere on screen would compete with it.
 ///
 /// The reference uses Snapchat's yellow; this uses `colorScheme.primary`
 /// so it stays on-brand and correct in both themes.
@@ -26,33 +32,56 @@ class StreakRecordButton extends StatelessWidget {
     required this.isRecording,
     required this.onPressStart,
     required this.onPressEnd,
+    this.isSending = false,
   });
 
   /// 0..1 through the CURRENT segment, not the whole recording.
   final double progress;
   final bool isRecording;
+
+  /// Uploading. The button becomes the loading indicator and stops
+  /// accepting presses — starting a second recording mid-upload would
+  /// queue a send behind one already in flight.
+  final bool isSending;
+
   final VoidCallback onPressStart;
   final VoidCallback onPressEnd;
 
   /// The touch target, sized for a thumb regardless of what is drawn.
-  static const double _target = 96;
+  static const double _target = 112;
 
-  /// The idle ring, and the recording disc it grows into.
   static const double _idleDiameter = 72;
-  static const double _activeDiameter = 88;
+  static const double _discDiameter = 64;
 
-  /// Thick enough to read at a glance from the corner of the eye.
-  static const double _arcStroke = 9;
+  /// Gap between the disc and the arc ringing it.
+  static const double _gap = Spacing.lg;
+
+  static const double _arcStroke = 6;
   static const double _ringStroke = 5;
+
+  double get _arcDiameter => _discDiameter + _gap * 2;
 
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
 
     return Listener(
-      onPointerDown: (_) => onPressStart(),
-      onPointerUp: (_) => onPressEnd(),
-      onPointerCancel: (_) => onPressEnd(),
+      onPointerDown: (_) {
+        if (isSending) return;
+        // Light rather than medium: this fires the instant a finger lands
+        // on the button, many times a session. A heavier tap would become
+        // wearing very quickly.
+        HapticFeedback.lightImpact();
+        onPressStart();
+      },
+      onPointerUp: (_) {
+        if (isSending) return;
+        onPressEnd();
+      },
+      onPointerCancel: (_) {
+        if (isSending) return;
+        onPressEnd();
+      },
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
         width: _target,
@@ -60,34 +89,40 @@ class StreakRecordButton extends StatelessWidget {
         child: Stack(
           alignment: Alignment.center,
           children: [
-            if (isRecording) ...[
-              // The disc first, the arc over it: the arc's stroke sits on
-              // the disc's edge in the reference, not outside it.
+            if (isSending)
+              SizedBox(
+                key: const ValueKey('streak-record-sending'),
+                width: _idleDiameter,
+                height: _idleDiameter,
+                child: CircularProgressIndicator(
+                  // Indeterminate: an upload's duration is unknown, and a
+                  // fake determinate bar would be a lie.
+                  strokeWidth: _ringStroke,
+                  backgroundColor: Colors.white24,
+                  valueColor: AlwaysStoppedAnimation(primary),
+                ),
+              )
+            else if (isRecording) ...[
               AnimatedContainer(
                 key: const ValueKey('streak-record-fill'),
                 duration: const Duration(milliseconds: 180),
                 curve: Curves.easeOut,
-                width: _activeDiameter,
-                height: _activeDiameter,
+                width: _discDiameter,
+                height: _discDiameter,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: primary,
                 ),
               ),
               SizedBox(
-                width: _activeDiameter,
-                height: _activeDiameter,
+                key: const ValueKey('streak-record-arc'),
+                width: _arcDiameter,
+                height: _arcDiameter,
                 child: CircularProgressIndicator(
                   value: progress,
                   strokeWidth: _arcStroke,
-                  // Transparent track: the unfilled part of the sweep
-                  // should show the disc, not a competing ring.
-                  backgroundColor: Colors.transparent,
-                  valueColor: AlwaysStoppedAnimation(
-                    // A darker cast of the same colour, so the arc reads
-                    // against the disc without introducing a second hue.
-                    Color.alphaBlend(Colors.black26, primary),
-                  ),
+                  backgroundColor: Colors.white24,
+                  valueColor: AlwaysStoppedAnimation(primary),
                 ),
               ),
             ] else
@@ -98,9 +133,8 @@ class StreakRecordButton extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    // Grey rather than white: the reference ring is
-                    // recessive until it is pressed, and a white ring on a
-                    // dark viewfinder pulls the eye off the subject.
+                    // Recessive until pressed: a white ring on a dark
+                    // viewfinder pulls the eye off the subject.
                     color: Colors.white70,
                     width: _ringStroke,
                   ),
