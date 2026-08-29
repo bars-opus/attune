@@ -9,7 +9,8 @@ import 'package:attune/core/widgets/bottom_sheet_header.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'voice_recording_bar.dart';
-import 'voice_recording_lock_overlay.dart';
+import 'package:attune/features/chat/presentation/widgets/voice_mic_halo.dart';
+import 'package:attune/features/chat/presentation/widgets/voice_lock_pill.dart';
 
 class ChatTextField extends StatefulWidget {
   const ChatTextField({
@@ -739,15 +740,22 @@ class _ChatTextFieldState extends State<ChatTextField> {
                                 width: _ComposerIcon._tapSize,
                                 height: _ComposerIcon._tapSize,
                                 child: Center(
-                                  child: IconTheme.merge(
-                                    data: IconThemeData(
-                                      color: colorScheme.onSurfaceVariant,
-                                      size: 24,
-                                    ),
-                                    child: IconCrossfade(
-                                      child: Icon(
-                                        Icons.mic_none_rounded,
-                                        key: ValueKey(_isRecording),
+                                  child: VoiceMicHalo(
+                                    amplitude:
+                                        _levels.isEmpty ? 0.0 : _levels.last,
+                                    isRecording: _isRecording,
+                                    child: IconTheme.merge(
+                                      data: IconThemeData(
+                                        color: colorScheme.onSurfaceVariant,
+                                        size: 24,
+                                      ),
+                                      child: IconCrossfade(
+                                        child: Icon(
+                                          _isRecording
+                                              ? Icons.mic_rounded
+                                              : Icons.mic_none_rounded,
+                                          key: ValueKey(_isRecording),
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -809,7 +817,7 @@ class _ChatTextFieldState extends State<ChatTextField> {
             Positioned(
               right: 14,
               bottom: 62,
-              child: VoiceRecordingLockOverlay(progress: _lockProgress),
+              child: VoiceLockPill(dragProgress: _lockProgress),
             ),
         ],
       ),
