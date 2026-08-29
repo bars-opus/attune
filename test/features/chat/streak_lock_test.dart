@@ -98,13 +98,32 @@ void main() {
       expect(src, contains('onStop: () => unawaited(_stopLockedRecording())'));
     });
 
-    test('closing works while locked', () {
-      // The close button was disabled whenever _isRecording, which a
-      // locked take is -- leaving no way out but waiting a minute.
+    test('the close button is hidden while held, not shown dead', () {
+      // A visible control that does nothing is worse than no control: it
+      // invites a tap and then ignores it. Held recording hides it;
+      // LOCKED recording keeps it, because nothing is holding the take
+      // and it must stay abandonable.
       expect(
         src,
-        isNot(contains('onPressed: _isRecording || _isSending ? null : _closeCamera')),
-        reason: 'a locked take must still be abandonable',
+        contains('if (!_isRecording || _isLocked)'),
+        reason: 'close is hidden mid-hold and present when locked',
+      );
+      expect(
+        src,
+        isNot(contains('onPressed: (_isRecording && !_isLocked) || _isSending')),
+        reason: 'hidden, not disabled',
+      );
+    });
+
+    test('no control is rendered in a permanently dead state', () {
+      // Every onPressed: null here would be a button the user can see and
+      // press to no effect.
+      // Narrowed to onPressed: a bare '? null' also matches ordinary
+      // null-guards elsewhere in the file, which are not dead buttons.
+      expect(
+        RegExp(r'onPressed:[^,]*\?\s*null').hasMatch(src),
+        isFalse,
+        reason: 'gate visibility instead of disabling',
       );
     });
 

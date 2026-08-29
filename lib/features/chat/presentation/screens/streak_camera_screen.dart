@@ -621,25 +621,29 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
           // that moment, and closing or flipping mid-decision would either
           // discard the take silently or spin up a camera nobody is
           // looking at.
-          if (preview == null) ...[
-            // Below the status bar and notch rather than tight against the
-            // top edge, and a larger target: these are the only two controls
-            // on a full-bleed viewfinder.
-            Positioned(
-              top: Spacing.xxl,
-              left: Spacing.md,
-              child: IconButton(
-                iconSize: 32,
-                // A LOCKED take must stay abandonable: nothing is holding
-              // it, so disabling this left no way out but waiting a
-              // minute. Only a finger-held take blocks closing.
-              onPressed: (_isRecording && !_isLocked) || _isSending
-                  ? null
-                  : _closeCamera,
-                icon: const Icon(Icons.close_rounded, color: Colors.white),
-                tooltip: 'Close camera',
+          // Hidden entirely rather than shown disabled: a control the
+          // user can see and press to no effect invites the tap and then
+          // ignores it, which reads as the app being broken.
+          //
+          // Close survives a LOCKED take -- nothing is holding it, so it
+          // must stay abandonable -- but goes while a finger is down,
+          // where the gesture owns the screen. Both go during review and
+          // during the send.
+          if (preview == null && !_isSending) ...[
+            if (!_isRecording || _isLocked)
+              // Below the status bar and notch rather than tight against the
+              // top edge, and a larger target: these are the only two controls
+              // on a full-bleed viewfinder.
+              Positioned(
+                top: Spacing.xxl,
+                left: Spacing.md,
+                child: IconButton(
+                  iconSize: 32,
+                  onPressed: _closeCamera,
+                  icon: const Icon(Icons.close_rounded, color: Colors.white),
+                  tooltip: 'Close camera',
+                ),
               ),
-            ),
 
             Positioned(
               top: Spacing.xxl,
@@ -650,7 +654,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
                 // switching lenses mid-take on both platforms, and turning
                 // the camera round without stopping is most of the point of
                 // a hands-free streak.
-                onPressed: _isSending ? null : _flipCamera,
+                onPressed: _flipCamera,
                 icon: const Icon(
                   Icons.flip_camera_ios_outlined,
                   color: Colors.white,

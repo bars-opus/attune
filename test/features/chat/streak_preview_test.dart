@@ -108,9 +108,9 @@ void main() {
       // at behind the preview.
       expect(
         src,
-        contains('if (preview == null) ...['),
+        contains('if (preview == null && !_isSending) ...['),
         reason: 'both top controls must be gated on there being no take '
-            'under review',
+            'under review, and none during the send',
       );
     });
   });
