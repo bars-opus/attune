@@ -199,4 +199,29 @@ BEGIN
   PERFORM set_config('request.jwt.claims', '', true);
 END $$;
 
+-- 7. The upload intent accepts 'streak'.
+--
+-- This is the FOURTH place media_type is gated, after the two CHECK
+-- constraints and the insert trigger. It rejected streak outright, so
+-- every send failed before a file was even transcoded -- and the client
+-- swallowed the error, so the console showed only video_compress's
+-- informational logs.
+DO $$
+DECLARE v_key text;
+BEGIN
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', '5f000000-0000-0000-0000-0000000000a1',
+                      'role', 'authenticated')::text, true);
+
+  SELECT storage_key INTO v_key
+  FROM public.create_chat_media_upload_intent(
+    '5e000000-0000-0000-0000-000000000001'::uuid, 'video/mp4', 'streak');
+
+  IF v_key IS NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: no upload intent issued for a streak';
+  END IF;
+
+  PERFORM set_config('request.jwt.claims', '', true);
+END $$;
+
 ROLLBACK;

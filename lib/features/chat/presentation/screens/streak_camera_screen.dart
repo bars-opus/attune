@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:attune/features/chat/utils/chat_log.dart';
 
 /// Press-and-hold streak capture, auto-splitting into 60-second segments.
 ///
@@ -301,13 +302,20 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
       // Staged files are only safe to delete once every clip has landed.
       await _discardAll();
       if (mounted) context.pop();
-    } on ChatVideoRejected {
+    } on ChatVideoRejected catch (rejected) {
+      // The rejection code IS the diagnostic: media_too_large,
+      // media_compress_failed, media_too_short and so on are entirely
+      // different failures behind one message.
+      ChatLog.diagnostic('streak prepare rejected', rejected);
       if (!mounted) return;
       setState(() => _isSending = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('That streak could not be sent.')),
       );
-    } catch (_) {
+    } catch (error) {
+      // Swallowing this is what hid the voice-note outage for weeks: the
+      // user saw a banner and the console said nothing usable.
+      ChatLog.diagnostic('streak send failed', error);
       if (!mounted) return;
       setState(() => _isSending = false);
       ScaffoldMessenger.of(context).showSnackBar(
