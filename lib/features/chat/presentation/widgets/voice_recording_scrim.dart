@@ -198,9 +198,12 @@ class VoiceRecordingScrim extends StatelessWidget {
                       child: Container(
                         width: 44,
                         height: 44,
-                        decoration: BoxDecoration(
+                        decoration: const BoxDecoration(
                           shape: BoxShape.circle,
-                          color: _danger.withValues(alpha: 0.18),
+                          // Opaque white: the red belongs to the glyph,
+                          // which needs a solid ground to read against the
+                          // blurred scrim behind it.
+                          color: Colors.white,
                         ),
                         child: const Icon(
                           Icons.delete_outline_rounded,
@@ -216,7 +219,10 @@ class VoiceRecordingScrim extends StatelessWidget {
                           duration: const Duration(milliseconds: 150),
                           opacity: isCancelling ? 1.0 : 0.75,
                           child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                            // Left-aligned, so the text reads as this
+                            // button's caption rather than drifting into
+                            // the middle of the row.
+                            mainAxisAlignment: MainAxisAlignment.start,
                             children: [
                               if (!isCancelling)
                                 const Icon(

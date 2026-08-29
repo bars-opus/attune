@@ -469,6 +469,72 @@ void main() {
       expect(recorder.stopped, isFalse, reason: 'discard is not a send');
     });
 
+    testWidgets('the delete icon sits on a plain white disc', (tester) async {
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final box = tester.widget<Container>(
+        find.descendant(
+          of: find.byKey(const ValueKey('voice-scrim-delete')),
+          matching: find.byType(Container),
+        ),
+      );
+      final decoration = box.decoration! as BoxDecoration;
+      // Opaque white, not a translucent red wash: the red belongs to the
+      // glyph, which needs a solid ground to read against the scrim.
+      expect(decoration.color, Colors.white);
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
+    testWidgets('the cancel hint sits beside the delete button', (
+      tester,
+    ) async {
+      // Centred in the leftover space, the text drifted far from the
+      // button it labels. It reads as that button's caption only when it
+      // is adjacent to it.
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final deleteRight =
+          tester
+              .getRect(find.byKey(const ValueKey('voice-scrim-delete')))
+              .right;
+      final hintLeft =
+          tester
+              .getRect(find.byKey(const ValueKey('voice-scrim-cancel-hint')))
+              .left;
+
+      expect(
+        hintLeft - deleteRight,
+        lessThan(48.0),
+        reason: 'hint starts at $hintLeft, button ends at $deleteRight',
+      );
+      expect(
+        hintLeft,
+        greaterThan(deleteRight),
+        reason: 'hint sits to the right of the button, not over it',
+      );
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
     testWidgets('the composer stops hit-testing under the scrim', (
       tester,
     ) async {
