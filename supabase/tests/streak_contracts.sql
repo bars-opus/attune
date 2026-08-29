@@ -224,4 +224,33 @@ BEGIN
   PERFORM set_config('request.jwt.claims', '', true);
 END $$;
 
+-- 8. authenticated can write the columns a streak send touches.
+--
+-- Supabase grants table privileges platform-side when a table is created.
+-- A column added by a LATER migration is not covered, and because
+-- messages already carries column-level grants, Postgres then demands a
+-- column privilege for every column written -- so inserting
+-- streak_views_remaining failed with 42501 in production while passing
+-- locally, where the test harness grants every column blanket.
+DO $$
+DECLARE v_missing text;
+BEGIN
+  SELECT string_agg(c, ', ') INTO v_missing
+  FROM unnest(ARRAY[
+    'relationship_id', 'sender_id', 'client_message_id', 'content',
+    'media_type', 'media_url', 'streak_views_remaining'
+  ]) AS c
+  WHERE NOT has_column_privilege('authenticated', 'public.messages', c, 'INSERT');
+
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: authenticated cannot INSERT messages columns: %',
+      v_missing;
+  END IF;
+
+  IF NOT has_table_privilege('authenticated', 'public.streak_clips', 'INSERT') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: authenticated cannot INSERT streak_clips';
+  END IF;
+END $$;
+
 ROLLBACK;
