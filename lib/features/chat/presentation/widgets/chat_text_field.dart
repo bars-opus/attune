@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:attune/core/services/media/voice_recorder_service.dart';
+import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/core/ui/motion/scale_pop.dart';
@@ -36,6 +37,7 @@ class ChatTextField extends StatefulWidget {
     this.focusNode,
     this.sendButtonColor,
     this.onSendButtonColor,
+    this.haptics = const SystemHaptics(),
   });
 
   final TextEditingController controller;
@@ -91,6 +93,10 @@ class ChatTextField extends StatefulWidget {
   /// default IconButtonTheme already supplies the right onPrimary pairing).
   final Color? onSendButtonColor;
 
+  /// Injected so tests can count the three transitions that must buzz:
+  /// press-to-record, swipe-to-lock, and crossing into cancel.
+  final Haptics haptics;
+
   /// Optional external focus node — e.g. so a caller can programmatically
   /// focus the field (tapping "Reply" on a comment) without owning its
   /// own separately-created, never-attached FocusNode.
@@ -107,6 +113,7 @@ class ChatTextField extends StatefulWidget {
 /// full, comfortable ~40x40 tap target via a transparent HitTestBehavior.
 class _ComposerIcon extends StatelessWidget {
   const _ComposerIcon({
+    super.key,
     required this.icon,
     required this.onTap,
     this.tooltip,
@@ -366,6 +373,7 @@ class _ChatTextFieldState extends State<ChatTextField> {
     _startInFlight = true;
     _releasedDuringStart = false;
     _dragOffset = Offset.zero;
+    widget.haptics.light();
 
     final recorder = (widget.recorderFactory ?? VoiceRecorderService.new)();
     final granted = await recorder.requestPermission();
@@ -484,6 +492,10 @@ class _ChatTextFieldState extends State<ChatTextField> {
       return;
     }
 
+    // Rising edge only: firing on every move while the finger is left of
+    // the threshold turns one gesture into a continuous rattle.
+    if (isCancelling && !_isCancelling) widget.haptics.medium();
+
     if (isCancelling != _isCancelling || lockProgress != _lockProgress) {
       setState(() {
         _isCancelling = isCancelling;
@@ -496,6 +508,7 @@ class _ChatTextFieldState extends State<ChatTextField> {
   /// and recording continues under the bar's delete/pause/send controls.
   void _lockRecording() {
     if (_stage == VoiceRecordingStage.locked) return;
+    widget.haptics.medium();
     setState(() {
       _stage = VoiceRecordingStage.locked;
       _isCancelling = false;
@@ -628,200 +641,197 @@ class _ChatTextFieldState extends State<ChatTextField> {
     // beside the bar. Previously the bar replaced the entire icon
     // row, so the mic, its halo and its progress ring were not on
     // screen at all while recording.
-    final micSlot =
-        Semantics(
-          button: true,
-          label: 'Hold to record a voice message',
-          // Press, not long-press: the mic is a
-          // press-and-hold control, so binding start to
-          // onLongPressStart gave it a ~500ms dead zone in
-          // which the user is already holding, sees nothing,
-          // and gets no recording at all if they release.
-          // A raw pan recognizer starts on touch-down and
-          // reports drags in the same gesture, which is what
-          // lock (up) and cancel (left) need.
-          // A raw Listener rather than GestureDetector's
-          // pan callbacks: pan does not report an end for a
-          // press with no movement, so a quick
-          // press-and-release never stopped the recorder.
-          // Pointer events always pair down with up/cancel.
-          child: Listener(
-            onPointerDown: (_) => unawaited(_startRecording()),
-            onPointerMove:
-                (event) => _onRecordPointerMove(event.delta),
-            onPointerUp: (_) => unawaited(_onRecordDragEnd()),
-            onPointerCancel:
-                (_) => unawaited(_onRecordDragEnd()),
-            behavior: HitTestBehavior.opaque,
-            child: Opacity(
-              opacity: widget.enabled ? 1.0 : 0.38,
-              child: SizedBox(
-                width: _ComposerIcon._tapSize,
-                height: _ComposerIcon._tapSize,
-                child: Center(
-                  child: VoiceMicHalo(
-                    amplitude:
-                        _levels.isEmpty ? 0.0 : _levels.last,
-                    isRecording: _isRecording,
-                    progress:
-                        _elapsed.inMilliseconds /
-                        VoiceRecorderService
-                            .maxDuration
-                            .inMilliseconds,
-                    child: IconTheme.merge(
-                      data: IconThemeData(
-                        color: colorScheme.onSurfaceVariant,
-                        size: 24,
-                      ),
-                      child: IconCrossfade(
-                        child: Icon(
-                          _isRecording
-                              ? Icons.mic_rounded
-                              : Icons.mic_none_rounded,
-                          key: ValueKey(_isRecording),
-                        ),
-                      ),
+    final micSlot = Semantics(
+      button: true,
+      label: 'Hold to record a voice message',
+      // Press, not long-press: the mic is a
+      // press-and-hold control, so binding start to
+      // onLongPressStart gave it a ~500ms dead zone in
+      // which the user is already holding, sees nothing,
+      // and gets no recording at all if they release.
+      // A raw pan recognizer starts on touch-down and
+      // reports drags in the same gesture, which is what
+      // lock (up) and cancel (left) need.
+      // A raw Listener rather than GestureDetector's
+      // pan callbacks: pan does not report an end for a
+      // press with no movement, so a quick
+      // press-and-release never stopped the recorder.
+      // Pointer events always pair down with up/cancel.
+      child: Listener(
+        onPointerDown: (_) => unawaited(_startRecording()),
+        onPointerMove: (event) => _onRecordPointerMove(event.delta),
+        onPointerUp: (_) => unawaited(_onRecordDragEnd()),
+        onPointerCancel: (_) => unawaited(_onRecordDragEnd()),
+        behavior: HitTestBehavior.opaque,
+        child: Opacity(
+          opacity: widget.enabled ? 1.0 : 0.38,
+          child: SizedBox(
+            width: _ComposerIcon._tapSize,
+            height: _ComposerIcon._tapSize,
+            child: Center(
+              child: VoiceMicHalo(
+                amplitude: _levels.isEmpty ? 0.0 : _levels.last,
+                isRecording: _isRecording,
+                isLocked: _stage == VoiceRecordingStage.locked,
+                progress:
+                    _elapsed.inMilliseconds /
+                    VoiceRecorderService.maxDuration.inMilliseconds,
+                // While recording, VoiceMicHalo sets onPrimary against
+                // its filled disc; overriding it here would paint the
+                // glyph the same colour as the surface behind it.
+                child: IconTheme.merge(
+                  data: IconThemeData(
+                    color: _isRecording ? null : colorScheme.onSurfaceVariant,
+                    size: 24,
+                  ),
+                  child: IconCrossfade(
+                    child: Icon(
+                      _isRecording ? Icons.mic_rounded : Icons.mic_none_rounded,
+                      key: ValueKey(_isRecording),
                     ),
                   ),
                 ),
               ),
             ),
           ),
-        );
+        ),
+      ),
+    );
 
     final composer = Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
       child:
-            _isRecording
-                ? _RecordingComposer(
-                  elapsed: _elapsed,
-                  amplitude: _levels.isEmpty ? 0.0 : _levels.last,
-                  levels: _levels,
-                  isCancelling: _isCancelling,
-                  stage: _stage,
-                  isPaused: _isPaused,
-                  micSlot: micSlot,
-                  onCancel: () => unawaited(_cancelRecording()),
-                  onTogglePause: () => unawaited(_togglePause()),
-                  onSend: () => unawaited(_finishRecording()),
-                )
-                : Container(
-                  constraints: const BoxConstraints(minHeight: 54),
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surface,
-                    border: Border.all(color: colorScheme.onSurface, width: .2),
-                    borderRadius: BorderRadius.circular(
-                      BorderRadiusTokens.full,
-                    ),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      if (leadingAction != null) ...[
-                        leadingAction,
-                        const SizedBox(width: 6),
-                      ],
-                      Expanded(
-                        child: TextField(
-                          controller: widget.controller,
-                          focusNode: widget.focusNode,
-                          enabled: widget.enabled,
-                          minLines: 1,
-                          maxLines: 5,
-                          textInputAction: TextInputAction.newline,
-                          onSubmitted: (_) => _handleSend(),
-                          style: Theme.of(context).textTheme.bodyLarge
-                              ?.copyWith(fontSize: 18, height: 1.25),
-                          decoration: InputDecoration(
-                            hintText: widget.hintText,
-                            hintStyle: Theme.of(
-                              context,
-                            ).textTheme.bodyLarge?.copyWith(
-                              color: colorScheme.onSurface.withValues(
-                                alpha: 0.5,
-                              ),
-                              fontSize: 14,
-                            ),
-                            isDense: true,
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            disabledBorder: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(
-                              vertical: Spacing.sm,
-                              horizontal: Spacing.sm,
-                            ),
+          _isRecording
+              ? _RecordingComposer(
+                // Mirrors the idle row's trailing icons exactly: games,
+                // plus the send button it shows when the mic is hidden.
+                trailingSlots:
+                    (widget.showGames ? 1 : 0) +
+                    (widget.showVoiceMessage ? 0 : 1),
+                elapsed: _elapsed,
+                amplitude: _levels.isEmpty ? 0.0 : _levels.last,
+                levels: _levels,
+                isCancelling: _isCancelling,
+                stage: _stage,
+                isPaused: _isPaused,
+                micSlot: micSlot,
+                onCancel: () => unawaited(_cancelRecording()),
+                onTogglePause: () => unawaited(_togglePause()),
+                onSend: () => unawaited(_finishRecording()),
+              )
+              : Container(
+                constraints: const BoxConstraints(minHeight: 54),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  border: Border.all(color: colorScheme.onSurface, width: .2),
+                  borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    if (leadingAction != null) ...[
+                      leadingAction,
+                      const SizedBox(width: 6),
+                    ],
+                    Expanded(
+                      child: TextField(
+                        controller: widget.controller,
+                        focusNode: widget.focusNode,
+                        enabled: widget.enabled,
+                        minLines: 1,
+                        maxLines: 5,
+                        textInputAction: TextInputAction.newline,
+                        onSubmitted: (_) => _handleSend(),
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontSize: 18,
+                          height: 1.25,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: widget.hintText,
+                          hintStyle: Theme.of(
+                            context,
+                          ).textTheme.bodyLarge?.copyWith(
+                            color: colorScheme.onSurface.withValues(alpha: 0.5),
+                            fontSize: 14,
+                          ),
+                          isDense: true,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: Spacing.sm,
+                            horizontal: Spacing.sm,
                           ),
                         ),
                       ),
-                      if (widget.showTranslator)
-                        AnimatedSize(
+                    ),
+                    if (widget.showTranslator)
+                      AnimatedSize(
+                        duration:
+                            reduceMotionOf(context)
+                                ? Duration.zero
+                                : const Duration(milliseconds: 200),
+                        curve: Curves.easeOutCubic,
+                        alignment: Alignment.centerLeft,
+                        child: AnimatedOpacity(
                           duration:
                               reduceMotionOf(context)
                                   ? Duration.zero
-                                  : const Duration(milliseconds: 200),
-                          curve: Curves.easeOutCubic,
-                          alignment: Alignment.centerLeft,
-                          child: AnimatedOpacity(
-                            duration:
-                                reduceMotionOf(context)
-                                    ? Duration.zero
-                                    : const Duration(milliseconds: 150),
-                            opacity: _hasText ? 1.0 : 0.0,
-                            child:
-                                _hasText
-                                    ? _ComposerIcon(
-                                      icon: Icons.help_outline_rounded,
-                                      onTap:
-                                          widget.enabled
-                                              ? widget.onOpenTranslator
-                                              : null,
-                                      tooltip: 'Help me say this',
-                                    )
-                                    : const SizedBox(
-                                      height: _ComposerIcon._tapSize,
-                                    ),
+                                  : const Duration(milliseconds: 150),
+                          opacity: _hasText ? 1.0 : 0.0,
+                          child:
+                              _hasText
+                                  ? _ComposerIcon(
+                                    icon: Icons.help_outline_rounded,
+                                    onTap:
+                                        widget.enabled
+                                            ? widget.onOpenTranslator
+                                            : null,
+                                    tooltip: 'Help me say this',
+                                  )
+                                  : const SizedBox(
+                                    height: _ComposerIcon._tapSize,
+                                  ),
+                        ),
+                      ),
+                    if (!_hasText && showAttachSheet)
+                      _ComposerIcon(
+                        icon: Icons.add_circle_outline_rounded,
+                        onTap:
+                            widget.enabled
+                                ? () => _handleAttachTap(context)
+                                : null,
+                        tooltip: 'More',
+                      ),
+                    if (!_hasText && widget.showVoiceMessage) micSlot,
+                    if (!_hasText && widget.showGames)
+                      _ComposerIcon(
+                        icon: Icons.sports_esports_outlined,
+                        onTap: widget.enabled ? widget.onOpenGames : null,
+                        tooltip: 'Games',
+                      ),
+                    if (_hasText || !widget.showVoiceMessage)
+                      _ComposerIcon(
+                        icon: null,
+                        onTap: widget.enabled && _hasText ? _handleSend : null,
+                        tooltip: 'Send message',
+                        filled: _hasText,
+                        fillColor:
+                            widget.sendButtonColor ?? colorScheme.primary,
+                        iconColor: widget.onSendButtonColor,
+                        child: IconCrossfade(
+                          child: ScalePop(
+                            key: const ValueKey('send'),
+                            trigger: _sendPulse,
+                            child: const Icon(Icons.send_rounded),
                           ),
                         ),
-                      if (!_hasText && showAttachSheet)
-                        _ComposerIcon(
-                          icon: Icons.add_circle_outline_rounded,
-                          onTap:
-                              widget.enabled
-                                  ? () => _handleAttachTap(context)
-                                  : null,
-                          tooltip: 'More',
-                        ),
-                      if (!_hasText && widget.showVoiceMessage)
-                        micSlot,
-                      if (!_hasText && widget.showGames)
-                        _ComposerIcon(
-                          icon: Icons.sports_esports_outlined,
-                          onTap: widget.enabled ? widget.onOpenGames : null,
-                          tooltip: 'Games',
-                        ),
-                      if (_hasText || !widget.showVoiceMessage)
-                        _ComposerIcon(
-                          icon: null,
-                          onTap:
-                              widget.enabled && _hasText ? _handleSend : null,
-                          tooltip: 'Send message',
-                          filled: _hasText,
-                          fillColor:
-                              widget.sendButtonColor ?? colorScheme.primary,
-                          iconColor: widget.onSendButtonColor,
-                          child: IconCrossfade(
-                            child: ScalePop(
-                              key: const ValueKey('send'),
-                              trigger: _sendPulse,
-                              child: const Icon(Icons.send_rounded),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
+              ),
     );
 
     return SafeArea(
@@ -864,6 +874,7 @@ class _RecordingComposer extends StatelessWidget {
     required this.stage,
     required this.isPaused,
     required this.micSlot,
+    required this.trailingSlots,
     this.onCancel,
     this.onTogglePause,
     this.onSend,
@@ -876,6 +887,10 @@ class _RecordingComposer extends StatelessWidget {
   final VoiceRecordingStage stage;
   final bool isPaused;
   final Widget micSlot;
+
+  /// How many icons the idle composer draws AFTER the mic. Reserved here
+  /// so the mic does not shift horizontally when recording starts.
+  final int trailingSlots;
   final VoidCallback? onCancel;
   final VoidCallback? onTogglePause;
   final VoidCallback? onSend;
@@ -899,6 +914,28 @@ class _RecordingComposer extends StatelessWidget {
         ),
         const SizedBox(width: Spacing.sm),
         micSlot,
+        // Matches the idle composer's inner horizontal padding, which the
+        // recording row does not otherwise have. Without it the mic sits
+        // 6px right of where the finger pressed it.
+        const SizedBox(width: 6),
+        // The trailing icons the idle composer draws to the right of the
+        // mic (games, send) are replaced one-for-one, so the mic keeps its
+        // horizontal position when recording begins. The finger is already
+        // on that button — moving it under the touch makes the lock and
+        // cancel drags read from a shifted origin.
+        for (var i = 0; i < trailingSlots; i++)
+          if (i == 0 && stage == VoiceRecordingStage.held)
+            _ComposerIcon(
+              key: const ValueKey('voice-held-send'),
+              icon: Icons.arrow_upward_rounded,
+              onTap: onSend,
+              tooltip: 'Send',
+            )
+          else
+            const SizedBox(
+              width: _ComposerIcon._tapSize,
+              height: _ComposerIcon._tapSize,
+            ),
       ],
     );
   }

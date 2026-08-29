@@ -17,6 +17,7 @@ class VoiceMicHalo extends StatelessWidget {
     required this.isRecording,
     required this.child,
     this.progress = 0,
+    this.isLocked = false,
   });
 
   /// 0..1 of the current input level.
@@ -27,6 +28,11 @@ class VoiceMicHalo extends StatelessWidget {
   /// minutes, and without this the user only learns they were close when
   /// the recorder cuts them off.
   final double progress;
+
+  /// Once locked the finger has left the button, so the halo and the
+  /// ring are noise: the bar's own controls own that state. The disc
+  /// stays so the composer keeps its shape.
+  final bool isLocked;
 
   final Widget child;
 
@@ -48,36 +54,43 @@ class VoiceMicHalo extends StatelessWidget {
       children: [
         // Behind the disc and translucent, so a loud moment reads as the
         // button swelling rather than as a second element appearing.
-        AnimatedContainer(
-          key: const ValueKey('voice-mic-halo'),
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOut,
-          width: halo,
-          height: halo,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: primary.withValues(alpha: 0.22),
+        if (!isLocked)
+          AnimatedContainer(
+            key: const ValueKey('voice-mic-halo'),
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOut,
+            width: halo,
+            height: halo,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: primary.withValues(alpha: 0.22),
+            ),
           ),
-        ),
         // Between the halo and the disc, so the sweep reads as the
         // button's own edge rather than a separate ring floating near it.
-        SizedBox(
-          width: _disc + 8,
-          height: _disc + 8,
-          child: CircularProgressIndicator(
-            value: progress.clamp(0.0, 1.0),
-            strokeWidth: 3,
-            backgroundColor: primary.withValues(alpha: 0.25),
-            valueColor: AlwaysStoppedAnimation(primary),
+        if (!isLocked)
+          SizedBox(
+            width: _disc + 8,
+            height: _disc + 8,
+            child: CircularProgressIndicator(
+              value: progress.clamp(0.0, 1.0),
+              strokeWidth: 3,
+              backgroundColor: primary.withValues(alpha: 0.25),
+              valueColor: AlwaysStoppedAnimation(primary),
+            ),
           ),
-        ),
         Container(
           key: const ValueKey('voice-mic-disc'),
           width: _disc,
           height: _disc,
           decoration: BoxDecoration(shape: BoxShape.circle, color: primary),
           child: IconTheme.merge(
-            data: const IconThemeData(color: Colors.white, size: 24),
+            // onPrimary, not white: in dark mode the primary disc is
+            // light and a white glyph vanishes into it.
+            data: IconThemeData(
+              color: Theme.of(context).colorScheme.onPrimary,
+              size: 24,
+            ),
             child: Center(child: child),
           ),
         ),

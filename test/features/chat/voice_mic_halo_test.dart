@@ -90,6 +90,54 @@ void main() {
       )));
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
+
+    testWidgets('the mic glyph follows onPrimary, not a hardcoded white',
+        (tester) async {
+      // Asserted in a scheme whose onPrimary is BLACK: with a light
+      // primary disc, a hardcoded white glyph vanishes into it. A
+      // light-mode assertion cannot catch this, since onPrimary is white
+      // there and both implementations agree.
+      await tester.pumpWidget(MaterialApp(
+        theme: ThemeData(
+          colorScheme: const ColorScheme.dark(
+            primary: Color(0xFFB8E6C8),
+            onPrimary: Color(0xFF11221A),
+          ),
+        ),
+        home: const Scaffold(
+          body: Center(
+            child: VoiceMicHalo(
+              amplitude: 0.3,
+              isRecording: true,
+              child: Icon(Icons.mic_rounded),
+            ),
+          ),
+        ),
+      ));
+
+      final theme = tester.widget<IconTheme>(
+        find.descendant(
+          of: find.byKey(const ValueKey('voice-mic-disc')),
+          matching: find.byType(IconTheme),
+        ),
+      );
+      expect(theme.data.color, const Color(0xFF11221A));
+    });
+
+    testWidgets('the ring and halo disappear once locked', (tester) async {
+      // Nothing is holding a locked take, so a progress ring around a
+      // button the finger has left is noise — the bar owns that state.
+      await tester.pumpWidget(_wrap(const VoiceMicHalo(
+        amplitude: 0.3,
+        isRecording: true,
+        isLocked: true,
+        progress: 0.4,
+        child: Icon(Icons.mic_rounded),
+      )));
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.byKey(const ValueKey('voice-mic-halo')), findsNothing);
+    });
   });
 
   group('the lock pill', () {
