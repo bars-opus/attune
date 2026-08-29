@@ -12,6 +12,12 @@
     <!-- record: voice messages in chat (VoiceRecorderService). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
+    <!-- vibrate: HapticFeedback throughout the app (streak capture, the
+         focused action menu, chat delight moments). Without this Android
+         SILENTLY ignores every haptic call - no error, no log, the taps
+         simply never land. Not a runtime permission: install-time only. -->
+    <uses-permission android:name="android.permission.VIBRATE"/>
+
     <!-- camera: ephemeral photo/video capture (EphemeralCameraScreen), and
          image_picker's fromCamera path. -->
     <uses-permission android:name="android.permission.CAMERA"/>

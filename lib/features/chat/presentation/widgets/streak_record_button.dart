@@ -1,6 +1,6 @@
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:attune/core/ui/feedback/haptics.dart';
 
 /// The streak capture control.
 ///
@@ -37,6 +37,7 @@ class StreakRecordButton extends StatelessWidget {
     this.isPreparing = false,
     this.isLocked = false,
     this.onStop,
+    this.haptics = const SystemHaptics(),
   });
 
   /// 0..1 through the CURRENT segment, not the whole recording.
@@ -59,6 +60,9 @@ class StreakRecordButton extends StatelessWidget {
 
   /// Ends a locked recording.
   final VoidCallback? onStop;
+
+  /// Injectable so a test can assert taps land without a device.
+  final Haptics haptics;
 
   final VoidCallback onPressStart;
   final VoidCallback onPressEnd;
@@ -97,7 +101,7 @@ class StreakRecordButton extends StatelessWidget {
         // lock that started it: both are moments the user chose, where
         // the press that begins a take is incidental.
         if (isLocked) {
-          HapticFeedback.mediumImpact();
+          haptics.medium();
           onStop?.call();
           return;
         }
@@ -110,7 +114,7 @@ class StreakRecordButton extends StatelessWidget {
         // Light rather than medium: this fires the instant a finger lands
         // on the button, many times a session, and a heavier tap becomes
         // wearing quickly.
-        HapticFeedback.lightImpact();
+        haptics.light();
         onPressStart();
       },
       onPointerUp: (_) {

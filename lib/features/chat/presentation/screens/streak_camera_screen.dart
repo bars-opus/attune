@@ -10,7 +10,6 @@ import 'package:attune/features/chat/presentation/widgets/streak_review_sheet.da
 import 'package:attune/features/settings/data/streak_replay_preference.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
@@ -18,6 +17,7 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/animated_rolling_counter.dart';
 import 'package:video_player/video_player.dart';
 import 'package:attune/features/chat/presentation/widgets/streak_lock_hint.dart';
+import 'package:attune/core/ui/feedback/haptics.dart';
 
 /// Press-and-hold streak capture, auto-splitting into 60-second segments.
 ///
@@ -223,14 +223,14 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     if (StreakRecordingSession.shouldStopAt(_segments.length)) {
       _ticker?.cancel();
       if (mounted) setState(() => _isRecording = false);
-      unawaited(HapticFeedback.heavyImpact());
+      ref.read(hapticsProvider).medium();
       unawaited(_openReviewGuarded());
       return;
     }
 
     await controller.startVideoRecording();
     if (!mounted) return;
-    unawaited(HapticFeedback.selectionClick());
+    ref.read(hapticsProvider).selection();
     setState(() {
       _segmentElapsed = Duration.zero;
       _segmentStartedAt = DateTime.now();
@@ -699,7 +699,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
                                   event.delta.dy / kStreakLockDragDistance)
                               .clamp(0.0, 1.0);
                           if (next >= 1.0) {
-                            unawaited(HapticFeedback.mediumImpact());
+                            ref.read(hapticsProvider).medium();
                             setState(() {
                               _isLocked = true;
                               _lockDrag = 1;
@@ -721,6 +721,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
                           onPressEnd: () => unawaited(_onPressEnd()),
                           isLocked: _isLocked,
                           onStop: () => unawaited(_stopLockedRecording()),
+                          haptics: ref.read(hapticsProvider),
                         ),
                       ),
             ),

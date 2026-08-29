@@ -149,18 +149,10 @@ void main() {
       expect(src, contains('streak press while sending'));
     });
 
-    test('stopping a locked take is haptic', () {
-      final button = File(
-        'lib/features/chat/presentation/widgets/streak_record_button.dart',
-      ).readAsStringSync();
-
-      // Three moments deserve one: starting a take, locking it, stopping
-      // it. Only the first two had one.
-      final locked = RegExp(
-        r'if \(isLocked\) \{[\s\S]{0,200}?HapticFeedback',
-      ).hasMatch(button);
-      expect(locked, isTrue, reason: 'the stop tap must be felt');
-    });
+    // Haptics are asserted behaviourally in
+    // streak_record_button_test.dart, using FakeHaptics — a source check
+    // could not tell a haptic that fires once from one that fires every
+    // time, which was the reported symptom.
 
     test('the press haptic is not gated on the take actually starting', () {
       final button = File(

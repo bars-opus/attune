@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:attune/core/ui/feedback/haptics.dart';
+
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/chat/presentation/widgets/streak_record_button.dart';
 import 'package:flutter/material.dart';
@@ -234,13 +236,50 @@ void main() {
     );
   });
 
-  test('pressing fires a light haptic', () {
-    // Not observable in a widget test — HapticFeedback goes out over a
-    // platform channel with no recorded effect on the tree.
-    final src = File(
-      'lib/features/chat/presentation/widgets/streak_record_button.dart',
-    ).readAsStringSync();
-    expect(src, contains('HapticFeedback.lightImpact()'));
+  testWidgets('every press fires a haptic, not just the first',
+      (tester) async {
+    // Behavioural now that haptics are injectable: the source assertion
+    // this replaces could not tell a haptic that fires once from one that
+    // fires every time, which is exactly the reported symptom.
+    final haptics = FakeHaptics();
+
+    Widget build() => _wrap(StreakRecordButton(
+          progress: 0,
+          isRecording: false,
+          haptics: haptics,
+          onPressStart: () {},
+          onPressEnd: () {},
+        ));
+
+    for (var i = 1; i <= 3; i++) {
+      await tester.pumpWidget(build());
+      final gesture = await tester
+          .startGesture(tester.getCenter(find.byType(StreakRecordButton)));
+      await tester.pump(const Duration(milliseconds: 30));
+      await gesture.up();
+      await tester.pump();
+      expect(haptics.lightCount, i, reason: 'press $i produced no haptic');
+    }
+  });
+
+  testWidgets('stopping a locked take fires a medium haptic',
+      (tester) async {
+    final haptics = FakeHaptics();
+    await tester.pumpWidget(_wrap(StreakRecordButton(
+      progress: 0.5,
+      isRecording: true,
+      isLocked: true,
+      haptics: haptics,
+      onPressStart: () {},
+      onPressEnd: () {},
+      onStop: () {},
+    )));
+
+    await tester.tap(find.byType(StreakRecordButton));
+    await tester.pump();
+
+    expect(haptics.mediumCount, 1);
+    expect(haptics.lightCount, 0, reason: 'stopping is not a press');
   });
 
   testWidgets('the camera warming up shows in the ring, not a centre spinner',
