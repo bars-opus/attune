@@ -2,14 +2,31 @@ import 'dart:io';
 
 import 'package:attune/features/chat/presentation/widgets/streak_lock_hint.dart';
 import 'package:flutter/material.dart';
+import 'package:attune/features/chat/presentation/widgets/voice_lock_pill.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Widget _wrap(Widget child) => MaterialApp(
-      home: Scaffold(backgroundColor: Colors.black, body: Center(child: child)),
-    );
+  home: Scaffold(backgroundColor: Colors.black, body: Center(child: child)),
+);
 
 void main() {
   group('the lock hint', () {
+    testWidgets('the padlock is the voice recorder\'s pill', (tester) async {
+      // The same gesture in two features should present the same target:
+      // a white pill with the padlock over a chevron, not a dark disc with
+      // a bare padlock.
+      await tester.pumpWidget(_wrap(const StreakLockHint(dragProgress: 0)));
+
+      expect(find.byType(VoiceLockPill), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('voice-lock-chevron')),
+        findsOneWidget,
+        reason: 'the arrow below the padlock is what points the gesture',
+      );
+      // The one-time teach caption is the streak's own and stays.
+      expect(find.byKey(const ValueKey('streak-lock-caption')), findsOneWidget);
+    });
+
     testWidgets('shows a padlock and the swipe instruction', (tester) async {
       await tester.pumpWidget(_wrap(const StreakLockHint(dragProgress: 0)));
       await tester.pump();
@@ -18,8 +35,7 @@ void main() {
       expect(find.text('Swipe up to record hands-free'), findsOneWidget);
     });
 
-    testWidgets('the caption fades out but the padlock stays',
-        (tester) async {
+    testWidgets('the caption fades out but the padlock stays', (tester) async {
       // The instruction is a one-time teach; the padlock is the target the
       // finger is travelling towards and must survive the whole drag.
       await tester.pumpWidget(_wrap(const StreakLockHint(dragProgress: 0)));
@@ -34,19 +50,16 @@ void main() {
       expect(caption.opacity, 0);
     });
 
-    testWidgets('the padlock rises and tightens as the drag progresses',
-        (tester) async {
+    testWidgets('the padlock rises and tightens as the drag progresses', (
+      tester,
+    ) async {
       await tester.pumpWidget(_wrap(const StreakLockHint(dragProgress: 0)));
       await tester.pump();
-      final start = tester.getCenter(
-        find.byIcon(Icons.lock_outline_rounded),
-      );
+      final start = tester.getCenter(find.byIcon(Icons.lock_outline_rounded));
 
       await tester.pumpWidget(_wrap(const StreakLockHint(dragProgress: 0.9)));
       await tester.pump(const Duration(milliseconds: 200));
-      final near = tester.getCenter(
-        find.byIcon(Icons.lock_outline_rounded),
-      );
+      final near = tester.getCenter(find.byIcon(Icons.lock_outline_rounded));
 
       expect(
         near.dy,
@@ -60,9 +73,10 @@ void main() {
     late String src;
 
     setUpAll(() {
-      src = File(
-        'lib/features/chat/presentation/screens/streak_camera_screen.dart',
-      ).readAsStringSync();
+      src =
+          File(
+            'lib/features/chat/presentation/screens/streak_camera_screen.dart',
+          ).readAsStringSync();
     });
 
     test('an upward drag past the threshold locks the recording', () {
@@ -110,7 +124,9 @@ void main() {
       );
       expect(
         src,
-        isNot(contains('onPressed: (_isRecording && !_isLocked) || _isSending')),
+        isNot(
+          contains('onPressed: (_isRecording && !_isLocked) || _isSending'),
+        ),
         reason: 'hidden, not disabled',
       );
     });
@@ -155,13 +171,15 @@ void main() {
     // time, which was the reported symptom.
 
     test('the press haptic is not gated on the take actually starting', () {
-      final button = File(
-        'lib/features/chat/presentation/widgets/streak_record_button.dart',
-      ).readAsStringSync();
+      final button =
+          File(
+            'lib/features/chat/presentation/widgets/streak_record_button.dart',
+          ).readAsStringSync();
 
       // Silence reads as a dead button. A stuck flag downstream should
       // cost the recording, never the feedback that the tap landed.
-      final order = button.indexOf('HapticFeedback.lightImpact()') <
+      final order =
+          button.indexOf('HapticFeedback.lightImpact()') <
           button.indexOf('onPressStart()');
       expect(order, isTrue, reason: 'haptic fires before the start attempt');
     });

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/features/chat/presentation/widgets/voice_lock_pill.dart';
 import 'package:flutter/material.dart';
 
 /// How far up the finger must travel to lock a recording.
@@ -52,7 +53,6 @@ class _StreakLockHintState extends State<StreakLockHint> {
   @override
   Widget build(BuildContext context) {
     final t = widget.dragProgress.clamp(0.0, 1.0);
-    final primary = Theme.of(context).colorScheme.primary;
 
     return IgnorePointer(
       child: Column(
@@ -78,23 +78,10 @@ class _StreakLockHintState extends State<StreakLockHint> {
             ),
           ),
 
-          // Rises toward the finger and warms to primary as the threshold
-          // nears, so the gesture confirms itself before it completes.
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            curve: Curves.easeOut,
-            transform: Matrix4.translationValues(0, -16 * t, 0),
-            padding: const EdgeInsets.all(Spacing.sm),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Color.lerp(Colors.black38, primary, t),
-            ),
-            child: Icon(
-              Icons.lock_outline_rounded,
-              size: 20 + 6 * t,
-              color: Colors.white,
-            ),
-          ),
+          // The voice recorder's pill, shared verbatim: the same gesture
+          // in two features should present the same target. It owns its
+          // own rise and warming, so nothing is wrapped around it here.
+          VoiceLockPill(dragProgress: t),
         ],
       ),
     );
