@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'streak_record_button.dart';
+
 /// The mic button while recording: a filled primary disc with a soft halo
 /// that breathes with the speaker's voice.
 ///
@@ -36,9 +38,21 @@ class VoiceMicHalo extends StatelessWidget {
 
   final Widget child;
 
-  static const double _disc = 48;
-  static const double _haloMin = 56;
-  static const double _haloMax = 92;
+  /// Matched to StreakRecordButton: both are press-and-hold capture
+  /// controls, so a smaller mic reads as a lesser affordance.
+  static const double disc = StreakRecordButton.discDiameter;
+  static const double arcStroke = StreakRecordButton.arcStroke;
+  static const double arcDiameter =
+      StreakRecordButton.discDiameter + StreakRecordButton.gap * 2;
+
+  /// The halo swells outside the arc, so a loud moment is visible rather
+  /// than hidden underneath it.
+  static const double _haloMin = arcDiameter + 4;
+  static const double _haloMax = arcDiameter + 40;
+
+  /// The widest the control ever draws — the halo at full amplitude. The
+  /// scrim reserves this so a loud moment is never clipped.
+  static const double haloExtent = _haloMax;
 
   @override
   Widget build(BuildContext context) {
@@ -70,26 +84,28 @@ class VoiceMicHalo extends StatelessWidget {
         // button's own edge rather than a separate ring floating near it.
         if (!isLocked)
           SizedBox(
-            width: _disc + 8,
-            height: _disc + 8,
+            width: arcDiameter,
+            height: arcDiameter,
             child: CircularProgressIndicator(
               value: progress.clamp(0.0, 1.0),
-              strokeWidth: 3,
+              strokeWidth: arcStroke,
               backgroundColor: primary.withValues(alpha: 0.25),
               valueColor: AlwaysStoppedAnimation(primary),
             ),
           ),
         Container(
           key: const ValueKey('voice-mic-disc'),
-          width: _disc,
-          height: _disc,
+          width: disc,
+          height: disc,
           decoration: BoxDecoration(shape: BoxShape.circle, color: primary),
           child: IconTheme.merge(
             // onPrimary, not white: in dark mode the primary disc is
             // light and a white glyph vanishes into it.
             data: IconThemeData(
               color: Theme.of(context).colorScheme.onPrimary,
-              size: 24,
+              // Scaled with the larger disc: a 24px glyph on an 84px disc
+              // reads as a dot in a circle.
+              size: 34,
             ),
             child: Center(child: child),
           ),

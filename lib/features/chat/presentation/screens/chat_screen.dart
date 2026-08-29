@@ -474,7 +474,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
+  /// TEMPORARY -- set false while iterating on the recorder UI, so device
+  /// testing does not fill the conversation with throwaway voice notes.
+  /// Flip back to true when the recorder work is done.
+  static const bool _voiceSendEnabled = false;
+
   Future<void> _onVoiceMessageRecorded(VoiceRecording recording) async {
+    if (!_voiceSendEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Voice sending is off while the recorder is in dev'),
+          ),
+        );
+      }
+      return;
+    }
     await ref
         .read(chatControllerProvider(widget.conversation).notifier)
         .sendVoiceMessage(

@@ -75,16 +75,16 @@ class StreakRecordButton extends StatelessWidget {
   /// The disc grows into place as recording starts, rather than appearing
   /// at its final size — paired with the arc's entrance it reads as the
   /// control opening up rather than swapping shape.
-  static const double _discDiameter = 84;
+  static const double discDiameter = 84;
   static const double _discFrom = 64;
 
   /// Gap between the disc and the arc ringing it.
-  static const double _gap = Spacing.lg;
+  static const double gap = Spacing.lg;
 
-  static const double _arcStroke = 9;
+  static const double arcStroke = 9;
   static const double _ringStroke = 5;
 
-  double get _arcDiameter => _discDiameter + _gap * 2;
+  double get _arcDiameter => discDiameter + gap * 2;
 
   bool get _isBusy => isSending || isPreparing;
 
@@ -155,7 +155,7 @@ class StreakRecordButton extends StatelessWidget {
             else if (isRecording) ...[
               TweenAnimationBuilder<double>(
                 key: const ValueKey('streak-record-fill-entrance'),
-                tween: Tween(begin: _discFrom, end: _discDiameter),
+                tween: Tween(begin: _discFrom, end: discDiameter),
                 duration: const Duration(milliseconds: 260),
                 curve: Curves.easeOutBack,
                 builder:
@@ -200,7 +200,7 @@ class StreakRecordButton extends StatelessWidget {
                   height: _arcDiameter,
                   child: CircularProgressIndicator(
                     value: progress,
-                    strokeWidth: _arcStroke,
+                    strokeWidth: arcStroke,
                     backgroundColor: Colors.white24,
                     valueColor: AlwaysStoppedAnimation(primary),
                   ),

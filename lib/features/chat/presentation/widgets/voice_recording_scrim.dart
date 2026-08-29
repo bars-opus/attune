@@ -95,20 +95,29 @@ class VoiceRecordingScrim extends StatelessWidget {
               ),
               // Drawn at the mic's real position so the visible control and
               // the gesture's origin stay the same point.
+              // Expanded around the slot's CENTRE, not laid into the slot:
+              // the composer's mic box is a 40px icon target, which would
+              // clip the 84px disc and its ring down to icon size.
               Positioned.fromRect(
-                rect: micRect,
+                rect: Rect.fromCenter(
+                  center: micRect.center,
+                  width: VoiceMicHalo.haloExtent,
+                  height: VoiceMicHalo.haloExtent,
+                ),
                 child: Center(
                   child: VoiceMicHalo(
                     amplitude: amplitude,
                     isRecording: true,
                     progress: progress,
-                    child: const Icon(Icons.mic_rounded, size: 24),
+                    child: const Icon(Icons.mic_rounded),
                   ),
                 ),
               ),
               Positioned(
                 left: micRect.center.dx - VoiceLockPill.width / 2,
-                top: micRect.top - 62,
+                // Measured from the halo's top rather than the icon slot's,
+                // so the bigger ring cannot grow up into the pill.
+                top: micRect.center.dy - VoiceMicHalo.haloExtent / 2 - 24,
                 child: Opacity(
                   opacity: t,
                   child: VoiceLockPill(dragProgress: lockProgress),

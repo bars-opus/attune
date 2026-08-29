@@ -324,6 +324,38 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     });
 
+    testWidgets('the scrim draws the mic at its full size, unclipped', (
+      tester,
+    ) async {
+      // The composer's slot is a 40px icon box. Positioning the halo into
+      // that rect directly would clip the 84px disc and its ring down to
+      // icon size.
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        tester
+            .getSize(
+              find.descendant(
+                of: find.byType(VoiceRecordingScrim),
+                matching: find.byKey(const ValueKey('voice-mic-disc')),
+              ),
+            )
+            .width,
+        VoiceMicHalo.disc,
+      );
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
     testWidgets('the lock pill sits directly above the mic', (tester) async {
       final recorder = _FakeRecorder();
       await tester.pumpWidget(_harness(recorder, FakeHaptics()));
