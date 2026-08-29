@@ -79,5 +79,27 @@ void main() {
       // The only way out is now explicit, since cancel no longer leaves.
       expect(src, contains('Icons.close'));
     });
+
+    test('the record button reappears while sending', () {
+      // The ring is the only progress a streak upload shows. Hiding the
+      // button whenever a preview exists hid it for the entire send.
+      expect(
+        src,
+        contains('preview != null && !_isSending'),
+        reason: 'review hides the button; sending must not',
+      );
+    });
+
+    test('the lens can be flipped mid-recording', () {
+      // setDescription routes to setDescriptionWhileRecording, which both
+      // platform packages implement. Disposing the controller instead
+      // would end the take.
+      expect(src, contains('setDescription('));
+      expect(
+        src,
+        isNot(contains('if (_isRecording || _cameras.length < 2) return;')),
+        reason: 'flipping must not be blocked during a take',
+      );
+    });
   });
 }

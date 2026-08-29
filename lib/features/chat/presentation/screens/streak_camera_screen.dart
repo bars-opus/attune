@@ -106,9 +106,27 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
   }
 
   Future<void> _flipCamera() async {
-    if (_isRecording || _cameras.length < 2) return;
+    final controller = _controller;
+    if (controller == null || _cameras.length < 2) return;
+
     _cameraIndex = (_cameraIndex + 1) % _cameras.length;
-    await _controller?.dispose();
+
+    // While recording, swap the lens in place. Disposing and recreating
+    // the controller would end the take -- setDescription routes to
+    // setDescriptionWhileRecording, which both camera_avfoundation and
+    // camera_android_camerax implement.
+    if (_isRecording) {
+      try {
+        await controller.setDescription(_cameras[_cameraIndex]);
+      } on CameraException catch (error) {
+        // Not fatal: the take continues on the lens it was already using.
+        ChatLog.diagnostic('streak flip while recording failed', error);
+      }
+      if (mounted) setState(() {});
+      return;
+    }
+
+    await controller.dispose();
     _controller = null;
     await _startPreview();
   }
@@ -581,10 +599,14 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
           // Leaving the camera is now explicit: cancel returns to a live
           // viewfinder rather than exiting, so without this there would be
           // no way out once a take is staged.
+          // Below the status bar and notch rather than tight against the
+          // top edge, and a larger target: these are the only two controls
+          // on a full-bleed viewfinder.
           Positioned(
-            top: 16,
-            left: 16,
+            top: Spacing.xxl,
+            left: Spacing.md,
             child: IconButton(
+              iconSize: 32,
               onPressed: _isRecording || _isSending ? null : _closeCamera,
               icon: const Icon(Icons.close_rounded, color: Colors.white),
               tooltip: 'Close camera',
@@ -592,10 +614,15 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
           ),
 
           Positioned(
-            top: 16,
-            right: 16,
+            top: Spacing.xxl,
+            right: Spacing.md,
             child: IconButton(
-              onPressed: _isRecording ? null : _flipCamera,
+              iconSize: 32,
+              // Enabled DURING recording too: the camera plugin supports
+              // switching lenses mid-take on both platforms, and turning
+              // the camera round without stopping is most of the point of
+              // a hands-free streak.
+              onPressed: _isSending ? null : _flipCamera,
               icon: const Icon(
                 Icons.flip_camera_ios_outlined,
                 color: Colors.white,
@@ -614,7 +641,11 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
             bottom: Spacing.xxl * 2,
             child: Center(
               child:
-                  preview != null
+                  // Hidden while a take is under REVIEW -- the sheet owns
+                  // that moment -- but shown again during the send, where
+                  // the ring is the only progress the user gets. Keying on
+                  // the preview alone hid it for the whole upload.
+                  preview != null && !_isSending
                       ? const SizedBox.shrink()
                       : StreakRecordButton(
                         progress: progress.clamp(0.0, 1.0),
