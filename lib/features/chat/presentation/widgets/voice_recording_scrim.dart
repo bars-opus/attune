@@ -144,7 +144,11 @@ class VoiceRecordingScrim extends StatelessWidget {
                   child: ShakeTransition(
                     axis: Axis.vertical,
                     offset: 56,
-                    duration: const Duration(milliseconds: 620),
+                    // easeOutBack overshoots once and settles, rather than
+                    // elasticOut's repeated bounce — a single confident
+                    // arrival reads better on a control you are mid-hold on.
+                    curve: Curves.easeOutBack,
+                    duration: const Duration(milliseconds: 930),
                     child: VoiceLockPill(dragProgress: lockProgress),
                   ),
                 ),
@@ -199,7 +203,8 @@ class VoiceRecordingScrim extends StatelessWidget {
                 // rest, which is the direction the cancel drag goes.
                 child: ShakeTransition(
                   offset: 160,
-                  duration: const Duration(milliseconds: 620),
+                  curve: Curves.easeOutBack,
+                  duration: const Duration(milliseconds: 930),
                   child: Row(
                     children: [
                       const SizedBox(width: Spacing.md),
