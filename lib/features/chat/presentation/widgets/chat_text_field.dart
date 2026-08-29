@@ -372,6 +372,7 @@ class _ChatTextFieldState extends State<ChatTextField>
             animation: _scrimController,
             data: _scrimData,
             micRect: micRect,
+            onCancel: () => unawaited(_cancelRecording()),
           ),
     );
     _scrimEntry = entry;
@@ -934,7 +935,14 @@ class _ChatTextFieldState extends State<ChatTextField>
     // No Stack and no lock pill here any more: the scrim draws the pill
     // (and the mic) above the backdrop, positioned from the mic's measured
     // rect rather than from an arithmetic guess at its inset.
-    return SafeArea(top: false, child: composer);
+    // While recording, the scrim covers the composer but its icons still
+    // hit-test underneath: the scrim's delete button overlaps the leading
+    // icon, and whichever wins the gesture arena decides what a tap does.
+    // The mic keeps its own pointers — it owns the live gesture.
+    return SafeArea(
+      top: false,
+      child: IgnorePointer(ignoring: _isRecording, child: composer),
+    );
   }
 }
 

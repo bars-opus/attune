@@ -356,6 +356,190 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     });
 
+    testWidgets('the cancel hint sits inline with the ring', (tester) async {
+      // Vertically aligned with the mic, not stacked under the waveform:
+      // the hint describes a drag that starts at the ring, so it should
+      // read along the path the finger takes.
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final ring = tester.getCenter(
+        find.descendant(
+          of: find.byType(VoiceRecordingScrim),
+          matching: find.byKey(const ValueKey('voice-mic-disc')),
+        ),
+      );
+      final hint = tester.getCenter(
+        find.byKey(const ValueKey('voice-scrim-cancel-hint')),
+      );
+
+      expect(
+        (hint.dy - ring.dy).abs(),
+        lessThan(4.0),
+        reason: 'hint at $hint is not inline with the ring at $ring',
+      );
+      expect(hint.dx, lessThan(ring.dx), reason: 'hint sits left of the ring');
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
+    testWidgets('a red delete button sits at the left end of that row', (
+      tester,
+    ) async {
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final delete = find.byKey(const ValueKey('voice-scrim-delete'));
+      expect(delete, findsOneWidget);
+
+      final hint = tester.getCenter(
+        find.byKey(const ValueKey('voice-scrim-cancel-hint')),
+      );
+      final deleteCentre = tester.getCenter(delete);
+      expect(
+        deleteCentre.dx,
+        lessThan(hint.dx),
+        reason: 'delete sits at the far left, before the hint',
+      );
+      expect(
+        (deleteCentre.dy - hint.dy).abs(),
+        lessThan(4.0),
+        reason: 'delete is on the same row as the hint',
+      );
+
+      // Red, so its meaning is legible before the label is read. A bare
+      // isNotNull check passes for white, which is the whole point of the
+      // colour.
+      final icon = tester.widget<Icon>(
+        find.descendant(of: delete, matching: find.byType(Icon)),
+      );
+      final colour = icon.color!;
+      expect(colour.r, greaterThan(0.7), reason: 'dominant red channel');
+      expect(colour.g, lessThan(0.6), reason: 'not white or grey');
+      expect(colour.b, lessThan(0.6));
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
+    testWidgets('tapping delete actually discards the take', (tester) async {
+      // The scrim sits under an IgnorePointer so it never steals the drag
+      // that lock and cancel read from. A tap target added inside that
+      // subtree is decorative unless it is deliberately excluded.
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // Finger up first: the delete button is for a hold that has already
+      // been locked or released, not a competitor to the live gesture.
+      await gesture.moveBy(const Offset(0, -80));
+      await tester.pump(const Duration(milliseconds: 16));
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      await tester.tap(find.byKey(const ValueKey('voice-scrim-delete')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        recorder.cancelled,
+        isTrue,
+        reason: 'the delete button must discard, not merely render',
+      );
+      expect(recorder.stopped, isFalse, reason: 'discard is not a send');
+    });
+
+    testWidgets('the composer stops hit-testing under the scrim', (
+      tester,
+    ) async {
+      // The scrim's delete button overlaps the composer's leading icon.
+      // Both hit-test unless the covered composer opts out, and whichever
+      // wins the arena decides what a tap does -- which silently made an
+      // earlier version of the delete test pass through the wrong widget.
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // Anchored on the games icon, which the harness renders to the
+      // right of the mic and which the scrim covers.
+      final composerIgnores = find.ancestor(
+        of: find.byIcon(Icons.sports_esports_outlined),
+        matching: find.byType(IgnorePointer),
+      );
+      expect(
+        tester
+            .widgetList<IgnorePointer>(composerIgnores)
+            .any((w) => w.ignoring),
+        isTrue,
+        reason: 'composer icons must not hit-test beneath the scrim',
+      );
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
+    testWidgets('the lock pill clears the ring by a margin', (tester) async {
+      // A pill resting on the ring's edge reads as part of it. The gap has
+      // to survive the ring growing, which is what pulled it down before.
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final pillBottom = tester.getRect(find.byType(VoiceLockPill)).bottom;
+      final ringTop =
+          tester
+              .getRect(
+                find.descendant(
+                  of: find.byType(VoiceRecordingScrim),
+                  matching: find.byType(CircularProgressIndicator),
+                ),
+              )
+              .top;
+
+      expect(
+        ringTop - pillBottom,
+        greaterThanOrEqualTo(8.0),
+        reason:
+            'pill bottom $pillBottom sits too close to ring top '
+            '$ringTop',
+      );
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
     testWidgets('the lock pill sits directly above the mic', (tester) async {
       final recorder = _FakeRecorder();
       await tester.pumpWidget(_harness(recorder, FakeHaptics()));

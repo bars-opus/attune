@@ -8,19 +8,10 @@ import 'voice_lock_pill.dart';
 import 'voice_mic_halo.dart';
 import 'voice_recording_bar.dart';
 
-/// The dimmed backdrop shown while a voice note is being recorded, using
-/// the same treatment as the focused message-action menu: a 12px blur
-/// under black at 30%.
-///
-/// Deliberately an Overlay entry rather than a Navigator route, which is
-/// how the focused menu does it. A route mid-gesture would move the
-/// pointer to a new Navigator layer and break the drag that lock and
-/// cancel both read from; an overlay leaves the composer's gesture in one
-/// uninterrupted stream.
-///
-/// Against a dark scrim the recording UI needs no surface of its own, so
-/// the counter, the waveform and the slide-to-cancel hint sit directly on
-/// the backdrop in white.
+/// Fixed rather than colorScheme.error: the scrim paints its own dark
+/// ground, so a theme error colour tuned for a light surface can wash out
+/// against it.
+const Color _danger = Color(0xFFFF5A5A);
 
 /// The live values the scrim draws, pushed from the composer through a
 /// notifier so the overlay rebuilds on its own schedule.
@@ -49,12 +40,26 @@ class VoiceScrimData {
   final double lockProgress;
 }
 
+/// The dimmed backdrop shown while a voice note is being recorded, using
+/// the same treatment as the focused message-action menu: a 12px blur
+/// under black.
+///
+/// Deliberately an Overlay entry rather than a Navigator route, which is
+/// how the focused menu does it. A route mid-gesture would move the
+/// pointer to a new Navigator layer and break the drag that lock and
+/// cancel both read from; an overlay leaves the composer's gesture in one
+/// uninterrupted stream.
+///
+/// Against a dark scrim the recording UI needs no surface of its own, so
+/// the counter, the waveform and the slide-to-cancel hint sit directly on
+/// the backdrop in white.
 class VoiceRecordingScrim extends StatelessWidget {
   const VoiceRecordingScrim({
     super.key,
     required this.animation,
     required this.data,
     required this.micRect,
+    this.onCancel,
   });
 
   final Animation<double> animation;
@@ -64,6 +69,10 @@ class VoiceRecordingScrim extends StatelessWidget {
   /// here rather than left in the composer so it sits ABOVE the backdrop —
   /// under it the control the finger is holding reads as dimmed out.
   final Rect micRect;
+
+  /// Discards the take. The delete button is a tap alternative to the
+  /// slide gesture, not a replacement for it.
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -77,33 +86,37 @@ class VoiceRecordingScrim extends StatelessWidget {
         final isCancelling = data.value.isCancelling;
         final progress = data.value.progress;
         final lockProgress = data.value.lockProgress;
-        return IgnorePointer(
-          // The composer beneath owns the gesture: this is a backdrop, not
-          // a target. Swallowing pointers here would kill the very drag
-          // the scrim exists to accompany.
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: ClipRect(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 12 * t, sigmaY: 12 * t),
-                    child: Container(
-                      color: Colors.black.withValues(alpha: 0.55 * t),
-                    ),
+
+        // Each layer opts out of hit testing individually rather than the
+        // whole scrim sitting under one IgnorePointer. A blanket outer one
+        // blocks its entire subtree, so a nested ignoring:false cannot
+        // re-enable the delete button — the composer's mic still owns the
+        // live drag because every layer except the delete button declines
+        // pointers.
+        return Stack(
+          children: [
+            IgnorePointer(
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12 * t, sigmaY: 12 * t),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.55 * t),
                   ),
                 ),
               ),
-              // Drawn at the mic's real position so the visible control and
-              // the gesture's origin stay the same point.
-              // Expanded around the slot's CENTRE, not laid into the slot:
-              // the composer's mic box is a 40px icon target, which would
-              // clip the 84px disc and its ring down to icon size.
-              Positioned.fromRect(
-                rect: Rect.fromCenter(
-                  center: micRect.center,
-                  width: VoiceMicHalo.haloExtent,
-                  height: VoiceMicHalo.haloExtent,
-                ),
+            ),
+            // Drawn at the mic's real position so the visible control and
+            // the gesture's origin stay the same point. Expanded around
+            // the slot's CENTRE, not laid into it: the composer's mic box
+            // is a 40px icon target, which would clip the 84px disc and
+            // its ring down to icon size.
+            Positioned.fromRect(
+              rect: Rect.fromCenter(
+                center: micRect.center,
+                width: VoiceMicHalo.haloExtent,
+                height: VoiceMicHalo.haloExtent,
+              ),
+              child: IgnorePointer(
                 child: Center(
                   child: VoiceMicHalo(
                     amplitude: amplitude,
@@ -113,17 +126,23 @@ class VoiceRecordingScrim extends StatelessWidget {
                   ),
                 ),
               ),
-              Positioned(
-                left: micRect.center.dx - VoiceLockPill.width / 2,
-                // Measured from the halo's top rather than the icon slot's,
-                // so the bigger ring cannot grow up into the pill.
-                top: micRect.center.dy - VoiceMicHalo.haloExtent / 2 - 24,
+            ),
+            Positioned(
+              left: micRect.center.dx - VoiceLockPill.width / 2,
+              // Measured from the halo's top rather than the icon slot's,
+              // so the bigger ring cannot grow up into the pill.
+              // Clears the halo's full extent plus a deliberate gap: a
+              // pill resting on the ring's edge reads as part of it.
+              top: micRect.center.dy - VoiceMicHalo.haloExtent / 2 - 72,
+              child: IgnorePointer(
                 child: Opacity(
                   opacity: t,
                   child: VoiceLockPill(dragProgress: lockProgress),
                 ),
               ),
-              Positioned.fill(
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
                 child: Opacity(
                   opacity: t,
                   child: Column(
@@ -151,43 +170,92 @@ class VoiceRecordingScrim extends StatelessWidget {
                           color: Colors.white,
                         ),
                       ),
-                      const SizedBox(height: Spacing.xl),
-                      AnimatedOpacity(
-                        duration: const Duration(milliseconds: 150),
-                        opacity: isCancelling ? 1.0 : 0.75,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (!isCancelling)
-                              const Icon(
-                                Icons.keyboard_arrow_left_rounded,
-                                size: 18,
-                                color: Colors.white,
-                              ),
-                            Text(
-                              isCancelling
-                                  ? 'Release to cancel'
-                                  : 'slide to cancel',
-                              key: const ValueKey('voice-scrim-cancel-hint'),
-                              style: Theme.of(
-                                context,
-                              ).textTheme.bodyMedium?.copyWith(
-                                color: Colors.white,
-                                fontWeight:
-                                    isCancelling
-                                        ? FontWeight.w600
-                                        : FontWeight.w400,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                     ],
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+            // Inline with the ring rather than stacked under the waveform:
+            // the hint describes a drag that starts at the ring, so it
+            // reads along the path the finger takes.
+            Positioned(
+              left: 0,
+              right: micRect.width + Spacing.md,
+              top: micRect.center.dy - 24,
+              height: 48,
+              child: Opacity(
+                opacity: t,
+                child: Row(
+                  children: [
+                    const SizedBox(width: Spacing.md),
+                    // A tap target as well as a label for the drag: a
+                    // finger already holding the mic cannot always reach a
+                    // clean swipe.
+                    GestureDetector(
+                      key: const ValueKey('voice-scrim-delete'),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onCancel,
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _danger.withValues(alpha: 0.18),
+                        ),
+                        child: const Icon(
+                          Icons.delete_outline_rounded,
+                          color: _danger,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: Spacing.sm),
+                    Expanded(
+                      child: IgnorePointer(
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 150),
+                          opacity: isCancelling ? 1.0 : 0.75,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (!isCancelling)
+                                const Icon(
+                                  Icons.keyboard_arrow_left_rounded,
+                                  size: 18,
+                                  color: Colors.white,
+                                ),
+                              Flexible(
+                                child: Text(
+                                  isCancelling
+                                      ? 'Release to cancel'
+                                      : 'slide to cancel',
+                                  key: const ValueKey(
+                                    'voice-scrim-cancel-hint',
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.bodyMedium?.copyWith(
+                                    color:
+                                        isCancelling ? _danger : Colors.white,
+                                    fontWeight:
+                                        isCancelling
+                                            ? FontWeight.w600
+                                            : FontWeight.w400,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         );
       },
     );
