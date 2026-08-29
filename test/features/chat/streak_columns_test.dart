@@ -59,4 +59,30 @@ void main() {
     expect(spent.isStreak, isTrue);
     expect(fresh.isStreak, isTrue);
   });
+
+  test('the streak viewer signs its clip keys before playback', () {
+    // streak_clips.media_url holds a raw STORAGE KEY, and the bucket is
+    // private. Passing it straight to VideoPlayerController.networkUrl
+    // requests a path that is not a URL at all, so playback fails with no
+    // useful error. Every other media path signs first.
+    final src = File(
+      'lib/features/chat/presentation/screens/streak_viewer_screen.dart',
+    ).readAsStringSync();
+
+    expect(
+      src,
+      contains('createSignedMediaUrl'),
+      reason: 'a raw storage key is not playable',
+    );
+
+    // And the signed value must be what reaches the player.
+    final playsRawKey = RegExp(
+      r'networkUrl\(\s*Uri\.parse\(\s*_clips\[[^\]]+\]\.mediaUrl',
+    ).hasMatch(src);
+    expect(
+      playsRawKey,
+      isFalse,
+      reason: 'the player must receive the signed URL, not the key',
+    );
+  });
 }

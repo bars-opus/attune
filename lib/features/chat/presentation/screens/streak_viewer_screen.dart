@@ -4,6 +4,7 @@ import 'package:attune/features/chat/data/repositories/streak_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
+import 'package:attune/features/chat/presentation/state/chat_state.dart';
 
 final streakRepositoryProvider = Provider<StreakRepository>(
   (ref) => StreakRepository(),
@@ -58,8 +59,21 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
       return;
     }
 
-    final controller =
-        VideoPlayerController.networkUrl(Uri.parse(_clips[index].mediaUrl));
+    // media_url is a STORAGE KEY, not a URL, and the bucket is private —
+    // handing the key straight to the player requests a path that does
+    // not exist. Every other media path in chat signs first.
+    final signed = await ref
+        .read(chatRepositoryProvider)
+        .createSignedMediaUrl(_clips[index].mediaUrl);
+    if (!mounted) return;
+    if (signed == null) {
+      // The clips are gone (spent, or past the 30-minute window). Close
+      // rather than sitting on a black screen.
+      await _finish();
+      return;
+    }
+
+    final controller = VideoPlayerController.networkUrl(Uri.parse(signed));
     await controller.initialize();
     if (!mounted) {
       await controller.dispose();
