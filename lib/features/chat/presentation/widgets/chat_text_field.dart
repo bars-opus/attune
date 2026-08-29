@@ -399,8 +399,18 @@ class _ChatTextFieldState extends State<ChatTextField>
   Future<void> _hideScrim() async {
     final entry = _scrimEntry;
     if (entry == null) return;
+    // The field is NOT cleared before the await: dispose() reads it to
+    // decide whether an overlay still needs taking down, and a dispose
+    // landing inside the fade would otherwise see null, skip removal, and
+    // leave the scrim covering the whole app forever.
+    try {
+      await _scrimController.reverse();
+    } on TickerCanceled {
+      // Disposed mid-fade; dispose() owns the removal from here.
+      return;
+    }
+    if (!identical(_scrimEntry, entry)) return;
     _scrimEntry = null;
-    await _scrimController.reverse();
     entry.remove();
   }
 
@@ -457,6 +467,12 @@ class _ChatTextFieldState extends State<ChatTextField>
     _releasedDuringStart = false;
     _dragOffset = Offset.zero;
     widget.haptics.light();
+    // Raised BEFORE the permission and start awaits, not after: on a
+    // first-ever recording the OS permission sheet can sit up for seconds,
+    // and the finger was held on the mic with nothing on screen the whole
+    // time (checklist 5.2 — first feedback within 200ms even when the full
+    // operation is bounded by an external dependency).
+    _showScrim();
 
     final recorder = (widget.recorderFactory ?? VoiceRecorderService.new)();
     final granted = await recorder.requestPermission();
@@ -476,6 +492,7 @@ class _ChatTextFieldState extends State<ChatTextField>
         ),
       );
       _startInFlight = false;
+      unawaited(_hideScrim());
       return;
     }
 
@@ -489,6 +506,7 @@ class _ChatTextFieldState extends State<ChatTextField>
         ),
       );
       _startInFlight = false;
+      unawaited(_hideScrim());
       return;
     }
 
@@ -502,8 +520,6 @@ class _ChatTextFieldState extends State<ChatTextField>
     });
 
     recorder.currentLevel.addListener(_onLevel);
-
-    _showScrim();
 
     setState(() {
       _recorder = recorder;

@@ -702,6 +702,42 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     });
 
+    testWidgets('every scrim control is labelled for a screen reader', (
+      tester,
+    ) async {
+      // Checklist 5.6. The composer's own icons all carry semantics; the
+      // scrim replaces them while recording, so three unlabelled tap
+      // targets would be the entire control surface for that whole time.
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(_harness(recorder, FakeHaptics()));
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 1200));
+
+      expect(find.bySemanticsLabel('Delete recording'), findsOneWidget);
+
+      await gesture.moveBy(const Offset(0, -80));
+      await tester.pump(const Duration(milliseconds: 16));
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 1200));
+
+      expect(find.bySemanticsLabel('Send voice message'), findsOneWidget);
+      expect(find.bySemanticsLabel('Pause recording'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('voice-scrim-pause')));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        find.bySemanticsLabel('Resume recording'),
+        findsOneWidget,
+        reason: 'the label must track the state, not the glyph alone',
+      );
+
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
     testWidgets('the delete icon sits on a plain white disc', (tester) async {
       final recorder = _FakeRecorder();
       await tester.pumpWidget(_harness(recorder, FakeHaptics()));

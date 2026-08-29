@@ -140,19 +140,23 @@ class VoiceRecordingScrim extends StatelessWidget {
               child: IgnorePointer(
                 ignoring: !isLocked,
                 child: Center(
-                  child: GestureDetector(
-                    key: isLocked ? const ValueKey('voice-scrim-send') : null,
-                    behavior: HitTestBehavior.opaque,
-                    onTap: isLocked ? onSend : null,
-                    child: VoiceMicHalo(
-                      amplitude: amplitude,
-                      isRecording: true,
-                      progress: progress,
-                      // The composer's own send glyph: two different
-                      // arrows for the same action in one feature reads as
-                      // two different actions.
-                      child: Icon(
-                        isLocked ? Icons.send_rounded : Icons.mic_rounded,
+                  child: Semantics(
+                    button: isLocked,
+                    label: isLocked ? 'Send voice message' : null,
+                    child: GestureDetector(
+                      key: isLocked ? const ValueKey('voice-scrim-send') : null,
+                      behavior: HitTestBehavior.opaque,
+                      onTap: isLocked ? onSend : null,
+                      child: VoiceMicHalo(
+                        amplitude: amplitude,
+                        isRecording: true,
+                        progress: progress,
+                        // The composer's own send glyph: two different
+                        // arrows for the same action in one feature reads as
+                        // two different actions.
+                        child: Icon(
+                          isLocked ? Icons.send_rounded : Icons.mic_rounded,
+                        ),
                       ),
                     ),
                   ),
@@ -225,23 +229,28 @@ class VoiceRecordingScrim extends StatelessWidget {
                     // cannot reach a second control anyway.
                     if (isLocked) ...[
                       const SizedBox(height: Spacing.lg),
-                      GestureDetector(
-                        key: const ValueKey('voice-scrim-pause'),
-                        behavior: HitTestBehavior.opaque,
-                        onTap: onTogglePause,
-                        child: Container(
-                          width: 52,
-                          height: 52,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white,
-                          ),
-                          child: Icon(
-                            isPaused
-                                ? Icons.play_arrow_rounded
-                                : Icons.pause_rounded,
-                            color: Colors.black87,
-                            size: 28,
+                      Semantics(
+                        button: true,
+                        label:
+                            isPaused ? 'Resume recording' : 'Pause recording',
+                        child: GestureDetector(
+                          key: const ValueKey('voice-scrim-pause'),
+                          behavior: HitTestBehavior.opaque,
+                          onTap: onTogglePause,
+                          child: Container(
+                            width: 52,
+                            height: 52,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white,
+                            ),
+                            child: Icon(
+                              isPaused
+                                  ? Icons.play_arrow_rounded
+                                  : Icons.pause_rounded,
+                              color: Colors.black87,
+                              size: 28,
+                            ),
                           ),
                         ),
                       ),
@@ -273,24 +282,28 @@ class VoiceRecordingScrim extends StatelessWidget {
                       // A tap target as well as a label for the drag: a
                       // finger already holding the mic cannot always reach a
                       // clean swipe.
-                      GestureDetector(
-                        key: const ValueKey('voice-scrim-delete'),
-                        behavior: HitTestBehavior.opaque,
-                        onTap: onCancel,
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            // Opaque white: the red belongs to the glyph,
-                            // which needs a solid ground to read against the
-                            // blurred scrim behind it.
-                            color: Colors.white,
-                          ),
-                          child: const Icon(
-                            Icons.delete_outline_rounded,
-                            color: _danger,
-                            size: 22,
+                      Semantics(
+                        button: true,
+                        label: 'Delete recording',
+                        child: GestureDetector(
+                          key: const ValueKey('voice-scrim-delete'),
+                          behavior: HitTestBehavior.opaque,
+                          onTap: onCancel,
+                          child: Container(
+                            width: 44,
+                            height: 44,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              // Opaque white: the red belongs to the glyph,
+                              // which needs a solid ground to read against the
+                              // blurred scrim behind it.
+                              color: Colors.white,
+                            ),
+                            child: const Icon(
+                              Icons.delete_outline_rounded,
+                              color: _danger,
+                              size: 22,
+                            ),
                           ),
                         ),
                       ),
