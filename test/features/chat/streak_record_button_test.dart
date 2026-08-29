@@ -242,4 +242,61 @@ void main() {
     ).readAsStringSync();
     expect(src, contains('HapticFeedback.lightImpact()'));
   });
+
+  testWidgets('the camera warming up shows in the ring, not a centre spinner',
+      (tester) async {
+    await tester.pumpWidget(_wrap(StreakRecordButton(
+      progress: 0,
+      isRecording: false,
+      isPreparing: true,
+      onPressStart: () {},
+      onPressEnd: () {},
+    )));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final arc = tester.widget<CircularProgressIndicator>(
+      find.byType(CircularProgressIndicator),
+    );
+    expect(
+      arc.value,
+      isNull,
+      reason: 'camera init has no measurable progress',
+    );
+  });
+
+  testWidgets('a preparing button ignores presses', (tester) async {
+    var started = false;
+    await tester.pumpWidget(_wrap(StreakRecordButton(
+      progress: 0,
+      isRecording: false,
+      isPreparing: true,
+      onPressStart: () => started = true,
+      onPressEnd: () {},
+    )));
+
+    final gesture = await tester
+        .startGesture(tester.getCenter(find.byType(StreakRecordButton)));
+    await tester.pump(const Duration(milliseconds: 50));
+    await gesture.up();
+
+    expect(
+      started,
+      isFalse,
+      reason: 'there is no camera to record from yet',
+    );
+  });
+
+  test('the camera screen has no centre spinner of its own', () {
+    // The ring is the only loading affordance: a spinner in the middle of
+    // a black screen says nothing the ring cannot, and reads as a broken
+    // launch rather than a camera warming up.
+    final src = File(
+      'lib/features/chat/presentation/screens/streak_camera_screen.dart',
+    ).readAsStringSync();
+    expect(
+      src,
+      isNot(contains('Center(child: CircularProgressIndicator())')),
+      reason: 'loading belongs on the button, not the screen',
+    );
+  });
 }

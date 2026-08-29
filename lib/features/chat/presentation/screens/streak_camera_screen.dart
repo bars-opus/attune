@@ -422,9 +422,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
                   ),
                 );
               },
-            )
-          else
-            const Center(child: CircularProgressIndicator()),
+            ),
 
           // Segment previews, only once a SECOND segment exists — a lone
           // thumbnail for a lone clip is noise.
@@ -481,6 +479,10 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
                 progress: progress.clamp(0.0, 1.0),
                 isRecording: _isRecording,
                 isSending: _isSending,
+                // Nothing else marks the wait: the screen is deliberately
+                // just the (black) preview until the camera is ready.
+                isPreparing: controller == null ||
+                    !controller.value.isInitialized,
                 onPressStart: () => unawaited(_onPressStart()),
                 onPressEnd: () => unawaited(_onPressEnd()),
               ),

@@ -14,10 +14,11 @@ import 'package:flutter/services.dart';
 ///     progress arc ringing it, separated by a clear gap so the two read
 ///     as distinct shapes rather than one thick stroke.
 ///
-///   SENDING — the same ring, sweeping indeterminately. The upload has no
-///     measurable progress, and the control the user just pressed is the
-///     honest place to show that something is happening; a second spinner
-///     elsewhere on screen would compete with it.
+///   BUSY (preparing or sending) — the same ring, sweeping
+///     indeterminately. Neither camera init nor an upload has measurable
+///     progress, and the control itself is the honest place to show that
+///     something is happening; a spinner in the middle of a black screen
+///     says nothing more and reads as a failed launch.
 ///
 /// The reference uses Snapchat's yellow; this uses `colorScheme.primary`
 /// so it stays on-brand and correct in both themes.
@@ -33,6 +34,7 @@ class StreakRecordButton extends StatelessWidget {
     required this.onPressStart,
     required this.onPressEnd,
     this.isSending = false,
+    this.isPreparing = false,
   });
 
   /// 0..1 through the CURRENT segment, not the whole recording.
@@ -43,6 +45,11 @@ class StreakRecordButton extends StatelessWidget {
   /// accepting presses — starting a second recording mid-upload would
   /// queue a send behind one already in flight.
   final bool isSending;
+
+  /// The camera is still initialising. Same treatment as sending: the
+  /// ring sweeps and the button refuses presses, so the launch reads as
+  /// "warming up" rather than as a broken black screen.
+  final bool isPreparing;
 
   final VoidCallback onPressStart;
   final VoidCallback onPressEnd;
@@ -61,13 +68,15 @@ class StreakRecordButton extends StatelessWidget {
 
   double get _arcDiameter => _discDiameter + _gap * 2;
 
+  bool get _isBusy => isSending || isPreparing;
+
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
 
     return Listener(
       onPointerDown: (_) {
-        if (isSending) return;
+        if (_isBusy) return;
         // Light rather than medium: this fires the instant a finger lands
         // on the button, many times a session. A heavier tap would become
         // wearing very quickly.
@@ -75,11 +84,11 @@ class StreakRecordButton extends StatelessWidget {
         onPressStart();
       },
       onPointerUp: (_) {
-        if (isSending) return;
+        if (_isBusy) return;
         onPressEnd();
       },
       onPointerCancel: (_) {
-        if (isSending) return;
+        if (_isBusy) return;
         onPressEnd();
       },
       behavior: HitTestBehavior.opaque,
@@ -89,7 +98,7 @@ class StreakRecordButton extends StatelessWidget {
         child: Stack(
           alignment: Alignment.center,
           children: [
-            if (isSending)
+            if (_isBusy)
               SizedBox(
                 key: const ValueKey('streak-record-sending'),
                 width: _idleDiameter,
