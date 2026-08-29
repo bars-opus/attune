@@ -11,6 +11,58 @@ Widget _wrap(Widget child) => MaterialApp(
 
 void main() {
   group('the lock hint', () {
+    testWidgets('the pill rises into place from the ring', (tester) async {
+      // Matches the voice recorder's entrance: the pill slides up out of
+      // the record button rather than appearing where it lands.
+      //
+      // Asserted by position mid-flight against its resting place, not by
+      // finding a ShakeTransition -- one wired horizontally, or with a
+      // zero offset, would satisfy a type check while animating nothing.
+      await tester.pumpWidget(_wrap(const StreakLockHint(dragProgress: 0)));
+
+      await tester.pump(const Duration(milliseconds: 16));
+      final early = tester.getCenter(find.byType(VoiceLockPill));
+
+      await tester.pump(const Duration(milliseconds: 1200));
+      final rest = tester.getCenter(find.byType(VoiceLockPill));
+
+      expect(
+        early.dy,
+        greaterThan(rest.dy + 20),
+        reason: 'pill must travel upward: $early -> $rest',
+      );
+      expect(
+        (early.dx - rest.dx).abs(),
+        lessThan(1.0),
+        reason: 'the rise is vertical only',
+      );
+    });
+
+    testWidgets('the entrance replays on a second hold', (tester) async {
+      // ShakeTransition wraps TweenAnimationBuilder, which animates from
+      // its begin value only on first build. The streak screen mounts this
+      // hint conditionally, so a reused element would animate once and
+      // never again -- the failure the streak uptick already had once.
+      Future<double> travel() async {
+        await tester.pumpWidget(_wrap(const StreakLockHint(dragProgress: 0)));
+        await tester.pump(const Duration(milliseconds: 16));
+        final early = tester.getCenter(find.byType(VoiceLockPill)).dy;
+        await tester.pump(const Duration(milliseconds: 1200));
+        final rest = tester.getCenter(find.byType(VoiceLockPill)).dy;
+        // Unmount, as the screen does when the finger lifts.
+        await tester.pumpWidget(_wrap(const SizedBox()));
+        await tester.pump(const Duration(milliseconds: 100));
+        return early - rest;
+      }
+
+      expect(await travel(), greaterThan(20));
+      expect(
+        await travel(),
+        greaterThan(20),
+        reason: 'the second hold did not animate',
+      );
+    });
+
     testWidgets('the padlock is the voice recorder\'s pill', (tester) async {
       // The same gesture in two features should present the same target:
       // a white pill with the padlock over a chevron, not a dark disc with

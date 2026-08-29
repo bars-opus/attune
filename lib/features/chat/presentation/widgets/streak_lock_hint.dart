@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/utils/animations/shake_transition.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_lock_pill.dart';
 import 'package:flutter/material.dart';
 
@@ -80,8 +81,16 @@ class _StreakLockHintState extends State<StreakLockHint> {
 
           // The voice recorder's pill, shared verbatim: the same gesture
           // in two features should present the same target. It owns its
-          // own rise and warming, so nothing is wrapped around it here.
-          VoiceLockPill(dragProgress: t),
+          // own drag-rise and warming; this is the separate entrance --
+          // it slides up out of the record button rather than appearing
+          // where it lands, matching the voice scrim.
+          ShakeTransition(
+            axis: Axis.vertical,
+            offset: 56,
+            curve: Curves.easeOutBack,
+            duration: const Duration(milliseconds: 930),
+            child: VoiceLockPill(dragProgress: t),
+          ),
         ],
       ),
     );
