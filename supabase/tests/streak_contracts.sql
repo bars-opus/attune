@@ -253,4 +253,102 @@ BEGIN
   END IF;
 END $$;
 
+-- 9. The sender may replay only until the recipient opens it.
+--
+-- Before the first recipient view a streak is still "in flight" and the
+-- sender can re-watch what they sent. The moment it is opened it belongs
+-- to the recipient's budget, and the sender is locked out permanently --
+-- which is also the sender's read receipt.
+DO $$
+DECLARE v_msg uuid;
+        v_sender uuid := '5f000000-0000-0000-0000-0000000000a1';
+        v_recipient uuid := '5f000000-0000-0000-0000-0000000000b2';
+        v_left int; v_ok boolean;
+BEGIN
+  INSERT INTO public.messages
+    (relationship_id, sender_id, client_message_id, content,
+     streak_views_remaining)
+  VALUES ('5e000000-0000-0000-0000-000000000001', v_sender,
+          gen_random_uuid(), 'streak parent', 1)
+  RETURNING id INTO v_msg;
+  INSERT INTO public.streak_clips (message_id, clip_index, media_url, duration_ms)
+  VALUES (v_msg, 0, 'chat/s-0', 1000);
+
+  -- Sender replays freely while it is unopened.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', v_sender, 'role','authenticated')::text, true);
+  PERFORM public.mark_streak_viewed(v_msg);
+  PERFORM public.mark_streak_viewed(v_msg);
+
+  SELECT streak_views_remaining INTO v_left
+  FROM public.messages WHERE id = v_msg;
+  IF v_left <> 1 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: sender replays spent the recipient budget (% left)',
+      v_left;
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.messages WHERE id = v_msg AND viewed_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a sender replay marked it opened';
+  END IF;
+
+  -- The recipient opens it.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', v_recipient, 'role','authenticated')::text, true);
+  PERFORM public.mark_streak_viewed(v_msg);
+
+  IF NOT EXISTS (SELECT 1 FROM public.messages WHERE id = v_msg AND viewed_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the recipient opening it set no viewed_at';
+  END IF;
+
+  -- The sender is now locked out.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', v_sender, 'role','authenticated')::text, true);
+  v_ok := false;
+  BEGIN
+    PERFORM public.mark_streak_viewed(v_msg);
+    v_ok := true;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+  IF v_ok THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the sender replayed a streak the recipient had opened';
+  END IF;
+
+  PERFORM set_config('request.jwt.claims', '', true);
+END $$;
+
+-- 10. With replays on, the 30-minute window expires a streak even with
+--     plays left -- whichever comes first.
+DO $$
+DECLARE v_msg uuid;
+        v_recipient uuid := '5f000000-0000-0000-0000-0000000000b2';
+        v_left int;
+BEGIN
+  INSERT INTO public.messages
+    (relationship_id, sender_id, client_message_id, content,
+     streak_views_remaining, viewed_at)
+  VALUES ('5e000000-0000-0000-0000-000000000001',
+          '5f000000-0000-0000-0000-0000000000a1',
+          gen_random_uuid(), 'streak parent', 3,
+          now() - interval '31 minutes')
+  RETURNING id INTO v_msg;
+  INSERT INTO public.streak_clips (message_id, clip_index, media_url, duration_ms)
+  VALUES (v_msg, 0, 'chat/s-1', 1000);
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', v_recipient, 'role','authenticated')::text, true);
+
+  v_left := public.mark_streak_viewed(v_msg);
+  IF v_left <> 0 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: a streak opened 31 minutes ago still had % views',
+      v_left;
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.streak_clips WHERE message_id = v_msg) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: clips survived the 30-minute window';
+  END IF;
+
+  PERFORM set_config('request.jwt.claims', '', true);
+END $$;
+
 ROLLBACK;

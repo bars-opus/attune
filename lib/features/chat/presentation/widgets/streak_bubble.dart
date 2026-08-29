@@ -12,6 +12,8 @@ class StreakBubble extends StatelessWidget {
     required this.viewsRemaining,
     required this.hasBeenPlayed,
     required this.onTap,
+    this.isMine = false,
+    this.openedByRecipient = false,
   });
 
   /// Views left for the recipient. 0 means spent.
@@ -22,7 +24,21 @@ class StreakBubble extends StatelessWidget {
 
   final VoidCallback onTap;
 
-  bool get _isSpent => viewsRemaining <= 0;
+  /// Whether the viewer sent this streak.
+  final bool isMine;
+
+  /// Whether the recipient has opened it. Only meaningful to the sender:
+  /// it is what ends their replay window, and their only read receipt.
+  final bool openedByRecipient;
+
+  /// The sender is done the moment the recipient opens it. Until then
+  /// they may replay freely — the streak is still in flight, and
+  /// re-watching what you sent costs the recipient nothing.
+  bool get _senderLockedOut => isMine && openedByRecipient;
+
+  /// The recipient's budget never governs the sender: an unopened streak
+  /// stays playable for them regardless of how many views it carries.
+  bool get _isSpent => _senderLockedOut || (!isMine && viewsRemaining <= 0);
 
   @override
   Widget build(BuildContext context) {
@@ -33,11 +49,19 @@ class StreakBubble extends StatelessWidget {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.videocam_off_outlined,
-              size: 18, color: colorScheme.onSurfaceVariant),
+          Icon(
+            _senderLockedOut
+                ? Icons.check_circle_outline
+                : Icons.videocam_off_outlined,
+            size: 18,
+            color: colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(width: 6),
           Text(
-            'Streak expired',
+            // "Opened" rather than "expired" for the sender: it says what
+            // actually happened, and is the only read receipt a streak
+            // gives them.
+            _senderLockedOut ? 'Opened' : 'Streak expired',
             style: textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
               fontStyle: FontStyle.italic,
@@ -67,7 +91,10 @@ class StreakBubble extends StatelessWidget {
             // Only meaningful once replays exist AND one has been used;
             // showing "1 left" on an unwatched view-once streak would be
             // noise.
-            if (hasBeenPlayed && viewsRemaining > 0) ...[
+            // The sender never sees a countdown: the budget is the
+            // recipient's, and reporting their viewing back would be a
+            // different feature.
+            if (!isMine && hasBeenPlayed && viewsRemaining > 0) ...[
               const SizedBox(width: 8),
               Text(
                 '$viewsRemaining left',

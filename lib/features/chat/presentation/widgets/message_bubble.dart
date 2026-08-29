@@ -989,12 +989,15 @@ class _BubbleBody extends StatelessWidget {
       children.add(
         StreakBubble(
           viewsRemaining: remaining,
-          // The sender always sees "Play": the budget belongs to the
-          // recipient, and showing a countdown on your own streak would
-          // report their viewing back to you.
           hasBeenPlayed: !message.isMine && message.viewedAt != null,
+          isMine: message.isMine,
+          // viewed_at is set only by a RECIPIENT view — a sender replay
+          // deliberately leaves it null — so this is exactly "has the
+          // recipient opened it".
+          openedByRecipient: message.viewedAt != null,
           onTap: () {
-            if (remaining <= 0) return;
+            if (message.isMine && message.viewedAt != null) return;
+            if (!message.isMine && remaining <= 0) return;
             Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => StreakViewerScreen(messageId: message.id),

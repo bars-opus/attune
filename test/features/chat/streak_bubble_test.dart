@@ -123,4 +123,58 @@ void main() {
     expect(cancelled, isTrue);
     expect(sent, isFalse);
   });
+
+  testWidgets('the sender can replay until it is opened', (tester) async {
+    var tapped = false;
+    await tester.pumpWidget(_wrap(StreakBubble(
+      // Zero, deliberately: the budget belongs to the RECIPIENT, so it
+      // must not gate the sender. With viewsRemaining: 1 this test passes
+      // even when the sender is wrongly subject to that budget.
+      viewsRemaining: 0,
+      hasBeenPlayed: false,
+      isMine: true,
+      openedByRecipient: false,
+      onTap: () => tapped = true,
+    )));
+
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    await tester.tap(find.byType(StreakBubble));
+    await tester.pump();
+    expect(tapped, isTrue);
+  });
+
+  testWidgets('once opened, the sender sees "Opened" and cannot replay',
+      (tester) async {
+    var tapped = false;
+    await tester.pumpWidget(_wrap(StreakBubble(
+      viewsRemaining: 1,
+      hasBeenPlayed: false,
+      isMine: true,
+      openedByRecipient: true,
+      onTap: () => tapped = true,
+    )));
+
+    // Doubles as the sender's read receipt.
+    expect(find.text('Opened'), findsOneWidget);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
+
+    await tester.tap(find.byType(StreakBubble));
+    await tester.pump();
+    expect(tapped, isFalse);
+  });
+
+  testWidgets('the recipient is unaffected by openedByRecipient',
+      (tester) async {
+    // Their own budget governs them, not the flag that locks the sender.
+    await tester.pumpWidget(_wrap(StreakBubble(
+      viewsRemaining: 2,
+      hasBeenPlayed: true,
+      isMine: false,
+      openedByRecipient: true,
+      onTap: () {},
+    )));
+
+    expect(find.text('Tap to play'), findsOneWidget);
+    expect(find.text('2 left'), findsOneWidget);
+  });
 }
