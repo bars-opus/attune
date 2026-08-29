@@ -35,6 +35,8 @@ class StreakRecordButton extends StatelessWidget {
     required this.onPressEnd,
     this.isSending = false,
     this.isPreparing = false,
+    this.isLocked = false,
+    this.onStop,
   });
 
   /// 0..1 through the CURRENT segment, not the whole recording.
@@ -51,6 +53,13 @@ class StreakRecordButton extends StatelessWidget {
   /// "warming up" rather than as a broken black screen.
   final bool isPreparing;
 
+  /// Recording hands-free. The disc becomes a stop button, since there is
+  /// no longer a finger on it to release.
+  final bool isLocked;
+
+  /// Ends a locked recording.
+  final VoidCallback? onStop;
+
   final VoidCallback onPressStart;
   final VoidCallback onPressEnd;
 
@@ -58,7 +67,12 @@ class StreakRecordButton extends StatelessWidget {
   static const double _target = 112;
 
   static const double _idleDiameter = 72;
-  static const double _discDiameter = 64;
+
+  /// The disc grows into place as recording starts, rather than appearing
+  /// at its final size — paired with the arc's entrance it reads as the
+  /// control opening up rather than swapping shape.
+  static const double _discDiameter = 72;
+  static const double _discFrom = 56;
 
   /// Gap between the disc and the arc ringing it.
   static const double _gap = Spacing.lg;
@@ -77,6 +91,12 @@ class StreakRecordButton extends StatelessWidget {
     return Listener(
       onPointerDown: (_) {
         if (_isBusy) return;
+        // A locked take is stopped by TAPPING, not by a press-and-hold,
+        // so the press handlers stand down entirely.
+        if (isLocked) {
+          onStop?.call();
+          return;
+        }
         // Light rather than medium: this fires the instant a finger lands
         // on the button, many times a session. A heavier tap would become
         // wearing very quickly.
@@ -84,11 +104,11 @@ class StreakRecordButton extends StatelessWidget {
         onPressStart();
       },
       onPointerUp: (_) {
-        if (_isBusy) return;
+        if (_isBusy || isLocked) return;
         onPressEnd();
       },
       onPointerCancel: (_) {
-        if (_isBusy) return;
+        if (_isBusy || isLocked) return;
         onPressEnd();
       },
       behavior: HitTestBehavior.opaque,
@@ -119,15 +139,27 @@ class StreakRecordButton extends StatelessWidget {
                 ),
               )
             else if (isRecording) ...[
-              AnimatedContainer(
-                key: const ValueKey('streak-record-fill'),
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOut,
-                width: _discDiameter,
-                height: _discDiameter,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: primary,
+              TweenAnimationBuilder<double>(
+                key: const ValueKey('streak-record-fill-entrance'),
+                tween: Tween(begin: _discFrom, end: _discDiameter),
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutBack,
+                builder: (context, size, _) => Container(
+                  key: const ValueKey('streak-record-fill'),
+                  width: size,
+                  height: size,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: primary,
+                  ),
+                  child: isLocked
+                      ? const Icon(
+                          Icons.stop_rounded,
+                          key: ValueKey('streak-record-stop'),
+                          color: Colors.white,
+                          size: 30,
+                        )
+                      : null,
                 ),
               ),
               // Scale and fade the arc in as recording starts, and out

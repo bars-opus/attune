@@ -17,6 +17,7 @@ import 'package:attune/features/chat/utils/chat_log.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/animated_rolling_counter.dart';
 import 'package:video_player/video_player.dart';
+import 'package:attune/features/chat/presentation/widgets/streak_lock_hint.dart';
 
 /// Press-and-hold streak capture, auto-splitting into 60-second segments.
 ///
@@ -54,6 +55,13 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
   /// Reviewing over a LIVE viewfinder would show the user the room they
   /// are standing in rather than the take they are deciding on.
   VideoPlayerController? _previewController;
+
+  /// Locked recordings continue after the finger lifts, and are stopped
+  /// by tapping the stop button instead.
+  bool _isLocked = false;
+
+  /// 0..1 of the way to the lock threshold, driving the hint's animation.
+  double _lockDrag = 0;
 
   bool _startInFlight = false;
   bool _releasedDuringStart = false;
@@ -155,6 +163,8 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
 
     setState(() {
       _isRecording = true;
+      _isLocked = false;
+      _lockDrag = 0;
       _segmentElapsed = Duration.zero;
       _segmentStartedAt = DateTime.now();
     });
@@ -228,6 +238,10 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     }
     if (!_isRecording) return;
 
+    // Locking is precisely the promise that lifting a finger does not end
+    // the take. The stop button owns that from here.
+    if (_isLocked) return;
+
     final controller = _controller;
     if (controller == null) return;
 
@@ -236,7 +250,11 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     final file = await controller.stopVideoRecording();
     if (!mounted) return;
 
-    setState(() => _isRecording = false);
+    setState(() {
+      _isRecording = false;
+      _isLocked = false;
+      _lockDrag = 0;
+    });
 
     if (StreakRecordingSession.shouldDiscard(
       completedSegments: _segments.length,
@@ -499,6 +517,16 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
               ),
             ),
 
+          // The lock affordance, above the button. Gone once locked: it
+          // has served its purpose and the stop button says the rest.
+          if (_isRecording && !_isLocked)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: Spacing.xxl * 2 + 112,
+              child: Center(child: StreakLockHint(dragProgress: _lockDrag)),
+            ),
+
           // Elapsed seconds, centred. A streak is capped at a minute, so
           // the number itself is the whole story — no bar, no ring, just
           // how long you have been talking. Rolls rather than jumps so a
@@ -611,17 +639,40 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
                   // the preview alone hid it for the whole upload.
                   preview != null && !_isSending
                       ? const SizedBox.shrink()
-                      : StreakRecordButton(
-                        progress: progress.clamp(0.0, 1.0),
-                        isRecording: _isRecording,
-                        isSending: _isSending,
-                        // Nothing else marks the wait: the screen is deliberately
-                        // just the (black) preview until the camera is ready.
-                        isPreparing:
-                            controller == null ||
-                            !controller.value.isInitialized,
-                        onPressStart: () => unawaited(_onPressStart()),
-                        onPressEnd: () => unawaited(_onPressEnd()),
+                      : Listener(
+                        // Tracked here rather than on the button so the
+                        // finger can travel well past it and still be
+                        // followed -- the lock target sits above the
+                        // button, outside its own hit box.
+                        onPointerMove: (event) {
+                          if (!_isRecording || _isLocked) return;
+                          final next = (_lockDrag -
+                                  event.delta.dy / kStreakLockDragDistance)
+                              .clamp(0.0, 1.0);
+                          if (next >= 1.0) {
+                            unawaited(HapticFeedback.mediumImpact());
+                            setState(() {
+                              _isLocked = true;
+                              _lockDrag = 1;
+                            });
+                            return;
+                          }
+                          setState(() => _lockDrag = next);
+                        },
+                        child: StreakRecordButton(
+                          progress: progress.clamp(0.0, 1.0),
+                          isRecording: _isRecording,
+                          isSending: _isSending,
+                          // Nothing else marks the wait: the screen is deliberately
+                          // just the (black) preview until the camera is ready.
+                          isPreparing:
+                              controller == null ||
+                              !controller.value.isInitialized,
+                          onPressStart: () => unawaited(_onPressStart()),
+                          onPressEnd: () => unawaited(_onPressEnd()),
+                          isLocked: _isLocked,
+                          onStop: () => unawaited(_onPressEnd()),
+                        ),
                       ),
             ),
           ),

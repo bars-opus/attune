@@ -59,7 +59,7 @@ void main() {
         onPressEnd: () {},
       )));
 
-      final fill = tester.widget<AnimatedContainer>(
+      final fill = tester.widget<Container>(
         find.byKey(const ValueKey('streak-record-fill')),
       );
       final decoration = fill.decoration! as BoxDecoration;

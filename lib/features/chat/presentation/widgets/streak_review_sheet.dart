@@ -25,7 +25,6 @@ class StreakReviewSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final count = segments.length;
     final seconds = segments
         .fold<Duration>(Duration.zero, (sum, s) => sum + s.duration)
         .inSeconds;
@@ -37,8 +36,14 @@ class StreakReviewSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            count == 1 ? '1 clip · ${seconds}s' : '$count clips · ${seconds}s',
-            style: textTheme.labelLarge,
+            // Just the length. A streak is always one clip now, so a count
+            // said nothing — and the duration is the only thing worth
+            // knowing before deciding whether to send.
+            '${seconds}s',
+            style: textTheme.titleLarge?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 20),
