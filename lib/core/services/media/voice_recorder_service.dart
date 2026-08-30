@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -49,7 +50,7 @@ class VoiceRecordingException implements Exception {
 /// `final _imagePicker = ImagePickerService();`).
 class VoiceRecorderService {
   VoiceRecorderService({AudioRecorder? recorder})
-      : _recorder = recorder ?? AudioRecorder();
+    : _recorder = recorder ?? AudioRecorder();
 
   final AudioRecorder _recorder;
 
@@ -80,13 +81,19 @@ class VoiceRecorderService {
   // computed lazily on the first reading once maxDuration is known
   // (constant, so this could be precomputed, but is derived here to keep
   // the bucket-index math in one place).
-  final List<double> _bucketPeaks = List.filled(waveformPointCount, 0.0);
-  int _readingCount = 0;
+  /// Peaks at source granularity, resampled to [waveformPointCount] only
+  /// when the waveform is read.
+  final List<double> _readings = <double>[];
+
+  /// Bounds memory for a maximum-length recording. At one reading per
+  /// 100ms a 5-minute take is 3000 readings; folding at 2x that keeps the
+  /// list small while preserving shape.
+  static const int _maxReadings = waveformPointCount * 60;
 
   /// Live 0.0-1.0 level of the most recent amplitude reading, republished
   /// every ~100ms while recording.
   ///
-  /// The downsampled [_bucketPeaks] array is a *whole-recording* summary
+  /// The downsampled waveform is a *whole-recording* summary
   /// only readable at [stop] — it can't drive a live waveform, which is
   /// why the recording UI used to paint a hardcoded constant. This
   /// notifier is the live counterpart: same readings, same dBFS
@@ -103,8 +110,7 @@ class VoiceRecorderService {
   }
 
   Future<void> start() async {
-    _bucketPeaks.fillRange(0, waveformPointCount, 0.0);
-    _readingCount = 0;
+    _readings.clear();
     currentLevel.value = 0.0;
     _startedAt = DateTime.now();
     _pausedTotal = Duration.zero;
@@ -177,9 +183,11 @@ class VoiceRecorderService {
   /// constructor-injected fake [AudioRecorder] as if a real recording were
   /// underway.
   @visibleForTesting
-  void debugSeedActiveRecording({required String path, required DateTime startedAt}) {
-    _bucketPeaks.fillRange(0, waveformPointCount, 0.0);
-    _readingCount = 0;
+  void debugSeedActiveRecording({
+    required String path,
+    required DateTime startedAt,
+  }) {
+    _readings.clear();
     _completedRecording = null;
     _pausedTotal = Duration.zero;
     _pausedAt = null;
@@ -204,9 +212,19 @@ class VoiceRecorderService {
     // (near 0 dBFS) maps to a tall bar, quiet/silent (<= -50 dBFS) maps to
     // 0. Using .abs() here would invert that (loud -> small number, quiet
     // -> large number), which is exactly the bug this replaced.
-    const minDb = -50.0;
-    final db = raw.clamp(minDb, 0.0);
-    final normalized = ((db - minDb) / -minDb * 255).clamp(0.0, 255.0);
+    // Mapped through the AMPLITUDE domain, not linearly in dB.
+    //
+    // dBFS is logarithmic, so a linear [-50, 0] -> [0, 255] map put normal
+    // speech (-25..-10 dBFS) at 50%..80% of full height: every bar was a
+    // tall block varying by a few percent, which reads as a flat line.
+    //
+    // Converting to linear amplitude (10^(dB/20)) undoes the log, and the
+    // square root then lifts the quiet end back into view — speech spans
+    // roughly 13%..63% of the height, leaving headroom above for genuinely
+    // loud moments instead of everything crowding the ceiling.
+    const floorDb = -60.0;
+    final amplitude = math.pow(10, raw.clamp(floorDb, 0.0) / 20).toDouble();
+    final normalized = (math.sqrt(amplitude) * 255).clamp(0.0, 255.0);
 
     // Published from inside the shared normalization path (rather than
     // from _onAmplitude) so the live waveform and the final recorded
@@ -216,13 +234,17 @@ class VoiceRecorderService {
     // dispose() — writing a disposed ValueNotifier throws.
     if (!_levelDisposed) currentLevel.value = normalized / 255;
 
-    final bucketIndex =
-        (_readingCount * waveformPointCount ~/ _expectedTotalReadings)
-            .clamp(0, waveformPointCount - 1);
-    if (normalized > _bucketPeaks[bucketIndex]) {
-      _bucketPeaks[bucketIndex] = normalized;
-    }
-    _readingCount++;
+    // Stored at source granularity and resampled to waveformPointCount at
+    // read time. Bucketing here against a FIXED denominator (the 5-minute
+    // maximum) meant a 30-second note wrote only buckets 0..9 and left the
+    // other 90 at zero — the player drew four real bars and a flat line
+    // for the rest, whatever the audio actually did.
+    //
+    // Capped so a full-length recording cannot grow this without bound:
+    // past the cap, readings fold into the existing slots pairwise, which
+    // halves the resolution rather than dropping the tail.
+    if (_readings.length >= _maxReadings) _foldReadings();
+    _readings.add(normalized);
   }
 
   // Amplitude readings arrive every 100ms (see the onAmplitudeChanged
@@ -233,18 +255,47 @@ class VoiceRecorderService {
   // the first few buckets — a 10-second recording's readings land across
   // the first ~7 buckets (10s / 300s * 100), not all crammed into bucket 0.
   //
-  // Derived from maxDuration's raw millisecond count as a literal rather
-  // than `maxDuration.inMilliseconds ~/ 100` — Duration's getters are not
-  // const-evaluable in this Dart SDK, so that expression fails to compile
-  // as a static const initializer.
-  static const int _expectedTotalReadings = 5 * 60 * 1000 ~/ 100;
+
+  /// Halves the stored resolution in place: adjacent slots collapse to
+  /// their peak. Keeps the whole recording represented rather than
+  /// truncating whatever arrives after a cap.
+  void _foldReadings() {
+    for (var i = 0; i * 2 + 1 < _readings.length; i++) {
+      final a = _readings[i * 2];
+      final b = _readings[i * 2 + 1];
+      _readings[i] = a > b ? a : b;
+    }
+    final kept = _readings.length ~/ 2;
+    _readings.removeRange(kept, _readings.length);
+  }
+
+  /// Resamples the stored readings onto exactly [waveformPointCount]
+  /// points, spanning the whole recording however long it ran.
+  List<int> _resampledWaveform() {
+    final out = List<int>.filled(waveformPointCount, 0);
+    if (_readings.isEmpty) return out;
+
+    for (var i = 0; i < waveformPointCount; i++) {
+      final start = i * _readings.length ~/ waveformPointCount;
+      var end = (i + 1) * _readings.length ~/ waveformPointCount;
+      // Every output point takes at least one reading: with fewer
+      // readings than points, start == end would leave gaps at zero.
+      if (end <= start) end = start + 1;
+
+      var peak = 0.0;
+      for (var j = start; j < end && j < _readings.length; j++) {
+        if (_readings[j] > peak) peak = _readings[j];
+      }
+      out[i] = peak.round().clamp(0, 255);
+    }
+    return out;
+  }
 
   /// Test seam: current downsampled waveform, without stopping the
   /// recorder. Production callers only ever see this via stop()'s returned
   /// VoiceRecording.
   @visibleForTesting
-  List<int> debugCurrentWaveform() =>
-      _bucketPeaks.map((v) => v.round().clamp(0, 255)).toList();
+  List<int> debugCurrentWaveform() => _resampledWaveform();
 
   Future<VoiceRecording> stop() async {
     final alreadyCompleted = _completedRecording;
