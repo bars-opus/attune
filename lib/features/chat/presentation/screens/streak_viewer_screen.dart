@@ -24,6 +24,7 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
   List<StreakClip> _clips = const [];
   int _index = 0;
   VideoPlayerController? _controller;
+
   /// True only when there is genuinely nothing to play — the clips are
   /// spent, expired, or the fetch failed. Deliberately NOT a "finished
   /// loading" flag: the previous version cleared one as soon as the clips
@@ -40,8 +41,9 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
 
   Future<void> _load() async {
     try {
-      final clips =
-          await ref.read(streakRepositoryProvider).fetchClips(widget.messageId);
+      final clips = await ref
+          .read(streakRepositoryProvider)
+          .fetchClips(widget.messageId);
       if (!mounted) return;
 
       if (clips.isEmpty) {
@@ -134,50 +136,60 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
   Widget build(BuildContext context) {
     final controller = _controller;
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: GestureDetector(
-        onTap: () => unawaited(_finish()),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Two states while opening, matching the ephemeral video
-            // viewer: a ready controller plays, anything else spins. The
-            // unavailable message is reserved for the case where there is
-            // actually nothing to play, so it can never appear mid-open.
-            if (controller != null && controller.value.isInitialized)
-              Center(
-                child: AspectRatio(
-                  aspectRatio: controller.value.aspectRatio,
-                  child: VideoPlayer(controller),
-                ),
-              )
-            else if (_unavailable)
-              const Center(
-                child: Text(
-                  'This streak is no longer available.',
-                  style: TextStyle(color: Colors.white),
-                ),
-              )
-            else
-              const Center(child: CircularProgressIndicator()),
-
-            // Clip position, so a multi-clip streak does not feel like it
-            // stalled between segments.
-            if (_clips.length > 1)
-              Positioned(
-                top: 56,
-                left: 0,
-                right: 0,
-                child: Center(
+    // canPop:false so the OS back gesture and the system back button route
+    // through _finish like every other exit. Without this they popped the
+    // route directly, the RPC never ran, and a watched streak was never
+    // charged — it stayed on "Play" however many times it had been opened.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        unawaited(_finish());
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: GestureDetector(
+          onTap: () => unawaited(_finish()),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Two states while opening, matching the ephemeral video
+              // viewer: a ready controller plays, anything else spins. The
+              // unavailable message is reserved for the case where there is
+              // actually nothing to play, so it can never appear mid-open.
+              if (controller != null && controller.value.isInitialized)
+                Center(
+                  child: AspectRatio(
+                    aspectRatio: controller.value.aspectRatio,
+                    child: VideoPlayer(controller),
+                  ),
+                )
+              else if (_unavailable)
+                const Center(
                   child: Text(
-                    '${_index + 1} / ${_clips.length}',
-                    style: const TextStyle(color: Colors.white70),
+                    'This streak is no longer available.',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                )
+              else
+                const Center(child: CircularProgressIndicator()),
+
+              // Clip position, so a multi-clip streak does not feel like it
+              // stalled between segments.
+              if (_clips.length > 1)
+                Positioned(
+                  top: 56,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Text(
+                      '${_index + 1} / ${_clips.length}',
+                      style: const TextStyle(color: Colors.white70),
+                    ),
                   ),
                 ),
-              ),
-
-          ],
+            ],
+          ),
         ),
       ),
     );

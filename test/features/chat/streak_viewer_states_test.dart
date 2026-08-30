@@ -12,6 +12,28 @@ void main() {
         ).readAsStringSync();
   });
 
+  test('a back-gesture dismissal still spends the view', () {
+    // _finish() ran on playback completion and on an explicit tap, but the
+    // OS back gesture and the system back button pop the route directly.
+    // That path never called the RPC, so the streak was watched and
+    // nothing was charged — it stayed on "Play" however many times it had
+    // been opened.
+    expect(
+      src,
+      contains('PopScope'),
+      reason:
+          'the route must intercept its own pop, or a back-gesture exit '
+          'skips the decrement entirely',
+    );
+    expect(
+      src,
+      contains('canPop: false'),
+      reason:
+          'the pop has to be blocked until _finish has spent the view; '
+          'letting it through and charging afterwards is the same race',
+    );
+  });
+
   test(
     '"no longer available" cannot show while the video is still opening',
     () {
