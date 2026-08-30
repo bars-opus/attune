@@ -5,34 +5,36 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/chat_test_harness.dart';
 
 void main() {
-  test('a new partner message while viewing fires one receive haptic',
-      () async {
-    final repo = FakeChatRepository(currentUserId: 'user-a');
-    final fake = FakeHaptics();
-    final convo = activeConversation('rel-1');
-    repo.conversationOverride = convo;
-    final container = buildChatContainer(
-      repository: repo,
-      userId: 'user-a',
-      extraOverrides: [hapticsProvider.overrideWithValue(fake)],
-    );
-    addTearDown(container.dispose);
-    final controller = container.read(chatControllerProvider(convo).notifier);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    controller.setViewActive(true);
+  test(
+    'a new partner message while viewing fires one receive haptic',
+    () async {
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      final fake = FakeHaptics();
+      final convo = activeConversation('rel-1');
+      repo.conversationOverride = convo;
+      final container = buildChatContainer(
+        repository: repo,
+        userId: 'user-a',
+        extraOverrides: [hapticsProvider.overrideWithValue(fake)],
+      );
+      addTearDown(container.dispose);
+      final controller = container.read(chatControllerProvider(convo).notifier);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      controller.setViewActive(true);
 
-    repo.seedIncoming(
-      id: 'p1',
-      relationshipId: 'rel-1',
-      senderId: 'partner',
-      content: 'hey',
-      createdAt: DateTime.now(),
-    );
-    repo.emitRealtime();
-    await Future<void>.delayed(const Duration(milliseconds: 400));
+      repo.seedIncoming(
+        id: 'p1',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'hey',
+        createdAt: DateTime.now(),
+      );
+      repo.emitRealtime();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
 
-    expect(fake.selectionCount + fake.lightCount, greaterThanOrEqualTo(1));
-  });
+      expect(fake.selectionCount + fake.lightCount, greaterThanOrEqualTo(1));
+    },
+  );
 
   test('own message does not fire the receive haptic', () async {
     final repo = FakeChatRepository(currentUserId: 'user-a');
@@ -91,8 +93,7 @@ void main() {
     expect(fake.selectionCount, 0);
   });
 
-  test(
-      'partner messages already present in the initial history do not fire '
+  test('partner messages already present in the initial history do not fire '
       'the receive haptic on open', () async {
     final repo = FakeChatRepository(currentUserId: 'user-a');
     final fake = FakeHaptics();

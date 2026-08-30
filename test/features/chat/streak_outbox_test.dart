@@ -2,17 +2,17 @@ import 'package:attune/features/chat/data/cache/pending_send.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 PendingSend _streak({int? budget = 3}) => PendingSend(
-      clientMessageId: 'cm1',
-      relationshipId: 'rel-1',
-      senderId: 'user-a',
-      text: '',
-      localMediaPath: '/tmp/streak.mp4',
-      mediaMimeType: 'video/mp4',
-      mediaType: 'streak',
-      mediaDurationMs: 42000,
-      streakViewsRemaining: budget,
-      createdAt: DateTime.utc(2026, 1, 1),
-    );
+  clientMessageId: 'cm1',
+  relationshipId: 'rel-1',
+  senderId: 'user-a',
+  text: '',
+  localMediaPath: '/tmp/streak.mp4',
+  mediaMimeType: 'video/mp4',
+  mediaType: 'streak',
+  mediaDurationMs: 42000,
+  streakViewsRemaining: budget,
+  createdAt: DateTime.utc(2026, 1, 1),
+);
 
 void main() {
   test('a streak round-trips through the cache with its budget', () {

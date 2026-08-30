@@ -51,9 +51,10 @@ void main() {
     // A streak is someone talking to their partner. A muted format
     // removes most of what makes it worth sending, and the flag is easy
     // to lose in a later refactor.
-    final src = File(
-      'lib/features/chat/presentation/screens/streak_camera_screen.dart',
-    ).readAsStringSync();
+    final src =
+        File(
+          'lib/features/chat/presentation/screens/streak_camera_screen.dart',
+        ).readAsStringSync();
     expect(src, contains('enableAudio: true'));
   });
 
@@ -61,9 +62,10 @@ void main() {
     // A bare CameraPreview in a StackFit.expand Stack scales the sensor
     // image to the screen's shape and elongates everything — the bug
     // fixed in 6db5763d on the ephemeral camera.
-    final src = File(
-      'lib/features/chat/presentation/screens/streak_camera_screen.dart',
-    ).readAsStringSync();
+    final src =
+        File(
+          'lib/features/chat/presentation/screens/streak_camera_screen.dart',
+        ).readAsStringSync();
     expect(src, contains('BoxFit.cover'));
   });
 }

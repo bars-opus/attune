@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:attune/features/chat/presentation/providers/voice_playback_provider.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
+import 'package:attune/core/widgets/rolling_duration.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -59,13 +60,6 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
     // explicit out-of-scope list.
     _player.dispose();
     super.dispose();
-  }
-
-  String _formatDuration(Duration d) {
-    final totalSeconds = d.inSeconds;
-    final minutes = totalSeconds ~/ 60;
-    final seconds = totalSeconds % 60;
-    return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
   Future<void> _togglePlayback() async {
@@ -208,10 +202,12 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
           ),
         ),
         const SizedBox(width: 8),
-        Text(
-          _formatDuration(
-            _isPlaying || _position > Duration.zero ? _position : total,
-          ),
+        // Rolls rather than jumps, so the ticking second registers at a
+        // glance without re-reading the digits — the same treatment the
+        // recording scrim gives its own timer.
+        RollingDuration(
+          keyPrefix: 'voice-playback-duration',
+          value: _isPlaying || _position > Duration.zero ? _position : total,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: colorScheme.onSurfaceVariant,
             fontFeatures: const [FontFeature.tabularFigures()],

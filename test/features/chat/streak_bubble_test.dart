@@ -9,43 +9,43 @@ Widget _wrap(Widget child) =>
 
 void main() {
   testWidgets('unwatched: a play button and "Play"', (tester) async {
-    await tester.pumpWidget(_wrap(StreakBubble(
-      viewsRemaining: 1,
-      hasBeenPlayed: false,
-      onTap: () {},
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(viewsRemaining: 1, hasBeenPlayed: false, onTap: () {}),
+      ),
+    );
 
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     expect(find.text('Play'), findsOneWidget);
   });
 
   testWidgets('after the first play it reads "Tap to play"', (tester) async {
-    await tester.pumpWidget(_wrap(StreakBubble(
-      viewsRemaining: 2,
-      hasBeenPlayed: true,
-      onTap: () {},
-    )));
+    await tester.pumpWidget(
+      _wrap(StreakBubble(viewsRemaining: 2, hasBeenPlayed: true, onTap: () {})),
+    );
 
     expect(find.text('Tap to play'), findsOneWidget);
     expect(find.text('Play'), findsNothing);
   });
 
   testWidgets('a replay budget shows how many are left', (tester) async {
-    await tester.pumpWidget(_wrap(StreakBubble(
-      viewsRemaining: 3,
-      hasBeenPlayed: true,
-      onTap: () {},
-    )));
+    await tester.pumpWidget(
+      _wrap(StreakBubble(viewsRemaining: 3, hasBeenPlayed: true, onTap: () {})),
+    );
     expect(find.textContaining('3'), findsOneWidget);
   });
 
   testWidgets('a spent streak is not tappable and says so', (tester) async {
     var tapped = false;
-    await tester.pumpWidget(_wrap(StreakBubble(
-      viewsRemaining: 0,
-      hasBeenPlayed: true,
-      onTap: () => tapped = true,
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(
+          viewsRemaining: 0,
+          hasBeenPlayed: true,
+          onTap: () => tapped = true,
+        ),
+      ),
+    );
 
     expect(find.text('Streak expired'), findsOneWidget);
     expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
@@ -57,11 +57,15 @@ void main() {
 
   testWidgets('tapping an available streak fires onTap', (tester) async {
     var tapped = false;
-    await tester.pumpWidget(_wrap(StreakBubble(
-      viewsRemaining: 1,
-      hasBeenPlayed: false,
-      onTap: () => tapped = true,
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(
+          viewsRemaining: 1,
+          hasBeenPlayed: false,
+          onTap: () => tapped = true,
+        ),
+      ),
+    );
 
     await tester.tap(find.byType(StreakBubble));
     await tester.pump();
@@ -70,27 +74,32 @@ void main() {
 
   testWidgets('no thumbnail or caption is ever rendered', (tester) async {
     // The row must reveal nothing about the content before it is opened.
-    await tester.pumpWidget(_wrap(StreakBubble(
-      viewsRemaining: 1,
-      hasBeenPlayed: false,
-      onTap: () {},
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(viewsRemaining: 1, hasBeenPlayed: false, onTap: () {}),
+      ),
+    );
 
     expect(find.byType(Image), findsNothing);
   });
 
-  testWidgets('the review sheet offers only send and cancel — no caption',
-      (tester) async {
+  testWidgets('the review sheet offers only send and cancel — no caption', (
+    tester,
+  ) async {
     var sent = false;
     var cancelled = false;
 
-    await tester.pumpWidget(_wrap(StreakReviewSheet(
-      segments: const [
-        StreakSegment(path: '/tmp/a.mp4', duration: Duration(seconds: 60)),
-      ],
-      onSend: () => sent = true,
-      onDiscard: () => cancelled = true,
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakReviewSheet(
+          segments: const [
+            StreakSegment(path: '/tmp/a.mp4', duration: Duration(seconds: 60)),
+          ],
+          onSend: () => sent = true,
+          onDiscard: () => cancelled = true,
+        ),
+      ),
+    );
 
     // No caption field and no replay toggle: replays are a persistent
     // chat setting, and the capture flow stays record -> send or cancel.
@@ -110,13 +119,17 @@ void main() {
     var sent = false;
     var cancelled = false;
 
-    await tester.pumpWidget(_wrap(StreakReviewSheet(
-      segments: const [
-        StreakSegment(path: '/tmp/a.mp4', duration: Duration(seconds: 30)),
-      ],
-      onSend: () => sent = true,
-      onDiscard: () => cancelled = true,
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakReviewSheet(
+          segments: const [
+            StreakSegment(path: '/tmp/a.mp4', duration: Duration(seconds: 30)),
+          ],
+          onSend: () => sent = true,
+          onDiscard: () => cancelled = true,
+        ),
+      ),
+    );
 
     await tester.tap(find.text('Cancel'));
     await tester.pump();
@@ -126,16 +139,20 @@ void main() {
 
   testWidgets('the sender can replay until it is opened', (tester) async {
     var tapped = false;
-    await tester.pumpWidget(_wrap(StreakBubble(
-      // Zero, deliberately: the budget belongs to the RECIPIENT, so it
-      // must not gate the sender. With viewsRemaining: 1 this test passes
-      // even when the sender is wrongly subject to that budget.
-      viewsRemaining: 0,
-      hasBeenPlayed: false,
-      isMine: true,
-      openedByRecipient: false,
-      onTap: () => tapped = true,
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(
+          // Zero, deliberately: the budget belongs to the RECIPIENT, so it
+          // must not gate the sender. With viewsRemaining: 1 this test passes
+          // even when the sender is wrongly subject to that budget.
+          viewsRemaining: 0,
+          hasBeenPlayed: false,
+          isMine: true,
+          openedByRecipient: false,
+          onTap: () => tapped = true,
+        ),
+      ),
+    );
 
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     await tester.tap(find.byType(StreakBubble));
@@ -143,16 +160,21 @@ void main() {
     expect(tapped, isTrue);
   });
 
-  testWidgets('once opened, the sender sees "Opened" and cannot replay',
-      (tester) async {
+  testWidgets('once opened, the sender sees "Opened" and cannot replay', (
+    tester,
+  ) async {
     var tapped = false;
-    await tester.pumpWidget(_wrap(StreakBubble(
-      viewsRemaining: 1,
-      hasBeenPlayed: false,
-      isMine: true,
-      openedByRecipient: true,
-      onTap: () => tapped = true,
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(
+          viewsRemaining: 1,
+          hasBeenPlayed: false,
+          isMine: true,
+          openedByRecipient: true,
+          onTap: () => tapped = true,
+        ),
+      ),
+    );
 
     // Doubles as the sender's read receipt.
     expect(find.text('Opened'), findsOneWidget);
@@ -163,16 +185,21 @@ void main() {
     expect(tapped, isFalse);
   });
 
-  testWidgets('the recipient is unaffected by openedByRecipient',
-      (tester) async {
+  testWidgets('the recipient is unaffected by openedByRecipient', (
+    tester,
+  ) async {
     // Their own budget governs them, not the flag that locks the sender.
-    await tester.pumpWidget(_wrap(StreakBubble(
-      viewsRemaining: 2,
-      hasBeenPlayed: true,
-      isMine: false,
-      openedByRecipient: true,
-      onTap: () {},
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(
+          viewsRemaining: 2,
+          hasBeenPlayed: true,
+          isMine: false,
+          openedByRecipient: true,
+          onTap: () {},
+        ),
+      ),
+    );
 
     expect(find.text('Tap to play'), findsOneWidget);
     expect(find.text('2 left'), findsOneWidget);
@@ -180,13 +207,17 @@ void main() {
 
   testWidgets('an in-flight streak says Sending, not Play', (tester) async {
     var tapped = false;
-    await tester.pumpWidget(_wrap(StreakBubble(
-      viewsRemaining: 1,
-      hasBeenPlayed: false,
-      isMine: true,
-      isSending: true,
-      onTap: () => tapped = true,
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(
+          viewsRemaining: 1,
+          hasBeenPlayed: false,
+          isMine: true,
+          isSending: true,
+          onTap: () => tapped = true,
+        ),
+      ),
+    );
 
     expect(find.text('Sending…'), findsOneWidget);
     expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
@@ -201,12 +232,16 @@ void main() {
   });
 
   testWidgets('once sent it becomes playable', (tester) async {
-    await tester.pumpWidget(_wrap(StreakBubble(
-      viewsRemaining: 1,
-      hasBeenPlayed: false,
-      isMine: true,
-      onTap: () {},
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(
+          viewsRemaining: 1,
+          hasBeenPlayed: false,
+          isMine: true,
+          onTap: () {},
+        ),
+      ),
+    );
 
     expect(find.text('Sending…'), findsNothing);
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);

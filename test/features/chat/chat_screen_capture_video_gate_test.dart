@@ -60,19 +60,33 @@ void main() {
   }) {
     return ProviderContainer(
       overrides: [
-        chatEphemeralVideoEnabledProvider.overrideWith((ref) async => ephemeral),
+        chatEphemeralVideoEnabledProvider.overrideWith(
+          (ref) async => ephemeral,
+        ),
         chatVideoSharingEnabledProvider.overrideWith((ref) async => video),
         chatImageSharingEnabledProvider.overrideWith((ref) async => image),
       ],
     );
   }
 
-  test('captureVideoEnabled is true only when all three flags are enabled', () async {
-    final container = buildContainer(ephemeral: true, video: true, image: true);
-    addTearDown(container.dispose);
-    final result = await derive(container, ephemeral: true, video: true, image: true);
-    expect(result, isTrue);
-  });
+  test(
+    'captureVideoEnabled is true only when all three flags are enabled',
+    () async {
+      final container = buildContainer(
+        ephemeral: true,
+        video: true,
+        image: true,
+      );
+      addTearDown(container.dispose);
+      final result = await derive(
+        container,
+        ephemeral: true,
+        video: true,
+        image: true,
+      );
+      expect(result, isTrue);
+    },
+  );
 
   final falseCombinations = <({bool ephemeral, bool video, bool image})>[
     (ephemeral: false, video: true, image: true),
@@ -85,8 +99,7 @@ void main() {
   ];
 
   for (final combo in falseCombinations) {
-    test(
-        'captureVideoEnabled is false when ephemeral=${combo.ephemeral} '
+    test('captureVideoEnabled is false when ephemeral=${combo.ephemeral} '
         'video=${combo.video} image=${combo.image}', () async {
       final container = buildContainer(
         ephemeral: combo.ephemeral,

@@ -36,12 +36,14 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: withScreenUtil(MaterialApp(
-          home: ChatScreen(
-            conversation: convo,
-            initialJumpToMessageId: initialJumpToMessageId,
+        child: withScreenUtil(
+          MaterialApp(
+            home: ChatScreen(
+              conversation: convo,
+              initialJumpToMessageId: initialJumpToMessageId,
+            ),
           ),
-        )),
+        ),
       ),
     );
     await tester.pump(const Duration(milliseconds: 60));
@@ -60,80 +62,83 @@ void main() {
   }
 
   testWidgets(
-      'scrolls to and highlights the target message when it is already in the loaded page',
-      (tester) async {
-    final repo = FakeChatRepository(currentUserId: 'user-a');
-    final base = DateTime.now();
-    for (var i = 0; i < 10; i++) {
-      repo.seedIncoming(
-        id: 'm$i',
-        relationshipId: 'rel-1',
-        senderId: 'partner',
-        content: 'message $i',
-        createdAt: base.subtract(Duration(minutes: 10 - i)),
+    'scrolls to and highlights the target message when it is already in the loaded page',
+    (tester) async {
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      final base = DateTime.now();
+      for (var i = 0; i < 10; i++) {
+        repo.seedIncoming(
+          id: 'm$i',
+          relationshipId: 'rel-1',
+          senderId: 'partner',
+          content: 'message $i',
+          createdAt: base.subtract(Duration(minutes: 10 - i)),
+        );
+      }
+      final container = await pumpChat(
+        tester,
+        repo,
+        initialJumpToMessageId: 'm3',
       );
-    }
-    final container = await pumpChat(
-      tester,
-      repo,
-      initialJumpToMessageId: 'm3',
-    );
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('message 3'), findsOneWidget);
-    await tearDownChat(tester, container);
-  });
+      expect(find.text('message 3'), findsOneWidget);
+      await tearDownChat(tester, container);
+    },
+  );
 
   testWidgets(
-      'pages backward to find and scroll to a target message older than the first page',
-      (tester) async {
-    final repo = FakeChatRepository(currentUserId: 'user-a');
-    final base = DateTime.now();
-    // 12 messages with a page size of 5: the target (oldest, m0) is on the
-    // third page, so this only passes if loadMoreMessages is actually
-    // called repeatedly rather than just searching the first page.
-    for (var i = 0; i < 12; i++) {
-      repo.seedIncoming(
-        id: 'm$i',
-        relationshipId: 'rel-1',
-        senderId: 'partner',
-        content: 'message $i',
-        createdAt: base.subtract(Duration(minutes: 12 - i)),
+    'pages backward to find and scroll to a target message older than the first page',
+    (tester) async {
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      final base = DateTime.now();
+      // 12 messages with a page size of 5: the target (oldest, m0) is on the
+      // third page, so this only passes if loadMoreMessages is actually
+      // called repeatedly rather than just searching the first page.
+      for (var i = 0; i < 12; i++) {
+        repo.seedIncoming(
+          id: 'm$i',
+          relationshipId: 'rel-1',
+          senderId: 'partner',
+          content: 'message $i',
+          createdAt: base.subtract(Duration(minutes: 12 - i)),
+        );
+      }
+      final container = await pumpChat(
+        tester,
+        repo,
+        initialJumpToMessageId: 'm0',
+        messagePageSize: 5,
       );
-    }
-    final container = await pumpChat(
-      tester,
-      repo,
-      initialJumpToMessageId: 'm0',
-      messagePageSize: 5,
-    );
-    // Allow the paging loop's async loadMoreMessages calls to complete —
-    // each is a real (fake-repo) round trip plus a settle.
-    for (var i = 0; i < 6; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    await tester.pump(const Duration(milliseconds: 400));
+      // Allow the paging loop's async loadMoreMessages calls to complete —
+      // each is a real (fake-repo) round trip plus a settle.
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('message 0'), findsOneWidget);
-    await tearDownChat(tester, container);
-  });
+      expect(find.text('message 0'), findsOneWidget);
+      await tearDownChat(tester, container);
+    },
+  );
 
   testWidgets(
-      'does nothing when initialJumpToMessageId is null (normal open)',
-      (tester) async {
-    final repo = FakeChatRepository(currentUserId: 'user-a');
-    repo.seedIncoming(
-      id: 'm1',
-      relationshipId: 'rel-1',
-      senderId: 'partner',
-      content: 'hello there',
-      createdAt: DateTime.now(),
-    );
-    final container = await pumpChat(tester, repo);
-    await tester.pump(const Duration(milliseconds: 400));
+    'does nothing when initialJumpToMessageId is null (normal open)',
+    (tester) async {
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      repo.seedIncoming(
+        id: 'm1',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'hello there',
+        createdAt: DateTime.now(),
+      );
+      final container = await pumpChat(tester, repo);
+      await tester.pump(const Duration(milliseconds: 400));
 
-    expect(tester.takeException(), isNull);
-    expect(find.text('hello there'), findsOneWidget);
-    await tearDownChat(tester, container);
-  });
+      expect(tester.takeException(), isNull);
+      expect(find.text('hello there'), findsOneWidget);
+      await tearDownChat(tester, container);
+    },
+  );
 }

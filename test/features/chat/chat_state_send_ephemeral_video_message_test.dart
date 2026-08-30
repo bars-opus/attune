@@ -31,8 +31,7 @@ class _Booted {
   final ProviderContainer container;
   final Conversation conversation;
 
-  ChatState get state =>
-      container.read(chatControllerProvider(conversation));
+  ChatState get state => container.read(chatControllerProvider(conversation));
 }
 
 void main() {
@@ -60,9 +59,7 @@ void main() {
     addTearDown(container.dispose);
     final convo = conversation ?? activeConversation(relId);
     repo.conversationOverride = convo;
-    final controller = container.read(
-      chatControllerProvider(convo).notifier,
-    );
+    final controller = container.read(chatControllerProvider(convo).notifier);
     // Let _init() (cache read, refresh, load, subscribe) settle.
     await Future<void>.delayed(const Duration(milliseconds: 20));
     return _Booted(controller, container, convo);
@@ -76,27 +73,28 @@ void main() {
   }
 
   group('sendEphemeralVideoMessage', () {
-    test('missing local video file sets state.error and does not queue',
-        () async {
-      final repo = FakeChatRepository(currentUserId: userId);
-      final b = await boot(repo);
-      final thumbPath = await writeFile('poster.jpg');
-
-      await b.controller.sendEphemeralVideoMessage(
-        localPath: p.join(tempDir.path, 'does_not_exist.mp4'),
-        durationMs: 2000,
-        thumbnailLocalPath: thumbPath,
-        width: 720,
-        height: 1280,
-      );
-
-      expect(b.state.messages, isEmpty);
-      expect(b.state.error, isNotNull);
-      expect(repo.sendCallCount, 0);
-    });
-
     test(
-        'missing thumbnail file (video exists, poster does not) sets '
+      'missing local video file sets state.error and does not queue',
+      () async {
+        final repo = FakeChatRepository(currentUserId: userId);
+        final b = await boot(repo);
+        final thumbPath = await writeFile('poster.jpg');
+
+        await b.controller.sendEphemeralVideoMessage(
+          localPath: p.join(tempDir.path, 'does_not_exist.mp4'),
+          durationMs: 2000,
+          thumbnailLocalPath: thumbPath,
+          width: 720,
+          height: 1280,
+        );
+
+        expect(b.state.messages, isEmpty);
+        expect(b.state.error, isNotNull);
+        expect(repo.sendCallCount, 0);
+      },
+    );
+
+    test('missing thumbnail file (video exists, poster does not) sets '
         'state.error and does not queue', () async {
       final repo = FakeChatRepository(currentUserId: userId);
       final b = await boot(repo);
@@ -115,11 +113,9 @@ void main() {
       expect(repo.sendCallCount, 0);
     });
 
-    test(
-        'duration over the 10s ephemeral cap sets state.error and does not '
+    test('duration over the 10s ephemeral cap sets state.error and does not '
         'queue — proves this is a genuinely different bound from '
-        "sendVideoMessage's 3-minute ChatVideoPreparer.maxDuration",
-        () async {
+        "sendVideoMessage's 3-minute ChatVideoPreparer.maxDuration", () async {
       final repo = FakeChatRepository(currentUserId: userId);
       final b = await boot(repo);
       final videoPath = await writeFile('too_long.mp4');
@@ -143,28 +139,28 @@ void main() {
     });
 
     test(
-        'duration under min returns silently with no error and no queued message',
-        () async {
-      final repo = FakeChatRepository(currentUserId: userId);
-      final b = await boot(repo);
-      final videoPath = await writeFile('too_short.mp4');
-      final thumbPath = await writeFile('poster_short.jpg');
+      'duration under min returns silently with no error and no queued message',
+      () async {
+        final repo = FakeChatRepository(currentUserId: userId);
+        final b = await boot(repo);
+        final videoPath = await writeFile('too_short.mp4');
+        final thumbPath = await writeFile('poster_short.jpg');
 
-      await b.controller.sendEphemeralVideoMessage(
-        localPath: videoPath,
-        durationMs: ChatVideoPreparer.minDuration.inMilliseconds - 100,
-        thumbnailLocalPath: thumbPath,
-        width: 720,
-        height: 1280,
-      );
+        await b.controller.sendEphemeralVideoMessage(
+          localPath: videoPath,
+          durationMs: ChatVideoPreparer.minDuration.inMilliseconds - 100,
+          thumbnailLocalPath: thumbPath,
+          width: 720,
+          height: 1280,
+        );
 
-      expect(b.state.messages, isEmpty);
-      expect(b.state.error, isNull);
-      expect(repo.sendCallCount, 0);
-    });
+        expect(b.state.messages, isEmpty);
+        expect(b.state.error, isNull);
+        expect(repo.sendCallCount, 0);
+      },
+    );
 
-    test(
-        'a valid send produces exactly one optimistic message with '
+    test('a valid send produces exactly one optimistic message with '
         'mediaType video, isViewOnce true, isEphemeralVideoAvailable true, '
         'status sending', () async {
       final repo = FakeChatRepository(currentUserId: userId)
@@ -205,8 +201,7 @@ void main() {
       expect(repo.sendCallCount, 1);
     });
 
-    test(
-        'a canonical row in state that transitions to expired during a '
+    test('a canonical row in state that transitions to expired during a '
         'merge has its local capture file deleted and localMediaPath '
         'cleared (Important finding I3)', () async {
       // _attemptSend already deletes pending.localMediaPath immediately
@@ -272,8 +267,7 @@ void main() {
       );
     });
 
-    test(
-        'a still-optimistic (_local_) row for the same message is cleaned '
+    test('a still-optimistic (_local_) row for the same message is cleaned '
         'up too if a realtime merge lands an already-expired canonical row '
         'before the send pipeline swaps the optimistic row out '
         '(Important finding I3)', () async {

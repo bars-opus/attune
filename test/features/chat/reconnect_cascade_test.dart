@@ -7,17 +7,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/chat_test_harness.dart';
 
 void main() {
-  testWidgets('a batch of messages arriving after reconnect each animate in',
-      (tester) async {
+  testWidgets('a batch of messages arriving after reconnect each animate in', (
+    tester,
+  ) async {
     final repo = FakeChatRepository(currentUserId: 'user-a');
     final convo = activeConversation('rel-1');
     repo.conversationOverride = convo;
     final container = buildChatContainer(repository: repo, userId: 'user-a');
 
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: withScreenUtil(MaterialApp(home: ChatScreen(conversation: convo))),
-    ));
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: withScreenUtil(
+          MaterialApp(home: ChatScreen(conversation: convo)),
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 40));
 
     // Three partner messages arrive together, then a realtime tick.
@@ -43,10 +48,11 @@ void main() {
     // than bubbles further down the newest-run, and at least one later
     // bubble in the batch should have a strictly longer duration than the
     // topmost one, proving the cascade offset is applied.
-    final settleIns = tester
-        .widgetList<SettleIn>(find.byType(SettleIn))
-        .where((w) => w.animate)
-        .toList();
+    final settleIns =
+        tester
+            .widgetList<SettleIn>(find.byType(SettleIn))
+            .where((w) => w.animate)
+            .toList();
     expect(settleIns.length, greaterThanOrEqualTo(3));
     final durations = settleIns.map((w) => w.duration).toList();
     expect(durations.last, greaterThan(durations.first));

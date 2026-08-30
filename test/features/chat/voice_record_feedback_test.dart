@@ -215,7 +215,7 @@ void main() {
 
       // The counter belongs on the scrim, vertically centred — not in a
       // bar down at the composer.
-      final counter = find.byKey(const ValueKey('voice-scrim-counter'));
+      final counter = find.byKey(const ValueKey('voice-scrim-counter-seconds'));
       expect(counter, findsOneWidget);
       final screen = tester.getSize(find.byType(MaterialApp)).height;
       expect(

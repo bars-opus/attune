@@ -15,7 +15,10 @@ void main() {
         'edited_at': null,
       };
       final message = Message.fromRow(row, currentUserId: 'u1');
-      expect(message.deletedAt, DateTime.parse('2026-08-13T10:02:00Z').toLocal());
+      expect(
+        message.deletedAt,
+        DateTime.parse('2026-08-13T10:02:00Z').toLocal(),
+      );
       expect(message.editedAt, isNull);
       expect(message.isDeleted, isTrue);
     });
@@ -32,7 +35,10 @@ void main() {
         'edited_at': '2026-08-13T10:01:00Z',
       };
       final message = Message.fromRow(row, currentUserId: 'u1');
-      expect(message.editedAt, DateTime.parse('2026-08-13T10:01:00Z').toLocal());
+      expect(
+        message.editedAt,
+        DateTime.parse('2026-08-13T10:01:00Z').toLocal(),
+      );
       expect(message.isDeleted, isFalse);
     });
 
@@ -60,7 +66,10 @@ void main() {
         content: 'hi',
         createdAt: DateTime.now().subtract(const Duration(minutes: 2)),
       );
-      expect(message.canEditOrDelete(currentUserId: 'u1', now: DateTime.now()), isTrue);
+      expect(
+        message.canEditOrDelete(currentUserId: 'u1', now: DateTime.now()),
+        isTrue,
+      );
     });
 
     test('canEditOrDelete is false past the 5-minute window', () {
@@ -72,7 +81,10 @@ void main() {
         content: 'hi',
         createdAt: DateTime.now().subtract(const Duration(minutes: 6)),
       );
-      expect(message.canEditOrDelete(currentUserId: 'u1', now: DateTime.now()), isFalse);
+      expect(
+        message.canEditOrDelete(currentUserId: 'u1', now: DateTime.now()),
+        isFalse,
+      );
     });
 
     test('canEditOrDelete is false for a message from the other sender', () {
@@ -84,7 +96,10 @@ void main() {
         content: 'hi',
         createdAt: DateTime.now(),
       );
-      expect(message.canEditOrDelete(currentUserId: 'u1', now: DateTime.now()), isFalse);
+      expect(
+        message.canEditOrDelete(currentUserId: 'u1', now: DateTime.now()),
+        isFalse,
+      );
     });
 
     test('canEditOrDelete is false for an already-deleted message', () {
@@ -98,7 +113,10 @@ void main() {
         'deleted_at': DateTime.now().toIso8601String(),
       };
       final message = Message.fromRow(row, currentUserId: 'u1');
-      expect(message.canEditOrDelete(currentUserId: 'u1', now: DateTime.now()), isFalse);
+      expect(
+        message.canEditOrDelete(currentUserId: 'u1', now: DateTime.now()),
+        isFalse,
+      );
     });
   });
 }

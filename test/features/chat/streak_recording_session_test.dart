@@ -6,7 +6,8 @@ void main() {
     test('splits exactly at 60 seconds, not before', () {
       expect(
         StreakRecordingSession.shouldSplitAt(
-            const Duration(seconds: 59, milliseconds: 999)),
+          const Duration(seconds: 59, milliseconds: 999),
+        ),
         isFalse,
       );
       expect(
@@ -35,7 +36,9 @@ void main() {
     test('a stray tap sends nothing', () {
       expect(
         StreakRecordingSession.shouldDiscard(
-            completedSegments: 0, held: const Duration(milliseconds: 200)),
+          completedSegments: 0,
+          held: const Duration(milliseconds: 200),
+        ),
         isTrue,
       );
     });
@@ -43,7 +46,9 @@ void main() {
     test('a first segment past the minimum is kept', () {
       expect(
         StreakRecordingSession.shouldDiscard(
-            completedSegments: 0, held: const Duration(milliseconds: 900)),
+          completedSegments: 0,
+          held: const Duration(milliseconds: 900),
+        ),
         isFalse,
       );
     });
@@ -53,7 +58,9 @@ void main() {
       // this would lose content the user watched themselves record.
       expect(
         StreakRecordingSession.shouldDiscard(
-            completedSegments: 1, held: const Duration(milliseconds: 200)),
+          completedSegments: 1,
+          held: const Duration(milliseconds: 200),
+        ),
         isFalse,
       );
     });

@@ -4,19 +4,18 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Widget _wrap(Widget child, {bool reduceMotion = false}) => MediaQuery(
-      data: MediaQueryData(
-        size: const Size(390, 844),
-        disableAnimations: reduceMotion,
-      ),
-      child: Directionality(
-        textDirection: TextDirection.ltr,
-        child: SizedBox(width: 390, height: 844, child: child),
-      ),
-    );
+  data: MediaQueryData(
+    size: const Size(390, 844),
+    disableAnimations: reduceMotion,
+  ),
+  child: Directionality(
+    textDirection: TextDirection.ltr,
+    child: SizedBox(width: 390, height: 844, child: child),
+  ),
+);
 
 void main() {
-  testWidgets('renders a dense field, not a handful of motifs',
-      (tester) async {
+  testWidgets('renders a dense field, not a handful of motifs', (tester) async {
     await tester.pumpWidget(_wrap(const DoodleField(color: Colors.green)));
     await tester.pump();
 
@@ -24,13 +23,15 @@ void main() {
     expect(
       count,
       greaterThanOrEqualTo(40),
-      reason: 'the reference is a packed field; six motifs cannot read '
+      reason:
+          'the reference is a packed field; six motifs cannot read '
           'like it at any scale',
     );
   });
 
-  testWidgets('every doodle still renders when motion is reduced',
-      (tester) async {
+  testWidgets('every doodle still renders when motion is reduced', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _wrap(const DoodleField(color: Colors.green), reduceMotion: true),
     );

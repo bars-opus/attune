@@ -10,21 +10,23 @@ import 'package:flutter_test/flutter_test.dart';
 const _primary = Color(0xFF2E7D5B);
 
 Widget _wrap(Widget child) => MaterialApp(
-      theme: ThemeData(
-        colorScheme: const ColorScheme.light(primary: _primary),
-      ),
-      home: Scaffold(backgroundColor: Colors.black, body: Center(child: child)),
-    );
+  theme: ThemeData(colorScheme: const ColorScheme.light(primary: _primary)),
+  home: Scaffold(backgroundColor: Colors.black, body: Center(child: child)),
+);
 
 void main() {
   group('idle — a hollow ring, ready to record', () {
     testWidgets('draws a ring outline and no fill', (tester) async {
-      await tester.pumpWidget(_wrap(StreakRecordButton(
-        progress: 0,
-        isRecording: false,
-        onPressStart: () {},
-        onPressEnd: () {},
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          StreakRecordButton(
+            progress: 0,
+            isRecording: false,
+            onPressStart: () {},
+            onPressEnd: () {},
+          ),
+        ),
+      );
 
       final ring = tester.widget<Container>(
         find.byKey(const ValueKey('streak-record-ring')),
@@ -41,25 +43,34 @@ void main() {
     });
 
     testWidgets('shows no progress arc when idle', (tester) async {
-      await tester.pumpWidget(_wrap(StreakRecordButton(
-        progress: 0,
-        isRecording: false,
-        onPressStart: () {},
-        onPressEnd: () {},
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          StreakRecordButton(
+            progress: 0,
+            isRecording: false,
+            onPressStart: () {},
+            onPressEnd: () {},
+          ),
+        ),
+      );
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
   });
 
   group('recording — a filled disc with a progress arc', () {
-    testWidgets('fills with the app primary, never a hardcoded colour',
-        (tester) async {
-      await tester.pumpWidget(_wrap(StreakRecordButton(
-        progress: 0.4,
-        isRecording: true,
-        onPressStart: () {},
-        onPressEnd: () {},
-      )));
+    testWidgets('fills with the app primary, never a hardcoded colour', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          StreakRecordButton(
+            progress: 0.4,
+            isRecording: true,
+            onPressStart: () {},
+            onPressEnd: () {},
+          ),
+        ),
+      );
 
       final fill = tester.widget<Container>(
         find.byKey(const ValueKey('streak-record-fill')),
@@ -69,19 +80,25 @@ void main() {
       expect(
         decoration.color,
         _primary,
-        reason: 'the reference is Snapchat yellow; ours must be the app '
+        reason:
+            'the reference is Snapchat yellow; ours must be the app '
             'primary so it stays on-brand in both themes',
       );
     });
 
-    testWidgets('the arc sits clear of the disc, not on its edge',
-        (tester) async {
-      await tester.pumpWidget(_wrap(StreakRecordButton(
-        progress: 0.4,
-        isRecording: true,
-        onPressStart: () {},
-        onPressEnd: () {},
-      )));
+    testWidgets('the arc sits clear of the disc, not on its edge', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          StreakRecordButton(
+            progress: 0.4,
+            isRecording: true,
+            onPressStart: () {},
+            onPressEnd: () {},
+          ),
+        ),
+      );
 
       final disc = tester.getSize(
         find.byKey(const ValueKey('streak-record-fill')),
@@ -100,12 +117,16 @@ void main() {
     });
 
     testWidgets('the arc tracks segment progress', (tester) async {
-      await tester.pumpWidget(_wrap(StreakRecordButton(
-        progress: 0.4,
-        isRecording: true,
-        onPressStart: () {},
-        onPressEnd: () {},
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          StreakRecordButton(
+            progress: 0.4,
+            isRecording: true,
+            onPressStart: () {},
+            onPressEnd: () {},
+          ),
+        ),
+      );
 
       final arc = tester.widget<CircularProgressIndicator>(
         find.byType(CircularProgressIndicator),
@@ -114,30 +135,40 @@ void main() {
       expect(
         arc.strokeWidth,
         greaterThanOrEqualTo(4),
-        reason: 'readable at a glance, not a hairline — thinner than the '
+        reason:
+            'readable at a glance, not a hairline — thinner than the '
             'earlier design because the arc now rings the disc with a gap '
             'rather than sitting on its edge',
       );
     });
 
-    testWidgets('the recording control is larger overall than idle',
-        (tester) async {
-      await tester.pumpWidget(_wrap(StreakRecordButton(
-        progress: 0,
-        isRecording: false,
-        onPressStart: () {},
-        onPressEnd: () {},
-      )));
+    testWidgets('the recording control is larger overall than idle', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          StreakRecordButton(
+            progress: 0,
+            isRecording: false,
+            onPressStart: () {},
+            onPressEnd: () {},
+          ),
+        ),
+      );
       final idle = tester.getSize(
         find.byKey(const ValueKey('streak-record-ring')),
       );
 
-      await tester.pumpWidget(_wrap(StreakRecordButton(
-        progress: 0.1,
-        isRecording: true,
-        onPressStart: () {},
-        onPressEnd: () {},
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          StreakRecordButton(
+            progress: 0.1,
+            isRecording: true,
+            onPressStart: () {},
+            onPressEnd: () {},
+          ),
+        ),
+      );
       await tester.pump(const Duration(milliseconds: 300));
       // The DISC is smaller than the idle ring now that the arc rings it
       // with a gap; what grows is the control as a whole.
@@ -153,19 +184,25 @@ void main() {
     });
   });
 
-  testWidgets('press and release both fire on a tap with no movement',
-      (tester) async {
+  testWidgets('press and release both fire on a tap with no movement', (
+    tester,
+  ) async {
     var started = false;
     var ended = false;
-    await tester.pumpWidget(_wrap(StreakRecordButton(
-      progress: 0,
-      isRecording: false,
-      onPressStart: () => started = true,
-      onPressEnd: () => ended = true,
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakRecordButton(
+          progress: 0,
+          isRecording: false,
+          onPressStart: () => started = true,
+          onPressEnd: () => ended = true,
+        ),
+      ),
+    );
 
-    final gesture = await tester
-        .startGesture(tester.getCenter(find.byType(StreakRecordButton)));
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(StreakRecordButton)),
+    );
     await tester.pump(const Duration(milliseconds: 50));
     expect(started, isTrue);
 
@@ -180,9 +217,10 @@ void main() {
     // device's arena does not. Swapping to pan therefore passes every
     // widget test and fails in the user's hand — which is precisely how
     // 511f4665 shipped, leaving the recorder running after a quick tap.
-    final src = File(
-      'lib/features/chat/presentation/widgets/streak_record_button.dart',
-    ).readAsStringSync();
+    final src =
+        File(
+          'lib/features/chat/presentation/widgets/streak_record_button.dart',
+        ).readAsStringSync();
 
     expect(src, contains('onPointerDown'));
     expect(src, contains('onPointerUp'));
@@ -193,15 +231,20 @@ void main() {
     );
   });
 
-  testWidgets('sending turns the ring into the loading indicator',
-      (tester) async {
-    await tester.pumpWidget(_wrap(StreakRecordButton(
-      progress: 0,
-      isRecording: false,
-      isSending: true,
-      onPressStart: () {},
-      onPressEnd: () {},
-    )));
+  testWidgets('sending turns the ring into the loading indicator', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _wrap(
+        StreakRecordButton(
+          progress: 0,
+          isRecording: false,
+          isSending: true,
+          onPressStart: () {},
+          onPressEnd: () {},
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 100));
 
     // An indeterminate sweep on the button itself — the screen should not
@@ -216,16 +259,21 @@ void main() {
 
   testWidgets('a sending button ignores presses', (tester) async {
     var started = false;
-    await tester.pumpWidget(_wrap(StreakRecordButton(
-      progress: 0,
-      isRecording: false,
-      isSending: true,
-      onPressStart: () => started = true,
-      onPressEnd: () {},
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakRecordButton(
+          progress: 0,
+          isRecording: false,
+          isSending: true,
+          onPressStart: () => started = true,
+          onPressEnd: () {},
+        ),
+      ),
+    );
 
-    final gesture = await tester
-        .startGesture(tester.getCenter(find.byType(StreakRecordButton)));
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(StreakRecordButton)),
+    );
     await tester.pump(const Duration(milliseconds: 50));
     await gesture.up();
 
@@ -236,25 +284,27 @@ void main() {
     );
   });
 
-  testWidgets('every press fires a haptic, not just the first',
-      (tester) async {
+  testWidgets('every press fires a haptic, not just the first', (tester) async {
     // Behavioural now that haptics are injectable: the source assertion
     // this replaces could not tell a haptic that fires once from one that
     // fires every time, which is exactly the reported symptom.
     final haptics = FakeHaptics();
 
-    Widget build() => _wrap(StreakRecordButton(
-          progress: 0,
-          isRecording: false,
-          haptics: haptics,
-          onPressStart: () {},
-          onPressEnd: () {},
-        ));
+    Widget build() => _wrap(
+      StreakRecordButton(
+        progress: 0,
+        isRecording: false,
+        haptics: haptics,
+        onPressStart: () {},
+        onPressEnd: () {},
+      ),
+    );
 
     for (var i = 1; i <= 3; i++) {
       await tester.pumpWidget(build());
-      final gesture = await tester
-          .startGesture(tester.getCenter(find.byType(StreakRecordButton)));
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(StreakRecordButton)),
+      );
       await tester.pump(const Duration(milliseconds: 30));
       await gesture.up();
       await tester.pump();
@@ -262,18 +312,21 @@ void main() {
     }
   });
 
-  testWidgets('stopping a locked take fires a medium haptic',
-      (tester) async {
+  testWidgets('stopping a locked take fires a medium haptic', (tester) async {
     final haptics = FakeHaptics();
-    await tester.pumpWidget(_wrap(StreakRecordButton(
-      progress: 0.5,
-      isRecording: true,
-      isLocked: true,
-      haptics: haptics,
-      onPressStart: () {},
-      onPressEnd: () {},
-      onStop: () {},
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakRecordButton(
+          progress: 0.5,
+          isRecording: true,
+          isLocked: true,
+          haptics: haptics,
+          onPressStart: () {},
+          onPressEnd: () {},
+          onStop: () {},
+        ),
+      ),
+    );
 
     await tester.tap(find.byType(StreakRecordButton));
     await tester.pump();
@@ -282,41 +335,47 @@ void main() {
     expect(haptics.lightCount, 0, reason: 'stopping is not a press');
   });
 
-  testWidgets('the camera warming up shows in the ring, not a centre spinner',
-      (tester) async {
-    await tester.pumpWidget(_wrap(StreakRecordButton(
-      progress: 0,
-      isRecording: false,
-      isPreparing: true,
-      onPressStart: () {},
-      onPressEnd: () {},
-    )));
+  testWidgets('the camera warming up shows in the ring, not a centre spinner', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _wrap(
+        StreakRecordButton(
+          progress: 0,
+          isRecording: false,
+          isPreparing: true,
+          onPressStart: () {},
+          onPressEnd: () {},
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 100));
 
     final arc = tester.widget<CircularProgressIndicator>(
       find.byType(CircularProgressIndicator),
     );
-    expect(
-      arc.value,
-      isNull,
-      reason: 'camera init has no measurable progress',
-    );
+    expect(arc.value, isNull, reason: 'camera init has no measurable progress');
     expect(
       arc.valueColor?.value,
       Colors.white,
-      reason: 'warming up is neutral; primary is reserved for the send, so '
+      reason:
+          'warming up is neutral; primary is reserved for the send, so '
           'the two waits are told apart at a glance',
     );
   });
 
   testWidgets('the sending sweep uses the app primary', (tester) async {
-    await tester.pumpWidget(_wrap(StreakRecordButton(
-      progress: 0,
-      isRecording: false,
-      isSending: true,
-      onPressStart: () {},
-      onPressEnd: () {},
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakRecordButton(
+          progress: 0,
+          isRecording: false,
+          isSending: true,
+          onPressStart: () {},
+          onPressEnd: () {},
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 100));
 
     final arc = tester.widget<CircularProgressIndicator>(
@@ -327,33 +386,35 @@ void main() {
 
   testWidgets('a preparing button ignores presses', (tester) async {
     var started = false;
-    await tester.pumpWidget(_wrap(StreakRecordButton(
-      progress: 0,
-      isRecording: false,
-      isPreparing: true,
-      onPressStart: () => started = true,
-      onPressEnd: () {},
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        StreakRecordButton(
+          progress: 0,
+          isRecording: false,
+          isPreparing: true,
+          onPressStart: () => started = true,
+          onPressEnd: () {},
+        ),
+      ),
+    );
 
-    final gesture = await tester
-        .startGesture(tester.getCenter(find.byType(StreakRecordButton)));
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(StreakRecordButton)),
+    );
     await tester.pump(const Duration(milliseconds: 50));
     await gesture.up();
 
-    expect(
-      started,
-      isFalse,
-      reason: 'there is no camera to record from yet',
-    );
+    expect(started, isFalse, reason: 'there is no camera to record from yet');
   });
 
   test('the camera screen has no centre spinner of its own', () {
     // The ring is the only loading affordance: a spinner in the middle of
     // a black screen says nothing the ring cannot, and reads as a broken
     // launch rather than a camera warming up.
-    final src = File(
-      'lib/features/chat/presentation/screens/streak_camera_screen.dart',
-    ).readAsStringSync();
+    final src =
+        File(
+          'lib/features/chat/presentation/screens/streak_camera_screen.dart',
+        ).readAsStringSync();
     expect(
       src,
       isNot(contains('Center(child: CircularProgressIndicator())')),

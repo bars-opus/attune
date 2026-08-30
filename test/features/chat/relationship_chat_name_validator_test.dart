@@ -35,16 +35,13 @@ void main() {
       expect(result.isValid, isFalse);
     });
 
-    test(
-      'length is measured after trimming — 30 chars plus padding whitespace '
-      'still passes',
-      () {
-        final name = '  ${'a' * 30}  ';
-        final result = validateRelationshipChatName(name);
-        expect(result.isValid, isTrue);
-        expect(result.trimmedName, 'a' * 30);
-      },
-    );
+    test('length is measured after trimming — 30 chars plus padding whitespace '
+        'still passes', () {
+      final name = '  ${'a' * 30}  ';
+      final result = validateRelationshipChatName(name);
+      expect(result.isValid, isTrue);
+      expect(result.trimmedName, 'a' * 30);
+    });
 
     test('accepts a single character (minimum boundary)', () {
       final result = validateRelationshipChatName('J');

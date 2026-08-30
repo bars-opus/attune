@@ -4,19 +4,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lottie/lottie.dart';
 
 Widget _wrap(Widget child, {bool reduceMotion = false}) => MediaQuery(
-      data: MediaQueryData(
-        size: const Size(390, 844),
-        disableAnimations: reduceMotion,
-      ),
-      child: Directionality(
-        textDirection: TextDirection.ltr,
-        child: SizedBox(width: 390, height: 844, child: child),
-      ),
-    );
+  data: MediaQueryData(
+    size: const Size(390, 844),
+    disableAnimations: reduceMotion,
+  ),
+  child: Directionality(
+    textDirection: TextDirection.ltr,
+    child: SizedBox(width: 390, height: 844, child: child),
+  ),
+);
 
 void main() {
   testWidgets('packs Lottie motifs into a dense field', (tester) async {
-    await tester.pumpWidget(_wrap(const LottieDoodleField(color: Colors.green)));
+    await tester.pumpWidget(
+      _wrap(const LottieDoodleField(color: Colors.green)),
+    );
     await tester.pump();
 
     expect(
@@ -26,22 +28,25 @@ void main() {
     );
   });
 
-  testWidgets('caps the field — Lottie is far heavier than an SVG',
-      (tester) async {
+  testWidgets('caps the field — Lottie is far heavier than an SVG', (
+    tester,
+  ) async {
     // Checked on a LARGE surface, where the packing produces well over
     // the cap. On a phone it yields fewer than 40 anyway, so a
     // phone-sized assertion passes even with the cap removed entirely.
-    await tester.pumpWidget(MediaQuery(
-      data: const MediaQueryData(size: Size(1400, 2200)),
-      child: const Directionality(
-        textDirection: TextDirection.ltr,
-        child: SizedBox(
-          width: 1400,
-          height: 2200,
-          child: LottieDoodleField(color: Colors.green),
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(size: Size(1400, 2200)),
+        child: const Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 1400,
+            height: 2200,
+            child: LottieDoodleField(color: Colors.green),
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     expect(
@@ -51,13 +56,15 @@ void main() {
       // still pass. The number here is the budget this wallpaper is
       // allowed, independent of what the source claims.
       lessThanOrEqualTo(45),
-      reason: 'each Lottie carries its own composition and controller; an '
+      reason:
+          'each Lottie carries its own composition and controller; an '
           'uncapped field is a battery and memory cost behind a chat',
     );
   });
 
-  testWidgets('renders every motif at rest when motion is reduced',
-      (tester) async {
+  testWidgets('renders every motif at rest when motion is reduced', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _wrap(const LottieDoodleField(color: Colors.green), reduceMotion: true),
     );
@@ -67,11 +74,15 @@ void main() {
   });
 
   testWidgets('is stable across rebuilds', (tester) async {
-    await tester.pumpWidget(_wrap(const LottieDoodleField(color: Colors.green)));
+    await tester.pumpWidget(
+      _wrap(const LottieDoodleField(color: Colors.green)),
+    );
     await tester.pump();
     final first = find.byType(LottieBuilder).evaluate().length;
 
-    await tester.pumpWidget(_wrap(const LottieDoodleField(color: Colors.green)));
+    await tester.pumpWidget(
+      _wrap(const LottieDoodleField(color: Colors.green)),
+    );
     await tester.pump();
 
     expect(find.byType(LottieBuilder).evaluate().length, first);

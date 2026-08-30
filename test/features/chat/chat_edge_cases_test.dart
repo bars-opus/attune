@@ -16,22 +16,24 @@ void main() {
   const userId = 'user-a';
   const relId = 'rel-1';
 
-  Future<({ChatController controller, ProviderContainer container, Conversation convo})>
-      boot(FakeChatRepository repo) async {
+  Future<
+    ({
+      ChatController controller,
+      ProviderContainer container,
+      Conversation convo,
+    })
+  >
+  boot(FakeChatRepository repo) async {
     final container = buildChatContainer(repository: repo, userId: userId);
     addTearDown(container.dispose);
     final convo = activeConversation(relId);
     repo.conversationOverride = convo;
-    final controller =
-        container.read(chatControllerProvider(convo).notifier);
+    final controller = container.read(chatControllerProvider(convo).notifier);
     await Future<void>.delayed(const Duration(milliseconds: 20));
     return (controller: controller, container: container, convo: convo);
   }
 
-  ChatState stateOf(
-    ProviderContainer c,
-    Conversation convo,
-  ) =>
+  ChatState stateOf(ProviderContainer c, Conversation convo) =>
       c.read(chatControllerProvider(convo));
 
   test('Double tap / request replay → one canonical message', () async {
@@ -45,103 +47,114 @@ void main() {
     await b.controller.flushOutbox();
     await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    final mine = stateOf(b.container, b.convo)
-        .messages
-        .where((m) => m.content == 'tap')
-        .toList();
+    final mine =
+        stateOf(
+          b.container,
+          b.convo,
+        ).messages.where((m) => m.content == 'tap').toList();
     expect(mine, hasLength(1));
     expect(mine.single.status, MessageStatus.sent);
   });
 
-  test('Commit succeeds, response lost → retry reconciles existing row',
-      () async {
-    final repo = FakeChatRepository(currentUserId: userId);
-    final b = await boot(repo);
+  test(
+    'Commit succeeds, response lost → retry reconciles existing row',
+    () async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      final b = await boot(repo);
 
-    // First attempt: the row commits on the server but the client sees a
-    // duplicate on the (retried) send.
-    repo.simulateDuplicate = true;
-    await b.controller.sendMessage('lost-response');
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      // First attempt: the row commits on the server but the client sees a
+      // duplicate on the (retried) send.
+      repo.simulateDuplicate = true;
+      await b.controller.sendMessage('lost-response');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    // Turn off duplicate and let a retry reconcile via findMessageByClientId.
-    final msgs = stateOf(b.container, b.convo).messages;
-    expect(msgs.where((m) => m.content == 'lost-response'), hasLength(1));
-  });
+      // Turn off duplicate and let a retry reconcile via findMessageByClientId.
+      final msgs = stateOf(b.container, b.convo).messages;
+      expect(msgs.where((m) => m.content == 'lost-response'), hasLength(1));
+    },
+  );
 
-  test('Realtime event precedes/refreshes → optimistic and canonical merge',
-      () async {
-    final repo = FakeChatRepository(currentUserId: userId);
-    final b = await boot(repo);
+  test(
+    'Realtime event precedes/refreshes → optimistic and canonical merge',
+    () async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      final b = await boot(repo);
 
-    await b.controller.sendMessage('merge-me');
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      await b.controller.sendMessage('merge-me');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    // A realtime tick triggers refresh + cursor catch-up; the canonical row is
-    // already present, so no duplicate appears.
-    repo.emitRealtime();
-    await Future<void>.delayed(const Duration(milliseconds: 350));
+      // A realtime tick triggers refresh + cursor catch-up; the canonical row is
+      // already present, so no duplicate appears.
+      repo.emitRealtime();
+      await Future<void>.delayed(const Duration(milliseconds: 350));
 
-    final merged = stateOf(b.container, b.convo)
-        .messages
-        .where((m) => m.content == 'merge-me')
-        .toList();
-    expect(merged, hasLength(1));
-  });
+      final merged =
+          stateOf(
+            b.container,
+            b.convo,
+          ).messages.where((m) => m.content == 'merge-me').toList();
+      expect(merged, hasLength(1));
+    },
+  );
 
-  test('Reconnect after missed events → cursor catch-up restores rows',
-      () async {
-    final repo = FakeChatRepository(currentUserId: userId);
-    final b = await boot(repo);
+  test(
+    'Reconnect after missed events → cursor catch-up restores rows',
+    () async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      final b = await boot(repo);
 
-    // Two partner messages arrive on the "server" while we were away.
-    repo.seedIncoming(
-      id: 'inc-1',
-      relationshipId: relId,
-      senderId: 'partner',
-      content: 'missed one',
-      createdAt: DateTime.now().subtract(const Duration(minutes: 2)),
-    );
-    repo.seedIncoming(
-      id: 'inc-2',
-      relationshipId: relId,
-      senderId: 'partner',
-      content: 'missed two',
-      createdAt: DateTime.now().subtract(const Duration(minutes: 1)),
-    );
+      // Two partner messages arrive on the "server" while we were away.
+      repo.seedIncoming(
+        id: 'inc-1',
+        relationshipId: relId,
+        senderId: 'partner',
+        content: 'missed one',
+        createdAt: DateTime.now().subtract(const Duration(minutes: 2)),
+      );
+      repo.seedIncoming(
+        id: 'inc-2',
+        relationshipId: relId,
+        senderId: 'partner',
+        content: 'missed two',
+        createdAt: DateTime.now().subtract(const Duration(minutes: 1)),
+      );
 
-    repo.emitRealtime();
-    await Future<void>.delayed(const Duration(milliseconds: 350));
+      repo.emitRealtime();
+      await Future<void>.delayed(const Duration(milliseconds: 350));
 
-    final contents =
-        stateOf(b.container, b.convo).messages.map((m) => m.content).toSet();
-    expect(contents, containsAll(<String>['missed one', 'missed two']));
-  });
+      final contents =
+          stateOf(b.container, b.convo).messages.map((m) => m.content).toSet();
+      expect(contents, containsAll(<String>['missed one', 'missed two']));
+    },
+  );
 
-  test('Two messages share a timestamp → stable id tie-breaker order',
-      () async {
-    final repo = FakeChatRepository(currentUserId: userId);
-    final shared = DateTime.now();
-    repo.seedIncoming(
-      id: 'aaa',
-      relationshipId: relId,
-      senderId: 'partner',
-      content: 'first',
-      createdAt: shared,
-    );
-    repo.seedIncoming(
-      id: 'bbb',
-      relationshipId: relId,
-      senderId: 'partner',
-      content: 'second',
-      createdAt: shared,
-    );
-    final b = await boot(repo);
+  test(
+    'Two messages share a timestamp → stable id tie-breaker order',
+    () async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      final shared = DateTime.now();
+      repo.seedIncoming(
+        id: 'aaa',
+        relationshipId: relId,
+        senderId: 'partner',
+        content: 'first',
+        createdAt: shared,
+      );
+      repo.seedIncoming(
+        id: 'bbb',
+        relationshipId: relId,
+        senderId: 'partner',
+        content: 'second',
+        createdAt: shared,
+      );
+      final b = await boot(repo);
 
-    final ids = stateOf(b.container, b.convo).messages.map((m) => m.id).toList();
-    // Newest-first with id DESC tie-breaker → 'bbb' before 'aaa'.
-    expect(ids.indexOf('bbb'), lessThan(ids.indexOf('aaa')));
-  });
+      final ids =
+          stateOf(b.container, b.convo).messages.map((m) => m.id).toList();
+      // Newest-first with id DESC tie-breaker → 'bbb' before 'aaa'.
+      expect(ids.indexOf('bbb'), lessThan(ids.indexOf('aaa')));
+    },
+  );
 
   test('Chat archives while open → messages purged from state', () async {
     final repo = FakeChatRepository(currentUserId: userId);
@@ -168,32 +181,34 @@ void main() {
     expect(s.messages, isEmpty);
   });
 
-  test('Account switch → previous user local state becomes inaccessible',
-      () async {
-    final repo = FakeChatRepository(currentUserId: userId);
-    final cache = ChatCacheService.forTesting(backend: memBackend());
-    final container = ProviderContainer(
-      overrides: [
-        chatRepositoryProvider.overrideWithValue(repo),
-        chatCacheServiceProvider.overrideWithValue(cache),
-        currentUserProvider.overrideWith((ref) => testUser(userId)),
-      ],
-    );
-    addTearDown(container.dispose);
-    final convo = activeConversation(relId);
-    repo.conversationOverride = convo;
-    final controller = container.read(chatControllerProvider(convo).notifier);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+  test(
+    'Account switch → previous user local state becomes inaccessible',
+    () async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      final cache = ChatCacheService.forTesting(backend: memBackend());
+      final container = ProviderContainer(
+        overrides: [
+          chatRepositoryProvider.overrideWithValue(repo),
+          chatCacheServiceProvider.overrideWithValue(cache),
+          currentUserProvider.overrideWith((ref) => testUser(userId)),
+        ],
+      );
+      addTearDown(container.dispose);
+      final convo = activeConversation(relId);
+      repo.conversationOverride = convo;
+      final controller = container.read(chatControllerProvider(convo).notifier);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    await controller.sendMessage('user-a secret');
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      await controller.sendMessage('user-a secret');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    // The account-change listener purges the previous user's cache. We assert
-    // the previous user's cached messages are gone.
-    await controller.debugHandleAccountChange(userId);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      // The account-change listener purges the previous user's cache. We assert
+      // the previous user's cached messages are gone.
+      await controller.debugHandleAccountChange(userId);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    final leftover = await cache.readMessages(userId, relId);
-    expect(leftover, isEmpty);
-  });
+      final leftover = await cache.readMessages(userId, relId);
+      expect(leftover, isEmpty);
+    },
+  );
 }

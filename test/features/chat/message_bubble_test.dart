@@ -1,6 +1,7 @@
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
 
-import 'support/chat_test_harness.dart';import 'package:attune/features/chat/domain/entities/message.dart';
+import 'support/chat_test_harness.dart';
+import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -38,9 +39,7 @@ Message _partner({String content = 'hello'}) {
 
 Future<void> _pump(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(
-    withScreenUtil(
-      MaterialApp(home: Scaffold(body: child)),
-    ),
+    withScreenUtil(MaterialApp(home: Scaffold(body: child))),
   );
 }
 

@@ -10,8 +10,9 @@ import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'support/chat_test_harness.dart';
 
 void main() {
-  testWidgets('sending plays exactly one send sound when enabled',
-      (tester) async {
+  testWidgets('sending plays exactly one send sound when enabled', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final repo = FakeChatRepository(currentUserId: 'user-a');
@@ -27,10 +28,14 @@ void main() {
       ],
     );
 
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: withScreenUtil(MaterialApp(home: ChatScreen(conversation: convo))),
-    ));
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: withScreenUtil(
+          MaterialApp(home: ChatScreen(conversation: convo)),
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 30));
 
     await tester.enterText(find.byType(TextField), 'hi');
@@ -51,8 +56,9 @@ void main() {
   });
 
   testWidgets('sending plays no sound when the toggle is off', (tester) async {
-    SharedPreferences.setMockInitialValues(
-        {'chat_message_sounds_enabled': false});
+    SharedPreferences.setMockInitialValues({
+      'chat_message_sounds_enabled': false,
+    });
     final prefs = await SharedPreferences.getInstance();
     final repo = FakeChatRepository(currentUserId: 'user-a');
     final fakeSound = FakeSoundService();
@@ -67,10 +73,14 @@ void main() {
       ],
     );
 
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: withScreenUtil(MaterialApp(home: ChatScreen(conversation: convo))),
-    ));
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: withScreenUtil(
+          MaterialApp(home: ChatScreen(conversation: convo)),
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 30));
     await tester.enterText(find.byType(TextField), 'hi');
     await tester.pump();

@@ -3,15 +3,15 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   Message baseMessage() => Message(
-        id: 'm1',
-        clientMessageId: 'c1',
-        relationshipId: 'r1',
-        senderId: 'u1',
-        content: 'hello',
-        createdAt: DateTime(2026, 1, 1),
-        status: MessageStatus.sent,
-        isMine: true,
-      );
+    id: 'm1',
+    clientMessageId: 'c1',
+    relationshipId: 'r1',
+    senderId: 'u1',
+    content: 'hello',
+    createdAt: DateTime(2026, 1, 1),
+    status: MessageStatus.sent,
+    isMine: true,
+  );
 
   test('reactions defaults to empty', () {
     expect(baseMessage().reactions, isEmpty);

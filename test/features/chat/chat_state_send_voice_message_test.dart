@@ -30,8 +30,7 @@ class _Booted {
   final ProviderContainer container;
   final Conversation conversation;
 
-  ChatState get state =>
-      container.read(chatControllerProvider(conversation));
+  ChatState get state => container.read(chatControllerProvider(conversation));
 }
 
 void main() {
@@ -59,9 +58,7 @@ void main() {
     addTearDown(container.dispose);
     final convo = conversation ?? activeConversation(relId);
     repo.conversationOverride = convo;
-    final controller = container.read(
-      chatControllerProvider(convo).notifier,
-    );
+    final controller = container.read(chatControllerProvider(convo).notifier);
     // Let _init() (cache read, refresh, load, subscribe) settle.
     await Future<void>.delayed(const Duration(milliseconds: 20));
     return _Booted(controller, container, convo);
@@ -107,25 +104,25 @@ void main() {
     });
 
     test(
-        'duration under min returns silently with no error and no queued message',
-        () async {
-      final repo = FakeChatRepository(currentUserId: userId);
-      final b = await boot(repo);
-      final path = await writeVoiceFile('too_short.m4a');
+      'duration under min returns silently with no error and no queued message',
+      () async {
+        final repo = FakeChatRepository(currentUserId: userId);
+        final b = await boot(repo);
+        final path = await writeVoiceFile('too_short.m4a');
 
-      await b.controller.sendVoiceMessage(
-        localPath: path,
-        durationMs: VoiceRecorderService.minDuration.inMilliseconds - 100,
-        waveform: const [1, 2, 3],
-      );
+        await b.controller.sendVoiceMessage(
+          localPath: path,
+          durationMs: VoiceRecorderService.minDuration.inMilliseconds - 100,
+          waveform: const [1, 2, 3],
+        );
 
-      expect(b.state.messages, isEmpty);
-      expect(b.state.error, isNull);
-      expect(repo.sendCallCount, 0);
-    });
+        expect(b.state.messages, isEmpty);
+        expect(b.state.error, isNull);
+        expect(repo.sendCallCount, 0);
+      },
+    );
 
-    test(
-        'a valid recording produces exactly one optimistic message with '
+    test('a valid recording produces exactly one optimistic message with '
         'mediaType audio, hasAudio true, status sending', () async {
       final repo = FakeChatRepository(currentUserId: userId)
         // Artificial delay so we can observe the optimistic (sending) state

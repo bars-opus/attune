@@ -14,7 +14,7 @@ import 'package:go_router/go_router.dart';
 /// `hasActiveSoloJourney` is exercised by this screen's tap handler.
 class _FakeHealingRepository implements HealingRepository {
   _FakeHealingRepository({required bool hasActiveSoloJourney})
-      : _hasActiveSoloJourney = hasActiveSoloJourney;
+    : _hasActiveSoloJourney = hasActiveSoloJourney;
 
   final bool _hasActiveSoloJourney;
 
@@ -40,12 +40,15 @@ Widget _buildTestApp({required bool hasActiveSoloJourney}) {
       GoRoute(
         path: RouteNames.healingJourney,
         name: 'healingJourney',
-        builder: (context, state) => const Scaffold(body: Text('Healing journey stub')),
+        builder:
+            (context, state) =>
+                const Scaffold(body: Text('Healing journey stub')),
       ),
       GoRoute(
         path: RouteNames.reflectionJournal,
         name: 'reflectionJournal',
-        builder: (context, state) => const Scaffold(body: Text('Reflection stub')),
+        builder:
+            (context, state) => const Scaffold(body: Text('Reflection stub')),
       ),
       GoRoute(
         path: RouteNames.datingMode,
@@ -72,7 +75,9 @@ Widget _buildTestApp({required bool hasActiveSoloJourney}) {
 }
 
 void main() {
-  testWidgets('shows healing entry card when there is no invite', (tester) async {
+  testWidgets('shows healing entry card when there is no invite', (
+    tester,
+  ) async {
     await tester.pumpWidget(_buildTestApp(hasActiveSoloJourney: false));
     await tester.pumpAndSettle();
 

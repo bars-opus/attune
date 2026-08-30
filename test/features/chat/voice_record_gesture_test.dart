@@ -65,14 +65,17 @@ Widget _harness(_FakeRecorder recorder, {VoidCallback? onRecorded}) {
 }
 
 void main() {
-  testWidgets('a brief press still records and sends, without a long hold',
-      (tester) async {
+  testWidgets('a brief press still records and sends, without a long hold', (
+    tester,
+  ) async {
     // The mic is a press-and-hold control. Binding start to onLongPressStart
     // means a ~500ms dead zone in which the user is holding, sees nothing,
     // and gets no recording at all if they release.
     final recorder = _FakeRecorder();
     var recorded = false;
-    await tester.pumpWidget(_harness(recorder, onRecorded: () => recorded = true));
+    await tester.pumpWidget(
+      _harness(recorder, onRecorded: () => recorded = true),
+    );
 
     final mic = find.byIcon(Icons.mic_none_rounded);
     final gesture = await tester.startGesture(tester.getCenter(mic));
@@ -90,18 +93,27 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(recorder.stopped, isTrue,
-        reason: 'started=' + recorder.started.toString() +
-            ' cancelled=' + recorder.cancelled.toString());
+    expect(
+      recorder.stopped,
+      isTrue,
+      reason:
+          'started=' +
+          recorder.started.toString() +
+          ' cancelled=' +
+          recorder.cancelled.toString(),
+    );
     expect(recorded, isTrue, reason: 'lifting the finger sends the recording');
   });
 
-  testWidgets('releasing mid-start does not orphan a live recording',
-      (tester) async {
+  testWidgets('releasing mid-start does not orphan a live recording', (
+    tester,
+  ) async {
     // start() is awaited before _isRecording flips true. If the finger
     // lifts inside that window the end handler returns early and nothing
     // ever stops the recorder — the mic stays live with no UI.
-    final recorder = _FakeRecorder(startDelay: const Duration(milliseconds: 300));
+    final recorder = _FakeRecorder(
+      startDelay: const Duration(milliseconds: 300),
+    );
     await tester.pumpWidget(_harness(recorder));
 
     final mic = find.byIcon(Icons.mic_none_rounded);
@@ -116,44 +128,50 @@ void main() {
     expect(
       recorder.stopped || recorder.cancelled,
       isTrue,
-      reason: 'a recording started after the finger lifted must be stopped, '
+      reason:
+          'a recording started after the finger lifted must be stopped, '
           'not left running with no way to reach it',
     );
   });
 
-  testWidgets('dragging up locks: the finger can lift and recording continues',
-      (tester) async {
-    final recorder = _FakeRecorder();
-    var recorded = false;
-    await tester.pumpWidget(
-        _harness(recorder, onRecorded: () => recorded = true));
+  testWidgets(
+    'dragging up locks: the finger can lift and recording continues',
+    (tester) async {
+      final recorder = _FakeRecorder();
+      var recorded = false;
+      await tester.pumpWidget(
+        _harness(recorder, onRecorded: () => recorded = true),
+      );
 
-    final mic = find.byIcon(Icons.mic_none_rounded);
-    final gesture = await tester.startGesture(tester.getCenter(mic));
-    await tester.pump(const Duration(milliseconds: 60));
+      final mic = find.byIcon(Icons.mic_none_rounded);
+      final gesture = await tester.startGesture(tester.getCenter(mic));
+      await tester.pump(const Duration(milliseconds: 60));
 
-    // Past the 100px lock threshold.
-    await gesture.moveBy(const Offset(0, -120));
-    await tester.pump(const Duration(milliseconds: 60));
+      // Past the 100px lock threshold.
+      await gesture.moveBy(const Offset(0, -120));
+      await tester.pump(const Duration(milliseconds: 60));
 
-    await gesture.up();
-    await tester.pump(const Duration(milliseconds: 100));
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 100));
 
-    expect(
-      recorder.stopped,
-      isFalse,
-      reason: 'lifting after a lock must NOT end the recording — that is '
-          'what locking is for',
-    );
-    expect(recorded, isFalse);
-    expect(recorder.cancelled, isFalse);
-  });
+      expect(
+        recorder.stopped,
+        isFalse,
+        reason:
+            'lifting after a lock must NOT end the recording — that is '
+            'what locking is for',
+      );
+      expect(recorded, isFalse);
+      expect(recorder.cancelled, isFalse);
+    },
+  );
 
   testWidgets('dragging left cancels, and nothing is sent', (tester) async {
     final recorder = _FakeRecorder();
     var recorded = false;
     await tester.pumpWidget(
-        _harness(recorder, onRecorded: () => recorded = true));
+      _harness(recorder, onRecorded: () => recorded = true),
+    );
 
     final mic = find.byIcon(Icons.mic_none_rounded);
     final gesture = await tester.startGesture(tester.getCenter(mic));

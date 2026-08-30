@@ -35,8 +35,7 @@ class _Booted {
   final ProviderContainer container;
   final Conversation conversation;
 
-  ChatState get state =>
-      container.read(chatControllerProvider(conversation));
+  ChatState get state => container.read(chatControllerProvider(conversation));
 }
 
 class _PosterSeedCacheManager implements BaseCacheManager {
@@ -142,9 +141,7 @@ void main() {
     addTearDown(container.dispose);
     final convo = conversation ?? activeConversation(relId);
     repo.conversationOverride = convo;
-    final controller = container.read(
-      chatControllerProvider(convo).notifier,
-    );
+    final controller = container.read(chatControllerProvider(convo).notifier);
     // Let _init() (cache read, refresh, load, subscribe) settle.
     await Future<void>.delayed(const Duration(milliseconds: 20));
     return _Booted(controller, container, convo);
@@ -157,8 +154,7 @@ void main() {
     return path;
   }
 
-  test(
-      'cold history does not publish a recent video before its cached poster '
+  test('cold history does not publish a recent video before its cached poster '
       'is ready for first paint', () async {
     const posterKey = 'chat-media/rel-1/recent-poster.jpg';
     final posterPath = await writeFile('recent_cached_poster.jpg');
@@ -187,10 +183,7 @@ void main() {
       userId: userId,
       extraOverrides: [
         chatPosterPrewarmerProvider.overrideWithValue(
-          ChatPosterPrewarmer(
-            repository: repo,
-            cacheManager: posterCache,
-          ),
+          ChatPosterPrewarmer(repository: repo, cacheManager: posterCache),
         ),
       ],
     );
@@ -214,15 +207,13 @@ void main() {
 
     final loaded = container.read(chatControllerProvider(conversation));
     expect(loaded.messages.single.id, 'recent-video');
-    expect(
-      ChatPosterPrewarmer.readyPosterPathFor(posterKey),
-      posterPath,
-    );
+    expect(ChatPosterPrewarmer.readyPosterPathFor(posterKey), posterPath);
   });
 
   group('sendVideoMessage', () {
-    test('missing local video file sets state.error and does not queue',
-        () async {
+    test(
+      'missing local video file sets state.error and does not queue',
+      () async {
         final repo = FakeChatRepository(currentUserId: userId);
         final b = await boot(repo);
         final thumbPath = await writeFile('poster.jpg');
@@ -238,10 +229,10 @@ void main() {
         expect(b.state.messages, isEmpty);
         expect(b.state.error, isNotNull);
         expect(repo.sendCallCount, 0);
-    });
+      },
+    );
 
-    test(
-        'missing thumbnail file (video exists, poster does not) sets '
+    test('missing thumbnail file (video exists, poster does not) sets '
         'state.error and does not queue', () async {
       final repo = FakeChatRepository(currentUserId: userId);
       final b = await boot(repo);
@@ -280,8 +271,8 @@ void main() {
     });
 
     test(
-        'duration under min returns silently with no error and no queued message',
-        () async {
+      'duration under min returns silently with no error and no queued message',
+      () async {
         final repo = FakeChatRepository(currentUserId: userId);
         final b = await boot(repo);
         final videoPath = await writeFile('too_short.mp4');
@@ -298,10 +289,10 @@ void main() {
         expect(b.state.messages, isEmpty);
         expect(b.state.error, isNull);
         expect(repo.sendCallCount, 0);
-    });
+      },
+    );
 
-    test(
-        'a valid send produces exactly one optimistic message with '
+    test('a valid send produces exactly one optimistic message with '
         'mediaType video, hasVideo true, status sending, matching '
         'width/height', () async {
       final repo = FakeChatRepository(currentUserId: userId)
@@ -349,8 +340,7 @@ void main() {
       expect(repo.sendCallCount, 1);
     });
 
-    test(
-        'thumbnail upload failure (2nd intent) is non-fatal: send still '
+    test('thumbnail upload failure (2nd intent) is non-fatal: send still '
         'completes with a null mediaThumbnailKey', () async {
       final repo = FakeChatRepository(currentUserId: userId)
         // Call order inside _attemptSend's two-intent video branch: 1 =
@@ -397,8 +387,8 @@ void main() {
     });
 
     test(
-        'a successful thumbnail upload still reclaims the staged poster file',
-        () async {
+      'a successful thumbnail upload still reclaims the staged poster file',
+      () async {
         final repo = FakeChatRepository(currentUserId: userId);
         final cachedPosterPath = p.join(tempDir.path, 'cached_poster.jpg');
         final b = await boot(
@@ -429,10 +419,10 @@ void main() {
           ChatPosterPrewarmer.readyPosterPathFor(message.mediaThumbnailKey),
           cachedPosterPath,
         );
-    });
+      },
+    );
 
-    test(
-        'video upload failure (1st intent) aborts the whole send: no '
+    test('video upload failure (1st intent) aborts the whole send: no '
         'canonical message reaches sendTextMessage, message stays queued '
         'for retry rather than silently disappearing', () async {
       final repo = FakeChatRepository(currentUserId: userId)

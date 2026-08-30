@@ -30,10 +30,12 @@ Future<ProviderContainer> _pumpChat(
     ],
   );
 
-  await tester.pumpWidget(UncontrolledProviderScope(
-    container: container,
-    child: withScreenUtil(MaterialApp(home: ChatScreen(conversation: convo))),
-  ));
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: withScreenUtil(MaterialApp(home: ChatScreen(conversation: convo))),
+    ),
+  );
   await tester.pump(const Duration(milliseconds: 40));
   return container;
 }
@@ -58,8 +60,9 @@ void main() {
     await _teardown(tester, container);
   });
 
-  testWidgets('header avatar does not glow while the partner is away',
-      (tester) async {
+  testWidgets('header avatar does not glow while the partner is away', (
+    tester,
+  ) async {
     // The widget is still mounted when offline — only `active` flips —
     // so asserting on presence alone would pass either way. This pins
     // the flag itself, which is what actually shows the glow.

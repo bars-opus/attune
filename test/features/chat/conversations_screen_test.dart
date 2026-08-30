@@ -70,9 +70,7 @@ void main() {
         journalEntriesProvider.overrideWith(
           () => _FixedJournalEntriesNotifier(),
         ),
-        remindersListProvider.overrideWith(
-          () => _FixedRemindersListNotifier(),
-        ),
+        remindersListProvider.overrideWith(() => _FixedRemindersListNotifier()),
       ],
     );
     return (
@@ -106,8 +104,9 @@ void main() {
       // that refetch is in flight Riverpod's own framework reports
       // AsyncLoading-with-previous-value on the SAME provider — reproduce
       // that exact transition here.
-      harness.container.read(conversationsProvider.notifier).state =
-          const AsyncLoading<List<Conversation>>().copyWithPrevious(
+      harness.container
+          .read(conversationsProvider.notifier)
+          .state = const AsyncLoading<List<Conversation>>().copyWithPrevious(
         AsyncData([cached]),
       );
       await tester.pump();
@@ -128,16 +127,14 @@ void main() {
       await tester.pumpWidget(harness.widget);
       await tester.pump();
 
-      harness.container.read(conversationsProvider.notifier).state =
-          const AsyncLoading<List<Conversation>>().copyWithPrevious(
+      harness.container
+          .read(conversationsProvider.notifier)
+          .state = const AsyncLoading<List<Conversation>>().copyWithPrevious(
         AsyncData([cached]),
       );
       await tester.pump();
 
-      expect(
-        find.text('No relationship chat is available yet.'),
-        findsNothing,
-      );
+      expect(find.text('No relationship chat is available yet.'), findsNothing);
     },
   );
 

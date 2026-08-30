@@ -9,8 +9,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/chat_test_harness.dart';
 
 void main() {
-  testWidgets('sending a message fires exactly one light haptic',
-      (tester) async {
+  testWidgets('sending a message fires exactly one light haptic', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final repo = FakeChatRepository(currentUserId: 'user-a');
@@ -26,10 +27,14 @@ void main() {
       ],
     );
 
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: withScreenUtil(MaterialApp(home: ChatScreen(conversation: convo))),
-    ));
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: withScreenUtil(
+          MaterialApp(home: ChatScreen(conversation: convo)),
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 30));
 
     await tester.enterText(find.byType(TextField), 'hi');

@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/widgets/rolling_duration.dart';
 
 import 'voice_lock_pill.dart';
 import 'voice_mic_halo.dart';
@@ -202,8 +203,9 @@ class VoiceRecordingScrim extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     IgnorePointer(
-                      child: _ScrimDuration(
-                        elapsed: elapsed,
+                      child: RollingDuration(
+                        keyPrefix: 'voice-scrim-counter',
+                        value: elapsed,
                         style: Theme.of(
                           context,
                         ).textTheme.displaySmall?.copyWith(
@@ -369,43 +371,3 @@ class VoiceRecordingScrim extends StatelessWidget {
 /// A single rolling counter of seconds reached "300s" at the recorder's
 /// five-minute ceiling, which reads as a raw number rather than a
 /// duration. Two counters keep the rolling animation on each segment.
-class _ScrimDuration extends StatelessWidget {
-  const _ScrimDuration({required this.elapsed, this.style});
-
-  final Duration elapsed;
-  final TextStyle? style;
-
-  @override
-  Widget build(BuildContext context) {
-    final minutes = elapsed.inMinutes;
-    final seconds = elapsed.inSeconds % 60;
-
-    if (minutes == 0) {
-      return AnimatedRollingCounter(
-        key: const ValueKey('voice-scrim-counter'),
-        count: elapsed.inSeconds,
-        style: style,
-      );
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        AnimatedRollingCounter(
-          key: const ValueKey('voice-scrim-counter-minutes'),
-          count: minutes,
-          style: style,
-        ),
-        Text(':', style: style),
-        // Zero-padded: "1:5" reads as one-and-a-half minutes to as many
-        // people as read it as one minute five.
-        if (seconds < 10) Text('0', style: style),
-        AnimatedRollingCounter(
-          key: const ValueKey('voice-scrim-counter'),
-          count: seconds,
-          style: style,
-        ),
-      ],
-    );
-  }
-}

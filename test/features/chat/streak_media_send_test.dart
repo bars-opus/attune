@@ -12,9 +12,10 @@ void main() {
     // This is the FIFTH place a media_type allowlist had to learn about
     // streaks, after both CHECK constraints, the insert trigger and the
     // upload-intent RPC.
-    final src = File(
-      'lib/features/chat/presentation/state/chat_state.dart',
-    ).readAsStringSync();
+    final src =
+        File(
+          'lib/features/chat/presentation/state/chat_state.dart',
+        ).readAsStringSync();
 
     final gate = RegExp(
       r'final isMediaSend\s*=\s*\(([\s\S]{0,300}?)\)\s*&&',

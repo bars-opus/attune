@@ -31,7 +31,9 @@ void main() {
     }, currentUserId: 'u1');
 
     await tester.pumpWidget(
-      withScreenUtil(MaterialApp(home: Scaffold(body: MessageBubble(message: deleted)))),
+      withScreenUtil(
+        MaterialApp(home: Scaffold(body: MessageBubble(message: deleted))),
+      ),
     );
 
     expect(find.text('This message was deleted'), findsOneWidget);
@@ -50,9 +52,13 @@ void main() {
     }, currentUserId: 'u1');
 
     await tester.pumpWidget(
-      withScreenUtil(MaterialApp(
-        home: Scaffold(body: MessageBubble(message: message, isStarred: true)),
-      )),
+      withScreenUtil(
+        MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(message: message, isStarred: true),
+          ),
+        ),
+      ),
     );
 
     expect(find.byIcon(Icons.star_rounded), findsOneWidget);
@@ -71,9 +77,13 @@ void main() {
     }, currentUserId: 'u1');
 
     await tester.pumpWidget(
-      withScreenUtil(MaterialApp(
-        home: Scaffold(body: MessageBubble(message: message, isStarred: false)),
-      )),
+      withScreenUtil(
+        MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(message: message, isStarred: false),
+          ),
+        ),
+      ),
     );
 
     expect(find.byIcon(Icons.star), findsNothing);
@@ -93,7 +103,9 @@ void main() {
     }, currentUserId: 'u1');
 
     await tester.pumpWidget(
-      withScreenUtil(MaterialApp(home: Scaffold(body: MessageBubble(message: edited)))),
+      withScreenUtil(
+        MaterialApp(home: Scaffold(body: MessageBubble(message: edited))),
+      ),
     );
 
     expect(find.textContaining('edited'), findsNothing);
@@ -114,14 +126,16 @@ void main() {
     }, currentUserId: 'u1');
 
     await tester.pumpWidget(
-      withScreenUtil(MaterialApp(
-        home: Scaffold(
-          body: MessageBubble(
-            message: edited,
-            onShowEditHistory: (message) => tapped = message,
+      withScreenUtil(
+        MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(
+              message: edited,
+              onShowEditHistory: (message) => tapped = message,
+            ),
           ),
         ),
-      )),
+      ),
     );
 
     expect(find.text('edited'), findsNothing);
@@ -141,15 +155,17 @@ void main() {
     );
 
     await tester.pumpWidget(
-      withScreenUtil(MaterialApp(
-        home: Scaffold(
-          body: MessageBubble(
-            message: message,
-            currentUserId: 'u1',
-            onDelete: () {},
+      withScreenUtil(
+        MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(
+              message: message,
+              currentUserId: 'u1',
+              onDelete: () {},
+            ),
           ),
         ),
-      )),
+      ),
     );
 
     // textContaining, not text: message content now renders via Text.rich
@@ -485,16 +501,12 @@ void main() {
 
     final positioned = tester.widgetList<Positioned>(find.byType(Positioned));
     expect(
-      positioned.any(
-        (widget) => widget.top == -12 && widget.left == -14,
-      ),
+      positioned.any((widget) => widget.top == -12 && widget.left == -14),
       isTrue,
       reason: 'reactions stay attached to the top edge',
     );
     expect(
-      positioned.any(
-        (widget) => widget.bottom == -12 && widget.left == -14,
-      ),
+      positioned.any((widget) => widget.bottom == -12 && widget.left == -14),
       isTrue,
       reason: 'the star remains independently attached to the bottom edge',
     );
@@ -531,15 +543,17 @@ void main() {
     );
 
     await tester.pumpWidget(
-      withScreenUtil(MaterialApp(
-        home: Scaffold(
-          body: MessageBubble(
-            message: message,
-            currentUserId: 'u1',
-            onRemoveReaction: () => removed = true,
+      withScreenUtil(
+        MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(
+              message: message,
+              currentUserId: 'u1',
+              onRemoveReaction: () => removed = true,
+            ),
           ),
         ),
-      )),
+      ),
     );
 
     await tester.tap(find.text('❤️'));
@@ -715,11 +729,13 @@ void main() {
     }, currentUserId: 'u1');
 
     await tester.pumpWidget(
-      withScreenUtil(MaterialApp(
-        home: Scaffold(
-          body: MessageBubble(message: message, currentUserId: 'u1'),
+      withScreenUtil(
+        MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(message: message, currentUserId: 'u1'),
+          ),
         ),
-      )),
+      ),
     );
 
     expect(find.textContaining('❤'), findsNothing);

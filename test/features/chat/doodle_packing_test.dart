@@ -58,7 +58,8 @@ void main() {
         expect(
           placements[i].rect.overlaps(placements[j].rect),
           isFalse,
-          reason: 'placement $i overlaps $j — the reference reads as dense '
+          reason:
+              'placement $i overlaps $j — the reference reads as dense '
               'but never collides',
         );
       }

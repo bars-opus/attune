@@ -11,20 +11,23 @@ void main() {
     // never be reached however far the finger travels.
     var travelled = 0.0;
 
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: Listener(
-            onPointerMove: (e) => travelled -= e.delta.dy,
-            behavior: HitTestBehavior.opaque,
-            child: const SizedBox(width: 48, height: 48),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Listener(
+              onPointerMove: (e) => travelled -= e.delta.dy,
+              behavior: HitTestBehavior.opaque,
+              child: const SizedBox(width: 48, height: 48),
+            ),
           ),
         ),
       ),
-    ));
+    );
 
-    final gesture =
-        await tester.startGesture(tester.getCenter(find.byType(SizedBox)));
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(SizedBox)),
+    );
     for (var i = 0; i < 12; i++) {
       await gesture.moveBy(const Offset(0, -10));
       await tester.pump();
@@ -34,16 +37,20 @@ void main() {
     expect(
       travelled,
       greaterThanOrEqualTo(100),
-      reason: 'pointer moves must keep reaching the widget the gesture '
+      reason:
+          'pointer moves must keep reaching the widget the gesture '
           'started on, even once the finger leaves its bounds',
     );
   });
 
-  testWidgets('the pill reports full progress at the threshold',
-      (tester) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: Scaffold(body: Center(child: VoiceLockPill(dragProgress: 1))),
-    ));
+  testWidgets('the pill reports full progress at the threshold', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: Center(child: VoiceLockPill(dragProgress: 1))),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 200));
 
     final chevron = tester.widget<Opacity>(

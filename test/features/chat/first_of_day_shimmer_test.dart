@@ -7,8 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/chat_test_harness.dart';
 
 void main() {
-  testWidgets('a message that starts a new day is wrapped in a Shimmer',
-      (tester) async {
+  testWidgets('a message that starts a new day is wrapped in a Shimmer', (
+    tester,
+  ) async {
     final repo = FakeChatRepository(currentUserId: 'user-a');
     final convo = activeConversation('rel-1');
     repo.conversationOverride = convo;
@@ -35,10 +36,14 @@ void main() {
     );
     final container = buildChatContainer(repository: repo, userId: 'user-a');
 
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: withScreenUtil(MaterialApp(home: ChatScreen(conversation: convo))),
-    ));
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: withScreenUtil(
+          MaterialApp(home: ChatScreen(conversation: convo)),
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 60));
     await tester.pump(const Duration(milliseconds: 400));
 

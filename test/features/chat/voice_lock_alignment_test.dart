@@ -19,15 +19,15 @@ void main() {
           'lib/features/chat/presentation/widgets/voice_recording_scrim.dart',
         ).readAsStringSync();
 
-    final threshold =
-        RegExp(r'_lockDragThreshold = ([\d.]+)').firstMatch(src)?.group(1);
+    final threshold = RegExp(
+      r'_lockDragThreshold = ([\d.]+)',
+    ).firstMatch(src)?.group(1);
     // The pill hangs off the halo's top edge, so its rise above the mic's
     // CENTRE — the distance the finger actually travels — is half the halo
     // plus that clearance.
-    final clearance =
-        RegExp(
-          r'VoiceMicHalo\.haloExtent / 2 - (\d+)',
-        ).firstMatch(scrim)?.group(1);
+    final clearance = RegExp(
+      r'VoiceMicHalo\.haloExtent / 2 - (\d+)',
+    ).firstMatch(scrim)?.group(1);
 
     expect(threshold, isNotNull, reason: 'threshold not found');
     expect(clearance, isNotNull, reason: 'pill position not found');

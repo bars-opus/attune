@@ -14,10 +14,14 @@ void main() {
     final container = buildChatContainer(repository: repo, userId: 'user-a');
     addTearDown(container.dispose);
 
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: withScreenUtil(MaterialApp(home: ChatScreen(conversation: convo))),
-    ));
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: withScreenUtil(
+          MaterialApp(home: ChatScreen(conversation: convo)),
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 40));
 
     expect(find.byType(BreathingDots), findsNothing);

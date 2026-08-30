@@ -60,14 +60,16 @@ void main() {
     );
   });
 
-  test('prepares a valid JPEG to jpeg output within the size ceiling',
-      () async {
-    final path = await writeJpeg(1200, 800);
-    final result = await const ChatImagePreparer().prepare(path);
+  test(
+    'prepares a valid JPEG to jpeg output within the size ceiling',
+    () async {
+      final path = await writeJpeg(1200, 800);
+      final result = await const ChatImagePreparer().prepare(path);
 
-    expect(result.mimeType, 'image/jpeg');
-    expect(result.byteSize, lessThanOrEqualTo(ChatImagePreparer.maxBytes));
-    expect(result.byteSize, greaterThan(0));
-    expect(await result.file.exists(), isTrue);
-  });
+      expect(result.mimeType, 'image/jpeg');
+      expect(result.byteSize, lessThanOrEqualTo(ChatImagePreparer.maxBytes));
+      expect(result.byteSize, greaterThan(0));
+      expect(await result.file.exists(), isTrue);
+    },
+  );
 }

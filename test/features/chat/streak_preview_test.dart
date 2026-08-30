@@ -7,9 +7,10 @@ void main() {
     late String src;
 
     setUpAll(() {
-      src = File(
-        'lib/features/chat/presentation/screens/streak_camera_screen.dart',
-      ).readAsStringSync();
+      src =
+          File(
+            'lib/features/chat/presentation/screens/streak_camera_screen.dart',
+          ).readAsStringSync();
     });
 
     test('plays the captured clip instead of the live camera', () {
@@ -26,7 +27,8 @@ void main() {
       expect(
         opensBeforeSheet,
         isTrue,
-        reason: 'the preview must open before the review sheet, or the '
+        reason:
+            'the preview must open before the review sheet, or the '
             'sheet sits over a live camera',
       );
     });
@@ -46,9 +48,7 @@ void main() {
       // path cannot forget half of it.
       expect(src, contains('Future<void> _disposePreview()'));
 
-      final calls = RegExp(r'await _disposePreview\(\)')
-          .allMatches(src)
-          .length;
+      final calls = RegExp(r'await _disposePreview\(\)').allMatches(src).length;
       expect(
         calls,
         greaterThanOrEqualTo(3),
@@ -109,7 +109,8 @@ void main() {
       expect(
         src,
         contains('if (preview == null && !_isSending) ...['),
-        reason: 'both top controls must be gated on there being no take '
+        reason:
+            'both top controls must be gated on there being no take '
             'under review, and none during the send',
       );
     });

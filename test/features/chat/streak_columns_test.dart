@@ -8,13 +8,14 @@ void main() {
     // A streak row fetched without its budget parses as null, and the
     // bubble then reads 0 views remaining — so a freshly sent streak
     // renders as already expired, or does not render at all.
-    final src = File(
-      'lib/features/chat/data/repositories/supabase_chat_repository.dart',
-    ).readAsStringSync();
+    final src =
+        File(
+          'lib/features/chat/data/repositories/supabase_chat_repository.dart',
+        ).readAsStringSync();
 
-    final block = RegExp(r'_messageColumns\s*=\s*((?:\s*.[^;]*?)+);')
-        .firstMatch(src)
-        ?.group(1);
+    final block = RegExp(
+      r'_messageColumns\s*=\s*((?:\s*.[^;]*?)+);',
+    ).firstMatch(src)?.group(1);
 
     expect(block, isNotNull, reason: '_messageColumns not found');
     expect(
@@ -28,8 +29,7 @@ void main() {
     expect(block, contains('is_view_once'));
   });
 
-  test('Message.fromRow keeps a streak budget of zero distinct from null',
-      () {
+  test('Message.fromRow keeps a streak budget of zero distinct from null', () {
     // Null means "not a streak"; zero means "spent". Collapsing them
     // makes an unspent streak look expired.
     final spent = Message.fromRow(const {
@@ -65,9 +65,10 @@ void main() {
     // private. Passing it straight to VideoPlayerController.networkUrl
     // requests a path that is not a URL at all, so playback fails with no
     // useful error. Every other media path signs first.
-    final src = File(
-      'lib/features/chat/presentation/screens/streak_viewer_screen.dart',
-    ).readAsStringSync();
+    final src =
+        File(
+          'lib/features/chat/presentation/screens/streak_viewer_screen.dart',
+        ).readAsStringSync();
 
     expect(
       src,

@@ -17,10 +17,7 @@ Widget _wrap(Duration elapsed) => MaterialApp(
 /// order rather than matched as one string.
 String _readTimer(WidgetTester tester) {
   final texts = tester.widgetList<Text>(
-    find.descendant(
-      of: find.byType(Row).first,
-      matching: find.byType(Text),
-    ),
+    find.descendant(of: find.byType(Row).first, matching: find.byType(Text)),
   );
   return texts.map((t) => t.data ?? '').join();
 }
@@ -28,13 +25,15 @@ String _readTimer(WidgetTester tester) {
 void main() {
   testWidgets('under a minute reads as plain seconds', (tester) async {
     await tester.pumpWidget(_wrap(const Duration(seconds: 43)));
-    expect(find.text(':'), findsNothing,
-        reason: 'no minutes segment below 60s');
+    expect(
+      find.text(':'),
+      findsNothing,
+      reason: 'no minutes segment below 60s',
+    );
     expect(_readTimer(tester), '43');
   });
 
-  testWidgets('past a minute reads as m:ss, not raw seconds',
-      (tester) async {
+  testWidgets('past a minute reads as m:ss, not raw seconds', (tester) async {
     // The recorder runs to 5 minutes, so a plain seconds counter reached
     // "300" — which nobody reads as five minutes.
     await tester.pumpWidget(_wrap(const Duration(seconds: 700)));

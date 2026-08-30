@@ -35,7 +35,10 @@ void main() {
       ),
     );
 
-    expect(result.messages.map((message) => message.content), ['Text only', 'Reply']);
+    expect(result.messages.map((message) => message.content), [
+      'Text only',
+      'Reply',
+    ]);
   });
 
   test('rejects exports with more than two participant labels', () {

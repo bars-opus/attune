@@ -6,10 +6,16 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('StreakClip parses a row, and clips sort into playback order', () {
     final clips = [
-      StreakClip.fromRow(
-          const {'clip_index': 1, 'media_url': 'b', 'duration_ms': 20000}),
-      StreakClip.fromRow(
-          const {'clip_index': 0, 'media_url': 'a', 'duration_ms': 60000}),
+      StreakClip.fromRow(const {
+        'clip_index': 1,
+        'media_url': 'b',
+        'duration_ms': 20000,
+      }),
+      StreakClip.fromRow(const {
+        'clip_index': 0,
+        'media_url': 'a',
+        'duration_ms': 60000,
+      }),
     ]..sort((x, y) => x.index.compareTo(y.index));
 
     expect(clips.map((c) => c.mediaUrl), ['a', 'b']);
@@ -20,12 +26,13 @@ void main() {
     // The caption is view-time only and the budget is server-owned. A
     // client select pulling either invites rendering them in the chat
     // row, which the spec forbids.
-    final src = File(
-      'lib/features/chat/data/repositories/streak_repository.dart',
-    ).readAsStringSync();
-    final select = RegExp(r"\.select\('([^']*clip_index[^']*)'\)")
-        .firstMatch(src)
-        ?.group(1);
+    final src =
+        File(
+          'lib/features/chat/data/repositories/streak_repository.dart',
+        ).readAsStringSync();
+    final select = RegExp(
+      r"\.select\('([^']*clip_index[^']*)'\)",
+    ).firstMatch(src)?.group(1);
 
     expect(select, isNotNull);
     expect(select, contains('media_url'));
@@ -36,9 +43,10 @@ void main() {
   test('markViewed goes through the RPC, never a direct update', () {
     // messages' RLS would let a client write any value, including
     // refilling its own budget.
-    final src = File(
-      'lib/features/chat/data/repositories/streak_repository.dart',
-    ).readAsStringSync();
+    final src =
+        File(
+          'lib/features/chat/data/repositories/streak_repository.dart',
+        ).readAsStringSync();
 
     expect(src, contains("rpc(\n      'mark_streak_viewed'"));
     expect(
