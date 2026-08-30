@@ -34,9 +34,10 @@ void main() {
       );
       expect(find.text('Streak expired'), findsNothing);
       expect(
-        find.byIcon(Icons.stop_circle_outlined),
+        find.byIcon(Icons.check_box_outline_blank_rounded),
         findsOneWidget,
-        reason: 'an outline stop glyph, not a check or a struck-out camera',
+        reason:
+            'a rounded outline container, not a check or a struck-out camera',
       );
     }
   });
