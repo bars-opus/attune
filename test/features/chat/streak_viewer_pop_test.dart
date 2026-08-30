@@ -77,6 +77,57 @@ void main() {
     expect(find.text('open'), findsOneWidget);
   });
 
+  testWidgets('the remaining count reaches the caller', (tester) async {
+    // The bubble only applies a NON-NULL result. If the route closes by
+    // any path that drops the pop argument, the count never arrives, the
+    // bubble keeps its build-time value, and the streak stays on "Play"
+    // however many times it is watched.
+    final repo = _FakeStreakRepository();
+    int? received = -1;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [streakRepositoryProvider.overrideWithValue(repo)],
+        child: MaterialApp(
+          home: Builder(
+            builder:
+                (context) => Scaffold(
+                  body: Center(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        received = await Navigator.of(context).push<int>(
+                          MaterialPageRoute<int>(
+                            builder:
+                                (_) =>
+                                    const StreakViewerScreen(messageId: 'm1'),
+                          ),
+                        );
+                      },
+                      child: const Text('open'),
+                    ),
+                  ),
+                ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final state = tester.state(find.byType(StreakViewerScreen));
+    // ignore: avoid_dynamic_calls
+    await (state as dynamic).finishForTest();
+    await tester.pumpAndSettle();
+
+    expect(
+      received,
+      0,
+      reason:
+          'the fake reports 0 views left; anything else means the result '
+          'was dropped on the way out and the bubble learns nothing',
+    );
+  });
+
   testWidgets('the view is charged exactly once, however it closes', (
     tester,
   ) async {

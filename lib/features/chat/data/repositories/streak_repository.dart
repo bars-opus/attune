@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/features/chat/utils/chat_log.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// One segment of a streak, in playback order.
@@ -10,10 +11,10 @@ class StreakClip {
   });
 
   factory StreakClip.fromRow(Map<String, dynamic> row) => StreakClip(
-        index: (row['clip_index'] as num).toInt(),
-        mediaUrl: row['media_url'] as String,
-        durationMs: (row['duration_ms'] as num).toInt(),
-      );
+    index: (row['clip_index'] as num).toInt(),
+    mediaUrl: row['media_url'] as String,
+    durationMs: (row['duration_ms'] as num).toInt(),
+  );
 
   final int index;
   final String mediaUrl;
@@ -61,6 +62,14 @@ class StreakRepository {
     final result = await _safeClient.rpc(
       'mark_streak_viewed',
       params: {'p_message_id': messageId},
+    );
+    // Logged with the RAW shape: the difference between "the RPC said 2
+    // views remain" and "the RPC returned null and this defaulted to 0"
+    // is invisible downstream, and both look like the bubble simply not
+    // updating.
+    ChatLog.diagnostic(
+      'mark_streak_viewed returned',
+      '${result.runtimeType}: $result',
     );
     return (result as num?)?.toInt() ?? 0;
   }

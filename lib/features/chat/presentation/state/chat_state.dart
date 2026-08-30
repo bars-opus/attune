@@ -788,6 +788,10 @@ class ChatController extends StateNotifier<ChatState> {
   /// (or outvote) the row that actually gates the clips.
   void applyStreakViewSpent(String messageId, int viewsRemaining) {
     final index = state.messages.indexWhere((m) => m.id == messageId);
+    ChatLog.diagnostic(
+      'applyStreakViewSpent',
+      'id=${ChatLog.shortId(messageId)} left=$viewsRemaining found=${index != -1}',
+    );
     if (index == -1) return;
 
     final updated = [...state.messages];
