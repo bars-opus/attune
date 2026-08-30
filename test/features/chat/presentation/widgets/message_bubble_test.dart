@@ -13,6 +13,7 @@ import 'package:attune/features/chat/presentation/widgets/video_message_thumbnai
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/features/chat/presentation/widgets/voice_message_player.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1087,6 +1088,7 @@ void main() {
         'created_at': DateTime.now().toIso8601String(),
       }, currentUserId: 'u1').copyWith(
         localMediaPath: '${fixtureDir.path}/deleted-by-the-os.m4a',
+        signedMediaUrl: 'https://example.com/signed/voice.m4a',
       );
 
       await tester.pumpWidget(
@@ -1102,10 +1104,18 @@ void main() {
         ),
       );
 
-      // A resolver, not a player pointed at the missing file.
+      // The player renders immediately either way now — the fallback moved
+      // into its resolver, which runs on play. Given a signed URL already
+      // on the row, the resolver must return THAT rather than the missing
+      // local file, and must do so without reaching for the network.
+      final player = tester.widget<VoiceMessagePlayer>(
+        find.byType(VoiceMessagePlayer),
+      );
+      final resolved = await player.resolveAudioUrl();
+
       expect(
-        find.byType(ResolvedMediaUrl),
-        findsOneWidget,
+        resolved,
+        'https://example.com/signed/voice.m4a',
         reason: 'a stale local path must fall through to the uploaded copy',
       );
     },

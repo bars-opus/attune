@@ -15,13 +15,25 @@ class VoiceMessagePlayer extends ConsumerStatefulWidget {
   const VoiceMessagePlayer({
     super.key,
     required this.messageId,
-    required this.audioUrl,
+    required this.resolveAudioUrl,
     required this.durationMs,
     required this.waveform,
   });
 
   final String messageId;
-  final String audioUrl;
+
+  /// Resolved on PLAY, not on build.
+  ///
+  /// durationMs and waveform both come off the message row, so the bubble
+  /// can draw itself with no network at all. Taking a resolved URL meant
+  /// the whole player sat behind a shimmer while a signed URL was fetched
+  /// — on every cold open, and again whenever the 10-minute signed-URL
+  /// TTL lapsed. Nothing but playback needs it.
+  ///
+  /// Returns null when the media cannot be resolved, which surfaces as the
+  /// same "could not play" message as any other playback failure.
+  final Future<String?> Function() resolveAudioUrl;
+
   final int durationMs;
   final List<int> waveform;
 
@@ -88,15 +100,27 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
     ref.read(currentlyPlayingVoiceMessageIdProvider.notifier).state =
         widget.messageId;
 
+    // Resolved here rather than at build time: this is the first moment
+    // the URL is actually needed.
+    final audioUrl = await widget.resolveAudioUrl();
+    if (!mounted) return;
+    if (audioUrl == null) {
+      ref.read(currentlyPlayingVoiceMessageIdProvider.notifier).state = null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That voice message could not play')),
+      );
+      return;
+    }
+
     // audioplayers' UrlSource only works for real HTTP(S) URLs. A voice
     // message just recorded by the current user is initially playable only
     // from message.localMediaPath (a local file path) before the upload
     // completes and signedMediaUrl becomes available — UrlSource would fail
     // on a raw file path, so branch on the source shape instead.
     final source =
-        widget.audioUrl.startsWith('http')
-            ? UrlSource(widget.audioUrl)
-            : DeviceFileSource(widget.audioUrl);
+        audioUrl.startsWith('http')
+            ? UrlSource(audioUrl)
+            : DeviceFileSource(audioUrl);
 
     // Per-player, because SoundService sets a PROCESS-WIDE context with
     // respectSilence:true for UI chirps — on iOS that is the ambient

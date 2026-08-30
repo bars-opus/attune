@@ -7,7 +7,9 @@ import 'package:attune/core/utils/animations/animated_scale_fade.dart';
 import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/core/widgets/focused_action_menu.dart';
 import 'package:attune/core/widgets/universal_bubble.dart';
+import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.dart';
@@ -983,41 +985,45 @@ class _BubbleBody extends StatelessWidget {
     }
     if (message.hasAudio) {
       final playableLocalAudioPath = _playableLocalPath(message.localMediaPath);
+      final mediaKey = message.mediaKey;
+      final signedUrl = message.signedMediaUrl;
+
+      // Drawn immediately: durationMs and waveform are both on the message
+      // row, so there is nothing to wait for. This used to sit inside
+      // ResolvedMediaUrl, whose shimmer hid the whole player behind a
+      // round-trip to sign a URL — on every cold open, and again after the
+      // 10-minute signed-URL TTL lapsed. The URL is now fetched on play,
+      // which is the only thing that needs it.
       children.add(
-        playableLocalAudioPath != null
-            ? VoiceMessagePlayer(
-              key: ValueKey(message.clientMessageId),
-              messageId: message.clientMessageId,
-              audioUrl: playableLocalAudioPath,
-              durationMs: message.mediaDurationMs ?? 0,
-              waveform: message.waveform ?? const [],
-            )
-            : ResolvedMediaUrl(
-              signedMediaUrl: message.signedMediaUrl,
-              mediaKey: message.mediaKey,
-              loading: const Shimmer(sweeps: null, child: _AudioPlaceholder()),
-              error: const _ImageLoadError(),
-              builder:
-                  (context, url) => VoiceMessagePlayer(
-                    // clientMessageId (not message.id) — it's the one
-                    // identifier that's stable across the
-                    // optimistic-to-canonical swap. The optimistic
-                    // (pre-upload) message has a synthetic id like
-                    // '_local_<clientMessageId>'; once the server confirms
-                    // the send, ChatController replaces it with the
-                    // canonical row, which has a real UUID as `id` but the
-                    // SAME clientMessageId. Using message.id here would
-                    // change out from under this widget mid-playback,
-                    // tripping the one-at-a-time-enforcement ref.listen
-                    // and pausing/tearing down the player for the single
-                    // most common case: listening to what you just sent.
-                    key: ValueKey(message.clientMessageId),
-                    messageId: message.clientMessageId,
-                    audioUrl: url,
-                    durationMs: message.mediaDurationMs ?? 0,
-                    waveform: message.waveform ?? const [],
-                  ),
-            ),
+        Consumer(
+          builder:
+              (context, ref, _) => VoiceMessagePlayer(
+                // clientMessageId (not message.id) — it's the one identifier
+                // that's stable across the optimistic-to-canonical swap. The
+                // optimistic (pre-upload) message has a synthetic id like
+                // '_local_<clientMessageId>'; once the server confirms the
+                // send, ChatController replaces it with the canonical row,
+                // which has a real UUID as `id` but the SAME clientMessageId.
+                // Using message.id here would change out from under this
+                // widget mid-playback, tripping the one-at-a-time-enforcement
+                // ref.listen and pausing/tearing down the player for the
+                // single most common case: listening to what you just sent.
+                key: ValueKey(message.clientMessageId),
+                messageId: message.clientMessageId,
+                durationMs: message.mediaDurationMs ?? 0,
+                waveform: message.waveform ?? const [],
+                resolveAudioUrl: () async {
+                  // A local file that still exists plays straight from disk,
+                  // no signing needed.
+                  if (playableLocalAudioPath != null) {
+                    return playableLocalAudioPath;
+                  }
+                  if (signedUrl != null) return signedUrl;
+                  if (mediaKey == null) return null;
+                  return ref.read(signedMediaUrlProvider(mediaKey).future);
+                },
+              ),
+        ),
       );
     }
     if (message.isStreak) {
@@ -1501,25 +1507,6 @@ class _ImageLoadError extends StatelessWidget {
       child: Icon(
         Icons.broken_image_outlined,
         color: Theme.of(context).colorScheme.onErrorContainer,
-      ),
-    );
-  }
-}
-
-/// Slim placeholder swept by [Shimmer] while a voice message's signed URL
-/// resolves — sized to roughly match VoiceMessagePlayer's real footprint
-/// rather than reusing the 220x220 square image placeholder.
-class _AudioPlaceholder extends StatelessWidget {
-  const _AudioPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 180,
-      height: 44,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(22),
       ),
     );
   }

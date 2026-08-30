@@ -19,9 +19,9 @@ void main() {
     // rolling counter from a jumping one.
     await tester.pumpWidget(
       _wrap(
-        const VoiceMessagePlayer(
+        VoiceMessagePlayer(
           messageId: 'm1',
-          audioUrl: 'https://example.com/voice.m4a',
+          resolveAudioUrl: () async => 'https://example.com/voice.m4a',
           durationMs: 4200,
           waveform: [50, 50, 50],
         ),
@@ -44,7 +44,7 @@ void main() {
       _wrap(
         VoiceMessagePlayer(
           messageId: 'm1',
-          audioUrl: 'https://example.com/voice.m4a',
+          resolveAudioUrl: () async => 'https://example.com/voice.m4a',
           durationMs: 4200,
           waveform: List.filled(100, 50),
         ),
@@ -70,7 +70,7 @@ void main() {
             home: Scaffold(
               body: VoiceMessagePlayer(
                 messageId: 'm1',
-                audioUrl: 'https://example.com/voice.m4a',
+                resolveAudioUrl: () async => 'https://example.com/voice.m4a',
                 durationMs: 4200,
                 waveform: List.filled(100, 50),
               ),
@@ -102,14 +102,14 @@ void main() {
                   VoiceMessagePlayer(
                     key: const ValueKey('m1'),
                     messageId: 'm1',
-                    audioUrl: 'https://example.com/a.m4a',
+                    resolveAudioUrl: () async => 'https://example.com/a.m4a',
                     durationMs: 1000,
                     waveform: List.filled(100, 50),
                   ),
                   VoiceMessagePlayer(
                     key: const ValueKey('m2'),
                     messageId: 'm2',
-                    audioUrl: 'https://example.com/b.m4a',
+                    resolveAudioUrl: () async => 'https://example.com/b.m4a',
                     durationMs: 1000,
                     waveform: List.filled(100, 50),
                   ),
@@ -153,7 +153,7 @@ void main() {
         _wrap(
           VoiceMessagePlayer(
             messageId: 'm1',
-            audioUrl: 'https://example.com/voice.m4a',
+            resolveAudioUrl: () async => 'https://example.com/voice.m4a',
             durationMs: 10000,
             waveform: List.filled(100, 50),
           ),

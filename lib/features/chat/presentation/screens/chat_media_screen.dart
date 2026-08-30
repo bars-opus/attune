@@ -328,7 +328,9 @@ class _AudioListTabState extends ConsumerState<_AudioListTab>
                   VoiceMessagePlayer(
                     key: ValueKey(message.clientMessageId),
                     messageId: message.clientMessageId,
-                    audioUrl: audioUrl,
+                    // Already resolved on this screen, so the resolver is
+                    // just the value it holds.
+                    resolveAudioUrl: () async => audioUrl,
                     durationMs: message.mediaDurationMs ?? 0,
                     waveform: message.waveform ?? const [],
                   ),
