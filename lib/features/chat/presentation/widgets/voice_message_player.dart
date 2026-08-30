@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:attune/features/chat/presentation/providers/voice_playback_provider.dart';
+import 'package:attune/features/chat/utils/chat_log.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -102,7 +103,34 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
         widget.audioUrl.startsWith('http')
             ? UrlSource(widget.audioUrl)
             : DeviceFileSource(widget.audioUrl);
-    await _player.play(source);
+
+    // Per-player, because SoundService sets a PROCESS-WIDE context with
+    // respectSilence:true for UI chirps — on iOS that is the ambient
+    // category, muted by the Ring/Silent switch. Without this the voice
+    // note inherits it and plays silently.
+    //
+    // A UI blip should respect the silent switch; a voice message the user
+    // deliberately tapped should not, the same way it plays in every other
+    // messaging app.
+    try {
+      await _player.setAudioContext(
+        AudioContextConfig(respectSilence: false).build(),
+      );
+      await _player.play(source);
+    } catch (error, stack) {
+      // diagnostic, not e: a playback failure carries no message content,
+      // and e would shape the cause to `<len=N>` — which is exactly as
+      // useless as the silence it is trying to explain.
+      ChatLog.diagnostic('voice playback failed', error);
+      debugPrintStack(stackTrace: stack);
+      if (!mounted) return;
+      ref.read(currentlyPlayingVoiceMessageIdProvider.notifier).state = null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That voice message could not play')),
+      );
+      return;
+    }
+    if (!mounted) return;
     setState(() => _isPlaying = true);
   }
 
