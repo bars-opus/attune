@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/motion_tokens.dart';
+import 'package:attune/core/ui/motion/make_room.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/ui/presence/breathing_dots.dart';
@@ -1984,19 +1985,27 @@ class _MessageListState extends ConsumerState<_MessageList>
                   // corners still read as one connected stack; a sender switch
                   // or day boundary restores the normal breathing room.
                   padding: EdgeInsets.only(top: isGrouped ? 3 : 12),
-                  child: SettleIn(
-                    key: ValueKey(message.clientMessageId),
-                    // Only animate a message the first time it is built after
-                    // arriving live (cached history never replays on open, and
-                    // recycled items never replay on scroll-back — Spec §2
-                    // play-once).
+                  // Opens the row's own vertical space as it arrives, so
+                  // the messages above are physically displaced by exactly
+                  // this bubble's height instead of jumping to their new
+                  // positions a frame before it fades in. Outside SettleIn
+                  // so the slot grows while the bubble settles into it.
+                  child: MakeRoom(
                     animate: shouldAnimate,
-                    duration: staggeredDuration,
-                    beginOffset:
-                        message.isMine
-                            ? const Offset(0, 0.12)
-                            : const Offset(0, 0.10),
-                    child: bubble,
+                    child: SettleIn(
+                      key: ValueKey(message.clientMessageId),
+                      // Only animate a message the first time it is built after
+                      // arriving live (cached history never replays on open, and
+                      // recycled items never replay on scroll-back — Spec §2
+                      // play-once).
+                      animate: shouldAnimate,
+                      duration: staggeredDuration,
+                      beginOffset:
+                          message.isMine
+                              ? const Offset(0, 0.12)
+                              : const Offset(0, 0.10),
+                      child: bubble,
+                    ),
                   ),
                 ),
               );

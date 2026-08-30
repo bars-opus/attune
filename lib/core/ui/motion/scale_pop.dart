@@ -24,8 +24,11 @@ class ScalePop extends StatefulWidget {
 
 class _ScalePopState extends State<ScalePop>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl =
-      AnimationController(vsync: this, duration: widget.duration, value: 1.0);
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: widget.duration,
+    value: 1.0,
+  );
   late final Animation<double> _scale = TweenSequence<double>([
     TweenSequenceItem(
       tween: Tween(begin: 1.0, end: 1.0 - widget.magnitude),

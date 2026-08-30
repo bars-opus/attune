@@ -119,15 +119,16 @@ class _GlowPulseState extends State<GlowPulse>
         return DecoratedBox(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            boxShadow: widget.active && _ctrl.value > 0
-                ? [
-                    BoxShadow(
-                      color: color.withValues(alpha: 0.45 * _ctrl.value),
-                      blurRadius: spread * 1.5,
-                      spreadRadius: spread,
-                    ),
-                  ]
-                : const [],
+            boxShadow:
+                widget.active && _ctrl.value > 0
+                    ? [
+                      BoxShadow(
+                        color: color.withValues(alpha: 0.45 * _ctrl.value),
+                        blurRadius: spread * 1.5,
+                        spreadRadius: spread,
+                      ),
+                    ]
+                    : const [],
           ),
           child: child,
         );

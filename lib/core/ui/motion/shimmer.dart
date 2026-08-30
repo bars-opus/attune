@@ -36,10 +36,11 @@ class Shimmer extends StatefulWidget {
   State<Shimmer> createState() => _ShimmerState();
 }
 
-class _ShimmerState extends State<Shimmer>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl =
-      AnimationController(vsync: this, duration: widget.period);
+class _ShimmerState extends State<Shimmer> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: widget.period,
+  );
   bool _started = false;
   bool _done = false;
   int _runId = 0; // invalidates an in-flight bounded run on state changes
@@ -104,7 +105,8 @@ class _ShimmerState extends State<Shimmer>
     if (_done || !widget.active || reduceMotionOf(context)) {
       return widget.child;
     }
-    final highlight = widget.highlightColor ??
+    final highlight =
+        widget.highlightColor ??
         Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.25);
     return AnimatedBuilder(
       animation: _ctrl,
@@ -116,11 +118,7 @@ class _ShimmerState extends State<Shimmer>
             return LinearGradient(
               begin: Alignment(-1.0 - 2 * (1 - t), 0),
               end: Alignment(1.0 - 2 * (1 - t), 0),
-              colors: [
-                Colors.transparent,
-                highlight,
-                Colors.transparent,
-              ],
+              colors: [Colors.transparent, highlight, Colors.transparent],
               stops: const [0.35, 0.5, 0.65],
             ).createShader(bounds);
           },

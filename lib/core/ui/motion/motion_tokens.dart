@@ -5,6 +5,13 @@ import 'package:flutter/widgets.dart';
 const Duration kSettleDuration = Duration(milliseconds: 280);
 const Curve kSettleCurve = Curves.easeOutBack;
 
+/// A new list item opening room for itself. Slightly longer than a plain
+/// settle: the eye is tracking everything above it moving, not just the
+/// item itself. easeOutCubic rather than easeOutBack — an overshoot here
+/// would bounce the whole list above it, not just the arriving bubble.
+const Duration kMakeRoomDuration = Duration(milliseconds: 320);
+const Curve kMakeRoomCurve = Curves.easeOutCubic;
+
 /// Ambient/celebration primitives (Master Spec §17.4: animation durations live
 /// in tokens, never as raw literals at call sites).
 const Duration kGlowBreathPeriod = Duration(milliseconds: 1600);

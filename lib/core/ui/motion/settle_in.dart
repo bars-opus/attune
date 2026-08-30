@@ -28,10 +28,14 @@ class SettleIn extends StatefulWidget {
 
 class _SettleInState extends State<SettleIn>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl =
-      AnimationController(vsync: this, duration: widget.duration);
-  late final Animation<double> _fade =
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: widget.duration,
+  );
+  late final Animation<double> _fade = CurvedAnimation(
+    parent: _ctrl,
+    curve: Curves.easeOut,
+  );
   late final Animation<Offset> _slide = Tween<Offset>(
     begin: widget.beginOffset,
     end: Offset.zero,
