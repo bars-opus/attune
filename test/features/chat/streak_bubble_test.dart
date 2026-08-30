@@ -63,6 +63,80 @@ void main() {
     }
   });
 
+  testWidgets('unwatched shows a play glyph; a replay shows a replay glyph', (
+    tester,
+  ) async {
+    // Three distinct states, so the glyph alone says which: play it for
+    // the first time, play it again, or it is done.
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(
+          key: const ValueKey('fresh'),
+          viewsRemaining: 3,
+          hasBeenPlayed: false,
+          onTap: () {},
+        ),
+      ),
+    );
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.replay_rounded), findsNothing);
+
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(
+          key: const ValueKey('replay'),
+          viewsRemaining: 2,
+          hasBeenPlayed: true,
+          onTap: () {},
+        ),
+      ),
+    );
+    expect(
+      find.byIcon(Icons.replay_rounded),
+      findsOneWidget,
+      reason: 'a watched streak with views left offers a REPLAY',
+    );
+    expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
+  });
+
+  testWidgets('the replay glyph is green, the first play is not', (
+    tester,
+  ) async {
+    // Green marks the bonus views the sender opted into — visually
+    // distinct from the ordinary first play, which uses the theme accent.
+    await tester.pumpWidget(
+      _wrap(StreakBubble(viewsRemaining: 2, hasBeenPlayed: true, onTap: () {})),
+    );
+
+    final icon = tester.widget<Icon>(find.byIcon(Icons.replay_rounded));
+    final colour = icon.color!;
+    expect(colour.g, greaterThan(0.4), reason: 'dominant green channel');
+    expect(colour.g, greaterThan(colour.r));
+    expect(colour.g, greaterThan(colour.b));
+  });
+
+  testWidgets('the final replay still reads as a replay', (tester) async {
+    // The countdown drops the "Nx" suffix on the last view, but the GLYPH
+    // must not fall back to a first-play arrow: one view left after
+    // watching is still a replay.
+    await tester.pumpWidget(
+      _wrap(StreakBubble(viewsRemaining: 1, hasBeenPlayed: true, onTap: () {})),
+    );
+    expect(find.text('Play'), findsOneWidget);
+    expect(find.byIcon(Icons.replay_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
+  });
+
+  testWidgets('the last play is spent, not a replay', (tester) async {
+    // viewsRemaining 0 is the box glyph; the replay state is strictly
+    // "watched, with views still left".
+    await tester.pumpWidget(
+      _wrap(StreakBubble(viewsRemaining: 0, hasBeenPlayed: true, onTap: () {})),
+    );
+    expect(find.byIcon(Icons.check_box_outline_blank_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.replay_rounded), findsNothing);
+  });
+
   testWidgets('a single-view streak just says "Play"', (tester) async {
     await tester.pumpWidget(
       _wrap(

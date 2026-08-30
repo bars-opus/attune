@@ -107,6 +107,17 @@ class StreakBubble extends StatelessWidget {
     final showCount = !isMine && viewsRemaining > 1;
     final label = showCount ? 'Play ${viewsRemaining}x' : 'Play';
 
+    // Three states, three glyphs: play it for the first time, play it
+    // again, or (above) it is spent. hasBeenPlayed alone is the divider —
+    // a watched streak with views left is a REPLAY, which is a different
+    // offer from a first watch.
+    //
+    // Green marks the bonus views the sender opted into, distinct from
+    // the theme accent an ordinary first play uses. Fixed rather than
+    // colorScheme.tertiary, which carries no green guarantee.
+    final isReplay = !isMine && hasBeenPlayed;
+    const replayGreen = Color(0xFF2E9E5B);
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -116,9 +127,9 @@ class StreakBubble extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.play_arrow_rounded,
+              isReplay ? Icons.replay_rounded : Icons.play_arrow_rounded,
               size: 22,
-              color: colorScheme.primary,
+              color: isReplay ? replayGreen : colorScheme.primary,
             ),
             const SizedBox(width: 6),
             Text(label, style: textTheme.bodyMedium),
