@@ -56,6 +56,7 @@ class MessageBubble extends StatelessWidget {
     this.onRemoveReaction,
     this.onImageTap,
     this.onVideoTap,
+    this.onStreakViewSpent,
     this.isGrouped = false,
     this.isGroupedWithPrevious = false,
     this.mediaGroup = const [],
@@ -181,6 +182,11 @@ class MessageBubble extends StatelessWidget {
   /// wired independently in _BubbleBody's isEphemeralVideoAvailable
   /// branch — this callback is never consulted there).
   final void Function(Message message)? onVideoTap;
+
+  /// Reports the budget the server returned after a streak view, so the
+  /// list can apply it. Without this the bubble keeps the count it was
+  /// built with and reopens past its budget.
+  final void Function(String messageId, int viewsRemaining)? onStreakViewSpent;
 
   @override
   Widget build(BuildContext context) {
@@ -396,6 +402,7 @@ class MessageBubble extends StatelessWidget {
                             conversation: conversation,
                             onImageTap: onImageTap,
                             onVideoTap: onVideoTap,
+                            onStreakViewSpent: onStreakViewSpent,
                             onBubbleColor: onBubbleColor,
                           ),
                         ],
@@ -826,6 +833,7 @@ class _BubbleBody extends StatelessWidget {
     this.mediaGroup = const [],
     this.onImageTap,
     this.onVideoTap,
+    this.onStreakViewSpent,
   });
 
   final Message message;
@@ -835,6 +843,11 @@ class _BubbleBody extends StatelessWidget {
   final Conversation? conversation;
   final void Function(Message message)? onImageTap;
   final void Function(Message message)? onVideoTap;
+
+  /// Reports the budget the server returned after a streak view, so the
+  /// list can apply it. Without this the bubble keeps the count it was
+  /// built with and reopens past its budget.
+  final void Function(String messageId, int viewsRemaining)? onStreakViewSpent;
 
   final Color onBubbleColor;
 
@@ -999,14 +1012,18 @@ class _BubbleBody extends StatelessWidget {
           // deliberately leaves it null — so this is exactly "has the
           // recipient opened it".
           openedByRecipient: message.viewedAt != null,
-          onTap: () {
+          onTap: () async {
             if (message.isMine && message.viewedAt != null) return;
             if (!message.isMine && remaining <= 0) return;
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
+            // The viewer returns the budget the server reported after
+            // spending a view; null means the decrement failed and the
+            // local count should stay as it is rather than guess.
+            final left = await Navigator.of(context).push<int>(
+              MaterialPageRoute<int>(
                 builder: (_) => StreakViewerScreen(messageId: message.id),
               ),
             );
+            if (left != null) onStreakViewSpent?.call(message.id, left);
           },
         ),
       );

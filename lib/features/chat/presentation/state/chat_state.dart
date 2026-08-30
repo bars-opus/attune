@@ -776,6 +776,36 @@ class ChatController extends StateNotifier<ChatState> {
   /// optimistic bubble, and _attemptSend owns retry and backoff. The
   /// camera therefore pops immediately rather than holding the user
   /// through a 25MB upload.
+  /// Records the budget the server returned after a streak view.
+  ///
+  /// mark_streak_viewed decrements server-side and returns what remains,
+  /// but nothing was applying that locally: the bubble kept the count it
+  /// was built with, so a streak could be reopened indefinitely until an
+  /// unrelated refresh happened to bring the new row down.
+  ///
+  /// Trusts the server's number rather than decrementing locally — the
+  /// budget is server-owned, and a client that computes it can drift from
+  /// (or outvote) the row that actually gates the clips.
+  void applyStreakViewSpent(String messageId, int viewsRemaining) {
+    final index = state.messages.indexWhere((m) => m.id == messageId);
+    if (index == -1) return;
+
+    final updated = [...state.messages];
+    // viewedAt is stamped alongside the count. It is what locks the SENDER
+    // out — their bubble reads "Opened" once the recipient has watched, and
+    // the server refuses their reopen on the same field. Applying only the
+    // count left the sender's side of the conversation still offering Play
+    // after it had been seen.
+    //
+    // Only ever set, never cleared: the server owns the real timestamp and
+    // the next refresh replaces this approximation with it.
+    updated[index] = updated[index].copyWith(
+      streakViewsRemaining: viewsRemaining,
+      viewedAt: updated[index].viewedAt ?? DateTime.now(),
+    );
+    state = state.copyWith(messages: updated);
+  }
+
   Future<void> sendStreakMessage({
     required String localPath,
     required int durationMs,
@@ -1628,7 +1658,9 @@ class ChatController extends StateNotifier<ChatState> {
       // the storage key already resolved for the upload. Additive: every
       // other media type skips this entirely.
       if (pending.mediaType == 'streak' && mediaKey != null) {
-        await ref.read(streakRepositoryProvider).attachClip(
+        await ref
+            .read(streakRepositoryProvider)
+            .attachClip(
               messageId: canonical.id,
               mediaUrl: mediaKey,
               durationMs: pending.mediaDurationMs ?? 0,

@@ -8,7 +8,61 @@ Widget _wrap(Widget child) =>
     MaterialApp(home: Scaffold(body: Center(child: child)));
 
 void main() {
-  testWidgets('unwatched: a play button and "Play"', (tester) async {
+  testWidgets('a spent streak reads "Opened" for BOTH parties', (tester) async {
+    // The sender saw "Opened" with a check while the recipient saw
+    // "Streak expired" with a videocam-off icon — two different words for
+    // the same event, and "expired" wrongly suggests time ran out rather
+    // than that it was watched.
+    for (final isMine in [true, false]) {
+      await tester.pumpWidget(
+        _wrap(
+          StreakBubble(
+            key: ValueKey(isMine),
+            viewsRemaining: 0,
+            hasBeenPlayed: true,
+            isMine: isMine,
+            openedByRecipient: true,
+            onTap: () {},
+          ),
+        ),
+      );
+
+      expect(
+        find.text('Opened'),
+        findsOneWidget,
+        reason: 'isMine=$isMine should read "Opened"',
+      );
+      expect(find.text('Streak expired'), findsNothing);
+      expect(
+        find.byIcon(Icons.drafts_outlined),
+        findsOneWidget,
+        reason: 'an opened-envelope glyph, not a check or a struck-out camera',
+      );
+    }
+  });
+
+  testWidgets('a spent streak is not tappable by either party', (tester) async {
+    for (final isMine in [true, false]) {
+      var tapped = false;
+      await tester.pumpWidget(
+        _wrap(
+          StreakBubble(
+            key: ValueKey('tap-$isMine'),
+            viewsRemaining: 0,
+            hasBeenPlayed: true,
+            isMine: isMine,
+            openedByRecipient: true,
+            onTap: () => tapped = true,
+          ),
+        ),
+      );
+      await tester.tap(find.text('Opened'));
+      await tester.pump();
+      expect(tapped, isFalse, reason: 'isMine=$isMine must not reopen it');
+    }
+  });
+
+  testWidgets('a single-view streak just says "Play"', (tester) async {
     await tester.pumpWidget(
       _wrap(
         StreakBubble(viewsRemaining: 1, hasBeenPlayed: false, onTap: () {}),
@@ -17,22 +71,45 @@ void main() {
 
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     expect(find.text('Play'), findsOneWidget);
+    expect(
+      find.textContaining('x'),
+      findsNothing,
+      reason: 'one view is the default — a count would be noise',
+    );
   });
 
-  testWidgets('after the first play it reads "Tap to play"', (tester) async {
+  testWidgets('a replay budget counts down in the label itself', (
+    tester,
+  ) async {
+    // "Play 3x" then "Play 2x" then "Play": the remaining count belongs in
+    // the label, not a separate chip beside it, so one glance answers both
+    // "can I play this" and "how many times".
+    for (final entry in {3: 'Play 3x', 2: 'Play 2x', 1: 'Play'}.entries) {
+      await tester.pumpWidget(
+        _wrap(
+          StreakBubble(
+            key: ValueKey(entry.key),
+            viewsRemaining: entry.key,
+            hasBeenPlayed: false,
+            onTap: () {},
+          ),
+        ),
+      );
+      expect(
+        find.text(entry.value),
+        findsOneWidget,
+        reason: '${entry.key} views remaining should read "${entry.value}"',
+      );
+    }
+  });
+
+  testWidgets('the countdown survives having been played', (tester) async {
+    // hasBeenPlayed only says the recipient has opened it once; the budget
+    // is what decides whether it can be opened again.
     await tester.pumpWidget(
       _wrap(StreakBubble(viewsRemaining: 2, hasBeenPlayed: true, onTap: () {})),
     );
-
-    expect(find.text('Tap to play'), findsOneWidget);
-    expect(find.text('Play'), findsNothing);
-  });
-
-  testWidgets('a replay budget shows how many are left', (tester) async {
-    await tester.pumpWidget(
-      _wrap(StreakBubble(viewsRemaining: 3, hasBeenPlayed: true, onTap: () {})),
-    );
-    expect(find.textContaining('3'), findsOneWidget);
+    expect(find.text('Play 2x'), findsOneWidget);
   });
 
   testWidgets('a spent streak is not tappable and says so', (tester) async {
@@ -47,7 +124,9 @@ void main() {
       ),
     );
 
-    expect(find.text('Streak expired'), findsOneWidget);
+    // Both parties now read "Opened" rather than the recipient seeing
+    // "Streak expired", which described time running out.
+    expect(find.text('Opened'), findsOneWidget);
     expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
 
     await tester.tap(find.byType(StreakBubble));
@@ -201,8 +280,10 @@ void main() {
       ),
     );
 
-    expect(find.text('Tap to play'), findsOneWidget);
-    expect(find.text('2 left'), findsOneWidget);
+    // The count now lives in the label rather than a separate "N left"
+    // chip beside it.
+    expect(find.text('Play 2x'), findsOneWidget);
+    expect(find.text('2 left'), findsNothing);
   });
 
   testWidgets('an in-flight streak says Sending, not Play', (tester) async {

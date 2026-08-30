@@ -92,6 +92,8 @@ class FakeChatRepository implements ChatRepository {
     required DateTime createdAt,
     DateTime? deliveredAt,
     DateTime? readAt,
+    String? mediaType,
+    int? streakViewsRemaining,
   }) {
     final row = {
       'id': id,
@@ -102,8 +104,9 @@ class FakeChatRepository implements ChatRepository {
       'created_at': createdAt.toUtc().toIso8601String(),
       'delivered_at': deliveredAt?.toUtc().toIso8601String(),
       'read_at': readAt?.toUtc().toIso8601String(),
-      'media_url': null,
-      'media_type': null,
+      'media_url': mediaType == null ? null : 'https://example.com/m.mp4',
+      'media_type': mediaType,
+      'streak_views_remaining': streakViewsRemaining,
       'source': 'native',
     };
     final message = Message.fromRow(row, currentUserId: currentUserId);

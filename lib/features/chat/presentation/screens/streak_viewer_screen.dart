@@ -108,13 +108,20 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
   Future<void> _finish() async {
     if (_viewSpent) return;
     _viewSpent = true;
+    int? remaining;
     try {
-      await ref.read(streakRepositoryProvider).markViewed(widget.messageId);
+      remaining = await ref
+          .read(streakRepositoryProvider)
+          .markViewed(widget.messageId);
     } catch (_) {
       // A failed decrement must not trap the viewer on the screen; the
       // budget is server-owned and the next open re-reads it.
     }
-    if (mounted) Navigator.of(context).maybePop();
+    // Returned to the caller so the bubble can apply it. The RPC has
+    // always returned what remains, but the value was discarded — the
+    // bubble kept the count it was built with and could be reopened past
+    // its budget until an unrelated refresh brought the new row down.
+    if (mounted) Navigator.of(context).maybePop(remaining);
   }
 
   @override

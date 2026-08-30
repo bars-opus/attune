@@ -72,19 +72,21 @@ class StreakBubble extends StatelessWidget {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // One glyph and one word for both parties. The recipient used to
+          // see a struck-out camera and "Streak expired", which describes
+          // time running out rather than the streak having been watched —
+          // and left the two sides of the same conversation disagreeing
+          // about what had happened.
           Icon(
-            _senderLockedOut
-                ? Icons.check_circle_outline
-                : Icons.videocam_off_outlined,
+            Icons.drafts_outlined,
             size: 18,
             color: colorScheme.onSurfaceVariant,
           ),
           const SizedBox(width: 6),
           Text(
-            // "Opened" rather than "expired" for the sender: it says what
-            // actually happened, and is the only read receipt a streak
-            // gives them.
-            _senderLockedOut ? 'Opened' : 'Streak expired',
+            // The only read receipt a streak gives, and now the same
+            // word the recipient sees.
+            'Opened',
             style: textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
               fontStyle: FontStyle.italic,
@@ -94,11 +96,16 @@ class StreakBubble extends StatelessWidget {
       );
     }
 
-    // "Play" before the first watch, "Tap to play" after — the second
-    // wording signals that it is still available rather than already used
-    // up, which is the question a recipient actually has once they have
-    // seen it once.
-    final label = hasBeenPlayed ? 'Tap to play' : 'Play';
+    // The remaining count lives IN the label — "Play 3x", "Play 2x", then
+    // plain "Play" on the last one — rather than in a separate chip beside
+    // it, so one glance answers both "can I play this" and "how many
+    // times". A count on the final view would be noise: "Play 1x" and
+    // "Play" say the same thing.
+    //
+    // The sender never sees a count: the budget is the recipient's, and
+    // reporting their viewing back would be a different feature.
+    final showCount = !isMine && viewsRemaining > 1;
+    final label = showCount ? 'Play ${viewsRemaining}x' : 'Play';
 
     return InkWell(
       onTap: onTap,
@@ -115,21 +122,6 @@ class StreakBubble extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Text(label, style: textTheme.bodyMedium),
-            // Only meaningful once replays exist AND one has been used;
-            // showing "1 left" on an unwatched view-once streak would be
-            // noise.
-            // The sender never sees a countdown: the budget is the
-            // recipient's, and reporting their viewing back would be a
-            // different feature.
-            if (!isMine && hasBeenPlayed && viewsRemaining > 0) ...[
-              const SizedBox(width: 8),
-              Text(
-                '$viewsRemaining left',
-                style: textTheme.labelSmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
           ],
         ),
       ),

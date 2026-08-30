@@ -1778,6 +1778,14 @@ class _MessageListState extends ConsumerState<_MessageList>
                           await onJumpToParent(jumpToId, state.messages);
                         }
                       },
+                      // The viewer reports what the server left after
+                      // spending a view; applying it is what stops a
+                      // streak reopening past its budget.
+                      onStreakViewSpent: (messageId, viewsRemaining) {
+                        ref
+                            .read(chatControllerProvider(conversation).notifier)
+                            .applyStreakViewSpent(messageId, viewsRemaining);
+                      },
                       onRetry:
                           message.isFailed
                               ? () => ref
