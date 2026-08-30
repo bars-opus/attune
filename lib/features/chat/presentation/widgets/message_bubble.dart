@@ -24,6 +24,27 @@ import 'dart:io';
 import 'package:attune/features/chat/presentation/widgets/streak_bubble.dart';
 import 'package:attune/features/chat/presentation/screens/streak_viewer_screen.dart';
 
+/// A local media path only if the file is still there.
+///
+/// localMediaPath points at a CACHE file: the OS reclaims app caches under
+/// storage pressure, and a recording is cleaned up once uploaded. Callers
+/// preferred it unconditionally over the signed URL, so once the file went
+/// away the player was handed a path to nothing — DeviceFileSource then
+/// fails with
+///
+///   PlatformException(DarwinAudioError, ... AVPlayerItem.Status.failed on
+///   setSourceUrl: error("Failed to set playerItem"))
+///
+/// while a perfectly good uploaded copy sat beside it. Returning null lets
+/// the caller fall through to that copy.
+///
+/// Synchronous on purpose: build() cannot await, and an async probe would
+/// flash the wrong source for a frame.
+String? _playableLocalPath(String? path) {
+  if (path == null) return null;
+  return File(path).existsSync() ? path : null;
+}
+
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
     super.key,
@@ -961,12 +982,13 @@ class _BubbleBody extends StatelessWidget {
       );
     }
     if (message.hasAudio) {
+      final playableLocalAudioPath = _playableLocalPath(message.localMediaPath);
       children.add(
-        message.localMediaPath != null
+        playableLocalAudioPath != null
             ? VoiceMessagePlayer(
               key: ValueKey(message.clientMessageId),
               messageId: message.clientMessageId,
-              audioUrl: message.localMediaPath!,
+              audioUrl: playableLocalAudioPath,
               durationMs: message.mediaDurationMs ?? 0,
               waveform: message.waveform ?? const [],
             )
@@ -1042,7 +1064,8 @@ class _BubbleBody extends StatelessWidget {
         ),
       );
     } else if (message.isEphemeralVideoAvailable) {
-      final videoUrl = message.localMediaPath ?? message.signedMediaUrl;
+      final videoUrl =
+          _playableLocalPath(message.localMediaPath) ?? message.signedMediaUrl;
       // Gate the tap on the send having actually completed: an optimistic,
       // still-uploading ephemeral video has only a localMediaPath (no
       // signedMediaUrl yet) and a synthetic '_local_<clientMessageId>' id

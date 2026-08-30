@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:attune/app/routing/app_router.dart';
 import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:attune/core/utils/animations/animated_scale_fade.dart';
@@ -19,6 +20,28 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../support/chat_test_harness.dart';
 
 void main() {
+  // MessageBubble now prefers localMediaPath only when the file is still
+  // on disk — a reclaimed cache file used to shadow a good signed URL and
+  // hand the player a path to nothing. These fixtures must therefore be
+  // REAL files, or they exercise the fallback rather than the local path
+  // they are about to assert on.
+  late Directory fixtureDir;
+  late String localVoicePath;
+  late String localOtherVoicePath;
+  late String localClipPath;
+
+  setUpAll(() {
+    fixtureDir = Directory.systemTemp.createTempSync('bubble_fixtures');
+    localVoicePath = '${fixtureDir.path}/voice.m4a';
+    localOtherVoicePath = '${fixtureDir.path}/other.m4a';
+    localClipPath = '${fixtureDir.path}/clip.mp4';
+    for (final path in [localVoicePath, localOtherVoicePath, localClipPath]) {
+      File(path).writeAsBytesSync(const [0]);
+    }
+  });
+
+  tearDownAll(() => fixtureDir.deleteSync(recursive: true));
+
   testWidgets('renders tombstone text when message is deleted', (tester) async {
     final deleted = Message.fromRow({
       'id': 'm1',
@@ -594,7 +617,7 @@ void main() {
         content: '',
         createdAt: createdAt,
         mediaType: 'audio',
-        localMediaPath: '/tmp/voice.m4a',
+        localMediaPath: localVoicePath,
         mediaDurationMs: 4200,
         waveform: List.filled(100, 50),
       );
@@ -652,7 +675,7 @@ void main() {
         content: '',
         createdAt: DateTime.now(),
         mediaType: 'audio',
-        localMediaPath: '/tmp/other.m4a',
+        localMediaPath: localOtherVoicePath,
         mediaDurationMs: 1000,
         waveform: List.filled(100, 50),
       );
@@ -886,7 +909,7 @@ void main() {
         isMine: true,
         mediaType: 'video',
         isViewOnce: true,
-        localMediaPath: '/tmp/clip.mp4',
+        localMediaPath: localClipPath,
       );
 
       await tester.pumpWidget(
@@ -1042,6 +1065,49 @@ void main() {
       expect(find.byType(VideoMessageThumbnail), findsOneWidget);
       expect(find.byType(ResolvedMediaUrl), findsOneWidget);
       expect(find.text('Video expired'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'a voice message whose local file has gone falls back to the upload',
+    (tester) async {
+      // The cache file is reclaimed by the OS, or cleaned up after upload.
+      // Preferring the path regardless handed DeviceFileSource a path to
+      // nothing — AVPlayerItem.Status.failed — while the signed URL sat
+      // unused beside it.
+      final message = Message.fromRow({
+        'id': 'm-gone',
+        'client_message_id': 'c-gone',
+        'relationship_id': 'r1',
+        'sender_id': 'u1',
+        'content': '',
+        'media_type': 'audio',
+        'media_url': 'chat/voice.m4a',
+        'media_duration_ms': 4200,
+        'created_at': DateTime.now().toIso8601String(),
+      }, currentUserId: 'u1').copyWith(
+        localMediaPath: '${fixtureDir.path}/deleted-by-the-os.m4a',
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: MessageBubble(
+                message: message,
+                conversation: testConversation(),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // A resolver, not a player pointed at the missing file.
+      expect(
+        find.byType(ResolvedMediaUrl),
+        findsOneWidget,
+        reason: 'a stale local path must fall through to the uploaded copy',
+      );
     },
   );
 }
