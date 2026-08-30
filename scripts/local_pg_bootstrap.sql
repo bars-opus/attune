@@ -197,6 +197,33 @@ CREATE TABLE IF NOT EXISTS storage.objects (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Supabase refuses direct deletion from storage tables; only the Storage
+-- API may remove an object:
+--
+--   PostgrestException(message: Direct deletion from storage tables is not
+--   allowed. Use the Storage API instead., code: 42501)
+--
+-- Without this guard the harness happily accepted DELETE FROM
+-- storage.objects, so three SECURITY DEFINER functions that did exactly
+-- that passed every local contract and threw on every real invocation --
+-- rolling back the state change that preceded the DELETE in each. This
+-- reproduces the platform's refusal so that class of bug fails here first.
+CREATE OR REPLACE FUNCTION storage.reject_direct_object_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION
+    'Direct deletion from storage tables is not allowed. Use the Storage API instead.'
+    USING ERRCODE = '42501';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS reject_direct_object_delete ON storage.objects;
+CREATE TRIGGER reject_direct_object_delete
+  BEFORE DELETE ON storage.objects
+  FOR EACH ROW EXECUTE FUNCTION storage.reject_direct_object_delete();
+
 GRANT USAGE ON SCHEMA public, auth, extensions, storage TO anon, authenticated, service_role;
 
 -- Supabase grants table privileges platform-side, so no migration does it.

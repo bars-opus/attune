@@ -351,4 +351,134 @@ BEGIN
   PERFORM set_config('request.jwt.claims', '', true);
 END $$;
 
+-- 9. A spent view COMMITS: no storage DELETE to roll it back.
+--
+-- mark_streak_viewed deleted directly from storage.objects, which the
+-- platform refuses (42501, "Direct deletion from storage tables is not
+-- allowed"). The DELETE ran AFTER the decrement, so the raised exception
+-- rolled the whole function back: the budget was never spent, viewed_at
+-- was never stamped, and a watched streak stayed on "Play" across app
+-- restarts. Deletion is now queued for the Storage API instead.
+DO $$
+DECLARE
+  v_msg uuid;
+  v_left int;
+  v_viewed timestamptz;
+  v_clips int;
+  v_queued int;
+BEGIN
+  INSERT INTO public.messages
+    (relationship_id, sender_id, client_message_id, content,
+     streak_views_remaining)
+  VALUES ('5e000000-0000-0000-0000-000000000001',
+          '5f000000-0000-0000-0000-0000000000a1',
+          gen_random_uuid(), 'spend me', 1)
+  RETURNING id INTO v_msg;
+
+  INSERT INTO public.streak_clips
+    (message_id, clip_index, media_url, duration_ms)
+  VALUES (v_msg, 0, 'chat/spend-0', 3000);
+
+  -- The storage row must EXIST, or the old function's
+  -- DELETE FROM storage.objects matches nothing, deletes zero rows, and
+  -- never trips the platform's refusal -- the contract would then pass
+  -- against the very definition that fails in production.
+  INSERT INTO storage.buckets (id, name)
+  VALUES ('message-media', 'message-media')
+  ON CONFLICT (id) DO NOTHING;
+  INSERT INTO storage.objects (bucket_id, name)
+  VALUES ('message-media', 'chat/spend-0')
+  ON CONFLICT DO NOTHING;
+
+  -- The RECIPIENT views it: user_b, not the sender.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', '5f000000-0000-0000-0000-0000000000b2',
+                      'role', 'authenticated')::text, true);
+
+  v_left := public.mark_streak_viewed(v_msg);
+
+  PERFORM set_config('request.jwt.claims', '', true);
+
+  IF v_left <> 0 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: a one-view streak should report 0 left, got %',
+      v_left;
+  END IF;
+
+  SELECT streak_views_remaining, viewed_at INTO v_left, v_viewed
+  FROM public.messages WHERE id = v_msg;
+
+  IF v_left <> 0 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the decrement did not commit (remaining=%)', v_left;
+  END IF;
+
+  IF v_viewed IS NULL THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: viewed_at not stamped, so the sender never locks out';
+  END IF;
+
+  SELECT count(*) INTO v_clips
+  FROM public.streak_clips WHERE message_id = v_msg;
+  IF v_clips <> 0 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: clips survived a spent streak (%)', v_clips;
+  END IF;
+
+  SELECT count(*) INTO v_queued
+  FROM public.media_deletion_queue
+  WHERE bucket_id = 'message-media' AND object_name = 'chat/spend-0'
+    AND deleted_at IS NULL;
+  IF v_queued <> 1 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the storage object was not queued for deletion (%)',
+      v_queued;
+  END IF;
+
+  DELETE FROM public.messages WHERE id = v_msg;
+END $$;
+
+-- 10. Neither viewer function may delete from storage.objects again.
+DO $$
+DECLARE v_def text;
+BEGIN
+  SELECT pg_get_functiondef(p.oid) INTO v_def
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'mark_streak_viewed';
+  IF position('DELETE FROM storage.objects' in v_def) > 0 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: mark_streak_viewed deletes from storage.objects (42501)';
+  END IF;
+
+  SELECT pg_get_functiondef(p.oid) INTO v_def
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'mark_video_viewed';
+  IF position('DELETE FROM storage.objects' in v_def) > 0 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: mark_video_viewed deletes from storage.objects (42501)';
+  END IF;
+END $$;
+
+-- 11. The deletion queue is server-only.
+--
+-- It names storage paths for messages the reader may not be party to.
+-- Supabase grants table privileges platform-side, so a REVOKE in the
+-- migration does not hold: RLS with no policies is what denies clients.
+DO $$
+DECLARE v_rls boolean; v_policies int;
+BEGIN
+  SELECT relrowsecurity INTO v_rls
+  FROM pg_class WHERE relname = 'media_deletion_queue';
+  SELECT count(*) INTO v_policies
+  FROM pg_policies WHERE tablename = 'media_deletion_queue';
+
+  IF NOT COALESCE(v_rls, false) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: media_deletion_queue has RLS disabled';
+  END IF;
+  IF v_policies <> 0 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the queue must have no policies, found %', v_policies;
+  END IF;
+END $$;
+
 ROLLBACK;
