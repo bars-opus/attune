@@ -481,4 +481,28 @@ BEGIN
   END IF;
 END $$;
 
+-- 12. The deletion queue is actually drained.
+--
+-- The queue only keeps the promise "destroyed after viewing" if something
+-- empties it. Postgres cannot: the platform refuses direct deletion from
+-- storage tables, which is the whole reason the queue exists. So a cron
+-- job must call the Edge Function that uses the Storage API.
+DO $$
+DECLARE v_schedule text; v_command text;
+BEGIN
+  SELECT schedule, command INTO v_schedule, v_command
+  FROM cron.job WHERE jobname = 'drain-media-deletion-queue';
+
+  IF v_schedule IS NULL THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: nothing drains media_deletion_queue, so spent streak media stays in the bucket';
+  END IF;
+
+  IF position('process-media-deletion-queue' in v_command) = 0 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the drain job does not call the deletion function (command: %)',
+      v_command;
+  END IF;
+END $$;
+
 ROLLBACK;
