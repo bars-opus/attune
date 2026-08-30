@@ -111,6 +111,57 @@ class ChatTextField extends StatefulWidget {
 /// tap target that made the composer row look sparse. GestureDetector
 /// around a bare Icon keeps the row visually tight while still giving a
 /// full, comfortable ~40x40 tap target via a transparent HitTestBehavior.
+/// A composer action drawn OUTSIDE the pill, on its own circular ground:
+/// the camera on the left, attach on the right.
+///
+/// Separate from [_ComposerIcon] because the two answer different
+/// questions. Icons inside the pill act on the message being written and
+/// sit on the pill's own surface; a satellite opens something else
+/// entirely, and carries its own ground to say so.
+class _ComposerSatellite extends StatelessWidget {
+  const _ComposerSatellite({
+    required this.icon,
+    required this.onTap,
+    this.tooltip,
+  });
+
+  final IconData icon;
+  final VoidCallback? onTap;
+  final String? tooltip;
+
+  static const double _size = 48;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final enabled = onTap != null;
+
+    final button = Semantics(
+      button: true,
+      label: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Opacity(
+          opacity: enabled ? 1.0 : 0.38,
+          child: Container(
+            width: _size,
+            height: _size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: colorScheme.surface,
+              border: Border.all(color: colorScheme.onSurface, width: .2),
+            ),
+            child: Icon(icon, size: 24, color: colorScheme.onSurfaceVariant),
+          ),
+        ),
+      ),
+    );
+
+    return tooltip == null ? button : Tooltip(message: tooltip!, child: button);
+  }
+}
+
 class _ComposerIcon extends StatelessWidget {
   const _ComposerIcon({
     required this.icon,
@@ -736,15 +787,15 @@ class _ChatTextFieldState extends State<ChatTextField>
         widget.showAttachVideo ||
         widget.onAttachFile != null;
     final colorScheme = Theme.of(context).colorScheme;
+    // Satellites: drawn on their own circular grounds either side of the
+    // pill rather than inside it, so the pill holds only what belongs to
+    // composing a message.
     final leadingAction =
         widget.showCaptureVideo
-            ? _ComposerIcon(
+            ? _ComposerSatellite(
               icon: Icons.camera_alt_rounded,
               onTap: widget.enabled ? widget.onCaptureVideo : null,
               tooltip: 'Camera',
-              filled: true,
-              fillColor: colorScheme.primary,
-              iconColor: colorScheme.onPrimary,
             )
             : null;
 
@@ -820,107 +871,127 @@ class _ChatTextFieldState extends State<ChatTextField>
       // counter, waveform, delete, and (once locked) send and pause.
       // The composer keeps only its ordinary icon row, whose mic slot
       // still holds the gesture and the position the scrim measures.
-      Container(
-        constraints: const BoxConstraints(minHeight: 54),
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        decoration: BoxDecoration(
-          color: colorScheme.surface,
-          border: Border.all(color: colorScheme.onSurface, width: .2),
-          borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (leadingAction != null) ...[
-              leadingAction,
-              const SizedBox(width: 6),
-            ],
-            Expanded(
-              child: TextField(
-                controller: widget.controller,
-                focusNode: widget.focusNode,
-                enabled: widget.enabled,
-                minLines: 1,
-                maxLines: 5,
-                textInputAction: TextInputAction.newline,
-                onSubmitted: (_) => _handleSend(),
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(fontSize: 18, height: 1.25),
-                decoration: InputDecoration(
-                  hintText: widget.hintText,
-                  hintStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.5),
-                    fontSize: 14,
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (leadingAction != null) ...[
+            leadingAction,
+            const SizedBox(width: Spacing.sm),
+          ],
+          Expanded(
+            child: Container(
+              key: const ValueKey('composer-pill'),
+              constraints: const BoxConstraints(minHeight: 54),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                border: Border.all(color: colorScheme.onSurface, width: .2),
+                borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: widget.controller,
+                      focusNode: widget.focusNode,
+                      enabled: widget.enabled,
+                      minLines: 1,
+                      maxLines: 5,
+                      textInputAction: TextInputAction.newline,
+                      onSubmitted: (_) => _handleSend(),
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontSize: 18,
+                        height: 1.25,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: widget.hintText,
+                        hintStyle: Theme.of(
+                          context,
+                        ).textTheme.bodyLarge?.copyWith(
+                          color: colorScheme.onSurface.withValues(alpha: 0.5),
+                          fontSize: 14,
+                        ),
+                        isDense: true,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: Spacing.sm,
+                          horizontal: Spacing.sm,
+                        ),
+                      ),
+                    ),
                   ),
-                  isDense: true,
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  disabledBorder: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    vertical: Spacing.sm,
-                    horizontal: Spacing.sm,
-                  ),
-                ),
+                  if (widget.showTranslator)
+                    AnimatedSize(
+                      duration:
+                          reduceMotionOf(context)
+                              ? Duration.zero
+                              : const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment.centerLeft,
+                      child: AnimatedOpacity(
+                        duration:
+                            reduceMotionOf(context)
+                                ? Duration.zero
+                                : const Duration(milliseconds: 150),
+                        opacity: _hasText ? 1.0 : 0.0,
+                        child:
+                            _hasText
+                                ? _ComposerIcon(
+                                  icon: Icons.help_outline_rounded,
+                                  onTap:
+                                      widget.enabled
+                                          ? widget.onOpenTranslator
+                                          : null,
+                                  tooltip: 'Help me say this',
+                                )
+                                : const SizedBox(
+                                  height: _ComposerIcon._tapSize,
+                                ),
+                      ),
+                    ),
+                  // Mic then games, both inside the pill. The mic is the
+                  // left of the two, matching the reference.
+                  if (!_hasText && widget.showVoiceMessage) micSlot,
+                  if (!_hasText && widget.showGames)
+                    _ComposerIcon(
+                      icon: Icons.sports_esports_outlined,
+                      onTap: widget.enabled ? widget.onOpenGames : null,
+                      tooltip: 'Games',
+                    ),
+                  if (_hasText || !widget.showVoiceMessage)
+                    _ComposerIcon(
+                      icon: null,
+                      onTap: widget.enabled && _hasText ? _handleSend : null,
+                      tooltip: 'Send message',
+                      filled: _hasText,
+                      fillColor: widget.sendButtonColor ?? colorScheme.primary,
+                      iconColor: widget.onSendButtonColor,
+                      child: IconCrossfade(
+                        child: ScalePop(
+                          key: const ValueKey('send'),
+                          trigger: _sendPulse,
+                          child: const Icon(Icons.send_rounded),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-            if (widget.showTranslator)
-              AnimatedSize(
-                duration:
-                    reduceMotionOf(context)
-                        ? Duration.zero
-                        : const Duration(milliseconds: 200),
-                curve: Curves.easeOutCubic,
-                alignment: Alignment.centerLeft,
-                child: AnimatedOpacity(
-                  duration:
-                      reduceMotionOf(context)
-                          ? Duration.zero
-                          : const Duration(milliseconds: 150),
-                  opacity: _hasText ? 1.0 : 0.0,
-                  child:
-                      _hasText
-                          ? _ComposerIcon(
-                            icon: Icons.help_outline_rounded,
-                            onTap:
-                                widget.enabled ? widget.onOpenTranslator : null,
-                            tooltip: 'Help me say this',
-                          )
-                          : const SizedBox(height: _ComposerIcon._tapSize),
-                ),
-              ),
-            if (!_hasText && showAttachSheet)
-              _ComposerIcon(
-                icon: Icons.add_circle_outline_rounded,
-                onTap: widget.enabled ? () => _handleAttachTap(context) : null,
-                tooltip: 'More',
-              ),
-            if (!_hasText && widget.showVoiceMessage) micSlot,
-            if (!_hasText && widget.showGames)
-              _ComposerIcon(
-                icon: Icons.sports_esports_outlined,
-                onTap: widget.enabled ? widget.onOpenGames : null,
-                tooltip: 'Games',
-              ),
-            if (_hasText || !widget.showVoiceMessage)
-              _ComposerIcon(
-                icon: null,
-                onTap: widget.enabled && _hasText ? _handleSend : null,
-                tooltip: 'Send message',
-                filled: _hasText,
-                fillColor: widget.sendButtonColor ?? colorScheme.primary,
-                iconColor: widget.onSendButtonColor,
-                child: IconCrossfade(
-                  child: ScalePop(
-                    key: const ValueKey('send'),
-                    trigger: _sendPulse,
-                    child: const Icon(Icons.send_rounded),
-                  ),
-                ),
-              ),
+          ),
+          // Attach as the trailing satellite, outside the pill.
+          if (showAttachSheet) ...[
+            const SizedBox(width: Spacing.sm),
+            _ComposerSatellite(
+              icon: Icons.add_circle_outline_rounded,
+              onTap: widget.enabled ? () => _handleAttachTap(context) : null,
+              tooltip: 'More',
+            ),
           ],
-        ),
+        ],
       ),
     );
 
