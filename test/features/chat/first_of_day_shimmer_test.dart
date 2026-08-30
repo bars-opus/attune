@@ -15,17 +15,23 @@ void main() {
     repo.conversationOverride = convo;
     final now = DateTime.now();
     // A message "today" and one from "yesterday" → today's is first-of-day.
-    // The "today" message is stamped a couple seconds ahead of `now` so it is
-    // unambiguously after ChatScreen's firstBuildCutoff (captured moments
-    // later, when the widget is constructed during pumpWidget below) and
-    // therefore counts as new — same calendar day, so the first-of-day
-    // comparison is unaffected.
+    // The "today" message is stamped ahead of `now` so it is unambiguously
+    // after ChatScreen's firstBuildCutoff (captured moments later, when the
+    // widget is constructed during pumpWidget below) and therefore counts
+    // as new — same calendar day, so the first-of-day comparison is
+    // unaffected.
+    //
+    // The margin is minutes, not seconds: under a loaded parallel suite run
+    // more than a couple of seconds of WALL CLOCK can pass between seeding
+    // here and the widget being built, letting the cutoff overtake the
+    // timestamp. The message then reads as history, no Shimmer renders, and
+    // the test fails for load rather than for behaviour.
     repo.seedIncoming(
       id: 'today',
       relationshipId: 'rel-1',
       senderId: 'partner',
       content: 'today msg',
-      createdAt: now.add(const Duration(seconds: 2)),
+      createdAt: now.add(const Duration(minutes: 5)),
     );
     repo.seedIncoming(
       id: 'yesterday',

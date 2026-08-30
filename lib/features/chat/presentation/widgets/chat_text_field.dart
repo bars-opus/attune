@@ -144,14 +144,12 @@ class _ComposerSatellite extends StatelessWidget {
         customBorder: const CircleBorder(),
         child: Opacity(
           opacity: enabled ? 1.0 : 0.38,
-          child: Container(
+          // No ground of its own: a bare glyph sitting on the chat
+          // wallpaper. SizedBox rather than Container so the tap target
+          // stays a full 48px without painting anything behind the icon.
+          child: SizedBox(
             width: _size,
             height: _size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: colorScheme.surface,
-              border: Border.all(color: colorScheme.onSurface, width: .2),
-            ),
             child: Icon(icon, size: 24, color: colorScheme.onSurfaceVariant),
           ),
         ),

@@ -82,40 +82,37 @@ void main() {
     );
   });
 
-  testWidgets('the camera carries no primary fill', (tester) async {
-    // In the reference the camera sits on the same neutral ground as the
-    // attach button, not a primary-filled chip. It DOES have a ground --
-    // the white circle -- so the assertion is that it matches attach,
-    // rather than that it has no Container at all.
+  testWidgets('both satellites are bare glyphs, with no circle', (
+    tester,
+  ) async {
+    // Neither the camera nor the attach icon carries a ground of its own:
+    // they read as glyphs sitting on the chat wallpaper, not as chips.
     await tester.pumpWidget(_harness());
 
-    Color? groundOf(IconData icon) {
-      final containers = tester.widgetList<Container>(
-        find.ancestor(of: find.byIcon(icon), matching: find.byType(Container)),
+    for (final icon in [
+      Icons.camera_alt_rounded,
+      Icons.add_circle_outline_rounded,
+    ]) {
+      final grounds = tester
+          .widgetList<Container>(
+            find.ancestor(
+              of: find.byIcon(icon),
+              matching: find.byType(Container),
+            ),
+          )
+          .where((c) {
+            final d = c.decoration;
+            return d is BoxDecoration &&
+                (d.shape == BoxShape.circle ||
+                    d.color != null ||
+                    d.border != null);
+          });
+
+      expect(
+        grounds,
+        isEmpty,
+        reason: '$icon still draws a circle or fill behind it',
       );
-      for (final c in containers) {
-        final d = c.decoration;
-        if (d is BoxDecoration && d.shape == BoxShape.circle) return d.color;
-      }
-      return null;
     }
-
-    final cameraGround = groundOf(Icons.camera_alt_rounded);
-    expect(cameraGround, isNotNull, reason: 'the camera has a circular ground');
-    expect(
-      cameraGround,
-      groundOf(Icons.add_circle_outline_rounded),
-      reason: 'camera and attach are the same kind of button',
-    );
-
-    final primary =
-        Theme.of(
-          tester.element(find.byType(ChatTextField)),
-        ).colorScheme.primary;
-    expect(
-      cameraGround,
-      isNot(primary),
-      reason: 'the primary-filled chip is gone',
-    );
   });
 }
