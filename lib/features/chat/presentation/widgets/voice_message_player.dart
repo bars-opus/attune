@@ -208,6 +208,35 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
   static const double _waveformWidth = 140;
 }
 
+/// The bar heights (0..1) the playback waveform draws for [waveform] at
+/// [width], one per bar.
+///
+/// Point-sampled, NOT aggregated. Collapsing the ~3 stored samples that
+/// fall behind each bar by peak discarded most of the recording's detail
+/// and lifted quiet bars toward loud ones, so the same audio looked
+/// visibly flatter on playback than it had while recording — the live
+/// painter draws one bar per raw reading and does no aggregation at all.
+/// Any aggregator has the same effect to some degree; peak is simply the
+/// most flattering of them.
+List<double> voiceWaveformBars(List<int> waveform, double width) {
+  if (waveform.isEmpty) return const <double>[];
+  final barCount = (width / kVoiceWaveformStride).floor().clamp(
+    1,
+    waveform.length,
+  );
+  return List<double>.generate(barCount, (i) {
+    final index = (i * waveform.length / barCount).floor().clamp(
+      0,
+      waveform.length - 1,
+    );
+    return waveform[index] / 255;
+  });
+}
+
+/// Bar spacing. The 100 stored samples would be sub-pixel at a bubble
+/// width, so the waveform shows as many of them as fit legibly.
+const double kVoiceWaveformStride = 4.0;
+
 /// Keeps silence visible without inflating it. Matches the live
 /// recording waveform's own floor, so the same audio draws the same way
 /// while recording and on playback.
@@ -230,31 +259,17 @@ class _WaveformPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (waveform.isEmpty) return;
 
-    // The recorder always emits waveformPointCount (100) samples, which at
-    // a typical bubble width would be sub-pixel bars. Aggregate them into
-    // as many bars as actually fit, so each one is a legible, rounded
-    // stroke rather than a hairline.
-    const stride = 4.0;
-    final barCount = (size.width / stride).floor().clamp(1, waveform.length);
-    final perBar = waveform.length / barCount;
+    final bars = voiceWaveformBars(waveform, size.width);
+    final barCount = bars.length;
     final progressIndex = (barCount * progressFraction).round();
     final centerY = size.height / 2;
 
     for (var i = 0; i < barCount; i++) {
-      // Peak (not mean) within the group — mean flattens speech into a
-      // uniform band and loses the shape that makes a waveform readable.
-      var peak = 0;
-      final start = (i * perBar).floor();
-      final end = ((i + 1) * perBar).ceil().clamp(0, waveform.length);
-      for (var j = start; j < end; j++) {
-        if (waveform[j] > peak) peak = waveform[j];
-      }
-
       // Floored in PIXELS, matching the live recording waveform. A 0.12
       // fraction floor lifted quiet audio to 12% of the bubble height,
       // well above where the same moment was drawn live — the two are the
       // same numbers, so they should look the same.
-      final barHeight = (size.height * (peak / 255)).clamp(
+      final barHeight = (size.height * bars[i]).clamp(
         _minBarHeight,
         size.height,
       );
@@ -265,7 +280,7 @@ class _WaveformPainter extends CustomPainter {
             ..strokeCap = StrokeCap.round
             ..strokeWidth = 2.5;
 
-      final x = i * stride + stride / 2;
+      final x = i * kVoiceWaveformStride + kVoiceWaveformStride / 2;
       canvas.drawLine(
         Offset(x, centerY - barHeight / 2),
         Offset(x, centerY + barHeight / 2),
