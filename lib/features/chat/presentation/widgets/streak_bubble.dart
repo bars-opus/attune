@@ -78,7 +78,7 @@ class StreakBubble extends StatelessWidget {
           // and left the two sides of the same conversation disagreeing
           // about what had happened.
           Icon(
-            Icons.drafts_outlined,
+            Icons.stop_circle_outlined,
             size: 18,
             color: colorScheme.onSurfaceVariant,
           ),

@@ -34,9 +34,9 @@ void main() {
       );
       expect(find.text('Streak expired'), findsNothing);
       expect(
-        find.byIcon(Icons.drafts_outlined),
+        find.byIcon(Icons.stop_circle_outlined),
         findsOneWidget,
-        reason: 'an opened-envelope glyph, not a check or a struck-out camera',
+        reason: 'an outline stop glyph, not a check or a struck-out camera',
       );
     }
   });
