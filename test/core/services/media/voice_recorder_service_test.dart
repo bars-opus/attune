@@ -178,6 +178,32 @@ void main() {
       );
     });
 
+    test('the live level and the stored waveform are the same numbers', () {
+      // The scrim's live waveform reads currentLevel while the player
+      // reads the stored array. They are only guaranteed to agree because
+      // both come from one normalization path -- until now that was
+      // asserted by a comment alone, so a second mapping added to either
+      // side would have gone unnoticed until the two visibly disagreed.
+      final service = VoiceRecorderService();
+
+      for (final db in [-45.0, -30.0, -20.0, -10.0, -3.0]) {
+        service.debugFeedAmplitude(db);
+        final live = service.currentLevel.value;
+
+        // The newest reading is the peak of the last populated point.
+        final stored = service.debugCurrentWaveform().reduce(
+          (a, b) => a > b ? a : b,
+        );
+        expect(
+          (live * 255 - stored).abs(),
+          lessThan(1.0),
+          reason:
+              'at $db dBFS the live level is ${(live * 255).round()} but '
+              'the stored waveform peaks at $stored',
+        );
+      }
+    });
+
     test('a louder dBFS reading produces a TALLER bar than a quieter one', () {
       // record's Amplitude.current is dBFS: 0 = loudest, increasingly
       // negative as audio gets quieter. This is the exact regression guard

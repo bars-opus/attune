@@ -208,6 +208,11 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
   static const double _waveformWidth = 140;
 }
 
+/// Keeps silence visible without inflating it. Matches the live
+/// recording waveform's own floor, so the same audio draws the same way
+/// while recording and on playback.
+const double _minBarHeight = 2.0;
+
 class _WaveformPainter extends CustomPainter {
   const _WaveformPainter({
     required this.waveform,
@@ -245,8 +250,14 @@ class _WaveformPainter extends CustomPainter {
         if (waveform[j] > peak) peak = waveform[j];
       }
 
-      final normalized = (peak / 255).clamp(0.12, 1.0);
-      final barHeight = size.height * normalized;
+      // Floored in PIXELS, matching the live recording waveform. A 0.12
+      // fraction floor lifted quiet audio to 12% of the bubble height,
+      // well above where the same moment was drawn live — the two are the
+      // same numbers, so they should look the same.
+      final barHeight = (size.height * (peak / 255)).clamp(
+        _minBarHeight,
+        size.height,
+      );
       final paint =
           Paint()
             ..color =
