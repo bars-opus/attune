@@ -237,9 +237,9 @@ void main() {
   ) async {
     final controller = TextEditingController();
     await _pump(tester, controller: controller, showAttachImage: false);
-    // The circular '+' attach icon only renders when media/files are
-    // available for the attachment sheet.
-    expect(find.byIcon(Icons.add_circle_outline_rounded), findsNothing);
+    // The in-pill paperclip only renders when media/files are available
+    // for the attachment sheet.
+    expect(find.byIcon(Icons.attach_file_rounded), findsNothing);
 
     await _pump(
       tester,
@@ -247,7 +247,7 @@ void main() {
       showAttachImage: true,
       onAttachImage: () {},
     );
-    expect(find.byIcon(Icons.add_circle_outline_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.attach_file_rounded), findsOneWidget);
   });
 
   testWidgets('disabled composer prevents send even with text', (tester) async {
@@ -298,7 +298,7 @@ void main() {
     },
   );
 
-  testWidgets('idle composer shows camera left and mic, games, add right', (
+  testWidgets('idle composer shows attachment, games, and microphone', (
     tester,
   ) async {
     await _pump(
@@ -316,10 +316,10 @@ void main() {
       onAttachFile: () {},
     );
 
-    expect(find.byIcon(Icons.camera_alt_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.photo_camera_outlined), findsOneWidget);
     expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
     expect(find.byIcon(Icons.sports_esports_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.add_circle_outline_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.attach_file_rounded), findsOneWidget);
     expect(find.byIcon(Icons.image_outlined), findsNothing);
     expect(find.byIcon(Icons.videocam_outlined), findsNothing);
     expect(find.byIcon(Icons.insert_drive_file_outlined), findsNothing);
@@ -370,7 +370,7 @@ void main() {
         showAttachVideo: false,
       );
 
-      await tester.tap(find.byIcon(Icons.add_circle_outline_rounded));
+      await tester.tap(find.byIcon(Icons.attach_file_rounded));
       await tester.pumpAndSettle();
 
       expect(find.text('Photos'), findsOneWidget);
@@ -398,7 +398,7 @@ void main() {
         onAttachFile: () {},
       );
 
-      await tester.tap(find.byIcon(Icons.add_circle_outline_rounded));
+      await tester.tap(find.byIcon(Icons.attach_file_rounded));
       await tester.pumpAndSettle();
 
       expect(find.text('Photos'), findsOneWidget);
@@ -422,7 +422,7 @@ void main() {
         onAttachFile: () {},
       );
 
-      await tester.tap(find.byIcon(Icons.add_circle_outline_rounded));
+      await tester.tap(find.byIcon(Icons.attach_file_rounded));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Video'));
       await tester.pumpAndSettle();
@@ -450,14 +450,14 @@ void main() {
         // pairs.
       );
 
-      expect(find.byIcon(Icons.camera_alt_rounded), findsNothing);
-      expect(find.byIcon(Icons.add_circle_outline_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.photo_camera_outlined), findsNothing);
+      expect(find.byIcon(Icons.attach_file_rounded), findsOneWidget);
       expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
     },
   );
 
   testWidgets(
-    'camera icon appears and calls onCaptureVideo when showCaptureVideo is true',
+    'camera action appears as leading composer button and calls onCaptureVideo',
     (tester) async {
       var captureVideoCalled = 0;
       final controller = TextEditingController();
@@ -468,8 +468,9 @@ void main() {
         onCaptureVideo: () => captureVideoCalled++,
       );
 
-      expect(find.byIcon(Icons.camera_alt_rounded), findsOneWidget);
-      await tester.tap(find.byIcon(Icons.camera_alt_rounded));
+      expect(find.byIcon(Icons.photo_camera_outlined), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.photo_camera_outlined));
+      await tester.pumpAndSettle();
       expect(captureVideoCalled, 1);
     },
   );

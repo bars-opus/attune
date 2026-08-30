@@ -34,12 +34,12 @@ class ChatColorScheme extends ThemeExtension<ChatColorScheme> {
     relationshipAccent: Color(0xFFD83D79),
   );
 
-  /// Attune Paper in dark mode: green-black depth, misty doodles, and a sender
-  /// bubble that stays rich without matching another product's exact green.
+  /// Attune Paper in dark mode: plain charcoal depth with quiet neutral
+  /// doodles, while the message bubbles keep the relationship color story.
   static const dark = ChatColorScheme(
-    background: Color(0xFF0E1714),
-    pattern: Color(0xFF74847C),
-    patternOpacity: 0.22,
+    background: Color(0xFF101112),
+    pattern: Color(0xFFE2E4E3),
+    patternOpacity: 0.16,
     senderBubble: Color(0xFF12604A),
     onSenderBubble: Color(0xFFF1F7F3),
     receiverBubble: Color(0xFF1F2925),

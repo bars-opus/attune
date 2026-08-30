@@ -13,6 +13,26 @@ import 'voice_recording_bar.dart';
 import 'voice_recording_scrim.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_mic_halo.dart';
 
+const List<BoxShadow> _composerShadows = [
+  BoxShadow(
+    offset: Offset(0, 1),
+    blurRadius: 1,
+    spreadRadius: -1,
+    color: Color(0x0F000000),
+  ),
+  BoxShadow(offset: Offset(0, 1), blurRadius: 1, color: Color(0x0A000000)),
+  BoxShadow(offset: Offset(0, 1), blurRadius: 2, color: Color(0x08000000)),
+];
+
+Color _composerIconColor(ColorScheme colorScheme) {
+  // The chat composer intentionally keys idle glyphs to the app's
+  // background foreground token. Flutter now aliases this toward onSurface,
+  // but keeping the token here preserves the requested visual contract in
+  // one place.
+  // ignore: deprecated_member_use
+  return colorScheme.onBackground;
+}
+
 class ChatTextField extends StatefulWidget {
   const ChatTextField({
     super.key,
@@ -33,7 +53,7 @@ class ChatTextField extends StatefulWidget {
     this.showCaptureVideo = false,
     this.showGames = false,
     this.enabled = true,
-    this.hintText = 'Type a message...',
+    this.hintText = 'Message',
     this.focusNode,
     this.sendButtonColor,
     this.onSendButtonColor,
@@ -52,16 +72,14 @@ class ChatTextField extends StatefulWidget {
   /// per the design spec.
   final void Function(VoiceRecording recording)? onVoiceMessageRecorded;
 
-  /// Opens the ephemeral (view-once) "streak" camera capture flow. Surfaced
-  /// as the dedicated leading camera icon rather than inside the '+' attach
-  /// sheet, since it's a capture action, not a library pick.
+  /// Opens the ephemeral (view-once) "streak" camera capture flow.
   final VoidCallback? onCaptureVideo;
 
   /// File attach — placeholder for now, wired into the '+' sheet.
   final VoidCallback? onAttachFile;
 
   /// Games entry point — placeholder for now, surfaced as its own composer
-  /// action rather than hidden inside the '+' sheet.
+  /// action rather than hidden inside the attachment sheet.
   final VoidCallback? onOpenGames;
 
   final bool showAttachImage;
@@ -111,8 +129,8 @@ class ChatTextField extends StatefulWidget {
 /// tap target that made the composer row look sparse. GestureDetector
 /// around a bare Icon keeps the row visually tight while still giving a
 /// full, comfortable ~40x40 tap target via a transparent HitTestBehavior.
-/// A composer action drawn OUTSIDE the pill, on its own circular ground:
-/// the camera on the left, attach on the right.
+/// A composer action drawn outside the message pill on its own circular
+/// surface. The attachment and microphone/send controls use this treatment.
 ///
 /// Separate from [_ComposerIcon] because the two answer different
 /// questions. Icons inside the pill act on the message being written and
@@ -120,14 +138,20 @@ class ChatTextField extends StatefulWidget {
 /// entirely, and carries its own ground to say so.
 class _ComposerSatellite extends StatelessWidget {
   const _ComposerSatellite({
-    required this.icon,
+    this.icon,
     required this.onTap,
     this.tooltip,
-  });
+    this.child,
+    this.fillColor,
+    this.iconColor,
+  }) : assert(icon != null || child != null, 'Provide either icon or child');
 
-  final IconData icon;
+  final IconData? icon;
   final VoidCallback? onTap;
   final String? tooltip;
+  final Widget? child;
+  final Color? fillColor;
+  final Color? iconColor;
 
   static const double _size = 48;
 
@@ -139,18 +163,32 @@ class _ComposerSatellite extends StatelessWidget {
     final button = Semantics(
       button: true,
       label: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: Opacity(
-          opacity: enabled ? 1.0 : 0.38,
-          // No ground of its own: a bare glyph sitting on the chat
-          // wallpaper. SizedBox rather than Container so the tap target
-          // stays a full 48px without painting anything behind the icon.
-          child: SizedBox(
-            width: _size,
-            height: _size,
-            child: Icon(icon, size: 24, color: colorScheme.onSurfaceVariant),
+      child: Opacity(
+        opacity: enabled ? 1.0 : 0.38,
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: _composerShadows,
+          ),
+          child: Material(
+            color: fillColor ?? colorScheme.surface.withValues(alpha: 0.94),
+            shape: const CircleBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onTap,
+              customBorder: const CircleBorder(),
+              child: SizedBox(
+                width: _size,
+                height: _size,
+                child: IconTheme.merge(
+                  data: IconThemeData(
+                    size: 25,
+                    color: iconColor ?? _composerIconColor(colorScheme),
+                  ),
+                  child: Center(child: child ?? Icon(icon)),
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -160,14 +198,47 @@ class _ComposerSatellite extends StatelessWidget {
   }
 }
 
+/// Circular composer ground for gesture-owning controls such as the
+/// press-and-drag microphone. It paints the same surface as a satellite
+/// without inserting another gesture recognizer above the child.
+class _ComposerSatelliteSurface extends StatelessWidget {
+  const _ComposerSatelliteSurface({required this.child, required this.enabled});
+
+  final Widget child;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Opacity(
+      opacity: enabled ? 1.0 : 0.38,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: _composerShadows,
+        ),
+        child: Material(
+          color: colorScheme.surface.withValues(alpha: 0.94),
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            width: _ComposerSatellite._size,
+            height: _ComposerSatellite._size,
+            child: Center(child: child),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ComposerIcon extends StatelessWidget {
   const _ComposerIcon({
     required this.icon,
     required this.onTap,
     this.tooltip,
     this.child,
-    this.filled = false,
-    this.fillColor,
     this.iconColor,
   }) : assert(icon != null || child != null, 'Provide either icon or child');
 
@@ -179,10 +250,6 @@ class _ComposerIcon extends StatelessWidget {
   /// need IconCrossfade wrapping the glyph rather than a bare Icon.
   final Widget? child;
 
-  /// Send button's filled-circle treatment; every other composer icon is
-  /// unfilled (plain glyph, theme's default icon color).
-  final bool filled;
-  final Color? fillColor;
   final Color? iconColor;
 
   static const double _tapSize = 40;
@@ -190,8 +257,7 @@ class _ComposerIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme;
-    final resolvedIconColor =
-        iconColor ?? (filled ? color.onPrimary : color.onSurfaceVariant);
+    final resolvedIconColor = iconColor ?? _composerIconColor(color);
     final content = IconTheme.merge(
       data: IconThemeData(color: resolvedIconColor, size: 24),
       child: child ?? Icon(icon),
@@ -202,18 +268,10 @@ class _ComposerIcon extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
-        child: Container(
+        child: SizedBox(
           width: _tapSize,
           height: _tapSize,
-          alignment: Alignment.center,
-          decoration:
-              filled
-                  ? BoxDecoration(
-                    color: fillColor ?? color.primary,
-                    shape: BoxShape.circle,
-                  )
-                  : null,
-          child: content,
+          child: Center(child: content),
         ),
       ),
     );
@@ -305,7 +363,7 @@ class _ChatAttachRow extends StatelessWidget {
         title: title,
         subtitle: ' ',
         icon: icon,
-        iconColor: colorScheme.primary,
+        iconColor: _composerIconColor(colorScheme),
         showAvatar: false,
         disableTrailing: true,
         showTrailingArrow: false,
@@ -785,17 +843,6 @@ class _ChatTextFieldState extends State<ChatTextField>
         widget.showAttachVideo ||
         widget.onAttachFile != null;
     final colorScheme = Theme.of(context).colorScheme;
-    // Satellites: drawn on their own circular grounds either side of the
-    // pill rather than inside it, so the pill holds only what belongs to
-    // composing a message.
-    final leadingAction =
-        widget.showCaptureVideo
-            ? _ComposerSatellite(
-              icon: Icons.camera_alt_rounded,
-              onTap: widget.enabled ? widget.onCaptureVideo : null,
-              tooltip: 'Camera',
-            )
-            : null;
 
     // Extracted so the recording composer can place the SAME mic
     // beside the bar. Previously the bar replaced the entire icon
@@ -845,7 +892,8 @@ class _ChatTextFieldState extends State<ChatTextField>
                 // glyph the same colour as the surface behind it.
                 child: IconTheme.merge(
                   data: IconThemeData(
-                    color: _isRecording ? null : colorScheme.onSurfaceVariant,
+                    color:
+                        _isRecording ? null : _composerIconColor(colorScheme),
                     size: 24,
                   ),
                   child: IconCrossfade(
@@ -872,19 +920,24 @@ class _ChatTextFieldState extends State<ChatTextField>
       Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (leadingAction != null) ...[
-            leadingAction,
+          if (widget.showCaptureVideo) ...[
+            _ComposerSatellite(
+              icon: Icons.photo_camera_outlined,
+              onTap: widget.enabled ? widget.onCaptureVideo : null,
+              tooltip: 'Camera',
+              iconColor: _composerIconColor(colorScheme),
+            ),
             const SizedBox(width: Spacing.sm),
           ],
           Expanded(
             child: Container(
               key: const ValueKey('composer-pill'),
-              constraints: const BoxConstraints(minHeight: 54),
-              padding: const EdgeInsets.symmetric(horizontal: 6),
+              constraints: const BoxConstraints(minHeight: 48),
+              padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
               decoration: BoxDecoration(
-                color: colorScheme.surface,
-                border: Border.all(color: colorScheme.onSurface, width: .2),
+                color: colorScheme.surface.withValues(alpha: 0.94),
                 borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
+                boxShadow: _composerShadows,
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -908,7 +961,7 @@ class _ChatTextFieldState extends State<ChatTextField>
                           context,
                         ).textTheme.bodyLarge?.copyWith(
                           color: colorScheme.onSurface.withValues(alpha: 0.5),
-                          fontSize: 14,
+                          fontSize: 18,
                         ),
                         isDense: true,
                         border: InputBorder.none,
@@ -951,44 +1004,51 @@ class _ChatTextFieldState extends State<ChatTextField>
                                 ),
                       ),
                     ),
-                  // Mic then games, both inside the pill. The mic is the
-                  // left of the two, matching the reference.
-                  if (!_hasText && widget.showVoiceMessage) micSlot,
                   if (!_hasText && widget.showGames)
                     _ComposerIcon(
                       icon: Icons.sports_esports_outlined,
                       onTap: widget.enabled ? widget.onOpenGames : null,
                       tooltip: 'Games',
+                      iconColor: _composerIconColor(colorScheme),
                     ),
-                  if (_hasText || !widget.showVoiceMessage)
+                  if (!_hasText && showAttachSheet)
                     _ComposerIcon(
-                      icon: null,
-                      onTap: widget.enabled && _hasText ? _handleSend : null,
-                      tooltip: 'Send message',
-                      filled: _hasText,
-                      fillColor: widget.sendButtonColor ?? colorScheme.primary,
-                      iconColor: widget.onSendButtonColor,
-                      child: IconCrossfade(
-                        child: ScalePop(
-                          key: const ValueKey('send'),
-                          trigger: _sendPulse,
-                          child: const Icon(Icons.send_rounded),
-                        ),
-                      ),
+                      icon: Icons.attach_file_rounded,
+                      onTap:
+                          widget.enabled
+                              ? () => _handleAttachTap(context)
+                              : null,
+                      tooltip: 'Attachments',
+                      iconColor: _composerIconColor(colorScheme),
                     ),
                 ],
               ),
             ),
           ),
-          // Attach as the trailing satellite, outside the pill.
-          if (showAttachSheet) ...[
-            const SizedBox(width: Spacing.sm),
+          const SizedBox(width: Spacing.sm),
+          if (!_hasText && widget.showVoiceMessage)
+            _ComposerSatelliteSurface(enabled: widget.enabled, child: micSlot)
+          else if (_hasText || !widget.showVoiceMessage)
             _ComposerSatellite(
-              icon: Icons.add_circle_outline_rounded,
-              onTap: widget.enabled ? () => _handleAttachTap(context) : null,
-              tooltip: 'More',
+              icon: null,
+              onTap: widget.enabled && _hasText ? _handleSend : null,
+              tooltip: 'Send message',
+              fillColor:
+                  _hasText
+                      ? widget.sendButtonColor ?? colorScheme.primary
+                      : colorScheme.surface.withValues(alpha: 0.94),
+              iconColor:
+                  _hasText
+                      ? widget.onSendButtonColor ?? colorScheme.onPrimary
+                      : _composerIconColor(colorScheme),
+              child: IconCrossfade(
+                child: ScalePop(
+                  key: const ValueKey('send'),
+                  trigger: _sendPulse,
+                  child: const Icon(Icons.send_rounded),
+                ),
+              ),
             ),
-          ],
         ],
       ),
     );

@@ -520,7 +520,8 @@ class _RevealTimestamp extends StatelessWidget {
 
 Color _bubbleFill(BuildContext context, {required bool isMine}) {
   final chatColors = Theme.of(context).chatColors;
-  return isMine ? chatColors.senderBubble : chatColors.receiverBubble;
+  if (isMine) return chatColors.senderBubble;
+  return Theme.of(context).colorScheme.surface.withValues(alpha: 0.94);
 }
 
 Gradient? _bubbleGradient(BuildContext context, {required bool isMine}) {

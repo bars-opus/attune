@@ -32,87 +32,84 @@ Rect _pill(WidgetTester tester) =>
     tester.getRect(find.byKey(const ValueKey('composer-pill')));
 
 void main() {
-  testWidgets('camera sits outside the pill on the left, attach on the right', (
+  testWidgets('camera sits left of the pill and microphone sits right', (
     tester,
   ) async {
     await tester.pumpWidget(_harness());
 
     final field = _pill(tester);
-    final camera = tester.getCenter(find.byIcon(Icons.camera_alt_rounded));
-    final attach = tester.getCenter(
-      find.byIcon(Icons.add_circle_outline_rounded),
-    );
+    final camera = tester.getCenter(find.byIcon(Icons.photo_camera_outlined));
+    final mic = tester.getCenter(find.byIcon(Icons.mic_none_rounded));
 
     expect(
       camera.dx,
       lessThan(field.left),
-      reason: 'the camera is a satellite left of the pill, not inside it',
+      reason: 'camera is the satellite left of the message pill',
     );
     expect(
-      attach.dx,
+      mic.dx,
       greaterThan(field.right),
-      reason: 'attach is a satellite right of the pill, not inside it',
+      reason: 'microphone is the satellite right of the message pill',
     );
   });
 
-  testWidgets('mic and games sit inside the pill, mic to the left of games', (
+  testWidgets(
+    'games and attachments stay inside the pill while microphone stays outside',
+    (tester) async {
+      await tester.pumpWidget(_harness());
+
+      final field = _pill(tester);
+      final mic = tester.getCenter(find.byIcon(Icons.mic_none_rounded));
+      final games = tester.getCenter(
+        find.byIcon(Icons.sports_esports_outlined),
+      );
+      final attach = tester.getCenter(find.byIcon(Icons.attach_file_rounded));
+
+      expect(mic.dx, greaterThan(field.right));
+      expect(
+        games.dx,
+        lessThan(field.right),
+        reason: 'games lives inside the pill',
+      );
+      expect(games.dx, greaterThan(field.left));
+      expect(
+        attach.dx,
+        lessThan(field.right),
+        reason: 'attachments live inside the pill',
+      );
+      expect(attach.dx, greaterThan(field.left));
+    },
+  );
+
+  testWidgets('both outer actions use circular material surfaces', (
     tester,
   ) async {
     await tester.pumpWidget(_harness());
 
-    final field = _pill(tester);
-    final mic = tester.getCenter(find.byIcon(Icons.mic_none_rounded));
-    final games = tester.getCenter(find.byIcon(Icons.sports_esports_outlined));
-
-    expect(mic.dx, greaterThan(field.left));
-    expect(
-      mic.dx,
-      lessThan(field.right),
-      reason: 'the mic lives inside the pill',
-    );
-    expect(
-      games.dx,
-      lessThan(field.right),
-      reason: 'games lives inside the pill',
-    );
-    expect(
-      mic.dx,
-      lessThan(games.dx),
-      reason: 'the mic is the left of the two in-pill icons',
-    );
-  });
-
-  testWidgets('both satellites are bare glyphs, with no circle', (
-    tester,
-  ) async {
-    // Neither the camera nor the attach icon carries a ground of its own:
-    // they read as glyphs sitting on the chat wallpaper, not as chips.
-    await tester.pumpWidget(_harness());
-
-    for (final icon in [
-      Icons.camera_alt_rounded,
-      Icons.add_circle_outline_rounded,
-    ]) {
-      final grounds = tester
-          .widgetList<Container>(
-            find.ancestor(
-              of: find.byIcon(icon),
-              matching: find.byType(Container),
-            ),
-          )
-          .where((c) {
-            final d = c.decoration;
-            return d is BoxDecoration &&
-                (d.shape == BoxShape.circle ||
-                    d.color != null ||
-                    d.border != null);
-          });
+    for (final icon in [Icons.photo_camera_outlined, Icons.mic_none_rounded]) {
+      final grounds = tester.widgetList<Material>(
+        find.ancestor(of: find.byIcon(icon), matching: find.byType(Material)),
+      );
 
       expect(
-        grounds,
-        isEmpty,
-        reason: '$icon still draws a circle or fill behind it',
+        grounds.any((material) => material.shape is CircleBorder),
+        isTrue,
+        reason: '$icon should sit on a circular surface',
       );
     }
+  });
+
+  testWidgets('message pill uses the same faint lift as chat bubbles', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_harness());
+
+    final pill = tester.widget<Container>(
+      find.byKey(const ValueKey('composer-pill')),
+    );
+    final decoration = pill.decoration;
+
+    expect(decoration, isA<BoxDecoration>());
+    expect((decoration! as BoxDecoration).boxShadow, isNotEmpty);
   });
 }

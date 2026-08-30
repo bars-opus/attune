@@ -114,14 +114,14 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
                     onTap: () {},
 
                     trailing:
-                         _isRefreshing
-                            ? SizedBox( 
+                        _isRefreshing
+                            ? SizedBox(
                               width: 40,
                               height: 40,
                               child: Center(child: CircularLoadingIndicator()),
                             )
                             : IconButton(
-                              icon:  Icon(
+                              icon: Icon(
                                 Icons.refresh,
                                 color: colorScheme.primary,
                               ),
