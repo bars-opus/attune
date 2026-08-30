@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:attune/features/chat/data/repositories/streak_repository.dart';
+import 'package:attune/features/chat/utils/chat_log.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
@@ -55,7 +56,8 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
       // in between is one the user sees as neither loading nor playing.
       _clips = clips;
       await _playAt(0);
-    } catch (_) {
+    } catch (error) {
+      ChatLog.diagnostic('streak clips fetch failed', error);
       if (mounted) setState(() => _unavailable = true);
     }
   }
@@ -89,11 +91,19 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
       return;
     }
 
+    // Latched: the end-of-clip condition (position >= duration and not
+    // playing) stays TRUE once reached, and the controller notifies on
+    // every tick. Without this the advance fired repeatedly, each call
+    // disposing the controller whose listener was still running — the
+    // screen went black and never popped.
+    var advanced = false;
     controller.addListener(() {
+      if (advanced) return;
       final value = controller.value;
       if (value.isInitialized &&
           value.position >= value.duration &&
           !value.isPlaying) {
+        advanced = true;
         unawaited(_playAt(index + 1));
       }
     });
@@ -105,25 +115,54 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
     await controller.play();
   }
 
-  /// Spends the view. Guarded so completion and an explicit dismissal
-  /// cannot both charge it.
+  /// The budget the server reported, once spent. Held so the close path
+  /// can return it even when the spend already happened on an earlier
+  /// call.
+  int? _remaining;
+
+  /// Spends the view, then closes.
+  ///
+  /// Two steps rather than one, and the close is NOT inside the guard.
+  /// _finish is re-entered by this screen's own PopScope when the pop it
+  /// requests is intercepted; if closing lived in the guarded body, that
+  /// second call would return early at _viewSpent and the route would
+  /// never pop — a black, frozen screen.
   Future<void> _finish() async {
+    await _spendView();
+    _close();
+  }
+
+  /// Test seam for the completion path: playback running out calls
+  /// _finish directly, with no gesture in flight, which is where the
+  /// PopScope re-entrancy actually bites.
+  @visibleForTesting
+  Future<void> finishForTest() => _finish();
+
+  /// Charges the view exactly once, however many exits race to it.
+  Future<void> _spendView() async {
     if (_viewSpent) return;
     _viewSpent = true;
-    int? remaining;
     try {
-      remaining = await ref
+      _remaining = await ref
           .read(streakRepositoryProvider)
           .markViewed(widget.messageId);
-    } catch (_) {
+    } catch (error) {
       // A failed decrement must not trap the viewer on the screen; the
       // budget is server-owned and the next open re-reads it.
+      //
+      // Logged rather than swallowed: if the RPC is failing, the streak
+      // stays on "Play" across restarts because the SERVER never recorded
+      // the view — and a silent catch makes that indistinguishable from
+      // the UI simply not updating.
+      ChatLog.diagnostic('mark streak viewed failed', error);
     }
-    // Returned to the caller so the bubble can apply it. The RPC has
-    // always returned what remains, but the value was discarded — the
-    // bubble kept the count it was built with and could be reopened past
-    // its budget until an unrelated refresh brought the new row down.
-    if (mounted) Navigator.of(context).maybePop(remaining);
+  }
+
+  /// Pops with whatever the server reported. Unguarded on purpose: this is
+  /// the step that has to run on every exit, including the re-entrant one.
+  void _close() {
+    if (!mounted) return;
+    Navigator.of(context).pop(_remaining);
   }
 
   @override
@@ -137,9 +176,13 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
     final controller = _controller;
 
     // canPop:false so the OS back gesture and the system back button route
-    // through _finish like every other exit. Without this they popped the
-    // route directly, the RPC never ran, and a watched streak was never
-    // charged — it stayed on "Play" however many times it had been opened.
+    // through _finish rather than popping directly, which skipped the RPC
+    // and left a watched streak uncharged.
+    //
+    // It does NOT block this screen's own Navigator.pop: a programmatic
+    // pop reports didPop:true and closes regardless, which is why _close
+    // works and why the didPop guard below is what prevents a double
+    // spend rather than a deadlock.
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {

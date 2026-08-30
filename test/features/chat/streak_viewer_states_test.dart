@@ -12,6 +12,53 @@ void main() {
         ).readAsStringSync();
   });
 
+  test('spending the view cannot deadlock against its own PopScope', () {
+    // _finish() is guarded by _viewSpent so completion and a dismissal
+    // cannot both charge the view. With canPop:false, _finish's own pop is
+    // intercepted and routed back into _finish, which then returns at that
+    // guard — nothing pops and the screen freezes black.
+    //
+    // The exit must therefore not be reachable only through the guarded
+    // body: closing has to happen on a path the guard cannot swallow.
+    expect(
+      src,
+      contains('_close('),
+      reason:
+          'popping must be its own step, not the tail of the guarded '
+          'spend — otherwise the second call returns early and the route '
+          'never closes',
+    );
+    final finishBody = src.substring(
+      src.indexOf('Future<void> _finish()'),
+      src.indexOf('void dispose()'),
+    );
+    expect(
+      finishBody.contains('maybePop'),
+      isFalse,
+      reason: 'the guarded body must not own the pop',
+    );
+  });
+
+  test('the completion listener fires the advance exactly once', () {
+    // VideoPlayerController notifies on every tick, and the end-of-clip
+    // condition (position >= duration && !isPlaying) stays TRUE once
+    // reached. Without a latch, _playAt(index + 1) is called repeatedly —
+    // each call disposing the controller whose listener is still running,
+    // which is what left the screen black and frozen instead of popping.
+    final listener = src.substring(
+      src.indexOf('controller.addListener('),
+      src.indexOf('setState(() {', src.indexOf('controller.addListener(')),
+    );
+
+    expect(
+      listener.contains('advanced'),
+      isTrue,
+      reason:
+          'the advance must latch, or the end-of-clip condition re-fires '
+          'on every subsequent tick',
+    );
+  });
+
   test('a back-gesture dismissal still spends the view', () {
     // _finish() ran on playback completion and on an explicit tap, but the
     // OS back gesture and the system back button pop the route directly.

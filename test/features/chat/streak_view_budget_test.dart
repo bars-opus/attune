@@ -137,7 +137,7 @@ void main() {
 
     expect(
       viewer,
-      contains('maybePop(remaining)'),
+      contains('pop(_remaining)'),
       reason: 'the viewer must return what the RPC reported, not discard it',
     );
     expect(
