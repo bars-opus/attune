@@ -1,6 +1,7 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/data/models/game_session.dart';
 import 'package:attune/features/games/truth_or_dare/data/models/custom_truth_or_dare_question.dart';
+import 'package:attune/features/games/truth_or_dare/domain/services/truth_or_dare_scoring_service.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/screens/card_flip_screen.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/screens/dare_reveal_screen.dart';
@@ -368,53 +369,13 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
     return session.currentRound.isOdd ? session.initiatorId : otherUserId;
   }
 
+  // Delegated so the end screen and its tests share one implementation.
   Map<String, dynamic> _buildMostInterestingPick(
     List<TruthOrDareRound> rounds,
-  ) {
-    final truthRounds =
-        rounds.where((round) {
-          if (round.questionType != 'truth') return false;
-          final answer = _roundAnswer(round);
-          return answer != null &&
-              answer.isNotEmpty &&
-              answer != '__revealed__';
-        }).toList();
+  ) => const TruthOrDareScoringService().mostInterestingPick(rounds);
 
-    if (truthRounds.isNotEmpty) {
-      truthRounds.sort((a, b) {
-        final aAnswer = _roundAnswer(a) ?? '';
-        final bAnswer = _roundAnswer(b) ?? '';
-        return aAnswer.length.compareTo(bAnswer.length);
-      });
-      final round = truthRounds.last;
-      return {'text': round.questionText, 'answer': _roundAnswer(round) ?? ''};
-    }
-
-    for (final round in rounds) {
-      if (round.questionType == 'dare') {
-        return {'text': round.questionText};
-      }
-    }
-
-    for (final round in rounds) {
-      if (round.isSkip) {
-        return {'text': round.questionText};
-      }
-    }
-
-    return rounds.isEmpty
-        ? <String, dynamic>{}
-        : {'text': rounds.first.questionText};
-  }
-
-  String? _roundAnswer(TruthOrDareRound round) {
-    final answers =
-        [round.answerA, round.answerB]
-            .whereType<String>()
-            .where((value) => value.isNotEmpty && value != '__revealed__')
-            .toList();
-    return answers.isEmpty ? null : answers.first;
-  }
+  String? _roundAnswer(TruthOrDareRound round) =>
+      const TruthOrDareScoringService().roundAnswer(round);
 }
 
 class _WaitingForRevealScreen extends StatelessWidget {
