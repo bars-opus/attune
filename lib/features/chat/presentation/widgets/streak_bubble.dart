@@ -89,7 +89,6 @@ class StreakBubble extends StatelessWidget {
             'Opened',
             style: textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
-              fontStyle: FontStyle.italic,
             ),
           ),
         ],

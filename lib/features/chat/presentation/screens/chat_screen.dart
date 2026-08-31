@@ -4,6 +4,7 @@ import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/motion_tokens.dart';
 import 'package:attune/core/ui/motion/make_room.dart';
+import 'package:attune/features/chat/presentation/widgets/chat_date_chip.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/ui/presence/breathing_dots.dart';
@@ -1485,6 +1486,39 @@ class _MessageListState extends ConsumerState<_MessageList>
   late final AnimationController _timestampReturnController;
   Animation<double>? _timestampReturnAnimation;
 
+  /// The day currently at the top of the viewport, shown in the pinned
+  /// chip. Null before the first scroll, when the inline separators are
+  /// enough on their own.
+  String? _pinnedDateLabel;
+
+  /// The pinned chip floats OVER the messages, so it shows while the list
+  /// is moving and fades out once it settles — leaving it up permanently
+  /// would cover a bubble the reader is trying to reach.
+  bool _pinnedDateVisible = false;
+
+  /// Time-based rather than driven by a scroll-end notification: a fling
+  /// that settles on its own does not reliably deliver one, and the chip
+  /// would stay up forever.
+  Timer? _pinnedDateTimer;
+
+  static const _pinnedDateLinger = Duration(milliseconds: 900);
+
+  /// Records the topmost visible day and keeps the chip up while the list
+  /// is moving.
+  void _updatePinnedDate(String? label) {
+    _pinnedDateTimer?.cancel();
+    _pinnedDateTimer = Timer(_pinnedDateLinger, () {
+      if (!mounted) return;
+      setState(() => _pinnedDateVisible = false);
+    });
+
+    if (_pinnedDateLabel == label && _pinnedDateVisible) return;
+    setState(() {
+      _pinnedDateLabel = label;
+      _pinnedDateVisible = true;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1499,7 +1533,40 @@ class _MessageListState extends ConsumerState<_MessageList>
     _timestampReturnAnimation?.removeListener(_onTimestampReturnTick);
     _timestampReturnController.dispose();
     _timestampRevealOffset.dispose();
+    // A Timer outliving this State fires setState on an unmounted widget.
+    _pinnedDateTimer?.cancel();
     super.dispose();
+  }
+
+  /// The day of the topmost message currently on screen.
+  ///
+  /// Walks the built rows and takes the first whose painted box crosses
+  /// the top of the viewport. Only built rows are considered, which is
+  /// exactly right: an unbuilt row is off-screen by definition.
+  String? _topmostVisibleDateLabel(List<Message> messages) {
+    var best = double.infinity;
+    DateTime? topDate;
+
+    for (final message in messages) {
+      final key = _rowKeys[message.id];
+      final context = key?.currentContext;
+      if (context == null) continue;
+
+      final box = context.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) continue;
+
+      final top = box.localToGlobal(Offset.zero).dy;
+      // The topmost row still visible: smallest top that has not scrolled
+      // entirely past the viewport's upper edge.
+      final bottom = top + box.size.height;
+      if (bottom <= 0) continue;
+      if (top < best) {
+        best = top;
+        topDate = message.createdAt;
+      }
+    }
+
+    return topDate == null ? null : chatDateLabel(topDate);
   }
 
   void _setTimestampRevealOffset(double offset) {
@@ -1591,436 +1658,514 @@ class _MessageListState extends ConsumerState<_MessageList>
     messageKeys.removeWhere((id, _) => !currentIds.contains(id));
     _rowKeys.removeWhere((id, _) => !currentIds.contains(id));
     final mediaRuns = ChatMediaRunLayout.fromMessages(state.messages);
-    return Listener(
-      onPointerUp: (_) => _closeTimestampReveal(),
-      onPointerCancel: (_) => _closeTimestampReveal(),
-      child: NotificationListener<ScrollNotification>(
-        onNotification: (notification) {
-          if (notification.metrics.pixels >=
-              notification.metrics.maxScrollExtent - 200) {
-            ref
-                .read(chatControllerProvider(conversation).notifier)
-                .loadMoreMessages();
-          }
-          if (notification.metrics.pixels <= 120) {
-            ref
-                .read(chatControllerProvider(conversation).notifier)
-                .markAsReadDebounced();
-          }
-          return false;
-        },
-        child: Scrollbar(
-          controller: scrollController,
-          child: ListView.builder(
-            controller: scrollController,
-            reverse: true,
-            // Reserves room so the newest message doesn't sit behind the
-            // floating composer, now Positioned on top of this list rather than
-            // stacked in flow beneath it. Generous estimate covering the tallest
-            // composer state (multi-line text growing the field to maxLines:5)
-            // plus safe-area/keyboard-adjacent breathing room.
-            padding: const EdgeInsets.fromLTRB(8, 10, 8, 96),
-            itemCount: state.messages.length + (state.isLoadingMore ? 1 : 0),
-            itemBuilder: (context, index) {
-              if (index == state.messages.length) {
-                return const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
+    final pinnedLabel = _pinnedDateLabel;
 
-              if (mediaRuns.hiddenIndices.contains(index)) {
-                return const SizedBox.shrink();
+    return Stack(
+      children: [
+        Listener(
+          onPointerUp: (_) => _closeTimestampReveal(),
+          onPointerCancel: (_) => _closeTimestampReveal(),
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              if (notification.metrics.pixels >=
+                  notification.metrics.maxScrollExtent - 200) {
+                ref
+                    .read(chatControllerProvider(conversation).notifier)
+                    .loadMoreMessages();
               }
-
-              final message = state.messages[index];
-              final mediaGroup = mediaRuns.runs[index] ?? const <Message>[];
-              // Keep the rendered row stable while timestamp drag updates
-              // rebuild the visible list. Replacing this key on every pointer
-              // delta disposes the active GestureDetector mid-gesture, making
-              // the reveal stop after its first movement.
-              final messageKey = _rowKeys.putIfAbsent(
-                message.id,
-                GlobalKey.new,
-              );
-              messageKeys[message.id] = messageKey;
-              for (final groupedMessage in mediaGroup) {
-                messageKeys[groupedMessage.id] = messageKey;
+              if (notification.metrics.pixels <= 120) {
+                ref
+                    .read(chatControllerProvider(conversation).notifier)
+                    .markAsReadDebounced();
               }
-              // A bubble is "first of its day" if its local date differs from the
-              // next-older message's local date (list is newest-first). Only
-              // genuinely-new first-of-day messages shimmer — cached history on
-              // open does not, since `isNew` reuses the same play-once cutoff as
-              // SettleIn below. Content-blind: only dates are compared.
-              final older =
-                  index + 1 < state.messages.length
-                      ? state.messages[index + 1]
-                      : null;
-              bool sameLocalDay(DateTime a, DateTime b) =>
-                  a.year == b.year && a.month == b.month && a.day == b.day;
-              final isFirstOfDay =
-                  older == null ||
-                  !sameLocalDay(message.createdAt, older.createdAt);
-              // Consecutive messages from the same sender sit close together
-              // (grouped); the normal, larger gap only appears right before the
-              // sender switches — i.e. above the first bubble of a new run,
-              // exactly like WhatsApp/iMessage grouping. A day boundary always
-              // forces the larger gap too (the date separator needs the
-              // breathing room regardless of who sent either message).
-              final isGrouped =
-                  older != null &&
-                  older.isMine == message.isMine &&
-                  !isFirstOfDay;
-              final newer = index > 0 ? state.messages[index - 1] : null;
-              final isLastOfDay =
-                  newer == null ||
-                  !sameLocalDay(message.createdAt, newer.createdAt);
-              final isGroupedWithPrevious =
-                  newer != null &&
-                  newer.isMine == message.isMine &&
-                  !isLastOfDay;
-              final isNew = message.createdAt.isAfter(firstBuildCutoff);
-              // Play-once ledger: animate only the first time this message is ever
-              // built on this screen. Without it, list recycling replays entry
-              // animations whenever a new message scrolls back into view.
-              final shouldAnimate =
-                  isNew &&
-                  !animatedMessageIds.contains(message.clientMessageId);
-              if (shouldAnimate) {
-                animatedMessageIds.add(message.clientMessageId);
+              // Measured from the row keys rather than an index estimate: rows
+              // vary in height (a one-line text against a media group), so a
+              // pixels/rowHeight guess names the wrong day on exactly the
+              // conversations where the chip matters most.
+              if (notification is ScrollUpdateNotification) {
+                _updatePinnedDate(_topmostVisibleDateLabel(state.messages));
               }
-
-              // A reply's parent is only known to be deleted/mine if it is
-              // actually in the currently-loaded window; an unloaded parent
-              // stays deleted=false, isMine=null (MessageBubble documents both
-              // assumptions — null means "don't know," not "not mine").
-              var parentDeleted = false;
-              bool? parentIsMine;
-              if (message.replyToMessageId != null) {
-                for (final candidate in state.messages) {
-                  if (candidate.id == message.replyToMessageId) {
-                    parentDeleted = candidate.isDeleted;
-                    parentIsMine = candidate.isMine;
-                    break;
-                  }
-                }
-              }
-
-              Widget bubble = ValueListenableBuilder<double>(
-                valueListenable: _timestampRevealOffset,
-                builder:
-                    (context, timestampRevealOffset, _) => MessageBubble(
-                      message: message,
-                      mediaGroup: mediaGroup,
-                      conversation: conversation,
-                      showStatus: index == 0 && message.isMine,
-                      showLatestTimestamp: index == 0,
-                      showTimestamp: true,
-                      timestampRevealOffset: timestampRevealOffset,
-                      onTimestampRevealChanged: _setTimestampRevealOffset,
-                      parentIsMine: parentIsMine,
-                      isGrouped: isGrouped,
-                      isGroupedWithPrevious: isGroupedWithPrevious,
-                      onImageTap: (tapped) async {
-                        // state.messages is newest-first (ListView's reverse: true);
-                        // ImageViewerScreen wants chronological (oldest-to-newest)
-                        // order to swipe forward through a photo history the same
-                        // direction a user reads the conversation, so reverse the
-                        // filtered subset here.
-                        final images =
-                            state.messages
-                                .where((m) => m.hasImage)
-                                .toList()
-                                .reversed
-                                .toList();
-                        final index = images.indexWhere(
-                          (m) => m.clientMessageId == tapped.clientMessageId,
-                        );
-                        if (index == -1) return;
-                        // "Go to message" pops the viewer with that image's message
-                        // id; jump to and flash it in THIS chat screen (already
-                        // open — no need to push a second one).
-                        final jumpToId = await context.pushNamed<String>(
-                          'imageViewer',
-                          extra: ImageViewerRouteArgs(
-                            images: images,
-                            initialIndex: index,
-                          ),
-                        );
-                        if (jumpToId != null) {
-                          await onJumpToParent(jumpToId, state.messages);
-                        }
-                      },
-                      onVideoTap: (tapped) async {
-                        // Mirrors onImageTap exactly. isViewOnce excluded — an
-                        // ephemeral video has its own separate
-                        // EphemeralVideoViewerScreen flow (tap-to-view-once,
-                        // markVideoViewed, expiry) and must never appear in this
-                        // regular, replayable video gallery.
-                        final videos =
-                            state.messages
-                                .where((m) => m.hasVideo && !m.isViewOnce)
-                                .toList()
-                                .reversed
-                                .toList();
-                        final index = videos.indexWhere(
-                          (m) => m.clientMessageId == tapped.clientMessageId,
-                        );
-                        if (index == -1) return;
-                        final jumpToId = await context.pushNamed<String>(
-                          'videoViewer',
-                          extra: VideoViewerRouteArgs(
-                            videos: videos,
-                            initialIndex: index,
-                          ),
-                        );
-                        if (jumpToId != null) {
-                          await onJumpToParent(jumpToId, state.messages);
-                        }
-                      },
-                      // The viewer reports what the server left after
-                      // spending a view; applying it is what stops a
-                      // streak reopening past its budget.
-                      onStreakViewSpent: (messageId, viewsRemaining) {
-                        ref
-                            .read(chatControllerProvider(conversation).notifier)
-                            .applyStreakViewSpent(messageId, viewsRemaining);
-                      },
-                      onRetry:
-                          message.isFailed
-                              ? () => ref
-                                  .read(
-                                    chatControllerProvider(
-                                      conversation,
-                                    ).notifier,
-                                  )
-                                  .retryMessage(message)
-                              : null,
-                      onRemove:
-                          message.isFailed
-                              ? () => ref
-                                  .read(
-                                    chatControllerProvider(
-                                      conversation,
-                                    ).notifier,
-                                  )
-                                  .removeFailedMessage(message)
-                              : null,
-                      onReply:
-                          state.conversation.canSend &&
-                                  !message.id.startsWith('_local_')
-                              ? () => onReply(message.id, message.content)
-                              : null,
-                      onJumpToParent:
-                          message.replyToMessageId == null
-                              ? null
-                              : () => onJumpToParent(
-                                message.replyToMessageId!,
-                                state.messages,
-                              ),
-                      isHighlighted: highlightedMessageId == message.id,
-                      // Actions are only offered on server-backed messages in an
-                      // active, sendable conversation: a local optimistic row has no
-                      // server id to delete/edit/star/pin, and a read-only
-                      // conversation (e.g. an ended relationship viewed via Previous
-                      // Relationships) must not offer mutating actions the RPCs will
-                      // now correctly reject server-side — this client gate is a
-                      // UX correction, not the security boundary (the RPCs are
-                      // authoritative; see fix round 1's migration change).
-                      currentUserId:
-                          state.conversation.canSend &&
-                                  !message.id.startsWith('_local_')
-                              ? ref.read(currentUserProvider)?.id
-                              : null,
-                      isStarred: state.starredMessageIds.contains(message.id),
-                      isPinned: state.pinnedMessages.any(
-                        (p) => p.id == message.id,
-                      ),
-                      parentDeleted: parentDeleted,
-                      onCopy: () {
-                        Clipboard.setData(ClipboardData(text: message.content));
-                        context.showSuccessSnackbar('Copied to clipboard');
-                      },
-                      // Star/unstar/unpin are all fire-and-forget from the menu, but
-                      // each awaits a network call that can throw — swallowing the
-                      // failure silently would leave an unhandled async error, so each
-                      // reports it the same way onPin does.
-                      onStar: () async {
-                        try {
-                          await ref
-                              .read(
-                                chatControllerProvider(conversation).notifier,
-                              )
-                              .starMessage(message.id);
-                        } catch (e, st) {
-                          debugPrint('starMessage failed: $e\n$st');
-                          if (context.mounted) {
-                            context.showErrorSnackbar(
-                              "Couldn't star — try again.",
-                            );
-                          }
-                        }
-                      },
-                      onUnstar: () async {
-                        try {
-                          await ref
-                              .read(
-                                chatControllerProvider(conversation).notifier,
-                              )
-                              .unstarMessage(message.id);
-                        } catch (e, st) {
-                          debugPrint('unstarMessage failed: $e\n$st');
-                          if (context.mounted) {
-                            context.showErrorSnackbar(
-                              "Couldn't unstar — try again.",
-                            );
-                          }
-                        }
-                      },
-                      onPin: () async {
-                        try {
-                          await ref
-                              .read(
-                                chatControllerProvider(conversation).notifier,
-                              )
-                              .pinMessage(message);
-                        } catch (e, st) {
-                          debugPrint('pinMessage failed: $e\n$st');
-                          if (context.mounted) {
-                            context.showErrorSnackbar(
-                              "Couldn't pin — you may already have 3 pinned messages.",
-                            );
-                          }
-                        }
-                      },
-                      onUnpin: () async {
-                        try {
-                          await ref
-                              .read(
-                                chatControllerProvider(conversation).notifier,
-                              )
-                              .unpinMessage(message);
-                        } catch (e, st) {
-                          debugPrint('unpinMessage failed: $e\n$st');
-                          if (context.mounted) {
-                            context.showErrorSnackbar(
-                              "Couldn't unpin — try again.",
-                            );
-                          }
-                        }
-                      },
-                      onReact: (emoji) async {
-                        try {
-                          await ref
-                              .read(
-                                chatControllerProvider(conversation).notifier,
-                              )
-                              .reactToMessage(message, emoji);
-                        } catch (e, st) {
-                          debugPrint('reactToMessage failed: $e\n$st');
-                          if (context.mounted) {
-                            context.showErrorSnackbar(
-                              "Couldn't react — try again.",
-                            );
-                          }
-                        }
-                      },
-                      onRemoveReaction: () async {
-                        try {
-                          await ref
-                              .read(
-                                chatControllerProvider(conversation).notifier,
-                              )
-                              .removeReactionFrom(message);
-                        } catch (e, st) {
-                          debugPrint('removeReactionFrom failed: $e\n$st');
-                          if (context.mounted) {
-                            context.showErrorSnackbar(
-                              "Couldn't remove reaction — try again.",
-                            );
-                          }
-                        }
-                      },
-                      onEdit:
-                          () => _showEditDialog(
-                            context,
-                            ref,
-                            conversation,
-                            message,
-                          ),
-                      onDelete:
-                          () => _confirmAndDelete(
-                            context,
-                            ref,
-                            conversation,
-                            message,
-                          ),
-                      onShowEditHistory:
-                          (target) =>
-                              _showEditHistorySheet(context, ref, target),
-                    ),
-              );
-              if (isFirstOfDay && shouldAnimate) {
-                bubble = Shimmer(
-                  period:
-                      expressive ? kShimmerSweepExpressive : kShimmerSweepCalm,
-                  child: bubble,
-                );
-              }
-
-              // A batch of messages arriving together (e.g. after a reconnect via
-              // _catchUpFromCursor) should cascade in rather than pop
-              // simultaneously: offset each new bubble's settle duration by its
-              // position within the newest-first list. The index is clamped so a
-              // large batch never produces an absurdly long settle. Cached
-              // history (`isNew == false`) always uses the base duration.
-              final stepMs =
-                  expressive ? kCascadeStepExpressiveMs : kCascadeStepCalmMs;
-              final staggeredDuration =
-                  shouldAnimate
-                      ? kSettleDuration +
-                          Duration(milliseconds: stepMs * index.clamp(0, 6))
-                      : kSettleDuration;
-
-              return KeyedSubtree(
-                key: messageKey,
-                child: Padding(
-                  // This list is reverse: true with state.messages newest-first,
-                  // so `older` (index+1) renders physically ABOVE this message
-                  // on screen — a top-padding here is exactly the gap between
-                  // this bubble and its older neighbor above it. Same-sender
-                  // messages keep only a hairline gap so their squared inner
-                  // corners still read as one connected stack; a sender switch
-                  // or day boundary restores the normal breathing room.
-                  padding: EdgeInsets.only(top: isGrouped ? 3 : 12),
-                  // Opens the row's own vertical space as it arrives, so
-                  // the messages above are physically displaced by exactly
-                  // this bubble's height instead of jumping to their new
-                  // positions a frame before it fades in. Outside SettleIn
-                  // so the slot grows while the bubble settles into it.
-                  child: MakeRoom(
-                    animate: shouldAnimate,
-                    child: SettleIn(
-                      key: ValueKey(message.clientMessageId),
-                      // Only animate a message the first time it is built after
-                      // arriving live (cached history never replays on open, and
-                      // recycled items never replay on scroll-back — Spec §2
-                      // play-once).
-                      animate: shouldAnimate,
-                      duration: staggeredDuration,
-                      beginOffset:
-                          message.isMine
-                              ? const Offset(0, 0.12)
-                              : const Offset(0, 0.10),
-                      child: bubble,
-                    ),
-                  ),
-                ),
-              );
+              return false;
             },
+            child: Scrollbar(
+              controller: scrollController,
+              child: ListView.builder(
+                controller: scrollController,
+                reverse: true,
+                // Reserves room so the newest message doesn't sit behind the
+                // floating composer, now Positioned on top of this list rather than
+                // stacked in flow beneath it. Generous estimate covering the tallest
+                // composer state (multi-line text growing the field to maxLines:5)
+                // plus safe-area/keyboard-adjacent breathing room.
+                padding: const EdgeInsets.fromLTRB(8, 10, 8, 96),
+                itemCount:
+                    state.messages.length + (state.isLoadingMore ? 1 : 0),
+                itemBuilder: (context, index) {
+                  if (index == state.messages.length) {
+                    return const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+
+                  if (mediaRuns.hiddenIndices.contains(index)) {
+                    return const SizedBox.shrink();
+                  }
+
+                  final message = state.messages[index];
+                  final mediaGroup = mediaRuns.runs[index] ?? const <Message>[];
+                  // Keep the rendered row stable while timestamp drag updates
+                  // rebuild the visible list. Replacing this key on every pointer
+                  // delta disposes the active GestureDetector mid-gesture, making
+                  // the reveal stop after its first movement.
+                  final messageKey = _rowKeys.putIfAbsent(
+                    message.id,
+                    GlobalKey.new,
+                  );
+                  messageKeys[message.id] = messageKey;
+                  for (final groupedMessage in mediaGroup) {
+                    messageKeys[groupedMessage.id] = messageKey;
+                  }
+                  // A bubble is "first of its day" if its local date differs from the
+                  // next-older message's local date (list is newest-first). Only
+                  // genuinely-new first-of-day messages shimmer — cached history on
+                  // open does not, since `isNew` reuses the same play-once cutoff as
+                  // SettleIn below. Content-blind: only dates are compared.
+                  final older =
+                      index + 1 < state.messages.length
+                          ? state.messages[index + 1]
+                          : null;
+                  bool sameLocalDay(DateTime a, DateTime b) =>
+                      a.year == b.year && a.month == b.month && a.day == b.day;
+                  final isFirstOfDay =
+                      older == null ||
+                      !sameLocalDay(message.createdAt, older.createdAt);
+                  // Consecutive messages from the same sender sit close together
+                  // (grouped); the normal, larger gap only appears right before the
+                  // sender switches — i.e. above the first bubble of a new run,
+                  // exactly like WhatsApp/iMessage grouping. A day boundary always
+                  // forces the larger gap too (the date separator needs the
+                  // breathing room regardless of who sent either message).
+                  final isGrouped =
+                      older != null &&
+                      older.isMine == message.isMine &&
+                      !isFirstOfDay;
+                  final newer = index > 0 ? state.messages[index - 1] : null;
+                  final isLastOfDay =
+                      newer == null ||
+                      !sameLocalDay(message.createdAt, newer.createdAt);
+                  final isGroupedWithPrevious =
+                      newer != null &&
+                      newer.isMine == message.isMine &&
+                      !isLastOfDay;
+                  final isNew = message.createdAt.isAfter(firstBuildCutoff);
+                  // Play-once ledger: animate only the first time this message is ever
+                  // built on this screen. Without it, list recycling replays entry
+                  // animations whenever a new message scrolls back into view.
+                  final shouldAnimate =
+                      isNew &&
+                      !animatedMessageIds.contains(message.clientMessageId);
+                  if (shouldAnimate) {
+                    animatedMessageIds.add(message.clientMessageId);
+                  }
+
+                  // A reply's parent is only known to be deleted/mine if it is
+                  // actually in the currently-loaded window; an unloaded parent
+                  // stays deleted=false, isMine=null (MessageBubble documents both
+                  // assumptions — null means "don't know," not "not mine").
+                  var parentDeleted = false;
+                  bool? parentIsMine;
+                  if (message.replyToMessageId != null) {
+                    for (final candidate in state.messages) {
+                      if (candidate.id == message.replyToMessageId) {
+                        parentDeleted = candidate.isDeleted;
+                        parentIsMine = candidate.isMine;
+                        break;
+                      }
+                    }
+                  }
+
+                  Widget bubble = ValueListenableBuilder<double>(
+                    valueListenable: _timestampRevealOffset,
+                    builder:
+                        (context, timestampRevealOffset, _) => MessageBubble(
+                          message: message,
+                          mediaGroup: mediaGroup,
+                          conversation: conversation,
+                          showStatus: index == 0 && message.isMine,
+                          showLatestTimestamp: index == 0,
+                          showTimestamp: true,
+                          timestampRevealOffset: timestampRevealOffset,
+                          onTimestampRevealChanged: _setTimestampRevealOffset,
+                          parentIsMine: parentIsMine,
+                          isGrouped: isGrouped,
+                          isGroupedWithPrevious: isGroupedWithPrevious,
+                          onImageTap: (tapped) async {
+                            // state.messages is newest-first (ListView's reverse: true);
+                            // ImageViewerScreen wants chronological (oldest-to-newest)
+                            // order to swipe forward through a photo history the same
+                            // direction a user reads the conversation, so reverse the
+                            // filtered subset here.
+                            final images =
+                                state.messages
+                                    .where((m) => m.hasImage)
+                                    .toList()
+                                    .reversed
+                                    .toList();
+                            final index = images.indexWhere(
+                              (m) =>
+                                  m.clientMessageId == tapped.clientMessageId,
+                            );
+                            if (index == -1) return;
+                            // "Go to message" pops the viewer with that image's message
+                            // id; jump to and flash it in THIS chat screen (already
+                            // open — no need to push a second one).
+                            final jumpToId = await context.pushNamed<String>(
+                              'imageViewer',
+                              extra: ImageViewerRouteArgs(
+                                images: images,
+                                initialIndex: index,
+                              ),
+                            );
+                            if (jumpToId != null) {
+                              await onJumpToParent(jumpToId, state.messages);
+                            }
+                          },
+                          onVideoTap: (tapped) async {
+                            // Mirrors onImageTap exactly. isViewOnce excluded — an
+                            // ephemeral video has its own separate
+                            // EphemeralVideoViewerScreen flow (tap-to-view-once,
+                            // markVideoViewed, expiry) and must never appear in this
+                            // regular, replayable video gallery.
+                            final videos =
+                                state.messages
+                                    .where((m) => m.hasVideo && !m.isViewOnce)
+                                    .toList()
+                                    .reversed
+                                    .toList();
+                            final index = videos.indexWhere(
+                              (m) =>
+                                  m.clientMessageId == tapped.clientMessageId,
+                            );
+                            if (index == -1) return;
+                            final jumpToId = await context.pushNamed<String>(
+                              'videoViewer',
+                              extra: VideoViewerRouteArgs(
+                                videos: videos,
+                                initialIndex: index,
+                              ),
+                            );
+                            if (jumpToId != null) {
+                              await onJumpToParent(jumpToId, state.messages);
+                            }
+                          },
+                          // The viewer reports what the server left after
+                          // spending a view; applying it is what stops a
+                          // streak reopening past its budget.
+                          onStreakViewSpent: (messageId, viewsRemaining) {
+                            ref
+                                .read(
+                                  chatControllerProvider(conversation).notifier,
+                                )
+                                .applyStreakViewSpent(
+                                  messageId,
+                                  viewsRemaining,
+                                );
+                          },
+                          onRetry:
+                              message.isFailed
+                                  ? () => ref
+                                      .read(
+                                        chatControllerProvider(
+                                          conversation,
+                                        ).notifier,
+                                      )
+                                      .retryMessage(message)
+                                  : null,
+                          onRemove:
+                              message.isFailed
+                                  ? () => ref
+                                      .read(
+                                        chatControllerProvider(
+                                          conversation,
+                                        ).notifier,
+                                      )
+                                      .removeFailedMessage(message)
+                                  : null,
+                          onReply:
+                              state.conversation.canSend &&
+                                      !message.id.startsWith('_local_')
+                                  ? () => onReply(message.id, message.content)
+                                  : null,
+                          onJumpToParent:
+                              message.replyToMessageId == null
+                                  ? null
+                                  : () => onJumpToParent(
+                                    message.replyToMessageId!,
+                                    state.messages,
+                                  ),
+                          isHighlighted: highlightedMessageId == message.id,
+                          // Actions are only offered on server-backed messages in an
+                          // active, sendable conversation: a local optimistic row has no
+                          // server id to delete/edit/star/pin, and a read-only
+                          // conversation (e.g. an ended relationship viewed via Previous
+                          // Relationships) must not offer mutating actions the RPCs will
+                          // now correctly reject server-side — this client gate is a
+                          // UX correction, not the security boundary (the RPCs are
+                          // authoritative; see fix round 1's migration change).
+                          currentUserId:
+                              state.conversation.canSend &&
+                                      !message.id.startsWith('_local_')
+                                  ? ref.read(currentUserProvider)?.id
+                                  : null,
+                          isStarred: state.starredMessageIds.contains(
+                            message.id,
+                          ),
+                          isPinned: state.pinnedMessages.any(
+                            (p) => p.id == message.id,
+                          ),
+                          parentDeleted: parentDeleted,
+                          onCopy: () {
+                            Clipboard.setData(
+                              ClipboardData(text: message.content),
+                            );
+                            context.showSuccessSnackbar('Copied to clipboard');
+                          },
+                          // Star/unstar/unpin are all fire-and-forget from the menu, but
+                          // each awaits a network call that can throw — swallowing the
+                          // failure silently would leave an unhandled async error, so each
+                          // reports it the same way onPin does.
+                          onStar: () async {
+                            try {
+                              await ref
+                                  .read(
+                                    chatControllerProvider(
+                                      conversation,
+                                    ).notifier,
+                                  )
+                                  .starMessage(message.id);
+                            } catch (e, st) {
+                              debugPrint('starMessage failed: $e\n$st');
+                              if (context.mounted) {
+                                context.showErrorSnackbar(
+                                  "Couldn't star — try again.",
+                                );
+                              }
+                            }
+                          },
+                          onUnstar: () async {
+                            try {
+                              await ref
+                                  .read(
+                                    chatControllerProvider(
+                                      conversation,
+                                    ).notifier,
+                                  )
+                                  .unstarMessage(message.id);
+                            } catch (e, st) {
+                              debugPrint('unstarMessage failed: $e\n$st');
+                              if (context.mounted) {
+                                context.showErrorSnackbar(
+                                  "Couldn't unstar — try again.",
+                                );
+                              }
+                            }
+                          },
+                          onPin: () async {
+                            try {
+                              await ref
+                                  .read(
+                                    chatControllerProvider(
+                                      conversation,
+                                    ).notifier,
+                                  )
+                                  .pinMessage(message);
+                            } catch (e, st) {
+                              debugPrint('pinMessage failed: $e\n$st');
+                              if (context.mounted) {
+                                context.showErrorSnackbar(
+                                  "Couldn't pin — you may already have 3 pinned messages.",
+                                );
+                              }
+                            }
+                          },
+                          onUnpin: () async {
+                            try {
+                              await ref
+                                  .read(
+                                    chatControllerProvider(
+                                      conversation,
+                                    ).notifier,
+                                  )
+                                  .unpinMessage(message);
+                            } catch (e, st) {
+                              debugPrint('unpinMessage failed: $e\n$st');
+                              if (context.mounted) {
+                                context.showErrorSnackbar(
+                                  "Couldn't unpin — try again.",
+                                );
+                              }
+                            }
+                          },
+                          onReact: (emoji) async {
+                            try {
+                              await ref
+                                  .read(
+                                    chatControllerProvider(
+                                      conversation,
+                                    ).notifier,
+                                  )
+                                  .reactToMessage(message, emoji);
+                            } catch (e, st) {
+                              debugPrint('reactToMessage failed: $e\n$st');
+                              if (context.mounted) {
+                                context.showErrorSnackbar(
+                                  "Couldn't react — try again.",
+                                );
+                              }
+                            }
+                          },
+                          onRemoveReaction: () async {
+                            try {
+                              await ref
+                                  .read(
+                                    chatControllerProvider(
+                                      conversation,
+                                    ).notifier,
+                                  )
+                                  .removeReactionFrom(message);
+                            } catch (e, st) {
+                              debugPrint('removeReactionFrom failed: $e\n$st');
+                              if (context.mounted) {
+                                context.showErrorSnackbar(
+                                  "Couldn't remove reaction — try again.",
+                                );
+                              }
+                            }
+                          },
+                          onEdit:
+                              () => _showEditDialog(
+                                context,
+                                ref,
+                                conversation,
+                                message,
+                              ),
+                          onDelete:
+                              () => _confirmAndDelete(
+                                context,
+                                ref,
+                                conversation,
+                                message,
+                              ),
+                          onShowEditHistory:
+                              (target) =>
+                                  _showEditHistorySheet(context, ref, target),
+                        ),
+                  );
+                  if (isFirstOfDay && shouldAnimate) {
+                    bubble = Shimmer(
+                      period:
+                          expressive
+                              ? kShimmerSweepExpressive
+                              : kShimmerSweepCalm,
+                      child: bubble,
+                    );
+                  }
+
+                  // A batch of messages arriving together (e.g. after a reconnect via
+                  // _catchUpFromCursor) should cascade in rather than pop
+                  // simultaneously: offset each new bubble's settle duration by its
+                  // position within the newest-first list. The index is clamped so a
+                  // large batch never produces an absurdly long settle. Cached
+                  // history (`isNew == false`) always uses the base duration.
+                  final stepMs =
+                      expressive
+                          ? kCascadeStepExpressiveMs
+                          : kCascadeStepCalmMs;
+                  final staggeredDuration =
+                      shouldAnimate
+                          ? kSettleDuration +
+                              Duration(milliseconds: stepMs * index.clamp(0, 6))
+                          : kSettleDuration;
+
+                  final row = KeyedSubtree(
+                    key: messageKey,
+                    child: Padding(
+                      // This list is reverse: true with state.messages newest-first,
+                      // so `older` (index+1) renders physically ABOVE this message
+                      // on screen — a top-padding here is exactly the gap between
+                      // this bubble and its older neighbor above it. Same-sender
+                      // messages keep only a hairline gap so their squared inner
+                      // corners still read as one connected stack; a sender switch
+                      // or day boundary restores the normal breathing room.
+                      padding: EdgeInsets.only(top: isGrouped ? 3 : 12),
+                      // Opens the row's own vertical space as it arrives, so
+                      // the messages above are physically displaced by exactly
+                      // this bubble's height instead of jumping to their new
+                      // positions a frame before it fades in. Outside SettleIn
+                      // so the slot grows while the bubble settles into it.
+                      child: MakeRoom(
+                        animate: shouldAnimate,
+                        child: SettleIn(
+                          key: ValueKey(message.clientMessageId),
+                          // Only animate a message the first time it is built after
+                          // arriving live (cached history never replays on open, and
+                          // recycled items never replay on scroll-back — Spec §2
+                          // play-once).
+                          animate: shouldAnimate,
+                          duration: staggeredDuration,
+                          beginOffset:
+                              message.isMine
+                                  ? const Offset(0, 0.12)
+                                  : const Offset(0, 0.10),
+                          child: bubble,
+                        ),
+                      ),
+                    ),
+                  );
+
+                  if (!isFirstOfDay) return row;
+
+                  // The list is reverse: true, so a child placed AFTER the row
+                  // in this column renders physically ABOVE it — which is
+                  // where the separator for a day belongs.
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      row,
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12, bottom: 4),
+                        child: Center(
+                          child: ChatDateChip(
+                            label: chatDateLabel(message.createdAt),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
           ),
         ),
-      ),
+        // Floats over the list, so it must never take a pointer: a tap
+        // meant for the bubble underneath has to reach it.
+        if (pinnedLabel != null)
+          Positioned(
+            top: 8,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Center(
+                child: ChatDateChip(
+                  label: pinnedLabel,
+                  opacity: _pinnedDateVisible ? 1 : 0,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

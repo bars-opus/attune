@@ -8,6 +8,17 @@ Widget _wrap(Widget child) =>
     MaterialApp(home: Scaffold(body: Center(child: child)));
 
 void main() {
+  testWidgets('the Opened label is not italic', (tester) async {
+    // Italic read as a system aside; "Opened" is a plain statement of what
+    // happened, in the same voice as every other bubble label.
+    await tester.pumpWidget(
+      _wrap(StreakBubble(viewsRemaining: 0, hasBeenPlayed: true, onTap: () {})),
+    );
+
+    final label = tester.widget<Text>(find.text('Opened'));
+    expect(label.style?.fontStyle, isNot(FontStyle.italic));
+  });
+
   testWidgets('a spent streak reads "Opened" for BOTH parties', (tester) async {
     // The sender saw "Opened" with a check while the recipient saw
     // "Streak expired" with a videocam-off icon — two different words for
