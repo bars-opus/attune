@@ -27,6 +27,12 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Watched, not read: this is what opens the realtime subscription that
+    // keeps the lists live. Without a listener the StreamProvider is never
+    // created, and an invite arriving while this screen is open would not
+    // show until the user navigated away and back.
+    ref.watch(gameSessionEventsProvider);
+
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 

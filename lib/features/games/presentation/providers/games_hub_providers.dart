@@ -1,5 +1,7 @@
 // lib/features/games/presentation/providers/games_hub_providers.dart
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -31,6 +33,57 @@ final currentRelationshipIdProvider = FutureProvider<String?>((ref) async {
 });
 
 // Active games for current relationship
+/// Keeps the hub live while it is on screen.
+///
+/// activeGamesProvider was a plain FutureProvider read once in initState,
+/// so an invite arriving while the partner was LOOKING at the hub never
+/// appeared — and neither did the other side accepting or finishing a
+/// game. They had to navigate away and back.
+///
+/// PostgresChangeEvent.all rather than inserts alone: an INSERT is a new
+/// invite, an UPDATE is the partner accepting or a game completing, and
+/// the hub shows both lists.
+final gameSessionEventsProvider = StreamProvider<void>((ref) async* {
+  final relationshipId = await ref.watch(currentRelationshipIdProvider.future);
+  if (relationshipId == null) return;
+
+  final supabase = ref.read(supabaseClientProvider);
+  final controller = StreamController<void>.broadcast();
+
+  final channel =
+      supabase
+          .channel('games:$relationshipId')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'game_sessions',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'relationship_id',
+              value: relationshipId,
+            ),
+            callback: (_) {
+              // The lists are refetched rather than patched from the payload:
+              // activeGamesProvider filters by status and orders by date, and
+              // reproducing that here would be a second, drifting copy of the
+              // same query.
+              ref.invalidate(activeGamesProvider);
+              ref.invalidate(recentGamesProvider);
+              if (!controller.isClosed) controller.add(null);
+            },
+          )
+          .subscribe();
+
+  // A channel outliving its provider leaks a socket subscription for the
+  // rest of the session.
+  ref.onDispose(() {
+    unawaited(controller.close());
+    unawaited(supabase.removeChannel(channel));
+  });
+
+  yield* controller.stream;
+});
+
 /// The human name for a game_type.
 ///
 /// The hub's own switch named only three types and fell through to the RAW
