@@ -106,6 +106,46 @@ AS $$
   );
 $$;
 
+-- Supabase Vault is unavailable in a stock Postgres. The real thing
+-- exposes vault.decrypted_secrets as a view over encrypted storage; this
+-- stub is a plain table with the same two columns the app reads, so
+-- migrations that select from it apply and contract tests can seed a
+-- secret to exercise the settings accessor.
+--
+-- Stubbed at all because the production settings mechanism (ALTER
+-- DATABASE ... SET app.settings.*) turned out to be unavailable on a
+-- managed project -- the SQL editor's `postgres` role is not the database
+-- owner -- so every cron job and enqueue trigger silently no-opped. The
+-- harness had no way to notice: it never ran the jobs, and the triggers
+-- were written to skip quietly when the settings were absent.
+CREATE SCHEMA IF NOT EXISTS vault;
+
+CREATE TABLE IF NOT EXISTS vault.decrypted_secrets (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text UNIQUE,
+  decrypted_secret text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE OR REPLACE FUNCTION vault.create_secret(
+  new_secret text,
+  new_name text DEFAULT NULL,
+  new_description text DEFAULT ''
+)
+RETURNS uuid
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_id uuid;
+BEGIN
+  INSERT INTO vault.decrypted_secrets (name, decrypted_secret)
+  VALUES (new_name, new_secret)
+  ON CONFLICT (name) DO UPDATE SET decrypted_secret = EXCLUDED.decrypted_secret
+  RETURNING id INTO v_id;
+  RETURN v_id;
+END;
+$$;
+
 -- pg_cron and pg_net are unavailable in a stock Postgres. Stubbing them
 -- lets scheduling migrations apply; the jobs themselves are never
 -- exercised by contract tests, which assert schema and authorization.
