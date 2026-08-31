@@ -1715,6 +1715,16 @@ class ChatController extends StateNotifier<ChatState> {
         error: null,
         messages: _replaceOptimistic(resolved),
       );
+      // Persisted here, not only on the next sync. loadMessages and
+      // refreshMessages were the only writers, so a just-sent message lived
+      // in memory alone: popping the screen dropped it, the warm-cache
+      // restore on return did not have it, and it reappeared seconds later
+      // when the server fetch landed.
+      unawaited(
+        ref
+            .read(chatCacheServiceProvider)
+            .writeMessages(user.id, pending.relationshipId, state.messages),
+      );
       ChatLog.d(
         '[CHAT] send ok rel=${ChatLog.shortId(relationshipId)} '
         'cid=${ChatLog.shortId(pending.clientMessageId)}',
@@ -1757,6 +1767,13 @@ class ChatController extends StateNotifier<ChatState> {
           state = state.copyWith(
             isSending: false,
             messages: _replaceOptimistic(resolved),
+          );
+          // Same reason as the success path above: without this, a message
+          // recovered from a duplicate insert is in memory only.
+          unawaited(
+            ref
+                .read(chatCacheServiceProvider)
+                .writeMessages(user.id, pending.relationshipId, state.messages),
           );
           return;
         }
