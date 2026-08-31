@@ -129,6 +129,7 @@ class _ChatGameOption {
     required this.subtitle,
     required this.icon,
     this.showMore = false,
+    this.comingSoon = false,
   });
 
   final ChatGameDestination destination;
@@ -136,6 +137,10 @@ class _ChatGameOption {
   final String subtitle;
   final IconData icon;
   final bool showMore;
+
+  /// Listed but not built. The row still appears — the catalogue doubles
+  /// as a roadmap — but it does not pretend to be playable.
+  final bool comingSoon;
 
   bool matches(String query, String categoryTitle) {
     return title.toLowerCase().contains(query) ||
@@ -207,6 +212,10 @@ const _chatGameCategories = <_ChatGameCategory>[
         title: 'Never Have I Ever',
         subtitle: 'Light confessions and laughs',
         icon: Icons.waving_hand_outlined,
+        // No implementation, no spec, no route. Selecting it used to push
+        // the games hub, which does not offer it either — the user picked
+        // a game and arrived somewhere unrelated.
+        comingSoon: true,
       ),
     ],
   ),
@@ -257,7 +266,10 @@ class _ChatGameCategorySection extends StatelessWidget {
           for (var index = 0; index < category.options.length; index++)
             _ChatGameMenuRow(
               option: category.options[index],
-              onTap: () => onSelect(category.options[index].destination),
+              onTap:
+                  category.options[index].comingSoon
+                      ? null
+                      : () => onSelect(category.options[index].destination),
             ),
         ],
       ),
@@ -269,7 +281,10 @@ class _ChatGameMenuRow extends StatelessWidget {
   const _ChatGameMenuRow({required this.option, required this.onTap});
 
   final _ChatGameOption option;
-  final VoidCallback onTap;
+
+  /// Null for a coming-soon row: CardInkWell renders it inert rather than
+  /// selecting a game that does not exist.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -294,20 +309,38 @@ class _ChatGameMenuRow extends StatelessWidget {
         avatarRadius: 25.h,
         padAvatarTop: true,
         showAvatar: false,
-        showTrailingArrow: true,
         showDivider: false,
         trailing:
-            option.showMore
+            option.comingSoon
+                ? Text(
+                  'Coming soon',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.55),
+                  ),
+                )
+                : option.showMore
                 ? Icon(
                   Icons.more_horiz_rounded,
                   color: colorScheme.onSurface.withValues(alpha: 0.72),
                   size: 28.h,
                 )
                 : const SizedBox.shrink(),
+        showTrailingArrow: !option.comingSoon,
       ),
     );
   }
 }
+
+/// The destinations listed but not yet built.
+///
+/// Kept alongside the catalogue seam so a test can assert that everything
+/// NOT on this list is genuinely reachable — the list must shrink as games
+/// ship, and must never become a place to hide one that simply broke.
+Set<ChatGameDestination> chatGameDestinationsComingSoon() => {
+  for (final category in _chatGameCategories)
+    for (final option in category.options)
+      if (option.comingSoon) option.destination,
+};
 
 /// The destinations the catalogue actually exposes.
 ///
@@ -316,6 +349,6 @@ class _ChatGameMenuRow extends StatelessWidget {
 /// time and would ship a game no one can launch.
 @visibleForTesting
 Set<ChatGameDestination> chatGameDestinationsInCatalogue() => {
-      for (final category in _chatGameCategories)
-        for (final option in category.options) option.destination,
-    };
+  for (final category in _chatGameCategories)
+    for (final option in category.options) option.destination,
+};
