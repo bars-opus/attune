@@ -171,9 +171,12 @@ class _ThirtySixJourneyCompletionScreenState
                 Gap(Spacing.md.w),
                 Expanded(
                   child: AppButton(
-                    label: 'Back to games',
+                    label: 'Done',
                     onPressed: () {
-                      context.goNamed('gamesHub');
+                      // The games hub is gone; games launch from the chat
+                      // composer now. goNamed replaces the stack, so this
+                      // has to name a route that still exists.
+                      context.goNamed('home');
                     },
                     size: ButtonSize.medium,
                   ),

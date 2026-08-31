@@ -56,7 +56,6 @@ import 'package:attune/features/reminders/presentation/screens/family_members_sc
 import 'package:attune/features/timeline/presentation/screens/log_moment_details_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/log_moment_type_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
-import 'package:attune/features/games/presentation/screens/games_hub_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_entry_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_completion_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_history_screen.dart';
@@ -262,7 +261,6 @@ class RouteNames {
   static const String datingPhotos = '/datingPhotos';
   static const String datingVerification = '/datingVerification';
   static const String logMomentDetails = '/logMomentDetails';
-  static const String gamesHub = '/gamesHub';
   static const String thirtySixChapterInvitation =
       '/thirtySixChapterInvitation';
   static const String thirtySixChapterIntroduction =
@@ -955,11 +953,6 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
             initialData: args.initialData,
           );
         },
-      ),
-      GoRoute(
-        path: RouteNames.gamesHub,
-        name: 'gamesHub',
-        builder: (context, state) => const GamesHubScreen(),
       ),
       GoRoute(
         path: RouteNames.thirtySixChapterInvitation,

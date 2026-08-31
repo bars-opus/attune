@@ -57,17 +57,20 @@ void main() {
     expect(block, contains('removeChannel'));
   });
 
-  test('the hub screen watches the events provider', () {
+  test('the games sheet watches the events provider', () {
     // The StreamProvider is only created when something listens. A
     // subscription nothing watches is a subscription that never opens, so
-    // every other assertion here would hold while the hub stayed stale.
-    final screen =
+    // every other assertion here would hold while the lists stayed stale.
+    //
+    // The consumer used to be the games hub screen. The hub is deleted and
+    // the chat sheet now carries both lists, so this follows it there.
+    final sheet =
         File(
-          'lib/features/games/presentation/screens/games_hub_screen.dart',
+          'lib/features/games/presentation/widgets/chat_games_sheet.dart',
         ).readAsStringSync();
 
     expect(
-      screen,
+      sheet,
       contains('ref.watch(gameSessionEventsProvider)'),
       reason: 'read() would not keep the subscription alive',
     );

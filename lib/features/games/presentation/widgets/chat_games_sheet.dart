@@ -5,12 +5,13 @@ import 'package:attune/core/widgets/bottom_sheet_header.dart';
 import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/core/widgets/search_text_field.dart';
+import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 enum ChatGameDestination {
-  gamesHub,
   thisOrThat,
   truthOrDare,
   thirtySixQuestions,
@@ -22,16 +23,43 @@ enum ChatGameDestination {
   loveMap,
 }
 
-class ChatGamesSheet extends StatefulWidget {
+/// The destination that resumes an in-progress session of [gameType].
+///
+/// game_sessions rows carry a game_type; the sheet's active list has to
+/// turn that back into somewhere to navigate. Every destination here
+/// resumes rather than restarts: the session games' createSession returns
+/// the existing session and the flow opens at the first unanswered round,
+/// 36 Questions has its own resume-or-start entry, and Paint Ball's lobby
+/// picks up the open match.
+///
+/// Returns null for a type with nowhere to go, so an unknown or retired
+/// game_type renders as a non-tappable row instead of crashing on a route
+/// name that does not exist.
+ChatGameDestination? chatGameDestinationForType(String gameType) {
+  const byType = {
+    'this_or_that': ChatGameDestination.thisOrThat,
+    'truth_or_dare': ChatGameDestination.truthOrDare,
+    '36_questions': ChatGameDestination.thirtySixQuestions,
+    'mirror': ChatGameDestination.mirror,
+    'sliding_scale': ChatGameDestination.slidingScale,
+    'scenario': ChatGameDestination.scenario,
+    'love_map': ChatGameDestination.loveMap,
+    'paint_ball': ChatGameDestination.paintBall,
+  };
+
+  return byType[gameType];
+}
+
+class ChatGamesSheet extends ConsumerStatefulWidget {
   const ChatGamesSheet({super.key, required this.onSelect});
 
   final ValueChanged<ChatGameDestination> onSelect;
 
   @override
-  State<ChatGamesSheet> createState() => _ChatGamesSheetState();
+  ConsumerState<ChatGamesSheet> createState() => _ChatGamesSheetState();
 }
 
-class _ChatGamesSheetState extends State<ChatGamesSheet> {
+class _ChatGamesSheetState extends ConsumerState<ChatGamesSheet> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
 
@@ -62,6 +90,11 @@ class _ChatGamesSheetState extends State<ChatGamesSheet> {
   Widget build(BuildContext context) {
     final filteredCategories = _filteredCategories;
 
+    // Hidden while searching: a query filters the catalogue, and games
+    // that merely happen to be in progress would survive it as results
+    // the user did not search for.
+    final showInProgress = _controller.text.trim().isEmpty;
+
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Column(
@@ -91,8 +124,20 @@ class _ChatGamesSheetState extends State<ChatGamesSheet> {
                     : ListView.builder(
                       physics: const BouncingScrollPhysics(),
                       padding: EdgeInsets.only(bottom: Spacing.xxl.h),
-                      itemCount: filteredCategories.length,
-                      itemBuilder: (context, categoryIndex) {
+                      // The in-progress section takes slot 0 when it is
+                      // showing, so it scrolls away with the catalogue
+                      // rather than eating fixed height in a sheet.
+                      itemCount:
+                          filteredCategories.length + (showInProgress ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (showInProgress && index == 0) {
+                          return _ChatGamesInProgress(
+                            onSelect: widget.onSelect,
+                          );
+                        }
+
+                        final categoryIndex =
+                            showInProgress ? index - 1 : index;
                         final category = filteredCategories[categoryIndex];
                         final precedingOptionCount = filteredCategories
                             .take(categoryIndex)
@@ -352,3 +397,130 @@ Set<ChatGameDestination> chatGameDestinationsInCatalogue() => {
   for (final category in _chatGameCategories)
     for (final option in category.options) option.destination,
 };
+
+/// The in-progress and just-finished games, above the catalogue.
+///
+/// These lists were the games hub's reason to exist. The hub is gone: the
+/// sheet is the only games surface now, so what is already underway
+/// belongs at the top of it, ahead of the catalogue of new games.
+///
+/// Both lists render nothing at all when empty — no header, no empty-state
+/// card. A screen can afford "No active games"; a bottom sheet opened to
+/// pick a game cannot, and a first-time player would meet two empty boxes
+/// before reaching what they came for.
+class _ChatGamesInProgress extends ConsumerWidget {
+  const _ChatGamesInProgress({required this.onSelect});
+
+  final ValueChanged<ChatGameDestination> onSelect;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Keeps both lists live while the sheet is open: an invite arriving,
+    // or the partner finishing a round, re-renders in place.
+    ref.watch(gameSessionEventsProvider);
+
+    final active = ref.watch(activeGamesProvider).valueOrNull ?? const [];
+    final recent = ref.watch(recentGamesProvider).valueOrNull ?? const [];
+
+    if (active.isEmpty && recent.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (active.isNotEmpty) ...[
+          _ChatGamesSectionLabel(label: 'Continue playing'),
+          for (final game in active)
+            _ChatGameSessionRow(game: game, onSelect: onSelect),
+          SizedBox(height: Spacing.md.h),
+        ],
+        if (recent.isNotEmpty) ...[
+          _ChatGamesSectionLabel(label: 'Recently played'),
+          for (final game in recent) _ChatGameSessionRow(game: game),
+          SizedBox(height: Spacing.md.h),
+        ],
+      ],
+    );
+  }
+}
+
+class _ChatGamesSectionLabel extends StatelessWidget {
+  const _ChatGamesSectionLabel({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: Spacing.sm.w,
+        bottom: Spacing.xs.h,
+        top: Spacing.xs.h,
+      ),
+      child: Text(
+        label,
+        style: Theme.of(
+          context,
+        ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
+
+/// One game_sessions row, styled as the catalogue's rows are.
+///
+/// [onSelect] is null for the recently-played list, which has nothing to
+/// resume — a completed session is a record, not a destination — and the
+/// row then renders without tap feedback or a trailing arrow rather than
+/// looking tappable and doing nothing.
+class _ChatGameSessionRow extends StatelessWidget {
+  const _ChatGameSessionRow({required this.game, this.onSelect});
+
+  final Map<String, dynamic> game;
+  final ValueChanged<ChatGameDestination>? onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final gameType = game['game_type'] as String? ?? '';
+
+    // Falls back to the raw-type title-caser rather than assuming the
+    // display field was computed: recentGamesProvider returns rows
+    // straight from the table, without game_type_display.
+    final title =
+        game['game_type_display'] as String? ?? gameTypeDisplayName(gameType);
+
+    final destination =
+        onSelect == null ? null : chatGameDestinationForType(gameType);
+
+    final status = game['status'] as String? ?? '';
+
+    return CardInkWell(
+      onTap: destination == null ? null : () => onSelect!(destination),
+      borderRadius: BorderRadius.circular(100),
+      color: colorScheme.surface,
+      padding: const EdgeInsets.symmetric(
+        vertical: Spacing.md,
+        horizontal: Spacing.lg,
+      ),
+      margin: const EdgeInsets.only(bottom: Spacing.xs),
+      child: InfoRowWidget(
+        iconColor: colorScheme.onSurface,
+        subtitle: switch (status) {
+          'invited' => 'Invitation waiting',
+          'completed' => 'Completed',
+          _ => 'In progress',
+        },
+        subTitleFontColor: Colors.grey,
+        titleFontColor: colorScheme.onSurface,
+        title: title,
+        icon: Icons.sports_esports_outlined,
+        avatarRadius: 25.h,
+        padAvatarTop: true,
+        showAvatar: false,
+        showDivider: false,
+        trailing: const SizedBox.shrink(),
+        showTrailingArrow: destination != null,
+      ),
+    );
+  }
+}

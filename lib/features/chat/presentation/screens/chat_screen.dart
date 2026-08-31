@@ -450,9 +450,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   Future<void> _openGameRoute(ChatGameDestination destination) async {
     switch (destination) {
-      case ChatGameDestination.gamesHub:
       case ChatGameDestination.neverHaveIEver:
-        await context.pushNamed('gamesHub');
+        // Coming soon in the catalogue, so the row does not fire this.
+        // Kept exhaustive rather than defaulted: adding a game to the
+        // enum should break this switch, not silently route nowhere.
+        break;
       case ChatGameDestination.thirtySixQuestions:
         // Its own entry screen, which resumes an in-progress journey or
         // starts one. Previously the games hub, the only game not routed
