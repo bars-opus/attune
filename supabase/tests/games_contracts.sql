@@ -600,4 +600,86 @@ BEGIN
   PERFORM set_config('request.jwt.claims', '', true);
 END $$;
 
+-- Every game table the client touches must carry an explicit grant.
+--
+--   permission denied for table thirty_six_question_journeys (42501)
+--
+-- Supabase grants table privileges platform-side at CREATE time, not from
+-- migrations, so a table created by a migration gets whatever the default
+-- privileges happen to be. Some game tables worked by accident of
+-- creation order; the 36 Questions ones did not, and opening the Paint
+-- Ball lobby failed outright.
+--
+-- Asserted against the CATALOGUE rather than by querying as authenticated:
+-- the local harness applies a blanket grant to mirror the platform, so a
+-- privilege check there passes whether or not the migration grants
+-- anything. Reading pg_class ACLs sees what the migration actually did.
+DO $$
+DECLARE
+  v_missing text;
+BEGIN
+  SELECT string_agg(t, ', ' ORDER BY t) INTO v_missing
+  FROM unnest(ARRAY[
+    'game_sessions',
+    'game_session_rounds',
+    'session_idempotency_keys',
+    'thirty_six_question_journeys',
+    'thirty_six_question_answers',
+    'chapter_reflections',
+    'thirty_six_questions_seen',
+    'game_questions_seen',
+    'custom_truth_or_dare_questions',
+    'custom_this_or_that_questions',
+    'game_questions',
+    'thirty_six_questions_canonical',
+    'thirty_six_questions_translations'
+  ]) AS t
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) AS a
+    WHERE n.nspname = 'public'
+      AND c.relname = t
+      AND a.grantee = 'authenticated'::regrole
+      AND a.privilege_type = 'SELECT'
+  );
+
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: game tables with no SELECT grant to authenticated: %',
+      v_missing;
+  END IF;
+END $$;
+
+-- The content catalogues stay read-only: a client able to write them
+-- could author the questions every other couple is served.
+DO $$
+DECLARE
+  v_writable text;
+BEGIN
+  SELECT string_agg(t, ', ' ORDER BY t) INTO v_writable
+  FROM unnest(ARRAY[
+    'game_questions',
+    'thirty_six_questions_canonical',
+    'thirty_six_questions_translations'
+  ]) AS t
+  WHERE EXISTS (
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) AS a
+    WHERE n.nspname = 'public'
+      AND c.relname = t
+      AND a.grantee = 'authenticated'::regrole
+      AND a.privilege_type IN ('INSERT', 'UPDATE', 'DELETE')
+  );
+
+  IF v_writable IS NOT NULL THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: clients can write the question catalogue: %',
+      v_writable;
+  END IF;
+END $$;
+
 ROLLBACK;
