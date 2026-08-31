@@ -178,6 +178,7 @@ class RepliesRow extends StatelessWidget {
             ),
             Gap(Spacing.xs.w),
           ],
+
           ShakeTransition(
             offset: -140,
             curve: Curves.easeOutBack,

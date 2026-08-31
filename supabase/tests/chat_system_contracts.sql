@@ -679,4 +679,85 @@ BEGIN
 END
 $$;
 
+-- The notification worker runs as service_role, so these exercise the
+-- function the way it is actually called. RESET ROLE first: an earlier
+-- section may have left a restricted role set, and the REVOKE below is
+-- deliberately strict enough that `authenticated` cannot call this at all.
+RESET ROLE;
+
+-- Delivery is recorded at PUSH DISPATCH, not when the recipient opens the
+-- chat.
+--
+-- mark_delivered is auth.uid()-scoped and only ever called from an open
+-- ChatController, so a message stayed on one tick until the recipient
+-- opened that conversation — and opening also marks it read, so the
+-- delivered state was rarely seen. mark_delivered_for_recipient is what
+-- the notification worker calls instead.
+DO $$
+DECLARE
+  v_msg uuid;
+  v_delivered timestamptz;
+  v_second timestamptz;
+BEGIN
+  INSERT INTO public.messages
+    (relationship_id, sender_id, client_message_id, content)
+  VALUES ('10000000-0000-0000-0000-000000000001',
+          '00000000-0000-0000-0000-0000000000a1',
+          gen_random_uuid(), 'receipt me')
+  RETURNING id INTO v_msg;
+
+  -- The RECIPIENT (b2), not the sender.
+  v_delivered := public.mark_delivered_for_recipient(
+    v_msg, '00000000-0000-0000-0000-0000000000b2');
+
+  IF v_delivered IS NULL THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: dispatch did not mark the message delivered';
+  END IF;
+
+  -- Idempotent: a retried job must not move the timestamp forward.
+  v_second := public.mark_delivered_for_recipient(
+    v_msg, '00000000-0000-0000-0000-0000000000b2');
+  IF v_second IS NOT NULL THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: a replayed dispatch rewrote delivered_at';
+  END IF;
+
+  DELETE FROM public.messages WHERE id = v_msg;
+END $$;
+
+-- A sender's own device must never mark its own message delivered.
+DO $$
+DECLARE v_msg uuid; v_delivered timestamptz;
+BEGIN
+  INSERT INTO public.messages
+    (relationship_id, sender_id, client_message_id, content)
+  VALUES ('10000000-0000-0000-0000-000000000001',
+          '00000000-0000-0000-0000-0000000000a1',
+          gen_random_uuid(), 'own message')
+  RETURNING id INTO v_msg;
+
+  v_delivered := public.mark_delivered_for_recipient(
+    v_msg, '00000000-0000-0000-0000-0000000000a1');
+
+  IF v_delivered IS NOT NULL THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the sender marked their own message delivered';
+  END IF;
+
+  DELETE FROM public.messages WHERE id = v_msg;
+END $$;
+
+-- Clients must not be able to assert delivery on another user's behalf.
+DO $$
+BEGIN
+  IF has_function_privilege(
+       'authenticated',
+       'public.mark_delivered_for_recipient(uuid, uuid)',
+       'EXECUTE') THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: authenticated can execute mark_delivered_for_recipient';
+  END IF;
+END $$;
+
 ROLLBACK;

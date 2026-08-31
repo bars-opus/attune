@@ -211,6 +211,11 @@ async function processJob(
     if (inAppResult.error) throw inAppResult.error;
 
     if (suppressPush) {
+      // Suppressed because the recipient is actively viewing this
+      // conversation — which means it HAS reached them. Their client marks
+      // it delivered too, and the RPC only writes a null delivered_at, so
+      // whichever lands first wins and the other is a no-op.
+      await markDelivered(supabase, String(job.message_id), recipientId);
       await finalizeJob(supabase, outboxId, "done", "suppressed_actively_viewing");
       return {
         outbox_id: outboxId,
@@ -237,6 +242,8 @@ async function processJob(
         updated_at: now,
       });
     if (scheduledResult.error) throw scheduledResult.error;
+
+    await markDelivered(supabase, String(job.message_id), recipientId);
 
     await finalizeJob(supabase, outboxId, "done", null);
     return { outbox_id: outboxId, status: "completed" };
@@ -316,4 +323,27 @@ function errorCode(error: unknown) {
     return error.message.slice(0, 120);
   }
   return "unknown_error";
+}
+
+/// Marks a message delivered at the moment its notification is dispatched.
+///
+/// Delivery was previously recorded only when the recipient opened that
+/// conversation, so a message sat on one tick until then — and opening
+/// also marks it read, so the delivered state was rarely seen at all.
+///
+/// Never fatal: a message that was pushed but not marked delivered is a
+/// cosmetic receipt problem, while failing the job here would retry a push
+/// the recipient has already received.
+async function markDelivered(
+  supabase: ReturnType<typeof serviceRoleClient>,
+  messageId: string,
+  recipientId: string,
+) {
+  const { error } = await supabase.rpc("mark_delivered_for_recipient", {
+    p_message_id: messageId,
+    p_recipient_id: recipientId,
+  });
+  if (error) {
+    console.error("mark_delivered_for_recipient failed", error.message);
+  }
 }
