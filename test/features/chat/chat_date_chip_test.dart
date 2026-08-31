@@ -80,6 +80,17 @@ void main() {
         reason: 'one rule each side, so the date sits ON the line',
       );
 
+      // The date sits in the same pill the floating chip uses, so the two
+      // read as one component that has simply stuck to the top.
+      expect(
+        find.descendant(
+          of: find.byType(ChatDateSeparator),
+          matching: find.byType(ChatDateChip),
+        ),
+        findsOneWidget,
+        reason: 'the rounded container is shared with the pinned chip',
+      );
+
       final labelRect = tester.getRect(find.text('12 October'));
       final left = tester.getRect(rules.first);
       final right = tester.getRect(rules.last);

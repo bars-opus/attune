@@ -98,15 +98,12 @@ class ChatDateSeparator extends StatelessWidget {
     return Row(
       children: [
         rule,
+        // The SAME pill the pinned chip uses, so the floating one reads as
+        // this separator having stuck to the top rather than as a second,
+        // similar component.
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: Spacing.smMd),
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: Colors.black.withValues(alpha: 0.55),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
+          child: ChatDateChip(label: label),
         ),
         rule,
       ],
