@@ -1,4 +1,5 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/community/presentation/widgets/community_questions_entry.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -22,6 +23,11 @@ class ThisOrThatGamesHubScreen extends ConsumerWidget {
               'Quick picks, shared surprises, and low-pressure conversation starters.',
               style: textTheme.bodyMedium,
             ),
+            Gap(Spacing.lg.h),
+            // Before starting: what other couples are asking for THIS
+            // game. Moved off the games hub, which is being removed —
+            // and it belongs here anyway, where the questions are.
+            const CommunityQuestionsEntry(typeFilter: 'This or That'),
             Gap(Spacing.lg.h),
             sessionAsync.when(
               loading:

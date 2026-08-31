@@ -4,13 +4,20 @@ import 'package:attune/features/community/data/models/community_question.dart';
 import 'package:attune/features/community/presentation/providers/community_providers.dart';
 import 'package:attune/features/community/presentation/widgets/community_question_card.dart';
 
-
-
 class CommunityFeedScreen extends ConsumerStatefulWidget {
-  const CommunityFeedScreen({super.key});
+  const CommunityFeedScreen({super.key, this.initialTypeFilter});
+
+  /// Opens the feed already narrowed to one game's questions.
+  ///
+  /// A game linking here means "see what other couples are asking for
+  /// THIS game"; landing on every type and making the user find the
+  /// filter answers a question they did not ask. Null keeps the
+  /// browse-everything behaviour the standalone entry had.
+  final String? initialTypeFilter;
 
   @override
-  ConsumerState<CommunityFeedScreen> createState() => _CommunityFeedScreenState();
+  ConsumerState<CommunityFeedScreen> createState() =>
+      _CommunityFeedScreenState();
 }
 
 class _CommunityFeedScreenState extends ConsumerState<CommunityFeedScreen> {
@@ -25,11 +32,18 @@ class _CommunityFeedScreenState extends ConsumerState<CommunityFeedScreen> {
   bool _isLoading = false;
 
   final List<String> _typeFilters = ['All', 'This or That', 'Truth', 'Dare'];
-  final List<String> _toneFilters = ['All', 'Connecting', 'Romantic', 'Playful', 'Spicy'];
+  final List<String> _toneFilters = [
+    'All',
+    'Connecting',
+    'Romantic',
+    'Playful',
+    'Spicy',
+  ];
 
   @override
   void initState() {
     super.initState();
+    _selectedTypeFilter = widget.initialTypeFilter;
     _loadInitialFeed();
     _scrollController.addListener(_onScroll);
   }
@@ -44,19 +58,22 @@ class _CommunityFeedScreenState extends ConsumerState<CommunityFeedScreen> {
   Future<void> _loadInitialFeed() async {
     setState(() => _isLoading = true);
     try {
-      final feed = await ref.read(communityFeedProvider((
-        typeFilter: _selectedTypeFilter == 'All' ? null : _selectedTypeFilter,
-        toneFilter: _selectedToneFilter == 'All' ? null : _selectedToneFilter,
-        searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
-        limit: 20,
-        cursor: null,
-      )).future);
+      final feed = await ref.read(
+        communityFeedProvider((
+          typeFilter: _selectedTypeFilter == 'All' ? null : _selectedTypeFilter,
+          toneFilter: _selectedToneFilter == 'All' ? null : _selectedToneFilter,
+          searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
+          limit: 20,
+          cursor: null,
+        )).future,
+      );
 
       setState(() {
         _questions.clear();
         _questions.addAll(feed);
         _hasMore = feed.length >= 20;
-        _cursor = feed.isNotEmpty ? feed.last.createdAt.toIso8601String() : null;
+        _cursor =
+            feed.isNotEmpty ? feed.last.createdAt.toIso8601String() : null;
         _isLoading = false;
       });
     } catch (e) {
@@ -74,18 +91,21 @@ class _CommunityFeedScreenState extends ConsumerState<CommunityFeedScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final feed = await ref.read(communityFeedProvider((
-        typeFilter: _selectedTypeFilter == 'All' ? null : _selectedTypeFilter,
-        toneFilter: _selectedToneFilter == 'All' ? null : _selectedToneFilter,
-        searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
-        limit: 20,
-        cursor: _cursor,
-      )).future);
+      final feed = await ref.read(
+        communityFeedProvider((
+          typeFilter: _selectedTypeFilter == 'All' ? null : _selectedTypeFilter,
+          toneFilter: _selectedToneFilter == 'All' ? null : _selectedToneFilter,
+          searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
+          limit: 20,
+          cursor: _cursor,
+        )).future,
+      );
 
       setState(() {
         _questions.addAll(feed);
         _hasMore = feed.length >= 20;
-        _cursor = feed.isNotEmpty ? feed.last.createdAt.toIso8601String() : null;
+        _cursor =
+            feed.isNotEmpty ? feed.last.createdAt.toIso8601String() : null;
         _isLoading = false;
       });
     } catch (e) {
@@ -94,7 +114,8 @@ class _CommunityFeedScreenState extends ConsumerState<CommunityFeedScreen> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
       _loadMore();
     }
   }
@@ -130,7 +151,8 @@ class _CommunityFeedScreenState extends ConsumerState<CommunityFeedScreen> {
                 onChanged: (value) {
                   _searchQuery = value;
                   _applyFilters();
-                }, label: '',
+                },
+                label: '',
               ),
             ),
             // Filters
@@ -147,13 +169,16 @@ class _CommunityFeedScreenState extends ConsumerState<CommunityFeedScreen> {
                       separatorBuilder: (_, __) => Gap(Spacing.sm.w),
                       itemBuilder: (context, index) {
                         final label = _typeFilters[index];
-                        final isSelected = _selectedTypeFilter == label || (index == 0 && _selectedTypeFilter == null);
+                        final isSelected =
+                            _selectedTypeFilter == label ||
+                            (index == 0 && _selectedTypeFilter == null);
                         return _buildFilterChip(
                           label: label,
                           isSelected: isSelected,
                           onTap: () {
                             setState(() {
-                              _selectedTypeFilter = label == 'All' ? null : label;
+                              _selectedTypeFilter =
+                                  label == 'All' ? null : label;
                             });
                             _applyFilters();
                           },
@@ -171,13 +196,16 @@ class _CommunityFeedScreenState extends ConsumerState<CommunityFeedScreen> {
                       separatorBuilder: (_, __) => Gap(Spacing.sm.w),
                       itemBuilder: (context, index) {
                         final label = _toneFilters[index];
-                        final isSelected = _selectedToneFilter == label || (index == 0 && _selectedToneFilter == null);
+                        final isSelected =
+                            _selectedToneFilter == label ||
+                            (index == 0 && _selectedToneFilter == null);
                         return _buildFilterChip(
                           label: label,
                           isSelected: isSelected,
                           onTap: () {
                             setState(() {
-                              _selectedToneFilter = label == 'All' ? null : label;
+                              _selectedToneFilter =
+                                  label == 'All' ? null : label;
                             });
                             _applyFilters();
                           },
@@ -192,22 +220,25 @@ class _CommunityFeedScreenState extends ConsumerState<CommunityFeedScreen> {
             Gap(Spacing.md.h),
             // Feed
             Expanded(
-              child: _questions.isEmpty && !_isLoading
-                  ? _buildEmptyState()
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: EdgeInsets.all(Spacing.md.w),
-                      itemCount: _questions.length + (_hasMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index == _questions.length) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: Center(child: CircularProgressIndicator()),
+              child:
+                  _questions.isEmpty && !_isLoading
+                      ? _buildEmptyState()
+                      : ListView.builder(
+                        controller: _scrollController,
+                        padding: EdgeInsets.all(Spacing.md.w),
+                        itemCount: _questions.length + (_hasMore ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index == _questions.length) {
+                            return const Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          }
+                          return CommunityQuestionCard(
+                            question: _questions[index],
                           );
-                        }
-                        return CommunityQuestionCard(question: _questions[index]);
-                      },
-                    ),
+                        },
+                      ),
             ),
           ],
         ),
@@ -226,11 +257,15 @@ class _CommunityFeedScreenState extends ConsumerState<CommunityFeedScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: Spacing.md.w, vertical: Spacing.xs.h),
+        padding: EdgeInsets.symmetric(
+          horizontal: Spacing.md.w,
+          vertical: Spacing.xs.h,
+        ),
         decoration: BoxDecoration(
-          color: isSelected
-              ? colorScheme.primary.withOpacity(0.1)
-              : colorScheme.surfaceContainerHighest.withOpacity(0.3),
+          color:
+              isSelected
+                  ? colorScheme.primary.withOpacity(0.1)
+                  : colorScheme.surfaceContainerHighest.withOpacity(0.3),
           borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
           border: Border.all(
             color: isSelected ? colorScheme.primary : Colors.transparent,
@@ -242,7 +277,10 @@ class _CommunityFeedScreenState extends ConsumerState<CommunityFeedScreen> {
           style: TextStyle(
             fontSize: 12,
             fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-            color: isSelected ? colorScheme.primary : colorScheme.onSurface.withOpacity(0.7),
+            color:
+                isSelected
+                    ? colorScheme.primary
+                    : colorScheme.onSurface.withOpacity(0.7),
           ),
         ),
       ),
@@ -261,10 +299,7 @@ class _CommunityFeedScreenState extends ConsumerState<CommunityFeedScreen> {
           children: [
             const Icon(Icons.public_outlined, size: 64),
             Gap(Spacing.md.h),
-            Text(
-              'No community questions yet',
-              style: textTheme.titleMedium,
-            ),
+            Text('No community questions yet', style: textTheme.titleMedium),
             Gap(Spacing.sm.h),
             Text(
               'Browse our featured collection\nor share your own question.',

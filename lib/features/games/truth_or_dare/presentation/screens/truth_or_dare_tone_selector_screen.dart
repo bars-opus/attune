@@ -1,4 +1,5 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/community/presentation/widgets/community_questions_entry.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/screens/truth_or_dare_session_router_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -104,6 +105,11 @@ class _TruthOrDareToneSelectorScreenState
         padding: EdgeInsets.all(Spacing.lg.w),
         child: Column(
           children: [
+            // Before starting: what other couples are asking for THIS
+            // game. Moved off the games hub, which is being removed — and
+            // it belongs here anyway, where the questions are.
+            const CommunityQuestionsEntry(typeFilter: 'Truth'),
+            Gap(Spacing.lg.h),
             Expanded(
               child: GridView.builder(
                 itemCount: _tones.length,

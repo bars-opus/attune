@@ -451,9 +451,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   Future<void> _openGameRoute(ChatGameDestination destination) async {
     switch (destination) {
       case ChatGameDestination.gamesHub:
-      case ChatGameDestination.thirtySixQuestions:
       case ChatGameDestination.neverHaveIEver:
         await context.pushNamed('gamesHub');
+      case ChatGameDestination.thirtySixQuestions:
+        // Its own entry screen, which resumes an in-progress journey or
+        // starts one. Previously the games hub, the only game not routed
+        // to itself.
+        await context.pushNamed('thirtySixQuestions');
       case ChatGameDestination.mirror:
         await context.pushNamed('mirrorGame');
       case ChatGameDestination.slidingScale:

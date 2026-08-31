@@ -57,6 +57,7 @@ import 'package:attune/features/timeline/presentation/screens/log_moment_details
 import 'package:attune/features/timeline/presentation/screens/log_moment_type_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
 import 'package:attune/features/games/presentation/screens/games_hub_screen.dart';
+import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_entry_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_completion_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_history_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_introduction_screen.dart';
@@ -282,6 +283,7 @@ class RouteNames {
   static const String truthOrDareHistory = '/truthOrDareHistory';
   static const String truthReveal = '/truthReveal';
   static const String dareReveal = '/dareReveal';
+  static const String thirtySixEntry = '/thirtySixQuestions';
   static const String thirtySixJourneyOverview = '/thirtySixJourneyOverview';
   static const String communityFeed = '/communityFeed';
   static const String thisOrThatGamesHub = '/thisOrThatGamesHub';
@@ -1230,6 +1232,15 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         },
       ),
       GoRoute(
+        // Resume-or-start. The chat sheet has no journey id, so it cannot
+        // link to the overview directly — that decision used to live in
+        // the games hub, which is why 36 Questions was the one game routed
+        // there rather than to itself.
+        path: RouteNames.thirtySixEntry,
+        name: 'thirtySixQuestions',
+        builder: (context, state) => const ThirtySixEntryScreen(),
+      ),
+      GoRoute(
         path: RouteNames.thirtySixJourneyOverview,
         name: 'thirtySixJourneyOverview',
         builder: (context, state) {
@@ -1245,7 +1256,12 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.communityFeed,
         name: 'communityFeed',
-        builder: (context, state) => const CommunityFeedScreen(),
+        // ?type= opens the feed already narrowed to one game's questions,
+        // so a game linking here lands on its own rather than everything.
+        builder:
+            (context, state) => CommunityFeedScreen(
+              initialTypeFilter: state.uri.queryParameters['type'],
+            ),
       ),
       GoRoute(
         path: RouteNames.thisOrThatGamesHub,
@@ -1273,20 +1289,23 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.mirrorGame,
         name: 'mirrorGame',
-        builder: (context, state) =>
-            const SessionGameFlowScaffold(gameType: 'mirror'),
+        builder:
+            (context, state) =>
+                const SessionGameFlowScaffold(gameType: 'mirror'),
       ),
       GoRoute(
         path: RouteNames.slidingScaleGame,
         name: 'slidingScaleGame',
-        builder: (context, state) =>
-            const SessionGameFlowScaffold(gameType: 'sliding_scale'),
+        builder:
+            (context, state) =>
+                const SessionGameFlowScaffold(gameType: 'sliding_scale'),
       ),
       GoRoute(
         path: RouteNames.scenarioGame,
         name: 'scenarioGame',
-        builder: (context, state) =>
-            const SessionGameFlowScaffold(gameType: 'scenario'),
+        builder:
+            (context, state) =>
+                const SessionGameFlowScaffold(gameType: 'scenario'),
       ),
       GoRoute(
         path: RouteNames.loveMap,

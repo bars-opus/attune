@@ -1,6 +1,7 @@
 // lib/features/games/thirty_six_questions/presentation/screens/thirty_six_journey_overview_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/community/presentation/widgets/community_questions_entry.dart';
 import 'package:attune/features/games/thirty_six_questions/data/models/thirty_six_question_chapter.dart';
 import 'package:attune/features/games/thirty_six_questions/data/models/thirty_six_question_journey.dart';
 import 'package:flutter/material.dart';
@@ -207,6 +208,15 @@ class ThirtySixJourneyOverviewScreen extends ConsumerWidget {
                         nextChapter: nextChapter,
                       ),
                     ),
+                  // What other couples are asking. Moved off the games
+                  // hub, which is being removed — and it belongs beside
+                  // the questions rather than on a generic list of games.
+                  SliverPadding(
+                    padding: EdgeInsets.symmetric(horizontal: Spacing.lg.w),
+                    sliver: const SliverToBoxAdapter(
+                      child: CommunityQuestionsEntry(),
+                    ),
+                  ),
                   SliverToBoxAdapter(child: SizedBox(height: Spacing.xl.h)),
                 ],
               );
