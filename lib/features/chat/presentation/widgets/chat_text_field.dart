@@ -956,6 +956,13 @@ class _ChatTextFieldState extends State<ChatTextField>
                         height: 1.25,
                       ),
                       decoration: InputDecoration(
+                        // The app-wide InputDecorationTheme sets
+                        // filled: true with a surface colour. Overriding
+                        // only the borders left a square-cornered filled
+                        // rectangle inside this rounded pill, whose corners
+                        // showed past the curve at the left edge. The pill
+                        // already paints the background.
+                        filled: false,
                         hintText: widget.hintText,
                         hintStyle: Theme.of(
                           context,
