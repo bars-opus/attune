@@ -41,26 +41,27 @@ class ChatDateChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return AnimatedOpacity(
       opacity: opacity,
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOut,
       child: Container(
+        key: const ValueKey('chat-date-chip'),
         padding: const EdgeInsets.symmetric(
           horizontal: Spacing.smMd,
           vertical: 5,
         ),
         decoration: BoxDecoration(
-          // Translucent dark, the way Telegram's chip sits over whatever
-          // wallpaper is behind it, rather than a themed surface that
-          // would disappear against some of them.
-          color: Colors.black.withValues(alpha: 0.28),
+          // Uses the app's inverse background pair so the floating and inline
+          // date chips stay legible over both chat wallpaper themes.
+          color: _dateChipFill(colorScheme),
           borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
         ),
         child: Text(
           label,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: Colors.white,
+            color: _dateChipText(colorScheme),
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -84,14 +85,12 @@ class ChatDateSeparator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final rule = Expanded(
       child: Container(
         key: const ValueKey('chat-date-rule'),
-        height: 1,
-        // Matched to the chip's own translucent-dark treatment rather than
-        // a theme divider, for the same reason: it sits over an arbitrary
-        // wallpaper, not a known surface.
-        color: Colors.black.withValues(alpha: 0.12),
+        height: 0.6,
+        color: _dateRuleColor(colorScheme),
       ),
     );
 
@@ -109,4 +108,19 @@ class ChatDateSeparator extends StatelessWidget {
       ],
     );
   }
+}
+
+Color _dateChipFill(ColorScheme colorScheme) {
+  // ignore: deprecated_member_use
+  return colorScheme.onBackground.withValues(alpha: 0.28);
+}
+
+Color _dateChipText(ColorScheme colorScheme) {
+  // ignore: deprecated_member_use
+  return colorScheme.background;
+}
+
+Color _dateRuleColor(ColorScheme colorScheme) {
+  // ignore: deprecated_member_use
+  return colorScheme.onBackground.withValues(alpha: 0.16);
 }

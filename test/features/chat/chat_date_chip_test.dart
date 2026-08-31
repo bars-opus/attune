@@ -2,8 +2,8 @@ import 'package:attune/features/chat/presentation/widgets/chat_date_chip.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Widget _wrap(Widget child) =>
-    MaterialApp(home: Scaffold(body: Center(child: child)));
+Widget _wrap(Widget child, {ThemeData? theme}) =>
+    MaterialApp(theme: theme, home: Scaffold(body: Center(child: child)));
 
 void main() {
   group('the label', () {
@@ -46,6 +46,39 @@ void main() {
     expect(find.text('12 October'), findsOneWidget);
   });
 
+  testWidgets('uses the inverse background pair in light and dark themes', (
+    tester,
+  ) async {
+    for (final brightness in Brightness.values) {
+      final theme = ThemeData(
+        brightness: brightness,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.green,
+          brightness: brightness,
+        ),
+      );
+      await tester.pumpWidget(
+        _wrap(const ChatDateChip(label: '12 October'), theme: theme),
+      );
+
+      final context = tester.element(find.byType(ChatDateChip));
+      final colorScheme = Theme.of(context).colorScheme;
+      final chip = tester.widget<Container>(
+        find.byKey(const ValueKey('chat-date-chip')),
+      );
+      final decoration = chip.decoration! as BoxDecoration;
+      final label = tester.widget<Text>(find.text('12 October'));
+
+      // ignore: deprecated_member_use
+      final expectedChipFill = colorScheme.onBackground.withValues(alpha: 0.28);
+      // ignore: deprecated_member_use
+      final expectedChipText = colorScheme.background;
+
+      expect(decoration.color, expectedChipFill);
+      expect(label.style?.color, expectedChipText);
+    }
+  });
+
   testWidgets('opacity 0 keeps it laid out but invisible', (tester) async {
     // The floating chip fades rather than unmounting, so its position does
     // not jump when it comes back.
@@ -79,6 +112,17 @@ void main() {
         findsNWidgets(2),
         reason: 'one rule each side, so the date sits ON the line',
       );
+
+      final context = tester.element(find.byType(ChatDateSeparator));
+      final colorScheme = Theme.of(context).colorScheme;
+      // ignore: deprecated_member_use
+      final expectedRuleColor = colorScheme.onBackground.withValues(
+        alpha: 0.16,
+      );
+      for (final rule in tester.widgetList<Container>(rules)) {
+        expect(rule.constraints?.minHeight, 0.6);
+        expect(rule.color, expectedRuleColor);
+      }
 
       // The date sits in the same pill the floating chip uses, so the two
       // read as one component that has simply stuck to the top.

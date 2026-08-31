@@ -15,7 +15,22 @@ class AttuneChatWallpaper extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        ExcludeSemantics(child: ColoredBox(color: chatColors.background)),
+        ExcludeSemantics(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  chatColors.background,
+                  chatColors.background,
+                  chatColors.backgroundAccent,
+                ],
+                stops: const [0, 0.34, 1],
+              ),
+            ),
+          ),
+        ),
         ExcludeSemantics(
           child: IgnorePointer(
             child: RepaintBoundary(

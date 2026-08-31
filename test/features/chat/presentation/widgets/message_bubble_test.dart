@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:attune/app/routing/app_router.dart';
 import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:attune/core/utils/animations/animated_scale_fade.dart';
+import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/providers/voice_playback_provider.dart';
@@ -61,6 +62,90 @@ void main() {
     );
 
     expect(find.text('This message was deleted'), findsOneWidget);
+  });
+
+  testWidgets('chat replies use the compact leading-bar treatment', (
+    tester,
+  ) async {
+    final reply = Message.fromRow({
+      'id': 'reply-style',
+      'client_message_id': 'reply-style-client',
+      'relationship_id': 'r1',
+      'sender_id': 'u1',
+      'content': 'New message',
+      'reply_to_message_id': 'parent',
+      'quoted_text': 'Earlier message',
+      'created_at': DateTime.now().toIso8601String(),
+    }, currentUserId: 'u1');
+
+    await tester.pumpWidget(
+      withScreenUtil(
+        MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(message: reply, parentIsMine: false),
+          ),
+        ),
+      ),
+    );
+
+    final bubble = tester.widget<UniversalBubble>(find.byType(UniversalBubble));
+    expect(bubble.bubbleColor, ChatColorScheme.light.senderBubble);
+    expect(
+      bubble.quoteBackgroundColor,
+      ChatColorScheme.light.senderReplySurface,
+    );
+    expect(
+      bubble.quoteMineBorderColor,
+      ChatColorScheme.light.senderReplyAccent,
+    );
+    expect(
+      bubble.quotePartnerBorderColor,
+      ChatColorScheme.light.senderReplyAccent,
+    );
+    expect(bubble.quoteBarOnLeft, isTrue);
+    expect(bubble.quoteAuthorAlignLeft, isTrue);
+    expect(bubble.showQuoteIcon, isFalse);
+    expect(bubble.footerInsideBubble, isTrue);
+  });
+
+  testWidgets('dark chat keeps its existing bubble and reply colors', (
+    tester,
+  ) async {
+    final reply = Message.fromRow({
+      'id': 'dark-reply-style',
+      'client_message_id': 'dark-reply-style-client',
+      'relationship_id': 'r1',
+      'sender_id': 'partner',
+      'content': 'New message',
+      'reply_to_message_id': 'parent',
+      'quoted_text': 'Earlier message',
+      'created_at': DateTime.now().toIso8601String(),
+    }, currentUserId: 'me');
+    final darkTheme = ThemeData(
+      brightness: Brightness.dark,
+      extensions: const [ChatColorScheme.dark],
+    );
+
+    await tester.pumpWidget(
+      withScreenUtil(
+        MaterialApp(
+          theme: darkTheme,
+          home: Scaffold(
+            body: MessageBubble(message: reply, parentIsMine: false),
+          ),
+        ),
+      ),
+    );
+
+    final bubble = tester.widget<UniversalBubble>(find.byType(UniversalBubble));
+    expect(
+      bubble.bubbleColor,
+      darkTheme.colorScheme.surface.withValues(alpha: 0.94),
+    );
+    expect(bubble.quoteBarOnLeft, isFalse);
+    expect(bubble.quoteAuthorAlignLeft, isFalse);
+    expect(bubble.showQuoteIcon, isTrue);
+    expect(bubble.quotePartnerBorderColor, ChatColorScheme.dark.pattern);
   });
 
   testWidgets('shows a star adornment when the message is starred', (

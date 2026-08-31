@@ -57,6 +57,35 @@ void main() {
     expect(find.text('4'), findsOneWidget);
   });
 
+  testWidgets('uses the compact circular player and clock-form duration', (
+    tester,
+  ) async {
+    const accent = Color(0xFF2296F3);
+    const metadata = Color(0xFF8B918E);
+    await tester.pumpWidget(
+      _wrap(
+        VoiceMessagePlayer(
+          messageId: 'styled',
+          resolveAudioUrl: () async => 'https://example.com/voice.m4a',
+          durationMs: 23000,
+          waveform: List.filled(100, 80),
+          accentColor: accent,
+          metadataColor: metadata,
+        ),
+      ),
+    );
+
+    final playIcon = tester.widget<Icon>(find.byIcon(Icons.play_arrow_rounded));
+    final playerContext = tester.element(find.byType(VoiceMessagePlayer));
+    // ignore: deprecated_member_use
+    expect(playIcon.color, Theme.of(playerContext).colorScheme.background);
+    final duration = tester.widget<RollingDuration>(
+      find.byType(RollingDuration),
+    );
+    expect(duration.alwaysShowMinutes, isTrue);
+    expect(duration.style?.color, metadata);
+  });
+
   testWidgets(
     'starting playback on one bubble sets it as the app-wide currently-playing id',
     (tester) async {

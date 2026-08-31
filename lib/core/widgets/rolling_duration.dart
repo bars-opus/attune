@@ -18,6 +18,7 @@ class RollingDuration extends StatelessWidget {
     required this.value,
     this.style,
     this.keyPrefix = 'rolling-duration',
+    this.alwaysShowMinutes = false,
   });
 
   final Duration value;
@@ -26,12 +27,16 @@ class RollingDuration extends StatelessWidget {
   /// Distinguishes the counters when several are on screen at once.
   final String keyPrefix;
 
+  /// Keeps short values in clock form (for example, 0:23). Recording
+  /// surfaces retain the compact seconds-only default.
+  final bool alwaysShowMinutes;
+
   @override
   Widget build(BuildContext context) {
     final minutes = value.inMinutes;
     final seconds = value.inSeconds % 60;
 
-    if (minutes == 0) {
+    if (minutes == 0 && !alwaysShowMinutes) {
       return AnimatedRollingCounter(
         key: ValueKey('$keyPrefix-seconds'),
         count: value.inSeconds,

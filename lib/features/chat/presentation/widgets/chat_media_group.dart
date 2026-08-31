@@ -72,6 +72,7 @@ class ChatMediaGroup extends StatefulWidget {
     required this.messages,
     required this.isMine,
     required this.bubbleColor,
+    required this.labelColor,
     this.onImageTap,
     this.onVideoTap,
   }) : assert(messages.length > 1);
@@ -81,6 +82,7 @@ class ChatMediaGroup extends StatefulWidget {
   final List<Message> messages;
   final bool isMine;
   final Color bubbleColor;
+  final Color labelColor;
   final void Function(Message message)? onImageTap;
   final void Function(Message message)? onVideoTap;
 
@@ -128,7 +130,6 @@ class _ChatMediaGroupState extends State<ChatMediaGroup> {
         widget.messages.where((message) => message.hasImage).length;
     final videoCount = widget.messages.length - imageCount;
     final label = _mediaLabel(imageCount, videoCount);
-    final labelColor = Theme.of(context).colorScheme.primary;
     final stackAlignment =
         widget.isMine ? Alignment.centerRight : Alignment.centerLeft;
 
@@ -157,12 +158,16 @@ class _ChatMediaGroupState extends State<ChatMediaGroup> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Icon(Icons.grid_view_rounded, size: 17, color: labelColor),
+                  Icon(
+                    Icons.grid_view_rounded,
+                    size: 17,
+                    color: widget.labelColor,
+                  ),
                   const SizedBox(width: 6),
                   Text(
                     label,
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: labelColor,
+                      color: widget.labelColor,
                       fontWeight: FontWeight.w700,
                     ),
                   ),

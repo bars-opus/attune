@@ -19,7 +19,6 @@ import 'package:attune/features/chat/presentation/widgets/video_message_thumbnai
 import 'package:attune/features/chat/presentation/widgets/voice_message_player.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
@@ -216,6 +215,7 @@ class MessageBubble extends StatelessWidget {
     final isMine = message.isMine;
     final colorScheme = Theme.of(context).colorScheme;
     final chatColors = Theme.of(context).chatColors;
+    final isLightMode = Theme.of(context).brightness == Brightness.light;
     final bubbleColor = _bubbleFill(context, isMine: isMine);
     final bubbleGradient = _bubbleGradient(context, isMine: isMine);
     final bubbleRadius = _groupedBubbleRadius(
@@ -226,6 +226,18 @@ class MessageBubble extends StatelessWidget {
     final isMediaGroup = mediaGroup.length > 1;
     final onBubbleColor =
         isMine ? chatColors.onSenderBubble : chatColors.onReceiverBubble;
+    final metadataColor =
+        isMine ? chatColors.senderMetadata : chatColors.receiverMetadata;
+    final replySurface =
+        isLightMode
+            ? (isMine
+                ? chatColors.senderReplySurface
+                : chatColors.receiverReplySurface)
+            : (isMine
+                ? Colors.black.withValues(alpha: 0.18)
+                : chatColors.onReceiverBubble.withValues(alpha: 0.08));
+    final replyAccent =
+        isMine ? chatColors.senderReplyAccent : chatColors.receiverReplyAccent;
     final replyBubbleTextColor = onBubbleColor;
     final canOpenActions =
         currentUserId != null && !message.isDeleted && !message.isPreparing;
@@ -313,6 +325,7 @@ class MessageBubble extends StatelessWidget {
                           isGrouped || isGroupedWithPrevious ? 0 : 4,
                       footerSpacing: hasVisibleFooter ? 4 : 0,
                       showFooter: hasVisibleFooter,
+                      footerInsideBubble: !isMediaGroup,
                       dragOffsetOverride:
                           timestampRevealOffset > 0
                               ? -timestampRevealOffset
@@ -328,15 +341,15 @@ class MessageBubble extends StatelessWidget {
                       // little smaller reads as a preview/citation rather than a
                       // second full-size message, while UniversalBubble's own 12px
                       // fallback read too small next to the bumped-up content text.
-                      quoteBackgroundColor:
-                          isMine
-                              ? Colors.black.withValues(alpha: 0.18)
-                              : chatColors.onReceiverBubble.withValues(
-                                alpha: 0.08,
-                              ),
+                      quoteBackgroundColor: replySurface,
                       quoteForegroundColor: replyBubbleTextColor,
-                      quoteTextStyle: Theme.of(context).textTheme.bodyMedium
-                          ?.copyWith(color: replyBubbleTextColor),
+                      quoteTextStyle: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(
+                        color: replyBubbleTextColor,
+                        fontSize: 14,
+                        height: 1.18,
+                      ),
                       // "You" when replying to your own message; the partner's real
                       // chat name otherwise (falls back to "Partner" if conversation
                       // wasn't passed — matches this file's existing nullable-
@@ -354,8 +367,15 @@ class MessageBubble extends StatelessWidget {
                       // null-means-unknown gate as quoteAuthorLabel.
                       quoteAuthorIsMine:
                           message.quotedText == null ? null : parentIsMine,
-                      quoteMineBorderColor: chatColors.relationshipAccent,
-                      quotePartnerBorderColor: chatColors.pattern,
+                      quoteMineBorderColor:
+                          isLightMode
+                              ? replyAccent
+                              : chatColors.relationshipAccent,
+                      quotePartnerBorderColor:
+                          isLightMode ? replyAccent : chatColors.pattern,
+                      quoteBarOnLeft: isLightMode,
+                      quoteAuthorAlignLeft: isLightMode,
+                      showQuoteIcon: !isLightMode,
                       onJumpToParent:
                           message.quotedText == null ? null : onJumpToParent,
                       isHighlighted: isHighlighted,
@@ -422,6 +442,7 @@ class MessageBubble extends StatelessWidget {
                             mediaGroup: mediaGroup,
                             isMine: isMine,
                             bubbleColor: bubbleColor,
+                            mediaLabelColor: metadataColor,
                             conversation: conversation,
                             onImageTap: onImageTap,
                             onVideoTap: onVideoTap,
@@ -439,7 +460,7 @@ class MessageBubble extends StatelessWidget {
                                 showStatus: showStatus,
                                 showTime: showLatestTimestamp,
                                 showEdited: false,
-                                onBubbleColor: chatColors.metadata,
+                                onBubbleColor: metadataColor,
                                 onRetry: onRetry,
                                 onRemove: onRemove,
                                 onShowEditHistory: onShowEditHistory,
@@ -551,7 +572,10 @@ class _RevealTimestamp extends StatelessWidget {
 Color _bubbleFill(BuildContext context, {required bool isMine}) {
   final chatColors = Theme.of(context).chatColors;
   if (isMine) return chatColors.senderBubble;
-  return Theme.of(context).colorScheme.surface.withValues(alpha: 0.94);
+  if (Theme.of(context).brightness == Brightness.dark) {
+    return Theme.of(context).colorScheme.surface.withValues(alpha: 0.94);
+  }
+  return chatColors.receiverBubble;
 }
 
 Gradient? _bubbleGradient(BuildContext context, {required bool isMine}) {
@@ -851,6 +875,7 @@ class _BubbleBody extends StatelessWidget {
     required this.message,
     required this.isMine,
     required this.bubbleColor,
+    required this.mediaLabelColor,
     required this.conversation,
     required this.onBubbleColor,
     this.mediaGroup = const [],
@@ -863,6 +888,7 @@ class _BubbleBody extends StatelessWidget {
   final List<Message> mediaGroup;
   final bool isMine;
   final Color bubbleColor;
+  final Color mediaLabelColor;
   final Conversation? conversation;
   final void Function(Message message)? onImageTap;
   final void Function(Message message)? onVideoTap;
@@ -901,6 +927,7 @@ class _BubbleBody extends StatelessWidget {
         messages: mediaGroup,
         isMine: isMine,
         bubbleColor: bubbleColor,
+        labelColor: mediaLabelColor,
         onImageTap: onImageTap,
         onVideoTap: onVideoTap,
       );
@@ -1012,6 +1039,12 @@ class _BubbleBody extends StatelessWidget {
                 messageId: message.clientMessageId,
                 durationMs: message.mediaDurationMs ?? 0,
                 waveform: message.waveform ?? const [],
+                foregroundColor: onBubbleColor,
+                accentColor: Theme.of(context).chatColors.voiceAccent,
+                metadataColor:
+                    isMine
+                        ? Theme.of(context).chatColors.senderMetadata
+                        : Theme.of(context).chatColors.receiverMetadata,
                 resolveAudioUrl: () async {
                   // A local file that still exists plays straight from disk,
                   // no signing needed.
@@ -1040,6 +1073,12 @@ class _BubbleBody extends StatelessWidget {
           // deliberately leaves it null — so this is exactly "has the
           // recipient opened it".
           openedByRecipient: message.viewedAt != null,
+          foregroundColor: onBubbleColor,
+          accentColor: Theme.of(context).chatColors.voiceAccent,
+          metadataColor:
+              isMine
+                  ? Theme.of(context).chatColors.senderMetadata
+                  : Theme.of(context).chatColors.receiverMetadata,
           onTap: () async {
             if (message.isMine && message.viewedAt != null) return;
             if (!message.isMine && remaining <= 0) return;
@@ -1215,9 +1254,12 @@ class _BubbleBody extends StatelessWidget {
           // bodyLarge (17px) matches how WhatsApp/iMessage actually size
           // message text; bodyMedium (14px, AppTextTheme's paragraph
           // default) reads small for a chat bubble specifically.
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: color, fontSize: 14.h),
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            color: color,
+            fontSize: 16,
+            fontWeight: FontWeight.w400,
+            height: 1.2,
+          ),
         ),
       );
     }

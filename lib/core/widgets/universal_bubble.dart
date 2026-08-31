@@ -74,6 +74,9 @@ class UniversalBubble extends StatefulWidget {
     this.quoteAuthorIsMine,
     this.quoteMineBorderColor,
     this.quotePartnerBorderColor,
+    this.quoteBarOnLeft = false,
+    this.quoteAuthorAlignLeft = false,
+    this.showQuoteIcon = true,
     this.showShadow = false,
     this.showCardBorder = false,
     this.verticalPadding = 4,
@@ -90,6 +93,7 @@ class UniversalBubble extends StatefulWidget {
     this.onEndRevealDragChanged,
     this.footerSpacing = 4,
     this.showFooter = true,
+    this.footerInsideBubble = false,
   });
 
   /// True puts the bubble on the right, false on the left.
@@ -230,6 +234,18 @@ class UniversalBubble extends StatefulWidget {
   /// colorScheme.primary (chat's "primary for partner" look) when null.
   final Color? quotePartnerBorderColor;
 
+  /// Pins the quote accent bar to the leading edge. Chat opts in for the
+  /// compact reply treatment; other bubble types retain their prior
+  /// alignment-aware placement.
+  final bool quoteBarOnLeft;
+
+  /// Keeps the quoted author aligned with the quoted text even in a bubble
+  /// owned by the current user.
+  final bool quoteAuthorAlignLeft;
+
+  /// Whether to show the decorative quote glyph inside the preview.
+  final bool showQuoteIcon;
+
   /// Adds a slight drop shadow to the bubble fill. Defaults to false so
   /// ForumPostBubble (this widget's other caller) sees zero visual change —
   /// MessageBubble opts in to match the composer's own floating-shadow look.
@@ -300,6 +316,11 @@ class UniversalBubble extends StatefulWidget {
   /// interact with column spacing and parent measurement, so chat turns the
   /// whole footer block off when no metadata should be visible.
   final bool showFooter;
+
+  /// Places metadata inside the bubble's lower edge. Chat opts in for text,
+  /// voice, and streak messages; media stacks keep their existing external
+  /// metadata treatment.
+  final bool footerInsideBubble;
 
   @override
   State<UniversalBubble> createState() => _UniversalBubbleState();
@@ -378,6 +399,8 @@ class _UniversalBubbleState extends State<UniversalBubble>
         : (widget.quotePartnerBorderColor ?? colorScheme.primary);
   }
 
+  bool get _quoteBarIsOnLeft => widget.quoteBarOnLeft || !widget.isMine;
+
   BorderRadius get _bubbleBorderRadius =>
       widget.bubbleBorderRadiusOverride ??
       BorderRadius.circular(widget.bubbleBorderRadius);
@@ -405,9 +428,9 @@ class _UniversalBubbleState extends State<UniversalBubble>
   BorderRadius _quoteBlockRadius() {
     const radius = Radius.circular(8);
     if (widget.quoteAuthorIsMine == null) return BorderRadius.circular(8);
-    return widget.isMine
-        ? const BorderRadius.only(topLeft: radius, bottomLeft: radius)
-        : const BorderRadius.only(topRight: radius, bottomRight: radius);
+    return _quoteBarIsOnLeft
+        ? const BorderRadius.only(topRight: radius, bottomRight: radius)
+        : const BorderRadius.only(topLeft: radius, bottomLeft: radius);
   }
 
   /// Wraps [quoteBlock] with a WhatsApp-style colored side bar. The SIDE
@@ -441,9 +464,12 @@ class _UniversalBubbleState extends State<UniversalBubble>
       decoration: BoxDecoration(
         color: color,
         borderRadius:
-            widget.isMine
-                ? const BorderRadius.only(topRight: radius, bottomRight: radius)
-                : const BorderRadius.only(topLeft: radius, bottomLeft: radius),
+            _quoteBarIsOnLeft
+                ? const BorderRadius.only(topLeft: radius, bottomLeft: radius)
+                : const BorderRadius.only(
+                  topRight: radius,
+                  bottomRight: radius,
+                ),
       ),
     );
     // IntrinsicHeight (not CrossAxisAlignment.stretch, which demands
@@ -455,9 +481,9 @@ class _UniversalBubbleState extends State<UniversalBubble>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children:
-            widget.isMine
-                ? [Flexible(child: quoteBlock), bar]
-                : [bar, Flexible(child: quoteBlock)],
+            _quoteBarIsOnLeft
+                ? [bar, Flexible(child: quoteBlock)]
+                : [Flexible(child: quoteBlock), bar],
       ),
     );
   }
@@ -537,7 +563,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
                       // the left) — icon and text column pinned to
                       // opposite ends of the row.
                       children: [
-                        if (widget.isMine) ...[
+                        if (widget.showQuoteIcon && widget.isMine) ...[
                           _quoteIcon(),
                           const SizedBox(width: 4),
                         ],
@@ -549,7 +575,9 @@ class _UniversalBubbleState extends State<UniversalBubble>
                               if (widget.quoteAuthorLabel != null)
                                 Align(
                                   alignment:
-                                      widget.isMine
+                                      widget.quoteAuthorAlignLeft
+                                          ? Alignment.centerLeft
+                                          : widget.isMine
                                           ? Alignment.centerRight
                                           : Alignment.centerLeft,
                                   child: Text(
@@ -589,7 +617,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
                             ],
                           ),
                         ),
-                        if (!widget.isMine) ...[
+                        if (widget.showQuoteIcon && !widget.isMine) ...[
                           const SizedBox(width: 4),
                           _quoteIcon(),
                         ],
@@ -601,6 +629,10 @@ class _UniversalBubbleState extends State<UniversalBubble>
               const SizedBox(height: 4),
             ],
             widget.content,
+            if (widget.showFooter && widget.footerInsideBubble) ...[
+              SizedBox(height: widget.footerSpacing),
+              Align(alignment: Alignment.centerRight, child: widget.footer),
+            ],
           ],
         ),
       ),
@@ -1155,7 +1187,9 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                                       mainAxisSize:
                                                           MainAxisSize.min,
                                                       children: [
-                                                        if (widget.isMine) ...[
+                                                        if (widget
+                                                                .showQuoteIcon &&
+                                                            widget.isMine) ...[
                                                           _quoteIcon(),
                                                           const SizedBox(
                                                             width: 4,
@@ -1175,7 +1209,11 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                                                   null)
                                                                 Align(
                                                                   alignment:
-                                                                      widget.isMine
+                                                                      widget.quoteAuthorAlignLeft
+                                                                          ? Alignment
+                                                                              .centerLeft
+                                                                          : widget
+                                                                              .isMine
                                                                           ? Alignment
                                                                               .centerRight
                                                                           : Alignment
@@ -1228,7 +1266,9 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                                             ],
                                                           ),
                                                         ),
-                                                        if (!widget.isMine) ...[
+                                                        if (widget
+                                                                .showQuoteIcon &&
+                                                            !widget.isMine) ...[
                                                           const SizedBox(
                                                             width: 4,
                                                           ),
@@ -1242,6 +1282,17 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                               const SizedBox(height: 4),
                                             ],
                                             widget.content,
+                                            if (widget.showFooter &&
+                                                widget.footerInsideBubble) ...[
+                                              SizedBox(
+                                                height: widget.footerSpacing,
+                                              ),
+                                              Align(
+                                                alignment:
+                                                    Alignment.centerRight,
+                                                child: widget.footer,
+                                              ),
+                                            ],
                                           ],
                                         ),
                                       ),
@@ -1249,7 +1300,8 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                   ),
                                 ),
                               ),
-                              if (widget.showFooter) ...[
+                              if (widget.showFooter &&
+                                  !widget.footerInsideBubble) ...[
                                 SizedBox(height: widget.footerSpacing),
                                 ConstrainedBox(
                                   constraints: BoxConstraints(

@@ -15,6 +15,9 @@ class StreakBubble extends StatelessWidget {
     this.isMine = false,
     this.openedByRecipient = false,
     this.isSending = false,
+    this.foregroundColor,
+    this.metadataColor,
+    this.accentColor,
   });
 
   /// Views left for the recipient. 0 means spent.
@@ -35,6 +38,9 @@ class StreakBubble extends StatelessWidget {
   /// Whether the recipient has opened it. Only meaningful to the sender:
   /// it is what ends their replay window, and their only read receipt.
   final bool openedByRecipient;
+  final Color? foregroundColor;
+  final Color? metadataColor;
+  final Color? accentColor;
 
   /// The sender is done the moment the recipient opens it. Until then
   /// they may replay freely — the streak is still in flight, and
@@ -49,6 +55,9 @@ class StreakBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
+    final foreground = foregroundColor ?? colorScheme.onSurface;
+    final metadata = metadataColor ?? colorScheme.onSurfaceVariant;
+    final accent = accentColor ?? colorScheme.primary;
 
     if (isSending) {
       return Row(
@@ -59,11 +68,17 @@ class StreakBubble extends StatelessWidget {
             height: 14,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation(colorScheme.primary),
+              valueColor: AlwaysStoppedAnimation(accent),
             ),
           ),
           const SizedBox(width: 8),
-          Text('Sending…', style: textTheme.bodyMedium),
+          Text(
+            'Sending…',
+            style: textTheme.bodyMedium?.copyWith(
+              color: foreground,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ],
       );
     }
@@ -80,16 +95,14 @@ class StreakBubble extends StatelessWidget {
           Icon(
             Icons.check_box_outline_blank_rounded,
             size: 18,
-            color: colorScheme.onSurfaceVariant,
+            color: metadata,
           ),
           const SizedBox(width: 6),
           Text(
             // The only read receipt a streak gives, and now the same
             // word the recipient sees.
             'Opened',
-            style: textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
+            style: textTheme.bodyMedium?.copyWith(color: metadata),
           ),
         ],
       );
@@ -119,19 +132,42 @@ class StreakBubble extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(24),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        padding: const EdgeInsets.symmetric(vertical: 2),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              isReplay ? Icons.replay_rounded : Icons.play_arrow_rounded,
-              size: 22,
-              color: isReplay ? replayGreen : colorScheme.primary,
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: (isReplay ? replayGreen : accent).withValues(
+                  alpha: 0.14,
+                ),
+                shape: BoxShape.circle,
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x14000000),
+                    blurRadius: 3,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: Icon(
+                isReplay ? Icons.replay_rounded : Icons.play_arrow_rounded,
+                size: 24,
+                color: isReplay ? replayGreen : accent,
+              ),
             ),
-            const SizedBox(width: 6),
-            Text(label, style: textTheme.bodyMedium),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: textTheme.bodyMedium?.copyWith(
+                color: foreground,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ],
         ),
       ),

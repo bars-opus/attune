@@ -18,6 +18,9 @@ class VoiceMessagePlayer extends ConsumerStatefulWidget {
     required this.resolveAudioUrl,
     required this.durationMs,
     required this.waveform,
+    this.foregroundColor,
+    this.metadataColor,
+    this.accentColor,
   });
 
   final String messageId;
@@ -36,6 +39,9 @@ class VoiceMessagePlayer extends ConsumerStatefulWidget {
 
   final int durationMs;
   final List<int> waveform;
+  final Color? foregroundColor;
+  final Color? metadataColor;
+  final Color? accentColor;
 
   @override
   ConsumerState<VoiceMessagePlayer> createState() => _VoiceMessagePlayerState();
@@ -179,9 +185,13 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
             : _position.inMilliseconds / total.inMilliseconds;
 
     final colorScheme = Theme.of(context).colorScheme;
+    final foreground = widget.foregroundColor ?? colorScheme.onSurface;
+    final metadata = widget.metadataColor ?? colorScheme.onSurfaceVariant;
+    final accent = widget.accentColor ?? colorScheme.primary;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Semantics(
           button: true,
@@ -189,52 +199,73 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
           child: InkWell(
             onTap: _togglePlayback,
             customBorder: const CircleBorder(),
-            child: SizedBox(
-              width: 40,
-              height: 40,
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: accent,
+                shape: BoxShape.circle,
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x18000000),
+                    blurRadius: 4,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+              ),
               child: Icon(
                 _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                size: 30,
-                color: colorScheme.onSurface,
+                size: 32,
+                // ignore: deprecated_member_use
+                color: colorScheme.background,
               ),
             ),
           ),
         ),
-        const SizedBox(width: 4),
-        // Scrub by dragging as well as tapping: on a ~140px waveform a
-        // tap-only target makes precise seeking within a multi-minute
-        // message impractical.
-        GestureDetector(
-          key: const ValueKey('voice_message_waveform'),
-          behavior: HitTestBehavior.opaque,
-          onTapUp: (details) => _seekFromLocalX(details.localPosition.dx),
-          onHorizontalDragStart:
-              (details) => _seekFromLocalX(details.localPosition.dx),
-          onHorizontalDragUpdate:
-              (details) => _seekFromLocalX(details.localPosition.dx),
-          child: SizedBox(
-            width: 140,
-            height: 34,
-            child: CustomPaint(
-              painter: _WaveformPainter(
-                waveform: widget.waveform,
-                progressFraction: progressFraction,
-                color: colorScheme.primary,
-                trackColor: colorScheme.onSurfaceVariant,
+        const SizedBox(width: 10),
+        SizedBox(
+          width: _waveformWidth,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Scrub by dragging as well as tapping: the waveform remains
+              // the full gesture target even though the duration now sits
+              // beneath it.
+              GestureDetector(
+                key: const ValueKey('voice_message_waveform'),
+                behavior: HitTestBehavior.opaque,
+                onTapUp: (details) => _seekFromLocalX(details.localPosition.dx),
+                onHorizontalDragStart:
+                    (details) => _seekFromLocalX(details.localPosition.dx),
+                onHorizontalDragUpdate:
+                    (details) => _seekFromLocalX(details.localPosition.dx),
+                child: SizedBox(
+                  width: _waveformWidth,
+                  height: 30,
+                  child: CustomPaint(
+                    painter: _WaveformPainter(
+                      waveform: widget.waveform,
+                      progressFraction: progressFraction,
+                      color: accent,
+                      trackColor: foreground,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        // Rolls rather than jumps, so the ticking second registers at a
-        // glance without re-reading the digits — the same treatment the
-        // recording scrim gives its own timer.
-        RollingDuration(
-          keyPrefix: 'voice-playback-duration',
-          value: _isPlaying || _position > Duration.zero ? _position : total,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-            fontFeatures: const [FontFeature.tabularFigures()],
+              const SizedBox(height: 1),
+              RollingDuration(
+                keyPrefix: 'voice-playback-duration',
+                value:
+                    _isPlaying || _position > Duration.zero ? _position : total,
+                alwaysShowMinutes: true,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: metadata,
+                  fontWeight: FontWeight.w500,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -253,7 +284,7 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
     unawaited(_seekToFraction((localX / _waveformWidth).clamp(0.0, 1.0)));
   }
 
-  static const double _waveformWidth = 140;
+  static const double _waveformWidth = 172;
 }
 
 /// The bar heights (0..1) the playback waveform draws for [waveform] at
