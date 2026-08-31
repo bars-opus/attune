@@ -105,7 +105,9 @@ void main() {
     expect(bubble.quoteBarOnLeft, isTrue);
     expect(bubble.quoteAuthorAlignLeft, isTrue);
     expect(bubble.showQuoteIcon, isFalse);
-    expect(bubble.footerInsideBubble, isTrue);
+    // The time and status now sit UNDER the bubble for every message type,
+    // matching what media groups already did.
+    expect(bubble.footerInsideBubble, isFalse);
   });
 
   testWidgets('dark chat keeps its existing bubble and reply colors', (

@@ -325,7 +325,13 @@ class MessageBubble extends StatelessWidget {
                           isGrouped || isGroupedWithPrevious ? 0 : 4,
                       footerSpacing: hasVisibleFooter ? 4 : 0,
                       showFooter: hasVisibleFooter,
-                      footerInsideBubble: !isMediaGroup,
+                      // Under the bubble for every message type. The
+                      // metadata describes the message rather than being
+                      // part of it, and inside the lower edge it crowded
+                      // the text on a short message. Media groups already
+                      // put it outside, so this also settles a
+                      // disagreement between the two treatments.
+                      footerInsideBubble: false,
                       dragOffsetOverride:
                           timestampRevealOffset > 0
                               ? -timestampRevealOffset
