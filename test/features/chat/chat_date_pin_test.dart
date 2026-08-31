@@ -63,7 +63,7 @@ void main() {
     // rows, which were its only real consumers.
     expect(
       src,
-      contains('EdgeInsets.fromLTRB(0, 10, 0, 96)'),
+      contains('EdgeInsets.fromLTRB(0, 10, 0, 120)'),
       reason: 'a list-level horizontal inset clips the date rule',
     );
     expect(

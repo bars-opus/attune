@@ -1707,7 +1707,11 @@ class _MessageListState extends ConsumerState<_MessageList>
                 // padding clips it however wide the row asks to be. The
                 // 8px moves onto the message rows themselves, which are
                 // the only children that wanted it.
-                padding: const EdgeInsets.fromLTRB(0, 10, 0, 96),
+                // 120, not 96: the time and status moved BELOW the
+                // bubble (a934e840), adding height under the last message
+                // that the old reserve did not account for — so the footer
+                // ended up sitting against the composer.
+                padding: const EdgeInsets.fromLTRB(0, 10, 0, 120),
                 itemCount:
                     state.messages.length + (state.isLoadingMore ? 1 : 0),
                 itemBuilder: (context, index) {
