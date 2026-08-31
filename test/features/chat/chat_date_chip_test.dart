@@ -20,10 +20,16 @@ void main() {
       expect(chatDateLabel(DateTime(2026, 10, 8), now: now), 'Thursday');
     });
 
-    test('older than a week reads as a date, and gains a year once past it', () {
-      expect(chatDateLabel(DateTime(2026, 9, 3), now: now), '3 September');
-      expect(chatDateLabel(DateTime(2025, 9, 3), now: now), '3 September 2025');
-    });
+    test(
+      'older than a week reads as a date, and gains a year once past it',
+      () {
+        expect(chatDateLabel(DateTime(2026, 9, 3), now: now), '3 September');
+        expect(
+          chatDateLabel(DateTime(2025, 9, 3), now: now),
+          '3 September 2025',
+        );
+      },
+    );
 
     test('a date is judged by its local day, not by elapsed hours', () {
       // 23:59 yesterday is 31 minutes before `now`, but it is still
@@ -55,5 +61,43 @@ void main() {
       ),
     );
     expect(opacity.opacity, 0);
+  });
+
+  group('the inline separator', () {
+    testWidgets('runs a rule to both edges with the date on it', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(const ChatDateSeparator(label: '12 October')),
+      );
+
+      expect(find.text('12 October'), findsOneWidget);
+
+      final rules = find.byKey(const ValueKey('chat-date-rule'));
+      expect(
+        rules,
+        findsNWidgets(2),
+        reason: 'one rule each side, so the date sits ON the line',
+      );
+
+      final labelRect = tester.getRect(find.text('12 October'));
+      final left = tester.getRect(rules.first);
+      final right = tester.getRect(rules.last);
+
+      expect(left.right, lessThanOrEqualTo(labelRect.left));
+      expect(right.left, greaterThanOrEqualTo(labelRect.right));
+      expect(
+        left.center.dy,
+        moreOrLessEquals(labelRect.center.dy, epsilon: 1.5),
+        reason: 'the rule cuts through the middle of the date',
+      );
+    });
+
+    testWidgets('the pinned chip carries no rule', (tester) async {
+      // It floats over the messages: a line running to both edges would
+      // read as dividing them rather than labelling a scroll position.
+      await tester.pumpWidget(_wrap(const ChatDateChip(label: '12 October')));
+      expect(find.byKey(const ValueKey('chat-date-rule')), findsNothing);
+    });
   });
 }

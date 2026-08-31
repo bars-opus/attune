@@ -68,3 +68,48 @@ class ChatDateChip extends StatelessWidget {
     );
   }
 }
+
+/// The inline date separator: a rule running to both screen edges with the
+/// day's label sitting on it.
+///
+/// Distinct from [ChatDateChip], which is what floats at the top while
+/// scrolling. The rule suits an inline separator — it divides one day's
+/// messages from the next — and would be wrong on the pinned chip, where a
+/// line to both edges reads as cutting the conversation in half rather
+/// than labelling a scroll position.
+class ChatDateSeparator extends StatelessWidget {
+  const ChatDateSeparator({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final rule = Expanded(
+      child: Container(
+        key: const ValueKey('chat-date-rule'),
+        height: 1,
+        // Matched to the chip's own translucent-dark treatment rather than
+        // a theme divider, for the same reason: it sits over an arbitrary
+        // wallpaper, not a known surface.
+        color: Colors.black.withValues(alpha: 0.12),
+      ),
+    );
+
+    return Row(
+      children: [
+        rule,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.smMd),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: Colors.black.withValues(alpha: 0.55),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        rule,
+      ],
+    );
+  }
+}

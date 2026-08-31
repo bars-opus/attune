@@ -1697,7 +1697,12 @@ class _MessageListState extends ConsumerState<_MessageList>
                 // stacked in flow beneath it. Generous estimate covering the tallest
                 // composer state (multi-line text growing the field to maxLines:5)
                 // plus safe-area/keyboard-adjacent breathing room.
-                padding: const EdgeInsets.fromLTRB(8, 10, 8, 96),
+                // No horizontal inset on the LIST: the date separator's
+                // rule has to reach both screen edges, and a list-level
+                // padding clips it however wide the row asks to be. The
+                // 8px moves onto the message rows themselves, which are
+                // the only children that wanted it.
+                padding: const EdgeInsets.fromLTRB(0, 10, 0, 96),
                 itemCount:
                     state.messages.length + (state.isLoadingMore ? 1 : 0),
                 itemBuilder: (context, index) {
@@ -2098,7 +2103,13 @@ class _MessageListState extends ConsumerState<_MessageList>
                       // messages keep only a hairline gap so their squared inner
                       // corners still read as one connected stack; a sender switch
                       // or day boundary restores the normal breathing room.
-                      padding: EdgeInsets.only(top: isGrouped ? 3 : 12),
+                      padding: EdgeInsets.only(
+                        top: isGrouped ? 3 : 12,
+                        // Inherited from the list, which no longer applies it
+                        // so the date rule can span the full width.
+                        left: 8,
+                        right: 8,
+                      ),
                       // Opens the row's own vertical space as it arrives, so
                       // the messages above are physically displaced by exactly
                       // this bubble's height instead of jumping to their new
@@ -2136,10 +2147,8 @@ class _MessageListState extends ConsumerState<_MessageList>
                       row,
                       Padding(
                         padding: const EdgeInsets.only(top: 12, bottom: 4),
-                        child: Center(
-                          child: ChatDateChip(
-                            label: chatDateLabel(message.createdAt),
-                          ),
+                        child: ChatDateSeparator(
+                          label: chatDateLabel(message.createdAt),
                         ),
                       ),
                     ],

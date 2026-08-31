@@ -55,4 +55,20 @@ void main() {
     );
     expect(disposeBody, contains('_pinnedDateTimer'));
   });
+
+  test('the list carries no horizontal inset, so the rule spans it', () {
+    // The 8px used to sit on the LIST, which clipped the separator's rule
+    // 8px short of each edge however wide the row asked to be — an
+    // OverflowBox could not escape it. The inset moved onto the message
+    // rows, which were its only real consumers.
+    expect(
+      src,
+      contains('EdgeInsets.fromLTRB(0, 10, 0, 96)'),
+      reason: 'a list-level horizontal inset clips the date rule',
+    );
+    expect(
+      src,
+      isNot(contains('EdgeInsets.fromLTRB(8, 10, 8, 96)')),
+    );
+  });
 }
