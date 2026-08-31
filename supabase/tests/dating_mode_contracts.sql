@@ -426,7 +426,7 @@ BEGIN
     RAISE EXCEPTION 'service_role cannot execute the age-verification writer';
   END IF;
   -- DATING-C4: former-partner exclusion writer/HMAC are backend-only.
-  IF has_function_privilege('authenticated','public.record_dating_former_partner_exclusion(uuid)','EXECUTE') THEN
+  IF has_function_privilege('authenticated','public.record_dating_former_partner_exclusion(uuid, boolean)','EXECUTE') THEN
     RAISE EXCEPTION 'authenticated can execute the former-partner exclusion writer';
   END IF;
   IF has_function_privilege('authenticated','public.dating_phone_hmac(text)','EXECUTE') THEN
@@ -466,7 +466,7 @@ BEGIN
   -- An ended relationship between B and D, then record the exclusion.
   INSERT INTO public.relationships(user_a, user_b, status, ended_at)
   VALUES (b, d, 'ended', now()) RETURNING id INTO v_rel_id;
-  PERFORM public.record_dating_former_partner_exclusion(v_rel_id);
+  PERFORM public.record_dating_former_partner_exclusion(v_rel_id, true);
 
   -- Exclusion rows exist symmetrically (B protected from D and vice-versa).
   SELECT count(*) INTO v FROM public.dating_former_partner_exclusions
