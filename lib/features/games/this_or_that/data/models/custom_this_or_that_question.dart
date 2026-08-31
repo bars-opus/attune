@@ -47,9 +47,10 @@ class CustomThisOrThatQuestion {
       tone: json['tone'],
       isPrivate: json['is_private'] ?? true,
       timesUsed: json['times_used'] ?? 0,
-      lastUsedAt: json['last_used_at'] != null
-          ? DateTime.parse(json['last_used_at'])
-          : null,
+      lastUsedAt:
+          json['last_used_at'] != null
+              ? DateTime.parse(json['last_used_at'])
+              : null,
       hiddenForReview: json['hidden_for_review'] ?? false,
       sharedToCommunity: json['shared_to_community'] ?? false,
       communityUsageCount: json['community_usage_count'] ?? 0,

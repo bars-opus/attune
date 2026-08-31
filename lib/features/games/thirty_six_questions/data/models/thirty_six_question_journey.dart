@@ -89,7 +89,19 @@ class ThirtySixQuestionJourney extends Equatable {
     return count;
   }
 
-  int get nextChapter => completedChapters + 1;
+  /// The lowest chapter not yet completed, or 4 once all three are done.
+  ///
+  /// Sequences rather than counting: completedChapters + 1 returned 3 for a
+  /// journey with 1 and 3 finished, offering a chapter already played
+  /// instead of the missing 2. Chapters are strictly progressive
+  /// (36_QUESTIONS.md §1), so the next one is the first gap — and the
+  /// model should not need a screen to be correct about that.
+  int get nextChapter {
+    if (chapter1CompletedAt == null) return 1;
+    if (chapter2CompletedAt == null) return 2;
+    if (chapter3CompletedAt == null) return 3;
+    return 4;
+  }
 
   bool get isFullyCompleted => completedChapters >= 3;
 

@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 
-
 class CustomQuestionCard extends ConsumerWidget {
   final CustomQuestion question;
   final bool isOwnQuestion;
@@ -52,9 +51,7 @@ class CustomQuestionCard extends ConsumerWidget {
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-        border: Border.all(
-          color: colorScheme.outline.withOpacity(0.1),
-        ),
+        border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -63,7 +60,10 @@ class CustomQuestionCard extends ConsumerWidget {
           Row(
             children: [
               Container(
-                padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w, vertical: Spacing.xs.h),
+                padding: EdgeInsets.symmetric(
+                  horizontal: Spacing.sm.w,
+                  vertical: Spacing.xs.h,
+                ),
                 decoration: BoxDecoration(
                   color: colorScheme.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
@@ -83,48 +83,58 @@ class CustomQuestionCard extends ConsumerWidget {
                     if (value == 'delete') {
                       final confirm = await showDialog<bool>(
                         context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Delete question?'),
-                          content: const Text(
-                            'This question will be removed for both you and your partner.',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancel'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              style: TextButton.styleFrom(
-                                foregroundColor: Colors.red,
+                        builder:
+                            (context) => AlertDialog(
+                              title: const Text('Delete question?'),
+                              content: const Text(
+                                'This question will be removed for both you and your partner.',
                               ),
-                              child: const Text('Delete'),
+                              actions: [
+                                TextButton(
+                                  onPressed:
+                                      () => Navigator.pop(context, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.red,
+                                  ),
+                                  child: const Text('Delete'),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
                       );
                       if (confirm == true) {
-                        await ref.read(deleteCustomQuestionProvider(question.id).future);
+                        await ref.read(
+                          deleteCustomQuestionProvider(question.id).future,
+                        );
                         onDeleted?.call();
                       }
                     } else if (value == 'toggle_privacy') {
-                      await ref.read(toggleCustomQuestionPrivacyProvider((
-                        id: question.id,
-                        isPrivate: !question.isPrivate,
-                      )).future);
+                      await ref.read(
+                        toggleCustomQuestionPrivacyProvider((
+                          id: question.id,
+                          isPrivate: !question.isPrivate,
+                        )).future,
+                      );
                       onPrivacyChanged?.call();
                     }
                   },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(
-                      value: 'toggle_privacy',
-                      child: Text('Share with partner / Make private'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Text('Delete', style: TextStyle(color: Colors.red)),
-                    ),
-                  ],
+                  itemBuilder:
+                      (context) => [
+                        const PopupMenuItem(
+                          value: 'toggle_privacy',
+                          child: Text('Share with partner / Make private'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text(
+                            'Delete',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      ],
                 ),
               if (!isOwnQuestion)
                 PopupMenuButton<String>(
@@ -133,37 +143,48 @@ class CustomQuestionCard extends ConsumerWidget {
                     if (value == 'report') {
                       final reason = await showDialog<String>(
                         context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Report question'),
-                          content: const Text('Why are you reporting this question?'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, null),
-                              child: const Text('Cancel'),
+                        builder:
+                            (context) => AlertDialog(
+                              title: const Text('Report question'),
+                              content: const Text(
+                                'Why are you reporting this question?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, null),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed:
+                                      () => Navigator.pop(
+                                        context,
+                                        'inappropriate',
+                                      ),
+                                  child: const Text('Inappropriate'),
+                                ),
+                                TextButton(
+                                  onPressed:
+                                      () => Navigator.pop(context, 'offensive'),
+                                  child: const Text('Offensive'),
+                                ),
+                              ],
                             ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, 'inappropriate'),
-                              child: const Text('Inappropriate'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, 'offensive'),
-                              child: const Text('Offensive'),
-                            ),
-                          ],
-                        ),
                       );
                       if (reason != null) {
-                        await ref.read(reportCustomQuestionProvider((
-                          id: question.id,
-                          reason: reason,
-                        )).future);
+                        await ref.read(
+                          reportCustomQuestionProvider((
+                            id: question.id,
+                            reason: reason,
+                          )).future,
+                        );
                         onReported?.call();
                       }
                     }
                   },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'report', child: Text('Report')),
-                  ],
+                  itemBuilder:
+                      (context) => const [
+                        PopupMenuItem(value: 'report', child: Text('Report')),
+                      ],
                 ),
             ],
           ),
@@ -171,9 +192,7 @@ class CustomQuestionCard extends ConsumerWidget {
           // Question text
           Text(
             question.questionText,
-            style: textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
           Gap(Spacing.sm.h),
           // Options
@@ -199,7 +218,10 @@ class CustomQuestionCard extends ConsumerWidget {
 
   Widget _buildOptionChip(String text, String? emoji, ColorScheme colorScheme) {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w, vertical: Spacing.xs.h),
+      padding: EdgeInsets.symmetric(
+        horizontal: Spacing.sm.w,
+        vertical: Spacing.xs.h,
+      ),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
         borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),

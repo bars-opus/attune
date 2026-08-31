@@ -1,4 +1,5 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:attune/features/games/this_or_that/data/models/game_round.dart';
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_session.dart';
 import 'package:attune/features/games/this_or_that/domain/services/scoring_service.dart';
@@ -16,6 +17,15 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Refreshes what this screen reads whenever the partner acts. Without
+    // it, a player waiting on their turn saw nothing until they tapped
+    // something — which in a turn-based game is most of the time.
+    ref.listen(gameSessionLiveProvider(sessionId), (_, _) {
+      ref.invalidate(sessionProvider(sessionId));
+      ref.invalidate(sessionRoundsProvider(sessionId));
+    });
+    ref.watch(gameSessionLiveProvider(sessionId));
+
     final sessionAsync = ref.watch(sessionProvider(sessionId));
     final userId = ref.watch(currentUserIdProvider);
 

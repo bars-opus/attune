@@ -39,9 +39,10 @@ class CustomQuestion {
       tone: json['tone'],
       isPrivate: json['is_private'] ?? false,
       timesUsed: json['times_used'] ?? 0,
-      lastUsedAt: json['last_used_at'] != null
-          ? DateTime.parse(json['last_used_at'])
-          : null,
+      lastUsedAt:
+          json['last_used_at'] != null
+              ? DateTime.parse(json['last_used_at'])
+              : null,
       createdAt: DateTime.parse(json['created_at']),
     );
   }

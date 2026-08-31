@@ -5,7 +5,6 @@ import 'package:attune/features/games/this_or_that/data/models/custom_this_or_th
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_custom_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-
 class ThisOrThatCustomCard extends ConsumerWidget {
   final CustomThisOrThatQuestion question;
   final bool isOwnQuestion;
@@ -26,12 +25,18 @@ class ThisOrThatCustomCard extends ConsumerWidget {
 
   String get _toneDisplay {
     switch (question.tone) {
-      case 'connecting': return '💙 Connecting';
-      case 'romantic': return '❤️ Romantic';
-      case 'playful': return '😄 Playful';
-      case 'spicy': return '🔥 Spicy';
-      case 'intimate': return '🌙 Intimate';
-      default: return question.tone;
+      case 'connecting':
+        return '💙 Connecting';
+      case 'romantic':
+        return '❤️ Romantic';
+      case 'playful':
+        return '😄 Playful';
+      case 'spicy':
+        return '🔥 Spicy';
+      case 'intimate':
+        return '🌙 Intimate';
+      default:
+        return question.tone;
     }
   }
 
@@ -46,9 +51,7 @@ class ThisOrThatCustomCard extends ConsumerWidget {
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-        border: Border.all(
-          color: colorScheme.outline.withOpacity(0.1),
-        ),
+        border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -58,7 +61,10 @@ class ThisOrThatCustomCard extends ConsumerWidget {
             children: [
               // Type badge
               Container(
-                padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w, vertical: Spacing.xs.h),
+                padding: EdgeInsets.symmetric(
+                  horizontal: Spacing.sm.w,
+                  vertical: Spacing.xs.h,
+                ),
                 decoration: BoxDecoration(
                   color: colorScheme.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
@@ -74,7 +80,10 @@ class ThisOrThatCustomCard extends ConsumerWidget {
               Gap(Spacing.sm.w),
               // Tone badge
               Container(
-                padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w, vertical: Spacing.xs.h),
+                padding: EdgeInsets.symmetric(
+                  horizontal: Spacing.sm.w,
+                  vertical: Spacing.xs.h,
+                ),
                 decoration: BoxDecoration(
                   color: colorScheme.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
@@ -94,113 +103,133 @@ class ThisOrThatCustomCard extends ConsumerWidget {
                     if (value == 'delete') {
                       final confirm = await showDialog<bool>(
                         context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Delete question?'),
-                          content: const Text(
-                            'This question will be removed for both you and your partner.',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancel'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              style: TextButton.styleFrom(
-                                foregroundColor: Colors.red,
+                        builder:
+                            (context) => AlertDialog(
+                              title: const Text('Delete question?'),
+                              content: const Text(
+                                'This question will be removed for both you and your partner.',
                               ),
-                              child: const Text('Delete'),
+                              actions: [
+                                TextButton(
+                                  onPressed:
+                                      () => Navigator.pop(context, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.red,
+                                  ),
+                                  child: const Text('Delete'),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
                       );
                       if (confirm == true) {
-                        await ref.read(deleteThisOrThatCustomQuestionProvider(question.id).future);
+                        await ref.read(
+                          deleteThisOrThatCustomQuestionProvider(
+                            question.id,
+                          ).future,
+                        );
                         onDeleted?.call();
                       }
                     } else if (value == 'toggle_privacy') {
-                      await ref.read(toggleThisOrThatCustomPrivacyProvider((
-                        id: question.id,
-                        isPrivate: !question.isPrivate,
-                      )).future);
+                      await ref.read(
+                        toggleThisOrThatCustomPrivacyProvider((
+                          id: question.id,
+                          isPrivate: !question.isPrivate,
+                        )).future,
+                      );
                       onPrivacyChanged?.call();
                     } else if (value == 'share_community') {
                       final confirm = await showDialog<bool>(
                         context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Share with community?'),
-                          content: const Text(
-                            'This question will be visible to other Attune users anonymously. '
-                            'You can unshare anytime.',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancel'),
+                        builder:
+                            (context) => AlertDialog(
+                              title: const Text('Share with community?'),
+                              content: const Text(
+                                'This question will be visible to other Attune users anonymously. '
+                                'You can unshare anytime.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed:
+                                      () => Navigator.pop(context, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('Share'),
+                                ),
+                              ],
                             ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text('Share'),
-                            ),
-                          ],
-                        ),
                       );
                       if (confirm == true) {
-                        await ref.read(toggleThisOrThatCommunityShareProvider((
-                          id: question.id,
-                          share: true,
-                        )).future);
+                        await ref.read(
+                          toggleThisOrThatCommunityShareProvider((
+                            id: question.id,
+                            share: true,
+                          )).future,
+                        );
                         onSharedChanged?.call();
                       }
                     } else if (value == 'unshare_community') {
                       final confirm = await showDialog<bool>(
                         context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Remove from community?'),
-                          content: const Text(
-                            'This question will no longer be visible to other users.',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancel'),
+                        builder:
+                            (context) => AlertDialog(
+                              title: const Text('Remove from community?'),
+                              content: const Text(
+                                'This question will no longer be visible to other users.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed:
+                                      () => Navigator.pop(context, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('Remove'),
+                                ),
+                              ],
                             ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text('Remove'),
-                            ),
-                          ],
-                        ),
                       );
                       if (confirm == true) {
-                        await ref.read(toggleThisOrThatCommunityShareProvider((
-                          id: question.id,
-                          share: false,
-                        )).future);
+                        await ref.read(
+                          toggleThisOrThatCommunityShareProvider((
+                            id: question.id,
+                            share: false,
+                          )).future,
+                        );
                         onSharedChanged?.call();
                       }
                     }
                   },
-                  itemBuilder: (context) => [
-                    if (question.sharedToCommunity)
-                      const PopupMenuItem(
-                        value: 'unshare_community',
-                        child: Text('Remove from community'),
-                      )
-                    else
-                      const PopupMenuItem(
-                        value: 'share_community',
-                        child: Text('Share with community'),
-                      ),
-                    const PopupMenuItem(
-                      value: 'toggle_privacy',
-                      child: Text('Share with partner / Make private'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Text('Delete', style: TextStyle(color: Colors.red)),
-                    ),
-                  ],
+                  itemBuilder:
+                      (context) => [
+                        if (question.sharedToCommunity)
+                          const PopupMenuItem(
+                            value: 'unshare_community',
+                            child: Text('Remove from community'),
+                          )
+                        else
+                          const PopupMenuItem(
+                            value: 'share_community',
+                            child: Text('Share with community'),
+                          ),
+                        const PopupMenuItem(
+                          value: 'toggle_privacy',
+                          child: Text('Share with partner / Make private'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text(
+                            'Delete',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      ],
                 ),
               if (!isOwnQuestion)
                 PopupMenuButton<String>(
@@ -209,37 +238,48 @@ class ThisOrThatCustomCard extends ConsumerWidget {
                     if (value == 'report') {
                       final reason = await showDialog<String>(
                         context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Report question'),
-                          content: const Text('Why are you reporting this question?'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, null),
-                              child: const Text('Cancel'),
+                        builder:
+                            (context) => AlertDialog(
+                              title: const Text('Report question'),
+                              content: const Text(
+                                'Why are you reporting this question?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, null),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed:
+                                      () => Navigator.pop(
+                                        context,
+                                        'inappropriate',
+                                      ),
+                                  child: const Text('Inappropriate'),
+                                ),
+                                TextButton(
+                                  onPressed:
+                                      () => Navigator.pop(context, 'offensive'),
+                                  child: const Text('Offensive'),
+                                ),
+                              ],
                             ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, 'inappropriate'),
-                              child: const Text('Inappropriate'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, 'offensive'),
-                              child: const Text('Offensive'),
-                            ),
-                          ],
-                        ),
                       );
                       if (reason != null) {
-                        await ref.read(reportThisOrThatCustomQuestionProvider((
-                          id: question.id,
-                          reason: reason,
-                        )).future);
+                        await ref.read(
+                          reportThisOrThatCustomQuestionProvider((
+                            id: question.id,
+                            reason: reason,
+                          )).future,
+                        );
                         onReported?.call();
                       }
                     }
                   },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'report', child: Text('Report')),
-                  ],
+                  itemBuilder:
+                      (context) => const [
+                        PopupMenuItem(value: 'report', child: Text('Report')),
+                      ],
                 ),
             ],
           ),
@@ -247,17 +287,25 @@ class ThisOrThatCustomCard extends ConsumerWidget {
           // Question text
           Text(
             question.questionText,
-            style: textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
           Gap(Spacing.sm.h),
           // Options
           Row(
             children: [
-              _buildOptionChip(question.optionA, question.emojiA, colorScheme, textTheme),
+              _buildOptionChip(
+                question.optionA,
+                question.emojiA,
+                colorScheme,
+                textTheme,
+              ),
               Gap(Spacing.md.w),
-              _buildOptionChip(question.optionB, question.emojiB, colorScheme, textTheme),
+              _buildOptionChip(
+                question.optionB,
+                question.emojiB,
+                colorScheme,
+                textTheme,
+              ),
             ],
           ),
           Gap(Spacing.sm.h),
@@ -266,10 +314,15 @@ class ThisOrThatCustomCard extends ConsumerWidget {
             children: [
               if (question.isPrivate)
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: Spacing.xs.w, vertical: 2),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: Spacing.xs.w,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
+                    borderRadius: BorderRadius.circular(
+                      BorderRadiusTokens.sm.r,
+                    ),
                   ),
                   child: Text(
                     'Private',
@@ -281,10 +334,15 @@ class ThisOrThatCustomCard extends ConsumerWidget {
               if (question.isPrivate) Gap(Spacing.sm.w),
               if (question.sharedToCommunity)
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: Spacing.xs.w, vertical: 2),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: Spacing.xs.w,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: colorScheme.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
+                    borderRadius: BorderRadius.circular(
+                      BorderRadiusTokens.sm.r,
+                    ),
                   ),
                   child: Text(
                     '🌐 Community',
@@ -307,9 +365,17 @@ class ThisOrThatCustomCard extends ConsumerWidget {
     );
   }
 
-  Widget _buildOptionChip(String text, String? emoji, ColorScheme colorScheme, TextTheme textTheme) {
+  Widget _buildOptionChip(
+    String text,
+    String? emoji,
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+  ) {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w, vertical: Spacing.xs.h),
+      padding: EdgeInsets.symmetric(
+        horizontal: Spacing.sm.w,
+        vertical: Spacing.xs.h,
+      ),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
         borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),

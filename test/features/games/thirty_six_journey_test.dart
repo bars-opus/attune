@@ -47,6 +47,17 @@ void main() {
       expect(_journey(ch1: true, ch2: true).nextChapter, 3);
     });
 
+    test('an out-of-order completion offers the MISSING chapter', () {
+      // nextChapter counted completions rather than sequencing them, so a
+      // journey with 1 and 3 done offered 3 again — a chapter already
+      // finished — instead of the missing 2. Unreachable through the
+      // overview screen, which only ever offers nextChapter, but the model
+      // should not depend on a screen to be correct.
+      expect(_journey(ch1: true, ch3: true).nextChapter, 2);
+      expect(_journey(ch2: true).nextChapter, 1);
+      expect(_journey(ch3: true).nextChapter, 1);
+    });
+
     test('all three chapters completes the journey', () {
       final done = _journey(ch1: true, ch2: true, ch3: true);
       expect(done.completedChapters, 3);

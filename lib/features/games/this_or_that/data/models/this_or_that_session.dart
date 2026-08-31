@@ -40,15 +40,18 @@ class ThisOrThatSession {
       currentRound: json['current_round'] ?? 0,
       matchCount: json['match_count'] ?? 0,
       totalRoundsCompleted: json['total_rounds_completed'] ?? 0,
-      startedAt: json['started_at'] != null
-          ? DateTime.parse(json['started_at'])
-          : null,
-      completedAt: json['completed_at'] != null
-          ? DateTime.parse(json['completed_at'])
-          : null,
-      abandonedAt: json['abandoned_at'] != null
-          ? DateTime.parse(json['abandoned_at'])
-          : null,
+      startedAt:
+          json['started_at'] != null
+              ? DateTime.parse(json['started_at'])
+              : null,
+      completedAt:
+          json['completed_at'] != null
+              ? DateTime.parse(json['completed_at'])
+              : null,
+      abandonedAt:
+          json['abandoned_at'] != null
+              ? DateTime.parse(json['abandoned_at'])
+              : null,
       createdAt: DateTime.parse(json['created_at']),
     );
   }

@@ -82,60 +82,91 @@ class _CustomQuestionCreateScreenState
     }
   }
 
-  
+  Future<void> _selectEmoji(bool isOptionA) async {
+    const emojis = [
+      '😀',
+      '😂',
+      '🥰',
+      '😍',
+      '🤔',
+      '😎',
+      '🔥',
+      '💙',
+      '❤️',
+      '💚',
+      '💛',
+      '💜',
+      '🍕',
+      '🍔',
+      '🌮',
+      '🍣',
+      '🥗',
+      '🍩',
+      '🏖️',
+      '⛰️',
+      '🌆',
+      '🌃',
+      '🎬',
+      '📚',
+      '🐕',
+      '🐈',
+      '🐦',
+      '🐟',
+      '🦋',
+      '🌸',
+      '🎮',
+      '📱',
+      '💻',
+      '🎵',
+      '🏀',
+      '⚽',
+    ];
 
-Future<void> _selectEmoji(bool isOptionA) async {
-  const emojis = [
-    '😀', '😂', '🥰', '😍', '🤔', '😎',
-    '🔥', '💙', '❤️', '💚', '💛', '💜',
-    '🍕', '🍔', '🌮', '🍣', '🥗', '🍩',
-    '🏖️', '⛰️', '🌆', '🌃', '🎬', '📚',
-    '🐕', '🐈', '🐦', '🐟', '🦋', '🌸',
-    '🎮', '📱', '💻', '🎵', '🏀', '⚽',
-  ];
-
-  final emoji = await showDialog<String>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Choose an emoji'),
-      content: SizedBox(
-        width: 300,
-        height: 350,
-        child: GridView.builder(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 6,
-            childAspectRatio: 1,
-          ),
-          itemCount: emojis.length,
-          itemBuilder: (context, index) => InkWell(
-            onTap: () => Navigator.pop(context, emojis[index]),
-            child: Center(
-              child: Text(emojis[index], style: const TextStyle(fontSize: 28)),
+    final emoji = await showDialog<String>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Choose an emoji'),
+            content: SizedBox(
+              width: 300,
+              height: 350,
+              child: GridView.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 6,
+                  childAspectRatio: 1,
+                ),
+                itemCount: emojis.length,
+                itemBuilder:
+                    (context, index) => InkWell(
+                      onTap: () => Navigator.pop(context, emojis[index]),
+                      child: Center(
+                        child: Text(
+                          emojis[index],
+                          style: const TextStyle(fontSize: 28),
+                        ),
+                      ),
+                    ),
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+            ],
           ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-      ],
-    ),
-  );
+    );
 
-  if (emoji != null && mounted) {
-    setState(() {
-      if (isOptionA) {
-        _selectedEmojiA = emoji;
-      } else {
-        _selectedEmojiB = emoji;
-      }
-    });
+    if (emoji != null && mounted) {
+      setState(() {
+        if (isOptionA) {
+          _selectedEmojiA = emoji;
+        } else {
+          _selectedEmojiB = emoji;
+        }
+      });
+    }
   }
-}
-
-
 
   @override
   Widget build(BuildContext context) {

@@ -1,5 +1,6 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/data/models/game_session.dart';
+import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:attune/features/games/truth_or_dare/data/models/custom_truth_or_dare_question.dart';
 import 'package:attune/features/games/truth_or_dare/domain/services/truth_or_dare_scoring_service.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
@@ -18,6 +19,15 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Refreshes what this screen reads whenever the partner acts. Without
+    // it, a player waiting on their turn saw nothing until they tapped
+    // something — which in a turn-based game is most of the time.
+    ref.listen(gameSessionLiveProvider(sessionId), (_, _) {
+      ref.invalidate(truthOrDareSessionProvider(sessionId));
+      ref.invalidate(truthOrDareSessionRoundsProvider(sessionId));
+    });
+    ref.watch(gameSessionLiveProvider(sessionId));
+
     final sessionAsync = ref.watch(truthOrDareSessionProvider(sessionId));
     final userId = ref.watch(currentUserIdProvider);
 

@@ -8,11 +8,7 @@ class MatchIndicator extends StatelessWidget {
   final bool isMatch;
   final Animation<double>? animation;
 
-  const MatchIndicator({
-    super.key,
-    required this.isMatch,
-    this.animation,
-  });
+  const MatchIndicator({super.key, required this.isMatch, this.animation});
 
   @override
   Widget build(BuildContext context) {
@@ -24,8 +20,9 @@ class MatchIndicator extends StatelessWidget {
         animation: animation ?? const AlwaysStoppedAnimation(1.0),
         builder: (context, child) {
           final opacity = (animation?.value ?? 1.0).clamp(0.0, 1.0);
-          final flashOpacity = opacity < 0.5 ? opacity * 2 : (1.0 - opacity) * 2;
-          
+          final flashOpacity =
+              opacity < 0.5 ? opacity * 2 : (1.0 - opacity) * 2;
+
           return Container(
             padding: EdgeInsets.all(Spacing.md.w),
             decoration: BoxDecoration(
@@ -60,7 +57,10 @@ class MatchIndicator extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.compare_arrows, color: colorScheme.onSurface.withOpacity(0.6)),
+          Icon(
+            Icons.compare_arrows,
+            color: colorScheme.onSurface.withOpacity(0.6),
+          ),
           Gap(Spacing.sm.w),
           Text(
             'Different picks this time 😄',

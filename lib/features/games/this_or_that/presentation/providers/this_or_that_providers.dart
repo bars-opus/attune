@@ -4,7 +4,6 @@ import 'package:attune/features/games/this_or_that/data/models/custom_question.d
 import 'package:attune/features/games/this_or_that/data/models/game_round.dart';
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_session.dart';
 import 'package:attune/features/games/this_or_that/data/repositories/this_or_that_repository.dart';
-import 'package:attune/features/games/this_or_that/domain/services/question_selector.dart';
 import 'package:attune/features/games/this_or_that/domain/services/scoring_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -16,10 +15,6 @@ final supabaseClientProvider = Provider<SupabaseClient>((ref) {
 final thisOrThatRepositoryProvider = Provider<ThisOrThatRepository>((ref) {
   final supabase = ref.read(supabaseClientProvider);
   return ThisOrThatRepository(supabase);
-});
-
-final questionSelectorProvider = Provider<QuestionSelector>((ref) {
-  return QuestionSelector();
 });
 
 final scoringServiceProvider = Provider<ScoringService>((ref) {

@@ -19,18 +19,37 @@ class SessionHistoryCard extends StatelessWidget {
   }
 
   String _getMonth(int month) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     return months[month - 1];
   }
 
   String _getToneDisplay() {
     switch (session.tone) {
-      case 'connecting': return 'Connecting';
-      case 'romantic': return 'Romantic';
-      case 'playful': return 'Playful';
-      case 'spicy': return 'Spicy';
-      case 'intimate': return 'Intimate';
-      default: return session.tone;
+      case 'connecting':
+        return 'Connecting';
+      case 'romantic':
+        return 'Romantic';
+      case 'playful':
+        return 'Playful';
+      case 'spicy':
+        return 'Spicy';
+      case 'intimate':
+        return 'Intimate';
+      default:
+        return session.tone;
     }
   }
 
@@ -44,14 +63,15 @@ class SessionHistoryCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: EdgeInsets.symmetric(horizontal: Spacing.md.w, vertical: Spacing.xs.h),
+        margin: EdgeInsets.symmetric(
+          horizontal: Spacing.md.w,
+          vertical: Spacing.xs.h,
+        ),
         padding: EdgeInsets.all(Spacing.md.w),
         decoration: BoxDecoration(
           color: colorScheme.surface,
           borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-          border: Border.all(
-            color: colorScheme.outline.withOpacity(0.1),
-          ),
+          border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -60,10 +80,15 @@ class SessionHistoryCard extends StatelessWidget {
               children: [
                 // Game icon and type
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w, vertical: Spacing.xs.h),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: Spacing.sm.w,
+                    vertical: Spacing.xs.h,
+                  ),
                   decoration: BoxDecoration(
                     color: colorScheme.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
+                    borderRadius: BorderRadius.circular(
+                      BorderRadiusTokens.sm.r,
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -82,15 +107,17 @@ class SessionHistoryCard extends StatelessWidget {
                 const Spacer(),
                 // Tone badge
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w, vertical: Spacing.xs.h),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: Spacing.sm.w,
+                    vertical: Spacing.xs.h,
+                  ),
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
+                    borderRadius: BorderRadius.circular(
+                      BorderRadiusTokens.sm.r,
+                    ),
                   ),
-                  child: Text(
-                    _getToneDisplay(),
-                    style: textTheme.labelSmall,
-                  ),
+                  child: Text(_getToneDisplay(), style: textTheme.labelSmall),
                 ),
                 Gap(Spacing.sm.w),
                 // Menu
@@ -99,9 +126,13 @@ class SessionHistoryCard extends StatelessWidget {
                   onSelected: (value) {
                     if (value == 'hide') onHide();
                   },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'hide', child: Text('Hide from my view')),
-                  ],
+                  itemBuilder:
+                      (context) => const [
+                        PopupMenuItem(
+                          value: 'hide',
+                          child: Text('Hide from my view'),
+                        ),
+                      ],
                 ),
               ],
             ),

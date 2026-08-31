@@ -81,9 +81,7 @@ class _ToneSelectorScreenState extends ConsumerState<ToneSelectorScreen> {
     } catch (error) {
       if (!mounted) return;
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Could not start the game right now.'),
-        ),
+        const SnackBar(content: Text('Could not start the game right now.')),
       );
     } finally {
       if (mounted) setState(() => _isStarting = false);
