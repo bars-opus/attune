@@ -9,15 +9,60 @@
 --
 -- Implements PAINT_BALL_GAME_SPEC.md §10 and the §11 inheritances from
 -- GAMES.md §5 (auth, idempotency, concurrency, rate limiting).
+--
+-- Every function RETURNS jsonb and reports failure as
+-- {error: true, code, message} rather than raising. That is the contract
+-- PaintBallService already expects: it reads the response as a Map and
+-- checks data['error'] == true, converting it to PaintBallApiError. A
+-- raised exception would surface as an unhandled PostgrestException
+-- instead of the game's own error UI.
+--
+-- DROP before CREATE because a deployment may already carry a function of
+-- the same name with a different return type; CREATE OR REPLACE cannot
+-- change one (42P13).
+
+
+-- The error shape PaintBallService already parses: it reads the RPC
+-- response as a Map, checks data['error'] == true and builds a
+-- PaintBallApiError from it. Messages are deliberately generic —
+-- distinguishing "not your session" from "no such session" is a
+-- membership oracle.
+CREATE OR REPLACE FUNCTION public.paint_ball_error(p_code text)
+RETURNS jsonb
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT jsonb_build_object(
+    'error', true,
+    'code', p_code,
+    'message', CASE p_code
+      WHEN 'FORBIDDEN'       THEN 'You can''t do that right now.'
+      WHEN 'NOT_YOUR_TURN'   THEN 'It''s not your turn.'
+      WHEN 'SESSION_EXPIRED' THEN 'This game has already ended.'
+      WHEN 'RATE_LIMITED'    THEN 'Too many games started. Try again later.'
+      WHEN 'INVALID_OUTCOME' THEN 'That outcome isn''t valid.'
+      ELSE 'Something went wrong.'
+    END
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.paint_ball_error(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.paint_ball_error(text) TO authenticated;
 
 -- §10.1 --------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.paint_ball_create_session(
+DROP FUNCTION IF EXISTS public.paint_ball_create_session(uuid, text, text, boolean);
+DROP FUNCTION IF EXISTS public.paint_ball_accept_session(uuid);
+DROP FUNCTION IF EXISTS public.paint_ball_decline_session(uuid);
+DROP FUNCTION IF EXISTS public.paint_ball_fire_shot(uuid, int, boolean, text);
+DROP FUNCTION IF EXISTS public.paint_ball_resolve_penalty(uuid, text);
+
+CREATE FUNCTION public.paint_ball_create_session(
   p_relationship_id uuid,
   p_tone text,
   p_idempotency_key text,
   p_allow_partner_authored boolean DEFAULT true
 )
-RETURNS uuid
+RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
@@ -28,7 +73,7 @@ DECLARE
   v_recent int;
 BEGIN
   IF v_user IS NULL THEN
-    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+    RETURN public.paint_ball_error('FORBIDDEN');
   END IF;
 
   -- §11.1: membership, with a generic message so a non-member cannot
@@ -39,7 +84,7 @@ BEGIN
       AND status = 'active'
       AND (user_a = v_user OR user_b = v_user)
   ) THEN
-    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+    RETURN public.paint_ball_error('FORBIDDEN');
   END IF;
 
   -- §10.1: return the existing session on a repeated key rather than
@@ -47,7 +92,7 @@ BEGIN
   SELECT session_id INTO v_session
   FROM public.session_idempotency_keys WHERE key = p_idempotency_key;
   IF v_session IS NOT NULL THEN
-    RETURN v_session;
+    RETURN jsonb_build_object('session_id', v_session, 'existing', true);
   END IF;
 
   -- An in-flight session is itself the answer: one Paint Ball at a time
@@ -59,7 +104,7 @@ BEGIN
     AND status IN ('invited', 'active')
   LIMIT 1;
   IF v_session IS NOT NULL THEN
-    RETURN v_session;
+    RETURN jsonb_build_object('session_id', v_session, 'existing', true);
   END IF;
 
   -- §10.1: max 5 game initiations per hour per couple.
@@ -68,7 +113,7 @@ BEGIN
   WHERE relationship_id = p_relationship_id
     AND created_at > now() - interval '1 hour';
   IF v_recent >= 5 THEN
-    RAISE EXCEPTION 'RATE_LIMITED' USING ERRCODE = '53400';
+    RETURN public.paint_ball_error('RATE_LIMITED');
   END IF;
 
   INSERT INTO public.game_sessions (
@@ -85,7 +130,7 @@ BEGIN
   VALUES (p_idempotency_key, v_session)
   ON CONFLICT (key) DO NOTHING;
 
-  RETURN v_session;
+  RETURN jsonb_build_object('session_id', v_session, 'existing', false);
 END;
 $$;
 
@@ -95,10 +140,10 @@ GRANT EXECUTE ON FUNCTION public.paint_ball_create_session(uuid, text, text, boo
   TO authenticated;
 
 -- §10.2 --------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.paint_ball_accept_session(
+CREATE FUNCTION public.paint_ball_accept_session(
   p_session_id uuid
 )
-RETURNS void
+RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
@@ -108,7 +153,7 @@ DECLARE
   v_session public.game_sessions%ROWTYPE;
 BEGIN
   IF v_user IS NULL THEN
-    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+    RETURN public.paint_ball_error('FORBIDDEN');
   END IF;
 
   SELECT s.* INTO v_session
@@ -119,22 +164,22 @@ BEGIN
   FOR UPDATE OF s;
 
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+    RETURN public.paint_ball_error('FORBIDDEN');
   END IF;
 
   -- Already accepted: idempotent, not an error.
   IF v_session.status = 'active' THEN
-    RETURN;
+    RETURN jsonb_build_object('ok', true);
   END IF;
 
   IF v_session.status <> 'invited' THEN
-    RAISE EXCEPTION 'SESSION_EXPIRED' USING ERRCODE = '22023';
+    RETURN public.paint_ball_error('SESSION_EXPIRED');
   END IF;
 
   -- §10.2: only the NON-initiator accepts. The initiator accepting their
   -- own invite would start a game the partner never agreed to.
   IF v_session.initiator_id = v_user THEN
-    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+    RETURN public.paint_ball_error('FORBIDDEN');
   END IF;
 
   UPDATE public.game_sessions
@@ -143,16 +188,18 @@ BEGIN
          -- The initiator fires first.
          current_turn_user_id = v_session.initiator_id
    WHERE id = p_session_id;
+
+  RETURN jsonb_build_object('ok', true);
 END;
 $$;
 
 REVOKE ALL ON FUNCTION public.paint_ball_accept_session(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.paint_ball_accept_session(uuid) TO authenticated;
 
-CREATE OR REPLACE FUNCTION public.paint_ball_decline_session(
+CREATE FUNCTION public.paint_ball_decline_session(
   p_session_id uuid
 )
-RETURNS void
+RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
@@ -162,7 +209,7 @@ DECLARE
   v_status text;
 BEGIN
   IF v_user IS NULL THEN
-    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+    RETURN public.paint_ball_error('FORBIDDEN');
   END IF;
 
   SELECT s.status INTO v_status
@@ -173,15 +220,15 @@ BEGIN
   FOR UPDATE OF s;
 
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+    RETURN public.paint_ball_error('FORBIDDEN');
   END IF;
 
   IF v_status = 'abandoned' THEN
-    RETURN;
+    RETURN jsonb_build_object('ok', true);
   END IF;
 
   IF v_status <> 'invited' THEN
-    RAISE EXCEPTION 'SESSION_EXPIRED' USING ERRCODE = '22023';
+    RETURN public.paint_ball_error('SESSION_EXPIRED');
   END IF;
 
   UPDATE public.game_sessions
@@ -189,6 +236,8 @@ BEGIN
          abandoned_at = now(),
          abandon_reason = 'user_initiated'
    WHERE id = p_session_id;
+
+  RETURN jsonb_build_object('ok', true);
 END;
 $$;
 
@@ -199,7 +248,7 @@ GRANT EXECUTE ON FUNCTION public.paint_ball_decline_session(uuid) TO authenticat
 -- The client's p_hit is trusted (§5.5) but the STRUCTURE is not: turn
 -- ownership, a single decrement, the floor at zero, one winner and one
 -- penalty are all enforced here and cannot be spoofed.
-CREATE OR REPLACE FUNCTION public.paint_ball_fire_shot(
+CREATE FUNCTION public.paint_ball_fire_shot(
   p_session_id uuid,
   p_round_number int,
   p_hit boolean,
@@ -225,7 +274,7 @@ DECLARE
   v_defender_lives int;
 BEGIN
   IF v_user IS NULL THEN
-    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+    RETURN public.paint_ball_error('FORBIDDEN');
   END IF;
 
   -- §11.3: the row lock plus the turn check below is what makes a
@@ -236,7 +285,7 @@ BEGIN
   FOR UPDATE;
 
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+    RETURN public.paint_ball_error('FORBIDDEN');
   END IF;
 
   SELECT * INTO v_rel FROM public.relationships
@@ -244,7 +293,7 @@ BEGIN
 
   -- §10.3 step 1.
   IF v_rel.user_a <> v_user AND v_rel.user_b <> v_user THEN
-    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+    RETURN public.paint_ball_error('FORBIDDEN');
   END IF;
 
   -- §10.3 step 4: idempotency BEFORE the state checks, so a retry of a
@@ -270,12 +319,12 @@ BEGIN
 
   -- §10.3 step 3.
   IF v_session.status <> 'active' THEN
-    RAISE EXCEPTION 'SESSION_EXPIRED' USING ERRCODE = '22023';
+    RETURN public.paint_ball_error('SESSION_EXPIRED');
   END IF;
 
   -- §10.3 step 2.
   IF v_session.current_turn_user_id IS DISTINCT FROM v_user THEN
-    RAISE EXCEPTION 'NOT_YOUR_TURN' USING ERRCODE = '22023';
+    RETURN public.paint_ball_error('NOT_YOUR_TURN');
   END IF;
 
   v_shooter_is_a := (v_rel.user_a = v_user);
@@ -403,11 +452,11 @@ GRANT EXECUTE ON FUNCTION public.paint_ball_fire_shot(uuid, int, boolean, text)
   TO authenticated;
 
 -- §10.5 --------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.paint_ball_resolve_penalty(
+CREATE FUNCTION public.paint_ball_resolve_penalty(
   p_session_id uuid,
   p_outcome text
 )
-RETURNS void
+RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
@@ -417,11 +466,11 @@ DECLARE
   v_session public.game_sessions%ROWTYPE;
 BEGIN
   IF v_user IS NULL THEN
-    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+    RETURN public.paint_ball_error('FORBIDDEN');
   END IF;
 
   IF p_outcome NOT IN ('completed', 'declined') THEN
-    RAISE EXCEPTION 'INVALID_OUTCOME' USING ERRCODE = '22023';
+    RETURN public.paint_ball_error('INVALID_OUTCOME');
   END IF;
 
   SELECT s.* INTO v_session
@@ -432,18 +481,18 @@ BEGIN
   FOR UPDATE OF s;
 
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+    RETURN public.paint_ball_error('FORBIDDEN');
   END IF;
 
   -- Idempotent once completed (§11.2).
   IF v_session.status = 'completed' THEN
-    RETURN;
+    RETURN jsonb_build_object('ok', true);
   END IF;
 
   -- §10.5: only the LOSER resolves. The winner marking their own penalty
   -- done would let them close the game without the other partner acting.
   IF v_session.winner_user_id IS NULL OR v_session.winner_user_id = v_user THEN
-    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+    RETURN public.paint_ball_error('FORBIDDEN');
   END IF;
 
   UPDATE public.game_sessions
@@ -451,6 +500,8 @@ BEGIN
          status = 'completed',
          completed_at = now()
    WHERE id = p_session_id;
+
+  RETURN jsonb_build_object('ok', true);
 END;
 $$;
 

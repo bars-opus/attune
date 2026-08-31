@@ -439,14 +439,22 @@ BEGIN
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
 
-  v_session := public.paint_ball_create_session(
+  v_result := public.paint_ball_create_session(
     '10000000-0000-0000-0000-0000000000a1', 'playful', 'pb-key-1', true);
+  v_session := (v_result->>'session_id')::uuid;
+
+  IF (v_result->>'existing')::boolean THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a new session reported existing=true';
+  END IF;
 
   -- §10.1: a repeated key returns the SAME session, never a second one.
-  IF public.paint_ball_create_session(
-       '10000000-0000-0000-0000-0000000000a1', 'playful', 'pb-key-1', true)
-     <> v_session THEN
+  v_result := public.paint_ball_create_session(
+    '10000000-0000-0000-0000-0000000000a1', 'playful', 'pb-key-1', true);
+  IF (v_result->>'session_id')::uuid <> v_session THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: idempotency key created a second session';
+  END IF;
+  IF NOT (v_result->>'existing')::boolean THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a repeat did not report existing=true';
   END IF;
 
   IF (SELECT lives_a FROM public.game_sessions WHERE id = v_session) <> 3
@@ -454,13 +462,12 @@ BEGIN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a new game did not start with 3 lives each';
   END IF;
 
-  -- §10.2: the initiator may NOT accept their own invite.
-  BEGIN
-    PERFORM public.paint_ball_accept_session(v_session);
+  -- §10.2: the initiator may NOT accept their own invite. Errors come
+  -- back as {error: true, code}, which is what PaintBallService parses.
+  v_result := public.paint_ball_accept_session(v_session);
+  IF NOT COALESCE((v_result->>'error')::boolean, false) THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the initiator accepted their own invite';
-  EXCEPTION WHEN insufficient_privilege THEN
-    NULL;
-  END;
+  END IF;
 
   -- The partner accepts; the INITIATOR fires first.
   PERFORM set_config('request.jwt.claims',
@@ -473,12 +480,11 @@ BEGIN
   END IF;
 
   -- §10.3 step 2: firing out of turn is refused.
-  BEGIN
-    PERFORM public.paint_ball_fire_shot(v_session, 1, true, NULL);
-    RAISE EXCEPTION 'CONTRACT VIOLATED: a partner fired out of turn';
-  EXCEPTION WHEN SQLSTATE '22023' THEN
-    NULL;
-  END;
+  v_result := public.paint_ball_fire_shot(v_session, 1, true, NULL);
+  IF (v_result->>'code') IS DISTINCT FROM 'NOT_YOUR_TURN' THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: firing out of turn returned %', v_result;
+  END IF;
 
   -- A hits B three times, alternating turns back each round.
   PERFORM set_config('request.jwt.claims',
@@ -542,12 +548,10 @@ BEGIN
   END IF;
 
   -- §10.5: the WINNER may not resolve their own penalty.
-  BEGIN
-    PERFORM public.paint_ball_resolve_penalty(v_session, 'completed');
+  v_result := public.paint_ball_resolve_penalty(v_session, 'completed');
+  IF NOT COALESCE((v_result->>'error')::boolean, false) THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the winner resolved the penalty';
-  EXCEPTION WHEN insufficient_privilege THEN
-    NULL;
-  END;
+  END IF;
 
   -- The loser resolves, and the game completes.
   PERFORM set_config('request.jwt.claims',
@@ -574,8 +578,9 @@ DECLARE
 BEGIN
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
-  v_session := public.paint_ball_create_session(
-    '10000000-0000-0000-0000-0000000000a1', 'playful', 'pb-key-floor', true);
+  v_session := (public.paint_ball_create_session(
+    '10000000-0000-0000-0000-0000000000a1', 'playful', 'pb-key-floor', true)
+    ->>'session_id')::uuid;
 
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
