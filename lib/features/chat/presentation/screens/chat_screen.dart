@@ -756,7 +756,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                         ),
                       ),
                     ),
-                    Gap(Spacing.md),
+                    // No trailing gap: it exposed a band of the scaffold's
+                    // own background (colorScheme.neutral) below the
+                    // wallpaper. The composer is Positioned over this
+                    // column and carries its own SafeArea, so nothing here
+                    // needs to reserve room for it, and the list already
+                    // pads its bottom by 96 to clear it.
                   ],
                 ),
                 Positioned(
