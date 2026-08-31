@@ -3,11 +3,13 @@
 class ScoringService {
   /// Calculate the most interesting pick from a list of rounds
   /// Priority: first differing round > is_interesting flag > round 5
-  Map<String, dynamic> getMostInterestingPick(List<Map<String, dynamic>> rounds) {
+  Map<String, dynamic> getMostInterestingPick(
+    List<Map<String, dynamic>> rounds,
+  ) {
     // Find first differing round
     for (final round in rounds) {
-      if (round['answer_a'] != round['answer_b'] && 
-          round['answer_a'] != null && 
+      if (round['answer_a'] != round['answer_b'] &&
+          round['answer_a'] != null &&
           round['answer_b'] != null) {
         return round;
       }
@@ -20,7 +22,14 @@ class ScoringService {
       }
     }
 
-    // Fallback to round 5 (index 4)
+    // Fallback to round 5 (index 4), or the first round in a session
+    // shorter than that.
+    //
+    // Empty returns an empty map rather than rounds[0], which throws. The
+    // only caller guards against an empty list today, but that guard lives
+    // in a screen three files away — a second caller would find the throw
+    // instead of the guard.
+    if (rounds.isEmpty) return <String, dynamic>{};
     return rounds.length > 4 ? rounds[4] : rounds[0];
   }
 
