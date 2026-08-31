@@ -68,7 +68,10 @@ class ChatColorScheme extends ThemeExtension<ChatColorScheme> {
     senderReplyAccent: Color(0xFFFF6F9E),
     receiverReplySurface: Color(0xFF35413D),
     receiverReplyAccent: Color(0xFFE2E4E3),
-    voiceAccent: Color(0xFFB6FD9D),
+    // The same blue as light mode: the play button and the played portion
+    // of the waveform read as one control across both themes rather than
+    // changing identity with the theme.
+    voiceAccent: Color(0xFF2296F3),
     relationshipAccent: Color(0xFFFF6F9E),
   );
 

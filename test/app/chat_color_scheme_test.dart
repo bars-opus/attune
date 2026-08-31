@@ -30,6 +30,10 @@ void main() {
     expect(ChatColorScheme.light.senderBubble, const Color(0xFFDCFFC2));
     expect(ChatColorScheme.light.receiverBubble, const Color(0xFFFFFEFC));
     expect(ChatColorScheme.light.voiceAccent, const Color(0xFF2296F3));
+    // The same blue in dark mode: the play button and the played portion
+    // of the waveform read as one control across both themes rather than
+    // changing identity with the theme.
+    expect(ChatColorScheme.dark.voiceAccent, const Color(0xFF2296F3));
   });
 }
 
