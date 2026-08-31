@@ -170,4 +170,81 @@ END $$;
 
 RESET ROLE;
 
+-- A game invite notifies the partner.
+--
+-- Sessions were created with status 'invited' and nothing announced them:
+-- no push, no realtime, no trigger. The invite sat silent until the
+-- partner happened to open the Games hub.
+DO $$
+DECLARE
+  v_session uuid;
+  v_notifications int;
+  v_meta jsonb;
+BEGIN
+  INSERT INTO public.game_sessions
+    (relationship_id, initiator_id, game_type, status, total_rounds)
+  VALUES ('10000000-0000-0000-0000-0000000000a1',
+          '00000000-0000-0000-0000-0000000000a1',
+          'mirror', 'invited', 8)
+  RETURNING id INTO v_session;
+
+  SELECT count(*) INTO v_notifications
+  FROM public.scheduled_notifications
+  WHERE (metadata->>'session_id')::uuid = v_session;
+
+  SELECT metadata INTO v_meta
+  FROM public.scheduled_notifications
+  WHERE (metadata->>'session_id')::uuid = v_session
+  LIMIT 1;
+
+  IF v_notifications <> 1 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: an invite queued % notifications, expected 1',
+      v_notifications;
+  END IF;
+
+  -- The PARTNER, never the initiator.
+  IF (SELECT user_id FROM public.scheduled_notifications
+      WHERE (metadata->>'session_id')::uuid = v_session)
+     <> '00000000-0000-0000-0000-0000000000b2' THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the invite notified the wrong user';
+  END IF;
+
+  -- Named, not raw: "mirror" in a push is a database value on a lock
+  -- screen.
+  IF v_meta->>'body' NOT LIKE 'Mirror%' THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the push names the raw game_type (body: %)',
+      v_meta->>'body';
+  END IF;
+
+  DELETE FROM public.scheduled_notifications
+  WHERE (metadata->>'session_id')::uuid = v_session;
+  DELETE FROM public.game_sessions WHERE id = v_session;
+END $$;
+
+-- Accepting an invite must not notify again.
+DO $$
+DECLARE v_session uuid; v_count int;
+BEGIN
+  INSERT INTO public.game_sessions
+    (relationship_id, initiator_id, game_type, status, total_rounds)
+  VALUES ('10000000-0000-0000-0000-0000000000a1',
+          '00000000-0000-0000-0000-0000000000a1',
+          'scenario', 'active', 8)
+  RETURNING id INTO v_session;
+
+  SELECT count(*) INTO v_count FROM public.scheduled_notifications
+  WHERE (metadata->>'session_id')::uuid = v_session;
+
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: a non-invited session queued % notifications',
+      v_count;
+  END IF;
+
+  DELETE FROM public.game_sessions WHERE id = v_session;
+END $$;
+
 ROLLBACK;
