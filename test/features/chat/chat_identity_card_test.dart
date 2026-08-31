@@ -109,7 +109,10 @@ void main() {
   testWidgets('shows the 4 most recently shared images, newest first', (
     tester,
   ) async {
-    final repo = FakeChatRepository(currentUserId: userId);
+    final repo = FakeChatRepository(currentUserId: userId)
+      // The card re-signs from mediaKey rather than trusting a stored
+      // signedMediaUrl, whose token may have expired.
+      ..signMediaUrls = true;
     final base = DateTime(2026, 1, 1);
     // 5 images seeded so the "only 4" cap is actually exercised, not
     // vacuously true because there happen to be exactly 4.
@@ -153,7 +156,10 @@ void main() {
   testWidgets('renders nothing for the photo row when no images exist yet', (
     tester,
   ) async {
-    final repo = FakeChatRepository(currentUserId: userId);
+    final repo = FakeChatRepository(currentUserId: userId)
+      // The card re-signs from mediaKey rather than trusting a stored
+      // signedMediaUrl, whose token may have expired.
+      ..signMediaUrls = true;
     final container = ProviderContainer(
       overrides: [
         chatRepositoryProvider.overrideWithValue(repo),
@@ -180,7 +186,10 @@ void main() {
     'tapping a photo tile opens the IMAGE VIEWER for that photo, never the '
     'media gallery',
     (tester) async {
-      final repo = FakeChatRepository(currentUserId: userId);
+      final repo = FakeChatRepository(currentUserId: userId)
+        // The card re-signs from mediaKey rather than trusting a stored
+        // signedMediaUrl, whose token may have expired.
+        ..signMediaUrls = true;
       final message = imageMessage('img0', DateTime(2026, 1, 1));
       repo.serverMessages[message.id] = message;
       final container = ProviderContainer(
@@ -212,7 +221,10 @@ void main() {
     'each photo tile carries a Hero tagged with its own clientMessageId, '
     'so tapping it flies into the image viewer instead of cutting to it',
     (tester) async {
-      final repo = FakeChatRepository(currentUserId: userId);
+      final repo = FakeChatRepository(currentUserId: userId)
+        // The card re-signs from mediaKey rather than trusting a stored
+        // signedMediaUrl, whose token may have expired.
+        ..signMediaUrls = true;
       final first = imageMessage('img0', DateTime(2026, 1, 1));
       final second = imageMessage('img1', DateTime(2026, 1, 2));
       repo.serverMessages[first.id] = first;
@@ -254,7 +266,10 @@ void main() {
     'tapping the SECOND of several photos opens the viewer at the matching '
     'chronological index, with the full (uncapped) image list',
     (tester) async {
-      final repo = FakeChatRepository(currentUserId: userId);
+      final repo = FakeChatRepository(currentUserId: userId)
+        // The card re-signs from mediaKey rather than trusting a stored
+        // signedMediaUrl, whose token may have expired.
+        ..signMediaUrls = true;
       final base = DateTime(2026, 1, 1);
       // 6 images: exercises the newest-first-strip -> chronological-viewer
       // index translation against a list bigger than what's visible on the
@@ -296,7 +311,10 @@ void main() {
       WidgetTester tester, {
       required int count,
     }) async {
-      final repo = FakeChatRepository(currentUserId: userId);
+      final repo = FakeChatRepository(currentUserId: userId)
+        // The card re-signs from mediaKey rather than trusting a stored
+        // signedMediaUrl, whose token may have expired.
+        ..signMediaUrls = true;
       final base = DateTime(2026, 1, 1);
       for (var i = 0; i < count; i++) {
         final message = imageMessage('img$i', base.add(Duration(hours: i)));
@@ -358,7 +376,10 @@ void main() {
       WidgetTester tester, {
       required int count,
     }) async {
-      final repo = FakeChatRepository(currentUserId: userId);
+      final repo = FakeChatRepository(currentUserId: userId)
+        // The card re-signs from mediaKey rather than trusting a stored
+        // signedMediaUrl, whose token may have expired.
+        ..signMediaUrls = true;
       final base = DateTime(2026, 1, 1);
       for (var i = 0; i < count; i++) {
         final message = imageMessage('img$i', base.add(Duration(hours: i)));
@@ -476,7 +497,10 @@ void main() {
       'the dummy relationship center panel, with no name field inline', (
     tester,
   ) async {
-    final repo = FakeChatRepository(currentUserId: userId);
+    final repo = FakeChatRepository(currentUserId: userId)
+      // The card re-signs from mediaKey rather than trusting a stored
+      // signedMediaUrl, whose token may have expired.
+      ..signMediaUrls = true;
     final container = ProviderContainer(
       overrides: [
         chatRepositoryProvider.overrideWithValue(repo),
@@ -532,7 +556,10 @@ void main() {
       PulseScore? pulse,
       bool bothSharedQuiz = false,
     }) async {
-      final repo = FakeChatRepository(currentUserId: userId);
+      final repo = FakeChatRepository(currentUserId: userId)
+        // The card re-signs from mediaKey rather than trusting a stored
+        // signedMediaUrl, whose token may have expired.
+        ..signMediaUrls = true;
       final container = ProviderContainer(
         overrides: [
           chatRepositoryProvider.overrideWithValue(repo),
@@ -703,7 +730,10 @@ void main() {
     // InfoRowWidget's own constructor asserts icon != null || imageUrl !=
     // null — a bare null avatarUrl (the real state for a brand-new couple)
     // must not crash the row.
-    final repo = FakeChatRepository(currentUserId: userId);
+    final repo = FakeChatRepository(currentUserId: userId)
+      // The card re-signs from mediaKey rather than trusting a stored
+      // signedMediaUrl, whose token may have expired.
+      ..signMediaUrls = true;
     final container = ProviderContainer(
       overrides: [
         chatRepositoryProvider.overrideWithValue(repo),
@@ -728,7 +758,10 @@ void main() {
   group('edit sheet', () {
     testWidgets('tapping the identity row opens a bottom sheet with a '
         'centered avatar above a pre-filled name field', (tester) async {
-      final repo = FakeChatRepository(currentUserId: userId);
+      final repo = FakeChatRepository(currentUserId: userId)
+        // The card re-signs from mediaKey rather than trusting a stored
+        // signedMediaUrl, whose token may have expired.
+        ..signMediaUrls = true;
       final container = ProviderContainer(
         overrides: [
           chatRepositoryProvider.overrideWithValue(repo),
@@ -783,7 +816,10 @@ void main() {
 
     testWidgets('a valid name autosaves after the debounce and reports it '
         'inline (no Save button, no snackbar)', (tester) async {
-      final repo = FakeChatRepository(currentUserId: userId);
+      final repo = FakeChatRepository(currentUserId: userId)
+        // The card re-signs from mediaKey rather than trusting a stored
+        // signedMediaUrl, whose token may have expired.
+        ..signMediaUrls = true;
       final container = ProviderContainer(
         overrides: [
           chatRepositoryProvider.overrideWithValue(repo),
@@ -822,7 +858,10 @@ void main() {
 
     testWidgets('an invalid name shows a validation error inside the sheet '
         'without calling the repository', (tester) async {
-      final repo = FakeChatRepository(currentUserId: userId);
+      final repo = FakeChatRepository(currentUserId: userId)
+        // The card re-signs from mediaKey rather than trusting a stored
+        // signedMediaUrl, whose token may have expired.
+        ..signMediaUrls = true;
       final container = ProviderContainer(
         overrides: [
           chatRepositoryProvider.overrideWithValue(repo),
@@ -858,7 +897,10 @@ void main() {
     testWidgets('typing does NOT save before the debounce elapses', (
       tester,
     ) async {
-      final repo = FakeChatRepository(currentUserId: userId);
+      final repo = FakeChatRepository(currentUserId: userId)
+        // The card re-signs from mediaKey rather than trusting a stored
+        // signedMediaUrl, whose token may have expired.
+        ..signMediaUrls = true;
       final container = ProviderContainer(
         overrides: [
           chatRepositoryProvider.overrideWithValue(repo),
@@ -894,7 +936,10 @@ void main() {
         'editing writes nothing — the unchanged name is not re-saved', (
       tester,
     ) async {
-      final repo = FakeChatRepository(currentUserId: userId);
+      final repo = FakeChatRepository(currentUserId: userId)
+        // The card re-signs from mediaKey rather than trusting a stored
+        // signedMediaUrl, whose token may have expired.
+        ..signMediaUrls = true;
       final container = ProviderContainer(
         overrides: [
           chatRepositoryProvider.overrideWithValue(repo),
@@ -959,7 +1004,10 @@ void main() {
 
     testWidgets('an edit still inside the debounce window when the sheet is '
         'dismissed is still saved, not dropped', (tester) async {
-      final repo = FakeChatRepository(currentUserId: userId);
+      final repo = FakeChatRepository(currentUserId: userId)
+        // The card re-signs from mediaKey rather than trusting a stored
+        // signedMediaUrl, whose token may have expired.
+        ..signMediaUrls = true;
       final container = ProviderContainer(
         overrides: [
           chatRepositoryProvider.overrideWithValue(repo),

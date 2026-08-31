@@ -1064,9 +1064,21 @@ class _BubbleBody extends StatelessWidget {
                   if (playableLocalAudioPath != null) {
                     return playableLocalAudioPath;
                   }
-                  if (signedUrl != null) return signedUrl;
-                  if (mediaKey == null) return null;
-                  return ref.read(signedMediaUrlProvider(mediaKey).future);
+                  // Re-signed from the key rather than reusing
+                  // message.signedMediaUrl. That URL is baked on at row
+                  // FETCH time and its token lives 10 minutes, so opening
+                  // a chat, waiting, then pressing play handed AVPlayer an
+                  // expired URL — and a cached row's stored URL can be
+                  // arbitrarily old. createSignedMediaUrl caches with a
+                  // 60s safety margin, so this is a memory hit in the
+                  // common case, not a round-trip.
+                  //
+                  // The stored URL stays as the fallback for a row that
+                  // somehow carries one without a key.
+                  if (mediaKey != null) {
+                    return ref.read(signedMediaUrlProvider(mediaKey).future);
+                  }
+                  return signedUrl;
                 },
               ),
         ),

@@ -30,11 +30,21 @@ class ResolvedMediaUrl extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (signedMediaUrl != null) {
-      return builder(context, signedMediaUrl!);
-    }
     final key = mediaKey;
-    if (key == null) return error;
+
+    // The KEY wins over a stored signedMediaUrl. That URL is baked onto
+    // the message at row-fetch time and its token lives 10 minutes, so a
+    // chat left open — or a row restored from the disk cache — carries one
+    // that has already expired. signedMediaUrlProvider goes through
+    // SupabaseChatRepository's cache, which re-signs past a 60s safety
+    // margin, so this is a memory hit in the common case rather than a
+    // round-trip.
+    //
+    // The stored URL remains the fallback for a row that carries one
+    // without a key.
+    if (key == null) {
+      return signedMediaUrl != null ? builder(context, signedMediaUrl!) : error;
+    }
 
     final resolved = ref.watch(signedMediaUrlProvider(key));
     return resolved.when(

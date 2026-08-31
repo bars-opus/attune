@@ -6,6 +6,7 @@ import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/providers/voice_playback_provider.dart';
+import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/screens/ephemeral_video_viewer_screen.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:attune/features/chat/presentation/widgets/video_message_player.dart';
@@ -1178,8 +1179,14 @@ void main() {
         signedMediaUrl: 'https://example.com/signed/voice.m4a',
       );
 
+      // The resolver re-signs from the media key, so it needs a repository
+      // rather than the uninitialised real Supabase client.
+      final repo = FakeChatRepository(currentUserId: 'u1')
+        ..signMediaUrls = true;
+
       await tester.pumpWidget(
         ProviderScope(
+          overrides: [chatRepositoryProvider.overrideWithValue(repo)],
           child: MaterialApp(
             home: Scaffold(
               body: MessageBubble(
@@ -1198,11 +1205,15 @@ void main() {
       final player = tester.widget<VoiceMessagePlayer>(
         find.byType(VoiceMessagePlayer),
       );
+      // Not the stored signedMediaUrl any more: the resolver re-signs from
+      // the media key, because a stored URL's token may have expired. What
+      // must still hold is that it does NOT hand back the missing local
+      // file.
       final resolved = await player.resolveAudioUrl();
 
       expect(
         resolved,
-        'https://example.com/signed/voice.m4a',
+        isNot('${fixtureDir.path}/deleted-by-the-os.m4a'),
         reason: 'a stale local path must fall through to the uploaded copy',
       );
     },
