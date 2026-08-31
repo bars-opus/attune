@@ -269,9 +269,25 @@ GRANT USAGE ON SCHEMA public, auth, extensions, storage TO anon, authenticated, 
 -- Supabase grants table privileges platform-side, so no migration does it.
 -- Without this, `SET LOCAL ROLE authenticated` hits "permission denied"
 -- before RLS is ever consulted -- and RLS is the thing under test.
+--
+-- service_role is deliberately EXCLUDED from these defaults.
+--
+-- It was included, and that is what hid the project's longest-running
+-- fault: 103 public tables had no service_role grant in production, so
+-- every Edge Function worker read empty queues through PostgREST (a
+-- missing SELECT returns no rows, not an error) while this harness showed
+-- them all reachable. Granting service_role here would model a platform
+-- behaviour that does NOT exist -- Supabase grants at table creation
+-- through its API, and a table created by a migration gets nothing.
+--
+-- 20260931140000 grants service_role explicitly and sets its own default
+-- privileges for tables added later. Leaving it out here is what makes
+-- that migration load-bearing: drop it, and service_role_grants_test
+-- fails locally instead of a queue silently draining nothing in
+-- production.
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated, service_role;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT ON TABLES TO anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT USAGE, SELECT ON SEQUENCES TO authenticated, service_role, anon;
+  GRANT USAGE, SELECT ON SEQUENCES TO authenticated, anon;

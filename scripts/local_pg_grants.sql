@@ -1,11 +1,26 @@
--- Applied AFTER all migrations. ALTER DEFAULT PRIVILEGES only covers tables
--- created afterwards by the same role, so a blanket grant is what actually
--- reproduces Supabase's platform-side privileges across the whole schema.
+-- Applied AFTER all migrations, reproducing the privileges Supabase
+-- applies platform-side.
+--
+-- service_role is deliberately NOT blanket-granted here any more.
+--
+-- It used to be, and that hid a real production fault for the project's
+-- entire life: 103 public tables had no service_role grant at all,
+-- because Supabase grants privileges when a table is created through its
+-- API and a table created by a migration gets only whatever default
+-- privileges happen to exist. Every Edge Function worker read empty
+-- queues through PostgREST -- a missing SELECT returns NO ROWS rather
+-- than an error -- while this harness showed every table reachable.
+--
+-- 20260931140000 now grants service_role explicitly and sets default
+-- privileges for tables added later. Leaving service_role out of the
+-- blanket below is what makes that migration load-bearing here: if it is
+-- ever dropped or a table escapes it, the contract tests fail locally
+-- instead of the queue silently draining nothing in production.
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public
-  TO authenticated, service_role;
+  TO authenticated;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
-  TO authenticated, service_role, anon;
+  TO authenticated, anon;
 -- Then re-apply the table REVOKEs migrations make deliberately.
 --
 -- Same hazard as the function note below, one level up: the blanket grant
