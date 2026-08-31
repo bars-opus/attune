@@ -287,4 +287,149 @@ BEGIN
   END IF;
 END $$;
 
+-- Truth answers are queued for the safety scan (TRUTH_OR_DARE.md §4.4).
+--
+-- SafetyTriggerService.checkTruthAnswer was a stub returning false, called
+-- from nowhere, and safety_triggered was read by the client but never
+-- written. A free-text field in an intimate game had no safety net.
+RESET ROLE;
+
+DO $$
+DECLARE
+  v_session uuid;
+  v_round uuid;
+  v_queued int;
+  v_answering uuid;
+BEGIN
+  INSERT INTO public.game_sessions
+    (relationship_id, initiator_id, game_type, status, total_rounds)
+  VALUES ('10000000-0000-0000-0000-0000000000a1',
+          '00000000-0000-0000-0000-0000000000a1',
+          'truth_or_dare', 'active', 8)
+  RETURNING id INTO v_session;
+
+  INSERT INTO public.game_session_rounds
+    (session_id, round_number, chosen_type)
+  VALUES (v_session, 1, 'truth')
+  RETURNING id INTO v_round;
+
+  -- Nothing queued yet: the round exists but carries no answer.
+  SELECT count(*) INTO v_queued
+  FROM public.truth_answer_safety_outbox WHERE round_id = v_round;
+  IF v_queued <> 0 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: an empty round queued a scan';
+  END IF;
+
+  -- Partner A answers.
+  UPDATE public.game_session_rounds
+     SET answer_a = 'something a partner wrote',
+         answer_b = '__revealed__'
+   WHERE id = v_round;
+
+  SELECT count(*) INTO v_queued
+  FROM public.truth_answer_safety_outbox WHERE round_id = v_round;
+
+  SELECT answering_user_id INTO v_answering
+  FROM public.truth_answer_safety_outbox WHERE round_id = v_round LIMIT 1;
+
+  IF v_queued <> 1 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: a truth answer queued % scans, expected 1', v_queued;
+  END IF;
+
+  -- The ANSWERING partner is recorded, so the worker can send resources to
+  -- the other one — the reader.
+  IF v_answering <> '00000000-0000-0000-0000-0000000000a1' THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the wrong partner was recorded as answering';
+  END IF;
+
+  DELETE FROM public.game_sessions WHERE id = v_session;
+END $$;
+
+-- A dare has no free text and must not be queued.
+DO $$
+DECLARE v_session uuid; v_round uuid; v_queued int;
+BEGIN
+  INSERT INTO public.game_sessions
+    (relationship_id, initiator_id, game_type, status, total_rounds)
+  VALUES ('10000000-0000-0000-0000-0000000000a1',
+          '00000000-0000-0000-0000-0000000000a1',
+          'truth_or_dare', 'active', 8)
+  RETURNING id INTO v_session;
+
+  INSERT INTO public.game_session_rounds
+    (session_id, round_number, chosen_type)
+  VALUES (v_session, 1, 'dare')
+  RETURNING id INTO v_round;
+
+  UPDATE public.game_session_rounds
+     SET answer_a = 'did the dare' WHERE id = v_round;
+
+  SELECT count(*) INTO v_queued
+  FROM public.truth_answer_safety_outbox WHERE round_id = v_round;
+  IF v_queued <> 0 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a dare queued a safety scan';
+  END IF;
+
+  DELETE FROM public.game_sessions WHERE id = v_session;
+END $$;
+
+-- The reveal sentinel is not an answer and must not be scanned.
+DO $$
+DECLARE v_session uuid; v_round uuid; v_queued int;
+BEGIN
+  INSERT INTO public.game_sessions
+    (relationship_id, initiator_id, game_type, status, total_rounds)
+  VALUES ('10000000-0000-0000-0000-0000000000a1',
+          '00000000-0000-0000-0000-0000000000a1',
+          'truth_or_dare', 'active', 8)
+  RETURNING id INTO v_session;
+
+  INSERT INTO public.game_session_rounds
+    (session_id, round_number, chosen_type)
+  VALUES (v_session, 1, 'truth')
+  RETURNING id INTO v_round;
+
+  UPDATE public.game_session_rounds
+     SET answer_b = '__revealed__' WHERE id = v_round;
+
+  SELECT count(*) INTO v_queued
+  FROM public.truth_answer_safety_outbox WHERE round_id = v_round;
+  IF v_queued <> 0 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the reveal sentinel was queued as an answer';
+  END IF;
+
+  DELETE FROM public.game_sessions WHERE id = v_session;
+END $$;
+
+-- The outbox names rounds across every relationship: server-side only.
+DO $$
+DECLARE v_rls boolean; v_policies int;
+BEGIN
+  SELECT relrowsecurity INTO v_rls
+  FROM pg_class WHERE relname = 'truth_answer_safety_outbox';
+  SELECT count(*) INTO v_policies
+  FROM pg_policies WHERE tablename = 'truth_answer_safety_outbox';
+
+  IF NOT COALESCE(v_rls, false) OR v_policies <> 0 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the truth-answer outbox is reachable by clients';
+  END IF;
+END $$;
+
+-- And something must drain it: a queue nobody reads is worse than no
+-- safety net, because it looks implemented.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM cron.job WHERE jobname = 'drain-truth-answer-safety'
+  ) THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: nothing drains the truth-answer safety outbox';
+  END IF;
+END $$;
+
 ROLLBACK;
