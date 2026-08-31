@@ -71,4 +71,24 @@ void main() {
       isNot(contains('EdgeInsets.fromLTRB(8, 10, 8, 96)')),
     );
   });
+
+  test('the separator is given room to isolate one day from the next', () {
+    // 12 above and 4 below was tighter than the gap between two ordinary
+    // bubbles (12), so a day boundary read as less of a break than a
+    // change of sender. Generous and SYMMETRIC: the separator belongs to
+    // neither day, so leaning it toward one reads as a heading for that
+    // day rather than a division between both.
+    final block = src.substring(
+      src.indexOf('child: ChatDateSeparator(') - 300,
+      src.indexOf('child: ChatDateSeparator('),
+    );
+    // Deliberately uneven in source so it is EVEN on screen: the row
+    // below adds its own 12px top padding, which a symmetric value here
+    // would inherit as a 12px lean toward the older day.
+    expect(
+      block,
+      contains('EdgeInsets.only(top: 32, bottom: 20)'),
+      reason: 'a day boundary needs more air than a sender change',
+    );
+  });
 }

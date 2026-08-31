@@ -2146,7 +2146,14 @@ class _MessageListState extends ConsumerState<_MessageList>
                     children: [
                       row,
                       Padding(
-                        padding: const EdgeInsets.only(top: 12, bottom: 4),
+                        // 32 above, 20 below, which lands SYMMETRIC on
+                        // screen: the row beneath contributes its own 12px
+                        // top padding, so an even 20/20 here measures
+                        // 20 above and 32 below and leans the separator
+                        // toward the older day. A day boundary should also
+                        // read as a bigger break than a sender change,
+                        // which already gets 12.
+                        padding: const EdgeInsets.only(top: 32, bottom: 20),
                         child: ChatDateSeparator(
                           label: chatDateLabel(message.createdAt),
                         ),
