@@ -63,13 +63,17 @@ void main() {
     expect(bubble, contains('footerInsideBubble: false'));
   });
 
-  testWidgets('the footer time is white; a read receipt turns primary', (
+  testWidgets('the footer follows the theme; a read receipt turns primary', (
     tester,
   ) async {
     // The footer sits on the chat wallpaper now, not on a bubble, so the
-    // on-bubble metadata colours (a green and a grey) no longer apply. The
-    // read state keeps its own colour — that contrast IS the signal.
-    Future<void> pumpWith(MessageStatus status) async {
+    // on-bubble metadata colours (a green and a grey) no longer apply.
+    // White alone was wrong too: it vanishes against a light wallpaper.
+    // The read state keeps its own colour — that contrast IS the signal.
+    Future<void> pumpWith(
+      MessageStatus status, {
+      required Brightness brightness,
+    }) async {
       final message = Message.fromRow({
         'id': 'm1',
         'client_message_id': 'c1',
@@ -83,9 +87,10 @@ void main() {
         ProviderScope(
           child: withScreenUtil(
             MaterialApp(
+              theme: ThemeData(brightness: brightness),
               home: Scaffold(
                 body: MessageBubble(
-                  key: ValueKey(status),
+                  key: ValueKey('$status-$brightness'),
                   message: message,
                   currentUserId: 'u1',
                   showLatestTimestamp: true,
@@ -98,23 +103,61 @@ void main() {
       );
     }
 
-    await pumpWith(MessageStatus.delivered);
-    final time = tester.widget<Text>(find.textContaining(':').first);
+    // Light mode: black, because white vanishes on a light wallpaper.
+    await pumpWith(MessageStatus.delivered, brightness: Brightness.light);
     expect(
-      time.style?.color,
-      Colors.white,
-      reason: 'the time reads against the wallpaper, not a bubble',
+      tester.widget<Text>(find.textContaining(':').first).style?.color,
+      Colors.black,
+      reason: 'white was unreadable against the light wallpaper',
+    );
+    expect(
+      tester.widget<Icon>(find.byIcon(Icons.done_all_rounded)).color,
+      Colors.black,
     );
 
-    final delivered = tester.widget<Icon>(find.byIcon(Icons.done_all_rounded));
-    expect(delivered.color, Colors.white);
-
-    await pumpWith(MessageStatus.read);
-    final read = tester.widget<Icon>(find.byIcon(Icons.done_all_rounded));
+    // The read receipt is the one part that ignores the theme.
+    await pumpWith(MessageStatus.read, brightness: Brightness.light);
     expect(
-      read.color,
-      isNot(Colors.white),
+      tester.widget<Icon>(find.byIcon(Icons.done_all_rounded)).color,
+      isNot(Colors.black),
       reason: 'a read receipt is the one part that changes colour',
+    );
+  });
+
+  testWidgets('the footer is white in dark mode', (tester) async {
+    // Its own test rather than a second pump in the one above: pumping a
+    // new theme into the same test can leave the previous tree's Text
+    // matchable, and .first then reads the stale one.
+    final message = Message.fromRow({
+      'id': 'm1',
+      'client_message_id': 'c1',
+      'relationship_id': 'r1',
+      'sender_id': 'u1',
+      'content': 'hello there',
+      'created_at': DateTime(2026, 10, 12, 14, 30).toIso8601String(),
+    }, currentUserId: 'u1').copyWith(status: MessageStatus.delivered);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: withScreenUtil(
+          MaterialApp(
+            theme: ThemeData(brightness: Brightness.dark),
+            home: Scaffold(
+              body: MessageBubble(
+                message: message,
+                currentUserId: 'u1',
+                showLatestTimestamp: true,
+                showStatus: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.widget<Text>(find.textContaining(':').first).style?.color,
+      Colors.white,
     );
   });
 }

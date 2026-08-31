@@ -228,10 +228,13 @@ class MessageBubble extends StatelessWidget {
         isMine ? chatColors.onSenderBubble : chatColors.onReceiverBubble;
     // The footer sits on the chat wallpaper now rather than inside a
     // bubble, so the on-bubble metadata colours no longer apply: they were
-    // chosen to read against a filled sender/receiver bubble. White carries
-    // over any wallpaper, and _StatusIcon still overrides it to primary for
-    // a read receipt — that contrast is the signal.
-    final metadataColor = Colors.white;
+    // chosen to read against a filled sender/receiver bubble.
+    //
+    // Follows the theme rather than being fixed white — white vanished
+    // against the light wallpaper. _StatusIcon still overrides this to
+    // primary for a read receipt, which is what makes the receipt legible
+    // as a state change in either mode.
+    final metadataColor = isLightMode ? Colors.black : Colors.white;
     final replySurface =
         isLightMode
             ? (isMine
