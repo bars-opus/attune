@@ -91,4 +91,29 @@ void main() {
       reason: 'a day boundary needs more air than a sender change',
     );
   });
+
+  test('the separator is built ABOVE its message, not below', () {
+    // reverse: true flips the LIST\'s scroll axis, not the order of
+    // children inside a single item. Placing the separator after the row
+    // in the Column therefore rendered it BELOW the message — so the first
+    // message of a new day appeared above its own "Today" divider, reading
+    // as part of yesterday. The second message of the day looked correct,
+    // because it is not first-of-day and draws no separator at all.
+    // The whole Column, so both children are inside the slice.
+    final start = src.indexOf('if (!isFirstOfDay) return row;');
+    final block = src.substring(start, src.indexOf('},', start));
+
+    final separatorIndex = block.indexOf('ChatDateSeparator(');
+    final rowIndex = block.indexOf('\n                      row,');
+
+    expect(separatorIndex, isNonNegative);
+    expect(rowIndex, isNonNegative, reason: 'the row must still be built');
+    expect(
+      separatorIndex,
+      lessThan(rowIndex),
+      reason:
+          'the separator must come FIRST in the column to render above the '
+          'message it labels',
+    );
+  });
 }

@@ -2137,14 +2137,22 @@ class _MessageListState extends ConsumerState<_MessageList>
 
                   if (!isFirstOfDay) return row;
 
-                  // The list is reverse: true, so a child placed AFTER the row
-                  // in this column renders physically ABOVE it — which is
-                  // where the separator for a day belongs.
+                  // The separator comes FIRST, so it renders above the
+                  // message whose day it names.
+                  //
+                  // reverse: true flips the LIST's scroll axis; it does not
+                  // reverse the children of an individual item. Placing the
+                  // separator after the row put it BELOW the message, so
+                  // the first message of a new day sat above its own
+                  // "Today" divider and read as part of yesterday. The
+                  // day's second message looked right, because it is not
+                  // first-of-day and draws no separator at all — which is
+                  // what made this look like a send-path bug rather than a
+                  // layout one.
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      row,
                       Padding(
                         // 32 above, 20 below, which lands SYMMETRIC on
                         // screen: the row beneath contributes its own 12px
@@ -2158,6 +2166,7 @@ class _MessageListState extends ConsumerState<_MessageList>
                           label: chatDateLabel(message.createdAt),
                         ),
                       ),
+                      row,
                     ],
                   );
                 },
