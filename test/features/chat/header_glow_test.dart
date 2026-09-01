@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/chat_test_harness.dart';
+import 'package:attune/features/chat/presentation/providers/partner_presence_provider.dart';
 
 /// Pumps ChatScreen and returns the container so the caller can dispose
 /// it after unmounting.
@@ -16,6 +17,7 @@ import 'support/chat_test_harness.dart';
 Future<ProviderContainer> _pumpChat(
   WidgetTester tester, {
   required bool isOnline,
+  bool partnerActive = false,
 }) async {
   final repo = FakeChatRepository(currentUserId: 'user-a');
   final convo = activeConversation('rel-1');
@@ -23,10 +25,15 @@ Future<ProviderContainer> _pumpChat(
   final container = buildChatContainer(
     repository: repo,
     userId: 'user-a',
-    // The header's glow tracks connectivity, so drive it at the source
-    // rather than reaching into the widget.
+    // Driven at the source rather than by reaching into the widget.
     extraOverrides: [
       chatConnectivityProvider.overrideWith((ref) => Stream.value(isOnline)),
+      // The glow used to follow the VIEWER's connectivity, so it stayed
+      // lit permanently for everyone. It now follows whether the partner
+      // is in this conversation.
+      partnerActiveInChatProvider(
+        'rel-1',
+      ).overrideWith((ref) => Stream.value(partnerActive)),
     ],
   );
 
@@ -48,13 +55,17 @@ Future<void> _teardown(WidgetTester tester, ProviderContainer c) async {
 
 void main() {
   testWidgets('header avatar glows while the partner is here', (tester) async {
-    final container = await _pumpChat(tester, isOnline: true);
+    final container = await _pumpChat(
+      tester,
+      isOnline: true,
+      partnerActive: true,
+    );
 
     final glow = tester.widget<GlowPulse>(find.byType(GlowPulse));
     expect(
       glow.active,
       isTrue,
-      reason: 'an active conversation with the partner online must glow',
+      reason: 'the glow must follow the partner being in this chat',
     );
 
     await _teardown(tester, container);
@@ -63,10 +74,17 @@ void main() {
   testWidgets('header avatar does not glow while the partner is away', (
     tester,
   ) async {
-    // The widget is still mounted when offline — only `active` flips —
-    // so asserting on presence alone would pass either way. This pins
-    // the flag itself, which is what actually shows the glow.
-    final container = await _pumpChat(tester, isOnline: false);
+    // The widget is still mounted either way — only `active` flips — so
+    // asserting on presence alone would pass regardless. This pins the
+    // flag itself, which is what actually shows the glow.
+    //
+    // isOnline stays TRUE here: the viewer being connected must no longer
+    // be enough to light the glow. That was the bug.
+    final container = await _pumpChat(
+      tester,
+      isOnline: true,
+      partnerActive: false,
+    );
 
     final glow = tester.widget<GlowPulse>(find.byType(GlowPulse));
     expect(

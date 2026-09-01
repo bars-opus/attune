@@ -262,6 +262,15 @@ class FakeChatRepository implements ChatRepository {
     presenceCalls.add(relationshipId);
   }
 
+  /// Whether the fake partner is in the chat. Settable so a test can
+  /// drive the "Active in this chat" indicator both ways.
+  bool partnerActive = false;
+
+  @override
+  Future<bool> partnerIsActiveInChat(String relationshipId) async {
+    return partnerActive;
+  }
+
   @override
   Stream<void> watchConversationEvents(String relationshipId) => _events.stream;
 

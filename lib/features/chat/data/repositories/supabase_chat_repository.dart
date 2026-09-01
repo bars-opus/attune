@@ -626,6 +626,21 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
+  Future<bool> partnerIsActiveInChat(String relationshipId) async {
+    try {
+      final result = await _supabase.rpc(
+        'partner_is_active_in_chat',
+        params: {'p_relationship_id': relationshipId},
+      );
+      return result == true;
+    } catch (_) {
+      // Absent rather than wrong: a failed read must not claim the
+      // partner is present when we do not know.
+      return false;
+    }
+  }
+
+  @override
   Future<int> fetchStreak(String relationshipId) async {
     try {
       final offset = DateTime.now().timeZoneOffset.inMinutes;

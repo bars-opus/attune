@@ -36,6 +36,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:video_compress/video_compress.dart';
+import 'package:attune/features/chat/presentation/providers/partner_presence_provider.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({
@@ -1018,7 +1019,7 @@ class _ConversationStateBanner extends StatelessWidget {
   }
 }
 
-class _ConversationHeaderCard extends StatelessWidget {
+class _ConversationHeaderCard extends ConsumerWidget {
   const _ConversationHeaderCard({
     required this.conversation,
     required this.isExpanded,
@@ -1036,7 +1037,15 @@ class _ConversationHeaderCard extends StatelessWidget {
   final DateTime? lastSyncedAt;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Absent rather than wrong while loading: an unknown presence must not
+    // render as "Active", which is the failure the old indicator had.
+    final partnerActive =
+        ref
+            .watch(partnerActiveInChatProvider(conversation.relationshipId))
+            .valueOrNull ??
+        false;
+
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final subtitle =
@@ -1053,9 +1062,9 @@ class _ConversationHeaderCard extends StatelessWidget {
           // Breathes a few times when the partner is here, then settles
           // to a static glow — a moment, not a session-long loop.
           GlowPulse(
-            active:
-                conversation.availability == ConversationAvailability.active &&
-                isOnline,
+            // Follows the partner, not the viewer's connectivity, so the
+            // avatar stops glowing permanently for everyone.
+            active: partnerActive,
             child: ProfileAvatar(
               avatarUrl: conversation.avatarUrl ?? '',
               currentUserId: '',
@@ -1076,10 +1085,22 @@ class _ConversationHeaderCard extends StatelessWidget {
                     ),
                   ),
 
-                  // conversation.availability == ConversationAvailability.active &&
-                  isOnline
+                  // "Online" here used to be driven by isOnline -- the
+                  // VIEWER's own connectivity -- so it read Online
+                  // whenever you had a connection, whatever your partner
+                  // was doing. It was decoration, not data.
+                  //
+                  // Now it reports whether the partner is in THIS
+                  // conversation. Deliberately not a general online
+                  // status: in a couples app that answers "they are on
+                  // their phone and not replying to me", which starts
+                  // arguments the app should not help start. Scoped here
+                  // it says something kinder and true -- they are with
+                  // you now -- and it is the only thing chat_presence
+                  // actually measures.
+                  partnerActive
                       ? TextSpan(
-                        text: '\nOnline ',
+                        text: '\nActive in this chat',
                         style: textTheme.bodySmall?.copyWith(
                           color: colorScheme.primary,
                         ),

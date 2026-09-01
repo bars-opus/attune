@@ -207,6 +207,12 @@ abstract class ChatRepository {
   /// view is backgrounded or left. Best-effort; failures never block chat.
   Future<void> setPresence(String? relationshipId);
 
+  /// Whether the partner is looking at this conversation right now.
+  ///
+  /// Deliberately a boolean and not a timestamp: Attune shows "Active in
+  /// this chat", never a last-seen time. See partner_is_active_in_chat.
+  Future<bool> partnerIsActiveInChat(String relationshipId);
+
   /// Broadcasts an ephemeral typing signal to the other member over Realtime
   /// (no DB write). Best-effort; failures never block messaging.
   void sendTyping(String relationshipId, {required bool typing});

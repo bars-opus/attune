@@ -224,6 +224,7 @@ class ChatController extends StateNotifier<ChatState> {
   StreamSubscription<void>? _realtimeSubscription;
   Timer? _refreshDebounce;
   Timer? _readDebounce;
+  Timer? _presenceHeartbeat;
   Timer? _retryTimer;
 
   /// Whether the conversation is currently visible on-screen, the app is
@@ -340,10 +341,40 @@ class ChatController extends StateNotifier<ChatState> {
           .setPresence(active ? relationshipId : null),
     );
     if (active) {
+      _startPresenceHeartbeat();
       markAsReadDebounced();
     } else {
+      _stopPresenceHeartbeat();
       _readDebounce?.cancel();
     }
+  }
+
+  /// Refreshes presence while the conversation is open.
+  ///
+  /// Presence used to be written once, on entry, and its freshness window
+  /// is 45 seconds -- so a partner reading quietly for a minute looked
+  /// like they had left. The heartbeat is what makes "Active in this
+  /// chat" mean what it says.
+  ///
+  /// 20 seconds against a 45-second window: two beats can be lost to a
+  /// flaky connection before the indicator drops, so it does not flicker
+  /// on a brief blip. One row is updated per beat, per open chat.
+  void _startPresenceHeartbeat() {
+    _presenceHeartbeat?.cancel();
+    _presenceHeartbeat = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) {
+        if (!_isViewActive) return;
+        unawaited(
+          ref.read(chatRepositoryProvider).setPresence(relationshipId),
+        );
+      },
+    );
+  }
+
+  void _stopPresenceHeartbeat() {
+    _presenceHeartbeat?.cancel();
+    _presenceHeartbeat = null;
   }
 
   Future<void> _refreshConversation() async {
@@ -2228,6 +2259,10 @@ class ChatController extends StateNotifier<ChatState> {
     _refreshDebounce?.cancel();
     _readDebounce?.cancel();
     _retryTimer?.cancel();
+    // Without this the heartbeat outlives the screen, reporting the user
+    // as present in a chat they have closed -- which would both show the
+    // partner a false indicator and suppress their push notifications.
+    _presenceHeartbeat?.cancel();
     super.dispose();
   }
 }
