@@ -7,6 +7,7 @@ import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:attune/features/chat/utils/chat_log.dart';
 
 final supabaseChatRepositoryProvider = Provider<ChatRepository>((ref) {
   final supabase = ref.watch(supabaseClientProvider);
@@ -562,7 +563,34 @@ class SupabaseChatRepository implements ChatRepository {
                 }
               },
             )
-            .subscribe();
+            .subscribe((status, error) {
+              // A websocket dies when the network drops, and nothing here
+              // used to notice: .subscribe() was called with no status
+              // callback at all. After the connection returned the channel
+              // stayed dead, so no message, receipt, pin or reaction ever
+              // arrived again until the screen was rebuilt -- which is why
+              // "turn data off, turn it back on" lost messages entirely.
+              //
+              // On any non-subscribed terminal status, emit one event: the
+              // listener's handler refetches, which closes the gap for
+              // everything missed while the socket was down. Supabase's
+              // client reconnects the socket itself; what it cannot do is
+              // tell the app it missed events in the meantime.
+              switch (status) {
+                case RealtimeSubscribeStatus.subscribed:
+                  // Includes the FIRST subscribe, so the initial refetch is
+                  // harmless, and every resubscribe after a reconnect.
+                  if (!events.isClosed) events.add(null);
+                case RealtimeSubscribeStatus.channelError:
+                case RealtimeSubscribeStatus.timedOut:
+                case RealtimeSubscribeStatus.closed:
+                  ChatLog.d(
+                    '[CHAT] realtime channel ${status.name} '
+                    'rel=${ChatLog.shortId(relationshipId)} '
+                    '${error ?? ''}',
+                  );
+              }
+            });
 
     _channels[relationshipId] = channel;
     return channel;
@@ -618,7 +646,17 @@ class SupabaseChatRepository implements ChatRepository {
           );
     }
 
-    channel.subscribe();
+    // Same reconnect handling as the per-chat channel: a resubscribe after
+    // a dropped network emits one event, and the listener refetches the
+    // list -- which is what makes a message sent while the receiver was
+    // offline show up in their conversation list on reconnect instead of
+    // only when they open the chat.
+    channel.subscribe((status, error) {
+      if (status == RealtimeSubscribeStatus.subscribed &&
+          !controller.isClosed) {
+        controller.add(null);
+      }
+    });
 
     controller.onCancel = () {
       unawaited(_supabase.removeChannel(channel));
