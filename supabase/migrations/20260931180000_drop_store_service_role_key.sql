@@ -1,0 +1,13 @@
+-- Removes the one-shot helper from 20260931170000.
+--
+-- It existed for a single call: this project is mid-migration to
+-- Supabase's sb_secret_ API keys, Edge Functions receive the new key as
+-- SUPABASE_SERVICE_ROLE_KEY, and the dashboard exposes only the legacy
+-- JWT -- so the correct value could not be copied by hand. The function
+-- let an Edge Function hand its own injected key to Vault directly,
+-- without the secret passing through a clipboard or a terminal history.
+--
+-- Dropped immediately afterwards: a SECURITY DEFINER function that
+-- rewrites the credential the entire worker layer authenticates with has
+-- no reason to outlive the migration it was needed for.
+DROP FUNCTION IF EXISTS public.store_service_role_key(text);

@@ -78,3 +78,14 @@ END $$;
 -- Client access is granted per table alongside the RLS policies that
 -- constrain it; a blanket grant to those roles would hand every future
 -- table to clients by default, which is the opposite of what this fixes.
+
+-- PostgREST caches table privileges in its schema cache. A grant applied
+-- by migration is invisible to the API until that cache reloads -- the
+-- privilege is in the database, every has_table_privilege() check passes,
+-- and the workers still read empty queues, because PostgREST is still
+-- enforcing the permissions it loaded at startup.
+--
+-- That is indistinguishable from the missing grant itself from the
+-- outside, which is the trap: fixing the grant appears not to work, and
+-- the obvious conclusion is that the grant was not the problem.
+NOTIFY pgrst, 'reload schema';
