@@ -524,3 +524,26 @@ class _ChatGameSessionRow extends StatelessWidget {
     );
   }
 }
+
+/// The catalogue's icon for a game_type.
+///
+/// PLACEHOLDER ART. The chat game card currently draws this icon on a
+/// tinted disc, standing in for the illustrated board each game will get
+/// -- the pool table, the dartboard, the archery range that iMessage's
+/// games show. When those assets exist, this is the seam to replace:
+/// swap the Icon for the artwork and leave the card's layout, states and
+/// tap behaviour untouched.
+///
+/// Sourced from the sheet's own catalogue rather than a second list, so a
+/// game cannot show one icon in the picker and another in the chat.
+IconData? chatGameIconForType(String gameType) {
+  final destination = chatGameDestinationForType(gameType);
+  if (destination == null) return null;
+
+  for (final category in _chatGameCategories) {
+    for (final option in category.options) {
+      if (option.destination == destination) return option.icon;
+    }
+  }
+  return null;
+}

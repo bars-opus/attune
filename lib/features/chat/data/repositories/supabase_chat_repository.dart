@@ -33,6 +33,7 @@ class SupabaseChatRepository implements ChatRepository {
 
   static const _messageColumns =
       'id,relationship_id,sender_id,client_message_id,content,created_at,'
+      'sort_at,game_session_id,'
       'delivered_at,read_at,media_url,media_thumbnail_url,media_type,'
       'media_duration_ms,media_waveform,media_width,media_height,source,'
       'reply_to_message_id,quoted_text,deleted_at,edited_at,'
@@ -183,7 +184,7 @@ class SupabaseChatRepository implements ChatRepository {
                 .from('messages')
                 .select(_messageColumns)
                 .eq('relationship_id', relationshipId)
-                .order('created_at', ascending: false)
+                .order('sort_at', ascending: false)
                 .order('id', ascending: false)
                 .limit(limit)
             : await _supabase
@@ -191,10 +192,10 @@ class SupabaseChatRepository implements ChatRepository {
                 .select(_messageColumns)
                 .eq('relationship_id', relationshipId)
                 .or(
-                  'created_at.lt.${before.createdAt.toUtc().toIso8601String()},'
-                  'and(created_at.eq.${before.createdAt.toUtc().toIso8601String()},id.lt.${before.id})',
+                  'sort_at.lt.${before.sortAt.toUtc().toIso8601String()},'
+                  'and(sort_at.eq.${before.sortAt.toUtc().toIso8601String()},id.lt.${before.id})',
                 )
-                .order('created_at', ascending: false)
+                .order('sort_at', ascending: false)
                 .order('id', ascending: false)
                 .limit(limit);
 
@@ -220,7 +221,7 @@ class SupabaseChatRepository implements ChatRepository {
                   .from('messages')
                   .select(_messageColumns)
                   .eq('relationship_id', relationshipId)
-                  .order('created_at', ascending: true)
+                  .order('sort_at', ascending: true)
                   .order('id', ascending: true)
                   .limit(limit)
               : await _supabase
@@ -228,10 +229,10 @@ class SupabaseChatRepository implements ChatRepository {
                   .select(_messageColumns)
                   .eq('relationship_id', relationshipId)
                   .or(
-                    'created_at.gt.${cursor.createdAt.toUtc().toIso8601String()},'
-                    'and(created_at.eq.${cursor.createdAt.toUtc().toIso8601String()},id.gt.${cursor.id})',
+                    'sort_at.gt.${cursor.sortAt.toUtc().toIso8601String()},'
+                    'and(sort_at.eq.${cursor.sortAt.toUtc().toIso8601String()},id.gt.${cursor.id})',
                   )
-                  .order('created_at', ascending: true)
+                  .order('sort_at', ascending: true)
                   .order('id', ascending: true)
                   .limit(limit);
 
@@ -240,7 +241,7 @@ class SupabaseChatRepository implements ChatRepository {
       if (rows.length < limit) break;
       final last = rows.last;
       cursor = ChatMessageCursor(
-        createdAt: DateTime.parse(last['created_at'] as String),
+        sortAt: DateTime.parse(last['sort_at'] as String),
         id: last['id'] as String,
       );
     }
@@ -708,7 +709,7 @@ class SupabaseChatRepository implements ChatRepository {
         .from('messages')
         .select(_messageColumns)
         .eq('relationship_id', relationshipId)
-        .order('created_at', ascending: false)
+        .order('sort_at', ascending: false)
         .order('id', ascending: false)
         .limit(1);
     if (rows.isEmpty) return null;
@@ -912,7 +913,7 @@ class SupabaseChatRepository implements ChatRepository {
         // but the filter is unconditional since is_view_once is false for
         // every other media type's rows anyway.
         .eq('is_view_once', false)
-        .order('created_at', ascending: false)
+        .order('sort_at', ascending: false)
         .order('id', ascending: false);
 
     return rows
@@ -942,7 +943,7 @@ class SupabaseChatRepository implements ChatRepository {
         // it) — excluded here since there is nothing to show/highlight in
         // a search result for a tombstoned message.
         .isFilter('deleted_at', null)
-        .order('created_at', ascending: false)
+        .order('sort_at', ascending: false)
         .order('id', ascending: false);
 
     return rows

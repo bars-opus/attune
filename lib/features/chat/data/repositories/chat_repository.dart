@@ -228,11 +228,18 @@ class TypingEvent {
   final bool typing;
 }
 
+/// A keyset cursor over (sort_at, id).
+///
+/// sort_at, not created_at: a game card moves to the bottom of the chat
+/// when the turn passes, and ordering by created_at would either freeze it
+/// at the moment it was sent or -- if created_at were bumped instead --
+/// corrupt this cursor, serving rows twice or skipping them mid-scroll.
+/// created_at keeps its original meaning and still drives date separators.
 class ChatMessageCursor {
-  final DateTime createdAt;
+  final DateTime sortAt;
   final String id;
 
-  const ChatMessageCursor({required this.createdAt, required this.id});
+  const ChatMessageCursor({required this.sortAt, required this.id});
 }
 
 class ChatMediaUploadIntent {

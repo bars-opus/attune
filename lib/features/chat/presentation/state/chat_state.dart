@@ -475,7 +475,7 @@ class ChatController extends StateNotifier<ChatState> {
     for (final message in state.messages) {
       if (message.id.startsWith('_local_')) continue;
       // state.messages is newest-first; the first canonical row is the newest.
-      cursor = ChatMessageCursor(createdAt: message.createdAt, id: message.id);
+      cursor = ChatMessageCursor(sortAt: message.sortAt, id: message.id);
       break;
     }
 
@@ -539,7 +539,7 @@ class ChatController extends StateNotifier<ChatState> {
       final older = await repository.getMessages(
         relationshipId,
         before: ChatMessageCursor(
-          createdAt: state.messages.last.createdAt,
+          sortAt: state.messages.last.sortAt,
           id: state.messages.last.id,
         ),
         limit: ref.read(chatConfigProvider).messagePageSize,

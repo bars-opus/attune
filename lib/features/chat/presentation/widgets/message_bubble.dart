@@ -24,6 +24,7 @@ import 'package:intl/intl.dart';
 import 'dart:io';
 import 'package:attune/features/chat/presentation/widgets/streak_bubble.dart';
 import 'package:attune/features/chat/presentation/screens/streak_viewer_screen.dart';
+import 'package:attune/features/games/presentation/widgets/game_message_bubble.dart';
 
 /// A local media path only if the file is still there.
 ///
@@ -51,6 +52,7 @@ class MessageBubble extends StatelessWidget {
     super.key,
     required this.message,
     this.conversation,
+    this.onGameTap,
     this.onRetry,
     this.onRemove,
     this.showStatus = true,
@@ -118,6 +120,11 @@ class MessageBubble extends StatelessWidget {
   /// non-interactive (see _BubbleBody's canView derivation) rather than
   /// crashing — the tombstone branch never needs it at all.
   final Conversation? conversation;
+
+  /// Opens a game card's session. Given the game_type so the caller owns
+  /// routing -- the chat should not know how each game is reached.
+  final void Function(String gameType)? onGameTap;
+
   final VoidCallback? onRetry;
   final VoidCallback? onRemove;
   final bool showStatus;
@@ -460,6 +467,8 @@ class MessageBubble extends StatelessWidget {
                             onImageTap: onImageTap,
                             onVideoTap: onVideoTap,
                             onStreakViewSpent: onStreakViewSpent,
+                            onGameTap: onGameTap,
+                            viewerId: currentUserId,
                             onBubbleColor: onBubbleColor,
                           ),
                         ],
@@ -895,6 +904,8 @@ class _BubbleBody extends StatelessWidget {
     this.onImageTap,
     this.onVideoTap,
     this.onStreakViewSpent,
+    this.onGameTap,
+    this.viewerId,
   });
 
   final Message message;
@@ -910,6 +921,13 @@ class _BubbleBody extends StatelessWidget {
   /// list can apply it. Without this the bubble keeps the count it was
   /// built with and reopens past its budget.
   final void Function(String messageId, int viewsRemaining)? onStreakViewSpent;
+
+  /// Opens a game card's session, by game_type.
+  final void Function(String gameType)? onGameTap;
+
+  /// The viewer, used to phrase a game card as "Your move" vs "Their
+  /// move". Nullable so an unauthenticated preview still renders.
+  final String? viewerId;
 
   final Color onBubbleColor;
 
@@ -1084,7 +1102,20 @@ class _BubbleBody extends StatelessWidget {
         ),
       );
     }
-    if (message.isStreak) {
+    if (message.isGame && message.gameSessionId != null) {
+      children.add(
+        GameMessageBubble(
+          sessionId: message.gameSessionId!,
+          viewerId: viewerId ?? '',
+          viewerIsSender: message.isMine,
+          // content holds the game's display name, written by the trigger
+          // -- it keeps the card from flashing empty while the session
+          // stream delivers its first row.
+          fallbackLabel: message.content.isEmpty ? null : message.content,
+          onTap: (gameType) => onGameTap?.call(gameType),
+        ),
+      );
+    } else if (message.isStreak) {
       final remaining = message.streakViewsRemaining ?? 0;
       children.add(
         StreakBubble(

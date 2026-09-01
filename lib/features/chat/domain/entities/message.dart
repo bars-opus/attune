@@ -10,6 +10,22 @@ class Message {
   final DateTime createdAt;
   final String? mediaKey;
   final String? mediaType;
+
+  /// Ordering position in the chat, distinct from [createdAt].
+  ///
+  /// Equal to createdAt for every ordinary message. A game card moves to
+  /// the bottom when the turn passes, which bumps sort_at only -- so the
+  /// date separator still shows when the game was actually sent.
+  ///
+  /// Defaulted from createdAt rather than required: the two are equal for
+  /// every message except a resurfaced game card, so forcing every caller
+  /// to pass it would be ceremony that buys nothing.
+  final DateTime sortAt;
+
+  /// Set on a game card; the session whose live status the bubble renders.
+  final String? gameSessionId;
+
+  bool get isGame => mediaType == 'game';
   final String? mediaThumbnailKey;
   final String? signedMediaUrl;
   final String? localMediaPath;
@@ -71,6 +87,8 @@ class Message {
     required this.isMine,
     this.mediaKey,
     this.mediaType,
+    DateTime? sortAt,
+    this.gameSessionId,
     this.mediaThumbnailKey,
     this.signedMediaUrl,
     this.localMediaPath,
@@ -94,7 +112,7 @@ class Message {
     this.isPreparing = false,
     this.compressProgress,
     this.localThumbnailPath,
-  });
+  }) : sortAt = sortAt ?? createdAt;
 
   factory Message.fromRow(
     Map<String, dynamic> row, {
@@ -113,6 +131,12 @@ class Message {
       createdAt: DateTime.parse(row['created_at'] as String).toLocal(),
       mediaKey: row['media_url'] as String?,
       mediaType: row['media_type'] as String?,
+      // Older rows predate the column; falling back to created_at keeps
+      // them ordered exactly as before.
+      sortAt:
+          _parseDateTime(row['sort_at']) ??
+          DateTime.parse(row['created_at'] as String).toLocal(),
+      gameSessionId: row['game_session_id'] as String?,
       mediaThumbnailKey: row['media_thumbnail_url'] as String?,
       mediaDurationMs: (row['media_duration_ms'] as num?)?.toInt(),
       waveform:
@@ -171,6 +195,7 @@ class Message {
       senderId: senderId,
       content: content,
       createdAt: createdAt,
+      sortAt: createdAt,
       mediaKey: mediaKey,
       mediaType: mediaType,
       localMediaPath: localMediaPath,
@@ -197,6 +222,8 @@ class Message {
     String? senderId,
     String? content,
     DateTime? createdAt,
+    DateTime? sortAt,
+    String? gameSessionId,
     String? mediaKey,
     String? mediaType,
     String? mediaThumbnailKey,
@@ -232,6 +259,8 @@ class Message {
       senderId: senderId ?? this.senderId,
       content: content ?? this.content,
       createdAt: createdAt ?? this.createdAt,
+      sortAt: sortAt ?? this.sortAt,
+      gameSessionId: gameSessionId ?? this.gameSessionId,
       mediaKey: mediaKey ?? this.mediaKey,
       mediaType: mediaType ?? this.mediaType,
       mediaThumbnailKey: mediaThumbnailKey ?? this.mediaThumbnailKey,
@@ -270,6 +299,8 @@ class Message {
       'senderId': senderId,
       'content': content,
       'createdAt': createdAt.toIso8601String(),
+      'sortAt': sortAt.toIso8601String(),
+      'gameSessionId': gameSessionId,
       'mediaKey': mediaKey,
       'mediaType': mediaType,
       'mediaThumbnailKey': mediaThumbnailKey,
@@ -301,6 +332,11 @@ class Message {
       senderId: json['senderId'] as String,
       content: json['content'] as String,
       createdAt: DateTime.parse(json['createdAt'] as String),
+      sortAt:
+          json['sortAt'] == null
+              ? DateTime.parse(json['createdAt'] as String)
+              : DateTime.parse(json['sortAt'] as String),
+      gameSessionId: json['gameSessionId'] as String?,
       mediaKey: json['mediaKey'] as String?,
       mediaType: json['mediaType'] as String?,
       mediaThumbnailKey: json['mediaThumbnailKey'] as String?,

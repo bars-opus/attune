@@ -219,12 +219,12 @@ class FakeChatRepository implements ChatRepository {
             .where((m) => m.relationshipId == relationshipId)
             .toList()
           ..sort((a, b) {
-            final t = b.createdAt.compareTo(a.createdAt);
+            final t = b.sortAt.compareTo(a.sortAt);
             return t != 0 ? t : b.id.compareTo(a.id);
           });
     if (before == null) return all.take(limit).toList();
     return all
-        .where((m) => m.createdAt.isBefore(before.createdAt))
+        .where((m) => m.sortAt.isBefore(before.sortAt))
         .take(limit)
         .toList();
   }
@@ -240,11 +240,11 @@ class FakeChatRepository implements ChatRepository {
             .where((m) => m.relationshipId == relationshipId)
             .toList()
           ..sort((a, b) {
-            final t = a.createdAt.compareTo(b.createdAt);
+            final t = a.sortAt.compareTo(b.sortAt);
             return t != 0 ? t : a.id.compareTo(b.id);
           });
     if (after == null) return all.take(limit).toList();
-    return all.where((m) => m.createdAt.isAfter(after.createdAt)).toList();
+    return all.where((m) => m.sortAt.isAfter(after.sortAt)).toList();
   }
 
   @override

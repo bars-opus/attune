@@ -449,37 +449,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _openGameRoute(ChatGameDestination destination) async {
-    switch (destination) {
-      case ChatGameDestination.neverHaveIEver:
-        // Coming soon in the catalogue, so the row does not fire this.
-        // Kept exhaustive rather than defaulted: adding a game to the
-        // enum should break this switch, not silently route nowhere.
-        break;
-      case ChatGameDestination.thirtySixQuestions:
-        // Its own entry screen, which resumes an in-progress journey or
-        // starts one. Previously the games hub, the only game not routed
-        // to itself.
-        await context.pushNamed('thirtySixQuestions');
-      case ChatGameDestination.mirror:
-        await context.pushNamed('mirrorGame');
-      case ChatGameDestination.slidingScale:
-        await context.pushNamed('slidingScaleGame');
-      case ChatGameDestination.scenario:
-        await context.pushNamed('scenarioGame');
-      case ChatGameDestination.loveMap:
-        await context.pushNamed('loveMap');
-      case ChatGameDestination.thisOrThat:
-        await context.pushNamed('thisOrThatGamesHub');
-      case ChatGameDestination.truthOrDare:
-        await context.pushNamed('truthOrDareGame');
-      case ChatGameDestination.paintBall:
-        await context.pushNamed(
-          'paintBallLobby',
-          pathParameters: {
-            'relationshipId': widget.conversation.relationshipId,
-          },
-        );
-    }
+    await openGameRoute(
+      context,
+      destination,
+      relationshipId: widget.conversation.relationshipId,
+    );
   }
 
   Future<void> _onVoiceMessageRecorded(VoiceRecording recording) async {
@@ -1882,6 +1856,25 @@ class _MessageListState extends ConsumerState<_MessageList>
                           // The viewer reports what the server left after
                           // spending a view; applying it is what stops a
                           // streak reopening past its budget.
+                          onGameTap: (gameType) {
+                            // Reuses the sheet's type -> destination map,
+                            // so a card and the picker open a game exactly
+                            // the same way. Unknown types (a game added
+                            // server-side before the app knows it) do
+                            // nothing rather than routing nowhere.
+                            final destination = chatGameDestinationForType(
+                              gameType,
+                            );
+                            if (destination == null) return;
+                            unawaited(
+                              openGameRoute(
+                                context,
+                                destination,
+                                relationshipId:
+                                    widget.conversation.relationshipId,
+                              ),
+                            );
+                          },
                           onStreakViewSpent: (messageId, viewsRemaining) {
                             ref
                                 .read(
@@ -2479,3 +2472,45 @@ const _monthNames = <String>[
   'Nov',
   'Dec',
 ];
+
+/// Opens a game, from either the picker sheet or a chat game card.
+///
+/// Top-level rather than a method: the sheet is opened from the chat
+/// screen's state and the cards are built inside the message list's, and
+/// both must route identically -- a card and the picker landing in
+/// different places for the same game would be the worst kind of bug here.
+Future<void> openGameRoute(
+  BuildContext context,
+  ChatGameDestination destination, {
+  required String relationshipId,
+}) async {
+  switch (destination) {
+    case ChatGameDestination.neverHaveIEver:
+      // Coming soon in the catalogue, so the row does not fire this.
+      // Kept exhaustive rather than defaulted: adding a game to the
+      // enum should break this switch, not silently route nowhere.
+      break;
+    case ChatGameDestination.thirtySixQuestions:
+      // Its own entry screen, which resumes an in-progress journey or
+      // starts one. Previously the games hub, the only game not routed
+      // to itself.
+      await context.pushNamed('thirtySixQuestions');
+    case ChatGameDestination.mirror:
+      await context.pushNamed('mirrorGame');
+    case ChatGameDestination.slidingScale:
+      await context.pushNamed('slidingScaleGame');
+    case ChatGameDestination.scenario:
+      await context.pushNamed('scenarioGame');
+    case ChatGameDestination.loveMap:
+      await context.pushNamed('loveMap');
+    case ChatGameDestination.thisOrThat:
+      await context.pushNamed('thisOrThatGamesHub');
+    case ChatGameDestination.truthOrDare:
+      await context.pushNamed('truthOrDareGame');
+    case ChatGameDestination.paintBall:
+      await context.pushNamed(
+        'paintBallLobby',
+        pathParameters: {'relationshipId': relationshipId},
+      );
+  }
+}
