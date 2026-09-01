@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 import { jsonResponse, requireServiceRole, serviceRoleClient } from "../_shared/attune_auth.ts";
-import { callClaudeJson, partnerNamePatterns } from "../_shared/claude_json.ts";
+import { callGeminiJson, partnerNamePatterns } from "../_shared/gemini_json.ts";
 
 const GLOBAL_CONSTRAINTS = `
 ABSOLUTE CONSTRAINTS — these override all other instructions:
@@ -190,7 +190,7 @@ async function analyzeSegment(
     loadTotalSessions(supabase, relationship.id),
   ]);
 
-  const layerTwo = await callClaudeJson({
+  const layerTwo = await callGeminiJson({
     promptId: "layer2_session_analysis",
     systemPrompt: GLOBAL_CONSTRAINTS,
     userPrompt: buildLayerTwoPrompt({
@@ -200,7 +200,7 @@ async function analyzeSegment(
       conflictSessions30d,
       profiles,
     }),
-    maxTokens: 500,
+    maxOutputTokens: 500,
     runtimeProhibitedPatterns: partnerNamePatterns([
       relationship.userA.display_name,
       relationship.userB.display_name,
@@ -219,7 +219,7 @@ async function analyzeSegment(
   }
 
   if (validatedLayerTwo) {
-    const layerFour = await callClaudeJson({
+    const layerFour = await callGeminiJson({
       promptId: "layer4_pattern_memory",
       systemPrompt: GLOBAL_CONSTRAINTS,
       userPrompt: buildLayerFourPrompt({
@@ -230,7 +230,7 @@ async function analyzeSegment(
         conflictSessions30d,
         translatorNeedCounts,
       }),
-      maxTokens: 600,
+      maxOutputTokens: 600,
       runtimeProhibitedPatterns: partnerNamePatterns([
         relationship.userA.display_name,
         relationship.userB.display_name,
@@ -341,7 +341,7 @@ async function retryExistingSession(
     loadTotalSessions(supabase, relationship.id),
   ]);
 
-  const layerTwo = await callClaudeJson({
+  const layerTwo = await callGeminiJson({
     promptId: "layer2_session_analysis_retry",
     systemPrompt: GLOBAL_CONSTRAINTS,
     userPrompt: buildLayerTwoPrompt({
@@ -351,7 +351,7 @@ async function retryExistingSession(
       conflictSessions30d,
       profiles,
     }),
-    maxTokens: 500,
+    maxOutputTokens: 500,
     runtimeProhibitedPatterns: partnerNamePatterns([
       relationship.userA.display_name,
       relationship.userB.display_name,
@@ -371,7 +371,7 @@ async function retryExistingSession(
     return { session_id: session.id, status: "retry_pending_layer2" };
   }
 
-  const layerFour = await callClaudeJson({
+  const layerFour = await callGeminiJson({
     promptId: "layer4_pattern_memory_retry",
     systemPrompt: GLOBAL_CONSTRAINTS,
     userPrompt: buildLayerFourPrompt({
@@ -382,7 +382,7 @@ async function retryExistingSession(
       conflictSessions30d,
       translatorNeedCounts,
     }),
-    maxTokens: 600,
+    maxOutputTokens: 600,
     runtimeProhibitedPatterns: partnerNamePatterns([
       relationship.userA.display_name,
       relationship.userB.display_name,

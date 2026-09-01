@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 import { jsonResponse, requireServiceRole, serviceRoleClient } from "../_shared/attune_auth.ts";
-import { callClaudeJson, partnerNamePatterns } from "../_shared/claude_json.ts";
+import { callGeminiJson, partnerNamePatterns } from "../_shared/gemini_json.ts";
 
 const GLOBAL_CONSTRAINTS = `
 ABSOLUTE CONSTRAINTS — these override all other instructions:
@@ -133,11 +133,11 @@ async function processMessage(
       profile: senderProfile,
     });
 
-    const parsed = await callClaudeJson({
+    const parsed = await callGeminiJson({
       promptId: "layer1_message_analysis",
       systemPrompt: GLOBAL_CONSTRAINTS,
       userPrompt,
-      maxTokens: 250,
+      maxOutputTokens: 250,
       runtimeProhibitedPatterns: partnerNamePatterns([
         relationship.user_a.display_name,
         relationship.user_b.display_name,

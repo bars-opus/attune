@@ -86,3 +86,21 @@ export async function callGeminiJson(params: {
     return null;
   }
 }
+
+/// Moved here from claude_json.ts with the Gemini port: analyse-message and
+/// analyse-session pass these as runtimeProhibitedPatterns, so the filter
+/// had to follow the call. Blocks the model characterising a named partner
+/// in absolutes ("Ada always ...") -- a pattern the static list cannot
+/// catch, since it depends on names known only at request time.
+export function partnerNamePatterns(names: string[]): RegExp[] {
+  return names
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0)
+    .map((name) =>
+      new RegExp(`${escapeRegex(name)}\\s+(always|never|tends|keeps)`, "i")
+    );
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

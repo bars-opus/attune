@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callGeminiJson } from "../_shared/gemini_json.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,12 +8,11 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const CLAUDE_API_KEY = Deno.env.get("CLAUDE_API_KEY");
-const CLAUDE_URL = "https://api.anthropic.com/v1/messages";
 const INPUT_SCHEMA_VERSION = "1.1.0";
 const PROMPT_VERSION = "1.1.0";
 const MODEL_PROVIDER = "anthropic";
-const MODEL_NAME = "claude-sonnet-4-20250514";
+// Recorded on each verdict row, so it must name the model that ran.
+const MODEL_NAME = Deno.env.get("GEMINI_MODEL") ?? "gemini-1.5-flash";
 const FIXED_DISCLAIMER =
   "This reflects patterns in your data. It is not a diagnosis or a decision.";
 
@@ -562,46 +562,33 @@ function validateEligibility(context: any) {
 }
 
 async function generateVerdict(context: any) {
-  if (!CLAUDE_API_KEY) {
-    throw new Error("missing_claude_api_key");
+  if (!Deno.env.get("GEMINI_API_KEY")) {
+    throw new Error("missing_gemini_api_key");
   }
 
-  const response = await fetch(CLAUDE_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": CLAUDE_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: MODEL_NAME,
-      max_tokens: 500,
-      system: [
-        "ABSOLUTE CONSTRAINTS:",
-        "1. Never attribute a negative behaviour to a named or implied partner.",
-        "2. Never diagnose. Observe patterns. Frame with agency.",
-        "3. Never use toxic, narcissist, codependent, disorder, broken, healthy, unhealthy.",
-        "4. Never tell users what to decide.",
-        "5. Return ONLY valid JSON.",
-      ].join("\n"),
-      messages: [
-        {
-          role: "user",
-          content: buildPrompt(context),
-        },
-      ],
-    }),
-    signal: AbortSignal.timeout(10000),
+  // The shared helper owns the request shape, the 10s abort, fenced-JSON
+  // extraction and the prohibited-pattern filter. It returns null on any
+  // failure; this function's callers expect a throw, so the null is
+  // converted rather than propagated.
+  const parsed = await callGeminiJson({
+    promptId: "verdict",
+    systemPrompt: [
+      "ABSOLUTE CONSTRAINTS:",
+      "1. Never attribute a negative behaviour to a named or implied partner.",
+      "2. Never diagnose. Observe patterns. Frame with agency.",
+      "3. Never use toxic, narcissist, codependent, disorder, broken, healthy, unhealthy.",
+      "4. Never tell users what to decide.",
+      "5. Return ONLY valid JSON.",
+    ].join("\n"),
+    userPrompt: buildPrompt(context),
+    maxOutputTokens: 500,
   });
 
-  if (response.status !== 200) {
-    throw new Error(`claude_${response.status}`);
+  if (!parsed) {
+    throw new Error("gemini_generation_failed");
   }
 
-  const payload = await response.json();
-  const text =
-    payload.content?.map((block: any) => block.text || "").join("") ?? "";
-  return JSON.parse(text.replace(/```json|```/g, "").trim());
+  return parsed;
 }
 
 function buildPrompt(context: any) {

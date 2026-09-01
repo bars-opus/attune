@@ -1,5 +1,10 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callGeminiJson } from "../_shared/gemini_json.ts";
+
+// Persisted on each generated row, so it must name the model that
+// actually ran rather than the Claude constant this replaced.
+const MODEL_NAME = Deno.env.get("GEMINI_MODEL") ?? "gemini-1.5-flash";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,10 +12,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const CLAUDE_API_KEY = Deno.env.get("CLAUDE_API_KEY");
-const CLAUDE_URL = "https://api.anthropic.com/v1/messages";
 const MODEL_PROVIDER = "anthropic";
-const MODEL_NAME = "claude-sonnet-4-20250514";
 const INPUT_SCHEMA_VERSION = "1.1.0";
 const PROMPT_VERSION = "1.1.0";
 const VALIDATION_VERSION = "1.1.0";
@@ -106,7 +108,7 @@ serve(async (req) => {
       });
     }
 
-    let output = await maybeGenerateWithClaude(evidence, buildPrompt(evidence));
+    let output = await maybeGenerateWithGemini(evidence, buildPrompt(evidence));
     if (!output) {
       output = buildFallback(evidence);
     }
@@ -176,46 +178,27 @@ function buildPrompt(evidence: any) {
   ].join("\n");
 }
 
-async function maybeGenerateWithClaude(evidence: any, prompt: string) {
-  if (!CLAUDE_API_KEY) {
+async function maybeGenerateWithGemini(evidence: any, prompt: string) {
+  // The shared helper replaces a hand-rolled Anthropic client here: it
+  // owns the request shape, the abort timeout, fenced-JSON extraction and
+  // the prohibited-pattern filter. It returns null on any failure, which
+  // is the same signal this function already used to fall back.
+  const parsed = await callGeminiJson({
+    promptId: "healing_portrait",
+    systemPrompt:
+      "You are a careful, non-judgemental reflection assistant. Reply with JSON only.",
+    userPrompt: prompt,
+    maxOutputTokens: 220,
+  });
+
+  if (!parsed) {
     return null;
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const response = await fetch(CLAUDE_URL, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": CLAUDE_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: MODEL_NAME,
-        max_tokens: 220,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-    if (!response.ok) {
-      return null;
-    }
-    const payload = await response.json();
-    const text = payload?.content?.[0]?.text;
-    if (!text || typeof text !== "string") {
-      return null;
-    }
-    const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
-    return {
-      portrait: parsed.portrait ?? null,
-      reflection_prompt: parsed.reflection_prompt ?? "What part of this feels familiar?",
-    };
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
+  return {
+    portrait: parsed.portrait ?? null,
+    reflection_prompt: parsed.reflection_prompt ?? "What part of this feels familiar?",
+  };
 }
 
 function buildFallback(evidence: any) {

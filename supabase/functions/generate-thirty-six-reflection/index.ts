@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callGeminiJson } from "../_shared/gemini_json.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,8 +8,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const CLAUDE_API_KEY = Deno.env.get("CLAUDE_API_KEY");
-const CLAUDE_URL = "https://api.anthropic.com/v1/messages";
 
 type ReflectionType = "chapter" | "journey";
 
@@ -74,11 +73,11 @@ serve(async (req) => {
       });
     }
 
-    if (!CLAUDE_API_KEY) {
+    if (!Deno.env.get("GEMINI_API_KEY")) {
       return json({
         observation: null,
         confidence: "low",
-        message: "Claude API key is not configured",
+        message: "Gemini API key is not configured",
       });
     }
 
@@ -230,36 +229,32 @@ ${type === "chapter" ? "Use at most 25 words." : "Use 50 to 60 words."}
 ${prompt}
   `;
 
-  const response = await fetch(CLAUDE_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": CLAUDE_API_KEY!,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 220,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-    }),
-    signal: AbortSignal.timeout(10000),
+  // Routed through the shared helper with the Gemini port: it owns the
+  // request shape, the timeout, fenced-JSON extraction and the prohibited
+  // pattern filter, all of which were hand-rolled per function before.
+  // Returns null on any failure, which lands on the same fallback the
+  // inline version used.
+  const parsed = await callGeminiJson({
+    promptId: "thirty_six_reflection",
+    systemPrompt,
+    userPrompt,
+    maxOutputTokens: 220,
   });
 
-  if (!response.ok) {
-    console.error("Claude API failed:", response.status, await response.text());
+  if (!parsed) {
     return { observation: null, confidence: "low" };
   }
 
-  const data = await response.json();
-  const text = data.content?.[0]?.text ?? "{}";
-  const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
-
   return {
     observation: parsed.observation ?? null,
-    confidence: ["high", "medium", "low"].includes(parsed.confidence)
-      ? parsed.confidence
-      : "low",
+    // callGeminiJson types its values as unknown (the inline JSON.parse it
+    // replaced was any), so the model's confidence is narrowed to a string
+    // before the allow-list check rather than trusted.
+    confidence:
+      typeof parsed.confidence === "string" &&
+        ["high", "medium", "low"].includes(parsed.confidence)
+        ? parsed.confidence
+        : "low",
   };
 }
 

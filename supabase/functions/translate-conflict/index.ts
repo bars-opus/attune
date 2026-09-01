@@ -1,12 +1,11 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+import { callGeminiJson } from '../_shared/gemini_json.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const CLAUDE_API_KEY = Deno.env.get('CLAUDE_API_KEY')
-const CLAUDE_URL = 'https://api.anthropic.com/v1/messages'
 
 const PROHIBITED_PATTERNS = [
   /your partner (always|never|tends to|keeps)/i,
@@ -90,56 +89,22 @@ Rules:
 - framing_note is private — never shown to recipient
 `
 
-    // Call Claude with timeout
-    let response
-    try {
-      response = await fetch(CLAUDE_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': CLAUDE_API_KEY!,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 200,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userPrompt }],
-        }),
-        signal: AbortSignal.timeout(10000), // 10 second timeout
-      })
-    } catch (error) {
-      console.error('Claude timeout:', error)
-      return new Response(
-        JSON.stringify({
-          error: true,
-          code: 'TIMEOUT',
-          message: 'Couldn\'t rewrite. Please try again.'
-        }),
-        { status: 504, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    // Routed through the shared Gemini helper. It owns the request shape,
+    // the 10s abort, fenced-JSON extraction and the prohibited-pattern
+    // filter, returning null on any failure.
+    //
+    // The helper collapses timeout and error into one null, so the 504 vs
+    // 500 split the inline client made is gone. 500 is the honest code for
+    // "we could not tell": reporting a timeout we did not observe would be
+    // a guess, and the user-facing message is identical either way.
+    const parsed = await callGeminiJson({
+      promptId: 'translate_conflict',
+      systemPrompt,
+      userPrompt,
+      maxOutputTokens: 200,
+    })
 
-    if (response.status !== 200) {
-      console.error('Claude error:', response.status)
-      return new Response(
-        JSON.stringify({
-          error: true,
-          code: 'INTERNAL_ERROR',
-          message: 'Couldn\'t rewrite. Please try again.'
-        }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    const data = await response.json()
-    const content = data.content?.[0]?.text || ''
-    let parsed
-
-    try {
-      parsed = JSON.parse(content.replace(/```json|```/g, '').trim())
-    } catch (error) {
-      console.error('JSON parse error:', error)
+    if (!parsed) {
       return new Response(
         JSON.stringify({
           error: true,

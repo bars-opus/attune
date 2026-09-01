@@ -1,0 +1,29 @@
+-- Re-enables the AI cron jobs paused by 20260931150000 for flow testing.
+--
+-- Rename to .sql and push when the app is ready for AI testing. Schedules
+-- are the originals from 20260907120000 and 20260830120000.
+--
+-- Before enabling, confirm GEMINI_API_KEY is set (supabase secrets list):
+-- without it callGeminiJson returns null and every job produces its
+-- boilerplate fallback silently, which is the failure mode this whole
+-- sequence has been about.
+
+SELECT cron.schedule(
+  'analyse-message-backlog', '* * * * *',
+  $$ SELECT public.invoke_edge_function('analyse-message'); $$
+);
+
+SELECT cron.schedule(
+  'analyse-session-sweep', '7,37 * * * *',
+  $$ SELECT public.invoke_edge_function('analyse-session'); $$
+);
+
+SELECT cron.schedule(
+  'generate-verdict-monthly', '0 7 1 * *',
+  $$ SELECT public.invoke_edge_function('generate-verdict'); $$
+);
+
+SELECT cron.schedule(
+  'compute-pulse-weekly', '0 7 * * 0',
+  $$ SELECT public.invoke_edge_function('compute-pulse'); $$
+);
