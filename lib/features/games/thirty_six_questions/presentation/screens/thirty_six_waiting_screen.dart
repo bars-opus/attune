@@ -124,6 +124,37 @@ class _ThirtySixWaitingScreenState
     );
   }
 
+  /// Leaves a wait that may last hours.
+  ///
+  /// Confirmed rather than immediate: the player is mid-game, and a
+  /// mis-tap on a close button should not drop them out of it. Mirrors
+  /// This or That's waiting screen, which already did this correctly.
+  void _confirmExit() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Leave for now?'),
+        content: const Text(
+          'Your progress is saved. The game stays in your chat, and you '
+          'can pick it up from there.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Stay'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              Navigator.pop(context);
+            },
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -132,6 +163,14 @@ class _ThirtySixWaitingScreenState
 
     return Scaffold(
       appBar: AppBar(
+        // 36 Questions is asynchronous: a partner may answer this one
+        // tomorrow. Without a way out, answering trapped the player on a
+        // polling screen until they force-quit -- and the answer is
+        // already saved, so there was never anything to lose by leaving.
+        leading: IconButton(
+          icon: const Icon(Icons.close_rounded),
+          onPressed: _confirmExit,
+        ),
         title: Text(
           'Chapter ${widget.chapter} · Q${widget.roundNumber}/${widget.totalRounds}',
         ),

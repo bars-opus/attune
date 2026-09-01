@@ -80,6 +80,37 @@ class _PartnerWatchingScreenState extends ConsumerState<PartnerWatchingScreen> {
     );
   }
 
+  /// Leaves a wait that may last hours.
+  ///
+  /// Confirmed rather than immediate: the player is mid-game, and a
+  /// mis-tap on a close button should not drop them out of it. Mirrors
+  /// This or That's waiting screen, which already did this correctly.
+  void _confirmExit() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Leave for now?'),
+        content: const Text(
+          'Your progress is saved. The game stays in your chat, and you '
+          'can pick it up from there.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Stay'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              Navigator.pop(context);
+            },
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -90,6 +121,14 @@ class _PartnerWatchingScreenState extends ConsumerState<PartnerWatchingScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        // Watching a partner's turn could last as long as they take, and
+        // this screen had no back button at all: the only way out was to
+        // kill the app. Progress is on the server, so leaving costs
+        // nothing but the live view.
+        leading: IconButton(
+          icon: const Icon(Icons.close_rounded),
+          onPressed: _confirmExit,
+        ),
         title: Text(
           'Truth or Dare • Round ${widget.roundNumber}/${widget.totalRounds}',
         ),
