@@ -1,15 +1,8 @@
-import 'package:attune/app/theme/design_tokens.dart';
-import 'package:attune/core/utils/animations/animated_scale_fade.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/bottom_sheet_header.dart';
-import 'package:attune/core/widgets/card_inkwell.dart';
-import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/core/widgets/search_text_field.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 enum ChatGameDestination {
   thisOrThat,
@@ -60,8 +53,23 @@ class ChatGamesSheet extends ConsumerStatefulWidget {
 }
 
 class _ChatGamesSheetState extends ConsumerState<ChatGamesSheet> {
+  static const _tabs = [
+    AppTabItem(label: 'All', icon: Icons.apps_rounded),
+    AppTabItem(label: 'Quick', icon: Icons.flash_on_outlined),
+    AppTabItem(label: 'Fun', icon: Icons.celebration_outlined),
+    AppTabItem(label: 'Deep', icon: Icons.favorite_border_rounded),
+    AppTabItem(label: 'Slow', icon: Icons.self_improvement_outlined),
+    AppTabItem(label: 'Spicy', icon: Icons.local_fire_department_outlined),
+  ];
+
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
+  int _selectedTabIndex = 0;
+
+  static String? _moodForTab(AppTabItem tab) {
+    final label = tab.label;
+    return label == 'All' ? null : label;
+  }
 
   @override
   void dispose() {
@@ -70,17 +78,19 @@ class _ChatGamesSheetState extends ConsumerState<ChatGamesSheet> {
     super.dispose();
   }
 
-  List<_ChatGameCategory> get _filteredCategories {
-    final query = _controller.text.trim().toLowerCase();
-    if (query.isEmpty) return _chatGameCategories;
-
+  List<_ChatGameCategory> _filteredCategoriesFor(String? mood, String query) {
     return [
       for (final category in _chatGameCategories)
         _ChatGameCategory(
           title: category.title,
           options:
               category.options
-                  .where((option) => option.matches(query, category.title))
+                  .where(
+                    (option) =>
+                        (query.isEmpty ||
+                            option.matches(query, category.title)) &&
+                        (mood == null || option.tags.contains(mood)),
+                  )
                   .toList(),
         ),
     ].where((category) => category.options.isNotEmpty).toList();
@@ -88,18 +98,27 @@ class _ChatGamesSheetState extends ConsumerState<ChatGamesSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final filteredCategories = _filteredCategories;
-
-    // Hidden while searching: a query filters the catalogue, and games
-    // that merely happen to be in progress would survive it as results
-    // the user did not search for.
-    final showInProgress = _controller.text.trim().isEmpty;
+    final query = _controller.text.trim().toLowerCase();
+    final tabs = [
+      for (final tab in _tabs)
+        AppTabItem(
+          label: tab.label,
+          icon: tab.icon,
+          content: _ChatGamesTabContent(
+            query: query,
+            mood: _moodForTab(tab),
+            categories: _filteredCategoriesFor(_moodForTab(tab), query),
+            onSelect: widget.onSelect,
+          ),
+        ),
+    ];
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Column(
         children: [
-          const BottomSheetHeader(title: 'Games'),
+          const BottomSheetHeader(title: 'Play together'),
+
           SearchFormField(
             controller: _controller,
             focusNode: _focusNode,
@@ -108,54 +127,73 @@ class _ChatGamesSheetState extends ConsumerState<ChatGamesSheet> {
             onChanged: (_) => setState(() {}),
             onClearPressed: () => setState(() {}),
           ),
-          SizedBox(height: Spacing.xl.h),
+          SizedBox(height: Spacing.md.h),
           Expanded(
-            child:
-                filteredCategories.isEmpty
-                    ? EmptyStateWidget(
-                      icon: Icons.search_off_rounded,
-                      title: 'No games found',
-                      subtitle:
-                          _controller.text.trim().isEmpty
-                              ? 'Try searching by game name or category.'
-                              : 'No available game matches "${_controller.text.trim()}".',
-                    )
-                    // _EmptyGamesSearchState(query: _controller.text.trim())
-                    : ListView.builder(
-                      physics: const BouncingScrollPhysics(),
-                      padding: EdgeInsets.only(bottom: Spacing.xxl.h),
-                      // The in-progress section takes slot 0 when it is
-                      // showing, so it scrolls away with the catalogue
-                      // rather than eating fixed height in a sheet.
-                      itemCount:
-                          filteredCategories.length + (showInProgress ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (showInProgress && index == 0) {
-                          return _ChatGamesInProgress(
-                            onSelect: widget.onSelect,
-                          );
-                        }
-
-                        final categoryIndex =
-                            showInProgress ? index - 1 : index;
-                        final category = filteredCategories[categoryIndex];
-                        final precedingOptionCount = filteredCategories
-                            .take(categoryIndex)
-                            .fold<int>(
-                              0,
-                              (total, item) => total + item.options.length,
-                            );
-
-                        return _ChatGameCategorySection(
-                          category: category,
-                          startAnimationIndex: precedingOptionCount,
-                          onSelect: widget.onSelect,
-                        );
-                      },
-                    ),
+            child: TabsWithContent(
+              tabs: tabs,
+              initialIndex: _selectedTabIndex,
+              onTabChanged:
+                  (index) => setState(() => _selectedTabIndex = index),
+              style: const AppTabsStyle(tabPadding: 18),
+              padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w),
+              showContent: true,
+              scrollable: true,
+              contentSpacing: Spacing.lg,
+              backgroundColor: Colors.transparent,
+            ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ChatGamesTabContent extends StatelessWidget {
+  const _ChatGamesTabContent({
+    required this.query,
+    required this.mood,
+    required this.categories,
+    required this.onSelect,
+  });
+
+  final String query;
+  final String? mood;
+  final List<_ChatGameCategory> categories;
+  final ValueChanged<ChatGameDestination> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    // Hidden while searching: a query filters the catalogue, and games
+    // that merely happen to be in progress would survive it as results
+    // the user did not search for. Mood tabs are for starting games, so
+    // in-progress sessions stay anchored to All.
+    final showInProgress = query.isEmpty && mood == null;
+
+    if (categories.isEmpty) {
+      return EmptyStateWidget(
+        icon: Icons.search_off_rounded,
+        title: 'No games found',
+        subtitle:
+            query.isEmpty
+                ? 'Try another mood or search by game name.'
+                : 'No available game matches "$query".',
+      );
+    }
+
+    return ListView.builder(
+      physics: const BouncingScrollPhysics(),
+      padding: EdgeInsets.only(bottom: Spacing.xxl.h),
+      itemCount: categories.length + (showInProgress ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (showInProgress && index == 0) {
+          return _ChatGamesInProgress(onSelect: onSelect);
+        }
+
+        final categoryIndex = showInProgress ? index - 1 : index;
+        final category = categories[categoryIndex];
+
+        return _ChatGameCategorySection(category: category, onSelect: onSelect);
+      },
     );
   }
 }
@@ -173,6 +211,7 @@ class _ChatGameOption {
     required this.title,
     required this.subtitle,
     required this.icon,
+    required this.tags,
     this.showMore = false,
     this.comingSoon = false,
   });
@@ -181,6 +220,7 @@ class _ChatGameOption {
   final String title;
   final String subtitle;
   final IconData icon;
+  final Set<String> tags;
   final bool showMore;
 
   /// Listed but not built. The row still appears — the catalogue doubles
@@ -201,14 +241,16 @@ const _chatGameCategories = <_ChatGameCategory>[
       _ChatGameOption(
         destination: ChatGameDestination.thirtySixQuestions,
         title: '36 Questions',
-        subtitle: 'A guided closeness journey',
+        subtitle: 'A slow, guided way to feel closer',
         icon: Icons.favorite_border_rounded,
+        tags: {'Deep', 'Slow'},
       ),
       _ChatGameOption(
         destination: ChatGameDestination.thisOrThat,
         title: 'This or That',
         subtitle: 'Quick choices, shared reveals',
         icon: Icons.compare_arrows_rounded,
+        tags: {'Quick', 'Fun'},
         showMore: true,
       ),
     ],
@@ -221,24 +263,28 @@ const _chatGameCategories = <_ChatGameCategory>[
         title: 'Mirror',
         subtitle: 'How well do you read each other right now?',
         icon: Icons.psychology_outlined,
+        tags: {'Deep'},
       ),
       _ChatGameOption(
         destination: ChatGameDestination.slidingScale,
         title: 'Sliding Scale',
         subtitle: 'Where you each land on what matters',
         icon: Icons.tune_rounded,
+        tags: {'Quick', 'Deep'},
       ),
       _ChatGameOption(
         destination: ChatGameDestination.scenario,
         title: 'Scenario',
         subtitle: 'What you would each do, and why',
         icon: Icons.alt_route_rounded,
+        tags: {'Fun', 'Deep'},
       ),
       _ChatGameOption(
         destination: ChatGameDestination.loveMap,
         title: 'Love Map',
         subtitle: 'Their inner world, a few prompts at a time',
         icon: Icons.explore_outlined,
+        tags: {'Deep', 'Slow'},
       ),
     ],
   ),
@@ -250,6 +296,7 @@ const _chatGameCategories = <_ChatGameCategory>[
         title: 'Truth or Dare',
         subtitle: 'Playful prompts for two',
         icon: Icons.casino_outlined,
+        tags: {'Fun', 'Spicy'},
         showMore: true,
       ),
       _ChatGameOption(
@@ -257,6 +304,7 @@ const _chatGameCategories = <_ChatGameCategory>[
         title: 'Never Have I Ever',
         subtitle: 'Light confessions and laughs',
         icon: Icons.waving_hand_outlined,
+        tags: {'Fun', 'Spicy'},
         // No implementation, no spec, no route. Selecting it used to push
         // the games hub, which does not offer it either — the user picked
         // a game and arrived somewhere unrelated.
@@ -272,6 +320,7 @@ const _chatGameCategories = <_ChatGameCategory>[
         title: 'Paint Ball',
         subtitle: 'Turn-based color battle',
         icon: Icons.sports_esports_outlined,
+        tags: {'Quick', 'Fun'},
       ),
     ],
   ),
@@ -280,12 +329,10 @@ const _chatGameCategories = <_ChatGameCategory>[
 class _ChatGameCategorySection extends StatelessWidget {
   const _ChatGameCategorySection({
     required this.category,
-    required this.startAnimationIndex,
     required this.onSelect,
   });
 
   final _ChatGameCategory category;
-  final int startAnimationIndex;
   final ValueChanged<ChatGameDestination> onSelect;
 
   @override
@@ -293,31 +340,48 @@ class _ChatGameCategorySection extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: Spacing.lg.h),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(Spacing.sm.w, 0, Spacing.sm.w, 8.h),
-            child: Text(
-              category.title,
-              style: textTheme.labelLarge?.copyWith(
-                color: colorScheme.onSurface.withValues(alpha: 0.62),
-                fontWeight: FontWeight.w700,
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Gap(Spacing.lg),
+        AppDivider(),
+        Gap(Spacing.md),
+        Padding(
+          padding: EdgeInsets.fromLTRB(Spacing.sm.w, 0, Spacing.sm.w, 8.h),
+          child: Text(
+            category.title,
+            style: textTheme.labelLarge?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.62),
+              fontWeight: FontWeight.w700,
             ),
           ),
-          for (var index = 0; index < category.options.length; index++)
-            _ChatGameMenuRow(
-              option: category.options[index],
-              onTap:
-                  category.options[index].comingSoon
-                      ? null
-                      : () => onSelect(category.options[index].destination),
-            ),
-        ],
-      ),
+        ),
+        Gap(Spacing.sm.h),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final gap = Spacing.sm.w;
+            final tileWidth = (constraints.maxWidth - gap) / 2;
+
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: [
+                for (final option in category.options)
+                  SizedBox(
+                    width: tileWidth,
+                    child: _ChatGameMenuRow(
+                      option: option,
+                      onTap:
+                          option.comingSoon
+                              ? null
+                              : () => onSelect(option.destination),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }
@@ -334,43 +398,108 @@ class _ChatGameMenuRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final enabled = onTap != null;
 
     return CardInkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(100),
+      borderRadius: BorderRadius.circular(22),
       color: colorScheme.surface,
-      padding: const EdgeInsets.symmetric(
-        vertical: Spacing.md,
-        horizontal: Spacing.lg,
-      ),
-      margin: const EdgeInsets.only(bottom: Spacing.xs),
-      child: InfoRowWidget(
-        iconColor: colorScheme.onSurface,
-        subtitle: option.subtitle,
-        subTitleFontColor: Colors.grey,
-        titleFontColor: colorScheme.onSurface,
-        title: option.title,
-        icon: option.icon,
-        avatarRadius: 25.h,
-        padAvatarTop: true,
-        showAvatar: false,
-        showDivider: false,
-        trailing:
-            option.comingSoon
-                ? Text(
-                  'Coming soon',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.55),
+      padding: EdgeInsets.all(Spacing.md.w),
+      margin: EdgeInsets.zero,
+      // elevation: 0,
+      borderColor: colorScheme.outline.withValues(alpha: 0.08),
+      child: Opacity(
+        opacity: enabled ? 1 : 0.62,
+        child: SizedBox(
+          height: 142.h,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 50.h,
+                    height: 50.h,
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      option.icon,
+                      color: colorScheme.primary,
+                      size: 30.h,
+                    ),
                   ),
-                )
-                : option.showMore
-                ? Icon(
-                  Icons.more_horiz_rounded,
-                  color: colorScheme.onSurface.withValues(alpha: 0.72),
-                  size: 28.h,
-                )
-                : const SizedBox.shrink(),
-        showTrailingArrow: !option.comingSoon,
+                  const Spacer(),
+                  if (option.comingSoon)
+                    const _ChatGamePill(label: 'Coming soon', muted: true)
+                  else if (option.showMore)
+                    Icon(
+                      Icons.more_horiz_rounded,
+                      color: colorScheme.onSurface.withValues(alpha: 0.58),
+                      size: 24.h,
+                    )
+                  else
+                    SizedBox.shrink(),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                option.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.titleSmall?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              SizedBox(height: 4.h),
+              Text(
+                option.subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.62),
+                  height: 1.16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatGamePill extends StatelessWidget {
+  const _ChatGamePill({required this.label, this.muted = false});
+
+  final String label;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final foreground =
+        muted ? colorScheme.onSurfaceVariant : colorScheme.primary;
+    final background =
+        muted
+            ? colorScheme.surfaceContainerHighest
+            : colorScheme.primary.withValues(alpha: 0.12);
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 5.h),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: foreground,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -428,15 +557,19 @@ class _ChatGamesInProgress extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (active.isNotEmpty) ...[
+          Gap(Spacing.md.h),
           _ChatGamesSectionLabel(label: 'Continue playing'),
+          Gap(Spacing.sm.h),
           for (final game in active)
             _ChatGameSessionRow(game: game, onSelect: onSelect),
-          SizedBox(height: Spacing.md.h),
+          Gap(Spacing.lg.h),
         ],
         if (recent.isNotEmpty) ...[
+          Gap(Spacing.md.h),
           _ChatGamesSectionLabel(label: 'Recently played'),
+          Gap(Spacing.sm.h),
           for (final game in recent) _ChatGameSessionRow(game: game),
-          SizedBox(height: Spacing.md.h),
+          Gap(Spacing.lg.h),
         ],
       ],
     );
@@ -450,17 +583,29 @@ class _ChatGamesSectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Padding(
       padding: EdgeInsets.only(
         left: Spacing.sm.w,
         bottom: Spacing.xs.h,
         top: Spacing.xs.h,
       ),
-      child: Text(
-        label,
-        style: Theme.of(
-          context,
-        ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+      child: Row(
+        children: [
+          Icon(
+            Icons.sports_esports_outlined,
+            color: colorScheme.onSurface,
+            size: 23.h,
+          ),
+          Gap(Spacing.md.w),
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ],
       ),
     );
   }
@@ -491,36 +636,93 @@ class _ChatGameSessionRow extends StatelessWidget {
 
     final destination =
         onSelect == null ? null : chatGameDestinationForType(gameType);
+    final icon = chatGameIconForType(gameType) ?? Icons.sports_esports_outlined;
 
     final status = game['status'] as String? ?? '';
+    final statusLabel = switch (status) {
+      'invited' => 'Invitation waiting',
+      'completed' => 'Completed',
+      _ => 'In progress',
+    };
+    final subtitle = switch (status) {
+      'invited' => 'Invitation waiting for your partner',
+      'completed' => 'Recently played together',
+      _ => 'Pick up where you left off',
+    };
 
     return CardInkWell(
       onTap: destination == null ? null : () => onSelect!(destination),
-      borderRadius: BorderRadius.circular(100),
+      borderRadius: BorderRadius.circular(24),
       color: colorScheme.surface,
-      padding: const EdgeInsets.symmetric(
-        vertical: Spacing.md,
-        horizontal: Spacing.lg,
-      ),
-      margin: const EdgeInsets.only(bottom: Spacing.xs),
+      padding: EdgeInsets.all(Spacing.md.w),
+      margin: EdgeInsets.only(bottom: Spacing.sm.h),
+      // elevation: 0,
+      borderColor: colorScheme.outline.withValues(alpha: 0.08),
       child: InfoRowWidget(
-        iconColor: colorScheme.onSurface,
-        subtitle: switch (status) {
-          'invited' => 'Invitation waiting',
-          'completed' => 'Completed',
-          _ => 'In progress',
-        },
-        subTitleFontColor: Colors.grey,
-        titleFontColor: colorScheme.onSurface,
         title: title,
-        icon: Icons.sports_esports_outlined,
-        avatarRadius: 25.h,
-        padAvatarTop: true,
+        subtitle: subtitle,
+        icon: icon,
         showAvatar: false,
         showDivider: false,
-        trailing: const SizedBox.shrink(),
-        showTrailingArrow: destination != null,
+        showTrailingArrow: true,
+        padAvatarTop: true,
+        bottomWidget: _ChatGamePill(
+          label: statusLabel,
+          muted: status == 'completed',
+        ),
+
+        onTap: destination == null ? null : () => onSelect!(destination),
       ),
+
+      // Row(
+      //   children: [
+      //     Container(
+      //       width: 46.h,
+      //       height: 46.h,
+      //       decoration: BoxDecoration(
+      //         color: colorScheme.primary,
+      //         shape: BoxShape.circle,
+      //       ),
+      //       child: Icon(icon, color: colorScheme.onPrimary, size: 23.h),
+      //     ),
+      //     SizedBox(width: Spacing.md.w),
+      //     Expanded(
+      //       child: Column(
+      //         crossAxisAlignment: CrossAxisAlignment.start,
+      //         children: [
+      //           Row(
+      //             children: [
+      //               Expanded(
+      //                 child: Text(
+      //                   title,
+      //                   maxLines: 1,
+      //                   overflow: TextOverflow.ellipsis,
+      //                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
+      //                     color: colorScheme.onSurface,
+      //                     fontWeight: FontWeight.w800,
+      //                   ),
+      //                 ),
+      //               ),
+      // _ChatGamePill(
+      //   label: statusLabel,
+      //   muted: status == 'completed',
+      // ),
+      //             ],
+      //           ),
+      //           SizedBox(height: 3.h),
+      //           Text(
+      //             subtitle,
+      //             maxLines: 1,
+      //             overflow: TextOverflow.ellipsis,
+      //             style: Theme.of(context).textTheme.bodySmall?.copyWith(
+      //               color: colorScheme.onSurface.withValues(alpha: 0.62),
+      //             ),
+      //           ),
+      //         ],
+      //       ),
+      //     ),
+      //   ],
+      // ),
     );
   }
 }

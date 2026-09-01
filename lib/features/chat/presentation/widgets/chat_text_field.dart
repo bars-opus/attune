@@ -429,6 +429,25 @@ class _ChatTextFieldState extends State<ChatTextField>
 
   bool get _hasText => widget.controller.text.trim().isNotEmpty;
 
+  int _estimatedComposerLines({
+    required BuildContext context,
+    required TextStyle style,
+    required double maxWidth,
+  }) {
+    final text = widget.controller.text;
+    if (text.isEmpty) return 1;
+
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: Directionality.of(context),
+      maxLines: 5,
+    )..layout(maxWidth: maxWidth.clamp(1.0, double.infinity));
+
+    final lines = painter.computeLineMetrics().length;
+    painter.dispose();
+    return lines.clamp(1, 5);
+  }
+
   /// Drives the recording scrim's fade. An OverlayEntry rather than a
   /// route: a route pushed mid-gesture moves the pointer to a new
   /// Navigator layer and breaks the drag lock and cancel both read from.
@@ -920,116 +939,178 @@ class _ChatTextFieldState extends State<ChatTextField>
       Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (widget.showCaptureVideo) ...[
-            _ComposerSatellite(
-              icon: Icons.photo_camera_outlined,
-              onTap: widget.enabled ? widget.onCaptureVideo : null,
-              tooltip: 'Camera',
-              iconColor: _composerIconColor(colorScheme),
-            ),
-            const SizedBox(width: Spacing.sm),
-          ],
+          AnimatedSize(
+            duration:
+                reduceMotionOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.centerLeft,
+            child:
+                widget.showCaptureVideo && !_hasText
+                    ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _ComposerSatellite(
+                          icon: Icons.photo_camera_outlined,
+                          onTap: widget.enabled ? widget.onCaptureVideo : null,
+                          tooltip: 'Camera',
+                          iconColor: _composerIconColor(colorScheme),
+                        ),
+                        const SizedBox(width: Spacing.sm),
+                      ],
+                    )
+                    : const SizedBox.shrink(),
+          ),
           Expanded(
-            child: Container(
-              key: const ValueKey('composer-pill'),
-              constraints: const BoxConstraints(minHeight: 48),
-              padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
-              decoration: BoxDecoration(
-                color: colorScheme.surface.withValues(alpha: 0.94),
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
-                boxShadow: _composerShadows,
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: widget.controller,
-                      focusNode: widget.focusNode,
-                      enabled: widget.enabled,
-                      minLines: 1,
-                      maxLines: 5,
-                      textInputAction: TextInputAction.newline,
-                      onSubmitted: (_) => _handleSend(),
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontSize: 18,
-                        height: 1.25,
-                      ),
-                      decoration: InputDecoration(
-                        // The app-wide InputDecorationTheme sets
-                        // filled: true with a surface colour. Overriding
-                        // only the borders left a square-cornered filled
-                        // rectangle inside this rounded pill, whose corners
-                        // showed past the curve at the left edge. The pill
-                        // already paints the background.
-                        filled: false,
-                        hintText: widget.hintText,
-                        hintStyle: Theme.of(
-                          context,
-                        ).textTheme.bodyLarge?.copyWith(
-                          color: colorScheme.onSurface.withValues(alpha: 0.5),
-                          fontSize: 18,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final textStyle = Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(fontSize: 18, height: 1.25);
+                final visibleTrailingIconSlots =
+                    widget.showTranslator || (!_hasText && widget.showGames)
+                        ? 1
+                        : 0;
+                final textWidth =
+                    constraints.maxWidth -
+                    (Spacing.sm * 4) -
+                    (visibleTrailingIconSlots * _ComposerIcon._tapSize);
+                final lineCount = _estimatedComposerLines(
+                  context: context,
+                  style: textStyle ?? const TextStyle(fontSize: 18),
+                  maxWidth: textWidth,
+                );
+                final expansion =
+                    ((lineCount - 1) / 4).clamp(0.0, 1.0).toDouble();
+                final reduceMotion = reduceMotionOf(context);
+                final radius =
+                    lineCount == 1
+                        ? BorderRadiusTokens.full
+                        : 34 - 4 * expansion;
+                final verticalPadding = 2.0 + (6.0 * expansion);
+                final textVerticalPadding = Spacing.sm + (2.0 * expansion);
+
+                return AnimatedSize(
+                  duration:
+                      reduceMotion
+                          ? Duration.zero
+                          : const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.bottomCenter,
+                  child: AnimatedContainer(
+                    key: const ValueKey('composer-pill'),
+                    duration:
+                        reduceMotion
+                            ? Duration.zero
+                            : const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    constraints: const BoxConstraints(minHeight: 48),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: Spacing.sm,
+                      vertical: verticalPadding,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surface.withValues(alpha: 0.94),
+                      borderRadius: BorderRadius.circular(radius),
+                      boxShadow: _composerShadows,
+                    ),
+                    child: Row(
+                      crossAxisAlignment:
+                          lineCount > 1
+                              ? CrossAxisAlignment.end
+                              : CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: widget.controller,
+                            focusNode: widget.focusNode,
+                            enabled: widget.enabled,
+                            minLines: 1,
+                            maxLines: 5,
+                            textInputAction: TextInputAction.newline,
+                            onSubmitted: (_) => _handleSend(),
+                            style: textStyle,
+                            decoration: InputDecoration(
+                              // The app-wide InputDecorationTheme sets
+                              // filled: true with a surface colour. Overriding
+                              // only the borders left a square-cornered filled
+                              // rectangle inside this rounded pill, whose corners
+                              // showed past the curve at the left edge. The pill
+                              // already paints the background.
+                              filled: false,
+                              hintText: widget.hintText,
+                              hintStyle: Theme.of(
+                                context,
+                              ).textTheme.bodyLarge?.copyWith(
+                                color: colorScheme.onSurface.withValues(
+                                  alpha: 0.5,
+                                ),
+                                fontSize: 18,
+                              ),
+                              isDense: true,
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              disabledBorder: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(
+                                vertical: textVerticalPadding,
+                                horizontal: Spacing.sm,
+                              ),
+                            ),
+                          ),
                         ),
-                        isDense: true,
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        disabledBorder: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: Spacing.sm,
-                          horizontal: Spacing.sm,
-                        ),
-                      ),
+                        if (widget.showTranslator)
+                          AnimatedSize(
+                            duration:
+                                reduceMotion
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 200),
+                            curve: Curves.easeOutCubic,
+                            alignment: Alignment.centerLeft,
+                            child: AnimatedOpacity(
+                              duration:
+                                  reduceMotion
+                                      ? Duration.zero
+                                      : const Duration(milliseconds: 150),
+                              opacity: _hasText ? 1.0 : 0.0,
+                              child:
+                                  _hasText
+                                      ? _ComposerIcon(
+                                        icon: Icons.help_outline_rounded,
+                                        onTap:
+                                            widget.enabled
+                                                ? widget.onOpenTranslator
+                                                : null,
+                                        tooltip: 'Help me say this',
+                                      )
+                                      : const SizedBox(
+                                        height: _ComposerIcon._tapSize,
+                                      ),
+                            ),
+                          ),
+                        if (!_hasText && widget.showGames)
+                          _ComposerIcon(
+                            icon: Icons.sports_esports_outlined,
+                            onTap: widget.enabled ? widget.onOpenGames : null,
+                            tooltip: 'Games',
+                            iconColor: _composerIconColor(colorScheme),
+                          ),
+                        if (!_hasText && showAttachSheet)
+                          _ComposerIcon(
+                            icon: Icons.attach_file_rounded,
+                            onTap:
+                                widget.enabled
+                                    ? () => _handleAttachTap(context)
+                                    : null,
+                            tooltip: 'Attachments',
+                            iconColor: _composerIconColor(colorScheme),
+                          ),
+                      ],
                     ),
                   ),
-                  if (widget.showTranslator)
-                    AnimatedSize(
-                      duration:
-                          reduceMotionOf(context)
-                              ? Duration.zero
-                              : const Duration(milliseconds: 200),
-                      curve: Curves.easeOutCubic,
-                      alignment: Alignment.centerLeft,
-                      child: AnimatedOpacity(
-                        duration:
-                            reduceMotionOf(context)
-                                ? Duration.zero
-                                : const Duration(milliseconds: 150),
-                        opacity: _hasText ? 1.0 : 0.0,
-                        child:
-                            _hasText
-                                ? _ComposerIcon(
-                                  icon: Icons.help_outline_rounded,
-                                  onTap:
-                                      widget.enabled
-                                          ? widget.onOpenTranslator
-                                          : null,
-                                  tooltip: 'Help me say this',
-                                )
-                                : const SizedBox(
-                                  height: _ComposerIcon._tapSize,
-                                ),
-                      ),
-                    ),
-                  if (!_hasText && widget.showGames)
-                    _ComposerIcon(
-                      icon: Icons.sports_esports_outlined,
-                      onTap: widget.enabled ? widget.onOpenGames : null,
-                      tooltip: 'Games',
-                      iconColor: _composerIconColor(colorScheme),
-                    ),
-                  if (!_hasText && showAttachSheet)
-                    _ComposerIcon(
-                      icon: Icons.attach_file_rounded,
-                      onTap:
-                          widget.enabled
-                              ? () => _handleAttachTap(context)
-                              : null,
-                      tooltip: 'Attachments',
-                      iconColor: _composerIconColor(colorScheme),
-                    ),
-                ],
-              ),
+                );
+              },
             ),
           ),
           const SizedBox(width: Spacing.sm),

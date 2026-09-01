@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/motion_tokens.dart';
@@ -100,6 +101,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _controller.addListener(_onDraftChanged);
+    _composerFocusNode.addListener(_onComposerFocusChanged);
     Future.microtask(_restoreDraft);
     // Mark the view active once the first frame has rendered so read receipts
     // are only sent when the conversation is visible, foregrounded, and the
@@ -129,11 +131,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _controller.removeListener(_onDraftChanged);
+    _composerFocusNode.removeListener(_onComposerFocusChanged);
     _controller.dispose();
     _composerFocusNode.dispose();
     _scrollController.dispose();
     _highlightTimer?.cancel();
     super.dispose();
+  }
+
+  void _onComposerFocusChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -710,6 +717,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             ),
             body: Stack(
               children: [
+                const Positioned.fill(
+                  child: AttuneChatWallpaper(child: SizedBox.expand()),
+                ),
                 // Message list fills the whole body; the composer floats on top
                 // (see the Positioned block below) rather than being stacked in
                 // flow beneath it, so bubbles keep scrolling visibly behind the
@@ -729,30 +739,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                       conversation: conversation,
                       state: state,
                       isOnline: isOnline,
+                      errorMessage: state.error,
+                      onRetry: () => notifier.loadMessages(),
                     ),
-                    if (state.error != null)
-                      MaterialBanner(
-                        content: Text(state.error!),
-                        actions: [
-                          TextButton(
-                            onPressed: () => notifier.loadMessages(),
-                            child: const Text('Retry'),
-                          ),
-                        ],
-                      ),
                     Expanded(
-                      child: AttuneChatWallpaper(
-                        child: _MessageList(
-                          conversation: widget.conversation,
-                          state: state,
-                          scrollController: _scrollController,
-                          firstBuildCutoff: _messageListCutoff,
-                          animatedMessageIds: _animatedMessageIds,
-                          messageKeys: _messageKeys,
-                          highlightedMessageId: _highlightedMessageId,
-                          onReply: _setReplyTarget,
-                          onJumpToParent: _jumpToMessage,
-                        ),
+                      child: _MessageList(
+                        conversation: widget.conversation,
+                        state: state,
+                        scrollController: _scrollController,
+                        firstBuildCutoff: _messageListCutoff,
+                        animatedMessageIds: _animatedMessageIds,
+                        messageKeys: _messageKeys,
+                        highlightedMessageId: _highlightedMessageId,
+                        composerFocused: _composerFocusNode.hasFocus,
+                        onReply: _setReplyTarget,
+                        onJumpToParent: _jumpToMessage,
                       ),
                     ),
                     // No trailing gap: it exposed a band of the scaffold's
@@ -782,20 +783,45 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                       ),
                                     )
                                     .partnerTyping;
-                            if (!typing) return const SizedBox.shrink();
-                            return Padding(
-                              key: const ValueKey('typing_indicator'),
-                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    '${conversation.name} is typing',
-                                    style:
-                                        Theme.of(context).textTheme.bodySmall,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const BreathingDots(size: 6),
-                                ],
+                            return AnimatedSize(
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOutCubic,
+                              alignment: Alignment.bottomLeft,
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 180),
+                                switchInCurve: Curves.easeOutCubic,
+                                switchOutCurve: Curves.easeInCubic,
+                                transitionBuilder:
+                                    (child, animation) => FadeTransition(
+                                      opacity: animation,
+                                      child: SlideTransition(
+                                        position: Tween<Offset>(
+                                          begin: const Offset(0, 0.18),
+                                          end: Offset.zero,
+                                        ).animate(animation),
+                                        child: child,
+                                      ),
+                                    ),
+                                child:
+                                    typing
+                                        ? const Padding(
+                                          key: ValueKey('typing_indicator'),
+                                          padding: EdgeInsets.fromLTRB(
+                                            16,
+                                            4,
+                                            16,
+                                            6,
+                                          ),
+                                          child: Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: _TypingIndicatorBubble(),
+                                          ),
+                                        )
+                                        : const SizedBox.shrink(
+                                          key: ValueKey(
+                                            'typing_indicator_hidden',
+                                          ),
+                                        ),
                               ),
                             );
                           },
@@ -950,88 +976,243 @@ class _ConversationStateBanner extends StatelessWidget {
     required this.conversation,
     required this.state,
     required this.isOnline,
+    this.errorMessage,
+    this.onRetry,
   });
 
   final Conversation conversation;
   final ChatState state;
   final bool isOnline;
+  final String? errorMessage;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final queuedCount =
         state.messages
             .where((message) => message.isMine && message.isQueued)
             .length;
-    final failedCount =
-        state.messages
-            .where((message) => message.isMine && message.isFailed)
-            .length;
 
-    String? title;
-    String? body;
-    IconData icon = Icons.info_outline;
-    Color? color;
+    _ConversationBannerData? data;
 
-    if (conversation.isArchived) {
-      title = 'Conversation archived';
-      body = conversation.readOnlyReason;
-      icon = Icons.archive_outlined;
-      color = Theme.of(context).colorScheme.errorContainer;
+    if (errorMessage != null) {
+      data = _ConversationBannerData(
+        title: 'Could not sync',
+        body: errorMessage!,
+        icon: Icons.wifi_tethering_error_rounded,
+        accent: colorScheme.error,
+        surface: colorScheme.errorContainer.withValues(alpha: 0.72),
+        foreground: colorScheme.onErrorContainer,
+        actionLabel: 'Retry',
+        onAction: onRetry,
+      );
+    } else if (conversation.isArchived) {
+      data = _ConversationBannerData(
+        title: 'Conversation archived',
+        body: conversation.readOnlyReason ?? 'This chat is read-only.',
+        icon: Icons.archive_outlined,
+        accent: colorScheme.error,
+        surface: colorScheme.errorContainer.withValues(alpha: 0.72),
+        foreground: colorScheme.onErrorContainer,
+      );
     } else if (!isOnline) {
-      title = 'Offline';
-      body =
-          queuedCount > 0
-              ? '$queuedCount message${queuedCount == 1 ? '' : 's'} queued. They will send when you reconnect.'
-              : 'Messages will queue locally until you reconnect.';
-      icon = Icons.cloud_off_outlined;
-      color = Theme.of(context).colorScheme.surfaceContainerHighest;
-    } else if (state.isLoading && state.messages.isNotEmpty) {
-      title = 'Reconnecting';
-      body = 'Syncing the latest messages now.';
-      icon = Icons.sync_rounded;
-      color = Theme.of(context).colorScheme.primaryContainer;
-    } else if (failedCount > 0) {
-      title = 'Needs attention';
-      body =
-          '$failedCount message${failedCount == 1 ? '' : 's'} failed to send. Retry or remove them below.';
-      icon = Icons.error_outline_rounded;
-      color = Theme.of(context).colorScheme.errorContainer;
+      data = _ConversationBannerData(
+        title: 'Offline',
+        body:
+            queuedCount > 0
+                ? '$queuedCount message${queuedCount == 1 ? '' : 's'} queued. They will send when you reconnect.'
+                : 'Messages will queue locally until you reconnect.',
+        icon: Icons.cloud_off_outlined,
+        accent: colorScheme.onSurfaceVariant,
+        surface: colorScheme.surfaceContainerHighest.withValues(alpha: 0.86),
+        foreground: colorScheme.onSurface,
+      );
     } else if (!conversation.canSend && conversation.readOnlyReason != null) {
-      title = 'Read-only';
-      body = conversation.readOnlyReason;
-      icon = Icons.lock_outline;
-      color = Theme.of(context).colorScheme.surfaceContainerHighest;
+      data = _ConversationBannerData(
+        title: 'Read-only',
+        body: conversation.readOnlyReason!,
+        icon: Icons.lock_outline,
+        accent: colorScheme.onSurfaceVariant,
+        surface: colorScheme.surfaceContainerHighest.withValues(alpha: 0.86),
+        foreground: colorScheme.onSurface,
+      );
     }
 
-    if (title == null || body == null) {
-      return const SizedBox.shrink();
-    }
+    final child =
+        data == null
+            ? const SizedBox.shrink(key: ValueKey('conversation_banner_empty'))
+            : _ConversationAlertCard(
+              key: ValueKey('conversation_banner_${data.title}_${data.body}'),
+              data: data,
+            );
 
-    return Container(
-      width: double.infinity,
-      color: color,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 220),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder:
+            (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SizeTransition(
+                sizeFactor: animation,
+                axisAlignment: -1,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, -0.18),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
                 ),
-                const SizedBox(height: 2),
-                Text(body, style: Theme.of(context).textTheme.bodySmall),
+              ),
+            ),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _ConversationBannerData {
+  const _ConversationBannerData({
+    required this.title,
+    required this.body,
+    required this.icon,
+    required this.accent,
+    required this.surface,
+    required this.foreground,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String title;
+  final String body;
+  final IconData icon;
+  final Color accent;
+  final Color surface;
+  final Color foreground;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+}
+
+class _ConversationAlertCard extends StatelessWidget {
+  const _ConversationAlertCard({super.key, required this.data});
+
+  final _ConversationBannerData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    // ignore: deprecated_member_use
+    final controlSurface = colorScheme.background.withValues(alpha: 0.92);
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+        decoration: BoxDecoration(
+          color: colorScheme.neutral,
+          borderRadius: const BorderRadius.vertical(
+            bottom: Radius.circular(26),
+          ),
+          boxShadow: const [
+            BoxShadow(
+              offset: Offset(0, 8),
+              blurRadius: 24,
+              spreadRadius: -11,
+              color: Color(0x40000000),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Material(
+          color: data.surface,
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: data.accent.withValues(alpha: 0.18)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: controlSurface,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: data.accent.withValues(alpha: 0.14),
+                    ),
+                  ),
+                  child: Icon(data.icon, size: 18, color: data.accent),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        data.title,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: data.foreground,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        data.body,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: data.foreground.withValues(alpha: 0.72),
+                          height: 1.18,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (data.actionLabel != null && data.onAction != null) ...[
+                  const SizedBox(width: 8),
+                  Material(
+                    color: controlSurface,
+                    borderRadius: BorderRadius.circular(
+                      BorderRadiusTokens.full,
+                    ),
+                    child: InkWell(
+                      onTap: data.onAction,
+                      borderRadius: BorderRadius.circular(
+                        BorderRadiusTokens.full,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        child: Text(
+                          data.actionLabel!,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.labelMedium?.copyWith(
+                            color: data.accent,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1124,7 +1305,7 @@ class _ConversationHeaderCard extends ConsumerWidget {
                         ),
                       )
                       : TextSpan(
-                        text: subtitle,
+                        text: "\n$subtitle",
                         style: textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurface.withValues(alpha: 0.4),
                         ),
@@ -1458,6 +1639,7 @@ class _MessageList extends ConsumerStatefulWidget {
     required this.animatedMessageIds,
     required this.messageKeys,
     required this.highlightedMessageId,
+    required this.composerFocused,
     required this.onReply,
     required this.onJumpToParent,
   });
@@ -1489,6 +1671,11 @@ class _MessageList extends ConsumerStatefulWidget {
   /// The message currently flashed as a jump target, or null.
   final String? highlightedMessageId;
 
+  /// True while the chat composer owns focus. The Scaffold body can see a
+  /// zero keyboard inset after resize, so focus is the reliable signal for
+  /// tightening the list's bottom reserve above the floating composer.
+  final bool composerFocused;
+
   /// Sets the screen's reply target to (messageId, contentPreview).
   final void Function(String messageId, String contentPreview) onReply;
 
@@ -1504,6 +1691,8 @@ class _MessageList extends ConsumerStatefulWidget {
 class _MessageListState extends ConsumerState<_MessageList>
     with SingleTickerProviderStateMixin {
   static const _timestampReturnDuration = Duration(milliseconds: 220);
+  static const _messageListBottomReserve = 120.0;
+  static const _messageListKeyboardBottomReserve = 64.0;
 
   final ValueNotifier<double> _timestampRevealOffset = ValueNotifier(0);
   final Map<String, GlobalKey> _rowKeys = {};
@@ -1633,6 +1822,7 @@ class _MessageListState extends ConsumerState<_MessageList>
     final animatedMessageIds = widget.animatedMessageIds;
     final messageKeys = widget.messageKeys;
     final highlightedMessageId = widget.highlightedMessageId;
+    final composerFocused = widget.composerFocused;
     final onReply = widget.onReply;
     final onJumpToParent = widget.onJumpToParent;
 
@@ -1683,6 +1873,8 @@ class _MessageListState extends ConsumerState<_MessageList>
     _rowKeys.removeWhere((id, _) => !currentIds.contains(id));
     final mediaRuns = ChatMediaRunLayout.fromMessages(state.messages);
     final pinnedLabel = _pinnedDateLabel;
+    final keyboardIsOpen =
+        composerFocused || MediaQuery.of(context).viewInsets.bottom > 0;
 
     return Stack(
       children: [
@@ -1726,24 +1918,17 @@ class _MessageListState extends ConsumerState<_MessageList>
                 // padding clips it however wide the row asks to be. The
                 // 8px moves onto the message rows themselves, which are
                 // the only children that wanted it.
-                // 120, not 96: the time and status moved BELOW the
-                // bubble (a934e840), adding height under the last message
-                // that the old reserve did not account for — so the footer
-                // ended up sitting against the composer.
-                //
-                // The home-indicator inset is subtracted when the keyboard
-                // is up. 120 reserves the composer PLUS that inset, but
-                // the inset collapses to zero once the keyboard covers it
-                // — so the reserve stayed 120 while the space it was
-                // reserving for had shrunk, leaving a visible gap under
-                // the last bubble.
+                // The unfocused reserve includes the floating composer and
+                // the home-indicator SafeArea. When the keyboard is open,
+                // that SafeArea collapses, so a tighter reserve keeps the
+                // newest bubble/footer close to the focused composer.
                 padding: EdgeInsets.fromLTRB(
                   0,
                   10,
                   0,
-                  MediaQuery.of(context).viewInsets.bottom > 0
-                      ? 120 - MediaQuery.of(context).padding.bottom
-                      : 120,
+                  keyboardIsOpen
+                      ? _messageListKeyboardBottomReserve
+                      : _messageListBottomReserve,
                 ),
                 itemCount:
                     state.messages.length + (state.isLoadingMore ? 1 : 0),
@@ -2497,6 +2682,43 @@ class _PinnedMessagesBanner extends StatelessWidget {
               );
             },
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TypingIndicatorBubble extends StatelessWidget {
+  const _TypingIndicatorBubble();
+
+  @override
+  Widget build(BuildContext context) {
+    final chatColors = Theme.of(context).chatColors;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: chatColors.receiverBubble,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            offset: Offset(0, 1),
+            blurRadius: 1,
+            spreadRadius: -1,
+            color: Color(0x0F000000),
+          ),
+          BoxShadow(
+            offset: Offset(0, 1),
+            blurRadius: 2,
+            color: Color(0x0A000000),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+        child: BreathingDots(
+          size: 7,
+          color: colorScheme.primary.withValues(alpha: 0.82),
         ),
       ),
     );

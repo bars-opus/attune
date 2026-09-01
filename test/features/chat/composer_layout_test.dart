@@ -1,3 +1,4 @@
+import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -104,12 +105,42 @@ void main() {
   ) async {
     await tester.pumpWidget(_harness());
 
-    final pill = tester.widget<Container>(
+    final pill = tester.widget<AnimatedContainer>(
       find.byKey(const ValueKey('composer-pill')),
     );
     final decoration = pill.decoration;
 
     expect(decoration, isA<BoxDecoration>());
     expect((decoration! as BoxDecoration).boxShadow, isNotEmpty);
+  });
+
+  testWidgets('message pill rounds down and breathes when text wraps', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        text:
+            'This is a longer message that should wrap across several lines '
+            'inside the composer and make the field feel less cramped.',
+      ),
+    );
+
+    final pill = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey('composer-pill')),
+    );
+    final decoration = pill.decoration! as BoxDecoration;
+    final borderRadius = decoration.borderRadius! as BorderRadius;
+    final padding = pill.padding! as EdgeInsets;
+
+    expect(
+      borderRadius.topLeft.x,
+      lessThan(BorderRadiusTokens.full),
+      reason: 'multi-line text should morph out of the single-line capsule',
+    );
+    expect(
+      padding.vertical,
+      greaterThan(4),
+      reason: 'multi-line text needs more vertical breathing room',
+    );
   });
 }

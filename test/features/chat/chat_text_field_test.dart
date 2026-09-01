@@ -474,4 +474,25 @@ void main() {
       expect(captureVideoCalled, 1);
     },
   );
+
+  testWidgets('camera action hides while typing to give the field more room', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    await _pump(
+      tester,
+      controller: controller,
+      showCaptureVideo: true,
+      onCaptureVideo: () {},
+      showVoiceMessage: true,
+    );
+
+    expect(find.byIcon(Icons.photo_camera_outlined), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'hello');
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.photo_camera_outlined), findsNothing);
+    expect(find.byIcon(Icons.send_rounded), findsOneWidget);
+  });
 }

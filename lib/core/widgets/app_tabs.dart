@@ -319,7 +319,8 @@ class SimpleTabs extends StatelessWidget {
             // Uses low opacity for subtle separation without visual competition
             dividerColor:
                 style.showDivider
-                    ? (style.inactiveColor ?? colors.onSurface.withValues(alpha: 0.3))
+                    ? (style.inactiveColor ??
+                        colors.onSurface.withValues(alpha: 0.3))
                     : Colors.transparent,
             dividerHeight: 0.3,
 
@@ -391,8 +392,10 @@ class SimpleTabs extends StatelessWidget {
                               : null,
                       child: Container(
                         color: Colors.transparent,
-                        // Horizontal padding adjustable via style
-                        padding: EdgeInsets.symmetric(horizontal: 8.w),
+                        // Horizontal padding adjustable via style.
+                        padding: EdgeInsets.symmetric(
+                          horizontal: (style.tabPadding ?? 16.0).w,
+                        ),
                         alignment: Alignment.center,
                         // Use custom child if provided, otherwise build default label
                         child: tab.customChild ?? _buildTabLabel(tab),
