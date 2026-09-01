@@ -63,6 +63,38 @@ class _ThirtySixChapterInvitationScreenState
     }
   }
 
+  bool _cancelling = false;
+
+  /// Withdraws an invitation the partner has not accepted.
+  ///
+  /// This button used to pop the screen and nothing else -- the body was a
+  /// `// Cancel invitation logic` comment -- so a sent invite could never
+  /// be withdrawn. Worse, the session stayed 'invited', and the next
+  /// attempt to invite was refused because one was already outstanding:
+  /// the user was locked out of the game with no way back.
+  Future<void> _cancelInvitation() async {
+    setState(() => _cancelling = true);
+    try {
+      await ref
+          .read(thirtySixQuestionRepositoryProvider)
+          .updateChapterStatus(
+            sessionId: widget.sessionId,
+            status: 'abandoned',
+            abandonReason: 'cancelled_by_initiator',
+          );
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _cancelling = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not cancel the invitation. Please try again.'),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -113,11 +145,8 @@ class _ThirtySixChapterInvitationScreenState
               ),
               Gap(Spacing.xl.h),
               AppButton(
-                label: 'Cancel invitation',
-                onPressed: () {
-                  // Cancel invitation logic
-                  Navigator.pop(context);
-                },
+                label: _cancelling ? 'Cancelling…' : 'Cancel invitation',
+                onPressed: _cancelling ? null : _cancelInvitation,
                 size: ButtonSize.medium,
                 customColor: colorScheme.surfaceContainerHighest,
                 textColor: colorScheme.error,
