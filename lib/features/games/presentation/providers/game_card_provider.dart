@@ -44,15 +44,37 @@ class GameCardState {
 /// A stream rather than a future: the whole point of the card is that the
 /// partner's move changes it without the reader doing anything. Supabase's
 /// .stream() gives the initial row and every update on one subscription.
-final gameCardProvider = StreamProvider.family<GameCardState?, String>((
-  ref,
-  sessionId,
-) {
-  final supabase = ref.watch(supabaseClientProvider);
+///
+/// autoDispose, and this matters: a chat page loads 50 messages, so a
+/// conversation with a long game history would otherwise hold a websocket
+/// subscription per card for the rest of the session -- every one of them
+/// still streaming after the card scrolled out of sight. They are released
+/// when no card is watching.
+///
+/// The 30-second keep-alive stops the opposite problem: scrolling a card
+/// off and straight back on would tear down and rebuild its subscription
+/// each time, which is slower and noisier than holding it briefly.
+final gameCardProvider = StreamProvider.autoDispose
+    .family<GameCardState?, String>((ref, sessionId) {
+      final link = ref.keepAlive();
+      Timer? expiry;
 
-  return supabase
-      .from('game_sessions')
-      .stream(primaryKey: ['id'])
-      .eq('id', sessionId)
-      .map((rows) => rows.isEmpty ? null : GameCardState.fromRow(rows.first));
-});
+      ref.onCancel(() {
+        expiry = Timer(const Duration(seconds: 30), link.close);
+      });
+      ref.onResume(() {
+        expiry?.cancel();
+        expiry = null;
+      });
+      ref.onDispose(() => expiry?.cancel());
+
+      final supabase = ref.watch(supabaseClientProvider);
+
+      return supabase
+          .from('game_sessions')
+          .stream(primaryKey: ['id'])
+          .eq('id', sessionId)
+          .map(
+            (rows) => rows.isEmpty ? null : GameCardState.fromRow(rows.first),
+          );
+    });

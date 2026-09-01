@@ -132,3 +132,17 @@ DROP TRIGGER IF EXISTS resurface_game_message ON public.game_sessions;
 CREATE TRIGGER resurface_game_message
   AFTER UPDATE ON public.game_sessions
   FOR EACH ROW EXECUTE FUNCTION public.resurface_game_message();
+
+-- Defence in depth. Postgres already refuses to call a trigger function
+-- directly ("trigger functions can only be called as triggers"), so this
+-- closes nothing exploitable today -- but both are SECURITY DEFINER and
+-- write message rows, and PUBLIC EXECUTE on a definer function that
+-- bypasses RLS is not a default worth inheriting if that protection ever
+-- changes. Matches notify_game_invite, which already revokes.
+REVOKE ALL ON FUNCTION public.post_game_message() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.resurface_game_message() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.messages_default_sort_at() FROM PUBLIC, anon, authenticated;
+
+-- game_type_display_name stays PUBLIC: it is IMMUTABLE, takes a text
+-- game type and returns its display name, reads no tables and is not
+-- SECURITY DEFINER. There is nothing to protect.
