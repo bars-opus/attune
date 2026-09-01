@@ -5,6 +5,7 @@ import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/motion_tokens.dart';
 import 'package:attune/core/ui/motion/make_room.dart';
+import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_date_chip.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
@@ -72,6 +73,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   // view. IDs recorded here animate exactly once per screen lifetime.
   final Set<String> _animatedMessageIds = <String>{};
   bool _headerExpanded = false;
+  bool _headerOverlayMounted = false;
+  Timer? _headerOverlayRemovalTimer;
   bool _isForeground = true;
 
   /// Reply target set by swiping a message — mirrors
@@ -136,6 +139,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _composerFocusNode.dispose();
     _scrollController.dispose();
     _highlightTimer?.cancel();
+    _headerOverlayRemovalTimer?.cancel();
     super.dispose();
   }
 
@@ -447,7 +451,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   void _openGames() {
     FocusScope.of(context).unfocus();
-    setState(() => _headerExpanded = false);
+    _closeHeaderExpanded();
     unawaited(
       BottomSheetUtils.showDocumentationBottomSheet<void>(
         context: context,
@@ -467,11 +471,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   void _toggleHeaderExpanded() {
     FocusScope.of(context).unfocus();
-    setState(() => _headerExpanded = !_headerExpanded);
+    if (_headerExpanded) {
+      _closeHeaderExpanded();
+      return;
+    }
+    _headerOverlayRemovalTimer?.cancel();
+    setState(() {
+      _headerExpanded = true;
+      _headerOverlayMounted = true;
+    });
   }
 
   void _closeHeaderExpanded() {
-    if (_headerExpanded) setState(() => _headerExpanded = false);
+    if (!_headerExpanded && !_headerOverlayMounted) return;
+    _headerOverlayRemovalTimer?.cancel();
+    setState(() => _headerExpanded = false);
+    _headerOverlayRemovalTimer = Timer(const Duration(milliseconds: 260), () {
+      if (!mounted || _headerExpanded) return;
+      setState(() => _headerOverlayMounted = false);
+    });
   }
 
   Future<void> _openGameRoute(ChatGameDestination destination) async {
@@ -950,10 +968,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               ],
             ),
           ),
-          if (headerDrawerEnabled.valueOrNull == true && _headerExpanded)
+          if (headerDrawerEnabled.valueOrNull == true && _headerOverlayMounted)
             Positioned.fill(
               child: _ConversationHeaderOverlay(
                 snapshot: headerSnapshot,
+                closing: !_headerExpanded,
                 onDismiss: _closeHeaderExpanded,
                 onOpenPulse: () {
                   _closeHeaderExpanded();
@@ -1387,12 +1406,14 @@ class _ConversationHeaderExpandedSection extends StatelessWidget {
 class _ConversationHeaderOverlay extends StatelessWidget {
   const _ConversationHeaderOverlay({
     required this.snapshot,
+    required this.closing,
     required this.onDismiss,
     required this.onOpenPulse,
     required this.onOpenInsights,
   });
 
   final AsyncValue<ChatHeaderSnapshot> snapshot;
+  final bool closing;
   final VoidCallback onDismiss;
   final VoidCallback onOpenPulse;
   final VoidCallback onOpenInsights;
@@ -1407,64 +1428,89 @@ class _ConversationHeaderOverlay extends StatelessWidget {
       child: GestureDetector(
         onTap: onDismiss,
         behavior: HitTestBehavior.opaque,
-        child: Container(
-          color: Colors.black.withValues(alpha: 0.82),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(Spacing.md),
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: AnimatedScaleFade(
-                  duration: const Duration(milliseconds: 600),
-                  curve: Curves.easeOutBack,
-                  child: GestureDetector(
-                    onTap: () {},
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: 640.w),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: colorScheme.surface,
-                          borderRadius: BorderRadius.circular(24.r),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.24),
-                              blurRadius: 28,
-                              offset: const Offset(0, 18),
-                            ),
-                          ],
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(Spacing.md),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      'Chat details',
-                                      style: textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                  IconButton(
-                                    onPressed: onDismiss,
-                                    icon: const Icon(Icons.close_rounded),
-                                    tooltip: 'Close chat details',
-                                  ),
-                                ],
-                              ),
-                              _ConversationHeaderExpandedSection(
-                                snapshot: snapshot,
-                                onOpenPulse: onOpenPulse,
-                                onOpenInsights: onOpenInsights,
-                              ),
-                            ],
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(end: closing ? 0 : 1),
+          duration:
+              reduceMotionOf(context)
+                  ? Duration.zero
+                  : closing
+                  ? const Duration(milliseconds: 260)
+                  : const Duration(milliseconds: 460),
+          curve: Curves.linear,
+          builder: (context, value, child) {
+            final backdropProgress = Curves.easeOutCubic.transform(value);
+            final motionProgress = Curves.easeOutBack.transform(value);
+
+            return Container(
+              color: Colors.black.withValues(alpha: 0.82 * backdropProgress),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(Spacing.md),
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: Opacity(
+                      opacity: backdropProgress.clamp(0.0, 1.0).toDouble(),
+                      child: Transform.scale(
+                        alignment: Alignment.topCenter,
+                        scale: 0.78 + (0.22 * motionProgress),
+                        child: Transform.translate(
+                          offset: Offset(
+                            28 * (1 - motionProgress),
+                            -20 * (1 - motionProgress),
                           ),
+                          child: child,
                         ),
                       ),
                     ),
+                  ),
+                ),
+              ),
+            );
+          },
+          child: GestureDetector(
+            onTap: () {},
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: 640.w),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: BorderRadius.circular(24.r),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.24),
+                      blurRadius: 28,
+                      offset: const Offset(0, 18),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(Spacing.md),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Chat details',
+                              style: textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: onDismiss,
+                            icon: const Icon(Icons.close_rounded),
+                            tooltip: 'Close chat details',
+                          ),
+                        ],
+                      ),
+                      _ConversationHeaderExpandedSection(
+                        snapshot: snapshot,
+                        onOpenPulse: onOpenPulse,
+                        onOpenInsights: onOpenInsights,
+                      ),
+                    ],
                   ),
                 ),
               ),

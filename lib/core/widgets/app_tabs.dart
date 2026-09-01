@@ -178,7 +178,12 @@ class AppTabsStyle {
     this.inactiveColor,
     this.indicatorColor,
     this.indicatorHeight = 1.0,
-    this.tabPadding = 16.0,
+    // 8, not 16: three tabs at 16 push the third one off a 390pt screen
+    // entirely -- on an iPhone 14 Pro the Settings tab's centre lands at
+    // x=409 on a 390pt-wide view, so it cannot be tapped at all. Callers
+    // that want roomier tabs can still pass a larger value; the DEFAULT
+    // has to fit the narrowest common phone.
+    this.tabPadding = 8.0,
     this.borderRadius = BorderRadiusTokens.md,
     this.activeTextStyle,
     this.inactiveTextStyle,
@@ -394,7 +399,7 @@ class SimpleTabs extends StatelessWidget {
                         color: Colors.transparent,
                         // Horizontal padding adjustable via style.
                         padding: EdgeInsets.symmetric(
-                          horizontal: (style.tabPadding ?? 16.0).w,
+                          horizontal: (style.tabPadding ?? 8.0).w,
                         ),
                         alignment: Alignment.center,
                         // Use custom child if provided, otherwise build default label

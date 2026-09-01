@@ -117,7 +117,7 @@ class _ChatGamesSheetState extends ConsumerState<ChatGamesSheet> {
       onTap: () => FocusScope.of(context).unfocus(),
       child: Column(
         children: [
-          const BottomSheetHeader(title: 'Play together'),
+          const BottomSheetHeader(title: 'Play'),
 
           SearchFormField(
             controller: _controller,

@@ -1,6 +1,6 @@
+import 'dart:async';
 import 'dart:ui';
 
-import 'package:attune/core/utils/animations/animated_scale_fade.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 
@@ -101,6 +101,8 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
   // widget at all, so intercepting every dismiss path uniformly means
   // intercepting the pop itself, not the many call sites that trigger it.
   bool _dismissing = false;
+  Timer? _dismissTimer;
+  Completer<bool>? _dismissCompleter;
 
   // Captured in didChangeDependencies (below) — the standard place to
   // safely read ModalRoute.of(context) for a State — rather than at pop
@@ -118,11 +120,28 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
     _ownRoute ??= ModalRoute.of(context);
   }
 
-  Future<bool> _handlePop() async {
-    if (_dismissing) return true;
+  Future<bool> _handlePop() {
+    if (_dismissing) return _dismissCompleter?.future ?? Future.value(true);
     setState(() => _dismissing = true);
-    await Future.delayed(_entranceDuration);
-    return true;
+    final completer = Completer<bool>();
+    _dismissCompleter = completer;
+    _dismissTimer = Timer(_dismissDuration, () {
+      _dismissTimer = null;
+      _dismissCompleter = null;
+      completer.complete(true);
+    });
+    return completer.future;
+  }
+
+  @override
+  void dispose() {
+    _dismissTimer?.cancel();
+    _dismissTimer = null;
+    if (_dismissCompleter case final completer? when !completer.isCompleted) {
+      completer.complete(true);
+    }
+    _dismissCompleter = null;
+    super.dispose();
   }
 
   // Rough per-item height estimate for the flip-above/below decision —
@@ -131,7 +150,7 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
   // the safe area edge on an unusually tall action list, which is far
   // better than rendering fully off-screen.
   static const double _estimatedItemHeight = 56;
-  static const double _gap = 8;
+  static const double _gap = 4;
 
   // The quick-reaction row's own height, budgeted into the flip-above/below
   // decision below: the row is docked ABOVE the action list, so it adds real
@@ -153,8 +172,9 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
   // One compact motion rhythm drives the menu, row, emoji, and action items.
   // The short overlap is deliberate: modern iMessage feels like one surface
   // unfolding, not several cards waiting for each other to finish.
-  static const Duration _entranceDuration = Duration(milliseconds: 360);
-  static const double _staggerDelay = 0.05;
+  static const Duration _entranceDuration = Duration(milliseconds: 560);
+  static const Duration _dismissDuration = Duration(milliseconds: 360);
+  static const double _staggerDelay = 0.1;
   static const int _menuStaggerIndex = 0;
   static const int _reactionRowStaggerIndex = 1;
 
@@ -164,9 +184,9 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
       _reactionRowStaggerIndex + 1 + emojiPosition;
 
   Duration _emojiDuration(int emojiPosition) =>
-      Duration(milliseconds: 220 + emojiPosition.clamp(0, 6) * 22);
+      Duration(milliseconds: 360 + emojiPosition.clamp(0, 6) * 28);
 
-  static const double _emojiStaggerDelay = 0.065;
+  static const double _emojiStaggerDelay = 0.08;
 
   int _actionStaggerIndex(int actionPosition) => 1 + actionPosition;
 
@@ -183,8 +203,8 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
         widget.anchorRect.bottom + _gap + estimatedMenuHeight <=
         screenSize.height - safeAreaBottom;
 
-    final menuWidth = 240.0;
-    // The reaction row is a SEPARATE card from the 240px action list and is
+    final menuWidth = 208.0;
+    // The reaction row is a SEPARATE card from the action list and is
     // sized by its own content, so with a realistic tapback set (6 emoji plus
     // the "+") it measures wider than menuWidth. Clamping only against
     // menuWidth would leave the wider card hanging off the right edge — the
@@ -211,6 +231,8 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
     // flip (via PopScope's onPopInvokedWithResult, see _handlePop) sends
     // the whole entrance sequence into reverse together.
     final reversing = _dismissing;
+    final surfaceMotionDuration =
+        reversing ? _dismissDuration : _entranceDuration;
 
     final reactionRow = Material(
       color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.96),
@@ -229,11 +251,12 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 for (var i = 0; i < widget.quickReactions.length; i++)
-                  AnimatedScaleFade(
+                  _FocusedAttachMenuMotion(
                     key: ValueKey('focused-reaction-$i'),
-                    duration: _emojiDuration(i),
-                    curve: Curves.easeOutCubic,
+                    duration: reversing ? _dismissDuration : _emojiDuration(i),
                     beginScale: 0.55,
+                    beginOffset: const Offset(12, 10),
+                    alignment: Alignment.center,
                     staggerIndex: _emojiStaggerIndex(i),
                     staggerDelay: _emojiStaggerDelay,
                     reverse: reversing,
@@ -261,11 +284,15 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                       ),
                     ),
                   ),
-                AnimatedScaleFade(
+                _FocusedAttachMenuMotion(
                   key: const ValueKey('focused-reaction-more'),
-                  duration: _emojiDuration(widget.quickReactions.length),
-                  curve: Curves.easeOutCubic,
+                  duration:
+                      reversing
+                          ? _dismissDuration
+                          : _emojiDuration(widget.quickReactions.length),
                   beginScale: 0.55,
+                  beginOffset: const Offset(12, 10),
+                  alignment: Alignment.center,
                   staggerIndex: _emojiStaggerIndex(
                     widget.quickReactions.length,
                   ),
@@ -377,11 +404,12 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                         // sequence: the menu begins, then this row joins 18ms
                         // later, followed by its emoji ripple. On dismiss
                         // this same index makes the row exit before the menu.
-                        AnimatedScaleFade(
+                        _FocusedAttachMenuMotion(
                           key: const ValueKey('focused-reaction-row'),
-                          duration: _entranceDuration,
-                          curve: Curves.easeOutBack,
+                          duration: surfaceMotionDuration,
                           beginScale: 0.78,
+                          beginOffset: const Offset(34, 26),
+                          alignment: Alignment.centerLeft,
                           staggerIndex: _reactionRowStaggerIndex,
                           staggerDelay: _staggerDelay,
                           reverse: reversing,
@@ -391,11 +419,12 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                         // The action-menu surface starts first. Its rows and
                         // the reaction surface then overlap in a compact
                         // cascade. On dismiss, index 0 makes it exit last.
-                        AnimatedScaleFade(
+                        _FocusedAttachMenuMotion(
                           key: const ValueKey('focused-action-menu'),
-                          duration: _entranceDuration,
-                          curve: Curves.easeOutBack,
-                          beginScale: 0.92,
+                          duration: surfaceMotionDuration,
+                          beginScale: 0.78,
+                          beginOffset: const Offset(34, 26),
+                          alignment: Alignment.topLeft,
                           staggerIndex: _menuStaggerIndex,
                           staggerDelay: _staggerDelay,
                           reverse: reversing,
@@ -405,7 +434,7 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                             ).colorScheme.surface.withValues(alpha: 0.97),
                             surfaceTintColor: Colors.transparent,
                             shadowColor: Colors.black.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(18),
+                            borderRadius: BorderRadius.circular(24),
                             elevation: 12,
                             clipBehavior: Clip.antiAlias,
                             child: SizedBox(
@@ -418,11 +447,13 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                                     i < widget.actions.length;
                                     i++
                                   )
-                                    AnimatedScaleFade(
+                                    _FocusedAttachMenuMotion(
                                       key: ValueKey('focused-action-$i'),
-                                      duration: _entranceDuration,
-                                      curve: Curves.easeOutCubic,
-                                      beginScale: 0.97,
+                                      duration: surfaceMotionDuration,
+                                      curve: Curves.easeOutBack,
+                                      beginScale: 0.86,
+                                      beginOffset: const Offset(24, 18),
+                                      alignment: Alignment.centerLeft,
                                       staggerIndex: _actionStaggerIndex(i),
                                       staggerDelay: _staggerDelay,
                                       reverse: reversing,
@@ -445,6 +476,115 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
           },
         ),
       ),
+    );
+  }
+}
+
+class _FocusedAttachMenuMotion extends StatefulWidget {
+  const _FocusedAttachMenuMotion({
+    super.key,
+    required this.child,
+    required this.duration,
+    required this.staggerIndex,
+    required this.staggerDelay,
+    required this.reverse,
+    this.curve = Curves.easeOutBack,
+    this.beginScale = 0.78,
+    this.beginOffset = const Offset(34, 26),
+    this.alignment = Alignment.center,
+  });
+
+  final Widget child;
+  final Duration duration;
+  final int staggerIndex;
+  final double staggerDelay;
+  final bool reverse;
+  final Curve curve;
+  final double beginScale;
+  final Offset beginOffset;
+  final Alignment alignment;
+
+  @override
+  State<_FocusedAttachMenuMotion> createState() =>
+      _FocusedAttachMenuMotionState();
+}
+
+class _FocusedAttachMenuMotionState extends State<_FocusedAttachMenuMotion>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late Animation<double> _motionProgress;
+  late Animation<double> _opacityProgress;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(duration: widget.duration, vsync: this);
+    _buildAnimation();
+    widget.reverse ? _controller.reverse(from: 1) : _controller.forward();
+  }
+
+  @override
+  void didUpdateWidget(_FocusedAttachMenuMotion oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (widget.duration != oldWidget.duration) {
+      _controller.duration = widget.duration;
+    }
+
+    if (widget.curve != oldWidget.curve ||
+        widget.staggerIndex != oldWidget.staggerIndex ||
+        widget.staggerDelay != oldWidget.staggerDelay) {
+      _buildAnimation();
+    }
+
+    if (widget.reverse != oldWidget.reverse) {
+      widget.reverse ? _controller.reverse() : _controller.forward();
+    }
+  }
+
+  void _buildAnimation() {
+    final start = (widget.staggerIndex * widget.staggerDelay).clamp(0.0, 0.82);
+    final end = (start + 0.72).clamp(0.0, 1.0).toDouble();
+    final intervalStart = start.toDouble();
+    _motionProgress = CurvedAnimation(
+      parent: _controller,
+      curve: Interval(intervalStart, end, curve: widget.curve),
+    );
+    _opacityProgress = CurvedAnimation(
+      parent: _controller,
+      curve: Interval(intervalStart, end, curve: Curves.easeOutCubic),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      child: widget.child,
+      builder: (context, child) {
+        final motion = _motionProgress.value;
+        final opacity = _opacityProgress.value;
+        return Opacity(
+          opacity: opacity.clamp(0.0, 1.0).toDouble(),
+          child: Transform.scale(
+            alignment: widget.alignment,
+            scale: widget.beginScale + ((1 - widget.beginScale) * motion),
+            child: Transform.translate(
+              offset: Offset(
+                widget.beginOffset.dx * (1 - motion),
+                widget.beginOffset.dy * (1 - motion),
+              ),
+              child: child,
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:attune/core/services/media/voice_recorder_service.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
@@ -6,7 +8,6 @@ import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/core/ui/motion/scale_pop.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/core/widgets/bottom_sheet_header.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'voice_recording_bar.dart';
@@ -281,104 +282,279 @@ class _ComposerIcon extends StatelessWidget {
   }
 }
 
-class _ChatAttachSheet extends StatelessWidget {
-  const _ChatAttachSheet({
-    required this.showPhotos,
-    required this.showVideo,
-    required this.showFiles,
-    required this.onAttachImage,
-    required this.onAttachVideo,
-    required this.onAttachFile,
-  });
-
-  final bool showPhotos;
-  final bool showVideo;
-  final bool showFiles;
-  final VoidCallback? onAttachImage;
-  final VoidCallback? onAttachVideo;
-  final VoidCallback? onAttachFile;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const BottomSheetHeader(title: ''),
-          Gap(Spacing.lg),
-          if (showPhotos)
-            _ChatAttachRow(
-              title: 'Photos',
-              subtitle: 'Choose an image from your library',
-              icon: Icons.photo_outlined,
-              onTap: onAttachImage,
-            ),
-          if (showVideo)
-            _ChatAttachRow(
-              title: 'Video',
-              subtitle: 'Share a video from your library',
-              icon: Icons.videocam_outlined,
-              onTap: onAttachVideo,
-            ),
-          if (showFiles)
-            _ChatAttachRow(
-              title: 'Files',
-              subtitle: 'Attach a document or file',
-              icon: Icons.insert_drive_file_outlined,
-              onTap: onAttachFile,
-            ),
-
-          _ChatAttachRow(
-            title: 'Location',
-            subtitle: 'Attach location',
-            icon: Icons.location_on_outlined,
-            onTap: onAttachFile,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChatAttachRow extends StatelessWidget {
-  const _ChatAttachRow({
+class _ChatAttachAction {
+  const _ChatAttachAction({
     required this.title,
-    required this.subtitle,
     required this.icon,
     required this.onTap,
   });
 
   final String title;
-  final String subtitle;
   final IconData icon;
   final VoidCallback? onTap;
+}
+
+class _ChatAttachScrim extends StatelessWidget {
+  const _ChatAttachScrim({
+    required this.animation,
+    required this.anchorRect,
+    required this.actions,
+    required this.onDismiss,
+    required this.onAction,
+  });
+
+  final Animation<double> animation;
+  final Rect anchorRect;
+  final List<_ChatAttachAction> actions;
+  final VoidCallback onDismiss;
+  final ValueChanged<_ChatAttachAction> onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final horizontalInset = 24.w;
+    final maxWidth = media.size.width - (horizontalInset * 2);
+    final minMenuWidth = math.min(190.w, maxWidth);
+    final maxMenuWidth = math.max(minMenuWidth, math.min(360.w, maxWidth));
+    final longestTitleWidth =
+        actions
+            .map((action) => action.title.length)
+            .fold<int>(
+              0,
+              (longest, length) => length > longest ? length : longest,
+            ) *
+        12.0.w;
+    final menuWidth =
+        (longestTitleWidth + 118.w)
+            .clamp(minMenuWidth, maxMenuWidth)
+            .toDouble();
+    final maxRight = math.max(
+      horizontalInset,
+      media.size.width - menuWidth - horizontalInset,
+    );
+    final right =
+        (media.size.width - anchorRect.right)
+            .clamp(horizontalInset, maxRight)
+            .toDouble();
+    final rowHeight = 54.h;
+    final gap = 8.h;
+    final closeGap = 14.h;
+    final closeSize = 48.h;
+    final menuHeight =
+        (actions.length * rowHeight) +
+        ((actions.length - 1) * gap) +
+        closeGap +
+        closeSize;
+    final bottom =
+        (media.size.height - anchorRect.top + 18.h)
+            .clamp(
+              media.padding.bottom + 86.h,
+              media.size.height - menuHeight - media.padding.top - 32.h,
+            )
+            .toDouble();
+
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) {
+        final t = Curves.easeOutCubic.transform(animation.value);
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onDismiss,
+                child: ClipRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 10 * t, sigmaY: 10 * t),
+                    child: ColoredBox(
+                      color: Colors.black.withValues(alpha: 0.52 * t),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              right: right,
+              bottom: bottom,
+              width: menuWidth,
+              child: Material(
+                color: Colors.transparent,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    for (var index = 0; index < actions.length; index++) ...[
+                      _ChatAttachFloatingRow(
+                        action: actions[index],
+                        progress: _staggeredAttachProgress(t, index),
+                        onTap: () => onAction(actions[index]),
+                      ),
+                      if (index != actions.length - 1) SizedBox(height: gap),
+                    ],
+                    SizedBox(height: closeGap),
+                    _ChatAttachCloseButton(
+                      progress: _staggeredAttachProgress(t, actions.length),
+                      onTap: onDismiss,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+double _staggeredAttachProgress(double value, int index) {
+  final start = index * 0.1;
+  final end = (start + 0.72).clamp(0.0, 1.0).toDouble();
+  if (value <= start) return 0;
+  if (value >= end) return 1;
+  return Curves.easeOutBack.transform((value - start) / (end - start));
+}
+
+class _ChatAttachFloatingRow extends StatelessWidget {
+  const _ChatAttachFloatingRow({
+    required this.action,
+    required this.progress,
+    required this.onTap,
+  });
+
+  final _ChatAttachAction action;
+  final double progress;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final foreground =
+        action.onTap == null
+            ? colorScheme.onSurface.withValues(alpha: 0.42)
+            : colorScheme.onSurface;
+    final surface =
+        action.onTap == null
+            ? colorScheme.surface.withValues(alpha: 0.72)
+            : colorScheme.surface;
+
+    return Opacity(
+      opacity: progress.clamp(0.0, 1.0).toDouble(),
+      child: Transform.translate(
+        offset: Offset(34 * (1 - progress), 26 * (1 - progress)),
+        child: Transform.scale(
+          alignment: Alignment.centerRight,
+          scale: 0.78 + (0.22 * progress),
+          child: Material(
+            color: surface,
+            borderRadius: BorderRadius.circular(40),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: action.onTap == null ? null : onTap,
+              child: Padding(
+                padding: EdgeInsetsDirectional.fromSTEB(22.w, 0, 8.w, 0),
+                child: SizedBox(
+                  height: 54.h,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Padding(
+                          padding: EdgeInsetsDirectional.only(end: 18.w),
+                          child: Text(
+                            action.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(
+                              context,
+                            ).textTheme.titleMedium?.copyWith(
+                              color: foreground,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                      _ChatAttachTrailingIcon(
+                        icon: action.icon,
+                        foreground: foreground,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatAttachTrailingIcon extends StatelessWidget {
+  const _ChatAttachTrailingIcon({required this.icon, required this.foreground});
+
+  final IconData icon;
+  final Color foreground;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
-      child: InfoRowWidget(
-        title: title,
-        subtitle: ' ',
-        icon: icon,
-        iconColor: _composerIconColor(colorScheme),
-        showAvatar: false,
-        disableTrailing: true,
-        showTrailingArrow: false,
-        showDivider: false,
-        onTap: () {
-          Navigator.of(context).pop();
-          onTap?.call();
-        },
+    return Container(
+      width: 40.h,
+      height: 40.h,
+      decoration: BoxDecoration(
+        color: colorScheme.onSurface.withValues(alpha: 0.08),
+        shape: BoxShape.circle,
+      ),
+      child: Icon(icon, color: foreground, size: 22.h),
+    );
+  }
+}
+
+class _ChatAttachCloseButton extends StatelessWidget {
+  const _ChatAttachCloseButton({required this.progress, required this.onTap});
+
+  final double progress;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final easedProgress = progress.clamp(0.0, 1.0).toDouble();
+
+    return Opacity(
+      opacity: easedProgress,
+      child: Transform.translate(
+        offset: Offset(22 * (1 - easedProgress), 18 * (1 - easedProgress)),
+        child: Transform.scale(
+          alignment: Alignment.centerRight,
+          scale: 0.78 + (0.22 * easedProgress),
+          child: Material(
+            color: colorScheme.surface,
+            shape: const CircleBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onTap,
+              customBorder: const CircleBorder(),
+              child: SizedBox.square(
+                dimension: 48.h,
+                child: Icon(
+                  Icons.close_rounded,
+                  color: colorScheme.onSurface,
+                  size: 26.h,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
 class _ChatTextFieldState extends State<ChatTextField>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   int _sendPulse = 0;
   VoiceRecorderService? _recorder;
   bool _isRecording = false;
@@ -453,10 +629,13 @@ class _ChatTextFieldState extends State<ChatTextField>
   /// Navigator layer and breaks the drag lock and cancel both read from.
   late final AnimationController _scrimController;
   OverlayEntry? _scrimEntry;
+  late final AnimationController _attachController;
+  OverlayEntry? _attachEntry;
 
   /// Measures where the mic actually sits, so the scrim can draw it at the
   /// same point rather than at a computed guess.
   final GlobalKey _micKey = GlobalKey();
+  final GlobalKey _attachKey = GlobalKey();
 
   /// The scrim reads its live values from here rather than from a rebuild
   /// of this State. An OverlayEntry is a separate element subtree, so
@@ -475,6 +654,11 @@ class _ChatTextFieldState extends State<ChatTextField>
       vsync: this,
       duration: const Duration(milliseconds: 260),
       reverseDuration: const Duration(milliseconds: 180),
+    );
+    _attachController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 460),
+      reverseDuration: const Duration(milliseconds: 260),
     );
   }
 
@@ -549,7 +733,10 @@ class _ChatTextFieldState extends State<ChatTextField>
     // would tick a disposed controller.
     _scrimEntry?.remove();
     _scrimEntry = null;
+    _attachEntry?.remove();
+    _attachEntry = null;
     _scrimController.dispose();
+    _attachController.dispose();
     _scrimData.dispose();
     // Detach the level listener before disposing — the service disposes its
     // ValueNotifier, and a listener still attached to it would fire against
@@ -572,19 +759,86 @@ class _ChatTextFieldState extends State<ChatTextField>
   }
 
   void _handleAttachTap(BuildContext context) {
-    BottomSheetUtils.showDocumentationBottomSheet<void>(
-      context: context,
-      maxHeight: 360.h,
-      padding: Spacing.md,
-      widget: _ChatAttachSheet(
-        showPhotos: widget.showAttachImage,
-        showVideo: widget.showAttachVideo,
-        showFiles: widget.onAttachFile != null,
-        onAttachImage: widget.onAttachImage,
-        onAttachVideo: widget.onAttachVideo,
-        onAttachFile: widget.onAttachFile,
+    _showAttachOverlay();
+  }
+
+  List<_ChatAttachAction> _attachActions() {
+    return [
+      if (widget.showAttachImage)
+        _ChatAttachAction(
+          title: 'Photos',
+          icon: Icons.photo_outlined,
+          onTap: widget.onAttachImage,
+        ),
+      if (widget.showAttachVideo)
+        _ChatAttachAction(
+          title: 'Video',
+          icon: Icons.videocam_outlined,
+          onTap: widget.onAttachVideo,
+        ),
+      if (widget.onAttachFile != null)
+        _ChatAttachAction(
+          title: 'Files',
+          icon: Icons.insert_drive_file_outlined,
+          onTap: widget.onAttachFile,
+        ),
+      _ChatAttachAction(
+        title: 'Location',
+        icon: Icons.location_on_outlined,
+        onTap: widget.onAttachFile,
       ),
+    ];
+  }
+
+  void _showAttachOverlay() {
+    if (_attachEntry != null) {
+      unawaited(_hideAttachOverlay());
+      return;
+    }
+
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+
+    final box = _attachKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final anchorRect = box.localToGlobal(Offset.zero) & box.size;
+    final actions = _attachActions();
+    if (actions.isEmpty) return;
+
+    final entry = OverlayEntry(
+      builder:
+          (_) => _ChatAttachScrim(
+            animation: _attachController,
+            anchorRect: anchorRect,
+            actions: actions,
+            onDismiss: () => unawaited(_hideAttachOverlay()),
+            onAction: (action) => unawaited(_selectAttachAction(action)),
+          ),
     );
+
+    _attachEntry = entry;
+    overlay.insert(entry);
+    widget.haptics.light();
+    _attachController.forward(from: 0);
+  }
+
+  Future<void> _selectAttachAction(_ChatAttachAction action) async {
+    await _hideAttachOverlay();
+    if (!mounted) return;
+    action.onTap?.call();
+  }
+
+  Future<void> _hideAttachOverlay() async {
+    final entry = _attachEntry;
+    if (entry == null) return;
+    try {
+      await _attachController.reverse();
+    } on TickerCanceled {
+      return;
+    }
+    if (!identical(_attachEntry, entry)) return;
+    _attachEntry = null;
+    entry.remove();
   }
 
   Future<void> _startRecording() async {
@@ -1097,14 +1351,17 @@ class _ChatTextFieldState extends State<ChatTextField>
                             iconColor: _composerIconColor(colorScheme),
                           ),
                         if (!_hasText && showAttachSheet)
-                          _ComposerIcon(
-                            icon: Icons.attach_file_rounded,
-                            onTap:
-                                widget.enabled
-                                    ? () => _handleAttachTap(context)
-                                    : null,
-                            tooltip: 'Attachments',
-                            iconColor: _composerIconColor(colorScheme),
+                          KeyedSubtree(
+                            key: _attachKey,
+                            child: _ComposerIcon(
+                              icon: Icons.attach_file_rounded,
+                              onTap:
+                                  widget.enabled
+                                      ? () => _handleAttachTap(context)
+                                      : null,
+                              tooltip: 'Attachments',
+                              iconColor: _composerIconColor(colorScheme),
+                            ),
                           ),
                       ],
                     ),

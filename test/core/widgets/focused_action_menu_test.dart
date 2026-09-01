@@ -390,7 +390,7 @@ void main() {
     'the menu stays within the screen width when the bubble sits near the right edge',
     (tester) async {
       // Regression guard: Positioned(left: anchorRect.left, ...) with no
-      // clamping, combined with the menu's fixed 240px width, rendered up to
+      // clamping, combined with the menu's fixed 208px width, rendered up to
       // 94px (39%) off the right edge of a realistic 390-wide phone for a
       // short own-message bubble — the single most common message shape.
       // This anchorRect approximates that case: a short bubble's rect sitting
@@ -432,7 +432,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final menuRenderBox = tester.renderObject<RenderBox>(
-        find.byWidgetPredicate((w) => w is SizedBox && w.width == 240),
+        find.byWidgetPredicate((w) => w is SizedBox && w.width == 208),
       );
       final menuRect =
           menuRenderBox.localToGlobal(Offset.zero) & menuRenderBox.size;
@@ -440,9 +440,9 @@ void main() {
       expect(menuRect.left, greaterThanOrEqualTo(0));
       expect(menuRect.right, lessThanOrEqualTo(390));
       // Sanity: prove the fixture actually reproduces the pre-fix overflow
-      // shape (anchorRect.left + 240 > 390) rather than accidentally fitting
+      // shape (anchorRect.left + 208 > 390) rather than accidentally fitting
       // on its own — if this fails, the fixture no longer exercises the bug.
-      expect(244.0 + 240.0, greaterThan(390.0));
+      expect(244.0 + 208.0, greaterThan(390.0));
     },
   );
 
@@ -666,12 +666,12 @@ void main() {
   testWidgets(
     'a full tapback row stays within the screen width near the right edge',
     (tester) async {
-      // Regression guard: the reaction row is a SEPARATE card from the 240px
+      // Regression guard: the reaction row is a SEPARATE card from the 208px
       // action list and is sized by its own content, so a realistic six-emoji
       // tapback set measures ~257px — wider than menuWidth. Clamping the
       // menu's left edge against menuWidth alone let the wider row hang ~8px
       // off the right edge of a 390-wide phone. The pre-existing right-edge
-      // test above cannot catch this: it asserts on the 240px SizedBox (the
+      // test above cannot catch this: it asserts on the 208px SizedBox (the
       // action list), not on the reaction row.
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
@@ -731,8 +731,8 @@ void main() {
       expect(rowRect.left, greaterThanOrEqualTo(0));
       expect(rowRect.right, lessThanOrEqualTo(390));
       // Sanity: prove the fixture reproduces the overflow shape — the row is
-      // genuinely wider than the 240px action list it is clamped alongside.
-      expect(rowRect.width, greaterThan(240));
+      // genuinely wider than the 208px action list it is clamped alongside.
+      expect(rowRect.width, greaterThan(208));
     },
   );
 
@@ -797,10 +797,9 @@ void main() {
   testWidgets(
     'the menu unfolds in one overlapping reaction and action cascade',
     (tester) async {
-      // The updated motion keeps ordering but deliberately overlaps stages:
-      // menu at 0ms, row/action A at 18ms, first emoji at 36ms, then the rest
-      // at 18ms intervals. It reads as one unfolding surface rather than four
-      // separate, long animations.
+      // The attach-style motion keeps ordering but deliberately overlaps
+      // stages: the action surface starts first, then the reaction row and
+      // emoji ripple join with a slower, more visible stagger.
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -865,21 +864,24 @@ void main() {
               .transform
               .storage[0];
 
-      // At 10ms only the menu container has started.
+      // At 40ms only the menu container has started.
+      await tester.pump(const Duration(milliseconds: 30));
       await tester.pump(const Duration(milliseconds: 10));
       expect(menuOpacity(), greaterThan(0.0));
       expect(rowOpacity(), 0.0);
       expect(firstEmojiOpacity(), 0.0);
 
-      // At 25ms the row has joined, while its first emoji is still waiting.
-      await tester.pump(const Duration(milliseconds: 15));
+      // At 70ms the row has joined, and the first emoji is beginning to
+      // follow it.
+      await tester.pump(const Duration(milliseconds: 30));
       expect(rowOpacity(), greaterThan(0.0));
-      expect(firstEmojiOpacity(), 0.0);
-
-      // At 45ms the first emoji is moving but the final item has not begun.
-      await tester.pump(const Duration(milliseconds: 20));
       expect(firstEmojiOpacity(), greaterThan(0.0));
-      expect(lastEmojiOpacity(), 0.0);
+
+      // At 120ms the ripple is still ordered left-to-right: the first emoji is
+      // further along than the final item.
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(firstEmojiOpacity(), greaterThan(0.0));
+      expect(firstEmojiOpacity(), greaterThan(lastEmojiOpacity()));
 
       // The enlargement moves left-to-right: earlier emoji are visibly
       // further along while later emoji retain progressively longer timing.
@@ -946,25 +948,21 @@ void main() {
       await tester.tap(find.text('trigger'));
       await tester.pumpAndSettle();
 
-      double opacityAncestorOf(Finder target) =>
+      double keyedOpacity(String key) =>
           tester
               .widget<Opacity>(
-                find.ancestor(of: target, matching: find.byType(Opacity)).first,
+                find
+                    .descendant(
+                      of: find.byKey(ValueKey(key)),
+                      matching: find.byType(Opacity),
+                    )
+                    .first,
               )
               .opacity;
 
-      double menuOpacity() => opacityAncestorOf(find.text('Action A'));
-      double rowOpacity() {
-        final chain =
-            find
-                .ancestor(of: find.text('❤️'), matching: find.byType(Opacity))
-                .evaluate()
-                .map((e) => (e.widget as Opacity).opacity)
-                .toList();
-        return chain[1];
-      }
-
-      double emojiOpacity() => opacityAncestorOf(find.text('❤️'));
+      double menuOpacity() => keyedOpacity('focused-action-menu');
+      double rowOpacity() => keyedOpacity('focused-reaction-row');
+      double emojiOpacity() => keyedOpacity('focused-reaction-0');
 
       // Fully settled in before dismissing.
       expect(menuOpacity(), 1.0);
@@ -976,14 +974,9 @@ void main() {
       await tester.tapAt(const Offset(5, 5));
       await tester.pump();
 
-      // With duration 360ms and staggerDelay 0.05 (18ms/index): menu index
-      // 0, row index 1, first emoji index 2. Reversing the same Interval
-      // means the emoji (largest delay) unwinds fastest and the menu (delay
-      // 0) unwinds slowest. At 100ms in, the emoji and row
-      // should already be visibly fading (opacity dropping below 1.0)
-      // while the menu — animating out last — is still at or very close to
-      // full opacity.
-      await tester.pump(const Duration(milliseconds: 100));
+      // With the attach-style stagger, the emoji and row unwind before the
+      // delayed route removal completes.
+      await tester.pump(const Duration(milliseconds: 260));
       expect(emojiOpacity(), lessThan(1.0));
       expect(rowOpacity(), lessThan(1.0));
       expect(menuOpacity(), greaterThanOrEqualTo(rowOpacity()));
