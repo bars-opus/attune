@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:attune/features/games/session_games/data/repositories/session_game_repository.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// Shown after this user submits, until the partner does too.
@@ -17,6 +18,7 @@ class SessionGameWaitingScreen extends StatefulWidget {
     super.key,
     required this.roundId,
     required this.onRevealed,
+    this.onLeaveToChat,
     SessionGameRepository? repository,
   })  : _repository = repository,
         _testBothAnswered = null;
@@ -33,6 +35,7 @@ class SessionGameWaitingScreen extends StatefulWidget {
     required bool bothAnswered,
     required String? partnerAnswer,
     VoidCallback? onRevealed,
+    this.onLeaveToChat,
   })  : roundId = 'test',
         onRevealed = onRevealed ?? _noop,
         _repository = null,
@@ -42,6 +45,14 @@ class SessionGameWaitingScreen extends StatefulWidget {
 
   final String roundId;
   final VoidCallback onRevealed;
+
+  /// Called when the grace window expires without the partner answering.
+  ///
+  /// Session games are asynchronous: a partner may answer in an hour or
+  /// tomorrow, and holding someone on a blocking spinner until then made
+  /// the game feel broken. After the window, the player returns to the
+  /// chat, where the game card carries the state instead.
+  final VoidCallback? onLeaveToChat;
   final SessionGameRepository? _repository;
   final bool? _testBothAnswered;
 
@@ -52,12 +63,21 @@ class SessionGameWaitingScreen extends StatefulWidget {
 
 class _SessionGameWaitingScreenState extends State<SessionGameWaitingScreen> {
   Timer? _poll;
+  Timer? _grace;
   bool _revealed = false;
+  bool _left = false;
 
   /// Three seconds: fast enough that a partner answering feels
   /// near-immediate, slow enough that a five-minute wait costs ~100
   /// requests rather than thousands.
   static const _pollInterval = Duration(seconds: 3);
+
+  /// How long to wait before handing off to the chat card.
+  ///
+  /// Twenty seconds covers a partner who is answering right now without
+  /// stranding one who is not: session games have no turn order, so the
+  /// other player may not even have the app open.
+  static const _graceWindow = Duration(seconds: 20);
 
   @override
   void initState() {
@@ -68,11 +88,18 @@ class _SessionGameWaitingScreenState extends State<SessionGameWaitingScreen> {
     }
     if (widget._testBothAnswered != null) return; // test, not yet revealed
     _poll = Timer.periodic(_pollInterval, (_) => unawaited(_check()));
+
+    // The same-room case: partners playing together answer within
+    // seconds, and bouncing them to the chat only to tap back in would be
+    // worse than a brief wait. Past this window they are not in the same
+    // room, so the chat card takes over.
+    _grace = Timer(_graceWindow, _leaveToChat);
   }
 
   @override
   void dispose() {
     _poll?.cancel();
+    _grace?.cancel();
     super.dispose();
   }
 
@@ -89,22 +116,57 @@ class _SessionGameWaitingScreenState extends State<SessionGameWaitingScreen> {
   }
 
   void _fireReveal() {
-    if (_revealed) return; // exactly once, even if a poll overlaps
+    if (_revealed || _left) return; // exactly once, even if a poll overlaps
     _revealed = true;
     _poll?.cancel();
+    _grace?.cancel();
     widget.onRevealed();
+  }
+
+  void _leaveToChat() {
+    // A reveal that landed first wins: the partner answered inside the
+    // window, so showing the result beats returning to the chat.
+    if (_revealed || _left) return;
+    _left = true;
+    _poll?.cancel();
+    _grace?.cancel();
+    widget.onLeaveToChat?.call();
   }
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 16),
-          Text('Waiting for your partner'),
-        ],
+    final textTheme = Theme.of(context).textTheme;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text('Waiting for your partner', style: textTheme.titleMedium),
+            const SizedBox(height: 8),
+            // Says what happens next, so the wait does not read as a
+            // stuck screen. Their answer is already saved; nothing is
+            // lost by leaving.
+            Text(
+              'Your answer is saved. You can carry on in the chat — '
+              'we will let you know when they answer.',
+              textAlign: TextAlign.center,
+              style: textTheme.bodySmall,
+            ),
+            const SizedBox(height: 24),
+            // Available immediately, not only after the grace window: a
+            // player who already knows their partner is asleep should not
+            // have to wait out a timer to leave.
+            if (widget.onLeaveToChat != null)
+              TextButton(
+                onPressed: _leaveToChat,
+                child: const Text('Back to chat'),
+              ),
+          ],
+        ),
       ),
     );
   }

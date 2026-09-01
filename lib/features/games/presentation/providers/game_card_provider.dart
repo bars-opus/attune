@@ -18,7 +18,25 @@ class GameCardState {
     required this.winnerUserId,
     required this.currentRound,
     required this.totalRounds,
+    this.viewerAnswered,
+    this.partnerAnswered,
   });
+
+  GameCardState withRoundState({
+    required bool? viewerAnswered,
+    required bool? partnerAnswered,
+  }) {
+    return GameCardState(
+      gameType: gameType,
+      status: status,
+      currentTurnUserId: currentTurnUserId,
+      winnerUserId: winnerUserId,
+      currentRound: currentRound,
+      totalRounds: totalRounds,
+      viewerAnswered: viewerAnswered,
+      partnerAnswered: partnerAnswered,
+    );
+  }
 
   final String gameType;
   final String status;
@@ -26,6 +44,12 @@ class GameCardState {
   final String? winnerUserId;
   final int? currentRound;
   final int? totalRounds;
+
+  /// For session games only (Mirror, Sliding Scale, Scenario), which have
+  /// no turn order: both partners answer the same round independently.
+  /// Null for every other game, and while still loading.
+  final bool? viewerAnswered;
+  final bool? partnerAnswered;
 
   static GameCardState fromRow(Map<String, dynamic> row) {
     return GameCardState(

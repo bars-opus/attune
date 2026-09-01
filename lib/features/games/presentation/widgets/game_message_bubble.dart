@@ -32,8 +32,21 @@ String gameCardLabel({
     case 'active':
       final turn = state.currentTurnUserId;
       if (turn == null) {
-        // Games without alternating turns (both answer each round) have
-        // no current_turn_user_id; show progress instead of a turn.
+        // Session games have no turn order -- both partners answer the
+        // same round -- so "whose move" comes from who has answered it.
+        // This is what lets a player leave the waiting screen: the card
+        // carries the state they were staring at a spinner for.
+        final viewerAnswered = state.viewerAnswered;
+        final partnerAnswered = state.partnerAnswered;
+        if (viewerAnswered != null && partnerAnswered != null) {
+          if (viewerAnswered && !partnerAnswered) {
+            return 'Waiting for your partner';
+          }
+          if (!viewerAnswered && partnerAnswered) {
+            return 'Your turn';
+          }
+        }
+
         final round = state.currentRound;
         final total = state.totalRounds;
         if (round != null && total != null && total > 0) {

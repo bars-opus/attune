@@ -174,6 +174,16 @@ class _SessionGameFlowScaffoldState
               return SessionGameWaitingScreen(
                 roundId: notifier.currentRoundId!,
                 onRevealed: notifier.onRevealed,
+                // Session games are asynchronous -- a partner may answer
+                // in an hour -- so the player returns to the chat and the
+                // game card carries the state from there. The answer is
+                // already saved; reopening the game resumes at the first
+                // unanswered round.
+                onLeaveToChat: () {
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).pop();
+                  }
+                },
                 // Same repository the rest of the flow uses, so an
                 // override in tests reaches the poll too rather than
                 // letting it fall back to a live client.
