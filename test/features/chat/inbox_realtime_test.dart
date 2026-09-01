@@ -114,4 +114,44 @@ void main() {
       reason: 'the same relationships must not resubscribe on each event',
     );
   });
+
+  test('the list reports delivery for messages the device now holds', () async {
+    // The notification worker used to stamp delivered_at when it QUEUED a
+    // push -- which happens whether the recipient's phone is reachable or
+    // switched off, so a message sent to someone with no data showed the
+    // sender two checks while it sat in a queue nobody had received.
+    //
+    // Delivery is now claimed only where it is observed. The conversation
+    // list holding an unread partner message IS that observation, and it
+    // must not wait for the chat to be opened -- that is when READ is
+    // recorded, and the two would collapse into one state.
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    repo.conversations = [_convo('rel-1', unread: 2)];
+
+    final container = buildChatContainer(repository: repo, userId: 'user-a');
+    addTearDown(container.dispose);
+
+    await container.read(conversationsProvider.future);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    expect(
+      repo.relationshipDeliveredCalls, contains('rel-1'),
+      reason: 'a held-but-unread message is delivered, and must say so',
+    );
+  });
+
+  test('a read conversation is not re-reported as delivered', () async {
+    // Nothing to deliver means no call: otherwise every list refresh would
+    // fire an RPC per conversation forever.
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    repo.conversations = [_convo('rel-1')];
+
+    final container = buildChatContainer(repository: repo, userId: 'user-a');
+    addTearDown(container.dispose);
+
+    await container.read(conversationsProvider.future);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    expect(repo.relationshipDeliveredCalls, isEmpty);
+  });
 }

@@ -703,6 +703,19 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
+  Future<void> markRelationshipDelivered(String relationshipId) async {
+    try {
+      await _supabase.rpc(
+        'mark_relationship_delivered',
+        params: {'p_relationship_id': relationshipId},
+      );
+    } catch (_) {
+      // Best-effort: a missed receipt is cosmetic, and the next fetch
+      // retries. Never fail a conversation-list load over a tick.
+    }
+  }
+
+  @override
   Future<void> markConversationRead(String relationshipId) async {
     await _supabase.rpc(
       'mark_conversation_read',

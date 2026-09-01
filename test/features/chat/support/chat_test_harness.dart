@@ -252,6 +252,14 @@ class FakeChatRepository implements ChatRepository {
     markDeliveredCalls.add(messageIds);
   }
 
+  /// Relationships the list reported as delivered.
+  final relationshipDeliveredCalls = <String>[];
+
+  @override
+  Future<void> markRelationshipDelivered(String relationshipId) async {
+    relationshipDeliveredCalls.add(relationshipId);
+  }
+
   @override
   Future<void> markConversationRead(String relationshipId) async {
     markReadCalls.add(relationshipId);

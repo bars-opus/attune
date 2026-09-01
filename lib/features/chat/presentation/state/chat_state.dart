@@ -118,6 +118,28 @@ class ConversationsNotifier extends AsyncNotifier<List<Conversation>> {
   }
 
   @override
+  /// Reports delivery for conversations the device now holds.
+  ///
+  /// The notification worker used to stamp delivered_at when it QUEUED a
+  /// push, which claimed delivery for a phone that might be switched off.
+  /// The honest signal is this: the recipient's own device has the rows.
+  ///
+  /// Driven off unreadCount because that is what the list already knows --
+  /// an unread partner message the device is holding is exactly a message
+  /// that has been delivered but not read.
+  void _markDeliveredForFetched(
+    ChatRepository repository,
+    List<Conversation> conversations,
+  ) {
+    for (final conversation in conversations) {
+      if (conversation.unreadCount > 0) {
+        unawaited(
+          repository.markRelationshipDelivered(conversation.relationshipId),
+        );
+      }
+    }
+  }
+
   Future<List<Conversation>> build() async {
     ref.watch(conversationsRefreshProvider);
     final repository = ref.watch(chatRepositoryProvider);
@@ -143,6 +165,7 @@ class ConversationsNotifier extends AsyncNotifier<List<Conversation>> {
       final conversations = await repository.getConversations();
       unawaited(cache.writeConversations(user.id, conversations));
       _subscribeToInbox(repository, cache, user.id, conversations);
+      _markDeliveredForFetched(repository, conversations);
       return conversations;
     } catch (_) {
       return await cache.readConversations(user.id);
@@ -201,6 +224,7 @@ class ConversationsNotifier extends AsyncNotifier<List<Conversation>> {
       final conversations = await repository.getConversations();
       state = AsyncData(conversations);
       unawaited(cache.writeConversations(userId, conversations));
+      _markDeliveredForFetched(repository, conversations);
       // A new relationship (or a first fetch behind the cache) means new
       // ids to filter on, and the subscription is per relationship.
       _subscribeToInbox(repository, cache, userId, conversations);

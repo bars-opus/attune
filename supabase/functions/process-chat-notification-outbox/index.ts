@@ -162,12 +162,9 @@ async function processJob(
       (settings.push_enabled === false ||
           settings.booking_reminders_enabled === false)
     ) {
-      // Marked delivered even though no push is sent. Delivery is about
-      // the message reaching the recipient's account, not about whether
-      // they agreed to be notified: a recipient who turned push off still
-      // receives every message, and leaving this unmarked left the
-      // sender's tick on a single check forever for that partner.
-      await markDelivered(supabase, String(job.message_id), recipientId);
+      // Deliberately NOT marked delivered. A recipient with push disabled
+      // still receives the message, but nothing here observes their device
+      // getting it -- their own client marks it delivered when it does.
       await finalizeJob(
         supabase,
         outboxId,
@@ -249,7 +246,16 @@ async function processJob(
       });
     if (scheduledResult.error) throw scheduledResult.error;
 
-    await markDelivered(supabase, String(job.message_id), recipientId);
+    // NOT marked delivered here. Queuing a push is not delivery: this
+    // point is reached whether the recipient's device is reachable or
+    // switched off, so stamping delivered_at here showed the sender two
+    // checks for a message sitting in a queue nobody had received.
+    //
+    // Delivery is claimed only where it is actually observed -- the
+    // recipient's own client calls markDelivered once the row is on their
+    // device (_markPartnerMessagesDelivered), and the suppressed-because-
+    // actively-viewing branch above, where the recipient is demonstrably
+    // looking at the conversation.
 
     await finalizeJob(supabase, outboxId, "done", null);
     return { outbox_id: outboxId, status: "completed" };

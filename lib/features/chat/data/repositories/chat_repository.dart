@@ -205,6 +205,14 @@ abstract class ChatRepository {
   /// no chat is open at all.
   Stream<void> watchInboxEvents(List<String> relationshipIds);
   Future<void> markDelivered(List<String> messageIds);
+
+  /// Marks every undelivered partner message in a relationship delivered.
+  ///
+  /// Called from the conversation LIST: delivery means the recipient's
+  /// device has the message, and that is true as soon as the list has
+  /// fetched it -- not only when they open the chat, which is also when
+  /// read is recorded.
+  Future<void> markRelationshipDelivered(String relationshipId);
   Future<void> markConversationRead(String relationshipId);
   Future<bool> canAccessRelationship(String relationshipId);
 

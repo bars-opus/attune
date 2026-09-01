@@ -108,6 +108,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   @override
+  void deactivate() {
+    // The controller outlives this screen by controllerKeepAlive (5
+    // minutes), and _isViewActive was never cleared when the screen went
+    // away -- so it stayed TRUE for a chat nobody was looking at. Every
+    // realtime event in that window then ran markAsReadDebounced(),
+    // marking messages read that the user never saw: the unread badge
+    // cleared itself on the conversation list, and the sender's receipt
+    // jumped past delivered straight to read.
+    //
+    // deactivate() rather than dispose(): ref is still usable here, and
+    // this fires on both a pop and a push of another route over this one.
+    ref
+        .read(chatControllerProvider(widget.conversation).notifier)
+        .setViewActive(false);
+    super.deactivate();
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _controller.removeListener(_onDraftChanged);
