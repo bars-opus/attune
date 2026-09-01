@@ -106,6 +106,23 @@ AS $$
   );
 $$;
 
+-- Supabase creates the supabase_realtime publication platform-side and
+-- manages its table list from the dashboard, so no migration had ever
+-- referenced it -- and on this project it was EMPTY, meaning no
+-- postgres_changes event ever reached a client. Chat messages did not
+-- appear live; typing did, because typing is a broadcast that never
+-- touches Postgres.
+--
+-- Created empty here, exactly as a fresh Supabase project has it, so
+-- 20260931210000 has to do the work and a contract test can prove which
+-- tables ended up in it.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    CREATE PUBLICATION supabase_realtime;
+  END IF;
+END $$;
+
 -- Supabase Vault is unavailable in a stock Postgres. The real thing
 -- exposes vault.decrypted_secrets as a view over encrypted storage; this
 -- stub is a plain table with the same two columns the app reads, so
