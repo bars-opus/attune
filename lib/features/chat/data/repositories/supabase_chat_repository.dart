@@ -568,6 +568,65 @@ class SupabaseChatRepository implements ChatRepository {
     return channel;
   }
 
+
+  @override
+  Stream<void> watchInboxEvents(List<String> relationshipIds) {
+    if (relationshipIds.isEmpty) return const Stream<void>.empty();
+
+    final controller = StreamController<void>.broadcast();
+
+    // One channel for the inbox, with a filter per relationship. Supabase
+    // filters postgres_changes server-side on a single column, and
+    // messages has no user column -- so an unfiltered subscription would
+    // be the alternative, and that delivers every couple's message
+    // traffic to every client for RLS to discard.
+    //
+    // A user has one relationship today and a small number at most, so
+    // the handler count stays tiny.
+    var channel = _supabase.channel('inbox:${_currentUser.id}');
+
+    for (final id in relationshipIds) {
+      channel = channel
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'messages',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'relationship_id',
+              value: id,
+            ),
+            // The payload is ignored: the list refetches, because the
+            // preview and unread count are derived from several rows and
+            // reproducing that here would be a second, drifting copy.
+            callback: (_) {
+              if (!controller.isClosed) controller.add(null);
+            },
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'relationships',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'id',
+              value: id,
+            ),
+            callback: (_) {
+              if (!controller.isClosed) controller.add(null);
+            },
+          );
+    }
+
+    channel.subscribe();
+
+    controller.onCancel = () {
+      unawaited(_supabase.removeChannel(channel));
+    };
+
+    return controller.stream;
+  }
+
   @override
   Stream<void> watchConversationEvents(String relationshipId) {
     _channelFor(relationshipId);

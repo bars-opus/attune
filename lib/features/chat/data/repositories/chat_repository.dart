@@ -194,6 +194,16 @@ abstract class ChatRepository {
   });
 
   Stream<void> watchConversationEvents(String relationshipId);
+
+  /// Fires when anything that changes the CONVERSATION LIST happens in any
+  /// of the user's relationships: a new message (preview and unread
+  /// count), a read receipt (unread count), or a relationship row change
+  /// (name, avatar, archive).
+  ///
+  /// Separate from [watchConversationEvents], which is scoped to one open
+  /// chat: the list needs every relationship at once, and is watched while
+  /// no chat is open at all.
+  Stream<void> watchInboxEvents(List<String> relationshipIds);
   Future<void> markDelivered(List<String> messageIds);
   Future<void> markConversationRead(String relationshipId);
   Future<bool> canAccessRelationship(String relationshipId);

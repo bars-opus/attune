@@ -106,6 +106,17 @@ final conversationsProvider =
 class ConversationsNotifier extends AsyncNotifier<List<Conversation>> {
   static bool _servedCache = false;
 
+  StreamSubscription<void>? _inboxSubscription;
+  List<String>? _subscribedIds;
+
+  static bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   @override
   Future<List<Conversation>> build() async {
     ref.watch(conversationsRefreshProvider);
@@ -119,6 +130,10 @@ class ConversationsNotifier extends AsyncNotifier<List<Conversation>> {
       _servedCache = true;
       final cached = await cache.readConversations(user.id);
       if (cached.isNotEmpty) {
+        // Subscribed from the CACHED ids too: this path returns before the
+        // network fetch, and without this a cold start that painted from
+        // cache would leave the list unsubscribed until the next rebuild.
+        _subscribeToInbox(repository, cache, user.id, cached);
         _refreshInBackground(repository, cache, user.id);
         return cached;
       }
@@ -127,10 +142,51 @@ class ConversationsNotifier extends AsyncNotifier<List<Conversation>> {
     try {
       final conversations = await repository.getConversations();
       unawaited(cache.writeConversations(user.id, conversations));
+      _subscribeToInbox(repository, cache, user.id, conversations);
       return conversations;
     } catch (_) {
       return await cache.readConversations(user.id);
     }
+  }
+
+  /// Keeps the conversation list live.
+  ///
+  /// The list was fetched once at build and never again: a message
+  /// arriving while the user sat on the conversations screen changed
+  /// neither the preview nor the unread badge until they pulled to
+  /// refresh or restarted the app. The chat screen had its own
+  /// subscription; the list had none.
+  ///
+  /// Refreshes in place rather than invalidating: invalidate() would
+  /// rebuild through AsyncLoading and flash the list away under the user
+  /// for something as ordinary as a message arriving.
+  void _subscribeToInbox(
+    ChatRepository repository,
+    ChatCacheService cache,
+    String userId,
+    List<Conversation> conversations,
+  ) {
+    final ids = conversations.map((c) => c.relationshipId).toList()..sort();
+    if (ids.isEmpty) return;
+
+    // Re-subscribed only when the SET of relationships changes. Without
+    // this the subscription would tear itself down and rebuild on every
+    // event it delivered -- each refresh calls back into here -- churning
+    // a websocket channel for every message that arrives.
+    if (_subscribedIds != null && _listEquals(_subscribedIds!, ids)) return;
+
+    _inboxSubscription?.cancel();
+    _subscribedIds = ids;
+
+    _inboxSubscription = repository
+        .watchInboxEvents(ids)
+        .listen((_) => _refreshInBackground(repository, cache, userId));
+
+    ref.onDispose(() {
+      _inboxSubscription?.cancel();
+      _inboxSubscription = null;
+      _subscribedIds = null;
+    });
   }
 
   /// Fetches behind an already-painted cached list. Never surfaces an
@@ -145,6 +201,9 @@ class ConversationsNotifier extends AsyncNotifier<List<Conversation>> {
       final conversations = await repository.getConversations();
       state = AsyncData(conversations);
       unawaited(cache.writeConversations(userId, conversations));
+      // A new relationship (or a first fetch behind the cache) means new
+      // ids to filter on, and the subscription is per relationship.
+      _subscribeToInbox(repository, cache, userId, conversations);
     } catch (error) {
       ChatLog.e('conversations background refresh failed', error);
     }
@@ -361,15 +420,10 @@ class ChatController extends StateNotifier<ChatState> {
   /// on a brief blip. One row is updated per beat, per open chat.
   void _startPresenceHeartbeat() {
     _presenceHeartbeat?.cancel();
-    _presenceHeartbeat = Timer.periodic(
-      const Duration(seconds: 20),
-      (_) {
-        if (!_isViewActive) return;
-        unawaited(
-          ref.read(chatRepositoryProvider).setPresence(relationshipId),
-        );
-      },
-    );
+    _presenceHeartbeat = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (!_isViewActive) return;
+      unawaited(ref.read(chatRepositoryProvider).setPresence(relationshipId));
+    });
   }
 
   void _stopPresenceHeartbeat() {

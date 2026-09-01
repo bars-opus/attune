@@ -271,6 +271,19 @@ class FakeChatRepository implements ChatRepository {
     return partnerActive;
   }
 
+  /// Drives the conversation list's realtime refresh in tests.
+  final inboxEvents = StreamController<void>.broadcast();
+
+  /// The ids the notifier subscribed with, so a test can assert it
+  /// subscribed at all and to the right relationships.
+  final inboxSubscriptions = <List<String>>[];
+
+  @override
+  Stream<void> watchInboxEvents(List<String> relationshipIds) {
+    inboxSubscriptions.add(relationshipIds);
+    return inboxEvents.stream;
+  }
+
   @override
   Stream<void> watchConversationEvents(String relationshipId) => _events.stream;
 
@@ -319,7 +332,15 @@ class FakeChatRepository implements ChatRepository {
 
   // --- Unused-by-M1 surface: minimal implementations. ---
   @override
-  Future<List<Conversation>> getConversations() async => const [];
+  /// What the conversation list fetches. Mutable so a test can change it
+  /// between refreshes and assert the list actually re-read it.
+  List<Conversation> conversations = const [];
+  int getConversationsCalls = 0;
+
+  Future<List<Conversation>> getConversations() async {
+    getConversationsCalls++;
+    return conversations;
+  }
   @override
   Future<Conversation?> getPrimaryConversation() async => null;
   @override
