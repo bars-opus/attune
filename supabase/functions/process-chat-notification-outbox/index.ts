@@ -162,6 +162,12 @@ async function processJob(
       (settings.push_enabled === false ||
           settings.booking_reminders_enabled === false)
     ) {
+      // Marked delivered even though no push is sent. Delivery is about
+      // the message reaching the recipient's account, not about whether
+      // they agreed to be notified: a recipient who turned push off still
+      // receives every message, and leaving this unmarked left the
+      // sender's tick on a single check forever for that partner.
+      await markDelivered(supabase, String(job.message_id), recipientId);
       await finalizeJob(
         supabase,
         outboxId,
