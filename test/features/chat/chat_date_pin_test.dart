@@ -61,9 +61,16 @@ void main() {
     // 8px short of each edge however wide the row asked to be — an
     // OverflowBox could not escape it. The inset moved onto the message
     // rows, which were its only real consumers.
+    // Asserted on the horizontal values alone. The BOTTOM value is no
+    // longer a literal -- it sheds the safe-area inset when the keyboard
+    // is up -- and pinning the whole string made this test fail for a
+    // change that had nothing to do with the rule it guards.
+    final listPadding = RegExp(
+      r'EdgeInsets\.fromLTRB\(\s*0,\s*10,\s*0,',
+    );
     expect(
-      src,
-      contains('EdgeInsets.fromLTRB(0, 10, 0, 120)'),
+      listPadding.hasMatch(src),
+      isTrue,
       reason: 'a list-level horizontal inset clips the date rule',
     );
     expect(

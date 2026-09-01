@@ -1730,7 +1730,21 @@ class _MessageListState extends ConsumerState<_MessageList>
                 // bubble (a934e840), adding height under the last message
                 // that the old reserve did not account for — so the footer
                 // ended up sitting against the composer.
-                padding: const EdgeInsets.fromLTRB(0, 10, 0, 120),
+                //
+                // The home-indicator inset is subtracted when the keyboard
+                // is up. 120 reserves the composer PLUS that inset, but
+                // the inset collapses to zero once the keyboard covers it
+                // — so the reserve stayed 120 while the space it was
+                // reserving for had shrunk, leaving a visible gap under
+                // the last bubble.
+                padding: EdgeInsets.fromLTRB(
+                  0,
+                  10,
+                  0,
+                  MediaQuery.of(context).viewInsets.bottom > 0
+                      ? 120 - MediaQuery.of(context).padding.bottom
+                      : 120,
+                ),
                 itemCount:
                     state.messages.length + (state.isLoadingMore ? 1 : 0),
                 itemBuilder: (context, index) {
