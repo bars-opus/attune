@@ -336,4 +336,68 @@ BEGIN
   END IF;
 END $$;
 
+-- Answering moves the card to the bottom of the chat.
+--
+-- resurface_game_message fired only on game_sessions changes, and
+-- answering writes to game_session_rounds -- so the card stayed wherever
+-- the game was STARTED, usually far up the conversation on the
+-- initiator's side, while both partners waited for something to arrive.
+-- There is one card per game by design; what was missing is that it
+-- returns to the bottom when it becomes someone's move.
+DO $$
+DECLARE
+  a uuid := '00000000-0000-0000-0000-00000000ce01';
+  b uuid := '00000000-0000-0000-0000-00000000ce02';
+  v_rel uuid;
+  v_session uuid;
+  v_round uuid;
+  v_before timestamptz;
+  v_after timestamptz;
+BEGIN
+  SELECT id INTO v_rel FROM public.relationships
+  WHERE user_a = a AND user_b = b LIMIT 1;
+
+  INSERT INTO public.game_sessions(relationship_id, initiator_id, game_type, status)
+  VALUES (v_rel, a, 'this_or_that', 'active') RETURNING id INTO v_session;
+
+  INSERT INTO public.game_session_rounds(session_id, round_number)
+  VALUES (v_session, 1) RETURNING id INTO v_round;
+
+  SELECT sort_at INTO v_before
+  FROM public.messages WHERE game_session_id = v_session;
+
+  UPDATE public.game_session_rounds
+  SET answer_a = 'x', answer_a_submitted_at = now()
+  WHERE id = v_round;
+
+  SELECT sort_at INTO v_after
+  FROM public.messages WHERE game_session_id = v_session;
+
+  IF v_after <= v_before THEN
+    RAISE EXCEPTION
+      'answering did not move the card; it stays where the game started';
+  END IF;
+
+  -- A Mirror subject writes to a different table, so the round UPDATE
+  -- never fires for them. Without its own trigger, answering as the
+  -- subject moves nothing.
+  INSERT INTO public.game_sessions(relationship_id, initiator_id, game_type, status)
+  VALUES (v_rel, a, 'mirror', 'active') RETURNING id INTO v_session;
+  INSERT INTO public.game_session_rounds(session_id, round_number, active_partner_id)
+  VALUES (v_session, 1, a) RETURNING id INTO v_round;
+
+  SELECT sort_at INTO v_before
+  FROM public.messages WHERE game_session_id = v_session;
+
+  INSERT INTO public.mirror_round_truth(round_id, subject_id, truth_text)
+  VALUES (v_round, a, 'my truth');
+
+  SELECT sort_at INTO v_after
+  FROM public.messages WHERE game_session_id = v_session;
+
+  IF v_after <= v_before THEN
+    RAISE EXCEPTION 'a Mirror truth did not move the card';
+  END IF;
+END $$;
+
 ROLLBACK;

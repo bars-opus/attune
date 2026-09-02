@@ -47,12 +47,16 @@ String gameCardLabel({
           }
         }
 
+        // current_round defaults to 0 and the session games never update
+        // it -- they track progress on the rounds themselves -- so a card
+        // showing it read "Round 0 of 8", which is not a round anyone can
+        // be on. Displayed as 1-based, and only when it is a real round.
         final round = state.currentRound;
         final total = state.totalRounds;
-        if (round != null && total != null && total > 0) {
+        if (round != null && total != null && total > 0 && round > 0) {
           return 'Round $round of $total';
         }
-        return 'In progress';
+        return 'Tap to play';
       }
       return turn == viewerId ? 'Your move' : 'Their move';
     default:
