@@ -29,7 +29,6 @@ class _TruthOrDareToneSelectorScreenState
     if (_isStarting) return;
 
     final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
     final relationshipId = await ref.read(currentRelationshipIdProvider.future);
 
     if (relationshipId == null) {
@@ -77,10 +76,18 @@ class _TruthOrDareToneSelectorScreenState
       );
 
       if (!mounted) return;
-      navigator.pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => TruthOrDareSessionRouterScreen(sessionId: session.id),
-        ),
+      // pushReplacementNamed, not Navigator.pushReplacement with a
+      // MaterialPageRoute: this screen is a GoRouter page-based route, and
+      // completing one imperatively throws
+      //
+      //   'A page-based route cannot be completed using imperative api'
+      //
+      // The session was already created by then, so the game existed and
+      // only the navigation failed -- which surfaced as "Could not start
+      // Truth or Dare right now."
+      context.pushReplacementNamed(
+        'truthOrDareSessionRouter',
+        extra: session.id,
       );
     } catch (_) {
       if (!mounted) return;

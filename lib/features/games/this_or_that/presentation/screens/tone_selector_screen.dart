@@ -26,7 +26,6 @@ class _ToneSelectorScreenState extends ConsumerState<ToneSelectorScreen> {
     if (_isStarting) return;
 
     final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
 
     final relationshipId = await ref.read(currentRelationshipIdProvider.future);
     if (relationshipId == null) {
@@ -73,14 +72,14 @@ class _ToneSelectorScreenState extends ConsumerState<ToneSelectorScreen> {
         )).future,
       );
       if (!mounted) return;
-      navigator.pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => ThisOrThatSessionRouterScreen(sessionId: session.id),
-        ),
+      // Same page-based route problem as Truth or Dare: an imperative
+      // pushReplacement on a GoRouter page throws, and the failure landed
+      // in the catch below as "Could not start the game right now."
+      context.pushReplacementNamed(
+        'thisOrThatSessionRouter',
+        extra: session.id,
       );
-    } catch (error) {
-      // ignore: avoid_print
-      print('[TOT] start failed: $error');
+    } catch (_) {
       if (!mounted) return;
       messenger.showSnackBar(
         const SnackBar(content: Text('Could not start the game right now.')),
