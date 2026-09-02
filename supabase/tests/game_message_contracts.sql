@@ -278,4 +278,62 @@ BEGIN
   END IF;
 END $$;
 
+-- A Mirror subject's truth counts as having answered.
+--
+-- In Mirror the SUBJECT of a round writes to mirror_round_truth, not to
+-- an answer slot -- it is a fact about themselves, not a guess about
+-- their partner. session_game_round_state read only the slots, so it
+-- reported that nobody had answered: the player who had just answered
+-- saw "Round 1 of 8" instead of "Waiting for your partner", and their
+-- partner's card never said "Your turn". From both sides the game looked
+-- like it had not moved, while the server correctly refused a second
+-- submit with "Answer already submitted".
+DO $$
+DECLARE
+  a uuid := '00000000-0000-0000-0000-00000000ce01';
+  b uuid := '00000000-0000-0000-0000-00000000ce02';
+  v_rel uuid;
+  v_session uuid;
+  v_round uuid;
+  v_viewer boolean;
+  v_partner boolean;
+BEGIN
+  SELECT id INTO v_rel FROM public.relationships
+  WHERE user_a = a AND user_b = b LIMIT 1;
+
+  INSERT INTO public.game_sessions(relationship_id, initiator_id, game_type, status)
+  VALUES (v_rel, a, 'mirror', 'active') RETURNING id INTO v_session;
+
+  INSERT INTO public.game_session_rounds(session_id, round_number, active_partner_id)
+  VALUES (v_session, 1, a) RETURNING id INTO v_round;
+
+  INSERT INTO public.mirror_round_truth(round_id, subject_id, truth_text)
+  VALUES (v_round, a, 'my truth');
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  SELECT viewer_answered, partner_answered INTO v_viewer, v_partner
+  FROM public.session_game_round_state(v_session);
+
+  IF NOT v_viewer THEN
+    RAISE EXCEPTION
+      'a Mirror subject who wrote their truth still reads as unanswered';
+  END IF;
+  IF v_partner THEN
+    RAISE EXCEPTION 'the guesser has not answered but reads as answered';
+  END IF;
+
+  -- And the guesser must be told it is their turn.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  SELECT viewer_answered, partner_answered INTO v_viewer, v_partner
+  FROM public.session_game_round_state(v_session);
+
+  IF v_viewer OR NOT v_partner THEN
+    RAISE EXCEPTION
+      'the guesser should read as their turn, got viewer=% partner=%',
+      v_viewer, v_partner;
+  END IF;
+END $$;
+
 ROLLBACK;

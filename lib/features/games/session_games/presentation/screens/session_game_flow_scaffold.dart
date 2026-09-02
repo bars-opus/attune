@@ -71,7 +71,9 @@ class _SessionGameFlowScaffoldState
     final partnerId = await repository.getPartnerId(relationshipId, userId);
     if (!mounted) return;
 
-    await ref.read(sessionGameFlowProvider.notifier).start(
+    await ref
+        .read(sessionGameFlowProvider.notifier)
+        .start(
           gameType: widget.gameType,
           relationshipId: relationshipId,
           userId: userId,
@@ -89,23 +91,24 @@ class _SessionGameFlowScaffoldState
   Future<void> _confirmLeave() async {
     final leave = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Leave this game?'),
-        content: const Text(
-          'Your answers so far are discarded, and you can start the game '
-          'again whenever you like.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Stay'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Leave this game?'),
+            content: const Text(
+              'Your answers so far are discarded, and you can start the game '
+              'again whenever you like.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Stay'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Leave'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Leave'),
-          ),
-        ],
-      ),
     );
     if (leave != true || !mounted) return;
 
@@ -125,9 +128,7 @@ class _SessionGameFlowScaffoldState
   @override
   Widget build(BuildContext context) {
     if (_unavailable) {
-      return const Scaffold(
-        body: Center(child: Text(_genericErrorMessage)),
-      );
+      return const Scaffold(body: Center(child: Text(_genericErrorMessage)));
     }
 
     final async = ref.watch(sessionGameFlowProvider);
@@ -149,10 +150,11 @@ class _SessionGameFlowScaffoldState
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => const Center(
-          // Never render the raw error: it can carry row contents.
-          child: Text(_genericErrorMessage),
-        ),
+        error:
+            (error, _) => const Center(
+              // Never render the raw error: it can carry row contents.
+              child: Text(_genericErrorMessage),
+            ),
         data: (flow) {
           final question = notifier.currentQuestion;
           if (question == null) {
@@ -337,16 +339,12 @@ class _EndStage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (gameType != 'mirror') {
-      return SessionGameEndScreen(
-        onDone: () => Navigator.of(context).pop(),
-      );
+      return SessionGameEndScreen(onDone: () => Navigator.of(context).pop());
     }
 
     final sessionId = notifier.sessionId;
     if (sessionId == null) {
-      return SessionGameEndScreen(
-        onDone: () => Navigator.of(context).pop(),
-      );
+      return SessionGameEndScreen(onDone: () => Navigator.of(context).pop());
     }
 
     final repository = ref.read(sessionGameRepositoryProvider);

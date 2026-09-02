@@ -27,7 +27,10 @@ class SessionGameEndScreen extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text('That is the end', style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            'That is the end',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           if (score != null && totalRounds != null) ...[
             const SizedBox(height: 24),
             // Framed as the viewer's own reading of their partner, never

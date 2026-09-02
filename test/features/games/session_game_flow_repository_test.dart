@@ -68,7 +68,13 @@ void main() {
           ? source.substring(fetchRoundsIndex)
           : source.substring(fetchRoundsIndex, nextMethodIndex);
 
-      final selectMatch = RegExp(r"\.select\('([^']*)'\)").firstMatch(methodBody);
+      // Whitespace-tolerant: dart format wraps .select( onto its own
+      // line once the column list grows, and a single-line pattern then
+      // stops matching code that is perfectly correct.
+      final selectMatch = RegExp(
+        r"\.select\(\s*'([^']*)'\s*,?\s*\)",
+        dotAll: true,
+      ).firstMatch(methodBody);
       expect(selectMatch, isNotNull,
           reason: 'fetchRounds does not call .select(\'...\') with an explicit column list');
 

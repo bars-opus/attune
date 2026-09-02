@@ -49,10 +49,7 @@ class SessionGameFlowState {
     return SessionGameStage.question;
   }
 
-  SessionGameFlowState copyWith({
-    SessionGameStage? stage,
-    int? roundIndex,
-  }) {
+  SessionGameFlowState copyWith({SessionGameStage? stage, int? roundIndex}) {
     return SessionGameFlowState(
       stage: stage ?? this.stage,
       roundIndex: roundIndex ?? this.roundIndex,

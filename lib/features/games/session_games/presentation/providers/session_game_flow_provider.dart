@@ -66,8 +66,8 @@ final sessionGameRepositoryProvider = Provider<SessionGameRepository>(
 
 final sessionGameFlowProvider =
     AsyncNotifierProvider<SessionGameFlowNotifier, SessionGameFlowState>(
-  SessionGameFlowNotifier.new,
-);
+      SessionGameFlowNotifier.new,
+    );
 
 /// Drives one session: question -> waiting -> reveal -> [judge] -> end.
 ///
@@ -199,7 +199,22 @@ class SessionGameFlowNotifier extends AsyncNotifier<SessionGameFlowState> {
   Future<void> submit(String answer) async {
     final current = state.value;
     final roundId = currentRoundId;
-    if (current == null || roundId == null) return;
+
+    // A missing round used to return silently -- and the caller then
+    // advanced to the waiting stage regardless, so an answer that was
+    // never sent looked exactly like one that was. The player sat on
+    // "waiting for your partner" for a submit that never happened, and
+    // no error surfaced anywhere.
+    //
+    // Surfaced as an error state instead: it is a real failure, and the
+    // flow must not pretend otherwise.
+    if (current == null || roundId == null) {
+      state = AsyncError(
+        StateError('This round is not ready yet. Reopen the game to continue.'),
+        StackTrace.current,
+      );
+      return;
+    }
 
     try {
       await _repository.submitAnswer(roundId: roundId, answer: answer);

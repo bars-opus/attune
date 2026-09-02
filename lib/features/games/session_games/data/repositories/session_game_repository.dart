@@ -48,8 +48,9 @@ class SessionGameRepository {
         .limit(limit);
 
     return rows
-        .map((row) =>
-            SessionGameQuestion.fromRow(Map<String, dynamic>.from(row)))
+        .map(
+          (row) => SessionGameQuestion.fromRow(Map<String, dynamic>.from(row)),
+        )
         .toList();
   }
 
@@ -62,8 +63,10 @@ class SessionGameRepository {
   /// calls non-negotiable. get_revealed_round returns nulls until both
   /// have submitted.
   Future<RevealedRound> fetchRevealedRound(String roundId) async {
-    final rows = await _safeClient
-        .rpc('get_revealed_round', params: {'p_round_id': roundId});
+    final rows = await _safeClient.rpc(
+      'get_revealed_round',
+      params: {'p_round_id': roundId},
+    );
 
     final list = rows as List<dynamic>;
     if (list.isEmpty) {
@@ -107,13 +110,14 @@ class SessionGameRepository {
     required String gameType,
     required String partnerId,
   }) async {
-    final existingSession = await _safeClient
-        .from('game_sessions')
-        .select('id')
-        .eq('relationship_id', relationshipId)
-        .eq('game_type', gameType)
-        .inFilter('status', ['invited', 'active'])
-        .maybeSingle();
+    final existingSession =
+        await _safeClient
+            .from('game_sessions')
+            .select('id')
+            .eq('relationship_id', relationshipId)
+            .eq('game_type', gameType)
+            .inFilter('status', ['invited', 'active'])
+            .maybeSingle();
 
     if (existingSession != null) {
       return existingSession['id'] as String;
@@ -130,18 +134,19 @@ class SessionGameRepository {
       throw StateError('No questions available for $gameType');
     }
 
-    final session = await _safeClient
-        .from('game_sessions')
-        .insert({
-          'relationship_id': relationshipId,
-          'initiator_id': initiatorId,
-          'game_type': gameType,
-          'tone': 'connecting',
-          'status': 'active',
-          'total_rounds': questions.length,
-        })
-        .select('id')
-        .single();
+    final session =
+        await _safeClient
+            .from('game_sessions')
+            .insert({
+              'relationship_id': relationshipId,
+              'initiator_id': initiatorId,
+              'game_type': gameType,
+              'tone': 'connecting',
+              'status': 'active',
+              'total_rounds': questions.length,
+            })
+            .select('id')
+            .single();
 
     final sessionId = session['id'] as String;
 
@@ -193,7 +198,9 @@ class SessionGameRepository {
   Future<List<SessionGameRound>> fetchRounds(String sessionId) async {
     final rows = await _safeClient
         .from('game_session_rounds')
-        .select('id, round_number, question_id, both_answered, active_partner_id')
+        .select(
+          'id, round_number, question_id, both_answered, active_partner_id',
+        )
         .eq('session_id', sessionId)
         .order('round_number');
 
@@ -249,11 +256,12 @@ class SessionGameRepository {
   /// screen needs this to know which slot is "yours" without ever
   /// reading the other user's id off the client.
   Future<bool> isUserA(String relationshipId) async {
-    final row = await _safeClient
-        .from('relationships')
-        .select('user_a')
-        .eq('id', relationshipId)
-        .single();
+    final row =
+        await _safeClient
+            .from('relationships')
+            .select('user_a')
+            .eq('id', relationshipId)
+            .single();
     return row['user_a'] == _safeClient.auth.currentUser?.id;
   }
 
@@ -266,11 +274,12 @@ class SessionGameRepository {
   /// the real partner because nothing downstream — not RLS, not the
   /// repository — checks that it actually belongs to this relationship.
   Future<String> getPartnerId(String relationshipId, String userId) async {
-    final row = await _safeClient
-        .from('relationships')
-        .select('user_a, user_b')
-        .eq('id', relationshipId)
-        .single();
+    final row =
+        await _safeClient
+            .from('relationships')
+            .select('user_a, user_b')
+            .eq('id', relationshipId)
+            .single();
 
     final userA = row['user_a'] as String;
     final userB = row['user_b'] as String;
@@ -302,11 +311,12 @@ class SessionGameRepository {
   /// lives on the GUESS (get_revealed_round), and the caller must not
   /// display this before both_answered.
   Future<String?> fetchMirrorTruth(String roundId) async {
-    final row = await _safeClient
-        .from('mirror_round_truth')
-        .select('truth_text')
-        .eq('round_id', roundId)
-        .maybeSingle();
+    final row =
+        await _safeClient
+            .from('mirror_round_truth')
+            .select('truth_text')
+            .eq('round_id', roundId)
+            .maybeSingle();
     return row?['truth_text'] as String?;
   }
 
@@ -324,11 +334,12 @@ class SessionGameRepository {
   /// a session in full, so a client-side recomputation from that table
   /// would leak the same data mirror_scores' RLS exists to withhold.
   Future<int?> fetchMirrorScore(String sessionId) async {
-    final row = await _safeClient
-        .from('mirror_scores')
-        .select('score')
-        .eq('session_id', sessionId)
-        .maybeSingle();
+    final row =
+        await _safeClient
+            .from('mirror_scores')
+            .select('score')
+            .eq('session_id', sessionId)
+            .maybeSingle();
     return (row?['score'] as num?)?.toInt();
   }
 }

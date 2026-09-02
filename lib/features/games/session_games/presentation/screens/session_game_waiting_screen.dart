@@ -20,8 +20,8 @@ class SessionGameWaitingScreen extends StatefulWidget {
     required this.onRevealed,
     this.onLeaveToChat,
     SessionGameRepository? repository,
-  })  : _repository = repository,
-        _testBothAnswered = null;
+  }) : _repository = repository,
+       _testBothAnswered = null;
 
   /// Renders a fixed state without polling, for widget tests.
   ///
@@ -36,10 +36,10 @@ class SessionGameWaitingScreen extends StatefulWidget {
     required String? partnerAnswer,
     VoidCallback? onRevealed,
     this.onLeaveToChat,
-  })  : roundId = 'test',
-        onRevealed = onRevealed ?? _noop,
-        _repository = null,
-        _testBothAnswered = bothAnswered;
+  }) : roundId = 'test',
+       onRevealed = onRevealed ?? _noop,
+       _repository = null,
+       _testBothAnswered = bothAnswered;
 
   static void _noop() {}
 
