@@ -5,6 +5,7 @@ import 'package:attune/features/games/presentation/widgets/chat_games_sheet.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:attune/features/games/presentation/widgets/game_icon.dart';
 
 /// The status line a game card shows, from the viewer's perspective.
 ///
@@ -139,19 +140,25 @@ class GameMessageBubble extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // PLACEHOLDER ART: a tinted disc behind the catalogue icon,
-              // standing in for the illustrated board each game will get.
-              // Replace this block with the artwork; the states, layout
-              // and tap behaviour around it stay as they are.
-              Container(
-                height: 96.h,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: colorScheme.primary.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
+              // The game's illustration, on its own tile.
+              //
+              // A game without art yet falls back to the catalogue glyph
+              // on a tinted disc, so the set can be filled in one game at
+              // a time without a gap appearing in the meantime.
+              if (gameIconAsset(gameType) != null)
+                Center(child: GameIcon(gameType: gameType, size: 96.h))
+              else
+                Container(
+                  height: 96.h,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(
+                      BorderRadiusTokens.md.r,
+                    ),
+                  ),
+                  child: Icon(icon, size: 40.h, color: colorScheme.primary),
                 ),
-                child: Icon(icon, size: 40.h, color: colorScheme.primary),
-              ),
               SizedBox(height: Spacing.sm.h),
               Text(
                 title,

@@ -191,6 +191,9 @@ flutter:
 
   assets:
     - assets/images/
+    # Not covered by assets/images/ above: Flutter's directory entries are
+    # shallow, so a nested folder needs its own line.
+    - assets/images/game_icons/
     - assets/config/
     - assets/sounds/
 

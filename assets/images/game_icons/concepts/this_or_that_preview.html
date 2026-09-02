@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>This or That Icon Concepts</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 32px;
+        background: #f7f7f4;
+        color: #1f2521;
+      }
+      h1 {
+        margin: 0 0 24px;
+        font-size: 22px;
+      }
+      .concepts {
+        display: grid;
+        gap: 28px;
+      }
+      .concept {
+        display: grid;
+        gap: 12px;
+      }
+      .title {
+        font-weight: 700;
+      }
+      .strip {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(280px, 1fr));
+        gap: 14px;
+      }
+      .swatch {
+        min-height: 300px;
+        padding: 18px;
+        border-radius: 24px;
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+      }
+      .light {
+        background: #e5e9e5;
+      }
+      .dark {
+        background: #101112;
+      }
+      .sample {
+        display: grid;
+        gap: 8px;
+        place-items: center;
+        color: #6b746e;
+        font-size: 12px;
+      }
+      .dark .sample {
+        color: #bbc1bb;
+      }
+      img {
+        display: block;
+      }
+      @media (max-width: 760px) {
+        body {
+          padding: 18px;
+        }
+        .strip {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>This or That Icon Concepts</h1>
+    <main class="concepts">
+      <section class="concept">
+        <div class="title">Concept 1: two private picks, one reveal</div>
+        <div class="strip">
+          <div class="swatch light">
+            <div class="sample"><img src="this_or_that_concept_1.svg" width="40" height="40" />40</div>
+            <div class="sample"><img src="this_or_that_concept_1.svg" width="96" height="96" />96</div>
+            <div class="sample"><img src="this_or_that_concept_1.svg" width="256" height="256" />256</div>
+          </div>
+          <div class="swatch dark">
+            <div class="sample"><img src="this_or_that_concept_1.svg" width="40" height="40" />40</div>
+            <div class="sample"><img src="this_or_that_concept_1.svg" width="96" height="96" />96</div>
+            <div class="sample"><img src="this_or_that_concept_1.svg" width="256" height="256" />256</div>
+          </div>
+        </div>
+      </section>
+      <section class="concept">
+        <div class="title">Concept 2: matched hearts, playful toggle</div>
+        <div class="strip">
+          <div class="swatch light">
+            <div class="sample"><img src="this_or_that_concept_2.svg" width="40" height="40" />40</div>
+            <div class="sample"><img src="this_or_that_concept_2.svg" width="96" height="96" />96</div>
+            <div class="sample"><img src="this_or_that_concept_2.svg" width="256" height="256" />256</div>
+          </div>
+          <div class="swatch dark">
+            <div class="sample"><img src="this_or_that_concept_2.svg" width="40" height="40" />40</div>
+            <div class="sample"><img src="this_or_that_concept_2.svg" width="96" height="96" />96</div>
+            <div class="sample"><img src="this_or_that_concept_2.svg" width="256" height="256" />256</div>
+          </div>
+        </div>
+      </section>
+      <section class="concept">
+        <div class="title">Concept 3: hidden choices, reveal moment</div>
+        <div class="strip">
+          <div class="swatch light">
+            <div class="sample"><img src="this_or_that_concept_3.svg" width="40" height="40" />40</div>
+            <div class="sample"><img src="this_or_that_concept_3.svg" width="96" height="96" />96</div>
+            <div class="sample"><img src="this_or_that_concept_3.svg" width="256" height="256" />256</div>
+          </div>
+          <div class="swatch dark">
+            <div class="sample"><img src="this_or_that_concept_3.svg" width="40" height="40" />40</div>
+            <div class="sample"><img src="this_or_that_concept_3.svg" width="96" height="96" />96</div>
+            <div class="sample"><img src="this_or_that_concept_3.svg" width="256" height="256" />256</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

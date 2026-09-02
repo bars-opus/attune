@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="This or That concept 1">
+  <defs>
+    <linearGradient id="tile" x1="40" y1="24" x2="216" y2="232" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF8EE"/>
+      <stop offset="1" stop-color="#F0F7EF"/>
+    </linearGradient>
+    <linearGradient id="leftCard" x1="38" y1="70" x2="116" y2="174" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF8B7A"/>
+      <stop offset="1" stop-color="#F05E83"/>
+    </linearGradient>
+    <linearGradient id="rightCard" x1="140" y1="70" x2="218" y2="174" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5BD6BF"/>
+      <stop offset="1" stop-color="#25A882"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="8" flood-color="#243326" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+
+  <rect x="14" y="14" width="228" height="228" rx="54" fill="url(#tile)"/>
+  <path d="M47 54c15-18 42-17 58 1M151 55c16-18 43-18 58 0" fill="none" stroke="#375B4B" stroke-width="8" stroke-linecap="round" opacity="0.18"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="35" y="68" width="84" height="112" rx="30" fill="url(#leftCard)" transform="rotate(-7 77 124)"/>
+    <rect x="137" y="68" width="84" height="112" rx="30" fill="url(#rightCard)" transform="rotate(7 179 124)"/>
+  </g>
+
+  <path d="M75 115c-12-15-36 3-19 22l19 19 19-19c17-19-7-37-19-22z" fill="#FFF7F2"/>
+  <circle cx="181" cy="136" r="26" fill="#F4FFF9"/>
+  <path d="M170 136l8 8 17-18" fill="none" stroke="#20876E" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M124 83c10 10 10 25 0 36M132 137c-10 10-10 26 0 36" fill="none" stroke="#3D5147" stroke-width="8" stroke-linecap="round" opacity="0.26"/>
+  <circle cx="128" cy="128" r="18" fill="#FFFDF8" stroke="#375B4B" stroke-width="7"/>
+  <path d="M119 128h18" stroke="#375B4B" stroke-width="7" stroke-linecap="round"/>
+
+  <path d="M76 204c33 25 71 25 104 0" fill="none" stroke="#375B4B" stroke-width="8" stroke-linecap="round" opacity="0.2"/>
+  <circle cx="78" cy="204" r="8" fill="#FFB259"/>
+  <circle cx="178" cy="204" r="8" fill="#65D9C3"/>
+</svg>
