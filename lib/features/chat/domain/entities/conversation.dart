@@ -6,7 +6,20 @@ class Conversation {
   final String id;
   final String relationshipId;
   final String partnerId;
+  /// The COUPLE's name for this chat: the shared chat_name if they set
+  /// one, otherwise the partner's display name.
+  ///
+  /// For the header only. Anywhere a single person is speaking or being
+  /// addressed -- a typing indicator, a reply preview, a bubble -- use
+  /// [partnerName] instead, or the couple's shared name is put in one
+  /// individual's mouth.
   final String name;
+
+  /// The partner's own display name, never the couple's chat name.
+  ///
+  /// Falls back to [name] when the partner has no display name, so a
+  /// caller always has something to show.
+  final String partnerName;
   final String? avatarUrl;
   final Message? lastMessage;
   final int unreadCount;
@@ -14,24 +27,26 @@ class Conversation {
   final String relationshipStatus;
   final ConversationAvailability availability;
 
-  const Conversation({
+  Conversation({
     required this.id,
     required this.relationshipId,
     required this.partnerId,
     required this.name,
+    String? partnerName,
     required this.updatedAt,
     required this.relationshipStatus,
     required this.availability,
     this.avatarUrl,
     this.lastMessage,
     this.unreadCount = 0,
-  });
+  }) : partnerName = partnerName ?? name;
 
   Conversation copyWith({
     String? id,
     String? relationshipId,
     String? partnerId,
     String? name,
+    String? partnerName,
     String? avatarUrl,
     Message? lastMessage,
     int? unreadCount,
@@ -44,6 +59,7 @@ class Conversation {
       relationshipId: relationshipId ?? this.relationshipId,
       partnerId: partnerId ?? this.partnerId,
       name: name ?? this.name,
+      partnerName: partnerName ?? this.partnerName,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       lastMessage: lastMessage ?? this.lastMessage,
       unreadCount: unreadCount ?? this.unreadCount,
@@ -59,6 +75,7 @@ class Conversation {
       'relationshipId': relationshipId,
       'partnerId': partnerId,
       'name': name,
+      'partnerName': partnerName,
       'avatarUrl': avatarUrl,
       'lastMessage': lastMessage?.toJson(),
       'unreadCount': unreadCount,
@@ -74,6 +91,9 @@ class Conversation {
       relationshipId: json['relationshipId'] as String,
       partnerId: json['partnerId'] as String,
       name: json['name'] as String,
+      // Older cached rows predate the field; falling back to name keeps
+      // them rendering rather than crashing on a null.
+      partnerName: json['partnerName'] as String?,
       avatarUrl: json['avatarUrl'] as String?,
       lastMessage:
           json['lastMessage'] == null

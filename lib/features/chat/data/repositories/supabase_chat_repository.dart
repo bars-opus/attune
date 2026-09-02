@@ -118,6 +118,10 @@ class SupabaseChatRepository implements ChatRepository {
               (relationship['chat_name'] as String?) ??
               (partner?['display_name'] as String?) ??
               'Partner',
+          // The partner's OWN name, kept separate from the couple's
+          // chat_name: a typing indicator or reply preview naming the
+          // couple puts their shared name in one person's mouth.
+          partnerName: (partner?['display_name'] as String?) ?? 'Partner',
           avatarUrl: avatarUrl,
           lastMessage: lastMessage,
           unreadCount: unreadCount,

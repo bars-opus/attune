@@ -645,7 +645,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       'chatInsights',
       extra: (
         relationshipId: widget.conversation.relationshipId,
-        partnerName: widget.conversation.name,
+        partnerName: widget.conversation.partnerName,
       ),
     );
     _syncViewActive();

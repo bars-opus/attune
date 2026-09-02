@@ -382,7 +382,11 @@ class MessageBubble extends StatelessWidget {
                               ? null
                               : parentIsMine!
                               ? 'You'
-                              : (conversation?.name ?? 'Partner'),
+                              // partnerName, not name: name is the
+                              // COUPLE's chat name, and labelling a quoted
+                              // message with it credits one person's words
+                              // to the pair.
+                              : (conversation?.partnerName ?? 'Partner'),
                       // WhatsApp-style colored side border on the quote block. Same
                       // null-means-unknown gate as quoteAuthorLabel.
                       quoteAuthorIsMine:
