@@ -179,6 +179,11 @@ class SessionGameFlowNotifier extends AsyncNotifier<SessionGameFlowState> {
       );
 
       final initial = initialStageAndIndexFor(_rounds);
+      // ignore: avoid_print
+      print('[FLOW] start session=$_sessionId rounds=${_rounds.length} '
+          'order=${_rounds.map((r) => r.roundNumber).toList()} '
+          'bothAnswered=${_rounds.map((r) => r.bothAnswered).toList()} '
+          'chose index=${initial.roundIndex} stage=${initial.stage}');
 
       return SessionGameFlowState(
         stage: initial.stage,

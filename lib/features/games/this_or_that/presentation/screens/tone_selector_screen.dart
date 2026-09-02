@@ -79,6 +79,8 @@ class _ToneSelectorScreenState extends ConsumerState<ToneSelectorScreen> {
         ),
       );
     } catch (error) {
+      // ignore: avoid_print
+      print('[TOT] start failed: $error');
       if (!mounted) return;
       messenger.showSnackBar(
         const SnackBar(content: Text('Could not start the game right now.')),

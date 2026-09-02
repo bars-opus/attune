@@ -682,4 +682,27 @@ BEGIN
   END IF;
 END $$;
 
+-- game_session_rounds.question_id must be a real foreign key.
+--
+-- Without one PostgREST cannot resolve an embedded select, and This or
+-- That's session query -- '*, game_questions(question_text, option_a,
+-- ...)' -- fails at runtime with "Could not find a relationship between
+-- game_session_rounds and game_questions in the schema cache". The
+-- column was populated all along; only the constraint was missing, so
+-- the join read correctly in review and broke only when a partner tapped
+-- Resume session.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.game_session_rounds'::regclass
+      AND contype = 'f'
+      AND conname = 'game_session_rounds_question_id_fkey'
+  ) THEN
+    RAISE EXCEPTION
+      'question_id has no foreign key, so PostgREST cannot embed '
+      'game_questions and every session query using it fails';
+  END IF;
+END $$;
+
 ROLLBACK;
