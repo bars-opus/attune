@@ -86,10 +86,14 @@ void main() {
       isTrue,
       reason: 'the fetched state must reach the card state',
     );
+    // The fetch is awaited inside load(), which both subscriptions call.
+    // Asserted on the await rather than on asyncMap: the card now merges
+    // two streams through a controller, so the operator it used to use is
+    // an implementation detail that changed.
     expect(
-      source.contains('.asyncMap('),
+      source.contains('await supabase.rpc('),
       isTrue,
-      reason: 'a plain .map cannot await the round-state fetch',
+      reason: 'the round-state fetch must be awaited before emitting',
     );
   });
 
@@ -119,5 +123,47 @@ void main() {
           'gating on a list of game types silently excludes every game '
           'added after it was written',
     );
+  });
+
+  test('the card watches rounds, not only the session', () {
+    // Answering writes to game_session_rounds; the game_sessions row does
+    // not change. Streaming only the session meant the card computed its
+    // label once when it first built and never again -- "Round 1/10"
+    // stayed on screen no matter who answered, and the partner was never
+    // told it was their turn.
+    //
+    // This is the bug that survived three earlier fixes: the trigger, the
+    // Mirror truth, and the game-type gate were all real, but none of
+    // them could show while the card never re-rendered.
+    final source =
+        File(
+          'lib/features/games/presentation/providers/game_card_provider.dart',
+        ).readAsStringSync();
+
+    expect(
+      source.contains("from('game_session_rounds')"),
+      isTrue,
+      reason:
+          'without a rounds subscription the card cannot notice an answer',
+    );
+    expect(
+      source.contains("from('game_sessions')"),
+      isTrue,
+      reason: 'the session still drives status and round counts',
+    );
+  });
+
+  test('both subscriptions are released', () {
+    // Two streams per card now. A chat page loads 50 messages, so leaking
+    // either would hold websockets for every game ever scrolled past.
+    final source =
+        File(
+          'lib/features/games/presentation/providers/game_card_provider.dart',
+        ).readAsStringSync();
+
+    final dispose = source.substring(source.indexOf('ref.onDispose(() {'));
+    expect(dispose.contains('sessionSub.cancel()'), isTrue);
+    expect(dispose.contains('roundSub.cancel()'), isTrue);
+    expect(dispose.contains('controller.close()'), isTrue);
   });
 }

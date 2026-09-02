@@ -94,57 +94,84 @@ final gameCardProvider = StreamProvider.autoDispose
 
       final supabase = ref.watch(supabaseClientProvider);
 
-      // Session games carry no current_turn_user_id -- both partners
-      // answer the same round -- so their card needs the per-round answer
-      // state to say anything more useful than "Round 2 of 6".
+      // Watches the ROUNDS as well as the session.
       //
-      // Fetched per session update rather than streamed:
-      // game_session_rounds holds the answers themselves, and a client
-      // must never subscribe to a table it is not allowed to read before
-      // the reveal (spec 8.4). The RPC returns booleans only.
-      return supabase
+      // Answering writes to game_session_rounds; the game_sessions row
+      // does not change. Streaming only the session meant the card
+      // computed its label once when it first built and never again --
+      // so "Round 1/10" stayed on screen no matter who answered, and the
+      // partner was never told it was their turn.
+      //
+      // Merged rather than chained so either table moving refreshes the
+      // card.
+      final sessionRows = supabase
           .from('game_sessions')
           .stream(primaryKey: ['id'])
-          .eq('id', sessionId)
-          .asyncMap((rows) async {
-            if (rows.isEmpty) return null;
-            final state = GameCardState.fromRow(rows.first);
+          .eq('id', sessionId);
 
-            // Asked for every game that does NOT carry its own turn.
-            //
-            // This was a list of the three session games, which silently
-            // excluded This or That, Truth or Dare and 36 Questions --
-            // their cards could only ever show a round count, because the
-            // one call that knows whose move it is was never made for
-            // them.
-            //
-            // Inverted so the question is "does this session already say
-            // whose turn it is?" rather than a list that has to be
-            // remembered every time a game is added. Only Paint Ball sets
-            // current_turn_user_id.
-            if (state.status != 'active' || state.currentTurnUserId != null) {
-              return state;
-            }
+      final roundRows = supabase
+          .from('game_session_rounds')
+          .stream(primaryKey: ['id'])
+          .eq('session_id', sessionId);
 
-            try {
-              final result = await supabase.rpc(
-                'session_game_round_state',
-                params: {'p_session_id': sessionId},
-              );
-              if (result is List && result.isNotEmpty) {
-                final row = Map<String, dynamic>.from(result.first as Map);
-                return state.withRoundState(
-                  viewerAnswered: row['viewer_answered'] as bool?,
-                  partnerAnswered: row['partner_answered'] as bool?,
-                );
-              }
-            } catch (_) {
-              // Falls back to the round-count label rather than blanking
-              // the card: a failed receipt read must not remove a live
-              // game from the conversation.
-            }
-            return state;
-          });
+      Future<GameCardState?> load(List<Map<String, dynamic>> rows) async {
+        if (rows.isEmpty) return null;
+        final state = GameCardState.fromRow(rows.first);
+
+        // Asked for every game that does NOT carry its own turn. Only
+        // Paint Ball sets current_turn_user_id; a list of game types
+        // here would silently exclude every game added after it.
+        if (state.status != 'active' || state.currentTurnUserId != null) {
+          return state;
+        }
+
+        try {
+          final result = await supabase.rpc(
+            'session_game_round_state',
+            params: {'p_session_id': sessionId},
+          );
+          if (result is List && result.isNotEmpty) {
+            final row = Map<String, dynamic>.from(result.first as Map);
+            return state.withRoundState(
+              viewerAnswered: row['viewer_answered'] as bool?,
+              partnerAnswered: row['partner_answered'] as bool?,
+            );
+          }
+        } catch (_) {
+          // Falls back to the round-count label rather than blanking the
+          // card: a failed read must not remove a live game from the
+          // conversation.
+        }
+        return state;
+      }
+
+      // The rounds stream carries no session row, so a round change
+      // re-reads the session it belongs to rather than trying to build a
+      // card from a round.
+      List<Map<String, dynamic>>? latestSession;
+
+      final controller = StreamController<GameCardState?>();
+
+      final sessionSub = sessionRows.listen((rows) async {
+        latestSession = rows;
+        final next = await load(rows);
+        if (!controller.isClosed) controller.add(next);
+      });
+
+      final roundSub = roundRows.listen((_) async {
+        final rows = latestSession;
+        if (rows == null) return;
+        final next = await load(rows);
+        if (!controller.isClosed) controller.add(next);
+      });
+
+      ref.onDispose(() {
+        unawaited(sessionSub.cancel());
+        unawaited(roundSub.cancel());
+        unawaited(controller.close());
+      });
+
+      return controller.stream;
     });
 
 /// The games where both partners answer the same round independently,
