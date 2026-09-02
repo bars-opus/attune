@@ -212,4 +212,70 @@ BEGIN
   END IF;
 END $$;
 
+-- Session games get a card too.
+--
+-- post_game_message fired only on status = 'invited', and the session
+-- games (Mirror, Sliding Scale, Scenario) insert straight to 'active' --
+-- they have no invite step. So playing Scenario left no trace in the
+-- chat at all, which is also where the flow now hands off after
+-- answering: the player was returned to a conversation with nothing in
+-- it.
+DO $$
+DECLARE
+  v_rel uuid;
+  v_session uuid;
+  v_count int;
+  v_viewer boolean;
+  v_partner boolean;
+BEGIN
+  SELECT id INTO v_rel FROM public.relationships
+  WHERE user_a = '00000000-0000-0000-0000-00000000ce01' LIMIT 1;
+
+  INSERT INTO public.game_sessions(relationship_id, initiator_id, game_type, status)
+  VALUES (v_rel, '00000000-0000-0000-0000-00000000ce01', 'scenario', 'active')
+  RETURNING id INTO v_session;
+
+  SELECT count(*) INTO v_count
+  FROM public.messages WHERE game_session_id = v_session;
+
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION
+      'a session game inserted straight to active produced no card';
+  END IF;
+
+  -- And the card can say whose move it is. Session games carry no
+  -- current_turn_user_id -- both partners answer the SAME round -- so
+  -- without this the card could only show a round number, which cannot
+  -- tell you whether anything is waiting on you.
+  INSERT INTO public.game_session_rounds(session_id, round_number, answer_a_submitted_at)
+  VALUES (v_session, 1, now());
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', '00000000-0000-0000-0000-00000000ce01',
+                      'role', 'authenticated')::text, true);
+  SELECT viewer_answered, partner_answered INTO v_viewer, v_partner
+  FROM public.session_game_round_state(v_session);
+
+  IF NOT v_viewer OR v_partner THEN
+    RAISE EXCEPTION
+      'the player who answered should read as waiting, got viewer=% partner=%',
+      v_viewer, v_partner;
+  END IF;
+
+  -- The same round, read by the other partner, must say the OPPOSITE.
+  -- If these ever agree, one partner is told to act when they already
+  -- have.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', '00000000-0000-0000-0000-00000000ce02',
+                      'role', 'authenticated')::text, true);
+  SELECT viewer_answered, partner_answered INTO v_viewer, v_partner
+  FROM public.session_game_round_state(v_session);
+
+  IF v_viewer OR NOT v_partner THEN
+    RAISE EXCEPTION
+      'the waiting partner should read as their turn, got viewer=% partner=%',
+      v_viewer, v_partner;
+  END IF;
+END $$;
+
 ROLLBACK;
