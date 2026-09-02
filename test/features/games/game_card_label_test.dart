@@ -125,7 +125,11 @@ void main() {
           viewerId: me,
           viewerIsSender: false,
         ),
-        'In progress',
+        // "Tap to play", not "In progress": current_round defaults to 0
+        // and the session games never update it, so this branch is what a
+        // card falls back to -- and it should invite the next move rather
+        // than describe a state.
+        'Tap to play',
       );
     });
 
