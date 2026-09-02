@@ -212,7 +212,7 @@ class _ChatMediaGroupState extends State<ChatMediaGroup> {
                     // surface of its own, so it reads at a glance without
                     // needing to compete with whatever is behind it.
                     PositionedDirectional(
-                      top: 12,
+                      top: 20,
                       // Inset from the edge with the badge, not tight to
                       // it: both sit ON the photos, and a chip flush to
                       // the corner reads as clipped rather than placed.
@@ -221,7 +221,7 @@ class _ChatMediaGroupState extends State<ChatMediaGroup> {
                       child: _AlbumLabel(label: label),
                     ),
                     PositionedDirectional(
-                      top: 12,
+                      top: 20,
                       // Matches the label's inset opposite it, so the pair
                       // sits at the same depth from either edge.
                       end: widget.isMine ? null : 12,
