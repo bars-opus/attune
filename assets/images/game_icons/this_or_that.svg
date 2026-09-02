@@ -1,39 +1,46 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="This or That concept 1">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="This or That">
   <defs>
-    <linearGradient id="tile" x1="40" y1="24" x2="216" y2="232" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFF8EE"/>
-      <stop offset="1" stop-color="#F0F7EF"/>
+    <linearGradient id="cardCream" x1="43" y1="39" x2="196" y2="218" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF8EA"/>
+      <stop offset="0.48" stop-color="#F4E4C9"/>
+      <stop offset="1" stop-color="#D7B88E"/>
     </linearGradient>
-    <linearGradient id="leftCard" x1="38" y1="70" x2="116" y2="174" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FF8B7A"/>
-      <stop offset="1" stop-color="#F05E83"/>
+    <linearGradient id="cardCreamAlt" x1="80" y1="31" x2="222" y2="206" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF5E4"/>
+      <stop offset="0.55" stop-color="#EED9B8"/>
+      <stop offset="1" stop-color="#C99F70"/>
     </linearGradient>
-    <linearGradient id="rightCard" x1="140" y1="70" x2="218" y2="174" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#5BD6BF"/>
-      <stop offset="1" stop-color="#25A882"/>
+    <linearGradient id="cardEdge" x1="56" y1="52" x2="199" y2="216" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="0.66" stop-color="#D8BA8B"/>
+      <stop offset="1" stop-color="#A77547"/>
     </linearGradient>
-    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%">
-      <feDropShadow dx="0" dy="10" stdDeviation="8" flood-color="#243326" flood-opacity="0.16"/>
-    </filter>
+    <linearGradient id="ink" x1="70" y1="98" x2="183" y2="154" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3F3934"/>
+      <stop offset="1" stop-color="#191817"/>
+    </linearGradient>
   </defs>
 
-  <rect x="14" y="14" width="228" height="228" rx="54" fill="url(#tile)"/>
-  <path d="M47 54c15-18 42-17 58 1M151 55c16-18 43-18 58 0" fill="none" stroke="#375B4B" stroke-width="8" stroke-linecap="round" opacity="0.18"/>
+  <ellipse cx="130" cy="207" rx="89" ry="23" fill="#6C4A32" opacity="0.20"/>
+  <ellipse cx="138" cy="201" rx="79" ry="18" fill="#2C2018" opacity="0.12"/>
 
-  <g filter="url(#softShadow)">
-    <rect x="35" y="68" width="84" height="112" rx="30" fill="url(#leftCard)" transform="rotate(-7 77 124)"/>
-    <rect x="137" y="68" width="84" height="112" rx="30" fill="url(#rightCard)" transform="rotate(7 179 124)"/>
+  <g transform="rotate(9 164 124)">
+    <rect x="102" y="43" width="116" height="162" rx="17" fill="#7A5436" opacity="0.20" transform="translate(0 7)"/>
+    <rect x="102" y="38" width="116" height="162" rx="17" fill="url(#cardEdge)"/>
+    <rect x="106" y="41" width="108" height="154" rx="14" fill="url(#cardCreamAlt)"/>
+    <path d="M121 55c20-7 50-8 74 1" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" opacity="0.60"/>
+    <path d="M116 176c17 12 42 14 74 9" fill="none" stroke="#A2754A" stroke-width="5" stroke-linecap="round" opacity="0.22"/>
+    <text x="160" y="128" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="900" letter-spacing="0.7" fill="#B69A78" opacity="0.42" transform="translate(0 4)">THAT</text>
+    <text x="160" y="128" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="900" letter-spacing="0.7" fill="url(#ink)">THAT</text>
   </g>
 
-  <path d="M75 115c-12-15-36 3-19 22l19 19 19-19c17-19-7-37-19-22z" fill="#FFF7F2"/>
-  <circle cx="181" cy="136" r="26" fill="#F4FFF9"/>
-  <path d="M170 136l8 8 17-18" fill="none" stroke="#20876E" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-
-  <path d="M124 83c10 10 10 25 0 36M132 137c-10 10-10 26 0 36" fill="none" stroke="#3D5147" stroke-width="8" stroke-linecap="round" opacity="0.26"/>
-  <circle cx="128" cy="128" r="18" fill="#FFFDF8" stroke="#375B4B" stroke-width="7"/>
-  <path d="M119 128h18" stroke="#375B4B" stroke-width="7" stroke-linecap="round"/>
-
-  <path d="M76 204c33 25 71 25 104 0" fill="none" stroke="#375B4B" stroke-width="8" stroke-linecap="round" opacity="0.2"/>
-  <circle cx="78" cy="204" r="8" fill="#FFB259"/>
-  <circle cx="178" cy="204" r="8" fill="#65D9C3"/>
+  <g transform="rotate(-8 91 135)">
+    <rect x="38" y="57" width="116" height="162" rx="17" fill="#6D4A31" opacity="0.24" transform="translate(0 8)"/>
+    <rect x="38" y="51" width="116" height="162" rx="17" fill="url(#cardEdge)"/>
+    <rect x="42" y="54" width="108" height="154" rx="14" fill="url(#cardCream)"/>
+    <path d="M58 68c21-7 51-8 75 0" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" opacity="0.68"/>
+    <path d="M52 188c17 12 43 14 76 8" fill="none" stroke="#A2754A" stroke-width="5" stroke-linecap="round" opacity="0.24"/>
+    <text x="96" y="139" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="900" letter-spacing="0.7" fill="#B69A78" opacity="0.44" transform="translate(0 4)">THIS</text>
+    <text x="96" y="139" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="900" letter-spacing="0.7" fill="url(#ink)">THIS</text>
+  </g>
 </svg>

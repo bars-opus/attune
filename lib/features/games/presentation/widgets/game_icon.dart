@@ -9,7 +9,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 /// The set is filled in one game at a time; a missing asset must never be
 /// a broken image.
 String? gameIconAsset(String gameType) {
-  const drawn = {'this_or_that'};
+  const drawn = {'this_or_that', 'truth_or_dare'};
   if (!drawn.contains(gameType)) return null;
   return 'assets/images/game_icons/$gameType.svg';
 }
