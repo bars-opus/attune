@@ -110,7 +110,19 @@ final gameCardProvider = StreamProvider.autoDispose
             if (rows.isEmpty) return null;
             final state = GameCardState.fromRow(rows.first);
 
-            if (!isSessionGame(state.gameType) || state.status != 'active') {
+            // Asked for every game that does NOT carry its own turn.
+            //
+            // This was a list of the three session games, which silently
+            // excluded This or That, Truth or Dare and 36 Questions --
+            // their cards could only ever show a round count, because the
+            // one call that knows whose move it is was never made for
+            // them.
+            //
+            // Inverted so the question is "does this session already say
+            // whose turn it is?" rather than a list that has to be
+            // remembered every time a game is added. Only Paint Ball sets
+            // current_turn_user_id.
+            if (state.status != 'active' || state.currentTurnUserId != null) {
               return state;
             }
 
@@ -137,6 +149,10 @@ final gameCardProvider = StreamProvider.autoDispose
 
 /// The games where both partners answer the same round independently,
 /// so there is no turn to read from the session row.
+///
+/// Kept for tests and callers that need to name them; the card no longer
+/// gates on it, because a list of game types is a thing to forget when a
+/// game is added, and forgetting it makes a card silently useless.
 bool isSessionGame(String gameType) =>
     gameType == 'mirror' ||
     gameType == 'sliding_scale' ||

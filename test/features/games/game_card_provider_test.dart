@@ -92,4 +92,32 @@ void main() {
       reason: 'a plain .map cannot await the round-state fetch',
     );
   });
+
+  test('round state is fetched for every game without its own turn', () {
+    // The gate was a list of the three session games, which silently
+    // excluded This or That, Truth or Dare and 36 Questions: their cards
+    // could only show a round count, because the one call that knows
+    // whose move it is was never made for them.
+    //
+    // Only Paint Ball sets current_turn_user_id, so the question is
+    // "does this session already say whose turn it is?" -- not a list
+    // that has to be remembered whenever a game is added.
+    final source =
+        File(
+          'lib/features/games/presentation/providers/game_card_provider.dart',
+        ).readAsStringSync();
+
+    expect(
+      source.contains('state.currentTurnUserId != null'),
+      isTrue,
+      reason: 'the card must ask the session, not a hardcoded game list',
+    );
+    expect(
+      source.contains('if (!isSessionGame(state.gameType)'),
+      isFalse,
+      reason:
+          'gating on a list of game types silently excludes every game '
+          'added after it was written',
+    );
+  });
 }

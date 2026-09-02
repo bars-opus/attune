@@ -94,10 +94,6 @@ class GameMessageBubble extends ConsumerWidget {
     final session = ref.watch(gameCardProvider(sessionId));
 
     final state = session.valueOrNull;
-    // ignore: avoid_print
-    print('[CARD] session=$sessionId state=${state == null ? "null" : "${state.gameType}/${state.status}"} '
-        'viewerAnswered=${state?.viewerAnswered} partnerAnswered=${state?.partnerAnswered} '
-        'error=${session.hasError ? session.error : "none"}');
     final gameType = state?.gameType ?? '';
     final title =
         gameType.isEmpty
