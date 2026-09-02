@@ -115,4 +115,64 @@ BEGIN
   END IF;
 END $$;
 
+-- Place updates: the deliberate half of the feature.
+DO $$
+DECLARE
+  a uuid := '00000000-0000-0000-0000-00000000e001';
+  b uuid := '00000000-0000-0000-0000-00000000e002';
+  c uuid := '00000000-0000-0000-0000-00000000e003';
+  v_rel uuid;
+  v_msg uuid;
+  v_count int;
+  v_refused boolean := false;
+BEGIN
+  SELECT id INTO v_rel FROM public.relationships
+  WHERE user_a = a AND user_b = b LIMIT 1;
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+
+  v_msg := public.post_place_update(
+    v_rel, 'At the coffee shop', 'thinking of you', 5.5601, -0.2050,
+    'Accra', 'Ghana'
+  );
+
+  -- One RPC, not two client writes: a failure must not leave a message
+  -- with no place or a place with no message.
+  SELECT count(*) INTO v_count
+  FROM public.messages m
+  JOIN public.place_updates p ON p.message_id = m.id
+  WHERE m.id = v_msg AND m.media_type = 'place';
+
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'the update did not create a message and a place together';
+  END IF;
+
+  -- Deleting the message takes the coordinates with it. A place that
+  -- read one way tonight may read differently tomorrow, and there must be
+  -- no way to remove the card while leaving the location behind.
+  DELETE FROM public.messages WHERE id = v_msg;
+
+  SELECT count(*) INTO v_count
+  FROM public.place_updates WHERE message_id = v_msg;
+
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'a deleted message left its coordinates behind';
+  END IF;
+
+  -- A non-member cannot post into someone else's chat.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', c, 'role', 'authenticated')::text, true);
+
+  BEGIN
+    PERFORM public.post_place_update(v_rel, 'Somewhere');
+  EXCEPTION WHEN OTHERS THEN
+    v_refused := true;
+  END;
+
+  IF NOT v_refused THEN
+    RAISE EXCEPTION 'a non-member posted a place into this relationship';
+  END IF;
+END $$;
+
 ROLLBACK;

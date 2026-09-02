@@ -26,6 +26,10 @@ class Message {
   final String? gameSessionId;
 
   bool get isGame => mediaType == 'game';
+
+  /// A place a partner CHOSE to share -- never something the app
+  /// revealed. The distinction is the whole feature.
+  bool get isPlace => mediaType == 'place';
   final String? mediaThumbnailKey;
   final String? signedMediaUrl;
   final String? localMediaPath;

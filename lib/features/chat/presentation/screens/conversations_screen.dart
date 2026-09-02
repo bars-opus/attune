@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:attune/features/chat/domain/utils/conversation_preview.dart';
+import 'package:attune/features/location/presentation/widgets/partner_distance_row.dart';
 
 class ConversationsScreen extends ConsumerWidget {
   const ConversationsScreen({super.key});
@@ -123,6 +124,13 @@ class ConversationsScreen extends ConsumerWidget {
                           AppDivider(),
                           Gap(Spacing.sm.h),
                           const _NextCalendarEventRow(),
+                          // Ambient relationship context, beside the next
+                          // event rather than in a panel of its own:
+                          // "how far apart are we" belongs with "dinner
+                          // on Friday", not somewhere you go to check on
+                          // someone. Renders nothing at all unless both
+                          // partners share and the reading is fresh.
+                          const _PartnerDistanceRow(),
                           Gap(Spacing.sm.h),
                         ],
                       ),
@@ -279,6 +287,29 @@ class _LatestReflectionRow extends ConsumerWidget {
 /// Next upcoming reminder, if any — same source CouplesCalendarScreen
 /// itself reads (remindersListProvider), same "Today"/"Tomorrow"/"In N
 /// days" countdown language.
+/// Wraps PartnerDistanceRow with the couple this screen is showing.
+///
+/// Resolves the relationship from the conversation list rather than
+/// taking it as a parameter, matching how the reflection and calendar
+/// rows above it find their own data.
+class _PartnerDistanceRow extends ConsumerWidget {
+  const _PartnerDistanceRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final conversations = ref.watch(conversationsProvider).valueOrNull;
+    if (conversations == null || conversations.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final conversation = conversations.first;
+    return PartnerDistanceRow(
+      relationshipId: conversation.relationshipId,
+      partnerName: conversation.partnerName,
+    );
+  }
+}
+
 class _NextCalendarEventRow extends ConsumerWidget {
   const _NextCalendarEventRow();
 

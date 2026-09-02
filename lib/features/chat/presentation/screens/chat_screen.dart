@@ -39,6 +39,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:attune/features/chat/presentation/providers/partner_presence_provider.dart';
+import 'package:attune/features/location/presentation/widgets/share_place_sheet.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({
@@ -492,6 +493,36 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     });
   }
 
+  /// Opens the sheet for sharing where you are.
+  ///
+  /// A deliberate act, always: the app has no way to reveal a location on
+  /// someone's behalf, so this is the only path by which a precise place
+  /// ever reaches the chat.
+  Future<void> _sharePlace() async {
+    final shared = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder:
+          (_) => SharePlaceSheet(
+            relationshipId: widget.conversation.relationshipId,
+          ),
+    );
+
+    if (shared == true && mounted) {
+      // The message arrives through the normal realtime path; this just
+      // pulls it in immediately for the sender rather than waiting.
+      unawaited(
+        ref
+            .read(chatControllerProvider(widget.conversation).notifier)
+            .loadMessages(silent: true),
+      );
+    }
+  }
+
   Future<void> _openGameRoute(ChatGameDestination destination) async {
     await openGameRoute(
       context,
@@ -931,6 +962,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                     }
                                     : null,
                             onAttachFile: _attachFile,
+                            onSharePlace: _sharePlace,
                             onOpenGames: _openGames,
                             showAttachImage:
                                 imageSharingEnabled.valueOrNull == true,

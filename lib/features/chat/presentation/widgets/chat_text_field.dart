@@ -45,6 +45,7 @@ class ChatTextField extends StatefulWidget {
     this.onVoiceMessageRecorded,
     this.onCaptureVideo,
     this.onAttachFile,
+    this.onSharePlace,
     this.onOpenGames,
     this.showAttachImage = false,
     this.showAttachVideo = false,
@@ -75,6 +76,9 @@ class ChatTextField extends StatefulWidget {
 
   /// Opens the ephemeral (view-once) "streak" camera capture flow.
   final VoidCallback? onCaptureVideo;
+
+  /// Opens the share-a-place sheet. Null hides the Location entry.
+  final VoidCallback? onSharePlace;
 
   /// File attach — placeholder for now, wired into the '+' sheet.
   final VoidCallback? onAttachFile;
@@ -785,7 +789,9 @@ class _ChatTextFieldState extends State<ChatTextField>
       _ChatAttachAction(
         title: 'Location',
         icon: Icons.location_on_outlined,
-        onTap: widget.onAttachFile,
+        // Was wired to onAttachFile, which would have opened a file
+        // picker. Now shares a place the user describes themselves.
+        onTap: widget.onSharePlace,
       ),
     ];
   }

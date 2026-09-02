@@ -25,6 +25,7 @@ import 'dart:io';
 import 'package:attune/features/chat/presentation/widgets/streak_bubble.dart';
 import 'package:attune/features/chat/presentation/screens/streak_viewer_screen.dart';
 import 'package:attune/features/games/presentation/widgets/game_message_bubble.dart';
+import 'package:attune/features/location/presentation/widgets/place_update_bubble.dart';
 
 /// A local media path only if the file is still there.
 ///
@@ -1102,7 +1103,17 @@ class _BubbleBody extends StatelessWidget {
         ),
       );
     }
-    if (message.isGame && message.gameSessionId != null) {
+    if (message.isPlace) {
+      // The label lives on the message content, so the card renders from
+      // the row alone -- no second fetch, and it still shows if the
+      // place_updates row is ever missing.
+      children.add(
+        PlaceUpdateBubble(
+          label: message.content,
+          foregroundColor: onBubbleColor,
+        ),
+      );
+    } else if (message.isGame && message.gameSessionId != null) {
       children.add(
         GameMessageBubble(
           sessionId: message.gameSessionId!,
