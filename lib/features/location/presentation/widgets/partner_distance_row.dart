@@ -34,7 +34,39 @@ class PartnerDistanceRow extends ConsumerWidget {
     final distance =
         ref.watch(partnerDistanceProvider(relationshipId)).valueOrNull;
 
-    if (distance == null) return const SizedBox.shrink();
+    if (distance == null) {
+      // There are two reasons for no distance, and they are not the same
+      // thing.
+      //
+      // YOU have not turned it on: your own state, which you can act on,
+      // so the row offers the switch.
+      //
+      // THEY have not: their choice, and not yours to act on. The row
+      // stays silent -- "waiting for your partner" would put the question
+      // "why haven't you turned it on?" on their screen, which is exactly
+      // the pressure this design exists to avoid. Someone who wants to
+      // ask can still ask; the app will not ask on their behalf.
+      final sharing =
+          ref.watch(isSharingPresenceProvider).valueOrNull ?? true;
+      if (sharing) return const SizedBox.shrink();
+
+      return InfoRowWidget(
+        title: 'Share how far apart you are',
+        subtitle: 'Shows distance, never a location',
+        iconColor: colorScheme.onSurfaceVariant.withOpacity(.4),
+        icon: Icons.near_me_outlined,
+        subTitleMaxLines: 1,
+        titleMaxLines: 1,
+        showDivider: false,
+        showAvatar: false,
+        disableTrailing: false,
+        showTrailingArrow: true,
+        onTap: () async {
+          await ref.read(presenceRepositoryProvider).recordOwnPresence();
+          ref.invalidate(isSharingPresenceProvider);
+        },
+      );
+    }
 
     // A reunion in the shared calendar turns the distance into a
     // countdown, which is the same data with the opposite meaning: not

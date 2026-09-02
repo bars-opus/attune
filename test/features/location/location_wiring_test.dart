@@ -35,11 +35,31 @@ void main() {
           'lib/features/location/presentation/widgets/partner_distance_row.dart',
         ).readAsStringSync();
 
-    expect(
-      source.contains('if (distance == null) return const SizedBox.shrink();'),
-      isTrue,
-      reason: 'an absent distance must render nothing, not a placeholder',
-    );
+    // No "location unavailable" placeholder and no error state: those
+    // invite the question "why", which is the pressure this design
+    // avoids. The one thing the row may offer is the viewer's OWN switch.
+    //
+    // Comment lines are stripped first: the widget's own doc comment
+    // quotes the phrase it must not render, so a whole-file search finds
+    // the warning against the thing rather than the thing.
+    final code = source
+        .split('\n')
+        .where((line) => !line.trimLeft().startsWith('//'))
+        .join('\n');
+
+    for (final placeholder in [
+      'unavailable',
+      'Unavailable',
+      'No location',
+      'Location off',
+      'Could not',
+    ]) {
+      expect(
+        code.contains(placeholder),
+        isFalse,
+        reason: 'an absent distance must not explain itself: $placeholder',
+      );
+    }
   });
 
   test('stopping presence deletes the row rather than hiding it', () {
@@ -175,6 +195,71 @@ void main() {
       reason:
           'the provider must not record a position for someone who has '
           'not opted in',
+    );
+  });
+
+  test('a partner who has not shared produces silence, not a prompt', () {
+    // The asymmetry that matters. "Waiting for your partner" would put
+    // the question "why haven't you turned it on?" on their screen --
+    // exactly the pressure this design exists to avoid. Someone who wants
+    // to ask can ask; the app will not ask on their behalf.
+    final source =
+        File(
+          'lib/features/location/presentation/widgets/partner_distance_row.dart',
+        ).readAsStringSync();
+
+    expect(
+      source.contains('if (sharing) return const SizedBox.shrink();'),
+      isTrue,
+      reason:
+          'when the viewer IS sharing and there is still no distance, the '
+          'partner has not opted in -- and that must stay invisible',
+    );
+
+    for (final nudge in [
+      'Waiting for',
+      'has not shared',
+      "hasn't shared",
+      'Ask ',
+      'Invite ',
+    ]) {
+      expect(
+        source.contains(nudge),
+        isFalse,
+        reason: 'the row must never nudge about a partner\'s choice: $nudge',
+      );
+    }
+  });
+
+  test('a viewer who has not shared is offered the switch', () {
+    // Their OWN state, which they can act on -- so silence here would
+    // just make the feature look broken to someone who never enabled it.
+    final source =
+        File(
+          'lib/features/location/presentation/widgets/partner_distance_row.dart',
+        ).readAsStringSync();
+
+    expect(source.contains('Share how far apart you are'), isTrue);
+    expect(
+      source.contains('recordOwnPresence()'),
+      isTrue,
+      reason: 'the offer must actually turn sharing on',
+    );
+  });
+
+  test('an unknown sharing state stays silent', () {
+    // Defaults to `true` (i.e. assume sharing, show nothing) while the
+    // check is in flight. Defaulting the other way would flash an
+    // opt-in prompt at every user on every cold start.
+    final source =
+        File(
+          'lib/features/location/presentation/widgets/partner_distance_row.dart',
+        ).readAsStringSync();
+
+    expect(
+      source.contains('.valueOrNull ?? true'),
+      isTrue,
+      reason: 'an unresolved state must not flash a prompt',
     );
   });
 }
