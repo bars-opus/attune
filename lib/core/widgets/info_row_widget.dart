@@ -85,6 +85,15 @@ class InfoRowWidget extends StatelessWidget {
   /// a circular avatar background when [showAvatar] is `true`.
   final IconData? icon;
 
+  /// A custom leading visual, used instead of [icon] when supplied.
+  ///
+  /// Exists for rows whose identity is an illustration rather than a
+  /// glyph -- the game icons, which carry their own colour and tile and
+  /// so cannot be expressed as IconData. Added alongside [icon] rather
+  /// than replacing it: 72 call sites pass an IconData and none of them
+  /// should have to change.
+  final Widget? leadingWidget;
+
   /// URL of an image to display in the leading position.
   ///
   /// Alternative to [icon] - displays an image instead of an icon.
@@ -247,6 +256,7 @@ class InfoRowWidget extends StatelessWidget {
     required this.subtitle,
     this.icon,
     this.imageUrl,
+    this.leadingWidget,
     this.iconColor,
     this.backgroundColor,
     this.avatarRadius,
@@ -279,9 +289,10 @@ class InfoRowWidget extends StatelessWidget {
     this.padAvatarTop = false,
     this.bottomWidget,
   }) : assert(
-         // Either icon or imageUrl must be provided for visual identity
-         icon != null || imageUrl != null,
-         'Either icon or imageUrl must be provided',
+         // Either icon, imageUrl or leadingWidget must be provided for
+         // visual identity.
+         icon != null || imageUrl != null || leadingWidget != null,
+         'Either icon, imageUrl or leadingWidget must be provided',
        ),
        // Validate toggle parameters when toggle mode is enabled
        assert(
@@ -476,6 +487,18 @@ class InfoRowWidget extends StatelessWidget {
         backgroundColor ?? colorScheme.primary.withValues(alpha: 0.1);
     final size = iconSize ?? (showAvatar ? 20.h : 24.h);
     final notAvatarImage = isNotAvatarImage ?? false;
+
+    // A supplied widget wins: it is the row's identity, already sized and
+    // coloured by its caller, so none of the icon styling below applies.
+    if (leadingWidget != null) {
+      final sized = SizedBox(
+        width: avatarRadius ?? 45.h,
+        height: avatarRadius ?? 45.h,
+        child: Center(child: leadingWidget),
+      );
+      if (onAvatarTap == null) return sized;
+      return GestureDetector(onTap: onAvatarTap, child: sized);
+    }
 
     final avatar =
         imageUrl != null

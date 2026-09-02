@@ -3,6 +3,7 @@ import 'package:attune/core/widgets/bottom_sheet_header.dart';
 import 'package:attune/core/widgets/search_text_field.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/features/games/presentation/widgets/game_icon.dart';
 
 enum ChatGameDestination {
   thisOrThat,
@@ -28,6 +29,28 @@ enum ChatGameDestination {
 /// Returns null for a type with nowhere to go, so an unknown or retired
 /// game_type renders as a non-tappable row instead of crashing on a route
 /// name that does not exist.
+/// The game_type behind a catalogue destination.
+///
+/// The catalogue is keyed by destination and the art by game_type, so one
+/// of the two has to map to the other. Derived from
+/// chatGameDestinationForType rather than duplicated, so a game added to
+/// one is never missing from the other.
+String? chatGameTypeForDestination(ChatGameDestination destination) {
+  for (final gameType in const [
+    'this_or_that',
+    'truth_or_dare',
+    '36_questions',
+    'mirror',
+    'sliding_scale',
+    'scenario',
+    'love_map',
+    'paint_ball',
+  ]) {
+    if (chatGameDestinationForType(gameType) == destination) return gameType;
+  }
+  return null;
+}
+
 ChatGameDestination? chatGameDestinationForType(String gameType) {
   const byType = {
     'this_or_that': ChatGameDestination.thisOrThat,
@@ -418,18 +441,36 @@ class _ChatGameMenuRow extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 50.h,
-                    height: 50.h,
-                    decoration: BoxDecoration(
-                      color: colorScheme.primary.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      option.icon,
-                      color: colorScheme.primary,
-                      size: 30.h,
-                    ),
+                  // The illustration where one exists. A drawn icon
+                  // carries its own tile, so the tinted disc below is only
+                  // for the glyph fallback -- wrapping art in it would put
+                  // a circle behind a rounded square.
+                  Builder(
+                    builder: (context) {
+                      final gameType = chatGameTypeForDestination(
+                        option.destination,
+                      );
+                      final asset =
+                          gameType == null ? null : gameIconAsset(gameType);
+
+                      if (asset != null) {
+                        return GameIcon(gameType: gameType!, size: 50.h);
+                      }
+
+                      return Container(
+                        width: 50.h,
+                        height: 50.h,
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          option.icon,
+                          color: colorScheme.primary,
+                          size: 30.h,
+                        ),
+                      );
+                    },
                   ),
                   const Spacer(),
                   if (option.comingSoon)
@@ -661,6 +702,9 @@ class _ChatGameSessionRow extends StatelessWidget {
       child: InfoRowWidget(
         title: title,
         subtitle: subtitle,
+        // The illustration where one exists; GameIcon falls back to this
+        // glyph itself for the games not yet drawn.
+        leadingWidget: GameIcon(gameType: gameType, size: 34.h),
         icon: icon,
         showAvatar: false,
         showDivider: false,

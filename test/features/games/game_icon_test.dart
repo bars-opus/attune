@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:attune/features/games/presentation/widgets/game_icon.dart';
+import 'package:attune/features/games/presentation/widgets/chat_games_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -71,6 +72,32 @@ void main() {
         tester.takeException(),
         isNull,
         reason: '$gameType failed to render',
+      );
+    }
+  });
+
+  test('every game type maps back from its destination', () {
+    // The catalogue is keyed by destination and the art by game_type, so
+    // a row can only find its illustration through this mapping. Derived
+    // from chatGameDestinationForType rather than duplicated, and this
+    // pins that the two stay in step.
+    for (final gameType in [
+      'this_or_that',
+      'truth_or_dare',
+      '36_questions',
+      'mirror',
+      'sliding_scale',
+      'scenario',
+      'love_map',
+      'paint_ball',
+    ]) {
+      final destination = chatGameDestinationForType(gameType);
+      expect(destination, isNotNull, reason: '$gameType has no destination');
+
+      expect(
+        chatGameTypeForDestination(destination!),
+        gameType,
+        reason: '$gameType does not round-trip through its destination',
       );
     }
   });

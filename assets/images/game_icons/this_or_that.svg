@@ -1,46 +1,39 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="This or That">
   <defs>
-    <linearGradient id="cardCream" x1="43" y1="39" x2="196" y2="218" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFF8EA"/>
-      <stop offset="0.48" stop-color="#F4E4C9"/>
-      <stop offset="1" stop-color="#D7B88E"/>
+    <linearGradient id="cardFront" x1="35" y1="47" x2="155" y2="215" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7E9"/>
+      <stop offset="0.55" stop-color="#F5E5CD"/>
+      <stop offset="1" stop-color="#E7CDA5"/>
     </linearGradient>
-    <linearGradient id="cardCreamAlt" x1="80" y1="31" x2="222" y2="206" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFF5E4"/>
-      <stop offset="0.55" stop-color="#EED9B8"/>
-      <stop offset="1" stop-color="#C99F70"/>
+    <linearGradient id="cardBack" x1="96" y1="38" x2="219" y2="203" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF3E0"/>
+      <stop offset="0.56" stop-color="#EED8B5"/>
+      <stop offset="1" stop-color="#D7B17D"/>
     </linearGradient>
-    <linearGradient id="cardEdge" x1="56" y1="52" x2="199" y2="216" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF"/>
-      <stop offset="0.66" stop-color="#D8BA8B"/>
-      <stop offset="1" stop-color="#A77547"/>
-    </linearGradient>
-    <linearGradient id="ink" x1="70" y1="98" x2="183" y2="154" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#3F3934"/>
+    <linearGradient id="ink" x1="62" y1="96" x2="202" y2="152" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3A3631"/>
       <stop offset="1" stop-color="#191817"/>
     </linearGradient>
   </defs>
 
-  <ellipse cx="130" cy="207" rx="89" ry="23" fill="#6C4A32" opacity="0.20"/>
-  <ellipse cx="138" cy="201" rx="79" ry="18" fill="#2C2018" opacity="0.12"/>
+  <ellipse cx="131" cy="211" rx="92" ry="20" fill="#4F392B" opacity="0.14"/>
+  <ellipse cx="123" cy="203" rx="73" ry="15" fill="#8A6A50" opacity="0.13"/>
 
-  <g transform="rotate(9 164 124)">
-    <rect x="102" y="43" width="116" height="162" rx="17" fill="#7A5436" opacity="0.20" transform="translate(0 7)"/>
-    <rect x="102" y="38" width="116" height="162" rx="17" fill="url(#cardEdge)"/>
-    <rect x="106" y="41" width="108" height="154" rx="14" fill="url(#cardCreamAlt)"/>
-    <path d="M121 55c20-7 50-8 74 1" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" opacity="0.60"/>
-    <path d="M116 176c17 12 42 14 74 9" fill="none" stroke="#A2754A" stroke-width="5" stroke-linecap="round" opacity="0.22"/>
-    <text x="160" y="128" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="900" letter-spacing="0.7" fill="#B69A78" opacity="0.42" transform="translate(0 4)">THAT</text>
-    <text x="160" y="128" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="900" letter-spacing="0.7" fill="url(#ink)">THAT</text>
+  <g transform="rotate(8 170 122)">
+    <rect x="112" y="35" width="112" height="178" rx="17" fill="#9C7649" opacity="0.15" transform="translate(0 5)"/>
+    <rect x="112" y="34" width="112" height="178" rx="17" fill="#E2C190"/>
+    <rect x="115" y="36" width="106" height="172" rx="15" fill="url(#cardBack)"/>
+    <path d="M128 52c21-6 52-7 77 3" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity="0.48"/>
+    <text x="173" y="126" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="900" letter-spacing="0.4" fill="#B79B77" opacity="0.36" transform="translate(0 3)">THAT</text>
+    <text x="173" y="126" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="900" letter-spacing="0.4" fill="url(#ink)">THAT</text>
   </g>
 
-  <g transform="rotate(-8 91 135)">
-    <rect x="38" y="57" width="116" height="162" rx="17" fill="#6D4A31" opacity="0.24" transform="translate(0 8)"/>
-    <rect x="38" y="51" width="116" height="162" rx="17" fill="url(#cardEdge)"/>
-    <rect x="42" y="54" width="108" height="154" rx="14" fill="url(#cardCream)"/>
-    <path d="M58 68c21-7 51-8 75 0" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" opacity="0.68"/>
-    <path d="M52 188c17 12 43 14 76 8" fill="none" stroke="#A2754A" stroke-width="5" stroke-linecap="round" opacity="0.24"/>
-    <text x="96" y="139" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="900" letter-spacing="0.7" fill="#B69A78" opacity="0.44" transform="translate(0 4)">THIS</text>
-    <text x="96" y="139" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="900" letter-spacing="0.7" fill="url(#ink)">THIS</text>
+  <g transform="rotate(-8 88 132)">
+    <rect x="32" y="49" width="112" height="178" rx="17" fill="#8B6545" opacity="0.18" transform="translate(0 6)"/>
+    <rect x="32" y="47" width="112" height="178" rx="17" fill="#E6C99B"/>
+    <rect x="35" y="49" width="106" height="172" rx="15" fill="url(#cardFront)"/>
+    <path d="M48 66c21-8 52-9 78 1" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity="0.58"/>
+    <text x="88" y="139" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="900" letter-spacing="0.4" fill="#B79B77" opacity="0.38" transform="translate(0 3)">THIS</text>
+    <text x="88" y="139" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="900" letter-spacing="0.4" fill="url(#ink)">THIS</text>
   </g>
 </svg>
