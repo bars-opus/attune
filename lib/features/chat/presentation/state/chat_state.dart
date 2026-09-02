@@ -2048,8 +2048,19 @@ class ChatController extends StateNotifier<ChatState> {
   /// Newest-first ordering with a stable `id` tie-breaker so two messages that
   /// share a `created_at` keep a deterministic order matching the server's
   /// `(created_at DESC, id DESC)` query order (Spec 6.2, 16).
-  static int _byCreatedThenId(Message a, Message b) {
-    final byTime = b.createdAt.compareTo(a.createdAt);
+  /// Newest-first by (sortAt, id), matching the server's own ordering.
+  ///
+  /// sortAt, not createdAt. The server pages on (sort_at, id) and a game
+  /// card is moved to the bottom by bumping sort_at when someone answers
+  /// -- but the client re-sorted every merge by createdAt, which put the
+  /// card straight back where it was first sent. The card changed sides
+  /// correctly and then rendered above its own trail markers, which is
+  /// the opposite of the intended reading order.
+  ///
+  /// For every ordinary message sortAt equals createdAt, so nothing else
+  /// moves.
+  static int _bySortThenId(Message a, Message b) {
+    final byTime = b.sortAt.compareTo(a.sortAt);
     if (byTime != 0) return byTime;
     return b.id.compareTo(a.id);
   }
@@ -2135,7 +2146,7 @@ class ChatController extends StateNotifier<ChatState> {
               : message;
     }
 
-    final merged = byId.values.toList()..sort(_byCreatedThenId);
+    final merged = byId.values.toList()..sort(_bySortThenId);
 
     final canonicalByClientId = <String, Message>{};
     for (final message in merged) {
@@ -2165,7 +2176,7 @@ class ChatController extends StateNotifier<ChatState> {
       ...state.messages,
       ...older.where((message) => !existingIds.contains(message.id)),
     ];
-    merged.sort(_byCreatedThenId);
+    merged.sort(_bySortThenId);
     return merged;
   }
 
@@ -2205,7 +2216,7 @@ class ChatController extends StateNotifier<ChatState> {
       return messages;
     }
     messages.add(canonical);
-    messages.sort(_byCreatedThenId);
+    messages.sort(_bySortThenId);
     return messages;
   }
 
@@ -2226,7 +2237,7 @@ class ChatController extends StateNotifier<ChatState> {
       }
     }
 
-    final merged = byClientMessageId.values.toList()..sort(_byCreatedThenId);
+    final merged = byClientMessageId.values.toList()..sort(_bySortThenId);
     return merged;
   }
 
