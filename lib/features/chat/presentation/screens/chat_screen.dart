@@ -499,7 +499,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   /// someone's behalf, so this is the only path by which a precise place
   /// ever reaches the chat.
   Future<void> _sharePlace() async {
-    final shared = await showModalBottomSheet<bool>(
+    final shared = await showModalBottomSheet<Object?>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -512,15 +512,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           ),
     );
 
-    if (shared == true && mounted) {
-      // The message arrives through the normal realtime path; this just
-      // pulls it in immediately for the sender rather than waiting.
-      unawaited(
-        ref
-            .read(chatControllerProvider(widget.conversation).notifier)
-            .loadMessages(silent: true),
-      );
+    if (shared == null || !mounted) return;
+
+    final notifier = ref.read(
+      chatControllerProvider(widget.conversation).notifier,
+    );
+
+    // A photo goes through the ordinary image pipeline, which strips EXIF
+    // (chat spec 8.1). That matters more here than anywhere else: a photo
+    // taken at the place would otherwise carry its exact coordinates past
+    // every coarsening decision this feature makes.
+    if (shared is String && shared.isNotEmpty) {
+      await notifier.sendImageMessage(localPath: shared);
     }
+
+    // The place message arrives through the normal realtime path; this
+    // pulls it in immediately for the sender rather than waiting.
+    unawaited(notifier.loadMessages(silent: true));
   }
 
   Future<void> _openGameRoute(ChatGameDestination destination) async {

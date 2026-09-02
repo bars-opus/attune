@@ -7,6 +7,7 @@ import 'package:attune/features/location/presentation/providers/presence_provide
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:image_picker/image_picker.dart';
 
 /// Share where you are, with a note.
 ///
@@ -31,6 +32,7 @@ class _SharePlaceSheetState extends ConsumerState<SharePlaceSheet> {
   ParsedAddress? _place;
   bool _loading = true;
   bool _sending = false;
+  String? _photoPath;
 
   @override
   void initState() {
@@ -58,6 +60,15 @@ class _SharePlaceSheetState extends ConsumerState<SharePlaceSheet> {
     });
   }
 
+  Future<void> _pickPhoto() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _photoPath = picked.path);
+  }
+
   Future<void> _send() async {
     final label = _labelController.text.trim();
     if (label.isEmpty || _sending) return;
@@ -80,7 +91,13 @@ class _SharePlaceSheetState extends ConsumerState<SharePlaceSheet> {
 
     if (!mounted) return;
     if (ok) {
-      Navigator.of(context).pop(true);
+      // The photo goes through the ordinary image pipeline with the
+      // place as its caption, rather than being bolted onto the place
+      // card: that pipeline already strips EXIF (chat spec 8.1), which
+      // matters more here than anywhere else in the app. A photo taken
+      // at the place would otherwise carry its exact coordinates past
+      // every coarsening decision this feature makes.
+      Navigator.of(context).pop(_photoPath);
     } else {
       setState(() => _sending = false);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -140,6 +157,16 @@ class _SharePlaceSheetState extends ConsumerState<SharePlaceSheet> {
               maxLines: 2,
             ),
             Gap(Spacing.lg.h),
+            TextButton.icon(
+              onPressed: _sending ? null : _pickPhoto,
+              icon: Icon(
+                _photoPath == null
+                    ? Icons.add_photo_alternate_outlined
+                    : Icons.check_rounded,
+              ),
+              label: Text(_photoPath == null ? 'Add a photo' : 'Photo added'),
+            ),
+            Gap(Spacing.sm.h),
             AppButton(
               label: _sending ? 'Sharing…' : 'Share',
               onPressed: _sending ? null : _send,

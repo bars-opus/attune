@@ -4,6 +4,8 @@ import 'package:attune/features/location/domain/partner_distance.dart';
 import 'package:attune/features/location/presentation/providers/presence_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
+import 'package:attune/features/location/domain/reunion.dart';
 
 /// How far apart the couple is, on the conversation screen.
 ///
@@ -34,7 +36,11 @@ class PartnerDistanceRow extends ConsumerWidget {
 
     if (distance == null) return const SizedBox.shrink();
 
-    final copy = distanceCopy(distance, partnerName: partnerName);
+    // A reunion in the shared calendar turns the distance into a
+    // countdown, which is the same data with the opposite meaning: not
+    // "you are far apart" but "this ends on the 14th".
+    final withCountdown = _withReunion(ref, distance);
+    final copy = distanceCopy(withCountdown, partnerName: partnerName);
 
     return InfoRowWidget(
       title: copy.headline,
@@ -47,6 +53,38 @@ class PartnerDistanceRow extends ConsumerWidget {
       showAvatar: false,
       disableTrailing: true,
       showTrailingArrow: false,
+    );
+  }
+
+  /// Adds a countdown when the calendar holds a reunion.
+  ///
+  /// Only for couples who are actually far apart: counting down to a
+  /// visit when you are twenty minutes away would be odd, and the nearby
+  /// tones already say something better.
+  PartnerDistance _withReunion(WidgetRef ref, PartnerDistance distance) {
+    if (distance.km < PartnerDistance.sameCountryKm) return distance;
+
+    final reminders = ref.watch(remindersListProvider).valueOrNull;
+    if (reminders == null) return distance;
+
+    int? soonest;
+    for (final reminder in reminders) {
+      if (!isReunionEvent(reminder.title)) continue;
+      final days = daysUntil(reminder.remindAt);
+      if (days < 0) continue;
+      if (soonest == null || days < soonest) soonest = days;
+    }
+
+    if (soonest == null) return distance;
+
+    return PartnerDistance(
+      km: distance.km,
+      partnerCity: distance.partnerCity,
+      partnerTimezone: distance.partnerTimezone,
+      partnerLocalTime: distance.partnerLocalTime,
+      daysUntilTogether: soonest,
+      kmClosedSinceYesterday: distance.kmClosedSinceYesterday,
+      updatedAt: distance.updatedAt,
     );
   }
 

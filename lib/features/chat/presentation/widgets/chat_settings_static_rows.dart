@@ -5,6 +5,7 @@ import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/providers/chat_experience_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/settings/data/streak_replay_preference.dart';
+import 'package:attune/features/location/presentation/providers/presence_providers.dart';
 
 /// The three CardInkWell sections of ChatSettingsScreen below the
 /// avatar/name identity card — Shared location/End relationship, Search/
@@ -29,6 +30,10 @@ class ChatSettingsStaticRows extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Defaults to false while loading: a privacy toggle must never show
+    // "on" for a state it has not confirmed.
+    final isSharingLocation =
+        ref.watch(isSharingPresenceProvider).valueOrNull ?? false;
     final historicalImportEnabled = ref.watch(
       chatHistoricalImportEnabledProvider,
     );
@@ -43,26 +48,33 @@ class ChatSettingsStaticRows extends ConsumerWidget {
           CardInkWell(
             child: Column(
               children: [
+                // This toggle used to be hardcoded on and persist
+                // nowhere -- the worst shape for a privacy control, since
+                // it told every user their location was being shared when
+                // nothing was. It is now the real switch.
+                //
+                // Turning it off DELETES the stored position rather than
+                // hiding it, and the partner is not notified: an exit that
+                // announces itself is not an exit.
                 InfoRowWidget(
-                  title: 'Shared location',
-                  subtitle:
-                      'Location would be automatically shared between both partners',
+                  title: 'Share my location',
+                  subtitle: 'Shows how far apart you are. Never where you are.',
                   icon: Icons.location_on_outlined,
                   isToggleItem: true,
                   showAvatar: false,
-                  showTrailingArrow: true,
+                  showTrailingArrow: false,
                   showDivider: true,
-                  toggleValue: true,
+                  toggleValue: isSharingLocation,
                   iconColor: Colors.grey,
-                  // InfoRowWidget's own assertion requires onToggleChanged to
-                  // be non-null whenever isToggleItem is true — a null
-                  // conversation-gated callback here (matching every other
-                  // row's null-while-loading pattern) would fail that
-                  // assertion instead of just disabling the row. This toggle
-                  // doesn't persist anywhere yet regardless of conversation
-                  // state (see the empty callback body), so there's nothing
-                  // meaningfully different to gate here.
-                  onToggleChanged: (value) {},
+                  onToggleChanged: (value) async {
+                    final repository = ref.read(presenceRepositoryProvider);
+                    if (value) {
+                      await repository.recordOwnPresence();
+                    } else {
+                      await repository.stopSharing();
+                    }
+                    ref.invalidate(isSharingPresenceProvider);
+                  },
                 ),
 
                 InfoRowWidget(

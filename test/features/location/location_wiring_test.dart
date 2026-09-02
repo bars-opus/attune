@@ -74,4 +74,57 @@ void main() {
       reason: 'a client must never select a partner presence row directly',
     );
   });
+
+  test('the location toggle reflects real state, not a hardcoded true', () {
+    // It shipped hardcoded on, persisting nowhere -- the worst shape for
+    // a privacy control, telling every user their location was shared
+    // when nothing was.
+    final source =
+        File(
+          'lib/features/chat/presentation/widgets/chat_settings_static_rows.dart',
+        ).readAsStringSync();
+
+    expect(
+      source.contains('toggleValue: true'),
+      isFalse,
+      reason: 'a privacy toggle must not claim a state it has not read',
+    );
+    expect(source.contains('toggleValue: isSharingLocation'), isTrue);
+    expect(
+      source.contains('onToggleChanged: (value) {}'),
+      isFalse,
+      reason: 'the toggle must actually do something',
+    );
+  });
+
+  test('turning sharing off reaches stopSharing', () {
+    final source =
+        File(
+          'lib/features/chat/presentation/widgets/chat_settings_static_rows.dart',
+        ).readAsStringSync();
+
+    expect(source.contains('repository.stopSharing()'), isTrue);
+  });
+
+  test('a place photo goes through the EXIF-stripping image pipeline', () {
+    // The chat spec strips EXIF on image upload. That matters more here
+    // than anywhere else in the app: a photo taken at the place would
+    // otherwise carry its exact coordinates past every coarsening
+    // decision this feature makes.
+    final source =
+        File(
+          'lib/features/chat/presentation/screens/chat_screen.dart',
+        ).readAsStringSync();
+
+    final handler = source.substring(
+      source.indexOf('Future<void> _sharePlace()'),
+      source.indexOf('Future<void> _openGameRoute'),
+    );
+
+    expect(
+      handler.contains('sendImageMessage'),
+      isTrue,
+      reason: 'a place photo must not bypass the media pipeline',
+    );
+  });
 }
