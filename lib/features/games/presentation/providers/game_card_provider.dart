@@ -94,11 +94,50 @@ final gameCardProvider = StreamProvider.autoDispose
 
       final supabase = ref.watch(supabaseClientProvider);
 
+      // Session games carry no current_turn_user_id -- both partners
+      // answer the same round -- so their card needs the per-round answer
+      // state to say anything more useful than "Round 2 of 6".
+      //
+      // Fetched per session update rather than streamed:
+      // game_session_rounds holds the answers themselves, and a client
+      // must never subscribe to a table it is not allowed to read before
+      // the reveal (spec 8.4). The RPC returns booleans only.
       return supabase
           .from('game_sessions')
           .stream(primaryKey: ['id'])
           .eq('id', sessionId)
-          .map(
-            (rows) => rows.isEmpty ? null : GameCardState.fromRow(rows.first),
-          );
+          .asyncMap((rows) async {
+            if (rows.isEmpty) return null;
+            final state = GameCardState.fromRow(rows.first);
+
+            if (!isSessionGame(state.gameType) || state.status != 'active') {
+              return state;
+            }
+
+            try {
+              final result = await supabase.rpc(
+                'session_game_round_state',
+                params: {'p_session_id': sessionId},
+              );
+              if (result is List && result.isNotEmpty) {
+                final row = Map<String, dynamic>.from(result.first as Map);
+                return state.withRoundState(
+                  viewerAnswered: row['viewer_answered'] as bool?,
+                  partnerAnswered: row['partner_answered'] as bool?,
+                );
+              }
+            } catch (_) {
+              // Falls back to the round-count label rather than blanking
+              // the card: a failed receipt read must not remove a live
+              // game from the conversation.
+            }
+            return state;
+          });
     });
+
+/// The games where both partners answer the same round independently,
+/// so there is no turn to read from the session row.
+bool isSessionGame(String gameType) =>
+    gameType == 'mirror' ||
+    gameType == 'sliding_scale' ||
+    gameType == 'scenario';
