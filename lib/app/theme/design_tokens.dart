@@ -162,7 +162,14 @@ class BorderWidthTokens {
   static const double thin = 1.0; // Standard thin
   static const double thick = 2.0;
 
-  static var md; // Thick border
+  /// Medium: the selected-state border on tappable cards.
+  ///
+  /// Was `static var md;` -- no type and no value, so it evaluated to
+  /// null and every use threw "type 'Null' is not a subtype of type
+  /// 'double'" the moment a card rendered a selected border. `var` with
+  /// no initialiser is dynamic, so the analyzer never flagged it and the
+  /// two call sites looked correct.
+  static const double md = 2.0;
 }
 
 // Tab specific tokens
