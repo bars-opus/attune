@@ -213,14 +213,19 @@ class _ChatMediaGroupState extends State<ChatMediaGroup> {
                     // needing to compete with whatever is behind it.
                     PositionedDirectional(
                       top: 12,
-                      start: widget.isMine ? null : 6,
-                      end: widget.isMine ? 6 : null,
+                      // Inset from the edge with the badge, not tight to
+                      // it: both sit ON the photos, and a chip flush to
+                      // the corner reads as clipped rather than placed.
+                      start: widget.isMine ? null : 12,
+                      end: widget.isMine ? 12 : null,
                       child: _AlbumLabel(label: label),
                     ),
                     PositionedDirectional(
                       top: 12,
-                      end: widget.isMine ? null : 6,
-                      start: widget.isMine ? 6 : null,
+                      // Matches the label's inset opposite it, so the pair
+                      // sits at the same depth from either edge.
+                      end: widget.isMine ? null : 12,
+                      start: widget.isMine ? 12 : null,
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 220),
                         switchInCurve: Curves.easeOutBack,
@@ -462,7 +467,11 @@ class _AlbumLabel extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.62),
-        borderRadius: BorderRadius.circular(999),
+        // A soft rectangle rather than a full pill: at this height 999
+        // rounds the ends into semicircles, which reads as a tag stuck on
+        // the photo. Kept identical on the count badge so the two remain
+        // a matched pair.
+        borderRadius: BorderRadius.circular(10),
         boxShadow: const [
           BoxShadow(
             color: Color(0x22000000),
@@ -502,7 +511,11 @@ class _CountBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.62),
-        borderRadius: BorderRadius.circular(999),
+        // A soft rectangle rather than a full pill: at this height 999
+        // rounds the ends into semicircles, which reads as a tag stuck on
+        // the photo. Kept identical on the count badge so the two remain
+        // a matched pair.
+        borderRadius: BorderRadius.circular(10),
         boxShadow: const [
           BoxShadow(
             color: Color(0x22000000),
@@ -537,7 +550,11 @@ class _DurationBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.62),
-        borderRadius: BorderRadius.circular(999),
+        // A soft rectangle rather than a full pill: at this height 999
+        // rounds the ends into semicircles, which reads as a tag stuck on
+        // the photo. Kept identical on the count badge so the two remain
+        // a matched pair.
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
         format.format(date),

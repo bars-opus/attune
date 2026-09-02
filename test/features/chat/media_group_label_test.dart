@@ -27,9 +27,11 @@ void main() {
     );
     final badgeSurface = source.substring(source.indexOf('class _CountBadge'));
 
+    // The radius is asserted as SHARED rather than as a specific value:
+    // what matters is that the two stay a pair, not what the number is.
     for (final property in [
       'Colors.black.withValues(alpha: 0.62)',
-      'BorderRadius.circular(999)',
+      'BorderRadius.circular(10)',
     ]) {
       expect(
         labelSurface.contains(property),
@@ -53,14 +55,14 @@ void main() {
     );
 
     expect(
-      labelPosition.contains('start: widget.isMine ? null : 6'),
+      labelPosition.contains('start: widget.isMine ? null : 12'),
       isTrue,
       reason: 'the label takes the side the badge does not',
     );
     expect(
-      badgePosition.contains('end: widget.isMine ? null : 6'),
+      badgePosition.contains('end: widget.isMine ? null : 12'),
       isTrue,
-      reason: 'the badge keeps its original side',
+      reason: 'the badge keeps its original side, at the same inset',
     );
   });
 
@@ -75,5 +77,30 @@ void main() {
           'lib/features/chat/presentation/widgets/message_bubble.dart',
         ).readAsStringSync();
     expect(bubble.contains('mediaLabelColor'), isFalse);
+  });
+
+  test('every chip drawn on the photos shares one surface', () {
+    // Three chips sit on the same images: the album label, the count
+    // badge and a video's duration. They read as one system only while
+    // their surface matches -- changing one alone makes the odd chip look
+    // like a different feature.
+    for (final widget in ['_AlbumLabel', '_CountBadge', '_DurationBadge']) {
+      final start = source.indexOf('class $widget');
+      expect(start, greaterThan(-1), reason: '$widget is missing');
+
+      final next = source.indexOf('\nclass ', start + 1);
+      final body = next == -1 ? source.substring(start) : source.substring(start, next);
+
+      expect(
+        body.contains('Colors.black.withValues(alpha: 0.62)'),
+        isTrue,
+        reason: '$widget drifted from the shared chip surface',
+      );
+      expect(
+        body.contains('BorderRadius.circular(10)'),
+        isTrue,
+        reason: '$widget drifted from the shared chip radius',
+      );
+    }
   });
 }
