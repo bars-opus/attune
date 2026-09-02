@@ -127,4 +127,27 @@ void main() {
       reason: 'a place photo must not bypass the media pipeline',
     );
   });
+
+  test('the location fix is time-bounded', () {
+    // Geolocator.getCurrentPosition has no time limit of its own, and on
+    // a device with a poor fix it can hang indefinitely -- blocking the
+    // distance read that runs behind it, so the row never appears at all.
+    // Presence is ambient: a bounded failure that skips one cycle is
+    // strictly better than a request that never returns.
+    final source =
+        File(
+          'lib/features/location/data/presence_repository.dart',
+        ).readAsStringSync();
+
+    final record = source.substring(
+      source.indexOf('Future<bool> recordOwnPresence'),
+      source.indexOf('Future<PartnerDistance?> fetchDistance'),
+    );
+
+    expect(
+      record.contains('.timeout('),
+      isTrue,
+      reason: 'an unbounded location fix can hang the whole row',
+    );
+  });
 }

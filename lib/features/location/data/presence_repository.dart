@@ -34,10 +34,24 @@ class PresenceRepository {
   /// Returns false when location is unavailable or refused -- never
   /// throws, because presence is ambient and a failure to sample must not
   /// surface as an error in a chat screen.
+  /// How long to wait for a fix before giving up.
+  ///
+  /// Geolocator.getCurrentPosition has no time limit of its own, and on a
+  /// device with a poor fix it can hang indefinitely. Presence is ambient
+  /// -- the row simply does not appear this cycle -- so a bounded failure
+  /// is strictly better than a request that never returns and blocks the
+  /// distance read behind it.
+  ///
+  /// Bounded here rather than inside LocationService: that service is
+  /// shared with flows where a user is actively waiting for an address
+  /// and a longer wait is the right trade.
+  static const _fixTimeout = Duration(seconds: 20);
+
   Future<bool> recordOwnPresence() async {
     try {
-      final ParsedAddress? address =
-          await _locationService.getCurrentLocationWithDetails();
+      final ParsedAddress? address = await _locationService
+          .getCurrentLocationWithDetails()
+          .timeout(_fixTimeout, onTimeout: () => null);
       if (address?.latitude == null || address?.longitude == null) {
         return false;
       }
@@ -140,7 +154,12 @@ class PresenceRepository {
   /// Where the user is now, for pre-filling an update.
   Future<ParsedAddress?> currentPlace() async {
     try {
-      return await _locationService.getCurrentLocationWithDetails();
+      // Longer than the ambient timeout: the user is looking at a sheet
+      // waiting for this, so it is worth more patience than a background
+      // sample that can simply skip a cycle.
+      return await _locationService
+          .getCurrentLocationWithDetails()
+          .timeout(const Duration(seconds: 30), onTimeout: () => null);
     } catch (_) {
       return null;
     }

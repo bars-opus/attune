@@ -175,4 +175,45 @@ BEGIN
   END IF;
 END $$;
 
+-- Input bounds (checklist 2.1). Latitude 999 was accepted, and haversine
+-- would then return a confident nonsense distance -- "8,000 km apart" to
+-- a couple in the same house. A range check turns a silent wrong answer
+-- into a rejected write.
+DO $$
+DECLARE
+  a uuid := '00000000-0000-0000-0000-00000000e001';
+  v_rejected boolean;
+BEGIN
+  FOR v_rejected IN
+    SELECT * FROM (VALUES (true)) AS t(x)
+  LOOP
+    NULL;
+  END LOOP;
+
+  v_rejected := false;
+  BEGIN
+    UPDATE public.partner_presence SET latitude = 999 WHERE user_id = a;
+  EXCEPTION WHEN check_violation THEN
+    v_rejected := true;
+  END;
+  IF NOT v_rejected THEN
+    RAISE EXCEPTION 'latitude 999 was accepted';
+  END IF;
+
+  v_rejected := false;
+  BEGIN
+    UPDATE public.partner_presence SET longitude = -400 WHERE user_id = a;
+  EXCEPTION WHEN check_violation THEN
+    v_rejected := true;
+  END;
+  IF NOT v_rejected THEN
+    RAISE EXCEPTION 'longitude -400 was accepted';
+  END IF;
+
+  -- Real extremes must still be storable, or the check has rejected the
+  -- poles and the date line along with the nonsense.
+  UPDATE public.partner_presence SET latitude = -90, longitude = 180
+  WHERE user_id = a;
+END $$;
+
 ROLLBACK;
