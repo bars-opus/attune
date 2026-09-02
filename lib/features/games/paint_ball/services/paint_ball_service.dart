@@ -1,6 +1,7 @@
 // lib/features/games/paint_ball/services/paint_ball_service.dart
 
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../models/paint_ball_models.dart';
 
 class PaintBallService {
@@ -22,7 +23,16 @@ class PaintBallService {
       params: {
         'p_relationship_id': relationshipId,
         'p_tone': tone,
-        'p_idempotency_key': idempotencyKey,
+        // Generated when the caller does not supply one.
+        // session_idempotency_keys.key is NOT NULL, and no caller in the
+        // app has ever passed a key -- the parameter existed at every
+        // level of the chain and nothing filled it -- so creating a Paint
+        // Ball always failed on the constraint.
+        //
+        // A fresh key per call still buys the guard it exists for: the
+        // RPC returns the existing session on a repeat, so a retry that
+        // reuses this key cannot create a second game.
+        'p_idempotency_key': idempotencyKey ?? const Uuid().v4(),
         'p_allow_partner_authored': allowPartnerAuthored,
       },
     );
