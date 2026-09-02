@@ -466,18 +466,6 @@ class MessageBubble extends StatelessWidget {
                             mediaGroup: mediaGroup,
                             isMine: isMine,
                             bubbleColor: bubbleColor,
-                            // The album label now sits on a pill filled
-                            // with the bubble's colour, so its text takes
-                            // the matching on-bubble colour in BOTH
-                            // themes -- the pill, not the wallpaper, is
-                            // what it has to read against.
-                            //
-                            // It used to be metadataColor: flat
-                            // black/white, chosen for the FOOTER after the
-                            // footer moved out onto the wallpaper. The
-                            // label was left pointing at that value and
-                            // never followed it.
-                            mediaLabelColor: onBubbleColor,
                             conversation: conversation,
                             onImageTap: onImageTap,
                             onVideoTap: onVideoTap,
@@ -912,7 +900,6 @@ class _BubbleBody extends StatelessWidget {
     required this.message,
     required this.isMine,
     required this.bubbleColor,
-    required this.mediaLabelColor,
     required this.conversation,
     required this.onBubbleColor,
     this.mediaGroup = const [],
@@ -927,7 +914,6 @@ class _BubbleBody extends StatelessWidget {
   final List<Message> mediaGroup;
   final bool isMine;
   final Color bubbleColor;
-  final Color mediaLabelColor;
   final Conversation? conversation;
   final void Function(Message message)? onImageTap;
   final void Function(Message message)? onVideoTap;
@@ -973,7 +959,6 @@ class _BubbleBody extends StatelessWidget {
         messages: mediaGroup,
         isMine: isMine,
         bubbleColor: bubbleColor,
-        labelColor: mediaLabelColor,
         onImageTap: onImageTap,
         onVideoTap: onVideoTap,
       );

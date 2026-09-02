@@ -72,7 +72,6 @@ class ChatMediaGroup extends StatefulWidget {
     required this.messages,
     required this.isMine,
     required this.bubbleColor,
-    required this.labelColor,
     this.onImageTap,
     this.onVideoTap,
   }) : assert(messages.length > 1);
@@ -82,7 +81,6 @@ class ChatMediaGroup extends StatefulWidget {
   final List<Message> messages;
   final bool isMine;
   final Color bubbleColor;
-  final Color labelColor;
   final void Function(Message message)? onImageTap;
   final void Function(Message message)? onVideoTap;
 
@@ -145,76 +143,6 @@ class _ChatMediaGroupState extends State<ChatMediaGroup> {
               widget.isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Padding(
-              // Keep the album label visually connected to the carousel:
-              // breathing room belongs above it, with only a small gap below.
-              padding: const EdgeInsetsDirectional.only(
-                start: 4,
-                top: 8,
-                end: 4,
-                bottom: 3,
-              ),
-              // Carried on a pill filled with the BUBBLE's colour, so the
-              // album reads as part of the message rather than as loose
-              // chrome floating on the wallpaper.
-              //
-              // The colour has to be a fill rather than the text's own:
-              // a media group draws a transparent bubble so the images
-              // show through, so this label sits directly on the
-              // wallpaper -- and the sender bubble is a pale mint that
-              // is close to invisible as text there.
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: widget.bubbleColor,
-                  borderRadius: BorderRadius.circular(999),
-                  // The same faint lift a real bubble gets. Bubble
-                  // colours sit close to the wallpaper by design -- the
-                  // sender's mint is 1.04:1 against it -- so the shadow,
-                  // not the fill, is what separates a bubble from the
-                  // background. Without it this pill reads as a flat
-                  // patch rather than as part of the message.
-                  boxShadow: const [
-                    BoxShadow(
-                      offset: Offset(0, 1),
-                      blurRadius: 1,
-                      spreadRadius: -1,
-                      color: Color(0x0F000000),
-                    ),
-                    BoxShadow(
-                      offset: Offset(0, 1),
-                      blurRadius: 1,
-                      color: Color(0x0A000000),
-                    ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.grid_view_rounded,
-                        size: 17,
-                        color: widget.labelColor,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        label,
-                        style: Theme.of(context).textTheme.labelLarge
-                            ?.copyWith(
-                              color: widget.labelColor,
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
             Align(
               alignment: stackAlignment,
               child: SizedBox(
@@ -271,6 +199,23 @@ class _ChatMediaGroupState extends State<ChatMediaGroup> {
                           ),
                         );
                       },
+                    ),
+                    // The album label rides ON the stack now, opposite
+                    // the count badge and in the same treatment.
+                    //
+                    // It used to sit above the carousel on the wallpaper,
+                    // where it could not carry the bubble's colour: a
+                    // media group draws a transparent bubble, and the
+                    // sender's pale mint measures 1.04:1 against the light
+                    // wallpaper -- the same colour as the background, not
+                    // merely a faint one. Over the images it has a
+                    // surface of its own, so it reads at a glance without
+                    // needing to compete with whatever is behind it.
+                    PositionedDirectional(
+                      top: 12,
+                      start: widget.isMine ? null : 6,
+                      end: widget.isMine ? 6 : null,
+                      child: _AlbumLabel(label: label),
                     ),
                     PositionedDirectional(
                       top: 12,
@@ -496,6 +441,50 @@ class _PosterFallback extends StatelessWidget {
           size: 36,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
+      ),
+    );
+  }
+}
+
+/// The album label ("5 images"), carried on the stack opposite the count.
+///
+/// Shares _CountBadge's surface deliberately: they are a matched pair at
+/// the top of the same stack, and two different treatments there would
+/// read as two unrelated things stuck on the photos.
+class _AlbumLabel extends StatelessWidget {
+  const _AlbumLabel({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x22000000),
+            blurRadius: 5,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(Icons.grid_view_rounded, size: 15, color: Colors.white),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
