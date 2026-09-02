@@ -98,9 +98,10 @@ class PresenceRepository {
         km: km,
         partnerCity: row['partner_city'] as String?,
         partnerTimezone: row['partner_timezone'] as String?,
-        updatedAt: DateTime.tryParse(
-          (row['partner_updated_at'] as String?) ?? '',
-        )?.toLocal(),
+        updatedAt:
+            DateTime.tryParse(
+              (row['partner_updated_at'] as String?) ?? '',
+            )?.toLocal(),
       );
     } catch (_) {
       return null;
@@ -157,9 +158,10 @@ class PresenceRepository {
       // Longer than the ambient timeout: the user is looking at a sheet
       // waiting for this, so it is worth more patience than a background
       // sample that can simply skip a cycle.
-      return await _locationService
-          .getCurrentLocationWithDetails()
-          .timeout(const Duration(seconds: 30), onTimeout: () => null);
+      return await _locationService.getCurrentLocationWithDetails().timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => null,
+      );
     } catch (_) {
       return null;
     }

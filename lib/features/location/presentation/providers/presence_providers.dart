@@ -38,10 +38,20 @@ final partnerDistanceProvider = StreamProvider.autoDispose
 
       Future<void> refresh() async {
         if (closed) return;
-        // Records our own position before reading the distance: the
-        // server refuses to answer unless BOTH partners are sharing, so a
-        // stale own-position would silently blank the row.
-        await repository.recordOwnPresence();
+
+        // Only refreshes a position that ALREADY exists. Opening the chat
+        // list used to record one unconditionally, which meant a user who
+        // turned sharing off had it silently switched back on the next
+        // time they opened the app -- a privacy toggle that the app
+        // overrode. Sharing now starts only from the settings toggle,
+        // which is the one place the user asked for it.
+        //
+        // Still refreshed here rather than only on that tap: the server
+        // refuses a distance when either position is stale, so a user who
+        // opted in last week would otherwise see the row quietly vanish.
+        if (await repository.isSharing()) {
+          await repository.recordOwnPresence();
+        }
         if (closed) return;
         final distance = await repository.fetchDistance(relationshipId);
         if (closed || controller.isClosed) return;

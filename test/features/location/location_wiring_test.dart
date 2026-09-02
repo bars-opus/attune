@@ -150,4 +150,31 @@ void main() {
       reason: 'an unbounded location fix can hang the whole row',
     );
   });
+
+  test('opening the chat list does not start sharing on its own', () {
+    // The distance provider recorded a position unconditionally on mount,
+    // so a user who turned sharing OFF had it silently switched back on
+    // the next time they opened the app. A privacy toggle the app
+    // overrides is worse than no toggle.
+    //
+    // Sharing now starts only from the settings toggle, and the provider
+    // merely refreshes a position that already exists.
+    final source =
+        File(
+          'lib/features/location/presentation/providers/presence_providers.dart',
+        ).readAsStringSync();
+
+    final refresh = source.substring(
+      source.indexOf('Future<void> refresh()'),
+      source.indexOf('unawaited(refresh());'),
+    );
+
+    expect(
+      refresh.contains('if (await repository.isSharing())'),
+      isTrue,
+      reason:
+          'the provider must not record a position for someone who has '
+          'not opted in',
+    );
+  });
 }
