@@ -8,6 +8,7 @@ import 'package:attune/features/games/this_or_that/data/models/game_round.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:async';
+import 'package:attune/core/ui/presence/breathing_dots.dart';
 
 class QuestionScreen extends ConsumerStatefulWidget {
   final String roundId;
@@ -120,22 +121,54 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
         padding: EdgeInsets.all(Spacing.lg.w),
         child: Column(
           children: [
-            // Tone badge
-            Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: Spacing.sm.w,
-                vertical: Spacing.xs.h,
-              ),
-              decoration: BoxDecoration(
-                color: colorScheme.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
-              ),
-              child: Text(
-                widget.tone.toUpperCase(),
-                style: textTheme.labelSmall?.copyWith(
-                  color: colorScheme.primary,
-                  fontWeight: FontWeight.w600,
+            // Progress and tone.
+            //
+            // roundNumber and totalRounds were passed in and never shown,
+            // so a ten-round game gave no sense of movement -- every
+            // round looked identical to the last. The bar is the
+            // difference between "how long is this" and a game you can
+            // feel yourself getting through.
+            Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: Spacing.sm.w,
+                    vertical: Spacing.xs.h,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(
+                      BorderRadiusTokens.sm.r,
+                    ),
+                  ),
+                  child: Text(
+                    widget.tone.toUpperCase(),
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
+                const Spacer(),
+                Text(
+                  '${widget.roundNumber} of ${widget.totalRounds}',
+                  style: textTheme.labelMedium?.copyWith(
+                    color: colorScheme.onSurface.withOpacity(0.5),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            Gap(Spacing.sm.h),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value:
+                    widget.totalRounds == 0
+                        ? 0
+                        : widget.roundNumber / widget.totalRounds,
+                minHeight: 4.h,
+                backgroundColor: colorScheme.primary.withOpacity(0.10),
               ),
             ),
             Gap(Spacing.xl.h),
@@ -158,6 +191,7 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
                     isSelected: _selectedChoice == 'a',
                     onTap: () => _selectChoice('a'),
                     textTheme: textTheme,
+                    isWarm: true,
                   ),
                 ),
                 Gap(Spacing.md.w),
@@ -168,6 +202,7 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
                     isSelected: _selectedChoice == 'b',
                     onTap: () => _selectChoice('b'),
                     textTheme: textTheme,
+                    isWarm: false,
                   ),
                 ),
               ],
@@ -182,17 +217,42 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
               isLoading: _isSubmitting,
             ),
             Gap(Spacing.md.h),
-            // Partner status
-            Text(
-              _partnerAnswered
-                  ? 'Partner has answered. Waiting for reveal...'
-                  : 'Partner has not answered yet',
-              style: textTheme.bodySmall?.copyWith(
-                color:
-                    _partnerAnswered
-                        ? colorScheme.primary
-                        : colorScheme.onSurface.withOpacity(0.5),
-              ),
+            // Partner status.
+            //
+            // The most emotionally live fact on the screen -- are they
+            // here with me right now -- was a grey caption under a
+            // button. Waiting now breathes, using the same dots the
+            // typing indicator uses, so the wait reads as someone being
+            // there rather than as static text.
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (_partnerAnswered)
+                  Icon(
+                    Icons.check_circle_rounded,
+                    size: 16.h,
+                    color: colorScheme.primary,
+                  )
+                else
+                  BreathingDots(
+                    size: 5,
+                    color: colorScheme.onSurface.withOpacity(0.35),
+                  ),
+                Gap(Spacing.sm.w),
+                Text(
+                  _partnerAnswered
+                      ? 'They\'ve answered'
+                      : 'Waiting for them',
+                  style: textTheme.bodySmall?.copyWith(
+                    color:
+                        _partnerAnswered
+                            ? colorScheme.primary
+                            : colorScheme.onSurface.withOpacity(0.5),
+                    fontWeight:
+                        _partnerAnswered ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -208,14 +268,27 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
     setState(() => _selectedChoice = choice);
   }
 
+  /// The two sides of a choice, tinted differently.
+  ///
+  /// Both cards used the same neutral surface until one was picked, so a
+  /// game about contrast opened as two identical grey boxes. A warm side
+  /// and a cool one make the choice look like a choice before anything is
+  /// tapped -- and the tints are held at low opacity so the SELECTED
+  /// state, which uses the primary colour and a border, still reads as
+  /// clearly different from merely being the warm one.
+  static const _warmTint = Color(0xFFFF8A65);
+  static const _coolTint = Color(0xFF4FC3F7);
+
   Widget _buildChoiceCard({
     required String text,
     required String? emoji,
     required bool isSelected,
     required VoidCallback onTap,
     required TextTheme textTheme,
+    required bool isWarm,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
+    final tint = isWarm ? _warmTint : _coolTint;
 
     // ScalePop gives the picked card a quick confirming "pop"; the trigger is
     // the selection state so it fires only on (de)select, reduce-motion safe.
@@ -228,8 +301,8 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
           decoration: BoxDecoration(
             color:
                 isSelected
-                    ? colorScheme.primary.withOpacity(0.1)
-                    : colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                    ? colorScheme.primary.withOpacity(0.12)
+                    : tint.withOpacity(0.10),
             borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
             border: Border.all(
               color: isSelected ? colorScheme.primary : Colors.transparent,
