@@ -466,7 +466,32 @@ class MessageBubble extends StatelessWidget {
                             mediaGroup: mediaGroup,
                             isMine: isMine,
                             bubbleColor: bubbleColor,
-                            mediaLabelColor: metadataColor,
+                            // The album label takes the bubble's CONTENT
+                            // colour, so it reads as part of the message it
+                            // heads rather than as loose chrome.
+                            //
+                            // It was metadataColor -- flat black/white,
+                            // chosen for the footer AFTER the footer moved
+                            // out onto the wallpaper. The label was left
+                            // pointing at that value and never followed it,
+                            // which is why it looked disconnected.
+                            //
+                            // Not bubbleColor itself: a media group draws a
+                            // TRANSPARENT bubble so the images show
+                            // through, so this label sits on the wallpaper.
+                            // The sender bubble is a pale mint that would
+                            // be near-invisible there.
+                            //
+                            // And not onSenderBubble in dark mode: it is a
+                            // near-black green meant for that pale bubble,
+                            // and against the dark wallpaper (0xFF101112)
+                            // it measures 1.01:1 -- invisible. Dark mode
+                            // uses the receiver's on-colour for both sides,
+                            // which is the only one that reads there.
+                            mediaLabelColor:
+                                isLightMode
+                                    ? onBubbleColor
+                                    : chatColors.onReceiverBubble,
                             conversation: conversation,
                             onImageTap: onImageTap,
                             onVideoTap: onVideoTap,
