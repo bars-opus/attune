@@ -30,6 +30,10 @@ class Message {
   /// A place a partner CHOSE to share -- never something the app
   /// revealed. The distinction is the whole feature.
   bool get isPlace => mediaType == 'place';
+
+  /// The marker a game card leaves behind when it moves to the other
+  /// side. Not a card: it carries no session and never opens a game.
+  bool get isGameTrail => mediaType == 'game_trail';
   final String? mediaThumbnailKey;
   final String? signedMediaUrl;
   final String? localMediaPath;

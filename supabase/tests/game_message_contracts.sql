@@ -400,4 +400,76 @@ BEGIN
   END IF;
 END $$;
 
+-- The card moves between sides and leaves a trail.
+--
+-- Message.isMine compares sender_id to the viewer, so the side a card
+-- sits on IS its sender. A card stuck on the initiator meant both
+-- partners answered into a bubble that never changed sides and never
+-- moved: a game in active play looked like a message sent once and never
+-- replied to.
+DO $$
+DECLARE
+  a uuid := '00000000-0000-0000-0000-00000000ce01';
+  b uuid := '00000000-0000-0000-0000-00000000ce02';
+  v_rel uuid;
+  v_session uuid;
+  v_round uuid;
+  v_sender uuid;
+  v_trails int;
+BEGIN
+  SELECT id INTO v_rel FROM public.relationships
+  WHERE user_a = a AND user_b = b LIMIT 1;
+
+  INSERT INTO public.game_sessions(relationship_id, initiator_id, game_type, status)
+  VALUES (v_rel, a, 'this_or_that', 'active') RETURNING id INTO v_session;
+  INSERT INTO public.game_session_rounds(session_id, round_number)
+  VALUES (v_session, 1) RETURNING id INTO v_round;
+
+  SELECT sender_id INTO v_sender
+  FROM public.messages WHERE game_session_id = v_session;
+  IF v_sender <> a THEN
+    RAISE EXCEPTION 'the card should start on the initiator';
+  END IF;
+
+  -- The partner answers: the card crosses to them.
+  UPDATE public.game_session_rounds
+  SET answer_b = 'x', answer_b_submitted_at = now() WHERE id = v_round;
+
+  SELECT sender_id INTO v_sender
+  FROM public.messages WHERE game_session_id = v_session;
+  IF v_sender <> b THEN
+    RAISE EXCEPTION 'the card did not move to the partner who answered';
+  END IF;
+
+  -- And leaves exactly one marker on the side it left.
+  SELECT count(*) INTO v_trails
+  FROM public.messages
+  WHERE relationship_id = v_rel AND media_type = 'game_trail';
+  IF v_trails <> 1 THEN
+    RAISE EXCEPTION 'expected one trail marker, found %', v_trails;
+  END IF;
+
+  -- The same player answering again must not stack duplicate markers for
+  -- a card that never went anywhere.
+  UPDATE public.game_session_rounds
+  SET both_answered = true WHERE id = v_round;
+
+  SELECT count(*) INTO v_trails
+  FROM public.messages
+  WHERE relationship_id = v_rel AND media_type = 'game_trail';
+  IF v_trails <> 1 THEN
+    RAISE EXCEPTION
+      'a move that changed no side still left a marker: % total', v_trails;
+  END IF;
+
+  -- A trail is not a card: it must carry no session, or it would render
+  -- as a second playable game.
+  IF EXISTS (
+    SELECT 1 FROM public.messages
+    WHERE media_type = 'game_trail' AND game_session_id IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'a trail marker carries a session and will render as a card';
+  END IF;
+END $$;
+
 ROLLBACK;

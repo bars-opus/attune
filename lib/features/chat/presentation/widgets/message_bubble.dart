@@ -26,6 +26,7 @@ import 'package:attune/features/chat/presentation/widgets/streak_bubble.dart';
 import 'package:attune/features/chat/presentation/screens/streak_viewer_screen.dart';
 import 'package:attune/features/games/presentation/widgets/game_message_bubble.dart';
 import 'package:attune/features/location/presentation/widgets/place_update_bubble.dart';
+import 'package:attune/features/games/presentation/widgets/game_trail_line.dart';
 
 /// A local media path only if the file is still there.
 ///
@@ -232,6 +233,10 @@ class MessageBubble extends StatelessWidget {
       groupedBelow: isGroupedWithPrevious,
     );
     final isMediaGroup = mediaGroup.length > 1;
+    // A trail is a one-line record, not a message: given a bubble, a
+    // ten-round game would read as twenty bubbles rather than an
+    // exchange with a card moving through it.
+    final isBare = isMediaGroup || message.isGameTrail;
     final onBubbleColor =
         isMine ? chatColors.onSenderBubble : chatColors.onReceiverBubble;
     // The footer sits on the chat wallpaper now rather than inside a
@@ -320,17 +325,16 @@ class MessageBubble extends StatelessWidget {
                   children: [
                     UniversalBubble(
                       isMine: isMine,
-                      bubbleColor:
-                          isMediaGroup ? Colors.transparent : bubbleColor,
-                      bubbleGradient: isMediaGroup ? null : bubbleGradient,
+                      bubbleColor: isBare ? Colors.transparent : bubbleColor,
+                      bubbleGradient: isBare ? null : bubbleGradient,
                       onBubbleColor: onBubbleColor,
                       leading: null,
                       showCardBorder: false,
-                      showShadow: !isMediaGroup,
+                      showShadow: !isBare,
                       bubbleBorderRadius: 24,
                       bubbleBorderRadiusOverride: bubbleRadius,
                       contentPadding:
-                          isMediaGroup
+                          isBare
                               ? EdgeInsets.zero
                               : const EdgeInsets.symmetric(
                                 horizontal: 16,
@@ -1103,7 +1107,11 @@ class _BubbleBody extends StatelessWidget {
         ),
       );
     }
-    if (message.isPlace) {
+    if (message.isGameTrail) {
+      // No bubble: it is a record of a move, not a message. Rendering it
+      // as one would make a ten-round game look like twenty messages.
+      children.add(GameTrailLine(label: message.content, isMine: isMine));
+    } else if (message.isPlace) {
       // The label lives on the message content, so the card renders from
       // the row alone -- no second fetch, and it still shows if the
       // place_updates row is ever missing.
