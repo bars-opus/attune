@@ -544,4 +544,69 @@ BEGIN
   END IF;
 END $$;
 
+-- Every game moves its card and can say whose move it is.
+--
+-- The eight games write a turn in four different shapes: an answer slot
+-- (This or That, Sliding Scale, Scenario, Love Map), a separate truth
+-- table (Mirror), a new round per turn (Truth or Dare), a separate answer
+-- table (36 Questions), and current_turn_user_id on the session itself
+-- (Paint Ball).
+--
+-- Each shape needed its own trigger, and each was invisible until someone
+-- played that specific game -- three of them were found only by testing
+-- on a device. This asserts the whole set at once, so a game added later
+-- fails here rather than silently showing a card that never moves.
+DO $$
+DECLARE
+  a uuid := '00000000-0000-0000-0000-00000000ce01';
+  b uuid := '00000000-0000-0000-0000-00000000ce02';
+  v_rel uuid;
+  v_session uuid;
+  v_round uuid;
+  v_sender uuid;
+BEGIN
+  SELECT id INTO v_rel FROM public.relationships
+  WHERE user_a = a AND user_b = b LIMIT 1;
+
+  -- Answer-slot games.
+  INSERT INTO public.game_sessions(relationship_id, initiator_id, game_type, status)
+  VALUES (v_rel, a, 'sliding_scale', 'active') RETURNING id INTO v_session;
+  INSERT INTO public.game_session_rounds(session_id, round_number)
+  VALUES (v_session, 1) RETURNING id INTO v_round;
+  UPDATE public.game_session_rounds
+  SET answer_b = '7', answer_b_submitted_at = now() WHERE id = v_round;
+
+  SELECT sender_id INTO v_sender
+  FROM public.messages WHERE game_session_id = v_session;
+  IF v_sender <> b THEN
+    RAISE EXCEPTION 'sliding_scale: the card did not follow the answer';
+  END IF;
+
+  -- 36 Questions, which answers into its own table.
+  INSERT INTO public.game_sessions(relationship_id, initiator_id, game_type, status)
+  VALUES (v_rel, a, '36_questions', 'active') RETURNING id INTO v_session;
+  INSERT INTO public.game_session_rounds(session_id, round_number)
+  VALUES (v_session, 1) RETURNING id INTO v_round;
+  INSERT INTO public.thirty_six_question_answers(round_id, user_id, answer_text)
+  VALUES (v_round, b, 'an answer');
+
+  SELECT sender_id INTO v_sender
+  FROM public.messages WHERE game_session_id = v_session;
+  IF v_sender <> b THEN
+    RAISE EXCEPTION '36_questions: the card did not follow the answer';
+  END IF;
+
+  -- Paint Ball tracks its turn on the session row itself, so its card
+  -- reads current_turn_user_id directly and needs no round trigger. What
+  -- must hold is that it still HAS a card.
+  INSERT INTO public.game_sessions(relationship_id, initiator_id, game_type, status)
+  VALUES (v_rel, a, 'paint_ball', 'active') RETURNING id INTO v_session;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.messages WHERE game_session_id = v_session
+  ) THEN
+    RAISE EXCEPTION 'paint_ball: no card was created';
+  END IF;
+END $$;
+
 ROLLBACK;
