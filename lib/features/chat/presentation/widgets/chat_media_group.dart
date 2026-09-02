@@ -154,24 +154,65 @@ class _ChatMediaGroupState extends State<ChatMediaGroup> {
                 end: 4,
                 bottom: 3,
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.grid_view_rounded,
-                    size: 17,
-                    color: widget.labelColor,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    label,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: widget.labelColor,
-                      fontWeight: FontWeight.w700,
+              // Carried on a pill filled with the BUBBLE's colour, so the
+              // album reads as part of the message rather than as loose
+              // chrome floating on the wallpaper.
+              //
+              // The colour has to be a fill rather than the text's own:
+              // a media group draws a transparent bubble so the images
+              // show through, so this label sits directly on the
+              // wallpaper -- and the sender bubble is a pale mint that
+              // is close to invisible as text there.
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: widget.bubbleColor,
+                  borderRadius: BorderRadius.circular(999),
+                  // The same faint lift a real bubble gets. Bubble
+                  // colours sit close to the wallpaper by design -- the
+                  // sender's mint is 1.04:1 against it -- so the shadow,
+                  // not the fill, is what separates a bubble from the
+                  // background. Without it this pill reads as a flat
+                  // patch rather than as part of the message.
+                  boxShadow: const [
+                    BoxShadow(
+                      offset: Offset(0, 1),
+                      blurRadius: 1,
+                      spreadRadius: -1,
+                      color: Color(0x0F000000),
                     ),
+                    BoxShadow(
+                      offset: Offset(0, 1),
+                      blurRadius: 1,
+                      color: Color(0x0A000000),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
                   ),
-                ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.grid_view_rounded,
+                        size: 17,
+                        color: widget.labelColor,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        label,
+                        style: Theme.of(context).textTheme.labelLarge
+                            ?.copyWith(
+                              color: widget.labelColor,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
             Align(
