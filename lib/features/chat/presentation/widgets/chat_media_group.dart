@@ -511,11 +511,11 @@ class _CountBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.62),
-        // A soft rectangle rather than a full pill: at this height 999
-        // rounds the ends into semicircles, which reads as a tag stuck on
-        // the photo. Kept identical on the count badge so the two remain
-        // a matched pair.
-        borderRadius: BorderRadius.circular(10),
+        // Stays a full pill. The counter is a short, symmetric "1 / 5"
+        // and reads as a round chip; the softer rectangle is for the
+        // album label, whose text is long enough that a pill's
+        // semicircular ends look like a tag stuck on the photo.
+        borderRadius: BorderRadius.circular(999),
         boxShadow: const [
           BoxShadow(
             color: Color(0x22000000),
@@ -554,7 +554,7 @@ class _DurationBadge extends StatelessWidget {
         // rounds the ends into semicircles, which reads as a tag stuck on
         // the photo. Kept identical on the count badge so the two remain
         // a matched pair.
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         format.format(date),

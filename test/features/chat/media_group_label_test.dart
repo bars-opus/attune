@@ -27,11 +27,12 @@ void main() {
     );
     final badgeSurface = source.substring(source.indexOf('class _CountBadge'));
 
-    // The radius is asserted as SHARED rather than as a specific value:
-    // what matters is that the two stay a pair, not what the number is.
+    // Surface only. The RADIUS is deliberately not shared: the counter
+    // is a short symmetric "1 / 5" that reads as a round chip, while the
+    // album label's text is long enough that a pill's semicircular ends
+    // look like a tag stuck on the photo.
     for (final property in [
       'Colors.black.withValues(alpha: 0.62)',
-      'BorderRadius.circular(10)',
     ]) {
       expect(
         labelSurface.contains(property),
@@ -79,28 +80,52 @@ void main() {
     expect(bubble.contains('mediaLabelColor'), isFalse);
   });
 
-  test('every chip drawn on the photos shares one surface', () {
+  test('every chip drawn on the photos shares one fill', () {
     // Three chips sit on the same images: the album label, the count
-    // badge and a video's duration. They read as one system only while
-    // their surface matches -- changing one alone makes the odd chip look
-    // like a different feature.
+    // badge and a video's duration. Their FILL is what makes them read as
+    // one system.
+    //
+    // Their radius is intentionally not uniform -- the two badges stay
+    // circular, and only the album label softens -- so this asserts the
+    // fill alone rather than flattening a deliberate difference.
     for (final widget in ['_AlbumLabel', '_CountBadge', '_DurationBadge']) {
       final start = source.indexOf('class $widget');
       expect(start, greaterThan(-1), reason: '$widget is missing');
 
       final next = source.indexOf('\nclass ', start + 1);
-      final body = next == -1 ? source.substring(start) : source.substring(start, next);
+      final body =
+          next == -1 ? source.substring(start) : source.substring(start, next);
 
       expect(
         body.contains('Colors.black.withValues(alpha: 0.62)'),
         isTrue,
-        reason: '$widget drifted from the shared chip surface',
-      );
-      expect(
-        body.contains('BorderRadius.circular(10)'),
-        isTrue,
-        reason: '$widget drifted from the shared chip radius',
+        reason: '$widget drifted from the shared chip fill',
       );
     }
+  });
+
+  test('only the album label softens its corners', () {
+    // The badges are short and symmetric, so a pill suits them. The
+    // label is not, so it takes a soft rectangle. Pinned because a
+    // well-meaning "make these consistent" change would undo it.
+    String bodyOf(String widget) {
+      final start = source.indexOf('class $widget');
+      final next = source.indexOf('\nclass ', start + 1);
+      return next == -1
+          ? source.substring(start)
+          : source.substring(start, next);
+    }
+
+    expect(bodyOf('_AlbumLabel').contains('BorderRadius.circular(10)'), isTrue);
+    expect(
+      bodyOf('_CountBadge').contains('BorderRadius.circular(999)'),
+      isTrue,
+      reason: 'the counter stays circular',
+    );
+    expect(
+      bodyOf('_DurationBadge').contains('BorderRadius.circular(999)'),
+      isTrue,
+      reason: 'the duration chip stays circular',
+    );
   });
 }
