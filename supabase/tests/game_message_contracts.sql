@@ -472,4 +472,76 @@ BEGIN
   END IF;
 END $$;
 
+-- Truth or Dare: a turn-based game moves its card too.
+--
+-- The card machinery hangs off UPDATEs to game_session_rounds -- a
+-- partner fills an answer slot. Truth or Dare INSERTS a round per turn
+-- and never touches an answer slot, so none of it fired: the card stayed
+-- on the initiator and the chat showed nothing after a turn.
+--
+-- And its card could not say whose move it was either, because the state
+-- function read the two empty answer slots as "neither has answered".
+-- For a turn-based game the round's active_partner_id IS the answer.
+DO $$
+DECLARE
+  a uuid := '00000000-0000-0000-0000-00000000ce01';
+  b uuid := '00000000-0000-0000-0000-00000000ce02';
+  v_rel uuid;
+  v_session uuid;
+  v_sender uuid;
+  v_trails int;
+  v_viewer boolean;
+  v_partner boolean;
+BEGIN
+  SELECT id INTO v_rel FROM public.relationships
+  WHERE user_a = a AND user_b = b LIMIT 1;
+
+  INSERT INTO public.game_sessions(relationship_id, initiator_id, game_type, status)
+  VALUES (v_rel, a, 'truth_or_dare', 'active') RETURNING id INTO v_session;
+
+  -- A turn belonging to the partner.
+  INSERT INTO public.game_session_rounds(
+    session_id, round_number, active_partner_id, chosen_type
+  )
+  VALUES (v_session, 1, b, 'truth');
+
+  SELECT sender_id INTO v_sender
+  FROM public.messages WHERE game_session_id = v_session;
+  IF v_sender <> b THEN
+    RAISE EXCEPTION 'the card did not move to the player whose turn it is';
+  END IF;
+
+  SELECT count(*) INTO v_trails
+  FROM public.messages
+  WHERE relationship_id = v_rel AND media_type = 'game_trail';
+  IF v_trails < 1 THEN
+    RAISE EXCEPTION 'moving the card left no trail behind';
+  END IF;
+
+  -- The player whose turn it is reads "your turn".
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  SELECT viewer_answered, partner_answered INTO v_viewer, v_partner
+  FROM public.session_game_round_state(v_session);
+
+  IF v_viewer OR NOT v_partner THEN
+    RAISE EXCEPTION
+      'the active player should read as their turn, got viewer=% partner=%',
+      v_viewer, v_partner;
+  END IF;
+
+  -- And the other reads the opposite. If these ever agree, one partner is
+  -- told to act when it is not their move.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  SELECT viewer_answered, partner_answered INTO v_viewer, v_partner
+  FROM public.session_game_round_state(v_session);
+
+  IF NOT v_viewer OR v_partner THEN
+    RAISE EXCEPTION
+      'the waiting player should read as waiting, got viewer=% partner=%',
+      v_viewer, v_partner;
+  END IF;
+END $$;
+
 ROLLBACK;
