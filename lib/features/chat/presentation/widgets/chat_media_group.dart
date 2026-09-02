@@ -200,30 +200,11 @@ class _ChatMediaGroupState extends State<ChatMediaGroup> {
                         );
                       },
                     ),
-                    // The album label rides ON the stack now, opposite
-                    // the count badge and in the same treatment.
-                    //
-                    // It used to sit above the carousel on the wallpaper,
-                    // where it could not carry the bubble's colour: a
-                    // media group draws a transparent bubble, and the
-                    // sender's pale mint measures 1.04:1 against the light
-                    // wallpaper -- the same colour as the background, not
-                    // merely a faint one. Over the images it has a
-                    // surface of its own, so it reads at a glance without
-                    // needing to compete with whatever is behind it.
                     PositionedDirectional(
                       top: 20,
-                      // Inset from the edge with the badge, not tight to
-                      // it: both sit ON the photos, and a chip flush to
-                      // the corner reads as clipped rather than placed.
-                      start: widget.isMine ? null : 12,
-                      end: widget.isMine ? 12 : null,
-                      child: _AlbumLabel(label: label),
-                    ),
-                    PositionedDirectional(
-                      top: 20,
-                      // Matches the label's inset opposite it, so the pair
-                      // sits at the same depth from either edge.
+                      // Inset from the edge rather than tight to it: it
+                      // sits ON the photos, and a chip flush to the corner
+                      // reads as clipped rather than placed.
                       end: widget.isMine ? null : 12,
                       start: widget.isMine ? 12 : null,
                       child: AnimatedSwitcher(
@@ -451,54 +432,6 @@ class _PosterFallback extends StatelessWidget {
   }
 }
 
-/// The album label ("5 images"), carried on the stack opposite the count.
-///
-/// Shares _CountBadge's surface deliberately: they are a matched pair at
-/// the top of the same stack, and two different treatments there would
-/// read as two unrelated things stuck on the photos.
-class _AlbumLabel extends StatelessWidget {
-  const _AlbumLabel({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.62),
-        // A soft rectangle rather than a full pill: at this height 999
-        // rounds the ends into semicircles, which reads as a tag stuck on
-        // the photo. Kept identical on the count badge so the two remain
-        // a matched pair.
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 5,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const Icon(Icons.grid_view_rounded, size: 15, color: Colors.white),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _CountBadge extends StatelessWidget {
   const _CountBadge({super.key, required this.current, required this.total});
 
@@ -511,10 +444,6 @@ class _CountBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.62),
-        // Stays a full pill. The counter is a short, symmetric "1 / 5"
-        // and reads as a round chip; the softer rectangle is for the
-        // album label, whose text is long enough that a pill's
-        // semicircular ends look like a tag stuck on the photo.
         borderRadius: BorderRadius.circular(999),
         boxShadow: const [
           BoxShadow(
