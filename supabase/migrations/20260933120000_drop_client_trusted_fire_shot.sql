@@ -1,0 +1,14 @@
+-- paint_ball_fire_shot took the hit/miss verdict as a boolean argument and
+-- decremented the defender's lives on the caller's word. It was the right
+-- shape for the old live game, where the client resolved the shot locally.
+--
+-- The hidden-information rebuild moved resolution to the server:
+-- paint_ball_take_turn compares the shot to the defender's stored
+-- hide_position and decides for itself. That leaves this function both
+-- unreachable from the app and abusable by anyone posting to the API
+-- directly -- EXECUTE was granted to authenticated, so a partner could
+-- drain the other's lives to zero and force the knockout penalty without
+-- ever aiming.
+--
+-- Nothing in the client calls it; the drop is the whole fix.
+DROP FUNCTION IF EXISTS public.paint_ball_fire_shot(uuid, int, boolean, text);
