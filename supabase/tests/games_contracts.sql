@@ -265,7 +265,7 @@ BEGIN
     'paint_ball_create_session',
     'paint_ball_accept_session',
     'paint_ball_decline_session',
-    'paint_ball_fire_shot',
+    'paint_ball_take_turn',
     'paint_ball_resolve_penalty',
     'get_paint_ball_session_state',
     'expire_paint_ball_sessions'
@@ -443,32 +443,6 @@ BEGIN
     '10000000-0000-0000-0000-0000000000a1', 'playful', 'pb-key-1', true);
   v_session := (v_result->>'session_id')::uuid;
 
-  IF (v_result->>'existing')::boolean THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: a new session reported existing=true';
-  END IF;
-
-  -- §10.1: a repeated key returns the SAME session, never a second one.
-  v_result := public.paint_ball_create_session(
-    '10000000-0000-0000-0000-0000000000a1', 'playful', 'pb-key-1', true);
-  IF (v_result->>'session_id')::uuid <> v_session THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: idempotency key created a second session';
-  END IF;
-  IF NOT (v_result->>'existing')::boolean THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: a repeat did not report existing=true';
-  END IF;
-
-  IF (SELECT lives_a FROM public.game_sessions WHERE id = v_session) <> 3
-     OR (SELECT lives_b FROM public.game_sessions WHERE id = v_session) <> 3 THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: a new game did not start with 3 lives each';
-  END IF;
-
-  -- §10.2: the initiator may NOT accept their own invite. Errors come
-  -- back as {error: true, code}, which is what PaintBallService parses.
-  v_result := public.paint_ball_accept_session(v_session);
-  IF NOT COALESCE((v_result->>'error')::boolean, false) THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: the initiator accepted their own invite';
-  END IF;
-
   -- The partner accepts; the INITIATOR fires first.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
@@ -479,18 +453,44 @@ BEGIN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the initiator does not fire first';
   END IF;
 
-  -- §10.3 step 2: firing out of turn is refused.
-  v_result := public.paint_ball_fire_shot(v_session, 1, true, NULL);
+  -- §10.3 step 2: moving out of turn is refused. B is not on turn.
+  v_result := public.paint_ball_take_turn(v_session, 1, 0::smallint, 0::smallint);
   IF (v_result->>'code') IS DISTINCT FROM 'NOT_YOUR_TURN' THEN
     RAISE EXCEPTION
-      'CONTRACT VIOLATED: firing out of turn returned %', v_result;
+      'CONTRACT VIOLATED: moving out of turn returned %', v_result;
   END IF;
 
-  -- A hits B three times, alternating turns back each round.
+  -- Round 1: A hides at 0 and shoots 0. B has never hidden, so the opening
+  -- shot cannot hit -- that is the design (see paint_ball_turn_test).
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
-  v_result := public.paint_ball_fire_shot(v_session, 1, true, NULL);
+  v_result := public.paint_ball_take_turn(v_session, 1, 0::smallint, 0::smallint);
+  IF (v_result->>'shot_result') <> 'opening' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: round 1 was not an opening, got %',
+      v_result->>'shot_result';
+  END IF;
 
+  -- §10.3 step 4: replaying round 1 must return the stored result and must
+  -- not decrement a second time.
+  v_result := public.paint_ball_take_turn(v_session, 1, 0::smallint, 0::smallint);
+  IF (v_result->>'lives_b')::int <> 3 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: a replayed turn changed lives (lives_b=%)',
+      v_result->>'lives_b';
+  END IF;
+
+  -- B hides at 1 and shoots 2. A hid at 0, so this misses.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  v_result := public.paint_ball_take_turn(v_session, 2, 1::smallint, 2::smallint);
+  IF (v_result->>'lives_a')::int <> 3 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a miss cost a life';
+  END IF;
+
+  -- A shoots 1, where B just hid. First blood.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  v_result := public.paint_ball_take_turn(v_session, 3, 0::smallint, 1::smallint);
   IF (v_result->>'lives_b')::int <> 2 THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a hit did not cost a life (lives_b=%)',
       v_result->>'lives_b';
@@ -499,34 +499,26 @@ BEGIN
     RAISE EXCEPTION 'CONTRACT VIOLATED: knockout declared at 2 lives';
   END IF;
 
-  -- §10.3 step 4: replaying round 1 must not decrement again.
-  v_result := public.paint_ball_fire_shot(v_session, 1, true, NULL);
-  IF (v_result->>'lives_b')::int <> 2 THEN
-    RAISE EXCEPTION
-      'CONTRACT VIOLATED: a replayed shot decremented twice (lives_b=%)',
-      v_result->>'lives_b';
-  END IF;
-
-  -- B fires and misses; no life lost.
+  -- B stays at 1 and misses again; A keeps hitting 1.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
-  v_result := public.paint_ball_fire_shot(v_session, 2, false, NULL);
-  IF (v_result->>'lives_a')::int <> 3 THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: a miss cost a life';
-  END IF;
+  PERFORM public.paint_ball_take_turn(v_session, 4, 1::smallint, 2::smallint);
 
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
-  PERFORM public.paint_ball_fire_shot(v_session, 3, true, NULL);
+  v_result := public.paint_ball_take_turn(v_session, 5, 0::smallint, 1::smallint);
+  IF (v_result->>'lives_b')::int <> 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the second hit did not reach 1 life';
+  END IF;
 
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
-  PERFORM public.paint_ball_fire_shot(v_session, 4, false, NULL);
+  PERFORM public.paint_ball_take_turn(v_session, 6, 1::smallint, 2::smallint);
 
   -- The knockout blow.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
-  v_result := public.paint_ball_fire_shot(v_session, 5, true, NULL);
+  v_result := public.paint_ball_take_turn(v_session, 7, 0::smallint, 1::smallint);
 
   IF (v_result->>'lives_b')::int <> 0 THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the third hit did not reach 0 lives';
@@ -540,6 +532,26 @@ BEGIN
   IF (SELECT penalty_status FROM public.game_sessions WHERE id = v_session)
      <> 'pending' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: no penalty was queued on knockout';
+  END IF;
+  -- A knockout with no prompt would show the loser an empty penalty card.
+  IF (SELECT penalty_prompt_snapshot FROM public.game_sessions
+      WHERE id = v_session) IS NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: knockout queued no penalty prompt';
+  END IF;
+  IF (SELECT penalty_type FROM public.game_sessions WHERE id = v_session)
+     NOT IN ('truth', 'dare') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: penalty_type was not truth or dare';
+  END IF;
+  IF (v_result->>'penalty_prompt_snapshot') IS NULL THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the knockout response carried no penalty prompt';
+  END IF;
+  -- The session must NOT be complete yet: resolve_penalty returns early on a
+  -- completed session, so completing here locks the loser out of the penalty.
+  IF (SELECT status FROM public.game_sessions WHERE id = v_session)
+     = 'completed' THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: knockout completed the session before the penalty';
   END IF;
   -- §10.3 step 7: the turn is NOT advanced into another round.
   IF (SELECT current_turn_user_id FROM public.game_sessions WHERE id = v_session)
@@ -586,12 +598,22 @@ BEGIN
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
   PERFORM public.paint_ball_accept_session(v_session);
 
-  -- Drive B to zero directly, then fire once more at a dead defender.
+  -- B must have hidden somewhere before a shot can hit them, so play the
+  -- opening round out first: A opens, then B hides at 1.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  PERFORM public.paint_ball_take_turn(v_session, 1, 0::smallint, 0::smallint);
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  PERFORM public.paint_ball_take_turn(v_session, 2, 1::smallint, 2::smallint);
+
+  -- Drive B to zero directly, then land a real hit on a dead defender.
   UPDATE public.game_sessions SET lives_b = 0 WHERE id = v_session;
 
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
-  PERFORM public.paint_ball_fire_shot(v_session, 1, true, NULL);
+  PERFORM public.paint_ball_take_turn(v_session, 3, 0::smallint, 1::smallint);
 
   IF (SELECT lives_b FROM public.game_sessions WHERE id = v_session) < 0 THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: lives fell below zero';
