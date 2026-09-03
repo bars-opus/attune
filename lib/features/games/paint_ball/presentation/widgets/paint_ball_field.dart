@@ -4,7 +4,7 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-/// The three positions a player can take, drawn as cover.
+/// The three positions a player can take, drawn as shields.
 const int kPaintBallPositions = 3;
 
 /// A splatter left by a shot, kept so the field accumulates a record of
@@ -18,25 +18,22 @@ class PaintSplat {
     required this.round,
   });
 
-  /// Which cover node it landed on.
   final int position;
-
-  /// Whose shot it was, which decides the colour.
   final bool isMine;
-
-  /// A hit paints the cover; a miss splashes the ground beside it.
   final bool hit;
-
   final int round;
 }
 
-/// The Paint Ball field: two rows of cover, and the paint left on it.
+/// The Paint Ball field.
 ///
-/// The old arena was a marker sweeping across a line -- a rhythm game
-/// wearing a paintball costume, where nothing you did left a mark and a
-/// hit was a number changing. This draws the consequence instead: every
-/// shot lands somewhere and stays there, so by the fourth round the field
-/// is a record of the fight.
+/// Your shields are always the bottom row and theirs the top, whichever
+/// player you are: a field that flipped depending on who was looking
+/// would make "mine" and "theirs" a thing to work out each turn rather
+/// than something you simply see.
+///
+/// You can see your own triangle behind its shield. You cannot see
+/// theirs -- that is the hidden information the whole game turns on, and
+/// it appears only after a shot resolves against it.
 class PaintBallField extends StatelessWidget {
   const PaintBallField({
     super.key,
@@ -45,23 +42,19 @@ class PaintBallField extends StatelessWidget {
     required this.selectedShot,
     required this.revealedPartnerPosition,
     required this.isMyTurn,
+    this.shotProgress,
     this.onSelectShot,
   });
 
-  /// Every shot so far, oldest first.
   final List<PaintSplat> splats;
-
-  /// Where I am hiding this turn, if I have chosen.
   final int? myPosition;
-
-  /// Where I am aiming, if I have chosen.
   final int? selectedShot;
-
-  /// Where my partner was hiding, once a shot has resolved against it.
-  /// Null until the reveal -- this is the hidden information.
   final int? revealedPartnerPosition;
-
   final bool isMyTurn;
+
+  /// 0 to 1 while a shot travels, null otherwise. Drives the projectile.
+  final double? shotProgress;
+
   final ValueChanged<int>? onSelectShot;
 
   @override
@@ -69,74 +62,125 @@ class PaintBallField extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
 
     return AspectRatio(
-      aspectRatio: 1.15,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          children: [
-            // The paint sits under the cover, so a splat reads as landing
-            // ON the field rather than floating over the pieces.
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _SplatPainter(
-                  splats: splats,
-                  mineColor: colorScheme.primary,
-                  theirsColor: colorScheme.tertiary,
-                ),
+      aspectRatio: 1.05,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          final height = constraints.maxHeight;
+          final slot = width / kPaintBallPositions;
+
+          // Where a shot starts and ends: from my shield's row up to the
+          // targeted shield.
+          final originX =
+              myPosition == null
+                  ? width / 2
+                  : slot * myPosition! + slot / 2;
+          final targetX =
+              selectedShot == null
+                  ? width / 2
+                  : slot * selectedShot! + slot / 2;
+
+          return Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
+              color: colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.35,
               ),
             ),
-            Padding(
-              padding: EdgeInsets.all(Spacing.lg.w),
-              child: Column(
-                children: [
-                  // Their side: what you shoot at.
-                  _CoverRow(
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              children: [
+                // Paint sits under everything, so a splat reads as landing
+                // ON the field rather than floating over the pieces.
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _SplatPainter(
+                      splats: splats,
+                      mineColor: colorScheme.primary,
+                      theirsColor: colorScheme.tertiary,
+                    ),
+                  ),
+                ),
+
+                // Their row, at the top: what you shoot at.
+                Positioned(
+                  top: height * 0.12,
+                  left: 0,
+                  right: 0,
+                  child: _ShieldRow(
                     isOpponent: true,
-                    selected: selectedShot,
-                    revealed: revealedPartnerPosition,
+                    hiddenAt: revealedPartnerPosition,
+                    aimedAt: selectedShot,
                     enabled: isMyTurn && onSelectShot != null,
                     onTap: onSelectShot,
                   ),
-                  const Spacer(),
-                  Container(
+                ),
+
+                Positioned(
+                  top: height * 0.5,
+                  left: Spacing.lg.w,
+                  right: Spacing.lg.w,
+                  child: Container(
                     height: 1.h,
                     color: colorScheme.outline.withValues(alpha: 0.16),
                   ),
-                  const Spacer(),
-                  // Your side: where you are hiding.
-                  _CoverRow(
+                ),
+
+                // Your row, at the bottom: you can see yourself.
+                Positioned(
+                  bottom: height * 0.12,
+                  left: 0,
+                  right: 0,
+                  child: _ShieldRow(
                     isOpponent: false,
-                    selected: myPosition,
-                    revealed: null,
+                    hiddenAt: myPosition,
+                    aimedAt: null,
                     enabled: false,
                     onTap: null,
                   ),
-                ],
-              ),
+                ),
+
+                // The travelling paintball.
+                if (shotProgress != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _ProjectilePainter(
+                          progress: shotProgress!,
+                          from: Offset(originX, height * 0.80),
+                          to: Offset(targetX, height * 0.20),
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 }
 
-class _CoverRow extends StatelessWidget {
-  const _CoverRow({
+/// One row of three shields, with a triangle hiding behind one of them.
+class _ShieldRow extends StatelessWidget {
+  const _ShieldRow({
     required this.isOpponent,
-    required this.selected,
-    required this.revealed,
+    required this.hiddenAt,
+    required this.aimedAt,
     required this.enabled,
     required this.onTap,
   });
 
+  /// Where the player behind this row is hiding, when it may be shown.
+  /// Always set for your own row; set for theirs only after a reveal.
+  final int? hiddenAt;
+
+  /// The shield being aimed at, which steps aside to open the shot.
+  final int? aimedAt;
+
   final bool isOpponent;
-  final int? selected;
-  final int? revealed;
   final bool enabled;
   final ValueChanged<int>? onTap;
 
@@ -148,60 +192,147 @@ class _CoverRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: List.generate(kPaintBallPositions, (index) {
-        final isSelected = selected == index;
-        final wasThere = revealed == index;
+        final isAimed = aimedAt == index;
+        final isOccupied = hiddenAt == index;
 
         return GestureDetector(
           onTap: enabled ? () => onTap?.call(index) : null,
           behavior: HitTestBehavior.opaque,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOut,
-            width: 54.w,
-            height: 54.w,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color:
-                  isSelected
-                      ? base.withValues(alpha: 0.85)
-                      : base.withValues(alpha: enabled ? 0.18 : 0.12),
-              border: Border.all(
-                color:
-                    wasThere
-                        ? base
-                        : isSelected
-                        ? base
-                        : base.withValues(alpha: 0.3),
-                width: wasThere ? 3.r : 1.5.r,
-              ),
-            ),
-            child: Center(
-              child:
-                  wasThere
-                      // Where they actually were, shown only after the
-                      // shot resolves. This is the whole game: you learn
-                      // it too late to use this turn, and it is the best
-                      // information you have for the next one.
-                      ? Icon(
-                        Icons.person_rounded,
-                        size: 24.h,
+          child: SizedBox(
+            width: 74.w,
+            height: 78.h,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // The triangle sits BEHIND its shield, and slides between
+                // positions rather than teleporting -- the movement is
+                // what makes taking cover read as an action.
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeOutCubic,
+                  // Opponent triangles peek above their shield; yours
+                  // below, so each stays on its own side of the line.
+                  top: isOpponent ? 6.h : null,
+                  bottom: isOpponent ? null : 6.h,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 220),
+                    opacity: isOccupied ? 1 : 0,
+                    child: CustomPaint(
+                      size: Size(26.w, 24.h),
+                      painter: _TrianglePainter(
                         color: base,
-                      )
-                      : isSelected
-                      ? Icon(
-                        isOpponent
-                            ? Icons.my_location_rounded
-                            : Icons.shield_rounded,
-                        size: 22.h,
-                        color: colorScheme.onPrimary,
-                      )
-                      : null,
+                        pointsUp: !isOpponent,
+                      ),
+                    ),
+                  ),
+                ),
+
+                // The shield. When aimed at, it slides aside to open a
+                // clear line -- so a shot is something you can see a path
+                // for, not an abstract selection.
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOutBack,
+                  left: isAimed ? 22.w : 0,
+                  right: isAimed ? 0 : 0,
+                  bottom: isOpponent ? 8.h : null,
+                  top: isOpponent ? null : 8.h,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    width: 52.w,
+                    height: 34.h,
+                    decoration: BoxDecoration(
+                      color: base.withValues(
+                        alpha:
+                            isAimed
+                                ? 0.9
+                                : enabled
+                                ? 0.42
+                                : 0.30,
+                      ),
+                      borderRadius: BorderRadius.circular(
+                        BorderRadiusTokens.sm.r,
+                      ),
+                      border: Border.all(
+                        color: base.withValues(alpha: isAimed ? 1 : 0.45),
+                        width: isAimed ? 2.r : 1.r,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         );
       }),
     );
   }
+}
+
+class _TrianglePainter extends CustomPainter {
+  _TrianglePainter({required this.color, required this.pointsUp});
+
+  final Color color;
+  final bool pointsUp;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final path = Path();
+
+    if (pointsUp) {
+      path.moveTo(size.width / 2, 0);
+      path.lineTo(size.width, size.height);
+      path.lineTo(0, size.height);
+    } else {
+      path.moveTo(size.width / 2, size.height);
+      path.lineTo(size.width, 0);
+      path.lineTo(0, 0);
+    }
+    path.close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_TrianglePainter old) =>
+      old.color != color || old.pointsUp != pointsUp;
+}
+
+/// The paintball in flight, with a short trail behind it.
+class _ProjectilePainter extends CustomPainter {
+  _ProjectilePainter({
+    required this.progress,
+    required this.from,
+    required this.to,
+    required this.color,
+  });
+
+  final double progress;
+  final Offset from;
+  final Offset to;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final position = Offset.lerp(from, to, progress)!;
+
+    // A trail rather than a bare dot: at this speed a single circle reads
+    // as a jump between frames rather than a thing travelling.
+    for (var i = 0; i < 4; i++) {
+      final trailAt = (progress - i * 0.06).clamp(0.0, 1.0);
+      final point = Offset.lerp(from, to, trailAt)!;
+      canvas.drawCircle(
+        point,
+        7.0 - i * 1.4,
+        Paint()..color = color.withValues(alpha: 0.55 - i * 0.12),
+      );
+    }
+
+    canvas.drawCircle(position, 7, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_ProjectilePainter old) => old.progress != progress;
 }
 
 /// Draws the paint. Older splats fade rather than being dropped, so a
@@ -217,8 +348,6 @@ class _SplatPainter extends CustomPainter {
   final Color mineColor;
   final Color theirsColor;
 
-  /// Beyond this, the oldest splats fade out. Twelve rounds of paint is
-  /// already a busy field; the point is atmosphere, not a full ledger.
   static const _visible = 12;
 
   @override
@@ -232,7 +361,6 @@ class _SplatPainter extends CustomPainter {
 
     for (var i = 0; i < recent.length; i++) {
       final splat = recent[i];
-      // Newest at full strength, oldest at a quarter.
       final age = recent.length == 1 ? 1.0 : i / (recent.length - 1);
       final alpha = 0.18 + (0.32 * age);
 
@@ -242,14 +370,10 @@ class _SplatPainter extends CustomPainter {
             ..color = colour.withValues(alpha: alpha)
             ..style = PaintingStyle.fill;
 
-      // A splat lands on its target's row: my shots on their side (top),
-      // theirs on mine (bottom).
-      final rowY = splat.isMine ? size.height * 0.22 : size.height * 0.78;
-      final slot = (size.width / kPaintBallPositions);
+      final rowY = splat.isMine ? size.height * 0.20 : size.height * 0.80;
+      final slot = size.width / kPaintBallPositions;
       final centreX = slot * splat.position + slot / 2;
 
-      // A hit sits on the cover; a miss lands off to one side, so the
-      // field shows near-misses as well as damage.
       final seed = splat.round * 31 + splat.position * 7;
       final rng = math.Random(seed);
       final offsetX = splat.hit ? 0.0 : (rng.nextDouble() - 0.5) * slot * 0.8;
@@ -293,8 +417,6 @@ class _SplatPainter extends CustomPainter {
     path.close();
     canvas.drawPath(path, paint);
 
-    // A couple of flecks, which is what makes it read as splatter rather
-    // than a shape.
     for (var i = 0; i < 3; i++) {
       final angle = rng.nextDouble() * 2 * math.pi;
       final distance = radius * (1.1 + rng.nextDouble() * 0.7);

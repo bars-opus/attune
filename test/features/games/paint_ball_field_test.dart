@@ -118,4 +118,102 @@ void main() {
 
     expect(tapped, isFalse, reason: 'a player must not move out of turn');
   });
+
+  testWidgets('your own triangle is visible, theirs is not', (tester) async {
+    // The whole game rests on this asymmetry. You can see where you are
+    // hiding; their position appears only after a shot resolves against
+    // it. If both were drawn, the guess would stop being a guess.
+    await tester.pumpWidget(
+      _wrap(
+        const PaintBallField(
+          splats: [],
+          myPosition: 1,
+          selectedShot: null,
+          revealedPartnerPosition: null,
+          isMyTurn: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Six shields, each with a triangle that is opacity 0 unless
+    // occupied. Exactly one may be visible: mine.
+    final visible = tester
+        .widgetList<AnimatedOpacity>(find.byType(AnimatedOpacity))
+        .where((widget) => widget.opacity > 0)
+        .length;
+
+    expect(
+      visible,
+      1,
+      reason: 'only the viewer\'s own position may be shown',
+    );
+  });
+
+  testWidgets('a revealed partner position becomes visible', (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        const PaintBallField(
+          splats: [],
+          myPosition: 1,
+          selectedShot: 2,
+          revealedPartnerPosition: 0,
+          isMyTurn: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final visible = tester
+        .widgetList<AnimatedOpacity>(find.byType(AnimatedOpacity))
+        .where((widget) => widget.opacity > 0)
+        .length;
+
+    expect(
+      visible,
+      2,
+      reason: 'after the reveal both positions are on the field',
+    );
+  });
+
+  testWidgets('a shot in flight renders', (tester) async {
+    // The projectile is drawn from the shooter's shield to the target's,
+    // so it needs both positions. Mid-flight is the frame that matters.
+    await tester.pumpWidget(
+      _wrap(
+        const PaintBallField(
+          splats: [],
+          myPosition: 0,
+          selectedShot: 2,
+          revealedPartnerPosition: null,
+          isMyTurn: true,
+          shotProgress: 0.5,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a shot with no chosen positions still renders', (tester) async {
+    // Defensive: the projectile falls back to the centre rather than
+    // throwing on a null position, so a mid-flight rebuild after state
+    // clears cannot crash the screen.
+    await tester.pumpWidget(
+      _wrap(
+        const PaintBallField(
+          splats: [],
+          myPosition: null,
+          selectedShot: null,
+          revealedPartnerPosition: null,
+          isMyTurn: true,
+          shotProgress: 0.3,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+  });
 }

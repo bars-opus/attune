@@ -1,3 +1,4 @@
+import 'dart:async';
 // lib/features/games/paint_ball/presentation/screens/paint_ball_battle_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
@@ -21,10 +22,22 @@ class PaintBallBattleScreen extends ConsumerStatefulWidget {
       _PaintBallBattleScreenState();
 }
 
-class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen> {
+class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
+    with SingleTickerProviderStateMixin {
+  /// Drives the paintball across the field.
+  ///
+  /// The shot is sent to the server the moment Fire is tapped -- the
+  /// animation is not a gate on the turn. If it were, a slow frame or a
+  /// backgrounded app could cost someone their move.
+  late final AnimationController _shotController;
+
   @override
   void initState() {
     super.initState();
+    _shotController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 520),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final state = ref.read(paintBallSessionProvider);
       if (state.session?.sessionId != widget.sessionId) {
@@ -33,6 +46,21 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen> {
             .loadSession(widget.sessionId);
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _shotController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fire() async {
+    final notifier = ref.read(paintBallSessionProvider.notifier);
+    // Started together: the flight plays while the request is in the air,
+    // so the animation costs nothing in waiting.
+    unawaited(_shotController.forward(from: 0));
+    await notifier.takeTurn();
+    if (mounted) _shotController.reset();
   }
 
   @override
@@ -123,13 +151,25 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen> {
                   // they will shoot, which informs where they think you
                   // will be. Splitting it into two steps would hide half
                   // of that while making the other half.
-                  PaintBallField(
-                    splats: _splatsFor(session, currentUserId),
-                    myPosition: state.hidePosition,
-                    selectedShot: state.shotPosition,
-                    revealedPartnerPosition: state.revealedPartnerPosition,
-                    isMyTurn: session.isCurrentUserTurn(currentUserId),
-                    onSelectShot: notifier.selectShot,
+                  // Rebuilt per frame while a shot is in flight;
+                  // AnimatedBuilder rather than setState so only the
+                  // field repaints, not the whole screen.
+                  AnimatedBuilder(
+                    animation: _shotController,
+                    builder:
+                        (context, _) => PaintBallField(
+                          splats: _splatsFor(session, currentUserId),
+                          myPosition: state.hidePosition,
+                          selectedShot: state.shotPosition,
+                          revealedPartnerPosition:
+                              state.revealedPartnerPosition,
+                          isMyTurn: session.isCurrentUserTurn(currentUserId),
+                          onSelectShot: notifier.selectShot,
+                          shotProgress:
+                              _shotController.isAnimating
+                                  ? _shotController.value
+                                  : null,
+                        ),
                   ),
                   Gap(Spacing.md.h),
                   _HideChooser(
@@ -143,7 +183,7 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen> {
                   _TurnPrompt(
                     state: state,
                     isMyTurn: session.isCurrentUserTurn(currentUserId),
-                    onFire: notifier.takeTurn,
+                    onFire: _fire,
                     onNext: notifier.beginNextTurn,
                   ),
                 ],
