@@ -371,6 +371,13 @@ class PaintBallShotResult {
   final bool knockout;
   final String? penaltyType;
   final String? penaltyPromptSnapshot;
+
+  /// Where the partner was hiding when this shot resolved.
+  ///
+  /// Returned to the shooter AFTER the fact, which is what turns the next
+  /// guess into a read on someone rather than a coin flip. Null on the
+  /// opening move, when nobody had hidden yet.
+  final int? defenderWasAt;
   final bool existing;
 
   const PaintBallShotResult({
@@ -385,6 +392,7 @@ class PaintBallShotResult {
     required this.penaltyType,
     required this.penaltyPromptSnapshot,
     required this.existing,
+    this.defenderWasAt,
   });
 
   factory PaintBallShotResult.fromJson(Map<String, dynamic> json) {
@@ -400,6 +408,10 @@ class PaintBallShotResult {
       knockout: _asBool(data, 'knockout'),
       penaltyType: _asString(data, 'penalty_type'),
       penaltyPromptSnapshot: _asString(data, 'penalty_prompt_snapshot'),
+      defenderWasAt:
+          data['defender_was_at'] == null
+              ? null
+              : _asInt(data, 'defender_was_at'),
       existing: _asBool(data, 'existing'),
     );
   }

@@ -78,6 +78,35 @@ class PaintBallService {
   // ============================================================
   // Fire Shot
   // ============================================================
+  /// One turn: hide somewhere, and shoot where you think they are.
+  ///
+  /// Replaces fireShot's `hit` boolean. The server compares the shot to
+  /// where the partner actually hid, so a client cannot report a hit it
+  /// did not earn -- and the skill becomes predicting your partner rather
+  /// than reacting to a sweep.
+  Future<PaintBallShotResult> takeTurn({
+    required String sessionId,
+    required int roundNumber,
+    required int hidePosition,
+    required int shotPosition,
+  }) async {
+    final response = await _supabase.rpc(
+      'paint_ball_take_turn',
+      params: {
+        'p_session_id': sessionId,
+        'p_round_number': roundNumber,
+        'p_hide_position': hidePosition,
+        'p_shot_position': shotPosition,
+      },
+    );
+
+    final data = Map<String, dynamic>.from(response as Map);
+    if (data['error'] == true) {
+      throw PaintBallApiError.fromJson(data);
+    }
+    return PaintBallShotResult.fromJson(data);
+  }
+
   Future<PaintBallShotResult> fireShot({
     required String sessionId,
     required int roundNumber,
