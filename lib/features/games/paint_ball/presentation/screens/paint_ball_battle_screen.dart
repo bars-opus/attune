@@ -8,6 +8,8 @@ import '../state/paint_ball_provider.dart';
 import '../widgets/paint_ball_arena.dart';
 import '../widgets/paint_ball_controls.dart';
 import '../widgets/paint_ball_lives_display.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart';
+import 'package:attune/core/ui/presence/breathing_dots.dart';
 
 class PaintBallBattleScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -112,18 +114,41 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen> {
           ),
           Gap(Spacing.md.h),
           Expanded(
-            child: PaintBallArena(
-              isMyTurn: session.isCurrentUserTurn(currentUserId),
-              showHitFeedback: state.showHitFeedback,
-              showMissFeedback: state.showMissFeedback,
-              showKnockout: state.showKnockout,
-              onFire: (hit) => notifier.fireShot(hit: hit),
-              isSubmitting: state.isSubmitting,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
+              child: Column(
+                children: [
+                  // Both choices on one screen. The interesting decision
+                  // is the PAIR: where you hide informs where you think
+                  // they will shoot, which informs where they think you
+                  // will be. Splitting it into two steps would hide half
+                  // of that while making the other half.
+                  PaintBallField(
+                    splats: _splatsFor(session, currentUserId),
+                    myPosition: state.hidePosition,
+                    selectedShot: state.shotPosition,
+                    revealedPartnerPosition: state.revealedPartnerPosition,
+                    isMyTurn: session.isCurrentUserTurn(currentUserId),
+                    onSelectShot: notifier.selectShot,
+                  ),
+                  Gap(Spacing.md.h),
+                  _HideChooser(
+                    selected: state.hidePosition,
+                    enabled:
+                        session.isCurrentUserTurn(currentUserId) &&
+                        !state.isSubmitting,
+                    onSelect: notifier.selectHide,
+                  ),
+                  Gap(Spacing.md.h),
+                  _TurnPrompt(
+                    state: state,
+                    isMyTurn: session.isCurrentUserTurn(currentUserId),
+                    onFire: notifier.takeTurn,
+                    onNext: notifier.beginNextTurn,
+                  ),
+                ],
+              ),
             ),
-          ),
-          PaintBallControls(
-            isMyTurn: session.isCurrentUserTurn(currentUserId),
-            isSubmitting: state.isSubmitting,
           ),
           Gap(Spacing.md.h),
           if (state.errorMessage != null)
@@ -159,6 +184,191 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen> {
               ),
             ],
           ),
+    );
+  }
+}
+
+/// Turns the round history into paint on the field.
+///
+/// Derived from the rounds rather than stored: the server already records
+/// every shot's position and result, so a separate paint table would be a
+/// second copy of the same truth, free to drift.
+List<PaintSplat> _splatsFor(PaintBallSessionState session, String? userId) {
+  final splats = <PaintSplat>[];
+
+  for (final round in session.rounds) {
+    final position = round.shotPosition;
+    // An opening move had nothing to shoot at, so it leaves no paint.
+    if (position == null || round.shotResult == 'opening') continue;
+
+    splats.add(
+      PaintSplat(
+        position: position,
+        isMine: round.activePartnerId == userId,
+        hit: round.shotResult == 'hit',
+        round: round.roundNumber,
+      ),
+    );
+  }
+
+  return splats;
+}
+
+/// Where you take cover this turn.
+///
+/// Separate from the field's opponent row because they answer different
+/// questions -- one is "where am I", the other "where are they" -- and a
+/// single row of taps doing both would make it easy to spend a turn on
+/// the wrong one.
+class _HideChooser extends StatelessWidget {
+  const _HideChooser({
+    required this.selected,
+    required this.enabled,
+    required this.onSelect,
+  });
+
+  final int? selected;
+  final bool enabled;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Take cover',
+          style: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        Gap(Spacing.xs.h),
+        Text(
+          'They will shoot at where they think you are.',
+          style: textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurface.withValues(alpha: 0.6),
+          ),
+        ),
+        Gap(Spacing.sm.h),
+        Row(
+          children: List.generate(kPaintBallPositions, (index) {
+            final isSelected = selected == index;
+            return Expanded(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: Spacing.xs.w),
+                child: GestureDetector(
+                  onTap: enabled ? () => onSelect(index) : null,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    height: 48.h,
+                    decoration: BoxDecoration(
+                      color:
+                          isSelected
+                              ? colorScheme.primary.withValues(alpha: 0.85)
+                              : colorScheme.primary.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(
+                        BorderRadiusTokens.md.r,
+                      ),
+                    ),
+                    child: Center(
+                      child: Icon(
+                        Icons.shield_rounded,
+                        size: 20.h,
+                        color:
+                            isSelected
+                                ? colorScheme.onPrimary
+                                : colorScheme.primary.withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+}
+
+/// What to do next: fire, wait, or read the result.
+class _TurnPrompt extends StatelessWidget {
+  const _TurnPrompt({
+    required this.state,
+    required this.isMyTurn,
+    required this.onFire,
+    required this.onNext,
+  });
+
+  final PaintBallUiState state;
+  final bool isMyTurn;
+  final VoidCallback onFire;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    // A resolved shot: hold the reveal until they choose to move on, so
+    // the moment the field shows their partner's position is not swept
+    // away by an animation they did not ask for.
+    if (state.revealedPartnerPosition != null || state.showMissFeedback) {
+      final hit = state.showHitFeedback;
+      return Column(
+        children: [
+          Text(
+            hit ? 'Direct hit' : 'They were somewhere else',
+            style: textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: hit ? colorScheme.primary : colorScheme.onSurface,
+            ),
+          ),
+          Gap(Spacing.xs.h),
+          Text(
+            hit
+                ? 'You read them right.'
+                : 'Now you know where they were hiding.',
+            style: textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.65),
+            ),
+            textAlign: TextAlign.center,
+          ),
+          Gap(Spacing.md.h),
+          AppButton(
+            label: 'Back to chat',
+            onPressed: onNext,
+            size: ButtonSize.medium,
+            width: double.infinity,
+          ),
+        ],
+      );
+    }
+
+    if (!isMyTurn) {
+      return Column(
+        children: [
+          const BreathingDots(size: 6),
+          Gap(Spacing.sm.h),
+          Text(
+            'Waiting for their move',
+            style: textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.65),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return AppButton(
+      label: state.isSubmitting ? 'Firing…' : 'Fire',
+      // Both choices are required: submitting with either missing would
+      // spend a turn on half a move.
+      onPressed: state.canFire && !state.isSubmitting ? onFire : null,
+      size: ButtonSize.large,
+      width: double.infinity,
+      isLoading: state.isSubmitting,
     );
   }
 }

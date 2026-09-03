@@ -65,11 +65,20 @@ class PaintBallRound {
   final bool lifeLost;
   final DateTime createdAt;
 
+  /// Where the shot landed, so the field can paint it. Null for rounds
+  /// recorded before the game became position-based.
+  final int? shotPosition;
+
+  /// Who took this turn, which decides whose colour the paint is.
+  final String? activePartnerId;
+
   const PaintBallRound({
     required this.roundNumber,
     required this.shotResult,
     required this.lifeLost,
     required this.createdAt,
+    this.shotPosition,
+    this.activePartnerId,
   });
 
   factory PaintBallRound.fromJson(Map<String, dynamic> json) {
@@ -77,6 +86,9 @@ class PaintBallRound {
     return PaintBallRound(
       roundNumber: _asInt(data, 'round_number'),
       shotResult: _asString(data, 'shot_result') ?? 'miss',
+      shotPosition:
+          data['shot_position'] == null ? null : _asInt(data, 'shot_position'),
+      activePartnerId: _asString(data, 'active_partner_id'),
       lifeLost: _asBool(data, 'life_lost'),
       createdAt: _asDateTime(data, 'created_at') ?? DateTime.now(),
     );
@@ -555,6 +567,17 @@ class PaintBallUiState {
   final bool showMissFeedback;
   final bool showKnockout;
 
+  /// Where the player is hiding this turn, before they commit.
+  final int? hidePosition;
+
+  /// Where they are aiming, before they commit.
+  final int? shotPosition;
+
+  /// Where the partner was hiding, revealed once a shot resolves against
+  /// it. Null until then -- this is the hidden information the whole
+  /// game turns on.
+  final int? revealedPartnerPosition;
+
   const PaintBallUiState({
     this.phase = PaintBallGamePhase.lobby,
     this.isLoading = false,
@@ -564,6 +587,9 @@ class PaintBallUiState {
     this.showHitFeedback = false,
     this.showMissFeedback = false,
     this.showKnockout = false,
+    this.hidePosition,
+    this.shotPosition,
+    this.revealedPartnerPosition,
   });
 
   PaintBallUiState copyWith({
@@ -575,6 +601,9 @@ class PaintBallUiState {
     bool? showHitFeedback,
     bool? showMissFeedback,
     bool? showKnockout,
+    Object? hidePosition = _unset,
+    Object? shotPosition = _unset,
+    Object? revealedPartnerPosition = _unset,
   }) {
     return PaintBallUiState(
       phase: phase ?? this.phase,
@@ -586,8 +615,25 @@ class PaintBallUiState {
       showHitFeedback: showHitFeedback ?? this.showHitFeedback,
       showMissFeedback: showMissFeedback ?? this.showMissFeedback,
       showKnockout: showKnockout ?? this.showKnockout,
+      hidePosition:
+          identical(hidePosition, _unset)
+              ? this.hidePosition
+              : hidePosition as int?,
+      shotPosition:
+          identical(shotPosition, _unset)
+              ? this.shotPosition
+              : shotPosition as int?,
+      revealedPartnerPosition:
+          identical(revealedPartnerPosition, _unset)
+              ? this.revealedPartnerPosition
+              : revealedPartnerPosition as int?,
     );
   }
+
+  /// A turn is only ready once BOTH choices are made: where to hide and
+  /// where to shoot. Submitting with either missing would spend a turn on
+  /// half a move.
+  bool get canFire => hidePosition != null && shotPosition != null;
 
   bool get isGameActive =>
       phase == PaintBallGamePhase.playing ||

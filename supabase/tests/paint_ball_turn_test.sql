@@ -117,4 +117,49 @@ BEGIN
   END IF;
 END $$;
 
+-- The session state carries paint, but never the hiding places.
+DO $$
+DECLARE
+  a uuid := '00000000-0000-0000-0000-00000000cb01';
+  b uuid := '00000000-0000-0000-0000-00000000cb02';
+  v_rel uuid;
+  v_session uuid;
+  v_state jsonb;
+  v_round jsonb;
+BEGIN
+  INSERT INTO public.relationships(user_a, user_b, status)
+  VALUES (a, b, 'active') RETURNING id INTO v_rel;
+
+  INSERT INTO public.game_sessions(
+    relationship_id, initiator_id, game_type, status,
+    lives_a, lives_b, current_turn_user_id
+  )
+  VALUES (v_rel, a, 'paint_ball', 'active', 3, 3, a)
+  RETURNING id INTO v_session;
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  PERFORM public.paint_ball_take_turn(v_session, 1, 1::smallint, 2::smallint);
+
+  v_state := public.get_paint_ball_session_state(v_session)::jsonb;
+  v_round := v_state -> 'rounds' -> 0;
+
+  -- Without the position the field has nothing to paint, and a reopened
+  -- game shows a clean arena however many rounds were fired.
+  IF v_round ->> 'shot_position' IS NULL THEN
+    RAISE EXCEPTION 'the session state omits where the shot landed';
+  END IF;
+  IF v_round ->> 'active_partner_id' IS NULL THEN
+    RAISE EXCEPTION 'the session state omits whose shot it was';
+  END IF;
+
+  -- THE ONE THAT MATTERS. hide_position is the hidden information the
+  -- game turns on: a client that could read past hiding places could
+  -- read the current one, and the guess would stop being a guess.
+  IF v_round ? 'hide_position' THEN
+    RAISE EXCEPTION
+      'the session state leaks hide_position -- the guess is no longer a guess';
+  END IF;
+END $$;
+
 ROLLBACK;

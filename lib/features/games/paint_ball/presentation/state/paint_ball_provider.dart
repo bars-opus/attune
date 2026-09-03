@@ -138,6 +138,132 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
     );
   }
 
+  /// Chooses where to hide this turn.
+  void selectHide(int position) {
+    if (state.isSubmitting) return;
+    _sound.play(AppSound.gameTap);
+    state = state.copyWith(hidePosition: position);
+  }
+
+  /// Chooses where to shoot.
+  void selectShot(int position) {
+    if (state.isSubmitting) return;
+    _sound.play(AppSound.gameTap);
+    state = state.copyWith(shotPosition: position);
+  }
+
+  /// Commits the turn: hide here, shoot there.
+  ///
+  /// The server resolves the shot against where the partner actually hid,
+  /// so nothing here decides a hit. What comes back includes their
+  /// position, which is shown only now -- too late to change this shot,
+  /// and the best read available for the next one.
+  Future<void> takeTurn() async {
+    final session = state.session;
+    if (session == null) return;
+
+    final hide = state.hidePosition;
+    final shot = state.shotPosition;
+    if (hide == null || shot == null) return;
+
+    if (!session.isCurrentUserTurn(_ref.read(paintBallCurrentUserIdProvider))) {
+      state = state.copyWith(errorMessage: 'It\'s not your turn.');
+      return;
+    }
+
+    if (session.isCompleted || session.isAbandoned) {
+      state = state.copyWith(errorMessage: 'This game has already ended.');
+      return;
+    }
+
+    if (state.isSubmitting) return;
+
+    state = state.copyWith(
+      isSubmitting: true,
+      errorMessage: null,
+      phase: PaintBallGamePhase.shotAnimating,
+    );
+
+    try {
+      final result = await _service.takeTurn(
+        sessionId: session.sessionId,
+        roundNumber: session.currentRound,
+        hidePosition: hide,
+        shotPosition: shot,
+      );
+
+      final currentUserId = _ref.read(paintBallCurrentUserIdProvider);
+      final nextRounds = [
+        ...session.rounds,
+        PaintBallRound(
+          roundNumber: result.roundNumber,
+          shotResult: result.shotResult,
+          lifeLost: result.lifeLost,
+          createdAt: DateTime.now(),
+        ),
+      ];
+
+      final updatedSession = session.copyWith(
+        currentRound:
+            result.knockout ? session.currentRound : session.currentRound + 1,
+        totalRoundsCompleted: session.totalRoundsCompleted + 1,
+        livesA: result.livesA,
+        livesB: result.livesB,
+        currentTurnUserId: result.currentTurnUserId,
+        winnerUserId: result.knockout ? currentUserId : session.winnerUserId,
+        penaltyType: result.penaltyType,
+        penaltyPromptSnapshot: result.penaltyPromptSnapshot,
+        penaltyStatus: result.knockout ? 'pending' : null,
+        rounds: nextRounds,
+        isMyTurn: result.currentTurnUserId == currentUserId,
+        isWinner: result.knockout,
+        isLoser: false,
+      );
+
+      state = state.copyWith(
+        session: updatedSession,
+        phase:
+            result.knockout
+                ? PaintBallGamePhase.knockout
+                : PaintBallGamePhase.playing,
+        isSubmitting: false,
+        showHitFeedback: result.isHit,
+        showMissFeedback: result.isMiss,
+        showKnockout: result.knockout,
+        // Held after the turn so the reveal stays on screen while the
+        // player reads it; cleared when they start the next turn.
+        revealedPartnerPosition: result.defenderWasAt,
+      );
+
+      _sound.play(
+        result.knockout ? AppSound.gameComplete : AppSound.gameReveal,
+      );
+    } on PaintBallApiError catch (error) {
+      state = state.copyWith(
+        isSubmitting: false,
+        phase: PaintBallGamePhase.playing,
+        errorMessage: error.message,
+      );
+    } catch (error) {
+      state = state.copyWith(
+        isSubmitting: false,
+        phase: PaintBallGamePhase.playing,
+        errorMessage: 'Could not send that turn. Please try again.',
+      );
+    }
+  }
+
+  /// Clears the previous turn's choices and reveal, ready for a new one.
+  void beginNextTurn() {
+    state = state.copyWith(
+      hidePosition: null,
+      shotPosition: null,
+      revealedPartnerPosition: null,
+      showHitFeedback: false,
+      showMissFeedback: false,
+    );
+  }
+
   Future<void> fireShot({required bool hit}) async {
     final session = state.session;
     if (session == null) return;
