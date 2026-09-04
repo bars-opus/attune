@@ -7,6 +7,34 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 /// The three positions a player can take, drawn as shields.
 const int kPaintBallPositions = 3;
 
+/// The field's palette is fixed rather than theme-derived.
+///
+/// This is a diagram, not chrome: it reads as a schematic on black, and a
+/// light theme would invert the ground out from under it and leave the thin
+/// neon strokes invisible. The colours also carry meaning that must not
+/// drift with a theme -- green is yours, red is theirs, yellow is a player
+/// and the paint in flight.
+class PaintBallPalette {
+  const PaintBallPalette._();
+
+  /// The ground. Plain black, so the strokes glow rather than sit on grey.
+  static const Color field = Color(0xFF000000);
+
+  /// Yours: the mint of the reference diagram.
+  static const Color mine = Color(0xFF5EEAD4);
+
+  /// Theirs.
+  static const Color theirs = Color(0xFFFF4D6A);
+
+  /// A player, and the paint they fire. Deliberately neither side's colour:
+  /// a triangle reads as a person on the field, not as a piece of the
+  /// architecture around them.
+  static const Color player = Color(0xFFFFC94D);
+
+  /// The centre line dividing the two halves.
+  static const Color divider = Color(0xFF2A2A2A);
+}
+
 /// A splatter left by a shot, kept so the field accumulates a record of
 /// the match rather than resetting every turn.
 @immutable
@@ -59,8 +87,6 @@ class PaintBallField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return AspectRatio(
       aspectRatio: 1.05,
       child: LayoutBuilder(
@@ -83,9 +109,7 @@ class PaintBallField extends StatelessWidget {
           return Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
-              color: colorScheme.surfaceContainerHighest.withValues(
-                alpha: 0.35,
-              ),
+              color: PaintBallPalette.field,
             ),
             clipBehavior: Clip.antiAlias,
             child: Stack(
@@ -96,8 +120,8 @@ class PaintBallField extends StatelessWidget {
                   child: CustomPaint(
                     painter: _SplatPainter(
                       splats: splats,
-                      mineColor: colorScheme.primary,
-                      theirsColor: colorScheme.tertiary,
+                      mineColor: PaintBallPalette.mine,
+                      theirsColor: PaintBallPalette.theirs,
                     ),
                   ),
                 ),
@@ -120,10 +144,7 @@ class PaintBallField extends StatelessWidget {
                   top: height * 0.5,
                   left: Spacing.lg.w,
                   right: Spacing.lg.w,
-                  child: Container(
-                    height: 1.h,
-                    color: colorScheme.outline.withValues(alpha: 0.16),
-                  ),
+                  child: Container(height: 1.h, color: PaintBallPalette.divider),
                 ),
 
                 // Your row, at the bottom: you can see yourself.
@@ -149,7 +170,7 @@ class PaintBallField extends StatelessWidget {
                           progress: shotProgress!,
                           from: Offset(originX, height * 0.80),
                           to: Offset(targetX, height * 0.20),
-                          color: colorScheme.primary,
+                          color: PaintBallPalette.player,
                         ),
                       ),
                     ),
@@ -186,8 +207,8 @@ class _ShieldRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final base = isOpponent ? colorScheme.tertiary : colorScheme.primary;
+    final base =
+        isOpponent ? PaintBallPalette.theirs : PaintBallPalette.mine;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -200,7 +221,7 @@ class _ShieldRow extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           child: SizedBox(
             width: 74.w,
-            height: 78.h,
+            height: 92.h,
             child: Stack(
               alignment: Alignment.center,
               children: [
@@ -210,17 +231,23 @@ class _ShieldRow extends StatelessWidget {
                 AnimatedPositioned(
                   duration: const Duration(milliseconds: 320),
                   curve: Curves.easeOutCubic,
-                  // Opponent triangles peek above their shield; yours
-                  // below, so each stays on its own side of the line.
-                  top: isOpponent ? 6.h : null,
-                  bottom: isOpponent ? null : 6.h,
+                  // Under the arch, not above it: the triangle is taking
+                  // cover behind the shield, and a figure floating over
+                  // its own crown would read as standing in the open.
+                  top: isOpponent ? 34.h : null,
+                  bottom: isOpponent ? null : 34.h,
+                  left: 26.w,
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 220),
                     opacity: isOccupied ? 1 : 0,
                     child: CustomPaint(
-                      size: Size(26.w, 24.h),
+                      size: Size(22.w, 20.h),
                       painter: _TrianglePainter(
-                        color: base,
+                        // Both players are yellow. The shield colour says
+                        // whose side you are looking at; the triangle says
+                        // "a person is here", and that reads the same
+                        // whichever side they are on.
+                        color: PaintBallPalette.player,
                         pointsUp: !isOpponent,
                       ),
                     ),
@@ -233,29 +260,29 @@ class _ShieldRow extends StatelessWidget {
                 AnimatedPositioned(
                   duration: const Duration(milliseconds: 260),
                   curve: Curves.easeOutBack,
-                  left: isAimed ? 22.w : 0,
-                  right: isAimed ? 0 : 0,
+                  // Only ONE horizontal anchor: setting left AND right
+                  // stretches the child to the slot's full width, which
+                  // overrides the painter's size and flattens the arch
+                  // into a dome.
+                  left: isAimed ? 30.w : 18.w,
                   bottom: isOpponent ? 8.h : null,
                   top: isOpponent ? null : 8.h,
-                  child: AnimatedContainer(
+                  child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 220),
-                    width: 52.w,
-                    height: 34.h,
-                    decoration: BoxDecoration(
-                      color: base.withValues(
-                        alpha:
-                            isAimed
-                                ? 0.9
-                                : enabled
-                                ? 0.42
-                                : 0.30,
-                      ),
-                      borderRadius: BorderRadius.circular(
-                        BorderRadiusTokens.sm.r,
-                      ),
-                      border: Border.all(
-                        color: base.withValues(alpha: isAimed ? 1 : 0.45),
-                        width: isAimed ? 2.r : 1.r,
+                    // Aiming brightens the shield rather than filling it:
+                    // the stroke stays a stroke, so the field keeps
+                    // reading as a schematic.
+                    opacity:
+                        isAimed
+                            ? 1.0
+                            : enabled
+                            ? 0.75
+                            : 0.55,
+                    child: CustomPaint(
+                      size: Size(38.w, 62.h),
+                      painter: _ShieldPainter(
+                        color: base,
+                        strokeWidth: isAimed ? 2.4.r : 1.6.r,
                       ),
                     ),
                   ),
@@ -267,6 +294,50 @@ class _ShieldRow extends StatelessWidget {
       }),
     );
   }
+}
+
+/// A shield, drawn as the reference's outlined arch: straight legs, a
+/// rounded top, and an open base. Stroked rather than filled -- the whole
+/// field is a line diagram, and a solid block would read as a wall rather
+/// than as cover you are standing behind.
+class _ShieldPainter extends CustomPainter {
+  _ShieldPainter({required this.color, required this.strokeWidth});
+
+  final Color color;
+  final double strokeWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint =
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth
+          ..strokeCap = StrokeCap.round;
+
+    final radius = size.width / 2;
+    final path =
+        Path()
+          ..moveTo(0, size.height)
+          ..lineTo(0, radius)
+          ..arcToPoint(
+            Offset(size.width, radius),
+            radius: Radius.circular(radius),
+            clockwise: true,
+          )
+          ..lineTo(size.width, size.height);
+
+    canvas.drawPath(path, paint);
+
+    // The dots that cap each leg in the reference diagram.
+    final dot = Paint()..color = color;
+    canvas.drawCircle(Offset(0, radius), strokeWidth * 1.6, dot);
+    canvas.drawCircle(Offset(size.width, radius), strokeWidth * 1.6, dot);
+  }
+
+  @override
+  bool shouldRepaint(_ShieldPainter old) =>
+      old.color != color || old.strokeWidth != strokeWidth;
 }
 
 class _TrianglePainter extends CustomPainter {
@@ -318,16 +389,23 @@ class _ProjectilePainter extends CustomPainter {
 
     // A trail rather than a bare dot: at this speed a single circle reads
     // as a jump between frames rather than a thing travelling.
-    for (var i = 0; i < 4; i++) {
-      final trailAt = (progress - i * 0.06).clamp(0.0, 1.0);
+    for (var i = 1; i <= 5; i++) {
+      final trailAt = (progress - i * 0.035).clamp(0.0, 1.0);
       final point = Offset.lerp(from, to, trailAt)!;
       canvas.drawCircle(
         point,
-        7.0 - i * 1.4,
-        Paint()..color = color.withValues(alpha: 0.55 - i * 0.12),
+        7.0 - i * 0.9,
+        Paint()..color = color.withValues(alpha: 0.42 - i * 0.07),
       );
     }
 
+    // A soft halo under the ball so it reads as lit on black rather than
+    // as a flat sticker.
+    canvas.drawCircle(
+      position,
+      12,
+      Paint()..color = color.withValues(alpha: 0.22),
+    );
     canvas.drawCircle(position, 7, Paint()..color = color);
   }
 

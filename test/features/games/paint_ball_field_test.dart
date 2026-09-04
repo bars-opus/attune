@@ -8,6 +8,32 @@ Widget _wrap(Widget child) => ScreenUtilInit(
   builder: (context, _) => MaterialApp(home: Scaffold(body: child)),
 );
 
+/// Counts the player triangles that are actually visible.
+///
+/// Shields and triangles both animate their opacity, so counting every
+/// AnimatedOpacity would conflate the two. This walks to the triangle
+/// painters specifically -- the thing that reveals where somebody is
+/// standing, which is the secret the whole game rests on.
+int _visibleTriangles(WidgetTester tester) {
+  var count = 0;
+  for (final element in find.byType(AnimatedOpacity).evaluate()) {
+    final widget = element.widget as AnimatedOpacity;
+    if (widget.opacity <= 0) continue;
+    final hasTriangle = find
+        .descendant(
+          of: find.byWidget(widget),
+          matching: find.byType(CustomPaint),
+        )
+        .evaluate()
+        .any((e) {
+          final painter = (e.widget as CustomPaint).painter;
+          return painter.runtimeType.toString().contains('Triangle');
+        });
+    if (hasTriangle) count++;
+  }
+  return count;
+}
+
 void main() {
   testWidgets('the field renders with a full match of paint', (tester) async {
     // The painter builds an irregular path per splat with a seeded
@@ -136,15 +162,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Six shields, each with a triangle that is opacity 0 unless
-    // occupied. Exactly one may be visible: mine.
-    final visible = tester
-        .widgetList<AnimatedOpacity>(find.byType(AnimatedOpacity))
-        .where((widget) => widget.opacity > 0)
-        .length;
-
     expect(
-      visible,
+      _visibleTriangles(tester),
       1,
       reason: 'only the viewer\'s own position may be shown',
     );
@@ -164,13 +183,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final visible = tester
-        .widgetList<AnimatedOpacity>(find.byType(AnimatedOpacity))
-        .where((widget) => widget.opacity > 0)
-        .length;
-
     expect(
-      visible,
+      _visibleTriangles(tester),
       2,
       reason: 'after the reveal both positions are on the field',
     );

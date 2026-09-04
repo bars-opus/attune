@@ -6,8 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/paint_ball_models.dart';
 import '../state/paint_ball_provider.dart';
-import '../widgets/paint_ball_arena.dart';
-import '../widgets/paint_ball_controls.dart';
 import '../widgets/paint_ball_lives_display.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart';
 import 'package:attune/core/ui/presence/breathing_dots.dart';
@@ -91,8 +89,13 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
     }
 
     return Scaffold(
+      // Black regardless of theme, matching the field. Paint Ball is a
+      // schematic on a dark ground; a light surface would leave the field
+      // as a black rectangle floating on white.
+      backgroundColor: PaintBallPalette.field,
       appBar: AppBar(
         title: Text('Paint Ball - Round ${session.currentRound}'),
+        foregroundColor: Colors.white,
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
@@ -118,18 +121,16 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
                 width: double.infinity,
                 padding: EdgeInsets.all(Spacing.md.w),
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withValues(
-                    alpha: 0.35,
-                  ),
+                  color: Colors.white.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(12.r),
                   border: Border.all(
-                    color: colorScheme.outline.withValues(alpha: 0.08),
+                    color: Colors.white.withValues(alpha: 0.12),
                   ),
                 ),
                 child: Text(
                   'This session has ended.',
                   style: textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.7),
+                    color: Colors.white.withValues(alpha: 0.7),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -273,7 +274,6 @@ class _HideChooser extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     return Column(
@@ -287,7 +287,7 @@ class _HideChooser extends StatelessWidget {
         Text(
           'They will shoot at where they think you are.',
           style: textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurface.withValues(alpha: 0.6),
+            color: Colors.white.withValues(alpha: 0.6),
           ),
         ),
         Gap(Spacing.sm.h),
@@ -305,8 +305,8 @@ class _HideChooser extends StatelessWidget {
                     decoration: BoxDecoration(
                       color:
                           isSelected
-                              ? colorScheme.primary.withValues(alpha: 0.85)
-                              : colorScheme.primary.withValues(alpha: 0.10),
+                              ? PaintBallPalette.mine.withValues(alpha: 0.85)
+                              : PaintBallPalette.mine.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(
                         BorderRadiusTokens.md.r,
                       ),
@@ -317,8 +317,8 @@ class _HideChooser extends StatelessWidget {
                         size: 20.h,
                         color:
                             isSelected
-                                ? colorScheme.onPrimary
-                                : colorScheme.primary.withValues(alpha: 0.55),
+                                ? PaintBallPalette.field
+                                : PaintBallPalette.mine.withValues(alpha: 0.55),
                       ),
                     ),
                   ),
@@ -348,7 +348,6 @@ class _TurnPrompt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     // A resolved shot: hold the reveal until they choose to move on, so
@@ -362,7 +361,7 @@ class _TurnPrompt extends StatelessWidget {
             hit ? 'Direct hit' : 'They were somewhere else',
             style: textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w700,
-              color: hit ? colorScheme.primary : colorScheme.onSurface,
+              color: hit ? PaintBallPalette.mine : Colors.white,
             ),
           ),
           Gap(Spacing.xs.h),
@@ -371,7 +370,7 @@ class _TurnPrompt extends StatelessWidget {
                 ? 'You read them right.'
                 : 'Now you know where they were hiding.',
             style: textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurface.withValues(alpha: 0.65),
+              color: Colors.white.withValues(alpha: 0.65),
             ),
             textAlign: TextAlign.center,
           ),
@@ -394,7 +393,7 @@ class _TurnPrompt extends StatelessWidget {
           Text(
             'Waiting for their move',
             style: textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurface.withValues(alpha: 0.65),
+              color: Colors.white.withValues(alpha: 0.65),
             ),
           ),
         ],
