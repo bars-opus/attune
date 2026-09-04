@@ -22,6 +22,12 @@ Before chat ships, one of these must be explicitly chosen and recorded:
 
 No implementation should silently assume option 1 without written approval.
 
+> **Written 2026-09-04:** the specification this decision called for now
+> exists as `DATING_CHAT_SAFETY_SPEC.md`, in draft and unapproved. It answers
+> the Section 3 scope questions and carries the Section 5 blockers forward
+> with its own additions. Review it against this plan; the engineering tasks
+> in Section 4 stay blocked until its blockers are checked.
+
 **Working decision (product owner, July 2026): option 2 — a separate Dating
 Chat Safety specification.** Rationale: the threat models barely overlap. The
 couples Safety System targets coercive control by an intimate partner (tiered
