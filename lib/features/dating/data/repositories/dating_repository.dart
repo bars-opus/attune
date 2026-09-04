@@ -12,10 +12,20 @@ class DatingRepository {
   DatingRepository(this._supabase);
 
   final SupabaseClient _supabase;
+
+  /// Every RPC and PostgREST call in this repository is bounded by this.
+  ///
+  /// Checklist 1.2: without it a stalled connection leaves the caller
+  /// awaiting forever, which in practice is a dating or healing screen
+  /// spinning with no error and no way back. Matches the 30s used by
+  /// RelationshipLifecycleService.
+  static const _timeout = Duration(seconds: 30);
   final Map<String, String> _pendingIdempotencyKeys = <String, String>{};
 
   Future<Map<String, dynamic>> getEligibility() async {
-    final response = await _supabase.rpc('get_dating_eligibility');
+    final response = await _supabase
+        .rpc('get_dating_eligibility')
+        .timeout(_timeout);
     if (response is! Map) {
       return const <String, dynamic>{'is_eligible': false, 'reason': 'unknown'};
     }
@@ -28,12 +38,12 @@ class DatingRepository {
       return null;
     }
 
-    final response =
-        await _supabase
-            .from('dating_enrollments')
-            .select('*')
-            .eq('user_id', userId)
-            .maybeSingle();
+    final response = await _supabase
+        .from('dating_enrollments')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle()
+        .timeout(_timeout);
 
     if (response == null) {
       return null;
@@ -154,20 +164,18 @@ class DatingRepository {
       return null;
     }
 
-    final profile =
-        await _supabase
-            .from('dating_profiles')
-            .select(
-              'display_name, city_region_code, relationship_intention, bio',
-            )
-            .eq('user_id', userId)
-            .maybeSingle();
-    final preferences =
-        await _supabase
-            .from('dating_preferences')
-            .select('min_age, max_age')
-            .eq('user_id', userId)
-            .maybeSingle();
+    final profile = await _supabase
+        .from('dating_profiles')
+        .select('display_name, city_region_code, relationship_intention, bio')
+        .eq('user_id', userId)
+        .maybeSingle()
+        .timeout(_timeout);
+    final preferences = await _supabase
+        .from('dating_preferences')
+        .select('min_age, max_age')
+        .eq('user_id', userId)
+        .maybeSingle()
+        .timeout(_timeout);
 
     if (profile == null && preferences == null) {
       return null;
@@ -177,10 +185,9 @@ class DatingRepository {
   }
 
   Future<List<DatingIntroduction>> getIntroductions() async {
-    final response = await _supabase.rpc(
-      'get_my_dating_introductions',
-      params: {'p_limit': 20},
-    );
+    final response = await _supabase
+        .rpc('get_my_dating_introductions', params: {'p_limit': 20})
+        .timeout(_timeout);
 
     if (response is! List) {
       return const <DatingIntroduction>[];
@@ -212,10 +219,9 @@ class DatingRepository {
   }
 
   Future<List<Map<String, dynamic>>> getMatches() async {
-    final response = await _supabase.rpc(
-      'get_my_dating_matches',
-      params: {'p_limit': 50},
-    );
+    final response = await _supabase
+        .rpc('get_my_dating_matches', params: {'p_limit': 50})
+        .timeout(_timeout);
 
     if (response is! List) {
       return const <Map<String, dynamic>>[];
@@ -335,24 +341,31 @@ class DatingRepository {
   }
 
   Future<List<DatingProfilePhoto>> listPhotos() async {
-    final response = await _supabase.rpc('list_dating_profile_photos');
+    final response = await _supabase
+        .rpc('list_dating_profile_photos')
+        .timeout(_timeout);
     if (response is! List) {
       return const <DatingProfilePhoto>[];
     }
     return response
         .whereType<Map>()
-        .map((row) => DatingProfilePhoto.fromJson(Map<String, dynamic>.from(row)))
+        .map(
+          (row) => DatingProfilePhoto.fromJson(Map<String, dynamic>.from(row)),
+        )
         .toList(growable: false);
   }
 
   Future<Map<String, dynamic>> _createPhotoUploadIntent(String mimeType) async {
-    final response = await _supabase.rpc(
-      'create_dating_photo_upload_intent',
-      params: {'p_mime_type': mimeType},
-    );
-    final row = response is List && response.isNotEmpty
-        ? Map<String, dynamic>.from(response.first as Map)
-        : Map<String, dynamic>.from(response as Map);
+    final response = await _supabase
+        .rpc(
+          'create_dating_photo_upload_intent',
+          params: {'p_mime_type': mimeType},
+        )
+        .timeout(_timeout);
+    final row =
+        response is List && response.isNotEmpty
+            ? Map<String, dynamic>.from(response.first as Map)
+            : Map<String, dynamic>.from(response as Map);
     return row;
   }
 
@@ -368,16 +381,24 @@ class DatingRepository {
     final bucket = intent['bucket'] as String;
     final intentId = intent['intent_id'] as String;
 
-    await _supabase.storage.from(bucket).upload(
+    await _supabase.storage
+        .from(bucket)
+        .upload(
           storageKey,
           prepared.file,
-          fileOptions: FileOptions(upsert: false, contentType: prepared.mimeType),
-        );
+          fileOptions: FileOptions(
+            upsert: false,
+            contentType: prepared.mimeType,
+          ),
+        )
+        .timeout(_timeout);
 
-    final response = await _supabase.rpc(
-      'insert_dating_profile_photo',
-      params: {'p_intent_id': intentId, 'p_position': position},
-    );
+    final response = await _supabase
+        .rpc(
+          'insert_dating_profile_photo',
+          params: {'p_intent_id': intentId, 'p_position': position},
+        )
+        .timeout(_timeout);
     return response as String;
   }
 
@@ -396,20 +417,20 @@ class DatingRepository {
   /// failed (not a low-confidence match) — per spec §4 step 6, the caller
   /// should offer the user a retry rather than treating this as either
   /// success or failure.
-  Future<String> submitVerificationSelfie({
-    required String localPath,
-  }) async {
+  Future<String> submitVerificationSelfie({required String localPath}) async {
     const preparer = DatingImagePreparer();
     final prepared = await preparer.prepare(localPath);
     final bytes = await File(prepared.file.path).readAsBytes();
 
-    final response = await _supabase.functions.invoke(
-      'verify-dating-profile',
-      body: {
-        'selfie_base64': base64Encode(bytes),
-        'mime_type': prepared.mimeType,
-      },
-    );
+    final response = await _supabase.functions
+        .invoke(
+          'verify-dating-profile',
+          body: {
+            'selfie_base64': base64Encode(bytes),
+            'mime_type': prepared.mimeType,
+          },
+        )
+        .timeout(_timeout);
     if (response.status != 200) {
       throw Exception('Verification request failed');
     }
@@ -424,7 +445,8 @@ class DatingRepository {
         .from('dating_profiles')
         .select('verification_state')
         .eq('user_id', userId)
-        .maybeSingle();
+        .maybeSingle()
+        .timeout(_timeout);
     return response?['verification_state'] as String? ?? 'unverified';
   }
 

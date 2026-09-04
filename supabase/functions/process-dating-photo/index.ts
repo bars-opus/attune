@@ -90,6 +90,43 @@ serve(async (req) => {
           },
         );
 
+        // Strip metadata BEFORE the photo can become visible (§4.3). Only
+        // an approved photo is ever shown, so doing this here means no
+        // EXIF-bearing object is reachable by another user at any point.
+        //
+        // A failure to strip must not approve the photo: a photo we could
+        // not clean goes to needs_review rather than being published with
+        // its GPS intact.
+        if (outcome.state === "approved") {
+          const stripped = stripJpegMetadata(bytes);
+          if (stripped) {
+            const { error: reuploadError } = await supabase.storage
+              .from("dating-profile-photos")
+              .update(photo.storage_key, stripped, {
+                contentType: "image/jpeg",
+                upsert: true,
+              });
+            if (reuploadError) throw new Error("strip_reupload_failed");
+          } else {
+            // Not a JPEG we can walk safely. PNG carries no EXIF by the
+            // spec's own structure, but an unrecognised container is not
+            // something to publish unexamined.
+            const isPng = bytes.length > 8 && bytes[0] === 0x89 &&
+              bytes[1] === 0x50;
+            if (!isPng) {
+              await writeVerdict(
+                supabase,
+                photo.id,
+                "needs_review",
+                "metadata_strip_unsupported",
+              );
+              await finish(supabase, job.photo_id, "done", null);
+              processed++;
+              continue;
+            }
+          }
+        }
+
         await writeVerdict(supabase, photo.id, outcome.state, outcome.reason);
         await finish(supabase, job.photo_id, "done", null);
         processed++;
@@ -148,6 +185,78 @@ async function finish(
     })
     .eq("photo_id", photoId).eq("state", "processing");
   if (error) throw error;
+}
+
+/**
+ * Removes EXIF and every other metadata segment from a JPEG.
+ *
+ * Spec §4.3 requires stripping server-side. The client already passes
+ * `keepExif: false`, but that is a courtesy the client can withdraw: a
+ * modified or replayed upload can carry GPS coordinates, a capture
+ * timestamp, and a device serial straight into a dating photo other users
+ * will see. Stripping here is what makes it true regardless of the client.
+ *
+ * JPEG is a sequence of marker segments. Everything a camera writes lives
+ * in APPn (0xE0-0xEF, holding EXIF/GPS in APP1 and thumbnails that carry
+ * their own EXIF) or COM (0xFE). Dropping those segments leaves the
+ * compressed image data untouched, so this re-encodes nothing and cannot
+ * degrade the picture.
+ *
+ * Returns null when the input is not a JPEG we can safely walk, so callers
+ * fall back to leaving the object alone rather than writing something
+ * corrupt.
+ */
+function stripJpegMetadata(bytes: Uint8Array): Uint8Array | null {
+  if (bytes.length < 4 || bytes[0] !== 0xFF || bytes[1] !== 0xD8) return null;
+
+  const keep: Array<[number, number]> = [];
+  let offset = 2;
+
+  while (offset < bytes.length - 1) {
+    if (bytes[offset] !== 0xFF) return null;
+
+    const marker = bytes[offset + 1];
+
+    // Start of scan: the entropy-coded image data runs to the end of the
+    // file, so copy the remainder verbatim and stop parsing.
+    if (marker === 0xDA) {
+      keep.push([offset, bytes.length]);
+      break;
+    }
+
+    // Standalone markers carry no length field.
+    if (marker === 0x01 || (marker >= 0xD0 && marker <= 0xD7)) {
+      keep.push([offset, offset + 2]);
+      offset += 2;
+      continue;
+    }
+
+    const segmentLength = (bytes[offset + 2] << 8) | bytes[offset + 3];
+    if (segmentLength < 2 || offset + 2 + segmentLength > bytes.length) {
+      return null;
+    }
+
+    const isAppSegment = marker >= 0xE0 && marker <= 0xEF;
+    const isComment = marker === 0xFE;
+    if (!isAppSegment && !isComment) {
+      keep.push([offset, offset + 2 + segmentLength]);
+    }
+
+    offset += 2 + segmentLength;
+  }
+
+  let size = 2;
+  for (const [start, end] of keep) size += end - start;
+
+  const out = new Uint8Array(size);
+  out[0] = 0xFF;
+  out[1] = 0xD8;
+  let cursor = 2;
+  for (const [start, end] of keep) {
+    out.set(bytes.subarray(start, end), cursor);
+    cursor += end - start;
+  }
+  return out;
 }
 
 async function readImageDimensions(
