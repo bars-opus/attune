@@ -128,6 +128,42 @@ BEGIN
   END IF;
 END $$;
 
+-- ---------------------------------------------------------------------
+-- Operational health surfaces the exclusion key (checklist 4.9).
+--
+-- An unset key makes end_relationship record no exclusion and raise only a
+-- WARNING, leaving former partners mutually matchable with nothing to show
+-- it. Health must report both the key's presence and the relationships that
+-- already ended without an exclusion row.
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  v_health jsonb;
+BEGIN
+  v_health := public.get_dating_operational_health();
+
+  IF NOT (v_health ? 'exclusion_key_present') THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: health does not report exclusion_key_present';
+  END IF;
+  IF (v_health->>'exclusion_key_present')::boolean IS NOT TRUE THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the key is set but health reports it absent';
+  END IF;
+  IF NOT (v_health ? 'relationships_ended_without_exclusion_24h') THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: health omits relationships_ended_without_exclusion_24h';
+  END IF;
+  -- Every relationship ended so far in this test ran WITH the key set, so
+  -- the recorder ran and the gap count must be zero. A non-zero value means
+  -- an exclusion failed silently on a path the earlier assertions missed.
+  IF (v_health->>'relationships_ended_without_exclusion_24h')::int <> 0 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: % ended relationship(s) recorded no exclusion',
+      v_health->>'relationships_ended_without_exclusion_24h';
+  END IF;
+END $$;
+
 -- Ending must survive a failure to record. A user has to be able to
 -- leave a relationship even when the dating key is missing; the
 -- alternative is being trapped by a feature they may not even use.
@@ -152,6 +188,26 @@ BEGIN
 
   IF (SELECT status FROM public.relationships WHERE id = v_rel) <> 'ended' THEN
     RAISE EXCEPTION 'an unset dating key blocked ending a relationship';
+  END IF;
+
+  -- The silent failure just happened: this relationship ended and recorded
+  -- no exclusion, so the two former partners stay mutually matchable. That
+  -- is precisely what health must surface -- a counter that cannot count
+  -- past zero would report the system healthy while the damage accrues.
+  IF EXISTS (SELECT 1 FROM public.dating_former_partner_exclusions
+             WHERE relationship_id = v_rel) THEN
+    RAISE EXCEPTION
+      'an exclusion was recorded without a key -- test premise is wrong';
+  END IF;
+  IF (public.get_dating_operational_health()
+       ->>'relationships_ended_without_exclusion_24h')::int < 1 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: health missed a relationship that ended with no exclusion';
+  END IF;
+  IF (public.get_dating_operational_health()
+       ->>'exclusion_key_present')::boolean IS NOT FALSE THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: health reports a key that is not set';
   END IF;
 END $$;
 
