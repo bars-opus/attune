@@ -660,4 +660,46 @@ void main() {
     );
     expect(opensDown, isNotEmpty);
   });
+
+  testWidgets('the far row is named for the partner', (tester) async {
+    // "THEIR COVER" turns the person you are playing into an opponent.
+    // This app is about that specific person, so the board says who.
+    await tester.pumpWidget(
+      _wrap(
+        const PaintBallField(
+          splats: [],
+          myPosition: 1,
+          selectedShot: null,
+          revealedPartnerPosition: null,
+          isMyTurn: true,
+          partnerName: 'Ama',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('AMA'), findsOneWidget);
+    expect(find.text('THEIR COVER'), findsNothing);
+  });
+
+  testWidgets('an unknown partner falls back rather than showing a gap', (
+    tester,
+  ) async {
+    // The name loads asynchronously. Until it arrives the board must
+    // still read as a board.
+    await tester.pumpWidget(
+      _wrap(
+        const PaintBallField(
+          splats: [],
+          myPosition: 1,
+          selectedShot: null,
+          revealedPartnerPosition: null,
+          isMyTurn: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('THEIR COVER'), findsOneWidget);
+  });
 }

@@ -454,9 +454,18 @@ BEGIN
     RAISE EXCEPTION 'the session state omits whose shot it was';
   END IF;
 
-  -- THE ONE THAT MATTERS. hide_position is the hidden information the
-  -- game turns on: a client that could read past hiding places could
-  -- read the current one, and the guess would stop being a guess.
+  -- THE ONE THAT MATTERS. A partner's live hiding place is the secret the
+  -- game turns on: a closer who could read the opener's position would
+  -- simply shoot it, and the guess would stop being a guess.
+  --
+  -- Checked as the PARTNER, not the mover. A player may always see their
+  -- own position -- it is their own choice, and withholding it is what
+  -- made a chosen cover vanish the moment it was submitted.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  v_state := public.get_paint_ball_session_state(v_session)::jsonb;
+  v_round := v_state -> 'rounds' -> 0;
+
   IF v_round ? 'hide_position' THEN
     RAISE EXCEPTION
       'the session state leaks hide_position -- the guess is no longer a guess';

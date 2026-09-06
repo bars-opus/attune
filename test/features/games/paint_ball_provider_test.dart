@@ -446,6 +446,48 @@ void main() {
     expect(state.hidePosition, inInclusiveRange(0, 2));
   });
 
+  test('an unresolved move still holds your position', () async {
+    // Reported from a device: a position chosen before shooting did not
+    // survive the turn. The server withholds hide_position until a round
+    // resolves, so a player's OWN just-submitted cover was invisible to
+    // them and got re-randomised on the next load.
+    //
+    // Your own position was never the secret -- your partner's live one
+    // is -- so it now comes back, and this asserts the client keeps it.
+    final gateway = _FakePaintBallGateway(
+      _session(currentRound: 2).copyWith(
+        rounds: [
+          PaintBallRound(
+            roundNumber: 2,
+            shotResult: 'miss',
+            lifeLost: false,
+            createdAt: DateTime.now(),
+            activePartnerId: 'user-a',
+            hidePosition: 0,
+          ),
+        ],
+      ),
+      channel,
+    );
+    final container = _container(
+      gateway: gateway,
+      sound: FakeSoundService(),
+      haptics: FakeHaptics(),
+      analytics: const PaintBallAnalytics(),
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(paintBallSessionProvider.notifier)
+        .loadSession('session-1');
+
+    expect(
+      container.read(paintBallSessionProvider).hidePosition,
+      0,
+      reason: 'a chosen cover survives the turn it was chosen in',
+    );
+  });
+
   test('a later round keeps you where you were', () async {
     // Staying put must be a real choice made by doing nothing. If each
     // round re-rolled, a player would be teleported between turns and

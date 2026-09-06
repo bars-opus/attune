@@ -10,6 +10,7 @@ import '../widgets/paint_ball_lives_display.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart';
 import 'package:attune/core/ui/presence/breathing_dots.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart';
 
 class PaintBallBattleScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -184,6 +185,10 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
     // A queued replay drives the field until it has played. It starts on
     // the next frame rather than during build, since starting an
     // animation while building is a framework error.
+    // Null until it loads; the field falls back to "THEIR COVER" rather
+    // than showing a gap where a name will appear.
+    final partnerName = ref.watch(partnerNameProvider).valueOrNull;
+
     final replay = state.pendingReplay;
     if (replay != null && !_replayInFlight) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -248,6 +253,7 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
                 myLives: lives.myLives,
                 opponentLives: lives.opponentLives,
                 isMyTurn: session.isCurrentUserTurn(currentUserId),
+                partnerName: partnerName,
               ),
               Gap(Spacing.md.h),
               Expanded(
@@ -316,6 +322,7 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
                                 isMyTurn: session.isCurrentUserTurn(
                                   currentUserId,
                                 ),
+                                partnerName: partnerName,
                                 onSelectShot: notifier.selectShot,
                                 onSelectHide: notifier.selectHide,
                                 onFire: state.canFire ? _fire : null,

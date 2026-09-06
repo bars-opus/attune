@@ -9,24 +9,33 @@ class PaintBallLivesDisplay extends StatelessWidget {
   final int opponentLives;
   final bool isMyTurn;
 
+  /// Null until it loads, or if there is no name to show -- the display
+  /// falls back to "THEM" rather than rendering a gap.
+  final String? partnerName;
+
   const PaintBallLivesDisplay({
     super.key,
     required this.myLives,
     required this.opponentLives,
     required this.isMyTurn,
+    this.partnerName,
   });
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    // Named where we know it. "Them" turns the person you are playing
+    // into an opponent; their name keeps them the person.
+    final them = partnerName?.toUpperCase() ?? 'THEM';
+    final theirs = partnerName ?? 'Your partner';
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
       child: Semantics(
         container: true,
         label:
-            'Your partner has $opponentLives lives. You have $myLives lives. '
-            '${isMyTurn ? 'It is your turn.' : 'It is your partner\'s turn.'}',
+            '$theirs has $opponentLives lives. You have $myLives lives. '
+            '${isMyTurn ? 'It is your turn.' : 'It is $theirs\'s turn.'}',
         child: ExcludeSemantics(
           child: Row(
             children: [
@@ -35,7 +44,7 @@ class PaintBallLivesDisplay extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'THEM  $opponentLives',
+                      '$them  $opponentLives',
                       style: textTheme.labelMedium?.copyWith(
                         color: PaintBallPalette.theirs,
                         fontWeight: FontWeight.w700,
@@ -49,7 +58,11 @@ class PaintBallLivesDisplay extends StatelessWidget {
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
                 child: Text(
-                  isMyTurn ? 'YOUR MOVE' : 'THEIR MOVE',
+                  isMyTurn
+                      ? 'YOUR MOVE'
+                      : partnerName == null
+                      ? 'THEIR MOVE'
+                      : '$them\'S MOVE',
                   style: textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: Colors.white.withValues(alpha: 0.62),

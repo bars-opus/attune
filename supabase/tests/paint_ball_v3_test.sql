@@ -132,6 +132,20 @@ BEGIN
       'CONTRACT VIOLATED: an unresolved round exposed hide_position';
   END IF;
 
+  -- The mover sees their OWN choice while the round is still open. This
+  -- is the half the blanket rule got wrong: a player who could not read
+  -- back their own cover had it silently re-randomised on every reload,
+  -- so a position they chose did not survive the turn they chose it in.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  v_state := public.get_paint_ball_session_state(v_session)::text;
+  IF v_state !~ '"hide_position"' THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: a player cannot see their own hiding place';
+  END IF;
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', b, 'role', 'authenticated')::text, true);
   PERFORM public.paint_ball_take_turn(v_session, 1, 1::smallint, 1::smallint);
 
   -- AFTER: the round resolved, so both hides are history and the replay

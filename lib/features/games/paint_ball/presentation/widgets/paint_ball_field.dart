@@ -85,6 +85,7 @@ class PaintBallField extends StatelessWidget {
     this.replayProgress,
     this.theirRevealedShot,
     this.isReplaying = false,
+    this.partnerName,
   });
 
   final List<PaintSplat> splats;
@@ -115,6 +116,11 @@ class PaintBallField extends StatelessWidget {
   /// A round is playing back. Both sides emerge and fire; the board is not
   /// accepting input.
   final bool isReplaying;
+
+  /// Whose cover the top row is. Named rather than "THEIR COVER" because
+  /// the person across the field is someone specific, and this app is
+  /// about that person -- a generic pronoun makes them an opponent.
+  final String? partnerName;
 
   @override
   Widget build(BuildContext context) {
@@ -175,8 +181,11 @@ class PaintBallField extends StatelessWidget {
                   top: height * 0.035,
                   left: 0,
                   right: 0,
-                  child: const _FieldLabel(
-                    label: 'THEIR COVER',
+                  child: _FieldLabel(
+                    label:
+                        partnerName == null
+                            ? 'THEIR COVER'
+                            : partnerName!.toUpperCase(),
                     color: PaintBallPalette.theirs,
                   ),
                 ),
@@ -584,6 +593,7 @@ class _TravellingPlayer extends StatefulWidget {
 
   final int position;
   final bool isOpponent;
+
   /// The full row, and one cover inside it. Both are needed because the
   /// covers are a fixed width laid out with even gaps, so their spacing
   /// is not simply the row divided three ways.
@@ -673,8 +683,7 @@ class _TravellingPlayerState extends State<_TravellingPlayer>
             (widget.rowWidth - kPaintBallPositions * widget.coverWidth) /
             (kPaintBallPositions + 1);
         final coverCentre =
-            gap * (column + 1) +
-            widget.coverWidth * (column + 0.5);
+            gap * (column + 1) + widget.coverWidth * (column + 0.5);
         final x = coverCentre - 11.w;
         // Both rows shelter under their own dome, and the domes now face
         // each other -- yours crowns at the top of its box, theirs at the
