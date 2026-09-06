@@ -69,16 +69,23 @@ iMessage-style paintball: each player has 3 lives, takes turns firing paint
 splashes, and loses a life when hit. When a player loses all 3 lives, the round
 ends in a Truth or Dare penalty.
 
-The mechanic is **hidden information**, not reflexes. On each turn you choose
-where to hide on your own side and where to shoot on theirs; the server
-compares your shot to where they were actually hiding. You then learn where
-they were, and guess again. The skill is reading your partner — whether they
-repeat, and whether they think you expect them to — which is the only kind of
-skill this app should reward. See §5.5.
+The mechanic is **simultaneous prediction**, not reflexes. Each turn you
+choose where to hide on your own side and where to shoot on theirs. Once both
+partners have taken their half, the round resolves: each shot is checked
+against where the other actually hid *that same round*. You are guessing where
+they will go, not where they were.
 
-It is asynchronous: the two partners are on separate devices and do not need to be
-online at the same time. Each turn is a discrete, server-recorded action, exactly
-like an answer in This or That.
+Then you watch it: both characters step out, aim, and fire at once — the
+**replay** (§5.5), which is where the game stops being arithmetic and becomes
+a scene. The skill is reading your partner — whether they repeat, and whether
+they think you expect them to — which is the only kind of skill this app
+should reward.
+
+It is asynchronous: the two partners are on separate devices and do not need
+to be online at the same time. Each half-round is a discrete, server-recorded
+action, exactly like an answer in This or That — the duel only *looks*
+simultaneous, which is the trick that lets a couple in two time zones play
+one.
 
 ### 1.2 Core characteristics
 
@@ -92,8 +99,8 @@ like an answer in This or That.
 | Win condition | Opponent reaches 0 lives |
 | Loss penalty | One **declinable** Truth or Dare prompt |
 | Penalty source | App random (default) or partner-authored (optional) |
-| Shot skill | Predicting where your partner hid; **fully server-authoritative** |
-| Motion | Reposition slide, shield step-aside, paintball flight, knockout |
+| Shot skill | Predicting where your partner will hide *this round*; **fully server-authoritative** |
+| Motion | Reposition (out-across-in), aim tilt, paintball flight, round replay, knockout |
 | Sound | Fire, hit, miss, knockout, penalty reveal |
 | Visual language | Line schematic on black: arch shields, triangle players |
 | Replayability | Reuses the shared Truth or Dare bank + seen tracking |
@@ -177,10 +184,26 @@ Partner B receives invite (push + in-app)
 
 ### 3.2 Turn structure
 
-Turns alternate. The active player (`current_turn_user_id`) fires one shot per
-turn. The other player is not required to be present; they see the resolved result
-and updated lives when they next open the session (realtime subscription updates it
-live if they are present).
+> **Revised 2026-09-05 (v3).**
+
+A **round** is one exchange between both players and holds two halves. The
+active player (`current_turn_user_id`) takes their half: reposition, aim,
+fire. The round resolves only once both halves are in (§5.5).
+
+From a player's seat the loop is:
+
+```
+open the game
+  -> watch the previous round's replay   (if one completed since you last looked)
+  -> reposition   (tap your cover)
+  -> aim          (tap their cover)
+  -> fire         (tap your triangle)
+  -> if you closed the round, watch it resolve immediately
+  -> wait
+```
+
+Neither player need be present at once. A round completing while you are away
+is waiting as a replay when you return.
 
 ### 3.3 Game ending
 
@@ -266,66 +289,119 @@ active  -> abandoned  (24h inactivity OR partner unlinks relationship)
   the guarantee — never rely on realtime alone, because a dropped subscription must
   not strand a player on stale state.
 
-### 5.5 Shot resolution mechanic (hidden information)
+### 5.5 Shot resolution mechanic (simultaneous prediction)
 
-> **Rewritten 2026-09-04.** This section previously specified a timing-tap
-> sweep whose hit/miss was computed on the client and trusted by the server,
-> and carried a standing note telling future readers not to "improve" it into
-> server-side validation. That design shipped, played badly, and was replaced.
-> The old note is preserved at the end of this section because the reasoning
-> that retired it is worth keeping.
+> **Rewritten 2026-09-05 (v3).** Supersedes the v2 "hidden information"
+> resolution, which itself replaced a v1 timing-tap. See the end of this
+> section for what changed and why each version was retired.
 
-Paint Ball is an **asynchronous game of hidden information**. Neither player
-needs to be present at the same time, matching every other game in the module.
+Paint Ball is an **asynchronous simultaneous duel**. Neither player needs to
+be online at the same time, yet each round resolves as though both fired at
+once.
 
-Each turn a player does two things in one move:
+#### The round
 
-1. **Choose where to hide** — one of three positions on their own side.
-2. **Choose where to shoot** — one of three positions on their partner's side.
+A **round** is one exchange between *both* players — not one player's turn.
+It has two halves, taken whenever each player next opens the app:
 
-The server compares the shot to **where the defender was hiding at the end of
-their own last turn**. Equal is a hit; anything else is a miss.
+1. The **round opener** picks a hiding place and a target, then fires.
+   Nothing resolves. The turn passes.
+2. The **round closer** picks a hiding place and a target, then fires.
+   **Now the round resolves.**
 
-**Why this and not a reaction test:** a timing tap measures reflexes, which
-says nothing about the person you are playing. Predicting where your partner
-will hide is a read *on them* — did they repeat, did they expect you to expect
-a repeat — and that is the only kind of skill this game should reward.
+#### Resolution (symmetric)
 
-**The opening move.** On round one the defender has never hidden, so there is
-nothing to hit. That round resolves as `opening`, never `hit` or `miss`, and
-costs nothing. This is not an edge case to fix: it is what makes the first
-exchange a free read rather than a coin flip.
+Both shots are compared against the hide the *other* player chose **in that
+same round**:
 
-**What the shooter learns.** After resolving, the shooter is told where the
-defender actually was (`defender_was_at`). This is the whole engine of the
-game — you fire, you learn, and the next guess is informed. The defender is
-never told where the shot landed until it is their turn to see the field.
+```
+A hides LEFT,   shoots MIDDLE
+B hides MIDDLE, shoots LEFT
+  -> A's shot vs B's round hide (MIDDLE) = HIT
+  -> B's shot vs A's round hide (LEFT)   = HIT
+  Both lose a life.
+```
 
-**Trust model — server-authoritative, and this is not negotiable.**
+Every outcome is possible: both hit, one hits, neither hits.
 
-The hit verdict is computed by the server from the two stored positions. The
-client cannot report a hit. This is the direct reversal of the previous
-design, and the reason is structural rather than a change of taste: once the
-outcome depends on *hidden information*, a client that could declare its own
-hits could also declare them against a position it was never allowed to see.
-Trust-the-client and hidden-information are incompatible — the first hands the
-client an answer the second exists to withhold.
+**Why same-round and not previous-round.** You are predicting where your
+partner *will be this turn*, not where they were last turn. Resolving against
+a stale position rewards pattern-matching a record; resolving against the
+current one rewards reading the person. It also means round one can be a real
+hit — if you call middle and they choose middle, that is a read, and the game
+should honour it.
 
-`get_paint_ball_session_state` therefore returns `shot_position` and
-`active_partner_id` but **never `hide_position`**. A contract test fails if
-that column is ever added to the payload.
+**Symmetry.** The opener's shot is locked before the closer chooses their
+hide — but equally, the opener's *hide* is locked before the closer's shot.
+Each player commits both decisions without sight of the other's. Neither
+seat has an information advantage.
 
-**What the server is authoritative for:** whose turn it is, the hit verdict,
-that exactly one life is removed on a hit, that lives never fall below 0, turn
-alternation, penalty selection, and session termination.
+#### The opening round
 
-**Retired note (kept for the record).** The previous design argued that
-trust-the-client was acceptable because "the prize for winning is only a
-declinable penalty" and "every other game in the module is already
-honor-system." Both statements are still true, and they are still good reasons
-not to build anti-cheat into Truth or Dare. They stopped applying here the
-moment the game acquired a secret: the objection to a cheating client is no
-longer that it wins unfairly, but that it can read its partner's position.
+Round one still resolves normally: both players choose a hide and a target,
+and either may hit. `shot_result = 'opening'` is retired — it existed only
+because v2 resolved against a previous hide that did not yet exist. There is
+no longer a turn that cannot hit.
+
+#### The replay
+
+Because the round resolves only when both halves are in, neither player sees
+the exchange live. The **replay** is where it is paid off, and it is the
+centre of the game's feel.
+
+When a round completes, both players see it animated in full: both triangles
+emerge from their covers, step forward, tilt toward whatever each targeted,
+and fire. Both paintballs travel simultaneously. Hits land, lives update.
+
+**Both positions are revealed during the replay.** This is a deliberate
+reversal of v2's rule that `hide_position` never reaches a client. It is safe
+*and better* here because the round is already resolved — the information is
+history, not a live secret. Learning that your partner broke left when they
+were cornered is exactly the read this game exists to produce.
+
+**After the replay ends, both triangles return to hiding.** Only your own
+stays visible. The reveal is a moment, not a state.
+
+**When each player sees it.** Each player sees a round's replay the first
+time they open the game after that round completed:
+
+- The **closer** sees it immediately after firing — they completed the round,
+  so it resolves in front of them. They then open the next round.
+- The **opener** sees it when they next open the game, *before* taking their
+  half of the next round.
+
+So the loop from a player's seat is: watch the previous round resolve →
+reposition → aim → fire → wait.
+
+#### Trust model — server-authoritative
+
+Unchanged and non-negotiable. The server holds both hides, computes both
+verdicts, and applies both life changes. A client cannot report a hit.
+
+`get_paint_ball_session_state` returns `hide_position` **only for rounds that
+have already resolved**. For a round with one half outstanding, the opener's
+hide is withheld — otherwise the closer could read it and the prediction would
+stop being one. The contract test asserts exactly this boundary: resolved
+rounds expose both hides; unresolved rounds expose neither.
+
+#### Version history
+
+- **v1 — timing tap.** A target swept the screen; a tap inside a window
+  scored a hit, computed on the client and trusted by the server. Retired
+  because a reaction test measures reflexes, which say nothing about the
+  person you are playing, and because it played thinly.
+- **v2 — hidden information, previous-round resolution.** Introduced hiding
+  and prediction, moved resolution to the server, and never revealed a hide.
+  Retired because resolving against a *stale* position made the read a matter
+  of recalling a record rather than anticipating a person, and because
+  withholding every hide forever meant the game never showed you what
+  happened — there was no scene, only arithmetic.
+- **v3 — simultaneous, with replay.** Current.
+
+The v2 argument for never revealing a hide was sound while a revealed hide
+would leak a *live* secret. It stopped applying once resolution became
+simultaneous: after both halves are in, a hide is a completed fact, and
+showing it is what turns a turn into a moment.
 
 ## 6. TRUTH OR DARE PENALTY LAYER
 
@@ -337,8 +413,12 @@ arcade toy — and it is where the entire safety model lives.
 
 - The losing player is shown **one** Truth or Dare prompt immediately after the
   knockout animation.
-- The prompt step must be **resolved** (completed or declined) before the session
-  becomes `completed`.
+- **On a draw (double knockout, §10.3) both players get a prompt** — each
+  their own, drawn independently. The framing is mutual, never "you both
+  lost": copy reads "You got each other." Both prompts are declinable on the
+  same terms, and one player declining says nothing about the other.
+- The prompt step must be **resolved** (completed or declined) by every player
+  who has one before the session becomes `completed`.
 - **The prompt is always declinable.** Declining is a first-class outcome, not a
   failure: no punishment, no re-prompt loop, no streak, no "you owe me" ledger, no
   nag. Declining records `penalty_status = 'declined'` and proceeds to the end
@@ -409,10 +489,10 @@ Do not create any new prompt, custom-prompt, or report tables.**
 
 ### 7.2 Active battle layout
 
-> **Rewritten 2026-09-04.** The previous layout was a left/right split with
-> circular cover nodes. The field is now a **top/bottom** schematic, because
-> the game is no longer "two players facing off" but "you, guessing at a row
-> you cannot see."
+> **Rewritten 2026-09-05 (v3).** The bottom "left / middle / right" cover
+> buttons are **removed**. Every action is a tap on the field itself. A
+> control strip that duplicates the board teaches the player that the board
+> is a picture; making the board the controller teaches them it is a place.
 
 The field is a line diagram on plain black. Three arch-shaped shields per
 side, drawn as strokes rather than filled shapes.
@@ -420,73 +500,92 @@ side, drawn as strokes rather than filled shapes.
 ```
 ┌─────────────────────────────────────┐
 │ Paint Ball   Round 2                │
+│  ♥♥♥                          ♥♥·   │
 │                                     │
 │    ╭─╮      ╭─╮      ╭─╮            │  THEIR row (red)
-│    │ │      │▼│      │ │            │  triangle only after a reveal
+│    │ │      │ │      │ │            │  never occupied, except in replay
 │                                     │
-│  ─────────────────────────────────  │  centre line
-│                     ●               │  the paintball, in flight
+│  ─────────────────────────────────  │
 │                                     │
 │    ╭─╮      ╭─╮      ╭─╮            │  YOUR row (green)
-│    │▲│      │ │      │ │            │  your triangle is always visible
+│    │ │      │▲│      │ │            │  your triangle is always visible
 │                                     │
-│ [Take cover]  [Fire]                │
 └─────────────────────────────────────┘
 ```
 
-**Your row is always the bottom one**, whichever player you are. A field that
-flipped depending on who was looking would make "mine" and "theirs" something
-to work out each turn rather than something you simply see.
+**Your row is always the bottom one**, whichever player you are.
 
 **Colours are fixed, not theme-derived.** Green (`#5EEAD4`) is your side, red
-(`#FF4D6A`) is theirs, yellow (`#FFC94D`) is a player and the paint in flight,
-on a plain black ground. This is a diagram: a light theme would invert the
-ground out from under it and leave the thin strokes invisible. The colours
-also carry meaning that must not drift with a theme.
+(`#FF4D6A`) theirs, yellow (`#FFC94D`) a player and the paint in flight, on
+plain black.
 
-**Both triangles are yellow.** The arch colour already says whose side you are
-looking at; the triangle says "somebody is here", and that should read the
-same on either half of the field.
+### 7.3 Controls — three taps, all on the field
 
-### 7.3 Waiting-for-partner-turn state
+| Tap | Effect |
+|---|---|
+| **Your cover** | Reposition. Your triangle moves to that cover. |
+| **Their cover** | Aim. Your triangle emerges and tilts toward it. |
+| **Your triangle** | Fire. |
 
-When it is the partner's turn, the controls are disabled and the screen shows
-a calm waiting state. No countdown pressure. Because the game is asynchronous,
-this state is the normal resting state between sessions, not an interruption —
-the player is expected to leave and come back.
+**Repositioning stays open.** You may change your hiding place at any point
+before firing, including after aiming. Aiming does not lock the hide — a
+player who has committed to a target should still be free to reconsider where
+they are standing, since the two decisions are independent.
+
+**Re-aiming is free.** Tapping a different enemy cover swings the triangle to
+the new angle. Tapping the currently-aimed cover again does nothing (it is
+not a fire shortcut — firing is always the triangle, so the fire action is
+never something you trigger by accident while choosing).
+
+**Firing requires an aim.** Tapping your triangle with no target selected
+does nothing and shows a quiet hint.
 
 ### 7.4 Turn animation rules
 
-- **Repositioning:** your triangle slides between shields rather than
-  teleporting. The movement is what makes taking cover read as an action.
-- **Aiming:** the targeted shield slides aside and brightens, opening a clear
-  line — so a shot is something you can see a path for, not an abstract
-  selection.
-- **Firing:** the paintball travels as a circle from your shield to theirs,
-  with a short trail and a soft halo so it reads as lit on black.
-- The flight begins **with** the request rather than after it, so the
-  animation costs no waiting.
-- Paint accumulates on the field across the match rather than resetting each
-  turn, so a long game carries a visible record of itself.
-- All motion respects reduce-motion (§8.4).
+All motion is state-driven, so a dropped frame or a backgrounded app can
+never leave a triangle stranded mid-move.
+
+**Reposition** — the triangle leaves cover, travels, and re-enters:
+1. Step **back** out of the current cover.
+2. Travel **laterally** to the new cover's column.
+3. Step **forward** into the new cover.
+
+The three-beat path is what makes repositioning read as *moving through the
+world* rather than teleporting between slots.
+
+**Aim** — the triangle steps **forward** clear of its own cover, then
+**rotates** to point at the targeted cover. Re-aiming rotates from the
+current angle to the new one; it does not snap.
+
+**Fire** — a yellow circle leaves the **tip of the triangle** and travels to
+the targeted cover.
+
+**Replay (§5.5)** — the full exchange, both sides at once:
+1. Both triangles step forward from their true covers. *This is the reveal.*
+2. Both rotate to their respective targets.
+3. Both paintballs travel simultaneously.
+4. Impacts resolve: a hit plays a recoil-and-flash on the struck triangle;
+   a miss splatters on the cover.
+5. Lives update.
+6. Both triangles return to cover; the opponent's disappears.
+
+The replay is **skippable** — a tap anywhere jumps to the end state. It must
+never gate the player from acting, and a player who has seen it should not
+be made to sit through it again on reopen.
+
+**Reduce-motion.** The skill is a choice, not a reaction, so reduce-motion
+costs nothing. Every animation above collapses to its end state, and the
+replay becomes a static summary showing both positions, both shots, and the
+outcome. Identical information, identical odds.
 
 ### 7.5 Hit reveal
 
-The reveal must carry the position, not just the verdict — the position is
-what the next guess is built from.
+Folded into the replay (§7.4 step 4) rather than a separate screen. The
+outcome is shown *on the field*, where the positions are, because "they were
+behind the left cover" means more when you can see the left cover.
 
-```
-┌─────────────────────────────────────┐
-│ Direct hit                          │
-│ They were behind the middle shield  │
-│ Partner loses 1 life                │
-│                                     │
-│ [Next turn]                         │
-└─────────────────────────────────────┘
-```
-
-On a miss, the same screen still names where they were. On the opening round
-it says only that nobody was in position yet.
+A short line of text accompanies it, naming the read rather than the maths:
+"You called it." / "They moved." / "You got each other."
 
 ### 7.6 Loss penalty (declinable)
 
@@ -621,17 +720,24 @@ Notes:
   `game_type`, `tone`, `status`, `current_round`, `total_rounds_completed`,
   `started_at`, `completed_at`, `abandoned_at`, `hidden_by_user_ids`.
 
-### 9.2 Reuse `public.game_session_rounds` for shots
+### 9.2 Reuse `public.game_session_rounds` for turns
 
-One row per turn. Reuse existing columns; add four Paint-Ball-specific ones.
+> **Revised 2026-09-05 (v3).** A round is now an exchange between *both*
+> players, so it holds **two** rows — one per player — sharing a
+> `round_number`. The old UNIQUE on `(session_id, round_number)` becomes
+> `(session_id, round_number, active_partner_id)`.
 
 ```sql
 ALTER TABLE IF EXISTS public.game_session_rounds
   ADD COLUMN IF NOT EXISTS shot_result text
-    CHECK (shot_result IN ('hit', 'miss', 'opening')),
+    CHECK (shot_result IN ('hit', 'miss')),
   ADD COLUMN IF NOT EXISTS life_lost boolean NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS hide_position smallint,
-  ADD COLUMN IF NOT EXISTS shot_position smallint;
+  ADD COLUMN IF NOT EXISTS shot_position smallint,
+  -- Null until the round's other half arrives and both are resolved
+  -- together. Its nullness IS the "round half-complete" state, so there is
+  -- no separate status column to drift out of sync with reality.
+  ADD COLUMN IF NOT EXISTS resolved_at timestamptz;
 
 ALTER TABLE public.game_session_rounds
   ADD CONSTRAINT game_session_rounds_positions_range
@@ -641,26 +747,51 @@ ALTER TABLE public.game_session_rounds
   );
 ```
 
-`shot_result` includes **`opening`** as a distinct value. On the first turn
-nobody has hidden yet, so the shot had nothing to find; recording it as `miss`
-would be a lie the reveal screen then has to tell — "you missed" for a shot
-that could not have landed.
+`shot_result` no longer includes `'opening'` — v3 has no turn that cannot
+hit (§5.5).
 
-`hide_position` is the secret the game turns on. It is written here and read
-only by `paint_ball_take_turn` when resolving the *following* turn. It must
-never appear in any client-facing payload — see §10.3.
+**`hide_position` is the game's secret, and its exposure is time-boxed.** It
+is written when a player takes their half, and may be read by a client
+**only once `resolved_at` is set on that round**. Before then it is live
+information; after, it is history. See §10.3.
 
-Mapping to existing columns:
-- `session_id`, `round_number` (UNIQUE per session — the idempotency anchor),
-  `active_partner_id` (= the player whose turn it was), `resolved_at` uses the
-  existing `revealed_at`/`created_at`. The defender is derivable as the other
-  member; no new column needed.
+**Idempotency anchor** is now `(session_id, round_number, active_partner_id)`
+— a player retrying their own half must not create a second row, and must not
+be mistaken for their partner's half.
 
 ### 9.3 Penalty record
 
-Reuse the session row's penalty columns (§9.1) as the authoritative penalty record.
-A dedicated child table is unnecessary because there is exactly one penalty per
-session. Store the resolved prompt reference for history:
+> **Revised 2026-09-05 (v3).** A double knockout (§10.3) produces **two**
+> penalties in one session, so the single set of columns on `game_sessions`
+> no longer suffices.
+
+Penalties move to a child table keyed on `(session_id, user_id)`. There is at
+most one penalty per player per session, and a draw writes two rows.
+
+```sql
+CREATE TABLE IF NOT EXISTS public.paint_ball_penalties (
+  session_id uuid NOT NULL REFERENCES public.game_sessions(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  penalty_type text NOT NULL CHECK (penalty_type IN ('truth', 'dare')),
+  penalty_source text NOT NULL CHECK (penalty_source IN ('preset', 'partner_authored')),
+  penalty_status text NOT NULL DEFAULT 'pending'
+    CHECK (penalty_status IN ('pending', 'completed', 'declined')),
+  penalty_prompt_id uuid,
+  penalty_prompt_snapshot text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  resolved_at timestamptz,
+  PRIMARY KEY (session_id, user_id)
+);
+```
+
+The existing `game_sessions` penalty columns are retained and backfilled for
+sessions created before this change, so old sessions stay readable. New
+sessions write only to the child table.
+
+`winner_user_id` stays NULL on a draw. Nothing in the UI may present a draw as
+a loss for either player.
+
+Store the resolved prompt reference for history:
 
 ```sql
 ALTER TABLE IF EXISTS public.game_sessions
@@ -721,56 +852,84 @@ standard error codes.
 
 ### 10.3 `paint_ball_take_turn` (the core RPC)
 
-> **Rewritten 2026-09-04.** This section previously documented
-> `paint_ball_fire_shot(uuid, int, boolean, text)`, which took the hit verdict
-> as a client-supplied boolean. That function has been **dropped** from the
-> database. It was left behind after the rebuild with `SECURITY DEFINER` and
-> `EXECUTE` granted to `authenticated`, so a partner posting to the API
-> directly could drain the other's lives to zero and force the knockout
-> penalty without ever aiming. Do not reintroduce it.
+> **Revised 2026-09-05 (v3).** One call still submits one player's half of a
+> round, but resolution now happens only when the round's **second** half
+> arrives. The first half records and returns without a verdict.
+>
+> Historical note: v1's `paint_ball_fire_shot(uuid, int, boolean, text)` took
+> the hit verdict as a client-supplied boolean and has been **dropped** from
+> the database — it was reachable with `EXECUTE` granted to `authenticated`,
+> letting a partner drain the other's lives without aiming. Do not
+> reintroduce it.
 
 ```
 Inputs:  p_session_id uuid, p_round_number int,
          p_hide_position smallint, p_shot_position smallint
 ```
 
-Both positions are `0..2`. One call is one whole turn: you hide and you shoot
-together.
-
 In one transaction, with `SELECT ... FOR UPDATE` on the `game_sessions` row:
 
 1. **Auth:** caller is a member of the session's relationship, else `FORBIDDEN`.
 2. **Range check:** both positions in `0..2`, else `INVALID_POSITION`.
-3. **Idempotency (before the state checks):** if a `game_session_rounds` row
-   exists for `(session_id, round_number)`, return its stored result. This runs
-   *before* the status check so a retried turn that ended the game returns its
-   result rather than `SESSION_EXPIRED`.
+3. **Idempotency:** if a row exists for
+   `(session_id, round_number, active_partner_id = auth.uid())`, return its
+   stored state. Runs *before* the status check, so a retry of the turn that
+   ended the game returns its result rather than `SESSION_EXPIRED`.
 4. **State check:** `status = 'active'`, else `SESSION_EXPIRED`.
 5. **Turn check:** `current_turn_user_id = auth.uid()`, else `NOT_YOUR_TURN`.
-6. **Resolve:** read the defender's `hide_position` from their most recent
-   round. If there is none, this is the opening move: `shot_result = 'opening'`,
-   no life lost. Otherwise `hit` when `p_shot_position` equals it, else `miss`.
-7. **Apply life (guarded):** on a hit, decrement the defender's life with a
-   floor — `... WHERE id = p_session_id AND lives_x > 0`. The guard makes a
-   below-zero life structurally impossible even under a replayed or racing call.
-8. **Check knockout:** if the defender now has 0 lives, set `winner_user_id`,
-   select the penalty (§10.4), set `penalty_status = 'pending'`, and clear
-   `current_turn_user_id`. **Leave `status` as `'active'`** — the game is
-   entering the penalty phase, not finishing. `paint_ball_resolve_penalty`
-   returns early on an already-completed session, so marking it complete here
-   locks the loser out of the forfeit they just earned.
-9. **Else advance turn:** set `current_turn_user_id` to the other member.
-10. Return `{ lives_a, lives_b, shot_result, life_lost, defender_was_at,
-    round_number, current_turn_user_id, knockout, penalty_type,
-    penalty_source, penalty_prompt_snapshot }`.
+6. **Record this half:** insert the row with both positions, `shot_result`
+   and `resolved_at` left NULL.
+7. **Is the round complete?** Look for the partner's row at the same
+   `round_number`.
 
-`defender_was_at` is returned **to the shooter only**, after the fact. It is
-what makes the next guess informed rather than a coin flip.
+   **If absent — this is the opener's half.** Set
+   `current_turn_user_id` to the partner. Return
+   `{ round_state: 'awaiting_partner' }` with no verdict, no lives change,
+   and **no positions**. Nothing is revealed.
 
-**The hidden-information rule.** `get_paint_ball_session_state` returns
-`shot_position` and `active_partner_id` but **never `hide_position`**. A
-contract test fails if that column is added to the payload. The verdict is the
-server's to compute; the position is the server's to keep.
+   **If present — this is the closer's half; resolve the round.** In the
+   same transaction:
+   - `hit_opener := opener.shot_position = closer.hide_position`
+   - `hit_closer := closer.shot_position = opener.hide_position`
+   - Apply each hit to the *other* player's lives, each guarded by
+     `... AND lives_x > 0` so a below-zero life is structurally impossible.
+   - Stamp `resolved_at = now()` on **both** rows and write each
+     `shot_result`.
+   - Set `current_turn_user_id` to the opener (they open the next round),
+     unless a knockout occurred.
+
+8. **Knockout.** If either player reached 0 lives, select their penalty
+   (§10.4), set `penalty_status = 'pending'`, and clear
+   `current_turn_user_id`. **Leave `status = 'active'`** — the game is
+   entering the penalty phase, not finishing, and `paint_ball_resolve_penalty`
+   returns early on a completed session, which would lock the loser out of
+   the forfeit they just earned.
+
+   **Double knockout.** Both players may reach 0 in the same round. This is a
+   **draw**: both take a penalty, neither is the winner. `winner_user_id`
+   stays NULL and both penalty slots are populated (§9.3). A mutual forfeit
+   is a shared moment; declaring a winner on turn order would be arbitrary
+   and would make the ending feel like a technicality.
+
+9. Return, for a resolved round:
+   `{ round_state: 'resolved', lives_a, lives_b, round_number,
+      opener: { user_id, hide_position, shot_position, shot_result },
+      closer: { user_id, hide_position, shot_position, shot_result },
+      current_turn_user_id, knockout, double_knockout,
+      penalties: [ { user_id, penalty_type, penalty_source,
+                     penalty_prompt_snapshot } ] }`
+
+The `opener`/`closer` block is what the replay animates. It is returned
+**only** on the call that resolves the round; the opener receives the same
+data from `get_paint_ball_session_state` when they next open.
+
+**The hidden-information boundary.** `get_paint_ball_session_state` returns
+`hide_position` for rounds where `resolved_at IS NOT NULL`, and withholds it
+otherwise. A contract test asserts both halves of this: a resolved round
+exposes both hides, and a round awaiting its second half exposes neither.
+Withholding forever (v2) meant the game could never show what happened;
+exposing always would let the closer read the opener's position before
+choosing. The boundary is `resolved_at`.
 
 ### 10.4 Penalty selection (inside knockout, deterministic once chosen)
 
@@ -877,7 +1036,7 @@ Emit the same RED metrics; add Paint-Ball business counters (§15).
 3. **Turn + life state** proven via RPC unit/integration tests (idempotency,
    turn-ownership, life floor, knockout, deterministic penalty) **before any UI.**
 4. **Battlefield UI:** minimal shape-based arena, lives display, fire button.
-5. **Shot resolution + reveal UI:** hide/aim selection, flight animation, reveal of the defender's position,
+5. **Round resolution + replay UI:** on-field tap controls (reposition, aim, fire), the three-beat reposition animation, aim tilt, paintball flight, and the both-sides replay,
    reduce-motion fallback.
 6. **Penalty flow:** knockout screen, prompt display, **Complete / Skip** (both
    free), reuse of Truth-or-Dare content + moderation.
@@ -968,10 +1127,11 @@ Locked for the first release:
    enabled at creation **and** an eligible prompt exists, else fall back to preset.
 4. **Penalty is always declinable, always free.** No score history, streak, or
    "owed" ledger.
-5. Shot mechanic: choose a hiding place and a target each turn; the server
-   resolves the hit from the two stored positions (§5.5). **Fully
-   server-authoritative** — the client cannot report a hit, and
-   `hide_position` never leaves the server.
+5. Shot mechanic: choose a hiding place and a target each turn; the round
+   resolves once *both* players have taken their half, each shot checked
+   against the other's same-round hide (§5.5). **Fully server-authoritative**
+   — the client cannot report a hit, and `hide_position` reaches a client only
+   after that round has resolved.
 6. Visual: a line schematic on plain black — arch shields, triangle players,
    green for your row (always the bottom), red for theirs, yellow for a
    player and the paint in flight (§7.2).
