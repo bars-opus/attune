@@ -870,16 +870,21 @@ Inputs:  p_session_id uuid, p_round_number int,
 In one transaction, with `SELECT ... FOR UPDATE` on the `game_sessions` row:
 
 1. **Auth:** caller is a member of the session's relationship, else `FORBIDDEN`.
-2. **Range check:** both positions in `0..2`, else `INVALID_INPUT`.
-3. **Idempotency:** if a row exists for
+2. **Rate limit:** a second turn from the same player within two seconds is
+   `RATE_LIMITED`. Checked before the round-number guard, so a player
+   hammering the button is told to wait rather than told their input is
+   invalid.
+3. **Range check:** both positions in `0..2`, else `INVALID_INPUT`. The round
+   number must equal the session's `current_round`, else `INVALID_INPUT`.
+4. **Idempotency:** if a row exists for
    `(session_id, round_number, active_partner_id = auth.uid())`, return its
    stored state. Runs *before* the status check, so a retry of the turn that
    ended the game returns its result rather than `SESSION_EXPIRED`.
-4. **State check:** `status = 'active'`, else `SESSION_EXPIRED`.
-5. **Turn check:** `current_turn_user_id = auth.uid()`, else `NOT_YOUR_TURN`.
-6. **Record this half:** insert the row with both positions, `shot_result`
+5. **State check:** `status = 'active'`, else `SESSION_EXPIRED`.
+6. **Turn check:** `current_turn_user_id = auth.uid()`, else `NOT_YOUR_TURN`.
+7. **Record this half:** insert the row with both positions, `shot_result`
    and `resolved_at` left NULL.
-7. **Is the round complete?** Look for the partner's row at the same
+8. **Is the round complete?** Look for the partner's row at the same
    `round_number`.
 
    **If absent — this is the opener's half.** Set
@@ -898,7 +903,7 @@ In one transaction, with `SELECT ... FOR UPDATE` on the `game_sessions` row:
    - Set `current_turn_user_id` to the opener (they open the next round),
      unless a knockout occurred.
 
-8. **Knockout.** If either player reached 0 lives, select their penalty
+9. **Knockout.** If either player reached 0 lives, select their penalty
    (§10.4), set `penalty_status = 'pending'`, and clear
    `current_turn_user_id`. **Leave `status = 'active'`** — the game is
    entering the penalty phase, not finishing, and `paint_ball_resolve_penalty`
@@ -911,7 +916,7 @@ In one transaction, with `SELECT ... FOR UPDATE` on the `game_sessions` row:
    is a shared moment; declaring a winner on turn order would be arbitrary
    and would make the ending feel like a technicality.
 
-9. Return, for a resolved round:
+10. Return, for a resolved round:
    `{ round_state: 'resolved', lives_a, lives_b, round_number,
       opener: { user_id, hide_position, shot_position, shot_result },
       closer: { user_id, hide_position, shot_position, shot_result },
