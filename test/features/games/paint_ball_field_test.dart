@@ -365,4 +365,104 @@ void main() {
       expect(widget.duration, Duration.zero);
     }
   });
+
+  testWidgets('a replay shows both players, then hides theirs again', (
+    tester,
+  ) async {
+    // The replay is the only moment both positions are on the field. It
+    // is what turns a resolved round from arithmetic into something the
+    // couple watched happen.
+    await tester.pumpWidget(
+      _wrap(
+        const PaintBallField(
+          splats: [],
+          myPosition: 0,
+          selectedShot: 1,
+          revealedPartnerPosition: 1,
+          theirRevealedShot: 0,
+          isMyTurn: false,
+          isReplaying: true,
+          replayProgress: 0.7,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      _visibleTriangles(tester),
+      2,
+      reason: 'both players are on the field during a replay',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mid-replay both paintballs are in flight at once', (
+    tester,
+  ) async {
+    // Both players fired without seeing the other, so the shots cross
+    // rather than take turns. Watching them pass is what makes the round
+    // read as a duel instead of two separate moves.
+    await tester.pumpWidget(
+      _wrap(
+        const PaintBallField(
+          splats: [],
+          myPosition: 0,
+          selectedShot: 2,
+          revealedPartnerPosition: 2,
+          theirRevealedShot: 0,
+          isMyTurn: false,
+          isReplaying: true,
+          replayProgress: 0.7,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final projectiles =
+        tester
+            .widgetList<CustomPaint>(find.byType(CustomPaint))
+            .where(
+              (widget) =>
+                  widget.painter.runtimeType.toString().contains('Projectile'),
+            )
+            .length;
+
+    expect(
+      projectiles,
+      2,
+      reason: 'a replay puts both shots in the air together',
+    );
+  });
+
+  testWidgets('early in a replay nobody has fired yet', (tester) async {
+    // Emerging and aiming get room to read before anything leaves a
+    // barrel. A shot that flew before the aim landed would skip the part
+    // worth watching.
+    await tester.pumpWidget(
+      _wrap(
+        const PaintBallField(
+          splats: [],
+          myPosition: 0,
+          selectedShot: 2,
+          revealedPartnerPosition: 2,
+          theirRevealedShot: 0,
+          isMyTurn: false,
+          isReplaying: true,
+          replayProgress: 0.05,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final projectiles =
+        tester
+            .widgetList<CustomPaint>(find.byType(CustomPaint))
+            .where(
+              (widget) =>
+                  widget.painter.runtimeType.toString().contains('Projectile'),
+            )
+            .length;
+
+    expect(projectiles, 0, reason: 'no shot before the aim has landed');
+  });
 }

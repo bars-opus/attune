@@ -22,15 +22,24 @@ class PaintBallBattleScreen extends ConsumerStatefulWidget {
 }
 
 class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   /// Drives the paintball across the field.
   ///
   /// The shot is sent to the server the moment Fire is tapped -- the
   /// animation is not a gate on the turn. If it were, a slow frame or a
   /// backgrounded app could cost someone their move.
   late final AnimationController _shotController;
+
+  /// Drives the round replay: both sides emerge, aim, fire, and land.
+  ///
+  /// Longer than a single shot because it choreographs four beats rather
+  /// than one, and because it is the moment the round is *for* -- rushing
+  /// it would waste the only point at which the game shows the players
+  /// what they did to each other.
+  late final AnimationController _replayController;
   bool _routingToKnockout = false;
   bool _shotInFlight = false;
+  bool _replayInFlight = false;
   int? _firingRound;
 
   @override
@@ -39,6 +48,10 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
     _shotController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 520),
+    );
+    _replayController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1900),
     );
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -52,6 +65,7 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _shotController.dispose();
+    _replayController.dispose();
     super.dispose();
   }
 
@@ -64,6 +78,39 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
             .loadSession(widget.sessionId),
       );
     }
+  }
+
+  /// Plays a resolved round, then hands the field back.
+  ///
+  /// Driven here rather than in the provider because the widget owns the
+  /// animation clock: state that ticked frames would be responsible for
+  /// timing, and a rebuild mid-flight would restart the beat.
+  Future<void> _playReplay() async {
+    if (_replayInFlight) return;
+    setState(() => _replayInFlight = true);
+    final notifier = ref.read(paintBallSessionProvider.notifier);
+    try {
+      if (!reduceMotionOf(context)) {
+        await _replayController.forward(from: 0);
+      }
+    } finally {
+      if (mounted) {
+        _replayController.reset();
+        setState(() => _replayInFlight = false);
+        // Clearing sends the opponent's triangle back into hiding and
+        // resets the choices, so the next round starts from nothing.
+        notifier.clearReplay();
+      }
+    }
+  }
+
+  /// A tap anywhere jumps to the end state. The replay must never gate a
+  /// player from acting, and someone who has seen it should not be made
+  /// to sit through it again.
+  void _skipReplay() {
+    if (!_replayInFlight) return;
+    _replayController.stop();
+    _replayController.value = 1;
   }
 
   Future<void> _fire() async {
@@ -133,6 +180,16 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
     final textTheme = Theme.of(context).textTheme;
 
     final session = state.session;
+
+    // A queued replay drives the field until it has played. It starts on
+    // the next frame rather than during build, since starting an
+    // animation while building is a framework error.
+    final replay = state.pendingReplay;
+    if (replay != null && !_replayInFlight) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_playReplay());
+      });
+    }
     if (session == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -206,34 +263,69 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
                       // Rebuilt per frame while a shot is in flight;
                       // AnimatedBuilder rather than setState so only the
                       // field repaints, not the whole screen.
-                      AnimatedBuilder(
-                        animation: _shotController,
-                        builder:
-                            (context, _) => PaintBallField(
-                              splats: _splatsFor(
-                                session,
-                                currentUserId,
-                                excludedRound:
-                                    _shotInFlight ? _firingRound : null,
+                      // A tap anywhere during a replay skips to the end.
+                      // Wrapping rather than absorbing: when nothing is
+                      // playing this is inert, so the field's own taps
+                      // still reach it.
+                      GestureDetector(
+                        onTap: _replayInFlight ? _skipReplay : null,
+                        behavior:
+                            _replayInFlight
+                                ? HitTestBehavior.opaque
+                                : HitTestBehavior.deferToChild,
+                        child: AnimatedBuilder(
+                          animation: Listenable.merge([
+                            _shotController,
+                            _replayController,
+                          ]),
+                          builder:
+                              (context, _) => PaintBallField(
+                                splats: _splatsFor(
+                                  session,
+                                  currentUserId,
+                                  excludedRound:
+                                      _shotInFlight ? _firingRound : null,
+                                ),
+                                // During a replay the field shows what the
+                                // round actually was, not what this player
+                                // chose -- both sides are on screen, so the
+                                // positions come from the resolved halves.
+                                myPosition:
+                                    replay != null
+                                        ? replay.mine.hidePosition
+                                        : state.hidePosition,
+                                selectedShot:
+                                    replay != null
+                                        ? replay.mine.shotPosition
+                                        : state.shotPosition,
+                                revealedPartnerPosition:
+                                    replay != null
+                                        ? replay.theirs.hidePosition
+                                        : _shotInFlight
+                                        ? null
+                                        : state.revealedPartnerPosition,
+                                theirRevealedShot:
+                                    replay != null
+                                        ? replay.theirs.shotPosition
+                                        : null,
+                                replayProgress:
+                                    _replayInFlight
+                                        ? _replayController.value
+                                        : null,
+                                isReplaying: _replayInFlight,
+                                isMyTurn: session.isCurrentUserTurn(
+                                  currentUserId,
+                                ),
+                                onSelectShot: notifier.selectShot,
+                                onSelectHide: notifier.selectHide,
+                                onFire: state.canFire ? _fire : null,
+                                shotProgress:
+                                    _shotController.isAnimating &&
+                                            !reduceMotionOf(context)
+                                        ? _shotController.value
+                                        : null,
                               ),
-                              myPosition: state.hidePosition,
-                              selectedShot: state.shotPosition,
-                              revealedPartnerPosition:
-                                  _shotInFlight
-                                      ? null
-                                      : state.revealedPartnerPosition,
-                              isMyTurn: session.isCurrentUserTurn(
-                                currentUserId,
-                              ),
-                              onSelectShot: notifier.selectShot,
-                              onSelectHide: notifier.selectHide,
-                              onFire: state.canFire ? _fire : null,
-                              shotProgress:
-                                  _shotController.isAnimating &&
-                                          !reduceMotionOf(context)
-                                      ? _shotController.value
-                                      : null,
-                            ),
+                        ),
                       ),
                       Gap(Spacing.md.h),
                       _TurnPrompt(
@@ -490,8 +582,10 @@ class _TurnPrompt extends StatelessWidget {
     // A resolved shot: hold the reveal until they choose to move on, so
     // the moment the field shows their partner's position is not swept
     // away by an animation they did not ask for.
-    if (state.pendingReplay != null) {
-      final replay = state.pendingReplay!;
+    // lastReplay, not pendingReplay: the animation is over by the time
+    // this is read, and the result must stay on screen until dismissed.
+    if (state.lastReplay != null) {
+      final replay = state.lastReplay!;
       final hit = replay.mine.isHit;
       final wasHit = replay.theirs.isHit;
       final positionCopy =

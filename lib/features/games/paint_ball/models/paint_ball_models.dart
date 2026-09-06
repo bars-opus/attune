@@ -828,9 +828,18 @@ class PaintBallUiState {
   /// nothing to reveal and nothing to animate.
   final bool awaitingPartner;
 
-  /// A resolved round waiting to be played. Cleared once the field has
-  /// animated it, so reopening the game does not replay it forever.
+  /// A resolved round waiting to be ANIMATED. Cleared once the field has
+  /// played it, so reopening the game does not replay it forever.
   final PaintBallReplay? pendingReplay;
+
+  /// The last resolved round, kept after its animation ends.
+  ///
+  /// Separate from pendingReplay because the two answer different
+  /// questions: "is there something to animate?" and "what happened?".
+  /// The reveal text must outlive the animation -- a player reads it at
+  /// their own pace, and clearing it with the motion would snatch the
+  /// result away the instant it finished moving.
+  final PaintBallReplay? lastReplay;
 
   /// One per player who owes a forfeit. A draw has two.
   final List<PaintBallPenalty> penalties;
@@ -862,6 +871,7 @@ class PaintBallUiState {
     this.session,
     this.awaitingPartner = false,
     this.pendingReplay,
+    this.lastReplay,
     this.penalties = const [],
     this.showHitFeedback = false,
     this.showMissFeedback = false,
@@ -884,6 +894,7 @@ class PaintBallUiState {
     bool? showKnockout,
     bool? awaitingPartner,
     Object? pendingReplay = _unset,
+    Object? lastReplay = _unset,
     List<PaintBallPenalty>? penalties,
     Object? lastOutcome = _unset,
     Object? hidePosition = _unset,
@@ -911,6 +922,10 @@ class PaintBallUiState {
           identical(pendingReplay, _unset)
               ? this.pendingReplay
               : pendingReplay as PaintBallReplay?,
+      lastReplay:
+          identical(lastReplay, _unset)
+              ? this.lastReplay
+              : lastReplay as PaintBallReplay?,
       penalties: penalties ?? this.penalties,
       lastOutcome:
           identical(lastOutcome, _unset)

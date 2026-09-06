@@ -288,9 +288,8 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
 
       // The closer's half: the round resolved, so there is a replay.
       final updatedSession = session.copyWith(
-        currentRound: result.knockout
-            ? session.currentRound
-            : session.currentRound + 1,
+        currentRound:
+            result.knockout ? session.currentRound : session.currentRound + 1,
         livesA: result.livesA,
         livesB: result.livesB,
         currentTurnUserId: result.currentTurnUserId,
@@ -303,9 +302,21 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
       );
 
       final mine =
-          result.opener!.userId == currentUserId ? result.opener! : result.closer!;
+          result.opener!.userId == currentUserId
+              ? result.opener!
+              : result.closer!;
       final theirs =
-          result.opener!.userId == currentUserId ? result.closer! : result.opener!;
+          result.opener!.userId == currentUserId
+              ? result.closer!
+              : result.opener!;
+
+      final replay = PaintBallReplay(
+        roundNumber: result.roundNumber,
+        mine: mine,
+        theirs: theirs,
+        knockout: result.knockout,
+        doubleKnockout: result.doubleKnockout,
+      );
 
       state = state.copyWith(
         session: updatedSession,
@@ -315,13 +326,8 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
         // The replay is queued rather than played here: the widget owns the
         // animation clock, and driving it from state would make the
         // provider responsible for frames.
-        pendingReplay: PaintBallReplay(
-          roundNumber: result.roundNumber,
-          mine: mine,
-          theirs: theirs,
-          knockout: result.knockout,
-          doubleKnockout: result.doubleKnockout,
-        ),
+        pendingReplay: replay,
+        lastReplay: replay,
         penalties: result.penalties,
       );
 
@@ -334,8 +340,7 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
       if (result.knockout) {
         _analytics.playerEliminated(
           sessionId: session.sessionId,
-          penaltySource:
-              result.penalties.isEmpty ? 'app_random' : 'app_random',
+          penaltySource: result.penalties.isEmpty ? 'app_random' : 'app_random',
         );
       }
     } on PaintBallApiError catch (error) {
@@ -364,6 +369,10 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
       showKnockout: false,
       lastOutcome: null,
       selectionRound: null,
+      // The previous round's reveal goes with it. Leaving it up would
+      // show a player last round's result while they choose this one.
+      lastReplay: null,
+      pendingReplay: null,
     );
   }
 

@@ -77,6 +77,7 @@ class PaintBallField extends StatelessWidget {
     this.onFire,
     this.replayProgress,
     this.theirRevealedShot,
+    this.isReplaying = false,
   });
 
   final List<PaintSplat> splats;
@@ -104,6 +105,10 @@ class PaintBallField extends StatelessWidget {
   /// resolved, which is the same moment their position becomes visible.
   final int? theirRevealedShot;
 
+  /// A round is playing back. Both sides emerge and fire; the board is not
+  /// accepting input.
+  final bool isReplaying;
+
   @override
   Widget build(BuildContext context) {
     final reduceMotion = reduceMotionOf(context);
@@ -115,6 +120,19 @@ class PaintBallField extends StatelessWidget {
           final width = constraints.maxWidth;
           final height = constraints.maxHeight;
           final slot = width / kPaintBallPositions;
+
+          // The replay's four beats. Emerging and aiming are given room to
+          // read before anything is fired -- the point of the replay is
+          // seeing the two decisions meet, and a shot that left before the
+          // aim landed would skip the part worth watching.
+          final replay = replayProgress;
+          final emerged = replay == null || replay > 0.12;
+          final aimed = replay == null || replay > 0.34;
+          final firing = replay != null && replay > 0.52;
+          // Remapped so the paintball still crosses the whole field in the
+          // slice of the replay given to flight.
+          final flightProgress =
+              firing ? ((replay - 0.52) / 0.34).clamp(0.0, 1.0) : null;
 
           // Where a shot starts and ends: from my shield's row up to the
           // targeted shield.
@@ -163,7 +181,8 @@ class PaintBallField extends StatelessWidget {
                   child: _ShieldRow(
                     isOpponent: true,
                     hiddenAt: revealedPartnerPosition,
-                    aimingAt: theirRevealedShot,
+                    aimingAt: aimed ? theirRevealedShot : null,
+                    emerged: emerged,
                     aimedAt: selectedShot,
                     enabled: isMyTurn && onSelectShot != null,
                     onTap: onSelectShot,
@@ -203,7 +222,8 @@ class PaintBallField extends StatelessWidget {
                     // Your own triangle tilts toward whatever you are
                     // aiming at, so the aim is visible on the field
                     // rather than only in a control strip.
-                    aimingAt: selectedShot,
+                    aimingAt: aimed ? selectedShot : null,
+                    emerged: emerged,
                     aimedAt: null,
                     enabled: isMyTurn && onSelectHide != null,
                     onTap: onSelectHide,
@@ -211,6 +231,56 @@ class PaintBallField extends StatelessWidget {
                     reduceMotion: reduceMotion,
                   ),
                 ),
+
+                // The replay's two paintballs, in flight at once. Both
+                // players fired without seeing the other, so the shots
+                // must cross rather than take turns -- watching them
+                // pass mid-air is the moment the round becomes a duel
+                // rather than two separate turns.
+                if (flightProgress != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _ProjectilePainter(
+                          progress: flightProgress,
+                          from: Offset(
+                            myPosition == null
+                                ? width / 2
+                                : slot * myPosition! + slot / 2,
+                            height * 0.80,
+                          ),
+                          to: Offset(
+                            selectedShot == null
+                                ? width / 2
+                                : slot * selectedShot! + slot / 2,
+                            height * 0.20,
+                          ),
+                          color: PaintBallPalette.player,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (flightProgress != null && theirRevealedShot != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _ProjectilePainter(
+                          progress: flightProgress,
+                          from: Offset(
+                            revealedPartnerPosition == null
+                                ? width / 2
+                                : slot * revealedPartnerPosition! + slot / 2,
+                            height * 0.20,
+                          ),
+                          to: Offset(
+                            slot * theirRevealedShot! + slot / 2,
+                            height * 0.80,
+                          ),
+                          color: PaintBallPalette.player,
+                        ),
+                      ),
+                    ),
+                  ),
 
                 // The travelling paintball.
                 if (shotProgress != null)
@@ -270,6 +340,7 @@ class _ShieldRow extends StatelessWidget {
     required this.reduceMotion,
     this.aimingAt,
     this.onTapCharacter,
+    this.emerged = true,
   });
 
   /// Where the player behind this row is hiding, when it may be shown.
@@ -287,12 +358,17 @@ class _ShieldRow extends StatelessWidget {
   final bool enabled;
   final ValueChanged<int>? onTap;
   final VoidCallback? onTapCharacter;
+
+  /// False during the first beat of a replay, while both players are
+  /// still behind cover and about to step out.
+  final bool emerged;
+
   final bool reduceMotion;
 
   @override
   Widget build(BuildContext context) {
     final base = isOpponent ? PaintBallPalette.theirs : PaintBallPalette.mine;
-    final isAiming = aimingAt != null && hiddenAt != null;
+    final isAiming = aimingAt != null && hiddenAt != null && emerged;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -304,7 +380,11 @@ class _ShieldRow extends StatelessWidget {
         // angle is a real bearing, not a decoration: it tells the viewer
         // which cover is being aimed at before the shot leaves.
         final bearing = isOccupied && isAiming ? (aimingAt! - index) : 0;
-        final tilt = bearing * (isOpponent ? -0.42 : 0.42);
+        // Per-column lean, in TURNS. Kept small deliberately: the tilt
+        // says which cover is being aimed at, and a triangle rotated far
+        // enough to lose its "pointing" silhouette stops communicating
+        // that at all. Two columns of swing is ~0.09 turns, a clear lean.
+        final tilt = bearing * (isOpponent ? -0.045 : 0.045);
 
         return Semantics(
           // container: true so this becomes its own node rather than
@@ -371,9 +451,9 @@ class _ShieldRow extends StatelessWidget {
                   AnimatedPositioned(
                     duration: Duration(milliseconds: reduceMotion ? 0 : 320),
                     curve: Curves.easeOutCubic,
-                    top: isOpponent ? (isAiming ? 46.h : 34.h) : null,
-                    bottom: isOpponent ? null : (isAiming ? 46.h : 34.h),
-                    left: 26.w,
+                    top: isOpponent ? (isAiming ? 40.h : 34.h) : null,
+                    bottom: isOpponent ? null : (isAiming ? 40.h : 34.h),
+                    left: 27.w,
                     child: AnimatedOpacity(
                       duration: Duration(milliseconds: reduceMotion ? 0 : 220),
                       opacity: isOccupied ? 1 : 0,
@@ -389,7 +469,7 @@ class _ShieldRow extends StatelessWidget {
                             milliseconds: reduceMotion ? 0 : 260,
                           ),
                           curve: Curves.easeOut,
-                          turns: tilt / (2 * math.pi),
+                          turns: tilt,
                           child: CustomPaint(
                             size: Size(22.w, 20.h),
                             painter: _TrianglePainter(
