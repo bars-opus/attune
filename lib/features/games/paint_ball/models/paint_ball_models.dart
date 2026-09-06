@@ -56,6 +56,26 @@ enum PaintBallGamePhase {
   ended,
 }
 
+/// A deliberate exit from a Paint Ball child screen.
+///
+/// Passed back through the battle and lobby routes so end-screen actions do
+/// what their labels promise without coupling the game to chat's bottom sheet.
+enum PaintBallExitAction { backToChat, playAgain, openGames }
+
+enum PaintBallShotOutcome {
+  opening,
+  hit,
+  miss;
+
+  static PaintBallShotOutcome fromWire(String? value) => switch (value) {
+    'opening' => PaintBallShotOutcome.opening,
+    'hit' => PaintBallShotOutcome.hit,
+    _ => PaintBallShotOutcome.miss,
+  };
+
+  String get wireValue => name;
+}
+
 // ============================================================
 // Round
 // ============================================================
@@ -99,6 +119,8 @@ class PaintBallRound {
       'round_number': roundNumber,
       'shot_result': shotResult,
       'life_lost': lifeLost,
+      'shot_position': shotPosition,
+      'active_partner_id': activePartnerId,
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -108,14 +130,26 @@ class PaintBallRound {
     String? shotResult,
     bool? lifeLost,
     DateTime? createdAt,
+    Object? shotPosition = _unset,
+    Object? activePartnerId = _unset,
   }) {
     return PaintBallRound(
       roundNumber: roundNumber ?? this.roundNumber,
       shotResult: shotResult ?? this.shotResult,
       lifeLost: lifeLost ?? this.lifeLost,
       createdAt: createdAt ?? this.createdAt,
+      shotPosition:
+          identical(shotPosition, _unset)
+              ? this.shotPosition
+              : shotPosition as int?,
+      activePartnerId:
+          identical(activePartnerId, _unset)
+              ? this.activePartnerId
+              : activePartnerId as String?,
     );
   }
+
+  PaintBallShotOutcome get outcome => PaintBallShotOutcome.fromWire(shotResult);
 }
 
 // ============================================================
@@ -186,6 +220,7 @@ class PaintBallSessionState {
 
   factory PaintBallSessionState.fromJson(Map<String, dynamic> json) {
     final data = _json(json);
+    final parsedRound = _asInt(data, 'current_round', 1);
     return PaintBallSessionState(
       sessionId: _asString(data, 'session_id') ?? _asString(data, 'id') ?? '',
       relationshipId: _asString(data, 'relationship_id') ?? '',
@@ -195,7 +230,7 @@ class PaintBallSessionState {
       status: _asString(data, 'status') ?? 'invited',
       gameType: _asString(data, 'game_type') ?? 'paint_ball',
       tone: _asString(data, 'tone') ?? 'playful',
-      currentRound: _asInt(data, 'current_round', 1),
+      currentRound: parsedRound < 1 ? 1 : parsedRound,
       totalRoundsCompleted: _asInt(data, 'total_rounds_completed'),
       currentTurnUserId: _asString(data, 'current_turn_user_id'),
       livesA: _asInt(data, 'lives_a', 3),
@@ -210,11 +245,7 @@ class PaintBallSessionState {
         data,
         'penalty_allow_partner_authored',
       ),
-      rounds: _parseList(
-        data,
-        'rounds',
-        PaintBallRound.fromJson,
-      ),
+      rounds: _parseList(data, 'rounds', PaintBallRound.fromJson),
       isMyTurn: _asBool(data, 'is_my_turn'),
       isWinner: _asBool(data, 'is_winner'),
       isLoser: _asBool(data, 'is_loser'),
@@ -302,27 +333,36 @@ class PaintBallSessionState {
       tone: tone ?? this.tone,
       currentRound: currentRound ?? this.currentRound,
       totalRoundsCompleted: totalRoundsCompleted ?? this.totalRoundsCompleted,
-      currentTurnUserId: identical(currentTurnUserId, _unset)
-          ? this.currentTurnUserId
-          : currentTurnUserId as String?,
+      currentTurnUserId:
+          identical(currentTurnUserId, _unset)
+              ? this.currentTurnUserId
+              : currentTurnUserId as String?,
       livesA: livesA ?? this.livesA,
       livesB: livesB ?? this.livesB,
       winnerUserId:
-          identical(winnerUserId, _unset) ? this.winnerUserId : winnerUserId as String?,
+          identical(winnerUserId, _unset)
+              ? this.winnerUserId
+              : winnerUserId as String?,
       penaltyType:
-          identical(penaltyType, _unset) ? this.penaltyType : penaltyType as String?,
-      penaltyStatus: identical(penaltyStatus, _unset)
-          ? this.penaltyStatus
-          : penaltyStatus as String?,
-      penaltyPromptId: identical(penaltyPromptId, _unset)
-          ? this.penaltyPromptId
-          : penaltyPromptId as String?,
-      penaltyPromptSnapshot: identical(penaltyPromptSnapshot, _unset)
-          ? this.penaltyPromptSnapshot
-          : penaltyPromptSnapshot as String?,
-      penaltySource: identical(penaltySource, _unset)
-          ? this.penaltySource
-          : penaltySource as String?,
+          identical(penaltyType, _unset)
+              ? this.penaltyType
+              : penaltyType as String?,
+      penaltyStatus:
+          identical(penaltyStatus, _unset)
+              ? this.penaltyStatus
+              : penaltyStatus as String?,
+      penaltyPromptId:
+          identical(penaltyPromptId, _unset)
+              ? this.penaltyPromptId
+              : penaltyPromptId as String?,
+      penaltyPromptSnapshot:
+          identical(penaltyPromptSnapshot, _unset)
+              ? this.penaltyPromptSnapshot
+              : penaltyPromptSnapshot as String?,
+      penaltySource:
+          identical(penaltySource, _unset)
+              ? this.penaltySource
+              : penaltySource as String?,
       penaltyAllowPartnerAuthored:
           penaltyAllowPartnerAuthored ?? this.penaltyAllowPartnerAuthored,
       rounds: rounds ?? this.rounds,
@@ -331,15 +371,21 @@ class PaintBallSessionState {
       isLoser: isLoser ?? this.isLoser,
       existing: existing ?? this.existing,
       startedAt:
-          identical(startedAt, _unset) ? this.startedAt : startedAt as DateTime?,
-      completedAt: identical(completedAt, _unset)
-          ? this.completedAt
-          : completedAt as DateTime?,
-      abandonedAt: identical(abandonedAt, _unset)
-          ? this.abandonedAt
-          : abandonedAt as DateTime?,
+          identical(startedAt, _unset)
+              ? this.startedAt
+              : startedAt as DateTime?,
+      completedAt:
+          identical(completedAt, _unset)
+              ? this.completedAt
+              : completedAt as DateTime?,
+      abandonedAt:
+          identical(abandonedAt, _unset)
+              ? this.abandonedAt
+              : abandonedAt as DateTime?,
       createdAt:
-          identical(createdAt, _unset) ? this.createdAt : createdAt as DateTime?,
+          identical(createdAt, _unset)
+              ? this.createdAt
+              : createdAt as DateTime?,
     );
   }
 
@@ -382,6 +428,7 @@ class PaintBallShotResult {
   final String? currentTurnUserId;
   final bool knockout;
   final String? penaltyType;
+  final String? penaltySource;
   final String? penaltyPromptSnapshot;
 
   /// Where the partner was hiding when this shot resolved.
@@ -402,6 +449,7 @@ class PaintBallShotResult {
     required this.currentTurnUserId,
     required this.knockout,
     required this.penaltyType,
+    required this.penaltySource,
     required this.penaltyPromptSnapshot,
     required this.existing,
     this.defenderWasAt,
@@ -419,6 +467,7 @@ class PaintBallShotResult {
       currentTurnUserId: _asString(data, 'current_turn_user_id'),
       knockout: _asBool(data, 'knockout'),
       penaltyType: _asString(data, 'penalty_type'),
+      penaltySource: _asString(data, 'penalty_source'),
       penaltyPromptSnapshot: _asString(data, 'penalty_prompt_snapshot'),
       defenderWasAt:
           data['defender_was_at'] == null
@@ -439,13 +488,17 @@ class PaintBallShotResult {
       'current_turn_user_id': currentTurnUserId,
       'knockout': knockout,
       'penalty_type': penaltyType,
+      'penalty_source': penaltySource,
       'penalty_prompt_snapshot': penaltyPromptSnapshot,
+      'defender_was_at': defenderWasAt,
       'existing': existing,
     };
   }
 
-  bool get isHit => shotResult == 'hit';
-  bool get isMiss => shotResult == 'miss';
+  PaintBallShotOutcome get outcome => PaintBallShotOutcome.fromWire(shotResult);
+  bool get isOpening => outcome == PaintBallShotOutcome.opening;
+  bool get isHit => outcome == PaintBallShotOutcome.hit;
+  bool get isMiss => outcome == PaintBallShotOutcome.miss;
 }
 
 // ============================================================
@@ -492,10 +545,7 @@ class PaintBallCreateSessionResponse {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'session_id': sessionId,
-      'existing': existing,
-    };
+    return {'session_id': sessionId, 'existing': existing};
   }
 }
 
@@ -512,10 +562,60 @@ class PaintBallResolvePenaltyRequest {
   });
 
   Map<String, dynamic> toJson() {
-    return {
-      'session_id': sessionId,
-      'outcome': outcome,
-    };
+    return {'session_id': sessionId, 'outcome': outcome};
+  }
+}
+
+// ============================================================
+// Session History
+// ============================================================
+class PaintBallHistoryEntry {
+  const PaintBallHistoryEntry({
+    required this.sessionId,
+    required this.tone,
+    required this.winnerUserId,
+    required this.penaltyType,
+    required this.penaltyStatus,
+    required this.totalRoundsCompleted,
+    required this.completedAt,
+  });
+
+  final String sessionId;
+  final String tone;
+  final String? winnerUserId;
+  final String? penaltyType;
+  final String? penaltyStatus;
+  final int totalRoundsCompleted;
+  final DateTime completedAt;
+
+  factory PaintBallHistoryEntry.fromJson(Map<String, dynamic> json) {
+    final data = _json(json);
+    return PaintBallHistoryEntry(
+      sessionId: _asString(data, 'session_id') ?? '',
+      tone: _asString(data, 'tone') ?? 'playful',
+      winnerUserId: _asString(data, 'winner_user_id'),
+      penaltyType: _asString(data, 'penalty_type'),
+      penaltyStatus: _asString(data, 'penalty_status'),
+      totalRoundsCompleted: _asInt(data, 'total_rounds_completed'),
+      completedAt:
+          _asDateTime(data, 'completed_at') ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+    );
+  }
+}
+
+class PaintBallHistoryPage {
+  const PaintBallHistoryPage({required this.items, required this.nextCursor});
+
+  final List<PaintBallHistoryEntry> items;
+  final String? nextCursor;
+
+  factory PaintBallHistoryPage.fromJson(Map<String, dynamic> json) {
+    final data = _json(json);
+    return PaintBallHistoryPage(
+      items: _parseList(data, 'items', PaintBallHistoryEntry.fromJson),
+      nextCursor: _asString(data, 'next_cursor'),
+    );
   }
 }
 
@@ -543,11 +643,7 @@ class PaintBallApiError implements Exception {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'error': error,
-      'code': code,
-      'message': message,
-    };
+    return {'error': error, 'code': code, 'message': message};
   }
 
   @override
@@ -567,6 +663,10 @@ class PaintBallUiState {
   final bool showMissFeedback;
   final bool showKnockout;
 
+  /// The last server-authoritative verdict shown to the player. Kept as an
+  /// enum so the opening move cannot accidentally fall through to "miss".
+  final PaintBallShotOutcome? lastOutcome;
+
   /// Where the player is hiding this turn, before they commit.
   final int? hidePosition;
 
@@ -578,6 +678,10 @@ class PaintBallUiState {
   /// game turns on.
   final int? revealedPartnerPosition;
 
+  /// Round for which the two local choices were made. This prevents choices
+  /// from an earlier turn being reused when realtime advances back to us.
+  final int? selectionRound;
+
   const PaintBallUiState({
     this.phase = PaintBallGamePhase.lobby,
     this.isLoading = false,
@@ -587,9 +691,11 @@ class PaintBallUiState {
     this.showHitFeedback = false,
     this.showMissFeedback = false,
     this.showKnockout = false,
+    this.lastOutcome,
     this.hidePosition,
     this.shotPosition,
     this.revealedPartnerPosition,
+    this.selectionRound,
   });
 
   PaintBallUiState copyWith({
@@ -601,20 +707,31 @@ class PaintBallUiState {
     bool? showHitFeedback,
     bool? showMissFeedback,
     bool? showKnockout,
+    Object? lastOutcome = _unset,
     Object? hidePosition = _unset,
     Object? shotPosition = _unset,
     Object? revealedPartnerPosition = _unset,
+    Object? selectionRound = _unset,
   }) {
     return PaintBallUiState(
       phase: phase ?? this.phase,
       isLoading: isLoading ?? this.isLoading,
       isSubmitting: isSubmitting ?? this.isSubmitting,
       errorMessage:
-          identical(errorMessage, _unset) ? this.errorMessage : errorMessage as String?,
-      session: identical(session, _unset) ? this.session : session as PaintBallSessionState?,
+          identical(errorMessage, _unset)
+              ? this.errorMessage
+              : errorMessage as String?,
+      session:
+          identical(session, _unset)
+              ? this.session
+              : session as PaintBallSessionState?,
       showHitFeedback: showHitFeedback ?? this.showHitFeedback,
       showMissFeedback: showMissFeedback ?? this.showMissFeedback,
       showKnockout: showKnockout ?? this.showKnockout,
+      lastOutcome:
+          identical(lastOutcome, _unset)
+              ? this.lastOutcome
+              : lastOutcome as PaintBallShotOutcome?,
       hidePosition:
           identical(hidePosition, _unset)
               ? this.hidePosition
@@ -627,13 +744,20 @@ class PaintBallUiState {
           identical(revealedPartnerPosition, _unset)
               ? this.revealedPartnerPosition
               : revealedPartnerPosition as int?,
+      selectionRound:
+          identical(selectionRound, _unset)
+              ? this.selectionRound
+              : selectionRound as int?,
     );
   }
 
   /// A turn is only ready once BOTH choices are made: where to hide and
   /// where to shoot. Submitting with either missing would spend a turn on
   /// half a move.
-  bool get canFire => hidePosition != null && shotPosition != null;
+  bool get canFire =>
+      hidePosition != null &&
+      shotPosition != null &&
+      selectionRound == session?.currentRound;
 
   bool get isGameActive =>
       phase == PaintBallGamePhase.playing ||

@@ -15,6 +15,7 @@ import '../chat/support/chat_test_harness.dart';
 /// builds.
 Widget _sheet({
   required ValueChanged<ChatGameDestination> onSelect,
+  ValueChanged<String>? onOpenPaintBallSession,
   List<Map<String, dynamic>> active = const [],
   List<Map<String, dynamic>> recent = const [],
 }) {
@@ -25,7 +26,14 @@ Widget _sheet({
       gameSessionEventsProvider.overrideWith((ref) => const Stream.empty()),
     ],
     child: withScreenUtil(
-      MaterialApp(home: Scaffold(body: ChatGamesSheet(onSelect: onSelect))),
+      MaterialApp(
+        home: Scaffold(
+          body: ChatGamesSheet(
+            onSelect: onSelect,
+            onOpenPaintBallSession: onOpenPaintBallSession,
+          ),
+        ),
+      ),
     ),
   );
 }
@@ -201,6 +209,40 @@ void main() {
     await tester.pump();
 
     expect(selected, isNull);
+  });
+
+  testWidgets('a completed Paint Ball game opens its recap', (tester) async {
+    ChatGameDestination? selected;
+    String? openedSessionId;
+
+    await tester.pumpWidget(
+      _sheet(
+        onSelect: (destination) => selected = destination,
+        onOpenPaintBallSession: (sessionId) => openedSessionId = sessionId,
+        recent: const [
+          {
+            'id': 'paint-session-1',
+            'game_type': 'paint_ball',
+            'status': 'completed',
+          },
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final row = find.ancestor(
+      of: find.text('Completed'),
+      matching: find.byType(CardInkWell),
+    );
+    await tester.tap(row, warnIfMissed: false);
+    await tester.pump();
+
+    expect(openedSessionId, 'paint-session-1');
+    expect(
+      selected,
+      isNull,
+      reason: 'history must open a recap, not start or resume Paint Ball',
+    );
   });
 
   testWidgets('neither section appears when both lists are empty', (

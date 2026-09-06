@@ -19,7 +19,7 @@ class PaintBallDocs implements DocumentationModule {
 
   @override
   String getSubtitle(BuildContext context) =>
-      'A quick, playful showdown with a fun twist at the end';
+      'A playful guessing game about reading your partner';
 
   @override
   IconData get icon => Icons.sports_esports_outlined;
@@ -42,14 +42,14 @@ class PaintBallDocs implements DocumentationModule {
           title: 'A quick turn-based match',
           numberPrefix: '1',
           content:
-              'Paint Ball is a fast, playful game — each of you starts with 3 lives, and you take turns firing paint splashes at each other. It\'s asynchronous, so you don\'t need to be online at the same time; each turn is recorded and you\'ll see the result whenever you check back in.',
+              'Paint Ball is a playful prediction game. Each of you starts with 3 lives. On every turn you choose where to hide and where you think your partner hid, then the server reveals whether you read them correctly. It is asynchronous, so you do not need to be online at the same time.',
           type: ManualContentType.text,
         ),
         ManualContent(
           id: 'paintball_tone',
           title: 'A playful game by default',
           content:
-              'Paint Ball defaults to the Playful tone, with Connecting also available for a warmer feel. Spicy and Intimate tones aren\'t offered here — the combat framing combined with a forced prompt just isn\'t the right container for that level of content.',
+              'Paint Ball defaults to Playful, with Connecting and Romantic available for a warmer ending prompt. Spicy and Intimate are not offered here.',
           numberPrefix: '2',
           type: ManualContentType.text,
         ),
@@ -58,24 +58,24 @@ class PaintBallDocs implements DocumentationModule {
     ManualSection(
       id: 'paintball_playing',
       title: 'How to play',
-      subtitle: 'Tap at the right moment',
-      icon: Icons.touch_app_outlined,
+      subtitle: 'Hide, predict, and learn their pattern',
+      icon: Icons.shield_outlined,
       category: 'Paint Ball',
       order: 2,
       contents: [
         ManualContent(
           id: 'paintball_firing',
-          title: 'Timing your shot',
+          title: 'Choose two positions',
           content:
-              'On your turn, a target sweeps across the screen — tap while it\'s in the right window to land a hit. Miss the timing and your shot misses. It\'s a simple, forgiving mechanic built to keep the game feeling fast, not fiddly.',
+              'On your turn, choose one of three shields to hide behind and one of your partner\'s three shields to target. Both choices are submitted together. Your shot hits only when it matches the place your partner chose on their previous turn.',
           numberPrefix: '1',
           type: ManualContentType.text,
         ),
         ManualContent(
           id: 'paintball_lives',
-          title: 'Losing lives',
+          title: 'Opening move and lives',
           content:
-              'A hit removes one of your opponent\'s three lives. Once someone reaches zero lives, that round is over.',
+              'The first shot is a free opening because your partner has not hidden yet. After that, a hit removes one life and a miss removes none. The reveal tells you where your partner really was, giving you a clue for your next guess.',
           numberPrefix: '2',
           type: ManualContentType.text,
         ),
@@ -93,7 +93,7 @@ class PaintBallDocs implements DocumentationModule {
           id: 'paintball_penalty_what',
           title: 'One Truth or Dare prompt',
           content:
-              'Whoever runs out of lives gets a single Truth or Dare-style prompt to complete — drawn from Attune\'s existing Truth or Dare content, keeping the same warm, familiar tone.',
+              'Whoever runs out of lives receives one Truth or Dare prompt drawn from Attune\'s existing prompt system, with the same tone and moderation rules used everywhere else in the app.',
           numberPrefix: '1',
           type: ManualContentType.text,
         ),
@@ -131,7 +131,7 @@ class PaintBallDocs implements DocumentationModule {
         id: 'faq_paintball_intimate_tone',
         question: 'Can we play Paint Ball at the Spicy or Intimate tone?',
         answer:
-            'No — those tones aren\'t offered for this game. Paint Ball\'s combat framing paired with a forced-choice moment isn\'t the right setting for that level of content, so it stays at Playful or Connecting.',
+            'No. Paint Ball offers Playful, Connecting, and Romantic. Its final prompt is always optional, but Spicy and Intimate are still kept out of this game.',
         category: 'Paint Ball',
         order: 3,
       ),

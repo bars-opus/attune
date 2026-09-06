@@ -26,6 +26,7 @@ import 'package:attune/features/conflict_translator/data/models/translator_reque
 import 'package:attune/features/conflict_translator/presentation/providers/translator_providers.dart'
     as translator_providers;
 import 'package:attune/features/conflict_translator/presentation/screens/translator_sheet.dart';
+import 'package:attune/features/games/paint_ball/models/paint_ball_models.dart';
 import 'package:attune/features/games/presentation/widgets/chat_games_sheet.dart';
 import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
@@ -454,18 +455,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     FocusScope.of(context).unfocus();
     _closeHeaderExpanded();
     unawaited(
-      BottomSheetUtils.showDocumentationBottomSheet<void>(
-        context: context,
-        backgroundColor: Theme.of(context).colorScheme.neutral,
-
-        maxHeight: MediaQuery.sizeOf(context).height * 0.86,
-        padding: Spacing.md,
-        widget: ChatGamesSheet(
-          onSelect: (destination) {
-            Navigator.of(context).pop();
-            unawaited(_openGameRoute(destination));
-          },
-        ),
+      showChatGamesPicker(
+        context,
+        relationshipId: widget.conversation.relationshipId,
       ),
     );
   }
@@ -529,14 +521,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     // The place message arrives through the normal realtime path; this
     // pulls it in immediately for the sender rather than waiting.
     unawaited(notifier.loadMessages(silent: true));
-  }
-
-  Future<void> _openGameRoute(ChatGameDestination destination) async {
-    await openGameRoute(
-      context,
-      destination,
-      relationshipId: widget.conversation.relationshipId,
-    );
   }
 
   Future<void> _onVoiceMessageRecorded(VoiceRecording recording) async {
@@ -2840,6 +2824,76 @@ const _monthNames = <String>[
 /// screen's state and the cards are built inside the message list's, and
 /// both must route identically -- a card and the picker landing in
 /// different places for the same game would be the worst kind of bug here.
+Future<void> showChatGamesPicker(
+  BuildContext context, {
+  required String relationshipId,
+}) async {
+  await BottomSheetUtils.showDocumentationBottomSheet<void>(
+    context: context,
+    backgroundColor: Theme.of(context).colorScheme.neutral,
+    maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+    padding: Spacing.md,
+    widget: ChatGamesSheet(
+      onSelect: (destination) {
+        Navigator.of(context).pop();
+        unawaited(
+          openGameRoute(context, destination, relationshipId: relationshipId),
+        );
+      },
+      onOpenPaintBallSession: (sessionId) {
+        Navigator.of(context).pop();
+        unawaited(
+          _openPaintBallRecap(
+            context,
+            sessionId: sessionId,
+            relationshipId: relationshipId,
+          ),
+        );
+      },
+    ),
+  );
+}
+
+Future<void> _openPaintBallRecap(
+  BuildContext context, {
+  required String sessionId,
+  required String relationshipId,
+}) async {
+  final action = await context.pushNamed<PaintBallExitAction>(
+    'paintBallKnockout',
+    pathParameters: {'sessionId': sessionId},
+  );
+  if (!context.mounted) return;
+  await _handlePaintBallExit(
+    context,
+    action: action,
+    relationshipId: relationshipId,
+  );
+}
+
+Future<void> _handlePaintBallExit(
+  BuildContext context, {
+  required PaintBallExitAction? action,
+  required String relationshipId,
+}) async {
+  if (action == PaintBallExitAction.openGames) {
+    await showChatGamesPicker(context, relationshipId: relationshipId);
+    return;
+  }
+  if (action != PaintBallExitAction.playAgain) return;
+
+  final nextAction = await context.pushNamed<PaintBallExitAction>(
+    'paintBallLobby',
+    pathParameters: {'relationshipId': relationshipId},
+  );
+  if (!context.mounted) return;
+  await _handlePaintBallExit(
+    context,
+    action: nextAction,
+    relationshipId: relationshipId,
+  );
+}
+
 Future<void> openGameRoute(
   BuildContext context,
   ChatGameDestination destination, {
@@ -2869,9 +2923,15 @@ Future<void> openGameRoute(
     case ChatGameDestination.truthOrDare:
       await context.pushNamed('truthOrDareGame');
     case ChatGameDestination.paintBall:
-      await context.pushNamed(
+      final action = await context.pushNamed<PaintBallExitAction>(
         'paintBallLobby',
         pathParameters: {'relationshipId': relationshipId},
+      );
+      if (!context.mounted) return;
+      await _handlePaintBallExit(
+        context,
+        action: action,
+        relationshipId: relationshipId,
       );
   }
 }

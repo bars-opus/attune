@@ -12,6 +12,7 @@ import 'package:attune/features/auth/intro/intro_screen.dart';
 import 'package:attune/features/auth/log_in/presentation/screens/login_screen.dart';
 import 'package:attune/features/dating/presentation/screens/dating_dashboard_screen.dart';
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_battle_screen.dart';
+import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_history_screen.dart';
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_knockout_screen.dart';
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_lobby_screen.dart';
 import 'package:attune/features/onboarding/presentation/screens/onboarding_gate.dart';
@@ -1621,6 +1622,14 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         builder: (context, state) {
           final sessionId = state.pathParameters['sessionId']!;
           return PaintBallBattleScreen(sessionId: sessionId);
+        },
+      ),
+      GoRoute(
+        path: '/games/paint-ball/history/:relationshipId',
+        name: 'paintBallHistory',
+        builder: (context, state) {
+          final relationshipId = state.pathParameters['relationshipId']!;
+          return PaintBallHistoryScreen(relationshipId: relationshipId);
         },
       ),
       GoRoute(

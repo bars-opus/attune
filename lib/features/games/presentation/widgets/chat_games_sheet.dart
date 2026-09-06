@@ -67,9 +67,14 @@ ChatGameDestination? chatGameDestinationForType(String gameType) {
 }
 
 class ChatGamesSheet extends ConsumerStatefulWidget {
-  const ChatGamesSheet({super.key, required this.onSelect});
+  const ChatGamesSheet({
+    super.key,
+    required this.onSelect,
+    this.onOpenPaintBallSession,
+  });
 
   final ValueChanged<ChatGameDestination> onSelect;
+  final ValueChanged<String>? onOpenPaintBallSession;
 
   @override
   ConsumerState<ChatGamesSheet> createState() => _ChatGamesSheetState();
@@ -132,6 +137,7 @@ class _ChatGamesSheetState extends ConsumerState<ChatGamesSheet> {
             mood: _moodForTab(tab),
             categories: _filteredCategoriesFor(_moodForTab(tab), query),
             onSelect: widget.onSelect,
+            onOpenPaintBallSession: widget.onOpenPaintBallSession,
           ),
         ),
     ];
@@ -177,12 +183,14 @@ class _ChatGamesTabContent extends StatelessWidget {
     required this.mood,
     required this.categories,
     required this.onSelect,
+    required this.onOpenPaintBallSession,
   });
 
   final String query;
   final String? mood;
   final List<_ChatGameCategory> categories;
   final ValueChanged<ChatGameDestination> onSelect;
+  final ValueChanged<String>? onOpenPaintBallSession;
 
   @override
   Widget build(BuildContext context) {
@@ -209,7 +217,10 @@ class _ChatGamesTabContent extends StatelessWidget {
       itemCount: categories.length + (showInProgress ? 1 : 0),
       itemBuilder: (context, index) {
         if (showInProgress && index == 0) {
-          return _ChatGamesInProgress(onSelect: onSelect);
+          return _ChatGamesInProgress(
+            onSelect: onSelect,
+            onOpenPaintBallSession: onOpenPaintBallSession,
+          );
         }
 
         final categoryIndex = showInProgress ? index - 1 : index;
@@ -579,9 +590,13 @@ Set<ChatGameDestination> chatGameDestinationsInCatalogue() => {
 /// pick a game cannot, and a first-time player would meet two empty boxes
 /// before reaching what they came for.
 class _ChatGamesInProgress extends ConsumerWidget {
-  const _ChatGamesInProgress({required this.onSelect});
+  const _ChatGamesInProgress({
+    required this.onSelect,
+    required this.onOpenPaintBallSession,
+  });
 
   final ValueChanged<ChatGameDestination> onSelect;
+  final ValueChanged<String>? onOpenPaintBallSession;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -609,7 +624,11 @@ class _ChatGamesInProgress extends ConsumerWidget {
           Gap(Spacing.md.h),
           _ChatGamesSectionLabel(label: 'Recently played'),
           Gap(Spacing.sm.h),
-          for (final game in recent) _ChatGameSessionRow(game: game),
+          for (final game in recent)
+            _ChatGameSessionRow(
+              game: game,
+              onOpenPaintBallSession: onOpenPaintBallSession,
+            ),
           Gap(Spacing.lg.h),
         ],
       ],
@@ -654,15 +673,19 @@ class _ChatGamesSectionLabel extends StatelessWidget {
 
 /// One game_sessions row, styled as the catalogue's rows are.
 ///
-/// [onSelect] is null for the recently-played list, which has nothing to
-/// resume — a completed session is a record, not a destination — and the
-/// row then renders without tap feedback or a trailing arrow rather than
-/// looking tappable and doing nothing.
+/// [onSelect] is null for the recently-played list because a completed
+/// session cannot be resumed. Paint Ball is the one game with a full recap,
+/// so [onOpenPaintBallSession] can make only those completed rows tappable.
 class _ChatGameSessionRow extends StatelessWidget {
-  const _ChatGameSessionRow({required this.game, this.onSelect});
+  const _ChatGameSessionRow({
+    required this.game,
+    this.onSelect,
+    this.onOpenPaintBallSession,
+  });
 
   final Map<String, dynamic> game;
   final ValueChanged<ChatGameDestination>? onSelect;
+  final ValueChanged<String>? onOpenPaintBallSession;
 
   @override
   Widget build(BuildContext context) {
@@ -680,6 +703,18 @@ class _ChatGameSessionRow extends StatelessWidget {
     final icon = chatGameIconForType(gameType) ?? Icons.sports_esports_outlined;
 
     final status = game['status'] as String? ?? '';
+    final sessionId = game['id'] as String?;
+    final canOpenPaintBallRecap =
+        status == 'completed' &&
+        gameType == 'paint_ball' &&
+        sessionId != null &&
+        onOpenPaintBallSession != null;
+    final VoidCallback? rowOnTap =
+        destination != null
+            ? () => onSelect!(destination)
+            : canOpenPaintBallRecap
+            ? () => onOpenPaintBallSession!(sessionId)
+            : null;
     final statusLabel = switch (status) {
       'invited' => 'Invitation waiting',
       'completed' => 'Completed',
@@ -692,7 +727,7 @@ class _ChatGameSessionRow extends StatelessWidget {
     };
 
     return CardInkWell(
-      onTap: destination == null ? null : () => onSelect!(destination),
+      onTap: rowOnTap,
       borderRadius: BorderRadius.circular(24),
       color: colorScheme.surface,
       padding: EdgeInsets.all(Spacing.md.w),
@@ -708,14 +743,14 @@ class _ChatGameSessionRow extends StatelessWidget {
         icon: icon,
         showAvatar: false,
         showDivider: false,
-        showTrailingArrow: true,
+        showTrailingArrow: rowOnTap != null,
         padAvatarTop: true,
         bottomWidget: _ChatGamePill(
           label: statusLabel,
           muted: status == 'completed',
         ),
 
-        onTap: destination == null ? null : () => onSelect!(destination),
+        onTap: rowOnTap,
       ),
 
       // Row(

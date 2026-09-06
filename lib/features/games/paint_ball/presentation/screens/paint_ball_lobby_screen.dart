@@ -1,10 +1,14 @@
 // lib/features/games/paint_ball/presentation/screens/paint_ball_lobby_screen.dart
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../../core/ui/motion/reduce_motion.dart';
 import '../../../../../core/utils/exports/export_screens.dart';
 import '../../models/paint_ball_models.dart';
 import '../state/paint_ball_provider.dart';
+import '../widgets/paint_ball_field.dart';
 
 class PaintBallLobbyScreen extends ConsumerStatefulWidget {
   final String relationshipId;
@@ -18,6 +22,8 @@ class PaintBallLobbyScreen extends ConsumerStatefulWidget {
 
 class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
   String _selectedTone = 'playful';
+  bool _allowPartnerPrompts = false;
+  bool _routing = false;
 
   @override
   void initState() {
@@ -25,9 +31,15 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final state = ref.read(paintBallSessionProvider);
       final session = state.session;
-      if (session != null && session.relationshipId == widget.relationshipId) {
-        _routeForPhase(state.phase, session.sessionId);
+      if (session != null &&
+          session.relationshipId == widget.relationshipId &&
+          !session.isCompleted &&
+          !session.isAbandoned) {
+        unawaited(_routeForPhase(state.phase, session.sessionId));
         return;
+      }
+      if (session?.isCompleted == true || session?.isAbandoned == true) {
+        ref.read(paintBallSessionProvider.notifier).reset();
       }
       // No session in memory yet — check the backend for a resumable one (an
       // incoming invite for this partner, or a game in progress to rejoin).
@@ -45,7 +57,7 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
     ) {
       final sessionId = ref.read(paintBallCurrentSessionProvider)?.sessionId;
       if (sessionId != null) {
-        _routeForPhase(next, sessionId);
+        unawaited(_routeForPhase(next, sessionId));
       }
     });
 
@@ -71,11 +83,22 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
         title: const Text('Paint Ball'),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Paint Ball history',
+            icon: const Icon(Icons.history_rounded),
+            onPressed: () => unawaited(_openHistory()),
+          ),
+        ],
       ),
-      body: Padding(
-        padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      body: SafeArea(
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(
+            Spacing.lg.w,
+            Spacing.md.h,
+            Spacing.lg.w,
+            Spacing.xxl.h,
+          ),
           children: [
             Text(
               'Paint Ball',
@@ -85,12 +108,22 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
             ),
             Gap(Spacing.sm.h),
             Text(
-              'Playful pressure · 3 lives each',
+              'A quick read on the person you know best',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ),
             Gap(Spacing.xl.h),
+            IgnorePointer(
+              child: PaintBallField(
+                splats: const [],
+                myPosition: 1,
+                selectedShot: 2,
+                revealedPartnerPosition: null,
+                isMyTurn: false,
+              ),
+            ),
+            Gap(Spacing.lg.h),
             Container(
               width: double.infinity,
               padding: EdgeInsets.all(Spacing.md.w),
@@ -111,7 +144,9 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
                   ),
                   Gap(Spacing.sm.h),
                   Text(
-                    'Tap to fire when the moving marker feels right. Each hit removes one life. Lose all 3 lives and the game flips into a free Truth or Dare prompt.',
+                    'Choose where to hide and where you think your partner hid. '
+                    'A correct read removes one life; every reveal gives you a '
+                    'clue for the next turn.',
                     style: textTheme.bodySmall,
                     textAlign: TextAlign.center,
                   ),
@@ -120,26 +155,40 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       _buildFeature('3', 'Lives', colorScheme),
-                      _buildFeature('↔', 'Timing', colorScheme),
-                      _buildFeature('T/D', 'Penalty', colorScheme),
+                      _buildFeature('2', 'Choices', colorScheme),
+                      _buildFeature('1', 'Prompt', colorScheme),
                     ],
                   ),
                 ],
               ),
             ),
             Gap(Spacing.xl.h),
-            Text('Choose your tone', style: textTheme.titleMedium),
-            Gap(Spacing.sm.h),
-            Wrap(
-              spacing: Spacing.sm.w,
-              runSpacing: Spacing.sm.h,
-              children: [
-                _buildToneChip('Playful', 'playful'),
-                _buildToneChip('Connecting', 'connecting'),
-                _buildToneChip('Romantic', 'romantic'),
-              ],
-            ),
-            Gap(Spacing.lg.h),
+            if (session == null) ...[
+              Text('Choose your tone', style: textTheme.titleMedium),
+              Gap(Spacing.sm.h),
+              Wrap(
+                spacing: Spacing.sm.w,
+                runSpacing: Spacing.sm.h,
+                children: [
+                  _buildToneChip('Playful', 'playful'),
+                  _buildToneChip('Connecting', 'connecting'),
+                  _buildToneChip('Romantic', 'romantic'),
+                ],
+              ),
+              Gap(Spacing.md.h),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                value: _allowPartnerPrompts,
+                onChanged: (value) {
+                  setState(() => _allowPartnerPrompts = value);
+                },
+                title: const Text('Include shared partner prompts'),
+                subtitle: const Text(
+                  'If none fit this tone, Attune uses its own prompt instead.',
+                ),
+              ),
+              Gap(Spacing.lg.h),
+            ],
             if (session != null &&
                 session.relationshipId == widget.relationshipId) ...[
               Container(
@@ -156,7 +205,9 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
                 ),
                 child: Text(
                   session.isInvited
-                      ? 'Waiting for your partner to accept.'
+                      ? isIncomingInvite
+                          ? 'Your partner invited you to play at the ${session.tone} tone.'
+                          : 'Invitation sent. Your partner can answer whenever they are ready.'
                       : session.hasPendingPenalty
                       ? 'Penalty is ready.'
                       : session.isActive
@@ -177,10 +228,21 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
                   Expanded(
                     child: AppButton(
                       label: 'Decline',
-                      onPressed:
-                          () => notifier.declineSession(session.sessionId),
+                      onPressed: () async {
+                        await notifier.declineSession(session.sessionId);
+                        if (!context.mounted) return;
+                        final declined =
+                            ref
+                                .read(paintBallSessionProvider)
+                                .session
+                                ?.isAbandoned;
+                        if (declined == true) {
+                          Navigator.of(context).maybePop();
+                        }
+                      },
                       variant: ButtonVariant.outline,
                       size: ButtonSize.small,
+                      animateButton: !reduceMotionOf(context),
                     ),
                   ),
                   Gap(Spacing.md.w),
@@ -190,25 +252,37 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
                       onPressed:
                           () => notifier.acceptSession(session.sessionId),
                       size: ButtonSize.small,
+                      animateButton: !reduceMotionOf(context),
                     ),
                   ),
                 ],
               )
+            else if (session?.isInvited == true)
+              AppButton(
+                label: 'Back to chat',
+                onPressed: () => Navigator.of(context).maybePop(),
+                variant: ButtonVariant.outline,
+                size: ButtonSize.small,
+                width: double.infinity,
+                animateButton: !reduceMotionOf(context),
+              )
             else
               AppButton(
-                label: session == null ? 'Start Game' : 'Resume Game',
+                label: session == null ? 'Start game' : 'Resume game',
                 onPressed: () async {
                   if (session != null) {
-                    _routeForPhase(state.phase, session.sessionId);
+                    await _routeForPhase(state.phase, session.sessionId);
                     return;
                   }
                   await notifier.createSession(
                     relationshipId: widget.relationshipId,
                     tone: _selectedTone,
+                    allowPartnerAuthored: _allowPartnerPrompts,
                   );
                 },
                 size: ButtonSize.small,
                 width: double.infinity,
+                animateButton: !reduceMotionOf(context),
               ),
             Gap(Spacing.sm.h),
             if (state.errorMessage != null)
@@ -275,20 +349,52 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
     );
   }
 
-  void _routeForPhase(PaintBallGamePhase phase, String sessionId) {
-    if (!mounted) return;
-    if (phase == PaintBallGamePhase.playing) {
-      context.pushReplacementNamed(
-        'paintBallBattle',
-        pathParameters: {'sessionId': sessionId},
-      );
+  Future<void> _openHistory() async {
+    final action = await context.pushNamed<PaintBallExitAction>(
+      'paintBallHistory',
+      pathParameters: {'relationshipId': widget.relationshipId},
+    );
+    if (!mounted ||
+        action == null ||
+        action == PaintBallExitAction.backToChat) {
       return;
     }
-    if (phase == PaintBallGamePhase.knockout) {
-      context.pushReplacementNamed(
-        'paintBallKnockout',
-        pathParameters: {'sessionId': sessionId},
-      );
+    if (action == PaintBallExitAction.playAgain) {
+      ref.read(paintBallSessionProvider.notifier).reset();
+      return;
     }
+    Navigator.of(context).pop(action);
+  }
+
+  Future<void> _routeForPhase(
+    PaintBallGamePhase phase,
+    String sessionId,
+  ) async {
+    if (!mounted || _routing || ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+
+    final route = switch (phase) {
+      PaintBallGamePhase.playing ||
+      PaintBallGamePhase.waiting ||
+      PaintBallGamePhase.shotAnimating => 'paintBallBattle',
+      PaintBallGamePhase.knockout => 'paintBallKnockout',
+      _ => null,
+    };
+    if (route == null) return;
+
+    _routing = true;
+    final action = await context.pushNamed<PaintBallExitAction>(
+      route,
+      pathParameters: {'sessionId': sessionId},
+    );
+    if (!mounted) return;
+    _routing = false;
+
+    if (action == PaintBallExitAction.playAgain) {
+      ref.read(paintBallSessionProvider.notifier).reset();
+      return;
+    }
+    Navigator.of(context).pop(action ?? PaintBallExitAction.backToChat);
   }
 }

@@ -1,4 +1,5 @@
 import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_lives_display.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +7,17 @@ import 'package:flutter_test/flutter_test.dart';
 Widget _wrap(Widget child) => ScreenUtilInit(
   designSize: const Size(390, 844),
   builder: (context, _) => MaterialApp(home: Scaffold(body: child)),
+);
+
+Widget _wrapReduced(Widget child) => ScreenUtilInit(
+  designSize: const Size(390, 844),
+  builder:
+      (context, _) => MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Scaffold(body: child),
+        ),
+      ),
 );
 
 /// Counts the player triangles that are actually visible.
@@ -229,5 +241,89 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the three targets are labelled and focusable', (tester) async {
+    final tapped = <int>[];
+    await tester.pumpWidget(
+      _wrap(
+        PaintBallField(
+          splats: const [],
+          myPosition: 1,
+          selectedShot: null,
+          revealedPartnerPosition: null,
+          isMyTurn: true,
+          onSelectShot: tapped.add,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.bySemanticsLabel('Left target'), findsOneWidget);
+    expect(find.bySemanticsLabel('Middle target'), findsOneWidget);
+    expect(find.bySemanticsLabel('Right target'), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('Right target'));
+    expect(tapped, [2]);
+  });
+
+  testWidgets('reduce motion makes all field transitions immediate', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _wrapReduced(
+        const PaintBallField(
+          splats: [],
+          myPosition: 0,
+          selectedShot: 2,
+          revealedPartnerPosition: 1,
+          isMyTurn: true,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    for (final widget in tester.widgetList<AnimatedAlign>(
+      find.byType(AnimatedAlign),
+    )) {
+      expect(widget.duration, Duration.zero);
+    }
+    for (final widget in tester.widgetList<AnimatedSlide>(
+      find.byType(AnimatedSlide),
+    )) {
+      expect(widget.duration, Duration.zero);
+    }
+    for (final widget in tester.widgetList<AnimatedOpacity>(
+      find.byType(AnimatedOpacity),
+    )) {
+      expect(widget.duration, Duration.zero);
+    }
+  });
+
+  testWidgets('lives use text and become immediate with reduce motion', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _wrapReduced(
+        const PaintBallLivesDisplay(
+          myLives: 2,
+          opponentLives: 1,
+          isMyTurn: true,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.bySemanticsLabel(
+        'Your partner has 1 lives. You have 2 lives. It is your turn.',
+      ),
+      findsOneWidget,
+    );
+    for (final widget in tester.widgetList<AnimatedContainer>(
+      find.byType(AnimatedContainer),
+    )) {
+      expect(widget.duration, Duration.zero);
+    }
   });
 }

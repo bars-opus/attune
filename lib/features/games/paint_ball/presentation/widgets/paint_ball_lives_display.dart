@@ -1,6 +1,9 @@
 // lib/features/games/paint_ball/presentation/widgets/paint_ball_lives_display.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart';
+
 class PaintBallLivesDisplay extends StatelessWidget {
   final int myLives;
   final int opponentLives;
@@ -15,62 +18,64 @@ class PaintBallLivesDisplay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
-      child: Row(
-        children: [
-          // Opponent lives
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Opponent',
-                  style: textTheme.labelMedium?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.6),
-                  ),
+      child: Semantics(
+        container: true,
+        label:
+            'Your partner has $opponentLives lives. You have $myLives lives. '
+            '${isMyTurn ? 'It is your turn.' : 'It is your partner\'s turn.'}',
+        child: ExcludeSemantics(
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'THEM  $opponentLives',
+                      style: textTheme.labelMedium?.copyWith(
+                        color: PaintBallPalette.theirs,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Gap(Spacing.xs.h),
+                    _buildLivesRow(context, opponentLives, isOpponent: true),
+                  ],
                 ),
-                Gap(Spacing.xs.h),
-                _buildLivesRow(context, opponentLives, isOpponent: true),
-              ],
-            ),
-          ),
-
-          // VS separator
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
-            child: Text(
-              'VS',
-              style: textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: isMyTurn ? colorScheme.primary : colorScheme.onSurface,
               ),
-            ),
-          ),
-
-          // My lives
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  'You',
-                  style: textTheme.labelMedium?.copyWith(
-                    color:
-                        isMyTurn
-                            ? colorScheme.primary
-                            : colorScheme.onSurface.withValues(alpha: 0.6),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
+                child: Text(
+                  isMyTurn ? 'YOUR MOVE' : 'THEIR MOVE',
+                  style: textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white.withValues(alpha: 0.62),
+                    letterSpacing: 0,
                   ),
                 ),
-                Gap(Spacing.xs.h),
-                _buildLivesRow(context, myLives, isOpponent: false),
-              ],
-            ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      'YOU  $myLives',
+                      style: textTheme.labelMedium?.copyWith(
+                        color: PaintBallPalette.mine,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Gap(Spacing.xs.h),
+                    _buildLivesRow(context, myLives, isOpponent: false),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -80,52 +85,31 @@ class PaintBallLivesDisplay extends StatelessWidget {
     int lives, {
     required bool isOpponent,
   }) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final color = isOpponent ? PaintBallPalette.theirs : PaintBallPalette.mine;
 
     return Row(
       mainAxisAlignment:
           isOpponent ? MainAxisAlignment.start : MainAxisAlignment.end,
       children: List.generate(3, (index) {
         final hasLife = index < lives;
-        return Container(
+        return AnimatedContainer(
+          duration:
+              reduceMotionOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 220),
           margin: EdgeInsets.only(
-            right: isOpponent ? 4.w : 0,
-            left: isOpponent ? 0 : 4.w,
+            right: isOpponent ? 5.w : 0,
+            left: isOpponent ? 0 : 5.w,
           ),
-          width: 24.w,
-          height: 24.w,
+          width: 18.w,
+          height: 18.w,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color:
-                hasLife
-                    ? (isOpponent ? colorScheme.secondary : colorScheme.primary)
-                    : colorScheme.surface,
+            color: hasLife ? color : Colors.transparent,
             border: Border.all(
-              color:
-                  hasLife
-                      ? (isOpponent
-                          ? colorScheme.secondary
-                          : colorScheme.primary)
-                      : colorScheme.outline.withValues(alpha: 0.2),
-              width: 2.r,
+              color: color.withValues(alpha: hasLife ? 1 : 0.30),
+              width: 1.5.r,
             ),
-          ),
-          child: Center(
-            child:
-                hasLife
-                    ? Icon(
-                      Icons.favorite,
-                      size: 14.sp,
-                      color:
-                          isOpponent
-                              ? colorScheme.onSecondary
-                              : colorScheme.onPrimary,
-                    )
-                    : Icon(
-                      Icons.favorite_border,
-                      size: 14.sp,
-                      color: colorScheme.onSurface.withValues(alpha: 0.2),
-                    ),
           ),
         );
       }),

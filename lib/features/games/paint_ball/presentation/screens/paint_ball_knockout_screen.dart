@@ -1,17 +1,19 @@
 // lib/features/games/paint_ball/presentation/screens/paint_ball_knockout_screen.dart
 
+import 'dart:async';
+
+import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/core/ui/presence/breathing_dots.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/games/paint_ball/models/paint_ball_models.dart';
+import 'package:attune/features/games/paint_ball/presentation/state/paint_ball_provider.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../state/paint_ball_provider.dart';
-
 class PaintBallKnockoutScreen extends ConsumerStatefulWidget {
-  final String sessionId;
+  const PaintBallKnockoutScreen({super.key, required this.sessionId});
 
-  const PaintBallKnockoutScreen({
-    super.key,
-    required this.sessionId,
-  });
+  final String sessionId;
 
   @override
   ConsumerState<PaintBallKnockoutScreen> createState() =>
@@ -19,298 +21,495 @@ class PaintBallKnockoutScreen extends ConsumerStatefulWidget {
 }
 
 class _PaintBallKnockoutScreenState
-    extends ConsumerState<PaintBallKnockoutScreen> {
+    extends ConsumerState<PaintBallKnockoutScreen>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  late final AnimationController _entryController;
+  bool _entryStarted = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _entryController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 460),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final state = ref.read(paintBallSessionProvider);
-      if (state.session?.sessionId != widget.sessionId) {
-        ref.read(paintBallSessionProvider.notifier).loadSession(widget.sessionId);
-      }
+      ref.read(paintBallSessionProvider.notifier).loadSession(widget.sessionId);
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_entryStarted) return;
+    _entryStarted = true;
+    if (reduceMotionOf(context)) {
+      _entryController.value = 1;
+    } else {
+      unawaited(_entryController.forward());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(
+        ref
+            .read(paintBallSessionProvider.notifier)
+            .loadSession(widget.sessionId),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _entryController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(paintBallSessionProvider);
-    final notifier = ref.read(paintBallSessionProvider.notifier);
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
     final session = state.session;
+
     if (session == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final penaltyType = session.penaltyType ?? 'truth';
-    final penaltyPrompt = session.penaltyPromptSnapshot ?? '';
-    final isResolved = session.penaltyStatus == 'completed' ||
-        session.penaltyStatus == 'declined' ||
-        session.isCompleted;
-
-    // Only the LOSER resolves the penalty (spec §6.1/§10.5). The winner is
-    // navigated here too (both clients enter the knockout phase via realtime),
-    // but must see a spectator view — not "you lost" copy and not the
-    // Complete/Skip buttons, which would 403 for them.
     final currentUserId = ref.watch(paintBallCurrentUserIdProvider);
-    final isLoser = session.winnerUserId != null &&
-        session.winnerUserId != currentUserId;
-    final isWinner = session.winnerUserId != null &&
-        session.winnerUserId == currentUserId;
-
-    if (isWinner && !isResolved) {
-      return _buildWinnerWaitingView(context, penaltyType);
-    }
+    final isWinner = session.winnerUserId == currentUserId;
+    final isLoser = session.winnerUserId != null && !isWinner;
+    final isResolved =
+        session.isCompleted ||
+        session.penaltyStatus == 'completed' ||
+        session.penaltyStatus == 'declined';
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Truth or Dare'),
+        title: Text(isResolved ? 'Paint Ball' : 'Truth or Dare'),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        automaticallyImplyLeading: false,
+        leading: IconButton(
+          tooltip: 'Close',
+          icon: const Icon(Icons.close_rounded),
+          onPressed:
+              () => Navigator.of(context).pop(PaintBallExitAction.backToChat),
+        ),
       ),
-      body: Padding(
-        padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.all(Spacing.md.w),
-              decoration: BoxDecoration(
-                color: Colors.purple.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12.r),
-                border: Border.all(
-                  color: Colors.purple.withValues(alpha: 0.2),
-                ),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    isResolved
-                        ? 'SESSION COMPLETE'
-                        : isWinner
-                            ? 'KNOCKOUT'
-                            : 'KNOCKED OUT',
-                    style: textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.purple,
-                    ),
-                  ),
-                  Gap(Spacing.xs.h),
-                  Text(
-                    isResolved
-                        ? 'The penalty has been handled.'
-                        : isWinner
-                            ? 'You won this round.'
-                            : 'You lost all 3 lives.',
-                    style: textTheme.bodyLarge,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+      body: SafeArea(
+        child: FadeTransition(
+          opacity: CurvedAnimation(
+            parent: _entryController,
+            curve: Curves.easeOut,
+          ),
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.035),
+              end: Offset.zero,
+            ).animate(
+              CurvedAnimation(
+                parent: _entryController,
+                curve: Curves.easeOutCubic,
               ),
             ),
-            Gap(Spacing.xl.h),
-            if (!isResolved) ...[
-              Container(
-                width: double.infinity,
-                padding: EdgeInsets.all(Spacing.lg.w),
-                decoration: BoxDecoration(
-                  color: colorScheme.surface,
-                  borderRadius: BorderRadius.circular(16.r),
-                  border: Border.all(
-                    color: colorScheme.outline.withValues(alpha: 0.1),
+            child:
+                isResolved
+                    ? _PaintBallEndView(
+                      session: session,
+                      currentUserId: currentUserId,
+                    )
+                    : isWinner
+                    ? _WinnerWaitingView(session: session)
+                    : _PenaltyView(
+                      session: session,
+                      isLoser: isLoser,
+                      isSubmitting: state.isSubmitting,
+                      errorMessage: state.errorMessage,
+                    ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _KnockoutMark extends StatelessWidget {
+  const _KnockoutMark({required this.loser});
+
+  final bool loser;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final color = loser ? PaintBallPalette.theirs : PaintBallPalette.mine;
+
+    return Semantics(
+      label:
+          loser
+              ? 'You have no lives remaining'
+              : 'Your partner has no lives remaining',
+      child: ExcludeSemantics(
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                3,
+                (_) => Container(
+                  width: 22.w,
+                  height: 22.w,
+                  margin: EdgeInsets.symmetric(horizontal: 4.w),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: color.withValues(alpha: 0.44),
+                      width: 1.5.r,
+                    ),
                   ),
                 ),
-                child: Column(
-                  children: [
-                    Text(
-                      penaltyType.toUpperCase(),
-                      style: textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: penaltyType == 'truth'
-                            ? colorScheme.primary
-                            : colorScheme.secondary,
-                      ),
-                    ),
-                    Gap(Spacing.md.h),
-                    Text(
-                      penaltyPrompt,
-                      style: textTheme.titleMedium,
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
               ),
-              Gap(Spacing.xl.h),
-              Text(
-                'Complete the prompt or skip it for free.',
-                style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withValues(alpha: 0.6),
-                ),
+            ),
+            Gap(Spacing.sm.h),
+            Text(
+              loser ? 'KNOCKED OUT' : 'FINAL HIT',
+              style: textTheme.headlineSmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0,
               ),
-              Gap(Spacing.md.h),
-              // Only the loser gets the resolve controls. The winner never
-              // reaches this branch (early-returned to the waiting view above),
-              // but gate explicitly so the safety-critical buttons can never
-              // render for the wrong player.
-              if (isLoser)
-                if (state.isSubmitting)
-                  const Center(child: CircularProgressIndicator())
-                else
-                  Row(
-                    children: [
-                      Expanded(
-                        child: AppButton(
-                          label: 'Complete',
-                          onPressed: () =>
-                              notifier.resolvePenalty(completed: true),
-                          size: ButtonSize.small,
-                        ),
-                      ),
-                      Gap(Spacing.md.w),
-                      Expanded(
-                        child: AppButton(
-                          label: 'Skip',
-                          onPressed: () =>
-                              notifier.resolvePenalty(completed: false),
-                          size: ButtonSize.small,
-                        ),
-                      ),
-                    ],
-                  ),
-            ] else ...[
-              Container(
-                width: double.infinity,
-                padding: EdgeInsets.all(Spacing.lg.w),
-                decoration: BoxDecoration(
-                  color: colorScheme.surface,
-                  borderRadius: BorderRadius.circular(16.r),
-                  border: Border.all(
-                    color: colorScheme.outline.withValues(alpha: 0.1),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      'Nice round.',
-                      style: textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Gap(Spacing.sm.h),
-                    Text(
-                      session.penaltyStatus == 'declined'
-                          ? 'The prompt was skipped, and the game is complete.'
-                          : 'The prompt was completed, and the game is complete.',
-                      textAlign: TextAlign.center,
-                      style: textTheme.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-              Gap(Spacing.lg.h),
-              AppButton(
-                label: 'Back to Games',
-                onPressed: () => Navigator.pop(context),
-                size: ButtonSize.small,
-                width: double.infinity,
-              ),
-            ],
-            if (state.errorMessage != null) ...[
-              Gap(Spacing.md.h),
-              Text(
-                state.errorMessage!,
-                style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.error,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-            const Spacer(),
-            if (isLoser)
-              Text(
-                'You can always skip with no penalty. 💚',
-                style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withValues(alpha: 0.4),
-                ),
-              ),
+            ),
           ],
         ),
       ),
     );
   }
+}
 
-  /// Spectator view for the WINNER while the loser decides on their prompt.
-  /// The winner never sees the prompt content or any resolve control — the
-  /// penalty is the loser's private choice, and it is always declinable.
-  Widget _buildWinnerWaitingView(BuildContext context, String penaltyType) {
+class _PenaltyView extends ConsumerWidget {
+  const _PenaltyView({
+    required this.session,
+    required this.isLoser,
+    required this.isSubmitting,
+    required this.errorMessage,
+  });
+
+  final PaintBallSessionState session;
+  final bool isLoser;
+  final bool isSubmitting;
+  final String? errorMessage;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final penaltyType = session.penaltyType == 'dare' ? 'Dare' : 'Truth';
+    final prompt = session.penaltyPromptSnapshot?.trim() ?? '';
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Truth or Dare'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        automaticallyImplyLeading: false,
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        Spacing.lg.w,
+        Spacing.lg.h,
+        Spacing.lg.w,
+        Spacing.xxl.h,
       ),
-      body: Padding(
-        padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Container(
+      children: [
+        const _KnockoutMark(loser: true),
+        Gap(Spacing.xl.h),
+        Text(
+          'One last moment',
+          textAlign: TextAlign.center,
+          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        Gap(Spacing.xs.h),
+        Text(
+          'Complete it if it feels fun, or skip it freely.',
+          textAlign: TextAlign.center,
+          style: textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurface.withValues(alpha: 0.62),
+          ),
+        ),
+        Gap(Spacing.xl.h),
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(Spacing.lg.w),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(18.r),
+            border: Border.all(
+              color: colorScheme.outline.withValues(alpha: 0.12),
+            ),
+          ),
+          child: Column(
+            children: [
+              Text(
+                penaltyType.toUpperCase(),
+                style: textTheme.labelLarge?.copyWith(
+                  color:
+                      penaltyType == 'Truth'
+                          ? PaintBallPalette.mine
+                          : PaintBallPalette.theirs,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0,
+                ),
+              ),
+              Gap(Spacing.md.h),
+              Text(
+                prompt.isEmpty
+                    ? 'This prompt could not be loaded. You can skip and finish the game.'
+                    : prompt,
+                textAlign: TextAlign.center,
+                style: textTheme.titleMedium?.copyWith(height: 1.35),
+              ),
+            ],
+          ),
+        ),
+        Gap(Spacing.lg.h),
+        if (isLoser)
+          if (isSubmitting)
+            const Center(child: CircularProgressIndicator())
+          else ...[
+            AppButton(
+              label: 'Complete',
+              onPressed:
+                  prompt.isEmpty
+                      ? null
+                      : () => ref
+                          .read(paintBallSessionProvider.notifier)
+                          .resolvePenalty(completed: true),
               width: double.infinity,
-              padding: EdgeInsets.all(Spacing.md.w),
-              decoration: BoxDecoration(
-                color: Colors.purple.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12.r),
-                border: Border.all(color: Colors.purple.withValues(alpha: 0.2)),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    'KNOCKOUT',
-                    style: textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.purple,
-                    ),
-                  ),
-                  Gap(Spacing.xs.h),
-                  Text(
-                    'You won this round.',
-                    style: textTheme.bodyLarge,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
+              size: ButtonSize.medium,
+              animateButton: !reduceMotionOf(context),
             ),
-            Gap(Spacing.xl.h),
-            Text(
-              'Your partner got a ${penaltyType == 'dare' ? 'dare' : 'truth'} prompt. '
-              'It is theirs to complete or skip — you will see when the game wraps up.',
-              style: textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurface.withValues(alpha: 0.7),
-              ),
-              textAlign: TextAlign.center,
-            ),
-            Gap(Spacing.xl.h),
-            const CircularProgressIndicator(),
-            const Spacer(),
-            Text(
-              'They can complete or skip — both are fine. 💚',
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurface.withValues(alpha: 0.4),
-              ),
-              textAlign: TextAlign.center,
+            Gap(Spacing.sm.h),
+            AppButton(
+              label: 'Skip this one',
+              onPressed:
+                  () => ref
+                      .read(paintBallSessionProvider.notifier)
+                      .resolvePenalty(completed: false),
+              width: double.infinity,
+              size: ButtonSize.medium,
+              variant: ButtonVariant.text,
+              animateButton: !reduceMotionOf(context),
             ),
           ],
+        if (errorMessage != null) ...[
+          Gap(Spacing.md.h),
+          Text(
+            errorMessage!,
+            textAlign: TextAlign.center,
+            style: textTheme.bodySmall?.copyWith(color: colorScheme.error),
+          ),
+        ],
+        Gap(Spacing.xl.h),
+        Text(
+          'Skipping changes nothing between you and is never recorded as something owed.',
+          textAlign: TextAlign.center,
+          style: textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurface.withValues(alpha: 0.48),
+          ),
         ),
+      ],
+    );
+  }
+}
+
+class _WinnerWaitingView extends StatelessWidget {
+  const _WinnerWaitingView({required this.session});
+
+  final PaintBallSessionState session;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final type = session.penaltyType == 'dare' ? 'dare' : 'truth';
+
+    return Padding(
+      padding: EdgeInsets.all(Spacing.lg.w),
+      child: Column(
+        children: [
+          const Spacer(),
+          const _KnockoutMark(loser: false),
+          Gap(Spacing.xl.h),
+          Text(
+            'You read them right.',
+            style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          Gap(Spacing.sm.h),
+          Text(
+            'Your partner has a $type prompt they can complete or skip. Both choices are completely fine.',
+            textAlign: TextAlign.center,
+            style: textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.64),
+            ),
+          ),
+          Gap(Spacing.xl.h),
+          const BreathingDots(size: 7),
+          Gap(Spacing.sm.h),
+          Text(
+            'Waiting for them to wrap up',
+            style: textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.52),
+            ),
+          ),
+          const Spacer(),
+          AppButton(
+            label: 'Back to chat',
+            onPressed:
+                () => Navigator.of(context).pop(PaintBallExitAction.backToChat),
+            variant: ButtonVariant.outline,
+            size: ButtonSize.medium,
+            width: double.infinity,
+            animateButton: !reduceMotionOf(context),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class _PaintBallEndView extends ConsumerWidget {
+  const _PaintBallEndView({required this.session, required this.currentUserId});
+
+  final PaintBallSessionState session;
+  final String? currentUserId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final iWon = session.winnerUserId == currentUserId;
+    final myHits = _hitsFor(currentUserId);
+    final partnerId =
+        currentUserId == session.userAId ? session.userBId : session.userAId;
+    final partnerHits = _hitsFor(partnerId);
+    final skipped = session.penaltyStatus == 'declined';
+
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        Spacing.lg.w,
+        Spacing.xl.h,
+        Spacing.lg.w,
+        Spacing.xxl.h,
+      ),
+      children: [
+        Icon(
+          Icons.colorize_rounded,
+          size: 44.h,
+          color: PaintBallPalette.player,
+        ),
+        Gap(Spacing.md.h),
+        Text(
+          'Nice read.',
+          textAlign: TextAlign.center,
+          style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        Gap(Spacing.xs.h),
+        Text(
+          iWon
+              ? 'You landed the final hit.'
+              : 'Your partner landed the final hit.',
+          textAlign: TextAlign.center,
+          style: textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurface.withValues(alpha: 0.62),
+          ),
+        ),
+        Gap(Spacing.xl.h),
+        Container(
+          padding: EdgeInsets.all(Spacing.lg.w),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(18.r),
+            border: Border.all(
+              color: colorScheme.outline.withValues(alpha: 0.12),
+            ),
+          ),
+          child: Column(
+            children: [
+              _RecapRow(label: 'Your hits', value: '$myHits'),
+              Gap(Spacing.md.h),
+              _RecapRow(label: 'Their hits', value: '$partnerHits'),
+              Gap(Spacing.md.h),
+              _RecapRow(
+                label: session.penaltyType == 'dare' ? 'Dare' : 'Truth',
+                value: skipped ? 'Skipped' : 'Completed',
+              ),
+            ],
+          ),
+        ),
+        Gap(Spacing.xl.h),
+        AppButton(
+          label: 'Play again',
+          onPressed: () {
+            Navigator.of(context).pop(PaintBallExitAction.playAgain);
+          },
+          width: double.infinity,
+          size: ButtonSize.medium,
+          animateButton: !reduceMotionOf(context),
+        ),
+        Gap(Spacing.sm.h),
+        AppButton(
+          label: 'Try another game',
+          onPressed: () {
+            ref.read(paintBallSessionProvider.notifier).reset();
+            Navigator.of(context).pop(PaintBallExitAction.openGames);
+          },
+          width: double.infinity,
+          size: ButtonSize.medium,
+          variant: ButtonVariant.outline,
+          animateButton: !reduceMotionOf(context),
+        ),
+        Gap(Spacing.md.h),
+        Text(
+          'This recap belongs only to this game. Attune does not keep a running score.',
+          textAlign: TextAlign.center,
+          style: textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurface.withValues(alpha: 0.46),
+          ),
+        ),
+      ],
+    );
+  }
+
+  int _hitsFor(String? userId) =>
+      session.rounds
+          .where(
+            (round) =>
+                round.activePartnerId == userId &&
+                round.outcome == PaintBallShotOutcome.hit,
+          )
+          .length;
+}
+
+class _RecapRow extends StatelessWidget {
+  const _RecapRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.62),
+            ),
+          ),
+        ),
+        Text(
+          value,
+          style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+      ],
     );
   }
 }

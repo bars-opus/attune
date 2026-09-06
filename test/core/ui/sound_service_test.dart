@@ -35,12 +35,22 @@ void main() {
     s.play(AppSound.gameMatch);
     s.play(AppSound.gameReveal);
     s.play(AppSound.gameComplete);
+    s.play(AppSound.gameFire);
+    s.play(AppSound.gameHit);
+    s.play(AppSound.gameMiss);
+    s.play(AppSound.gameKnockout);
+    s.play(AppSound.gamePenaltyReveal);
     expect(s.played, [
       AppSound.gameTap,
       AppSound.gameCardFlip,
       AppSound.gameMatch,
       AppSound.gameReveal,
       AppSound.gameComplete,
+      AppSound.gameFire,
+      AppSound.gameHit,
+      AppSound.gameMiss,
+      AppSound.gameKnockout,
+      AppSound.gamePenaltyReveal,
     ]);
   });
 }

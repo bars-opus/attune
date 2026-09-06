@@ -6,10 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:attune/core/ui/feedback/sound_service.dart';
+import 'package:attune/core/ui/feedback/haptics.dart';
+import '../../analytics/paint_ball_analytics.dart';
 import '../../models/paint_ball_models.dart';
 import '../../services/paint_ball_service.dart';
 
-final paintBallServiceProvider = Provider<PaintBallService>((ref) {
+final paintBallServiceProvider = Provider<PaintBallGateway>((ref) {
   final supabase = Supabase.instance.client;
   return PaintBallService(supabase);
 });
@@ -18,12 +20,18 @@ final paintBallCurrentUserIdProvider = Provider<String?>((ref) {
   return Supabase.instance.client.auth.currentUser?.id;
 });
 
+final paintBallAnalyticsProvider = Provider<PaintBallAnalytics>((ref) {
+  return const PaintBallAnalytics();
+});
+
 class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
   final Ref _ref;
   RealtimeChannel? _realtimeChannel;
 
-  PaintBallService get _service => _ref.read(paintBallServiceProvider);
+  PaintBallGateway get _service => _ref.read(paintBallServiceProvider);
   SoundService get _sound => _ref.read(soundServiceProvider);
+  Haptics get _haptics => _ref.read(hapticsProvider);
+  PaintBallAnalytics get _analytics => _ref.read(paintBallAnalyticsProvider);
 
   PaintBallSessionNotifier(this._ref) : super(const PaintBallUiState());
 
@@ -43,6 +51,13 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
 
       await _loadSession(response.sessionId);
       _subscribeToSession(response.sessionId);
+      if (!response.existing) {
+        _analytics.sessionStarted(
+          sessionId: response.sessionId,
+          tone: tone,
+          partnerAuthoredEnabled: allowPartnerAuthored,
+        );
+      }
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -58,6 +73,7 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
       await _service.acceptSession(sessionId);
       await _loadSession(sessionId);
       _subscribeToSession(sessionId);
+      _analytics.sessionAccepted(sessionId: sessionId);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -76,7 +92,7 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
         phase: PaintBallGamePhase.ended,
         session: state.session?.copyWith(
           status: 'abandoned',
-          completedAt: DateTime.now(),
+          abandonedAt: DateTime.now(),
         ),
       );
     } catch (e) {
@@ -91,7 +107,7 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
     state = state.copyWith(isLoading: true, errorMessage: null);
 
     try {
-      await _loadSession(sessionId);
+      await _loadSession(sessionId, resetTransient: true);
       _subscribeToSession(sessionId);
     } catch (e) {
       state = state.copyWith(
@@ -111,7 +127,9 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
     try {
       final session = await _service.getActiveSession(relationshipId);
       if (session == null) {
-        state = state.copyWith(isLoading: false);
+        _realtimeChannel?.unsubscribe();
+        _realtimeChannel = null;
+        state = const PaintBallUiState();
         return;
       }
       state = state.copyWith(
@@ -128,28 +146,64 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
     }
   }
 
-  Future<void> _loadSession(String sessionId) async {
+  Future<void> _loadSession(
+    String sessionId, {
+    bool resetTransient = false,
+  }) async {
     final session = await _service.getSessionState(sessionId);
     final phase = _determinePhase(session);
+    final currentUserId = _ref.read(paintBallCurrentUserIdProvider);
+    final previousSession = state.session;
+    final shouldRevealPenalty =
+        session.hasPendingPenalty &&
+        session.isLoser &&
+        (previousSession?.sessionId != session.sessionId ||
+            previousSession?.hasPendingPenalty != true);
+    final becameMyTurn =
+        session.currentTurnUserId == currentUserId &&
+        previousSession?.currentTurnUserId != currentUserId;
     state = state.copyWith(
       session: session,
       phase: phase,
       isLoading: false,
+      hidePosition: resetTransient || becameMyTurn ? null : state.hidePosition,
+      shotPosition: resetTransient || becameMyTurn ? null : state.shotPosition,
+      selectionRound:
+          resetTransient || becameMyTurn ? null : state.selectionRound,
+      revealedPartnerPosition:
+          resetTransient || becameMyTurn ? null : state.revealedPartnerPosition,
+      lastOutcome: resetTransient || becameMyTurn ? null : state.lastOutcome,
+      showHitFeedback:
+          resetTransient || becameMyTurn ? false : state.showHitFeedback,
+      showMissFeedback:
+          resetTransient || becameMyTurn ? false : state.showMissFeedback,
     );
+    if (shouldRevealPenalty) {
+      _sound.play(AppSound.gamePenaltyReveal);
+      _haptics.light();
+    }
   }
 
   /// Chooses where to hide this turn.
   void selectHide(int position) {
     if (state.isSubmitting) return;
     _sound.play(AppSound.gameTap);
-    state = state.copyWith(hidePosition: position);
+    _haptics.selection();
+    state = state.copyWith(
+      hidePosition: position,
+      selectionRound: state.session?.currentRound,
+    );
   }
 
   /// Chooses where to shoot.
   void selectShot(int position) {
     if (state.isSubmitting) return;
     _sound.play(AppSound.gameTap);
-    state = state.copyWith(shotPosition: position);
+    _haptics.selection();
+    state = state.copyWith(
+      shotPosition: position,
+      selectionRound: state.session?.currentRound,
+    );
   }
 
   /// Commits the turn: hide here, shoot there.
@@ -183,6 +237,12 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
       errorMessage: null,
       phase: PaintBallGamePhase.shotAnimating,
     );
+    _sound.play(AppSound.gameFire);
+    _haptics.light();
+    _analytics.shotFired(
+      sessionId: session.sessionId,
+      roundNumber: session.currentRound,
+    );
 
     try {
       final result = await _service.takeTurn(
@@ -194,24 +254,32 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
 
       final currentUserId = _ref.read(paintBallCurrentUserIdProvider);
       final nextRounds = [
-        ...session.rounds,
+        ...session.rounds.where(
+          (round) => round.roundNumber != result.roundNumber,
+        ),
         PaintBallRound(
           roundNumber: result.roundNumber,
           shotResult: result.shotResult,
           lifeLost: result.lifeLost,
           createdAt: DateTime.now(),
+          shotPosition: shot,
+          activePartnerId: currentUserId,
         ),
-      ];
+      ]..sort((a, b) => a.roundNumber.compareTo(b.roundNumber));
 
       final updatedSession = session.copyWith(
         currentRound:
             result.knockout ? session.currentRound : session.currentRound + 1,
-        totalRoundsCompleted: session.totalRoundsCompleted + 1,
+        totalRoundsCompleted:
+            session.totalRoundsCompleted < nextRounds.length
+                ? nextRounds.length
+                : session.totalRoundsCompleted,
         livesA: result.livesA,
         livesB: result.livesB,
         currentTurnUserId: result.currentTurnUserId,
         winnerUserId: result.knockout ? currentUserId : session.winnerUserId,
         penaltyType: result.penaltyType,
+        penaltySource: result.penaltySource,
         penaltyPromptSnapshot: result.penaltyPromptSnapshot,
         penaltyStatus: result.knockout ? 'pending' : null,
         rounds: nextRounds,
@@ -230,14 +298,35 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
         showHitFeedback: result.isHit,
         showMissFeedback: result.isMiss,
         showKnockout: result.knockout,
+        lastOutcome: result.outcome,
         // Held after the turn so the reveal stays on screen while the
         // player reads it; cleared when they start the next turn.
         revealedPartnerPosition: result.defenderWasAt,
       );
 
-      _sound.play(
-        result.knockout ? AppSound.gameComplete : AppSound.gameReveal,
-      );
+      if (result.knockout) {
+        _analytics.playerEliminated(
+          sessionId: session.sessionId,
+          penaltySource: result.penaltySource ?? 'app_random',
+        );
+        _sound.play(AppSound.gameKnockout);
+        _haptics.medium();
+      } else if (result.isHit) {
+        _analytics.shotResolved(
+          sessionId: session.sessionId,
+          roundNumber: result.roundNumber,
+          hit: true,
+        );
+        _sound.play(AppSound.gameHit);
+        _haptics.medium();
+      } else if (result.isMiss) {
+        _analytics.shotResolved(
+          sessionId: session.sessionId,
+          roundNumber: result.roundNumber,
+          hit: false,
+        );
+        _sound.play(AppSound.gameMiss);
+      }
     } on PaintBallApiError catch (error) {
       state = state.copyWith(
         isSubmitting: false,
@@ -261,6 +350,9 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
       revealedPartnerPosition: null,
       showHitFeedback: false,
       showMissFeedback: false,
+      showKnockout: false,
+      lastOutcome: null,
+      selectionRound: null,
     );
   }
 
@@ -290,6 +382,14 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
         isSubmitting: false,
         phase: PaintBallGamePhase.ended,
       );
+      _analytics.penaltyResolved(
+        sessionId: session.sessionId,
+        completed: completed,
+      );
+      _analytics.sessionCompleted(
+        sessionId: session.sessionId,
+        roundsCompleted: session.totalRoundsCompleted,
+      );
       _sound.play(AppSound.gameComplete);
     } catch (e) {
       state = state.copyWith(
@@ -305,6 +405,10 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
       sessionId,
       onUpdate: (_) => unawaited(_loadSession(sessionId)),
     );
+  }
+
+  void clearError() {
+    state = state.copyWith(errorMessage: null);
   }
 
   PaintBallGamePhase _determinePhase(PaintBallSessionState session) {
@@ -330,9 +434,6 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
     if (error is PaintBallApiError) {
       return error.message;
     }
-    if (error is Exception) {
-      return error.toString();
-    }
     return 'Something went wrong. Please try again.';
   }
 
@@ -351,8 +452,8 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
 
 final paintBallSessionProvider =
     StateNotifierProvider<PaintBallSessionNotifier, PaintBallUiState>((ref) {
-  return PaintBallSessionNotifier(ref);
-});
+      return PaintBallSessionNotifier(ref);
+    });
 
 final paintBallCurrentSessionProvider = Provider<PaintBallSessionState?>((ref) {
   return ref.watch(paintBallSessionProvider).session;
@@ -377,7 +478,9 @@ final paintBallIsMyTurnProvider = Provider<bool>((ref) {
   return session.isCurrentUserTurn(userId);
 });
 
-final paintBallLivesProvider = Provider<({int myLives, int opponentLives})>((ref) {
+final paintBallLivesProvider = Provider<({int myLives, int opponentLives})>((
+  ref,
+) {
   final session = ref.watch(paintBallCurrentSessionProvider);
   final userId = ref.watch(paintBallCurrentUserIdProvider);
   if (session == null) return (myLives: 0, opponentLives: 0);

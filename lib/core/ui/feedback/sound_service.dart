@@ -16,6 +16,11 @@ enum AppSound {
   gameReveal, // a round result / answer reveal
   gameTap, // option / choice selection
   gameComplete, // session finished (end screen)
+  gameFire, // Paint Ball shot leaves the player's cover
+  gameHit, // Paint Ball direct hit
+  gameMiss, // Paint Ball miss/opening reveal
+  gameKnockout, // Paint Ball final life
+  gamePenaltyReveal, // Paint Ball loser sees the persisted prompt
 }
 
 /// Back-compat alias for the original chat-only names. Existing chat call sites
@@ -55,10 +60,8 @@ class AudioPlayerSoundService implements SoundService {
   // AssetSource paths are relative to the `assets/` prefix already declared in
   // pubspec, so they start at `sounds/…`.
   //
-  // TODO(assets): the game_*.wav clips below are code seams — drop the designed
-  // audio files into assets/sounds/ and declare them in pubspec. Until they
-  // exist, per-asset load failures are caught individually (see preload), so a
-  // missing game clip is a silent no-op and never breaks chat sounds.
+  // Per-asset load failures are caught individually (see preload), so a missing
+  // or unsupported clip is a silent no-op and never breaks other sounds.
   static const _assets = {
     AppSound.chatSend: 'sounds/chat_send.wav',
     AppSound.chatReceive: 'sounds/chat_receive.wav',
@@ -67,6 +70,11 @@ class AudioPlayerSoundService implements SoundService {
     AppSound.gameReveal: 'sounds/game_reveal.wav',
     AppSound.gameTap: 'sounds/game_tap.wav',
     AppSound.gameComplete: 'sounds/game_complete.wav',
+    AppSound.gameFire: 'sounds/game_fire.wav',
+    AppSound.gameHit: 'sounds/game_hit.wav',
+    AppSound.gameMiss: 'sounds/game_miss.wav',
+    AppSound.gameKnockout: 'sounds/game_knockout.wav',
+    AppSound.gamePenaltyReveal: 'sounds/game_penalty_reveal.wav',
   };
 
   final Map<AppSound, AudioPlayer> _players = {};

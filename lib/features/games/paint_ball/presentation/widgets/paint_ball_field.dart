@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -87,6 +88,8 @@ class PaintBallField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final reduceMotion = reduceMotionOf(context);
+
     return AspectRatio(
       aspectRatio: 1.05,
       child: LayoutBuilder(
@@ -98,9 +101,7 @@ class PaintBallField extends StatelessWidget {
           // Where a shot starts and ends: from my shield's row up to the
           // targeted shield.
           final originX =
-              myPosition == null
-                  ? width / 2
-                  : slot * myPosition! + slot / 2;
+              myPosition == null ? width / 2 : slot * myPosition! + slot / 2;
           final targetX =
               selectedShot == null
                   ? width / 2
@@ -128,7 +129,17 @@ class PaintBallField extends StatelessWidget {
 
                 // Their row, at the top: what you shoot at.
                 Positioned(
-                  top: height * 0.12,
+                  top: height * 0.035,
+                  left: 0,
+                  right: 0,
+                  child: const _FieldLabel(
+                    label: 'THEIR COVER',
+                    color: PaintBallPalette.theirs,
+                  ),
+                ),
+
+                Positioned(
+                  top: height * 0.105,
                   left: 0,
                   right: 0,
                   child: _ShieldRow(
@@ -137,6 +148,7 @@ class PaintBallField extends StatelessWidget {
                     aimedAt: selectedShot,
                     enabled: isMyTurn && onSelectShot != null,
                     onTap: onSelectShot,
+                    reduceMotion: reduceMotion,
                   ),
                 ),
 
@@ -144,12 +156,25 @@ class PaintBallField extends StatelessWidget {
                   top: height * 0.5,
                   left: Spacing.lg.w,
                   right: Spacing.lg.w,
-                  child: Container(height: 1.h, color: PaintBallPalette.divider),
+                  child: Container(
+                    height: 1.h,
+                    color: PaintBallPalette.divider,
+                  ),
                 ),
 
                 // Your row, at the bottom: you can see yourself.
                 Positioned(
-                  bottom: height * 0.12,
+                  bottom: height * 0.035,
+                  left: 0,
+                  right: 0,
+                  child: const _FieldLabel(
+                    label: 'YOUR COVER',
+                    color: PaintBallPalette.mine,
+                  ),
+                ),
+
+                Positioned(
+                  bottom: height * 0.105,
                   left: 0,
                   right: 0,
                   child: _ShieldRow(
@@ -158,6 +183,7 @@ class PaintBallField extends StatelessWidget {
                     aimedAt: null,
                     enabled: false,
                     onTap: null,
+                    reduceMotion: reduceMotion,
                   ),
                 ),
 
@@ -184,6 +210,26 @@ class PaintBallField extends StatelessWidget {
   }
 }
 
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      textAlign: TextAlign.center,
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: color.withValues(alpha: 0.72),
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0,
+      ),
+    );
+  }
+}
+
 /// One row of three shields, with a triangle hiding behind one of them.
 class _ShieldRow extends StatelessWidget {
   const _ShieldRow({
@@ -192,6 +238,7 @@ class _ShieldRow extends StatelessWidget {
     required this.aimedAt,
     required this.enabled,
     required this.onTap,
+    required this.reduceMotion,
   });
 
   /// Where the player behind this row is hiding, when it may be shown.
@@ -204,97 +251,117 @@ class _ShieldRow extends StatelessWidget {
   final bool isOpponent;
   final bool enabled;
   final ValueChanged<int>? onTap;
+  final bool reduceMotion;
 
   @override
   Widget build(BuildContext context) {
-    final base =
-        isOpponent ? PaintBallPalette.theirs : PaintBallPalette.mine;
+    final base = isOpponent ? PaintBallPalette.theirs : PaintBallPalette.mine;
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: List.generate(kPaintBallPositions, (index) {
-        final isAimed = aimedAt == index;
-        final isOccupied = hiddenAt == index;
+    final duration =
+        reduceMotion ? Duration.zero : const Duration(milliseconds: 320);
+    final alignmentX = switch (hiddenAt) {
+      0 => -0.68,
+      2 => 0.68,
+      _ => 0.0,
+    };
 
-        return GestureDetector(
-          onTap: enabled ? () => onTap?.call(index) : null,
-          behavior: HitTestBehavior.opaque,
-          child: SizedBox(
-            width: 74.w,
-            height: 92.h,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // The triangle sits BEHIND its shield, and slides between
-                // positions rather than teleporting -- the movement is
-                // what makes taking cover read as an action.
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 320),
-                  curve: Curves.easeOutCubic,
-                  // Under the arch, not above it: the triangle is taking
-                  // cover behind the shield, and a figure floating over
-                  // its own crown would read as standing in the open.
-                  top: isOpponent ? 34.h : null,
-                  bottom: isOpponent ? null : 34.h,
-                  left: 26.w,
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 220),
-                    opacity: isOccupied ? 1 : 0,
-                    child: CustomPaint(
-                      size: Size(22.w, 20.h),
-                      painter: _TrianglePainter(
-                        // Both players are yellow. The shield colour says
-                        // whose side you are looking at; the triangle says
-                        // "a person is here", and that reads the same
-                        // whichever side they are on.
-                        color: PaintBallPalette.player,
-                        pointsUp: !isOpponent,
-                      ),
-                    ),
+    return SizedBox(
+      height: 92.h,
+      child: Stack(
+        children: [
+          // One persistent triangle travels across the whole row. Rendering a
+          // triangle inside every slot only cross-fades two copies and reads as
+          // teleportation rather than taking cover.
+          Positioned.fill(
+            child: AnimatedAlign(
+              duration: duration,
+              curve: Curves.easeOutCubic,
+              alignment: Alignment(alignmentX, isOpponent ? 0.12 : -0.12),
+              child: AnimatedOpacity(
+                duration:
+                    reduceMotion
+                        ? Duration.zero
+                        : const Duration(milliseconds: 180),
+                opacity: hiddenAt == null ? 0 : 1,
+                child: CustomPaint(
+                  size: Size(22.w, 20.h),
+                  painter: _TrianglePainter(
+                    color: PaintBallPalette.player,
+                    pointsUp: !isOpponent,
                   ),
                 ),
-
-                // The shield. When aimed at, it slides aside to open a
-                // clear line -- so a shot is something you can see a path
-                // for, not an abstract selection.
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeOutBack,
-                  // Only ONE horizontal anchor: setting left AND right
-                  // stretches the child to the slot's full width, which
-                  // overrides the painter's size and flattens the arch
-                  // into a dome.
-                  left: isAimed ? 30.w : 18.w,
-                  bottom: isOpponent ? 8.h : null,
-                  top: isOpponent ? null : 8.h,
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 220),
-                    // Aiming brightens the shield rather than filling it:
-                    // the stroke stays a stroke, so the field keeps
-                    // reading as a schematic.
-                    opacity:
-                        isAimed
-                            ? 1.0
-                            : enabled
-                            ? 0.75
-                            : 0.55,
-                    child: CustomPaint(
-                      size: Size(38.w, 62.h),
-                      painter: _ShieldPainter(
-                        color: base,
-                        strokeWidth: isAimed ? 2.4.r : 1.6.r,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-        );
-      }),
+          Positioned.fill(
+            child: Row(
+              children: List.generate(kPaintBallPositions, (index) {
+                final isAimed = aimedAt == index;
+                final positionName = paintBallPositionName(index);
+
+                return Expanded(
+                  child: Semantics(
+                    button: enabled,
+                    enabled: enabled,
+                    selected: isAimed,
+                    label:
+                        isOpponent
+                            ? '$positionName target'
+                            : '$positionName cover',
+                    hint: enabled ? 'Select where to shoot' : null,
+                    child: GestureDetector(
+                      onTap: enabled ? () => onTap?.call(index) : null,
+                      behavior: HitTestBehavior.opaque,
+                      child: SizedBox.expand(
+                        child: Center(
+                          child: AnimatedSlide(
+                            duration:
+                                reduceMotion
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 260),
+                            curve: Curves.easeOutCubic,
+                            offset:
+                                isAimed ? const Offset(0.20, 0) : Offset.zero,
+                            child: AnimatedOpacity(
+                              duration:
+                                  reduceMotion
+                                      ? Duration.zero
+                                      : const Duration(milliseconds: 180),
+                              opacity:
+                                  isAimed
+                                      ? 1
+                                      : enabled
+                                      ? 0.75
+                                      : 0.58,
+                              child: CustomPaint(
+                                size: Size(38.w, 62.h),
+                                painter: _ShieldPainter(
+                                  color: base,
+                                  strokeWidth: isAimed ? 2.4.r : 1.6.r,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
+
+String paintBallPositionName(int position) => switch (position) {
+  0 => 'Left',
+  1 => 'Middle',
+  2 => 'Right',
+  _ => 'Unknown',
+};
 
 /// A shield, drawn as the reference's outlined arch: straight legs, a
 /// rounded top, and an open base. Stroked rather than filled -- the whole
@@ -385,13 +452,18 @@ class _ProjectilePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final position = Offset.lerp(from, to, progress)!;
+    final eased = Curves.easeInOutCubic.transform(progress.clamp(0, 1));
+    final control = Offset(
+      (from.dx + to.dx) / 2 + (to.dx - from.dx) * 0.08,
+      math.min(from.dy, to.dy) - size.height * 0.08,
+    );
+    final position = _quadratic(from, control, to, eased);
 
     // A trail rather than a bare dot: at this speed a single circle reads
     // as a jump between frames rather than a thing travelling.
     for (var i = 1; i <= 5; i++) {
-      final trailAt = (progress - i * 0.035).clamp(0.0, 1.0);
-      final point = Offset.lerp(from, to, trailAt)!;
+      final trailAt = (eased - i * 0.035).clamp(0.0, 1.0);
+      final point = _quadratic(from, control, to, trailAt);
       canvas.drawCircle(
         point,
         7.0 - i * 0.9,
@@ -407,6 +479,18 @@ class _ProjectilePainter extends CustomPainter {
       Paint()..color = color.withValues(alpha: 0.22),
     );
     canvas.drawCircle(position, 7, Paint()..color = color);
+  }
+
+  Offset _quadratic(Offset start, Offset control, Offset end, double t) {
+    final inverse = 1 - t;
+    return Offset(
+      inverse * inverse * start.dx +
+          2 * inverse * t * control.dx +
+          t * t * end.dx,
+      inverse * inverse * start.dy +
+          2 * inverse * t * control.dy +
+          t * t * end.dy,
+    );
   }
 
   @override
@@ -511,5 +595,13 @@ class _SplatPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SplatPainter oldDelegate) =>
-      oldDelegate.splats.length != splats.length;
+      oldDelegate.splats.length != splats.length ||
+      List.generate(splats.length, (index) {
+        final current = splats[index];
+        final old = oldDelegate.splats[index];
+        return current.round != old.round ||
+            current.position != old.position ||
+            current.isMine != old.isMine ||
+            current.hit != old.hit;
+      }).any((changed) => changed);
 }

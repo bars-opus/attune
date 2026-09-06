@@ -268,6 +268,9 @@ BEGIN
     'paint_ball_take_turn',
     'paint_ball_resolve_penalty',
     'get_paint_ball_session_state',
+    'get_active_paint_ball_session',
+    'get_paint_ball_history',
+    'paint_ball_hide_session',
     'expire_paint_ball_sessions'
   ]) AS expected
   WHERE NOT EXISTS (
@@ -436,6 +439,13 @@ DECLARE
   a uuid := '00000000-0000-0000-0000-0000000000a1';
   b uuid := '00000000-0000-0000-0000-0000000000b2';
 BEGIN
+  -- Earlier contract sections create other game types for this couple. The
+  -- shared initiation limiter counts all games, so keep those fixtures outside
+  -- Paint Ball's one-hour production window.
+  UPDATE public.game_sessions
+  SET created_at = now() - interval '2 hours'
+  WHERE relationship_id = '10000000-0000-0000-0000-0000000000a1';
+
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
 
@@ -487,6 +497,10 @@ BEGIN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a miss cost a life';
   END IF;
 
+  UPDATE public.game_session_rounds
+  SET created_at = now() - interval '3 seconds'
+  WHERE session_id = v_session;
+
   -- A shoots 1, where B just hid. First blood.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
@@ -504,6 +518,10 @@ BEGIN
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
   PERFORM public.paint_ball_take_turn(v_session, 4, 1::smallint, 2::smallint);
 
+  UPDATE public.game_session_rounds
+  SET created_at = now() - interval '3 seconds'
+  WHERE session_id = v_session;
+
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
   v_result := public.paint_ball_take_turn(v_session, 5, 0::smallint, 1::smallint);
@@ -514,6 +532,10 @@ BEGIN
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
   PERFORM public.paint_ball_take_turn(v_session, 6, 1::smallint, 2::smallint);
+
+  UPDATE public.game_session_rounds
+  SET created_at = now() - interval '3 seconds'
+  WHERE session_id = v_session;
 
   -- The knockout blow.
   PERFORM set_config('request.jwt.claims',
@@ -555,7 +577,7 @@ BEGIN
   END IF;
   -- §10.3 step 7: the turn is NOT advanced into another round.
   IF (SELECT current_turn_user_id FROM public.game_sessions WHERE id = v_session)
-     <> a THEN
+     IS NOT NULL THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the turn advanced past a knockout';
   END IF;
 
@@ -607,6 +629,10 @@ BEGIN
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
   PERFORM public.paint_ball_take_turn(v_session, 2, 1::smallint, 2::smallint);
+
+  UPDATE public.game_session_rounds
+  SET created_at = now() - interval '3 seconds'
+  WHERE session_id = v_session;
 
   -- Drive B to zero directly, then land a real hit on a dead defender.
   UPDATE public.game_sessions SET lives_b = 0 WHERE id = v_session;
