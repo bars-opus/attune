@@ -57,77 +57,112 @@ BEGIN
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
 
-  -- The opening move is neither a hit nor a miss: nobody has hidden yet,
-  -- so the shot had nothing to find. Recording it as a miss would be a
-  -- lie the reveal screen then has to tell.
-  v_result := public.paint_ball_take_turn(v_session, 1, 1::smallint, 2::smallint);
-  IF v_result->>'shot_result' <> 'opening' THEN
-    RAISE EXCEPTION 'the first shot should be an opening, got %',
-      v_result->>'shot_result';
+  -- v3: the opener's half resolves NOTHING. A round is an exchange, and
+  -- until both halves are in there is no verdict to give and nothing to
+  -- reveal -- otherwise the closer could read the opener's position and
+  -- the prediction would stop being one.
+  v_result := public.paint_ball_take_turn(v_session, 1, 0::smallint, 1::smallint);
+  IF v_result->>'round_state' IS DISTINCT FROM 'awaiting_partner' THEN
+    RAISE EXCEPTION 'the opener half should await the partner, got %', v_result;
   END IF;
-
-  -- The turn passes.
-  IF (SELECT current_turn_user_id FROM public.game_sessions WHERE id = v_session)
-     IS DISTINCT FROM b THEN
+  IF v_result ? 'opener' OR v_result ? 'closer' THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: a half-complete round exposed positions: %', v_result;
+  END IF;
+  IF (v_result->>'lives_a')::int <> 3 OR (v_result->>'lives_b')::int <> 3 THEN
+    RAISE EXCEPTION 'the opener half changed lives';
+  END IF;
+  IF v_result->>'current_turn_user_id' IS DISTINCT FROM b::text THEN
     RAISE EXCEPTION 'the turn did not pass to the partner';
   END IF;
-  IF (SELECT current_round FROM public.game_sessions WHERE id = v_session) <> 2
-     OR (SELECT total_rounds_completed FROM public.game_sessions WHERE id = v_session) <> 1 THEN
-    RAISE EXCEPTION 'the opening move did not advance the round counters';
-  END IF;
 
-  -- A hid at 1. B shooting at 1 finds them.
+  -- The state RPC must withhold just as firmly as take_turn did.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
-  v_result := public.paint_ball_take_turn(v_session, 2, 0::smallint, 1::smallint);
-
-  IF v_result->>'shot_result' <> 'hit' THEN
-    RAISE EXCEPTION 'shooting where the partner hid should hit, got %',
-      v_result->>'shot_result';
-  END IF;
-  IF (v_result->>'lives_a')::int <> 2 THEN
-    RAISE EXCEPTION 'a hit should cost exactly one life, lives_a = %',
-      v_result->>'lives_a';
+  IF (public.get_paint_ball_session_state(v_session)::jsonb)::text
+       ~ '"hide_position"' THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: an unresolved round leaked hide_position to the closer';
   END IF;
 
-  -- And the shooter learns where they were. This is what makes the next
-  -- guess a prediction rather than a coin flip.
-  IF (v_result->>'defender_was_at')::int <> 1 THEN
-    RAISE EXCEPTION 'the shooter was not told where their partner hid';
+  -- B closes the round. A hid at 0 and shot at 1; B now hides at 1 and
+  -- shoots at 0 -- so both called it, and BOTH lose a life. That mutual
+  -- outcome is only possible because the shots resolve against the same
+  -- round's hides rather than the previous round's.
+  PERFORM pg_sleep(2.1);
+  v_result := public.paint_ball_take_turn(v_session, 1, 1::smallint, 0::smallint);
+  IF v_result->>'round_state' IS DISTINCT FROM 'resolved' THEN
+    RAISE EXCEPTION 'the closer half should resolve the round, got %', v_result;
+  END IF;
+  IF (v_result->>'lives_a')::int <> 2 OR (v_result->>'lives_b')::int <> 2 THEN
+    RAISE EXCEPTION
+      'a mutual hit should cost both a life, got a=% b=%',
+      v_result->>'lives_a', v_result->>'lives_b';
+  END IF;
+  IF v_result->'opener'->>'shot_result' <> 'hit'
+     OR v_result->'closer'->>'shot_result' <> 'hit' THEN
+    RAISE EXCEPTION 'both shots should read as hits, got %', v_result;
   END IF;
 
-  -- The app cannot legitimately submit two moves for one player inside two
-  -- seconds. Age the completed test move before that player comes up again.
-  UPDATE public.game_session_rounds
-  SET created_at = now() - interval '3 seconds'
-  WHERE session_id = v_session
-    AND active_partner_id = a;
+  -- Round one can hit. 'opening' is retired: there is no longer a turn
+  -- that cannot land, because the hide it resolves against is chosen in
+  -- the same round rather than a previous one.
+  IF v_result->'opener'->>'shot_result' = 'opening'
+     OR v_result->'closer'->>'shot_result' = 'opening' THEN
+    RAISE EXCEPTION 'v3 must not produce an opening result';
+  END IF;
 
-  -- B hid at 0. A shooting at 2 finds nothing.
+  -- The replay needs BOTH positions, and only now may it have them.
+  IF v_result->'opener'->>'hide_position' IS NULL
+     OR v_result->'closer'->>'hide_position' IS NULL THEN
+    RAISE EXCEPTION 'a resolved round must expose both hides for the replay';
+  END IF;
+
+  -- The opener of the completed round opens the next one.
+  IF v_result->>'current_turn_user_id' IS DISTINCT FROM a::text THEN
+    RAISE EXCEPTION 'the next round should open with the previous opener';
+  END IF;
+
+  -- Retrying a half returns its stored outcome rather than playing twice.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
-  v_result := public.paint_ball_take_turn(v_session, 3, 1::smallint, 2::smallint);
-
-  IF v_result->>'shot_result' <> 'miss' THEN
-    RAISE EXCEPTION 'shooting an empty position should miss, got %',
-      v_result->>'shot_result';
-  END IF;
-  SELECT lives_b INTO v_lives FROM public.game_sessions WHERE id = v_session;
-  IF v_lives <> 3 THEN
-    RAISE EXCEPTION 'a miss must cost nothing, lives_b = %', v_lives;
+  v_result := public.paint_ball_take_turn(v_session, 1, 0::smallint, 1::smallint);
+  IF (v_result->>'lives_a')::int <> 2 OR (v_result->>'lives_b')::int <> 2 THEN
+    RAISE EXCEPTION 'a retried half was replayed, lives moved';
   END IF;
 
-  -- Out of turn is refused. The server decides whose move it is; without
-  -- this a client could fire twice and drain a partner's lives.
-  v_result := public.paint_ball_take_turn(v_session, 4, 0::smallint, 0::smallint);
-  IF v_result->>'code' IS DISTINCT FROM 'NOT_YOUR_TURN' THEN
-    RAISE EXCEPTION 'moving out of turn was allowed';
-  END IF;
-
-  -- B is on turn, but B also fired less than two seconds ago.
+  -- A miss costs nothing. Round 2: A hides 2 shoots 2; B hides 0 shoots 0.
+  -- Neither is where the other shot.
+  v_result := public.paint_ball_take_turn(v_session, 2, 2::smallint, 2::smallint);
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
-  v_result := public.paint_ball_take_turn(v_session, 4, 0::smallint, 0::smallint);
+  PERFORM pg_sleep(2.1);
+  v_result := public.paint_ball_take_turn(v_session, 2, 0::smallint, 0::smallint);
+  IF (v_result->>'lives_a')::int <> 2 OR (v_result->>'lives_b')::int <> 2 THEN
+    RAISE EXCEPTION 'a mutual miss cost a life, got %', v_result;
+  END IF;
+  IF v_result->'opener'->>'shot_result' <> 'miss'
+     OR v_result->'closer'->>'shot_result' <> 'miss' THEN
+    RAISE EXCEPTION 'both shots should read as misses, got %', v_result;
+  END IF;
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+
+  -- Out of turn is refused. The server decides whose move it is; without
+  -- this a client could play both halves and drain a partner's lives.
+  -- Round 3 opens with A, so B moving now is out of turn.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  v_result := public.paint_ball_take_turn(v_session, 3, 0::smallint, 0::smallint);
+  IF v_result->>'code' IS DISTINCT FROM 'NOT_YOUR_TURN' THEN
+    RAISE EXCEPTION 'moving out of turn was allowed, got %', v_result;
+  END IF;
+
+  -- A is on turn, but A also moved less than two seconds ago.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  v_result := public.paint_ball_take_turn(v_session, 3, 0::smallint, 0::smallint);
   IF v_result->>'code' IS DISTINCT FROM 'RATE_LIMITED' THEN
     RAISE EXCEPTION 'rapid repeat fire was not rate limited, got %', v_result;
   END IF;
@@ -317,6 +352,15 @@ BEGIN
     a, 'truth', 'declined', 7, now()
   )
   RETURNING id INTO v_session;
+
+  -- v3 keeps penalties in their own table (a draw needs two). This fixture
+  -- builds a finished session by hand, so it must write the row the RPCs
+  -- would have written.
+  INSERT INTO public.paint_ball_penalties (
+    session_id, user_id, penalty_type, penalty_source,
+    penalty_status, penalty_prompt_snapshot, resolved_at
+  )
+  VALUES (v_session, b, 'truth', 'app_random', 'declined', 'A test prompt.', now());
 
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);

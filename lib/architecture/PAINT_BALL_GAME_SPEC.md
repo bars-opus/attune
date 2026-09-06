@@ -773,7 +773,7 @@ CREATE TABLE IF NOT EXISTS public.paint_ball_penalties (
   session_id uuid NOT NULL REFERENCES public.game_sessions(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   penalty_type text NOT NULL CHECK (penalty_type IN ('truth', 'dare')),
-  penalty_source text NOT NULL CHECK (penalty_source IN ('preset', 'partner_authored')),
+  penalty_source text NOT NULL CHECK (penalty_source IN ('app_random', 'partner_authored')),
   penalty_status text NOT NULL DEFAULT 'pending'
     CHECK (penalty_status IN ('pending', 'completed', 'declined')),
   penalty_prompt_id uuid,
@@ -870,7 +870,7 @@ Inputs:  p_session_id uuid, p_round_number int,
 In one transaction, with `SELECT ... FOR UPDATE` on the `game_sessions` row:
 
 1. **Auth:** caller is a member of the session's relationship, else `FORBIDDEN`.
-2. **Range check:** both positions in `0..2`, else `INVALID_POSITION`.
+2. **Range check:** both positions in `0..2`, else `INVALID_INPUT`.
 3. **Idempotency:** if a row exists for
    `(session_id, round_number, active_partner_id = auth.uid())`, return its
    stored state. Runs *before* the status check, so a retry of the turn that

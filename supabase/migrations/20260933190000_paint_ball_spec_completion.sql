@@ -890,6 +890,11 @@ GRANT EXECUTE ON FUNCTION public.get_paint_ball_session_state(uuid)
 
 -- The client opens Paint Ball from a relationship, so it needs a secure way to
 -- discover an invitation or active session before it knows a session id.
+-- Remote holds an earlier revision of this function with a different return
+-- type, created outside the migration history. CREATE OR REPLACE cannot
+-- change a return type (42P13), so drop first.
+DROP FUNCTION IF EXISTS public.get_active_paint_ball_session(uuid);
+
 CREATE OR REPLACE FUNCTION public.get_active_paint_ball_session(
   p_relationship_id uuid
 )
