@@ -702,4 +702,45 @@ void main() {
 
     expect(find.text('THEIR COVER'), findsOneWidget);
   });
+
+  testWidgets('an idle board carries no paint', (tester) async {
+    // Paint used to accumulate from every past shot. That is a map of
+    // where your partner has already fired -- their habits sitting on
+    // the board, free to read, which is exactly the clue this game asks
+    // you to earn. It also buried the covers over a long match.
+    //
+    // Paint now arrives with the shot that makes it and leaves with the
+    // replay, so a board between rounds is clean.
+    await tester.pumpWidget(
+      _wrap(
+        const PaintBallField(
+          splats: [],
+          myPosition: 1,
+          selectedShot: null,
+          revealedPartnerPosition: null,
+          isMyTurn: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final splatPainters =
+        tester
+            .widgetList<CustomPaint>(find.byType(CustomPaint))
+            .where(
+              (widget) =>
+                  widget.painter.runtimeType.toString().contains('Splat'),
+            )
+            .map((widget) => widget.painter)
+            .toList();
+
+    // The painter may exist; what matters is that it has nothing to draw.
+    for (final painter in splatPainters) {
+      expect(
+        (painter as dynamic).splats as List,
+        isEmpty,
+        reason: 'a board between rounds shows no past shots',
+      );
+    }
+  });
 }

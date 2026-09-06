@@ -525,4 +525,57 @@ void main() {
       reason: 'the previous cover carries forward',
     );
   });
+
+  test('a replay ending does not move you out of cover', () async {
+    // Position persists until the player changes it. clearReplay used to
+    // null hidePosition along with the reveal, which put the player back
+    // to nowhere the moment the animation finished -- the same bug as
+    // starting with no character, arriving one beat later.
+    final gateway = _FakePaintBallGateway(_session(), channel)
+      ..nextResult = const PaintBallTurnResult(
+        roundNumber: 2,
+        livesA: 3,
+        livesB: 2,
+        currentTurnUserId: 'user-a',
+        knockout: false,
+        doubleKnockout: false,
+        opener: PaintBallHalf(
+          userId: 'user-b',
+          hidePosition: 2,
+          shotPosition: 0,
+          shotResult: 'miss',
+        ),
+        closer: PaintBallHalf(
+          userId: 'user-a',
+          hidePosition: 1,
+          shotPosition: 2,
+          shotResult: 'hit',
+        ),
+      );
+    final container = _container(
+      gateway: gateway,
+      sound: FakeSoundService(),
+      haptics: FakeHaptics(),
+      analytics: const PaintBallAnalytics(),
+    );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(paintBallSessionProvider.notifier);
+    await notifier.loadSession('session-1');
+    notifier
+      ..selectHide(1)
+      ..selectShot(2);
+    await notifier.takeTurn();
+
+    notifier.clearReplay();
+
+    final state = container.read(paintBallSessionProvider);
+    expect(state.hidePosition, 1, reason: 'you stay where you were standing');
+    expect(
+      state.shotPosition,
+      isNull,
+      reason: 'but the target is a fresh choice each round',
+    );
+    expect(state.revealedPartnerPosition, isNull);
+  });
 }

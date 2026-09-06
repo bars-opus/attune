@@ -41,7 +41,9 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
   bool _routingToKnockout = false;
   bool _shotInFlight = false;
   bool _replayInFlight = false;
-  int? _firingRound;
+
+  /// Guards the automatic exit so a rebuild cannot schedule a second pop.
+  bool _leaving = false;
 
   @override
   void initState() {
@@ -117,11 +119,8 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
   Future<void> _fire() async {
     if (_shotInFlight) return;
     final notifier = ref.read(paintBallSessionProvider.notifier);
-    final firingRound =
-        ref.read(paintBallSessionProvider).session?.currentRound;
     setState(() {
       _shotInFlight = true;
-      _firingRound = firingRound;
     });
     // Started together: the flight plays while the request is in the air,
     // so the animation costs nothing in waiting.
@@ -137,7 +136,6 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
         _shotController.reset();
         setState(() {
           _shotInFlight = false;
-          _firingRound = null;
         });
       }
     }
@@ -197,6 +195,33 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
     }
     if (session == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    // Your move is in and the round is with your partner: there is
+    // nothing left to do here, so leave rather than parking the player on
+    // a dead board behind a button. They land back in the chat, where the
+    // game's own bubble shows the move they just made.
+    //
+    // Held until any replay has finished, so the exchange the player came
+    // to watch is never cut off by the exit.
+    // lastReplay is checked as well as pendingReplay because there is a
+    // frame between the shot clearing and the replay's post-frame
+    // callback starting where neither flag is set -- and leaving in that
+    // gap would cut the exchange the player came to watch.
+    // beginNextTurn clears it, which is exactly when leaving is right.
+    if (session.status == 'active' &&
+        !session.isCurrentUserTurn(currentUserId) &&
+        state.pendingReplay == null &&
+        state.lastReplay == null &&
+        !_shotInFlight &&
+        !_replayInFlight &&
+        !_leaving) {
+      _leaving = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(paintBallSessionProvider.notifier).beginNextTurn();
+        Navigator.of(context).pop(PaintBallExitAction.backToChat);
+      });
     }
 
     return Scaffold(
@@ -289,8 +314,10 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
                                 splats: _splatsFor(
                                   session,
                                   currentUserId,
-                                  excludedRound:
-                                      _shotInFlight ? _firingRound : null,
+                                  // Only while a replay is on screen: the
+                                  // paint belongs to the shot you are
+                                  // watching land, not to the match.
+                                  onlyRound: replay?.roundNumber,
                                 ),
                                 // During a replay the field shows what the
                                 // round actually was, not what this player
@@ -515,16 +542,28 @@ class _TurnErrorBanner extends StatelessWidget {
 /// Derived from the rounds rather than stored: the server already records
 /// every shot's position and result, so a separate paint table would be a
 /// second copy of the same truth, free to drift.
+/// Paint for the round currently being replayed, and nothing else.
+///
+/// The field used to accumulate every past shot. That is a map of where
+/// your partner has already fired -- a record of their habits sitting on
+/// the board, free to read, which is exactly the clue this game asks you
+/// to earn instead. It also meant the board grew steadily dirtier until
+/// the covers were hard to make out.
+///
+/// So paint appears with the shot that made it and leaves with the
+/// replay.
 List<PaintSplat> _splatsFor(
   PaintBallSessionState session,
   String? userId, {
-  int? excludedRound,
+  int? onlyRound,
 }) {
+  if (onlyRound == null) return const [];
+
   final splats = <PaintSplat>[];
 
   for (final round in session.rounds) {
     final position = round.shotPosition;
-    if (position == null || round.roundNumber == excludedRound) continue;
+    if (position == null || round.roundNumber != onlyRound) continue;
 
     splats.add(
       PaintSplat(
@@ -580,21 +619,12 @@ class _TurnPrompt extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
+    // Not your turn: the screen is already leaving on its own, so this is
+    // only ever on screen for the frame between the round passing and the
+    // pop. A "Back to chat" button here would be asking the player to
+    // dismiss something that was about to dismiss itself.
     if (!isMyTurn) {
-      return Column(
-        children: [
-          const BreathingDots(size: 6),
-          Gap(Spacing.md.h),
-          AppButton(
-            label: 'Back to chat',
-            onPressed: onDone,
-            variant: ButtonVariant.outline,
-            size: ButtonSize.medium,
-            width: double.infinity,
-            animateButton: !reduceMotionOf(context),
-          ),
-        ],
-      );
+      return const BreathingDots(size: 6);
     }
 
     // Your turn, nothing in flight. There is no Fire button: firing is
@@ -609,9 +639,7 @@ class _TurnPrompt extends StatelessWidget {
     }
 
     return Text(
-      state.shotPosition == null
-          ? 'Tap a target.'
-          : 'Tap yourself to fire.',
+      state.shotPosition == null ? 'Tap a target.' : 'Tap yourself to fire.',
       style: textTheme.bodySmall?.copyWith(
         color: Colors.white.withValues(alpha: 0.5),
       ),

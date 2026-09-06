@@ -118,9 +118,14 @@ BEGIN
     RAISE EXCEPTION 'a resolved round must expose both hides for the replay';
   END IF;
 
-  -- The opener of the completed round opens the next one.
-  IF v_result->>'current_turn_user_id' IS DISTINCT FROM a::text THEN
-    RAISE EXCEPTION 'the next round should open with the previous opener';
+  -- The CLOSER opens the next round. They are the one standing here
+  -- watching the replay, so handing them the next round keeps one visit
+  -- whole: see what happened, then move. Handing it back to the opener
+  -- made the closer play once and then wait twice.
+  IF v_result->>'current_turn_user_id' IS DISTINCT FROM b::text THEN
+    RAISE EXCEPTION
+      'the closer should open the next round, got %',
+      v_result->>'current_turn_user_id';
   END IF;
 
   -- Retrying a half returns its stored outcome rather than playing twice.
@@ -151,17 +156,17 @@ BEGIN
 
   -- Out of turn is refused. The server decides whose move it is; without
   -- this a client could play both halves and drain a partner's lives.
-  -- Round 3 opens with A, so B moving now is out of turn.
+  -- B closed round 2, so B opens round 3 and A moving now is out of turn.
   PERFORM set_config('request.jwt.claims',
-    json_build_object('sub', b, 'role', 'authenticated')::text, true);
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
   v_result := public.paint_ball_take_turn(v_session, 3, 0::smallint, 0::smallint);
   IF v_result->>'code' IS DISTINCT FROM 'NOT_YOUR_TURN' THEN
     RAISE EXCEPTION 'moving out of turn was allowed, got %', v_result;
   END IF;
 
-  -- A is on turn, but A also moved less than two seconds ago.
+  -- B is on turn, but B also moved less than two seconds ago.
   PERFORM set_config('request.jwt.claims',
-    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+    json_build_object('sub', b, 'role', 'authenticated')::text, true);
   v_result := public.paint_ball_take_turn(v_session, 3, 0::smallint, 0::smallint);
   IF v_result->>'code' IS DISTINCT FROM 'RATE_LIMITED' THEN
     RAISE EXCEPTION 'rapid repeat fire was not rate limited, got %', v_result;

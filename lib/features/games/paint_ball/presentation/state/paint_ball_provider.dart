@@ -256,10 +256,13 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
     if (state.pendingReplay == null) return;
     state = state.copyWith(
       pendingReplay: null,
+      // Cleared together now that no panel reads it. It exists only to
+      // hold the screen open across the frame between the shot ending and
+      // the replay starting, and that window closes here.
+      lastReplay: null,
       // The reveal ends with the replay: the opponent's triangle goes back
       // into hiding, so the next guess starts from nothing again.
       revealedPartnerPosition: null,
-      hidePosition: null,
       shotPosition: null,
     );
   }

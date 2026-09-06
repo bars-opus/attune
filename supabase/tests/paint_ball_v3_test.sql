@@ -235,4 +235,58 @@ BEGIN
   END IF;
 END $$;
 
+-- THE RHYTHM. A visit to the game is one whole thing: watch the round
+-- you just closed, then open the next. Handing the next round back to
+-- the opener made the closer play once and wait twice.
+DO $$
+DECLARE
+  a uuid := '00000000-0000-0000-0000-00000003a001';
+  b uuid := '00000000-0000-0000-0000-00000003b002';
+  v_rel uuid;
+  v_session uuid;
+  v_result jsonb;
+BEGIN
+  INSERT INTO public.relationships(user_a, user_b, status)
+  VALUES (a, b, 'active') RETURNING id INTO v_rel;
+
+  INSERT INTO public.game_sessions(
+    relationship_id, initiator_id, game_type, status, tone,
+    lives_a, lives_b, current_turn_user_id, current_round
+  )
+  VALUES (v_rel, a, 'paint_ball', 'active', 'playful', 3, 3, a, 1)
+  RETURNING id INTO v_session;
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  PERFORM public.paint_ball_take_turn(v_session, 1, 0::smallint, 0::smallint);
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  v_result := public.paint_ball_take_turn(v_session, 1, 2::smallint, 2::smallint);
+
+  IF v_result->>'current_turn_user_id' IS DISTINCT FROM b::text THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the closer did not keep the turn, got %',
+      v_result->>'current_turn_user_id';
+  END IF;
+
+  -- And B can act on it immediately: the round counter advanced with the
+  -- resolution, so B's next move is round 2 rather than a rejected retry.
+  UPDATE public.game_session_rounds
+  SET created_at = now() - interval '3 seconds' WHERE session_id = v_session;
+
+  v_result := public.paint_ball_take_turn(v_session, 2, 1::smallint, 1::smallint);
+  IF v_result->>'round_state' IS DISTINCT FROM 'awaiting_partner' THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the closer could not open the next round: %',
+      v_result;
+  END IF;
+
+  -- NOW it passes.
+  IF v_result->>'current_turn_user_id' IS DISTINCT FROM a::text THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: the turn did not pass after the second move';
+  END IF;
+END $$;
+
 ROLLBACK;

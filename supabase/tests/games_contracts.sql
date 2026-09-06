@@ -523,13 +523,14 @@ BEGIN
   UPDATE public.game_session_rounds
   SET created_at = now() - interval '3 seconds' WHERE session_id = v_session;
 
-  -- Round 2. Same shape.
-  PERFORM set_config('request.jwt.claims',
-    json_build_object('sub', a, 'role', 'authenticated')::text, true);
-  PERFORM public.paint_ball_take_turn(v_session, 2, 0::smallint, 1::smallint);
+  -- Round 2. B closed round 1, so B opens this one -- the closer keeps
+  -- the turn, watches the replay, and moves again before it passes.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
-  v_result := public.paint_ball_take_turn(v_session, 2, 1::smallint, 2::smallint);
+  PERFORM public.paint_ball_take_turn(v_session, 2, 1::smallint, 2::smallint);
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  v_result := public.paint_ball_take_turn(v_session, 2, 0::smallint, 1::smallint);
   IF (v_result->>'lives_b')::int <> 1 THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the second hit did not reach 1 life';
   END IF;
@@ -537,7 +538,7 @@ BEGIN
   UPDATE public.game_session_rounds
   SET created_at = now() - interval '3 seconds' WHERE session_id = v_session;
 
-  -- Round 3: the knockout blow.
+  -- Round 3: the knockout blow. A closed round 2, so A opens this one.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
   PERFORM public.paint_ball_take_turn(v_session, 3, 0::smallint, 1::smallint);

@@ -11,6 +11,7 @@ import 'package:attune/features/games/paint_ball/services/paint_ball_service.dar
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -495,5 +496,78 @@ void main() {
       );
     }
     expect(find.textContaining('They were behind'), findsNothing);
+  });
+
+  testWidgets('the screen leaves once the turn has passed', (tester) async {
+    // Your move is in and the round is with your partner: nothing is left
+    // to do, so the game returns to the chat by itself rather than
+    // parking the player on a dead board behind a dismiss button.
+    _usePhoneViewport(tester);
+    final gateway = _ScreenGateway(
+      _session(currentTurnUserId: 'user-b'),
+      channel,
+    );
+
+    await tester.pumpWidget(
+      _wrap(
+        gateway: gateway,
+        child: const PaintBallBattleScreen(sessionId: 'session-1'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.text('Back to chat'),
+      findsNothing,
+      reason: 'nothing to dismiss -- the screen dismisses itself',
+    );
+    expect(
+      find.text('Your move is saved. Waiting for theirs.'),
+      findsNothing,
+      reason: 'no waiting copy on a screen that is leaving',
+    );
+  });
+
+  testWidgets('past rounds leave no paint on the board', (tester) async {
+    // A match of several rounds must not accumulate splats. Every past
+    // shot painted on the field is a record of where your partner fires
+    // -- a free read of their habits, which is the one thing this game
+    // asks you to work out yourself.
+    _usePhoneViewport(tester);
+    final gateway = _ScreenGateway(
+      _session(currentRound: 4).copyWith(
+        rounds: [
+          for (var round = 1; round <= 3; round++)
+            PaintBallRound(
+              roundNumber: round,
+              shotResult: 'miss',
+              lifeLost: false,
+              createdAt: DateTime.now(),
+              activePartnerId: round.isEven ? 'user-a' : 'user-b',
+              shotPosition: round % 3,
+              hidePosition: round % 3,
+            ),
+        ],
+      ),
+      channel,
+    );
+
+    await tester.pumpWidget(
+      _wrap(
+        gateway: gateway,
+        child: const PaintBallBattleScreen(sessionId: 'session-1'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final field = tester.widget<PaintBallField>(find.byType(PaintBallField));
+    expect(
+      field.splats,
+      isEmpty,
+      reason: 'three resolved rounds left no trail behind them',
+    );
   });
 }
