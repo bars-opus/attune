@@ -20,30 +20,19 @@ Widget _wrapReduced(Widget child) => ScreenUtilInit(
       ),
 );
 
-/// Counts the player triangles that are actually visible.
+/// Counts the player triangles on the field.
 ///
-/// Shields and triangles both animate their opacity, so counting every
-/// AnimatedOpacity would conflate the two. This walks to the triangle
-/// painters specifically -- the thing that reveals where somebody is
-/// standing, which is the secret the whole game rests on.
+/// A triangle exists only where a player's position is known -- your own
+/// always, theirs only after a round resolves. Counting the painters
+/// directly is the strictest form of that rule: it cannot be satisfied by
+/// a hidden-but-present widget.
 int _visibleTriangles(WidgetTester tester) {
-  var count = 0;
-  for (final element in find.byType(AnimatedOpacity).evaluate()) {
-    final widget = element.widget as AnimatedOpacity;
-    if (widget.opacity <= 0) continue;
-    final hasTriangle = find
-        .descendant(
-          of: find.byWidget(widget),
-          matching: find.byType(CustomPaint),
-        )
-        .evaluate()
-        .any((e) {
-          final painter = (e.widget as CustomPaint).painter;
-          return painter.runtimeType.toString().contains('Triangle');
-        });
-    if (hasTriangle) count++;
-  }
-  return count;
+  return tester
+      .widgetList<CustomPaint>(find.byType(CustomPaint))
+      .where(
+        (widget) => widget.painter.runtimeType.toString().contains('Triangle'),
+      )
+      .length;
 }
 
 const _names = ['Left', 'Middle', 'Right'];
@@ -464,5 +453,102 @@ void main() {
             .length;
 
     expect(projectiles, 0, reason: 'no shot before the aim has landed');
+  });
+
+  testWidgets('repositioning travels rather than teleporting', (tester) async {
+    // Moving cover is a journey: the triangle leaves, crosses, and enters
+    // the new cover as one body. A cross-fade between two covers would
+    // read as two triangles, and taking cover would feel like being
+    // reassigned rather than moving.
+    Widget field(int position) => _wrap(
+      PaintBallField(
+        splats: const [],
+        myPosition: position,
+        selectedShot: null,
+        revealedPartnerPosition: null,
+        isMyTurn: true,
+        onSelectShot: (_) {},
+        onSelectHide: (_) {},
+      ),
+    );
+
+    await tester.pumpWidget(field(0));
+    await tester.pumpAndSettle();
+
+    Offset trianglePosition() {
+      final finder = find.byWidgetPredicate(
+        (widget) =>
+            widget is CustomPaint &&
+            widget.painter.runtimeType.toString().contains('Triangle'),
+      );
+      return tester.getCenter(finder.first);
+    }
+
+    final start = trianglePosition();
+
+    await tester.pumpWidget(field(2));
+    await tester.pump(const Duration(milliseconds: 310));
+    final middle = trianglePosition();
+
+    await tester.pumpAndSettle();
+    final end = trianglePosition();
+
+    // It is genuinely between the two covers partway through, not already
+    // arrived and not still waiting.
+    expect(
+      middle.dx,
+      greaterThan(start.dx),
+      reason: 'the triangle has set off',
+    );
+    expect(
+      middle.dx,
+      lessThan(end.dx),
+      reason: 'the triangle has not arrived yet -- it is travelling',
+    );
+
+    // And exactly one triangle exists throughout: it is the same body
+    // moving, never a second one fading in.
+    expect(_visibleTriangles(tester), 1);
+  });
+
+  testWidgets('a travelling player steps clear of cover', (tester) async {
+    // Sliding sideways while still tucked in would read as passing
+    // through the wall, so the crossing happens stepped out.
+    Widget field(int position) => _wrap(
+      PaintBallField(
+        splats: const [],
+        myPosition: position,
+        selectedShot: null,
+        revealedPartnerPosition: null,
+        isMyTurn: true,
+        onSelectShot: (_) {},
+        onSelectHide: (_) {},
+      ),
+    );
+
+    Offset trianglePosition() {
+      final finder = find.byWidgetPredicate(
+        (widget) =>
+            widget is CustomPaint &&
+            widget.painter.runtimeType.toString().contains('Triangle'),
+      );
+      return tester.getCenter(finder.first);
+    }
+
+    await tester.pumpWidget(field(0));
+    await tester.pumpAndSettle();
+    final atRest = trianglePosition();
+
+    await tester.pumpWidget(field(2));
+    await tester.pump(const Duration(milliseconds: 310));
+    final crossing = trianglePosition();
+
+    // Your row is at the bottom, so stepping out of cover moves UP the
+    // screen -- a smaller dy.
+    expect(
+      crossing.dy,
+      lessThan(atRest.dy),
+      reason: 'the crossing happens clear of cover, not through it',
+    );
   });
 }

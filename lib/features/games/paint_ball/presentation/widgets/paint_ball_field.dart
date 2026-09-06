@@ -370,21 +370,48 @@ class _ShieldRow extends StatelessWidget {
     final base = isOpponent ? PaintBallPalette.theirs : PaintBallPalette.mine;
     final isAiming = aimingAt != null && hiddenAt != null && emerged;
 
+    // Per-column lean, in TURNS. Kept small deliberately: the tilt says
+    // which cover is being aimed at, and a triangle rotated far enough to
+    // lose its "pointing" silhouette stops communicating that at all.
+    final rowTilt =
+        isAiming
+            ? (aimingAt! - hiddenAt!) * (isOpponent ? -0.045 : 0.045)
+            : 0.0;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final slotWidth = constraints.maxWidth / kPaintBallPositions;
+        return SizedBox(
+          height: 92.h,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _coverRow(context, base),
+              // One triangle for the whole row, so it can cross between
+              // covers as a single body.
+              if (hiddenAt != null)
+                _TravellingPlayer(
+                  position: hiddenAt!,
+                  isOpponent: isOpponent,
+                  slotWidth: slotWidth,
+                  rowHeight: 92.h,
+                  isAiming: isAiming,
+                  tilt: rowTilt,
+                  reduceMotion: reduceMotion,
+                  onTap: onTapCharacter,
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _coverRow(BuildContext context, Color base) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: List.generate(kPaintBallPositions, (index) {
         final isAimed = aimedAt == index;
-        final isOccupied = hiddenAt == index;
-
-        // Pointing at a column to the left tilts left, and vice versa. The
-        // angle is a real bearing, not a decoration: it tells the viewer
-        // which cover is being aimed at before the shot leaves.
-        final bearing = isOccupied && isAiming ? (aimingAt! - index) : 0;
-        // Per-column lean, in TURNS. Kept small deliberately: the tilt
-        // says which cover is being aimed at, and a triangle rotated far
-        // enough to lose its "pointing" silhouette stops communicating
-        // that at all. Two columns of swing is ~0.09 turns, a clear lean.
-        final tilt = bearing * (isOpponent ? -0.045 : 0.045);
 
         return Semantics(
           // container: true so this becomes its own node rather than
@@ -431,52 +458,6 @@ class _ShieldRow extends StatelessWidget {
                         painter: _ShieldPainter(
                           color: base,
                           strokeWidth: isAimed ? 2.4.r : 1.6.r,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Declared AFTER the shield so it paints on top and wins
-                  // the hit test: the triangle is the fire control, and a
-                  // shield swallowing that tap would make firing
-                  // impossible. Visually it still reads as behind cover,
-                  // because it sits deeper in the arch.
-                  //
-                  // The triangle slides between
-                  // positions rather than teleporting -- the movement is
-                  // what makes taking cover read as an action.
-                  //
-                  // When aiming it steps FORWARD, clear of its own cover,
-                  // so the shot has a line and the player can see they are
-                  // exposed while they take it.
-                  AnimatedPositioned(
-                    duration: Duration(milliseconds: reduceMotion ? 0 : 320),
-                    curve: Curves.easeOutCubic,
-                    top: isOpponent ? (isAiming ? 40.h : 34.h) : null,
-                    bottom: isOpponent ? null : (isAiming ? 40.h : 34.h),
-                    left: 27.w,
-                    child: AnimatedOpacity(
-                      duration: Duration(milliseconds: reduceMotion ? 0 : 220),
-                      opacity: isOccupied ? 1 : 0,
-                      child: GestureDetector(
-                        // Firing is the triangle, never a shield: choosing
-                        // a target and committing to it must be two
-                        // separate acts, or a mis-tap while browsing
-                        // covers would fire a shot.
-                        onTap: isOccupied ? onTapCharacter : null,
-                        behavior: HitTestBehavior.opaque,
-                        child: AnimatedRotation(
-                          duration: Duration(
-                            milliseconds: reduceMotion ? 0 : 260,
-                          ),
-                          curve: Curves.easeOut,
-                          turns: tilt,
-                          child: CustomPaint(
-                            size: Size(22.w, 20.h),
-                            painter: _TrianglePainter(
-                              color: PaintBallPalette.player,
-                              pointsUp: !isOpponent,
-                            ),
-                          ),
                         ),
                       ),
                     ),
@@ -540,6 +521,147 @@ class _ShieldPainter extends CustomPainter {
   @override
   bool shouldRepaint(_ShieldPainter old) =>
       old.color != color || old.strokeWidth != strokeWidth;
+}
+
+/// A player's triangle, travelling across its whole row.
+///
+/// Repositioning is a journey, not a cross-fade. A triangle that faded out
+/// of one cover and into another would read as two triangles; this one
+/// leaves cover, crosses, and enters the new cover as a single body, which
+/// is what makes taking cover feel like moving rather than being
+/// reassigned.
+///
+/// Three beats:
+///   1. BACK  -- step out of the current cover, away from the line
+///   2. ACROSS -- travel laterally to the new column
+///   3. FORWARD -- settle into the new cover
+///
+/// It lives above the row rather than inside a cover because a child
+/// cannot travel outside its parent's box, which is exactly what a journey
+/// between covers requires.
+class _TravellingPlayer extends StatefulWidget {
+  const _TravellingPlayer({
+    required this.position,
+    required this.isOpponent,
+    required this.slotWidth,
+    required this.rowHeight,
+    required this.isAiming,
+    required this.tilt,
+    required this.reduceMotion,
+    this.onTap,
+  });
+
+  final int position;
+  final bool isOpponent;
+  final double slotWidth;
+  final double rowHeight;
+  final bool isAiming;
+  final double tilt;
+  final bool reduceMotion;
+  final VoidCallback? onTap;
+
+  @override
+  State<_TravellingPlayer> createState() => _TravellingPlayerState();
+}
+
+class _TravellingPlayerState extends State<_TravellingPlayer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late int _from;
+  late int _to;
+
+  @override
+  void initState() {
+    super.initState();
+    _from = widget.position;
+    _to = widget.position;
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 620),
+      value: 1,
+    );
+  }
+
+  @override
+  void didUpdateWidget(_TravellingPlayer old) {
+    super.didUpdateWidget(old);
+    if (old.position != widget.position) {
+      _from = old.position;
+      _to = widget.position;
+      if (widget.reduceMotion) {
+        _controller.value = 1;
+      } else {
+        _controller.forward(from: 0);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final t = _controller.value;
+
+        // The lateral move happens in the MIDDLE of the journey, so the
+        // triangle is clear of cover while it crosses. Sliding sideways
+        // while still tucked in would read as passing through the wall.
+        final lateral = Curves.easeInOut.transform(
+          ((t - 0.25) / 0.5).clamp(0.0, 1.0),
+        );
+        final column = _from + (_to - _from) * lateral;
+
+        // Depth: 0 is tucked in cover, 1 is stepped out. It rises for the
+        // crossing and falls again on arrival -- and stays out while
+        // aiming, since an aiming player is deliberately exposed.
+        final travelling = _controller.value < 1;
+        final depth =
+            travelling
+                ? Curves.easeInOut.transform(1 - (2 * t - 1).abs())
+                : (widget.isAiming ? 1.0 : 0.0);
+
+        final x = column * widget.slotWidth + widget.slotWidth / 2 - 11.w;
+        final baseInset = 34.h;
+        final stepOut = 14.h * depth;
+
+        return Positioned(
+          left: x,
+          top: widget.isOpponent ? baseInset + stepOut : null,
+          bottom: widget.isOpponent ? null : baseInset + stepOut,
+          // The triangle only takes taps when it IS the fire control.
+          // Otherwise it must be transparent to them: it stands over a
+          // cover that is itself a tap target, and intercepting there
+          // would make the cover beneath it unreachable -- silently
+          // costing the player one of their three hiding places.
+          child: IgnorePointer(
+            ignoring: widget.onTap == null,
+            child: GestureDetector(
+              onTap: widget.onTap,
+              behavior: HitTestBehavior.opaque,
+              child: AnimatedRotation(
+                duration: Duration(milliseconds: widget.reduceMotion ? 0 : 260),
+                curve: Curves.easeOut,
+                turns: widget.isAiming ? widget.tilt : 0,
+                child: CustomPaint(
+                  size: Size(22.w, 20.h),
+                  painter: _TrianglePainter(
+                    color: PaintBallPalette.player,
+                    pointsUp: !widget.isOpponent,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _TrianglePainter extends CustomPainter {
