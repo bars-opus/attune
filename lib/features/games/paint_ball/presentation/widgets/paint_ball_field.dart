@@ -465,6 +465,7 @@ class _ShieldRow extends StatelessWidget {
                         painter: _ShieldPainter(
                           color: base,
                           strokeWidth: isAimed ? 2.4.r : 1.6.r,
+                          opensDown: isOpponent,
                         ),
                       ),
                     ),
@@ -491,10 +492,23 @@ String paintBallPositionName(int position) => switch (position) {
 /// field is a line diagram, and a solid block would read as a wall rather
 /// than as cover you are standing behind.
 class _ShieldPainter extends CustomPainter {
-  _ShieldPainter({required this.color, required this.strokeWidth});
+  _ShieldPainter({
+    required this.color,
+    required this.strokeWidth,
+    required this.opensDown,
+  });
 
   final Color color;
   final double strokeWidth;
+
+  /// Which way the arch's open side faces.
+  ///
+  /// The two rows face each other across the centre line: yours domes
+  /// upward with its legs planted below, theirs domes downward with its
+  /// legs above. Drawing both the same way made the opponent's cover look
+  /// like it was sheltering someone standing off the top of the board
+  /// rather than facing you.
+  final bool opensDown;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -506,28 +520,37 @@ class _ShieldPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round;
 
     final radius = size.width / 2;
+
+    // The shoulder is where the legs meet the arc: near the top for a
+    // cover that domes upward, near the bottom for one that domes down.
+    final shoulderY = opensDown ? size.height - radius : radius;
+    final footY = opensDown ? 0.0 : size.height;
+
     final path =
         Path()
-          ..moveTo(0, size.height)
-          ..lineTo(0, radius)
+          ..moveTo(0, footY)
+          ..lineTo(0, shoulderY)
           ..arcToPoint(
-            Offset(size.width, radius),
+            Offset(size.width, shoulderY),
             radius: Radius.circular(radius),
-            clockwise: true,
+            // Sweeping the other way is what turns the dome over.
+            clockwise: !opensDown,
           )
-          ..lineTo(size.width, size.height);
+          ..lineTo(size.width, footY);
 
     canvas.drawPath(path, paint);
 
     // The dots that cap each leg in the reference diagram.
     final dot = Paint()..color = color;
-    canvas.drawCircle(Offset(0, radius), strokeWidth * 1.6, dot);
-    canvas.drawCircle(Offset(size.width, radius), strokeWidth * 1.6, dot);
+    canvas.drawCircle(Offset(0, shoulderY), strokeWidth * 1.6, dot);
+    canvas.drawCircle(Offset(size.width, shoulderY), strokeWidth * 1.6, dot);
   }
 
   @override
   bool shouldRepaint(_ShieldPainter old) =>
-      old.color != color || old.strokeWidth != strokeWidth;
+      old.color != color ||
+      old.strokeWidth != strokeWidth ||
+      old.opensDown != opensDown;
 }
 
 /// A player's triangle, travelling across its whole row.
@@ -653,7 +676,12 @@ class _TravellingPlayerState extends State<_TravellingPlayer>
             gap * (column + 1) +
             widget.coverWidth * (column + 0.5);
         final x = coverCentre - 11.w;
-        final baseInset = 34.h;
+        // Both rows shelter under their own dome, and the domes now face
+        // each other -- yours crowns at the top of its box, theirs at the
+        // bottom. So "tucked in" is measured from opposite edges, and a
+        // single inset would have put the opponent outside their arch
+        // entirely, standing on top of the cover instead of behind it.
+        final baseInset = widget.isOpponent ? 46.h : 34.h;
         final stepOut = 14.h * depth;
 
         return Positioned(

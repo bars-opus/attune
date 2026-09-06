@@ -607,4 +607,57 @@ void main() {
       }
     }
   });
+
+  testWidgets('the two rows of cover face each other', (tester) async {
+    // Reported from a device: both rows domed the same way, so the
+    // opponent's cover looked like it was sheltering someone standing
+    // off the top of the board rather than facing you across the line.
+    //
+    // Yours opens downward (legs planted below the dome); theirs opens
+    // upward. Checked through the painter's own flag rather than by
+    // eye, since the two are mirror images and easy to confuse.
+    await tester.pumpWidget(
+      _wrap(
+        PaintBallField(
+          splats: const [],
+          myPosition: 1,
+          selectedShot: null,
+          revealedPartnerPosition: 0,
+          isMyTurn: true,
+          onSelectShot: (_) {},
+          onSelectHide: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final shields =
+        tester
+            .widgetList<CustomPaint>(find.byType(CustomPaint))
+            .map((widget) => widget.painter)
+            .where(
+              (painter) => painter.runtimeType.toString().contains('Shield'),
+            )
+            .toList();
+
+    expect(shields, hasLength(kPaintBallPositions * 2));
+
+    final opensDown =
+        shields.map((painter) => '$painter'.contains('opensDown')).toList();
+
+    // Three of each: one row mirrored against the other. If every cover
+    // faced the same way this would be six or zero.
+    final downward =
+        shields.where((painter) {
+          final field = (painter as dynamic).opensDown as bool;
+          return field;
+        }).length;
+
+    expect(
+      downward,
+      kPaintBallPositions,
+      reason: 'exactly one row of cover faces the other',
+    );
+    expect(opensDown, isNotEmpty);
+  });
 }
