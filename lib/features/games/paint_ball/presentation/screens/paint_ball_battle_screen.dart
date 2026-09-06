@@ -350,6 +350,7 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
                                   currentUserId,
                                 ),
                                 partnerName: partnerName,
+                                theirStreak: replay?.theirStreak ?? 1,
                                 onSelectShot: notifier.selectShot,
                                 onSelectHide: notifier.selectHide,
                                 onFire: state.canFire ? _fire : null,

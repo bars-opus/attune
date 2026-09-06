@@ -41,6 +41,34 @@ int? _lastHideFor(PaintBallSessionState session, String? userId) {
   return null;
 }
 
+/// How many rounds running this player has held the same cover, counting
+/// the one just resolved.
+///
+/// Only resolved rounds carry a partner's hide_position, which is exactly
+/// right: the streak is built from what the replays have already shown
+/// you, never from anything you were not entitled to see.
+int _streakFor(
+  PaintBallSessionState session,
+  String userId,
+  int currentHide,
+) {
+  final theirs =
+      session.rounds
+          .where(
+            (round) =>
+                round.activePartnerId == userId && round.hidePosition != null,
+          )
+          .toList()
+        ..sort((a, b) => b.roundNumber.compareTo(a.roundNumber));
+
+  var streak = 1;
+  for (final round in theirs) {
+    if (round.hidePosition != currentHide) break;
+    streak++;
+  }
+  return streak;
+}
+
 final _random = Random();
 
 class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
@@ -360,6 +388,7 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
         theirs: theirs,
         knockout: result.knockout,
         doubleKnockout: result.doubleKnockout,
+        theirStreak: _streakFor(session, theirs.userId, theirs.hidePosition),
       );
 
       state = state.copyWith(

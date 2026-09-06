@@ -743,4 +743,54 @@ void main() {
       );
     }
   });
+
+  testWidgets('a partner who stays put is called out', (tester) async {
+    // The most interesting thing a player can do is refuse to move after
+    // being shot at -- it is stubbornness, or a bluff, or a dare to try
+    // the same spot twice. It goes unnoticed unless someone is counting,
+    // so the board counts, but only while the replay is on screen.
+    await tester.pumpWidget(
+      _wrap(
+        const PaintBallField(
+          splats: [],
+          myPosition: 0,
+          selectedShot: 2,
+          revealedPartnerPosition: 2,
+          theirRevealedShot: 0,
+          isMyTurn: false,
+          isReplaying: true,
+          replayProgress: 0.7,
+          partnerName: 'Ama',
+          theirStreak: 3,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('SAME SPOT x3'), findsOneWidget);
+  });
+
+  testWidgets('a streak is not kept on the board between rounds', (
+    tester,
+  ) async {
+    // It is a remark on what you just watched, not a readout. Left up, it
+    // would be the same free clue as a paint trail.
+    await tester.pumpWidget(
+      _wrap(
+        const PaintBallField(
+          splats: [],
+          myPosition: 0,
+          selectedShot: null,
+          revealedPartnerPosition: null,
+          isMyTurn: true,
+          partnerName: 'Ama',
+          theirStreak: 3,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('SAME SPOT x3'), findsNothing);
+    expect(find.text('AMA'), findsOneWidget);
+  });
 }

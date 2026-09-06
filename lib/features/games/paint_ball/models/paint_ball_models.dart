@@ -809,6 +809,7 @@ class PaintBallReplay {
     required this.theirs,
     required this.knockout,
     required this.doubleKnockout,
+    this.theirStreak = 1,
   });
 
   final int roundNumber;
@@ -820,6 +821,16 @@ class PaintBallReplay {
 
   final bool knockout;
   final bool doubleKnockout;
+
+  /// How many rounds running your partner has held the same cover,
+  /// counting this one. 1 means they just moved.
+  ///
+  /// This is the thing worth noticing. Someone who stays put after being
+  /// shot at is being stubborn, or bluffing, or daring you to try the
+  /// same spot twice -- and that is a read on the person, not on the
+  /// board. Without a count you would only catch it if you happened to
+  /// be keeping score in your head.
+  final int theirStreak;
 }
 
 class PaintBallUiState {

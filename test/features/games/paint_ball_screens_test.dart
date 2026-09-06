@@ -272,24 +272,27 @@ void main() {
   ) async {
     _usePhoneViewport(tester);
     final gateway = _ScreenGateway(_session(), channel)
+      // The turn stays with the shooter: this test is about the flight,
+      // and handing the round away mid-animation would start the screen
+      // leaving while the paint is still in the air.
       ..turnResult = const PaintBallTurnResult(
         roundNumber: 2,
         livesA: 3,
         livesB: 2,
-        currentTurnUserId: 'user-b',
+        currentTurnUserId: 'user-a',
         knockout: false,
         doubleKnockout: false,
         opener: PaintBallHalf(
-          userId: 'user-a',
-          hidePosition: 0,
-          shotPosition: 1,
-          shotResult: 'hit',
-        ),
-        closer: PaintBallHalf(
           userId: 'user-b',
           hidePosition: 1,
           shotPosition: 2,
           shotResult: 'miss',
+        ),
+        closer: PaintBallHalf(
+          userId: 'user-a',
+          hidePosition: 0,
+          shotPosition: 1,
+          shotResult: 'hit',
         ),
       );
 
@@ -341,9 +344,12 @@ void main() {
     // exact frame paint is visible depends on beat tuning, and a test
     // pinned to a millisecond would break every time that is adjusted
     // without the behaviour actually regressing.
+    // Small steps across a long window. Under a loaded run a coarse pump
+    // can step straight over the flight beat, which made this fail only
+    // when the suite was busy -- a timing artefact, not a regression.
     var framesWithPaint = 0;
-    for (var frame = 0; frame < 30; frame++) {
-      await tester.pump(const Duration(milliseconds: 100));
+    for (var frame = 0; frame < 120; frame++) {
+      await tester.pump(const Duration(milliseconds: 25));
       if (projectiles() > 0) framesWithPaint++;
     }
 

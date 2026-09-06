@@ -94,6 +94,7 @@ class PaintBallField extends StatelessWidget {
     this.theirRevealedShot,
     this.isReplaying = false,
     this.partnerName,
+    this.theirStreak = 1,
   });
 
   final List<PaintSplat> splats;
@@ -129,6 +130,11 @@ class PaintBallField extends StatelessWidget {
   /// the person across the field is someone specific, and this app is
   /// about that person -- a generic pronoun makes them an opponent.
   final String? partnerName;
+
+  /// Rounds running they have held the same cover. Shown only from two,
+  /// and only during a replay -- it is a remark on what you just watched,
+  /// not a readout kept on the board.
+  final int theirStreak;
 
   @override
   Widget build(BuildContext context) {
@@ -190,8 +196,14 @@ class PaintBallField extends StatelessWidget {
                   left: 0,
                   right: 0,
                   child: _FieldLabel(
+                    // Staying put is the most interesting thing a player
+                    // can do -- it is stubbornness, or a bluff, or a dare
+                    // to try the same spot twice -- and it goes unnoticed
+                    // unless someone is counting. So the board counts.
                     label:
-                        partnerName == null
+                        isReplaying && theirStreak > 1
+                            ? 'SAME SPOT x$theirStreak'
+                            : partnerName == null
                             ? 'THEIR COVER'
                             : partnerName!.toUpperCase(),
                     color: PaintBallPalette.theirs,
