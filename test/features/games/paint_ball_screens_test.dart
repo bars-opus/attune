@@ -21,7 +21,7 @@ class _ScreenGateway implements PaintBallGateway {
   _ScreenGateway(this.session, this.channel);
 
   PaintBallSessionState? session;
-  PaintBallShotResult? turnResult;
+  PaintBallTurnResult? turnResult;
   final RealtimeChannel channel;
 
   @override
@@ -79,7 +79,7 @@ class _ScreenGateway implements PaintBallGateway {
   }) => channel;
 
   @override
-  Future<PaintBallShotResult> takeTurn({
+  Future<PaintBallTurnResult> takeTurn({
     required String sessionId,
     required int roundNumber,
     required int hidePosition,
@@ -202,20 +202,25 @@ void main() {
   ) async {
     _usePhoneViewport(tester);
     final gateway = _ScreenGateway(_session(), channel)
-      ..turnResult = const PaintBallShotResult(
-        sessionId: 'session-1',
+      ..turnResult = const PaintBallTurnResult(
         roundNumber: 2,
-        shotResult: 'hit',
-        lifeLost: true,
         livesA: 3,
         livesB: 2,
         currentTurnUserId: 'user-b',
         knockout: false,
-        penaltyType: null,
-        penaltySource: null,
-        penaltyPromptSnapshot: null,
-        existing: false,
-        defenderWasAt: 1,
+        doubleKnockout: false,
+        opener: PaintBallHalf(
+          userId: 'user-a',
+          hidePosition: 0,
+          shotPosition: 1,
+          shotResult: 'hit',
+        ),
+        closer: PaintBallHalf(
+          userId: 'user-b',
+          hidePosition: 1,
+          shotPosition: 2,
+          shotResult: 'miss',
+        ),
       );
 
     await tester.pumpWidget(
@@ -232,7 +237,10 @@ void main() {
     expect(fire().onPressed, isNull);
 
     await _scrollToEnd(tester);
-    await tester.tap(find.text('Left'));
+    // v3: the board is the controller. Repositioning is a tap on your own
+    // cover, aiming is a tap on theirs -- there is no button strip to
+    // duplicate the field.
+    await tester.tap(find.bySemanticsLabel('Left cover'));
     await tester.tap(find.bySemanticsLabel('Middle target'));
     await tester.pump();
     expect(fire().onPressed, isNotNull);
@@ -242,6 +250,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('Direct hit'), findsOneWidget);
+    // The reveal must name the position, not just the verdict: the
+    // position is what the next guess is built from.
     expect(
       find.textContaining('They were behind the middle shield.'),
       findsOneWidget,
@@ -254,20 +264,25 @@ void main() {
   ) async {
     _usePhoneViewport(tester);
     final gateway = _ScreenGateway(_session(), channel)
-      ..turnResult = const PaintBallShotResult(
-        sessionId: 'session-1',
+      ..turnResult = const PaintBallTurnResult(
         roundNumber: 2,
-        shotResult: 'hit',
-        lifeLost: true,
         livesA: 3,
         livesB: 2,
         currentTurnUserId: 'user-b',
         knockout: false,
-        penaltyType: null,
-        penaltySource: null,
-        penaltyPromptSnapshot: null,
-        existing: false,
-        defenderWasAt: 1,
+        doubleKnockout: false,
+        opener: PaintBallHalf(
+          userId: 'user-a',
+          hidePosition: 0,
+          shotPosition: 1,
+          shotResult: 'hit',
+        ),
+        closer: PaintBallHalf(
+          userId: 'user-b',
+          hidePosition: 1,
+          shotPosition: 2,
+          shotResult: 'miss',
+        ),
       );
 
     await tester.pumpWidget(
@@ -280,7 +295,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     await _scrollToEnd(tester);
-    await tester.tap(find.text('Left'));
+    await tester.tap(find.bySemanticsLabel('Left cover'));
     await tester.tap(find.bySemanticsLabel('Middle target'));
     await tester.pump(const Duration(milliseconds: 250));
 

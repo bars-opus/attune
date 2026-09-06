@@ -46,6 +46,8 @@ int _visibleTriangles(WidgetTester tester) {
   return count;
 }
 
+const _names = ['Left', 'Middle', 'Right'];
+
 void main() {
   testWidgets('the field renders with a full match of paint', (tester) async {
     // The painter builds an irregular path per splat with a seeded
@@ -96,40 +98,77 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('only the opponent row is tappable', (tester) async {
-    // You choose where to SHOOT on their side. Tapping your own cover
-    // must not fire -- your hiding place is picked in its own step, and
-    // conflating the two would let a tap on your own row spend a turn.
-    final tapped = <int>[];
+  testWidgets('each row taps to its own action', (tester) async {
+    // v3: the board is the controller. Your row repositions you, theirs
+    // picks a target. They must stay distinct -- a tap that could do
+    // either would let a player spend a turn while browsing covers.
+    final shots = <int>[];
+    final hides = <int>[];
 
     await tester.pumpWidget(
       _wrap(
         PaintBallField(
           splats: const [],
-          myPosition: null,
+          myPosition: 0,
           selectedShot: null,
           revealedPartnerPosition: null,
           isMyTurn: true,
-          onSelectShot: tapped.add,
+          onSelectShot: shots.add,
+          onSelectHide: hides.add,
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    final targets = find.byType(GestureDetector);
-    expect(targets, findsWidgets);
-
-    // Six cover nodes exist; only the three on the opponent's row report.
-    for (var i = 0; i < targets.evaluate().length; i++) {
-      await tester.tap(targets.at(i), warnIfMissed: false);
+    for (var i = 0; i < kPaintBallPositions; i++) {
+      await tester.tap(find.bySemanticsLabel('${_names[i]} target'));
+      await tester.tap(find.bySemanticsLabel('${_names[i]} cover'));
     }
     await tester.pump();
 
-    expect(
-      tapped.length,
-      kPaintBallPositions,
-      reason: 'only the opponent row may be selected',
+    expect(shots, [0, 1, 2], reason: 'their row selects a target');
+    expect(hides, [0, 1, 2], reason: 'your row repositions you');
+  });
+
+  testWidgets('firing is the triangle, never a cover', (tester) async {
+    // Committing a shot must be its own act. If a cover could fire, a
+    // mis-tap while choosing a target would spend the turn.
+    var fired = 0;
+    final shots = <int>[];
+
+    await tester.pumpWidget(
+      _wrap(
+        PaintBallField(
+          splats: const [],
+          myPosition: 1,
+          selectedShot: 2,
+          revealedPartnerPosition: null,
+          isMyTurn: true,
+          onSelectShot: shots.add,
+          onSelectHide: (_) {},
+          onFire: () => fired++,
+        ),
+      ),
     );
+    await tester.pumpAndSettle();
+
+    // Tapping the aimed cover again re-selects; it does not fire.
+    await tester.tap(find.bySemanticsLabel('Right target'));
+    await tester.pump();
+    expect(fired, 0, reason: 'a cover tap must never fire');
+
+    // The occupied triangle on your own row is the fire control.
+    await tester.tap(
+      find
+          .descendant(
+            of: find.bySemanticsLabel('Middle cover'),
+            matching: find.byType(CustomPaint),
+          )
+          .first,
+      warnIfMissed: false,
+    );
+    await tester.pump();
+    expect(fired, greaterThan(0), reason: 'the triangle fires');
   });
 
   testWidgets('nothing is selectable when it is not your turn', (tester) async {

@@ -206,6 +206,23 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
     );
   }
 
+  /// Marks the queued replay as played.
+  ///
+  /// Called by the field when its animation finishes, or immediately when
+  /// the viewer skips it. Without this a reopened game would replay the
+  /// same round every time it loaded.
+  void clearReplay() {
+    if (state.pendingReplay == null) return;
+    state = state.copyWith(
+      pendingReplay: null,
+      // The reveal ends with the replay: the opponent's triangle goes back
+      // into hiding, so the next guess starts from nothing again.
+      revealedPartnerPosition: null,
+      hidePosition: null,
+      shotPosition: null,
+    );
+  }
+
   /// Commits the turn: hide here, shoot there.
   ///
   /// The server resolves the shot against where the partner actually hid,
@@ -253,79 +270,73 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
       );
 
       final currentUserId = _ref.read(paintBallCurrentUserIdProvider);
-      final nextRounds = [
-        ...session.rounds.where(
-          (round) => round.roundNumber != result.roundNumber,
-        ),
-        PaintBallRound(
-          roundNumber: result.roundNumber,
-          shotResult: result.shotResult,
-          lifeLost: result.lifeLost,
-          createdAt: DateTime.now(),
-          shotPosition: shot,
-          activePartnerId: currentUserId,
-        ),
-      ]..sort((a, b) => a.roundNumber.compareTo(b.roundNumber));
 
+      // The opener's half. Nothing resolved and nothing was revealed --
+      // the partner is simply up now.
+      if (!result.isResolved) {
+        state = state.copyWith(
+          session: session.copyWith(
+            currentTurnUserId: result.currentTurnUserId,
+            isMyTurn: false,
+          ),
+          phase: PaintBallGamePhase.playing,
+          isSubmitting: false,
+          awaitingPartner: true,
+        );
+        return;
+      }
+
+      // The closer's half: the round resolved, so there is a replay.
       final updatedSession = session.copyWith(
-        currentRound:
-            result.knockout ? session.currentRound : session.currentRound + 1,
-        totalRoundsCompleted:
-            session.totalRoundsCompleted < nextRounds.length
-                ? nextRounds.length
-                : session.totalRoundsCompleted,
+        currentRound: result.knockout
+            ? session.currentRound
+            : session.currentRound + 1,
         livesA: result.livesA,
         livesB: result.livesB,
         currentTurnUserId: result.currentTurnUserId,
-        winnerUserId: result.knockout ? currentUserId : session.winnerUserId,
-        penaltyType: result.penaltyType,
-        penaltySource: result.penaltySource,
-        penaltyPromptSnapshot: result.penaltyPromptSnapshot,
+        winnerUserId: result.winnerUserId,
         penaltyStatus: result.knockout ? 'pending' : null,
-        rounds: nextRounds,
         isMyTurn: result.currentTurnUserId == currentUserId,
-        isWinner: result.knockout,
-        isLoser: false,
+        isWinner: result.winnerUserId == currentUserId,
+        isLoser:
+            result.winnerUserId != null && result.winnerUserId != currentUserId,
       );
+
+      final mine =
+          result.opener!.userId == currentUserId ? result.opener! : result.closer!;
+      final theirs =
+          result.opener!.userId == currentUserId ? result.closer! : result.opener!;
 
       state = state.copyWith(
         session: updatedSession,
-        phase:
-            result.knockout
-                ? PaintBallGamePhase.knockout
-                : PaintBallGamePhase.playing,
+        phase: PaintBallGamePhase.playing,
         isSubmitting: false,
-        showHitFeedback: result.isHit,
-        showMissFeedback: result.isMiss,
-        showKnockout: result.knockout,
-        lastOutcome: result.outcome,
-        // Held after the turn so the reveal stays on screen while the
-        // player reads it; cleared when they start the next turn.
-        revealedPartnerPosition: result.defenderWasAt,
+        awaitingPartner: false,
+        // The replay is queued rather than played here: the widget owns the
+        // animation clock, and driving it from state would make the
+        // provider responsible for frames.
+        pendingReplay: PaintBallReplay(
+          roundNumber: result.roundNumber,
+          mine: mine,
+          theirs: theirs,
+          knockout: result.knockout,
+          doubleKnockout: result.doubleKnockout,
+        ),
+        penalties: result.penalties,
+      );
+
+      _analytics.shotResolved(
+        sessionId: session.sessionId,
+        roundNumber: result.roundNumber,
+        hit: mine.isHit,
       );
 
       if (result.knockout) {
         _analytics.playerEliminated(
           sessionId: session.sessionId,
-          penaltySource: result.penaltySource ?? 'app_random',
+          penaltySource:
+              result.penalties.isEmpty ? 'app_random' : 'app_random',
         );
-        _sound.play(AppSound.gameKnockout);
-        _haptics.medium();
-      } else if (result.isHit) {
-        _analytics.shotResolved(
-          sessionId: session.sessionId,
-          roundNumber: result.roundNumber,
-          hit: true,
-        );
-        _sound.play(AppSound.gameHit);
-        _haptics.medium();
-      } else if (result.isMiss) {
-        _analytics.shotResolved(
-          sessionId: session.sessionId,
-          roundNumber: result.roundNumber,
-          hit: false,
-        );
-        _sound.play(AppSound.gameMiss);
       }
     } on PaintBallApiError catch (error) {
       state = state.copyWith(

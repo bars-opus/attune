@@ -24,7 +24,7 @@ class _FakePaintBallGateway implements PaintBallGateway {
   _FakePaintBallGateway(this.session, this.channel);
 
   PaintBallSessionState? session;
-  PaintBallShotResult? nextResult;
+  PaintBallTurnResult? nextResult;
   Object? turnError;
   final RealtimeChannel channel;
   final turnCalls = <_TurnCall>[];
@@ -81,7 +81,7 @@ class _FakePaintBallGateway implements PaintBallGateway {
   }) => channel;
 
   @override
-  Future<PaintBallShotResult> takeTurn({
+  Future<PaintBallTurnResult> takeTurn({
     required String sessionId,
     required int roundNumber,
     required int hidePosition,
@@ -186,20 +186,25 @@ void main() {
 
       gateway
         ..turnError = null
-        ..nextResult = const PaintBallShotResult(
-          sessionId: 'session-1',
+        ..nextResult = const PaintBallTurnResult(
           roundNumber: 2,
-          shotResult: 'hit',
-          lifeLost: true,
           livesA: 3,
           livesB: 2,
           currentTurnUserId: 'user-b',
           knockout: false,
-          penaltyType: null,
-          penaltySource: null,
-          penaltyPromptSnapshot: null,
-          existing: false,
-          defenderWasAt: 2,
+          doubleKnockout: false,
+          opener: PaintBallHalf(
+            userId: 'user-a',
+            hidePosition: 1,
+            shotPosition: 2,
+            shotResult: 'hit',
+          ),
+          closer: PaintBallHalf(
+            userId: 'user-b',
+            hidePosition: 2,
+            shotPosition: 0,
+            shotResult: 'miss',
+          ),
         );
       await notifier.takeTurn();
 
@@ -208,11 +213,13 @@ void main() {
       expect(gateway.turnCalls.every((call) => call.round == 2), isTrue);
       expect(gateway.turnCalls.every((call) => call.hide == 1), isTrue);
       expect(gateway.turnCalls.every((call) => call.shot == 2), isTrue);
-      expect(state.lastOutcome, PaintBallShotOutcome.hit);
-      expect(state.revealedPartnerPosition, 2);
-      expect(state.session!.rounds.single.shotPosition, 2);
-      expect(sound.played, contains(AppSound.gameHit));
-      expect(haptics.mediumCount, 1);
+      // A resolved round queues a replay carrying BOTH halves -- the
+      // field cannot animate the exchange without the partner's position,
+      // and that position only exists once the round has resolved.
+      expect(state.pendingReplay, isNotNull);
+      expect(state.pendingReplay!.mine.shotResult, 'hit');
+      expect(state.pendingReplay!.theirs.hidePosition, 2);
+      expect(state.awaitingPartner, isFalse);
       expect(
         events.where((event) => event == PaintBallAnalytics.shotFiredEvent),
         hasLength(2),
@@ -221,21 +228,18 @@ void main() {
     },
   );
 
-  test('opening move never produces hit or miss feedback', () async {
+  test('opening a round reveals nothing and queues no replay', () async {
+    // The half that opens a round must not leak the partner's position or
+    // pretend to an outcome: nothing has resolved, and a client that
+    // animated a replay here would be inventing one.
     final gateway = _FakePaintBallGateway(_session(currentRound: 1), channel)
-      ..nextResult = const PaintBallShotResult(
-        sessionId: 'session-1',
+      ..nextResult = const PaintBallTurnResult(
         roundNumber: 1,
-        shotResult: 'opening',
-        lifeLost: false,
         livesA: 3,
         livesB: 3,
         currentTurnUserId: 'user-b',
         knockout: false,
-        penaltyType: null,
-        penaltySource: null,
-        penaltyPromptSnapshot: null,
-        existing: false,
+        doubleKnockout: false,
       );
     final sound = FakeSoundService();
     final container = _container(
@@ -254,7 +258,9 @@ void main() {
     await notifier.takeTurn();
 
     final state = container.read(paintBallSessionProvider);
-    expect(state.lastOutcome, PaintBallShotOutcome.opening);
+    expect(state.awaitingPartner, isTrue);
+    expect(state.pendingReplay, isNull);
+    expect(state.revealedPartnerPosition, isNull);
     expect(state.showHitFeedback, isFalse);
     expect(state.showMissFeedback, isFalse);
     expect(sound.played, isNot(contains(AppSound.gameHit)));

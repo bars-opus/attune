@@ -73,6 +73,10 @@ class PaintBallField extends StatelessWidget {
     required this.isMyTurn,
     this.shotProgress,
     this.onSelectShot,
+    this.onSelectHide,
+    this.onFire,
+    this.replayProgress,
+    this.theirRevealedShot,
   });
 
   final List<PaintSplat> splats;
@@ -85,6 +89,20 @@ class PaintBallField extends StatelessWidget {
   final double? shotProgress;
 
   final ValueChanged<int>? onSelectShot;
+
+  /// Tapping your own cover moves you there. Null disables repositioning.
+  final ValueChanged<int>? onSelectHide;
+
+  /// Tapping your own triangle fires, once a target is chosen.
+  final VoidCallback? onFire;
+
+  /// 0 to 1 while a resolved round replays, null otherwise. During a replay
+  /// BOTH sides emerge, aim and fire, so it drives more than the shot alone.
+  final double? replayProgress;
+
+  /// Where the opponent shot during the replay. Only known once the round
+  /// resolved, which is the same moment their position becomes visible.
+  final int? theirRevealedShot;
 
   @override
   Widget build(BuildContext context) {
@@ -145,9 +163,11 @@ class PaintBallField extends StatelessWidget {
                   child: _ShieldRow(
                     isOpponent: true,
                     hiddenAt: revealedPartnerPosition,
+                    aimingAt: theirRevealedShot,
                     aimedAt: selectedShot,
                     enabled: isMyTurn && onSelectShot != null,
                     onTap: onSelectShot,
+                    onTapCharacter: null,
                     reduceMotion: reduceMotion,
                   ),
                 ),
@@ -180,9 +200,14 @@ class PaintBallField extends StatelessWidget {
                   child: _ShieldRow(
                     isOpponent: false,
                     hiddenAt: myPosition,
+                    // Your own triangle tilts toward whatever you are
+                    // aiming at, so the aim is visible on the field
+                    // rather than only in a control strip.
+                    aimingAt: selectedShot,
                     aimedAt: null,
-                    enabled: false,
-                    onTap: null,
+                    enabled: isMyTurn && onSelectHide != null,
+                    onTap: onSelectHide,
+                    onTapCharacter: onFire,
                     reduceMotion: reduceMotion,
                   ),
                 ),
@@ -231,6 +256,10 @@ class _FieldLabel extends StatelessWidget {
 }
 
 /// One row of three shields, with a triangle hiding behind one of them.
+///
+/// The row is the controller as well as the picture: tapping a shield is
+/// how a player repositions or aims, and tapping the triangle fires. A
+/// separate button strip would teach the player the board is a picture.
 class _ShieldRow extends StatelessWidget {
   const _ShieldRow({
     required this.isOpponent,
@@ -239,6 +268,8 @@ class _ShieldRow extends StatelessWidget {
     required this.enabled,
     required this.onTap,
     required this.reduceMotion,
+    this.aimingAt,
+    this.onTapCharacter,
   });
 
   /// Where the player behind this row is hiding, when it may be shown.
@@ -248,110 +279,134 @@ class _ShieldRow extends StatelessWidget {
   /// The shield being aimed at, which steps aside to open the shot.
   final int? aimedAt;
 
+  /// Where the occupant of THIS row is pointing. Drives the triangle's
+  /// tilt, so an aim is something you can see rather than infer.
+  final int? aimingAt;
+
   final bool isOpponent;
   final bool enabled;
   final ValueChanged<int>? onTap;
+  final VoidCallback? onTapCharacter;
   final bool reduceMotion;
 
   @override
   Widget build(BuildContext context) {
     final base = isOpponent ? PaintBallPalette.theirs : PaintBallPalette.mine;
+    final isAiming = aimingAt != null && hiddenAt != null;
 
-    final duration =
-        reduceMotion ? Duration.zero : const Duration(milliseconds: 320);
-    final alignmentX = switch (hiddenAt) {
-      0 => -0.68,
-      2 => 0.68,
-      _ => 0.0,
-    };
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: List.generate(kPaintBallPositions, (index) {
+        final isAimed = aimedAt == index;
+        final isOccupied = hiddenAt == index;
 
-    return SizedBox(
-      height: 92.h,
-      child: Stack(
-        children: [
-          // One persistent triangle travels across the whole row. Rendering a
-          // triangle inside every slot only cross-fades two copies and reads as
-          // teleportation rather than taking cover.
-          Positioned.fill(
-            child: AnimatedAlign(
-              duration: duration,
-              curve: Curves.easeOutCubic,
-              alignment: Alignment(alignmentX, isOpponent ? 0.12 : -0.12),
-              child: AnimatedOpacity(
-                duration:
-                    reduceMotion
-                        ? Duration.zero
-                        : const Duration(milliseconds: 180),
-                opacity: hiddenAt == null ? 0 : 1,
-                child: CustomPaint(
-                  size: Size(22.w, 20.h),
-                  painter: _TrianglePainter(
-                    color: PaintBallPalette.player,
-                    pointsUp: !isOpponent,
+        // Pointing at a column to the left tilts left, and vice versa. The
+        // angle is a real bearing, not a decoration: it tells the viewer
+        // which cover is being aimed at before the shot leaves.
+        final bearing = isOccupied && isAiming ? (aimingAt! - index) : 0;
+        final tilt = bearing * (isOpponent ? -0.42 : 0.42);
+
+        return Semantics(
+          // container: true so this becomes its own node rather than
+          // merging into the row -- without it a screen reader announces
+          // one undifferentiated strip instead of three targets.
+          container: true,
+          button: enabled,
+          // Named by position rather than index: a screen-reader user
+          // hears "Middle target", which is the thing on the board, not
+          // "cover 2", which is an implementation detail.
+          label:
+              isOpponent
+                  ? '${paintBallPositionName(index)} target'
+                  : '${paintBallPositionName(index)} cover',
+          child: GestureDetector(
+            onTap: enabled ? () => onTap?.call(index) : null,
+            behavior: HitTestBehavior.opaque,
+            child: SizedBox(
+              width: 74.w,
+              height: 92.h,
+              child: Stack(
+                alignment: Alignment.center,
+                clipBehavior: Clip.none,
+                children: [
+                  // The shield. When aimed at, it slides aside to open a
+                  // clear line -- so a shot is something you can see a path
+                  // for, not an abstract selection.
+                  AnimatedPositioned(
+                    duration: Duration(milliseconds: reduceMotion ? 0 : 260),
+                    curve: Curves.easeOutBack,
+                    left: isAimed ? 30.w : 18.w,
+                    bottom: isOpponent ? 8.h : null,
+                    top: isOpponent ? null : 8.h,
+                    child: AnimatedOpacity(
+                      duration: Duration(milliseconds: reduceMotion ? 0 : 220),
+                      opacity:
+                          isAimed
+                              ? 1.0
+                              : enabled
+                              ? 0.75
+                              : 0.55,
+                      child: CustomPaint(
+                        size: Size(38.w, 62.h),
+                        painter: _ShieldPainter(
+                          color: base,
+                          strokeWidth: isAimed ? 2.4.r : 1.6.r,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ),
-          ),
-          Positioned.fill(
-            child: Row(
-              children: List.generate(kPaintBallPositions, (index) {
-                final isAimed = aimedAt == index;
-                final positionName = paintBallPositionName(index);
-
-                return Expanded(
-                  child: Semantics(
-                    button: enabled,
-                    enabled: enabled,
-                    selected: isAimed,
-                    label:
-                        isOpponent
-                            ? '$positionName target'
-                            : '$positionName cover',
-                    hint: enabled ? 'Select where to shoot' : null,
-                    child: GestureDetector(
-                      onTap: enabled ? () => onTap?.call(index) : null,
-                      behavior: HitTestBehavior.opaque,
-                      child: SizedBox.expand(
-                        child: Center(
-                          child: AnimatedSlide(
-                            duration:
-                                reduceMotion
-                                    ? Duration.zero
-                                    : const Duration(milliseconds: 260),
-                            curve: Curves.easeOutCubic,
-                            offset:
-                                isAimed ? const Offset(0.20, 0) : Offset.zero,
-                            child: AnimatedOpacity(
-                              duration:
-                                  reduceMotion
-                                      ? Duration.zero
-                                      : const Duration(milliseconds: 180),
-                              opacity:
-                                  isAimed
-                                      ? 1
-                                      : enabled
-                                      ? 0.75
-                                      : 0.58,
-                              child: CustomPaint(
-                                size: Size(38.w, 62.h),
-                                painter: _ShieldPainter(
-                                  color: base,
-                                  strokeWidth: isAimed ? 2.4.r : 1.6.r,
-                                ),
-                              ),
+                  // Declared AFTER the shield so it paints on top and wins
+                  // the hit test: the triangle is the fire control, and a
+                  // shield swallowing that tap would make firing
+                  // impossible. Visually it still reads as behind cover,
+                  // because it sits deeper in the arch.
+                  //
+                  // The triangle slides between
+                  // positions rather than teleporting -- the movement is
+                  // what makes taking cover read as an action.
+                  //
+                  // When aiming it steps FORWARD, clear of its own cover,
+                  // so the shot has a line and the player can see they are
+                  // exposed while they take it.
+                  AnimatedPositioned(
+                    duration: Duration(milliseconds: reduceMotion ? 0 : 320),
+                    curve: Curves.easeOutCubic,
+                    top: isOpponent ? (isAiming ? 46.h : 34.h) : null,
+                    bottom: isOpponent ? null : (isAiming ? 46.h : 34.h),
+                    left: 26.w,
+                    child: AnimatedOpacity(
+                      duration: Duration(milliseconds: reduceMotion ? 0 : 220),
+                      opacity: isOccupied ? 1 : 0,
+                      child: GestureDetector(
+                        // Firing is the triangle, never a shield: choosing
+                        // a target and committing to it must be two
+                        // separate acts, or a mis-tap while browsing
+                        // covers would fire a shot.
+                        onTap: isOccupied ? onTapCharacter : null,
+                        behavior: HitTestBehavior.opaque,
+                        child: AnimatedRotation(
+                          duration: Duration(
+                            milliseconds: reduceMotion ? 0 : 260,
+                          ),
+                          curve: Curves.easeOut,
+                          turns: tilt / (2 * math.pi),
+                          child: CustomPaint(
+                            size: Size(22.w, 20.h),
+                            painter: _TrianglePainter(
+                              color: PaintBallPalette.player,
+                              pointsUp: !isOpponent,
                             ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                );
-              }),
+                ],
+              ),
             ),
           ),
-        ],
-      ),
+        );
+      }),
     );
   }
 }

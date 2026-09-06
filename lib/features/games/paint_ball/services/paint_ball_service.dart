@@ -15,7 +15,13 @@ abstract class PaintBallGateway {
   Future<void> acceptSession(String sessionId);
   Future<void> declineSession(String sessionId);
 
-  Future<PaintBallShotResult> takeTurn({
+  /// One whole turn: hide somewhere, and shoot where you think they are.
+  ///
+  /// A round is an exchange, so this either opens one (returning only
+  /// "your partner is up") or closes one (returning both halves for the
+  /// replay). The server decides which -- and computes both verdicts, so a
+  /// client cannot report a hit or read a position still in play.
+  Future<PaintBallTurnResult> takeTurn({
     required String sessionId,
     required int roundNumber,
     required int hidePosition,
@@ -127,7 +133,7 @@ class PaintBallService implements PaintBallGateway {
   /// a client cannot report a hit it did not earn -- and the skill becomes
   /// predicting your partner rather than reacting to a sweep.
   @override
-  Future<PaintBallShotResult> takeTurn({
+  Future<PaintBallTurnResult> takeTurn({
     required String sessionId,
     required int roundNumber,
     required int hidePosition,
@@ -159,7 +165,7 @@ class PaintBallService implements PaintBallGateway {
     if (data['error'] == true) {
       throw PaintBallApiError.fromJson(data);
     }
-    return PaintBallShotResult.fromJson(data);
+    return PaintBallTurnResult.fromJson(data);
   }
 
   // ============================================================

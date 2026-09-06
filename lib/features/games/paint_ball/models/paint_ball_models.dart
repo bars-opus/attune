@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 // lib/features/games/paint_ball/models/paint_ball_models.dart
 
 const Object _unset = Object();
@@ -418,6 +419,140 @@ class PaintBallSessionState {
 // ============================================================
 // Shot Result
 // ============================================================
+/// One player's half of a resolved round: where they hid, where they shot,
+/// and whether it landed.
+///
+/// Both halves are needed to animate the replay, and both only exist once
+/// the round has resolved -- before that the server withholds them (§5.5).
+@immutable
+class PaintBallHalf {
+  const PaintBallHalf({
+    required this.userId,
+    required this.hidePosition,
+    required this.shotPosition,
+    required this.shotResult,
+  });
+
+  final String userId;
+  final int hidePosition;
+  final int shotPosition;
+  final String shotResult;
+
+  bool get isHit => shotResult == 'hit';
+
+  factory PaintBallHalf.fromJson(Map<String, dynamic> json) {
+    final data = _json(json);
+    return PaintBallHalf(
+      userId: _asString(data, 'user_id') ?? '',
+      hidePosition: _asInt(data, 'hide_position'),
+      shotPosition: _asInt(data, 'shot_position'),
+      shotResult: _asString(data, 'shot_result') ?? 'miss',
+    );
+  }
+}
+
+/// The result of taking a turn.
+///
+/// A round is an exchange, so a turn either opens one -- returning nothing
+/// but "your partner is up" -- or closes one, returning both halves for the
+/// replay. The two states are distinct types of answer, and collapsing them
+/// into one nullable-everything object would let a caller animate a replay
+/// that has not happened.
+@immutable
+class PaintBallTurnResult {
+  const PaintBallTurnResult({
+    required this.roundNumber,
+    required this.livesA,
+    required this.livesB,
+    required this.currentTurnUserId,
+    required this.knockout,
+    required this.doubleKnockout,
+    this.opener,
+    this.closer,
+    this.winnerUserId,
+    this.penalties = const [],
+  });
+
+  final int roundNumber;
+  final int livesA;
+  final int livesB;
+  final String? currentTurnUserId;
+  final bool knockout;
+
+  /// Both players reached zero in the same round. A draw: both forfeit,
+  /// neither wins.
+  final bool doubleKnockout;
+
+  /// Null while the round awaits its second half.
+  final PaintBallHalf? opener;
+  final PaintBallHalf? closer;
+
+  final String? winnerUserId;
+  final List<PaintBallPenalty> penalties;
+
+  /// True once both halves are in and there is a replay to animate.
+  bool get isResolved => opener != null && closer != null;
+
+  factory PaintBallTurnResult.fromJson(Map<String, dynamic> json) {
+    final data = _json(json);
+    final openerRaw = data['opener'];
+    final closerRaw = data['closer'];
+    return PaintBallTurnResult(
+      roundNumber: _asInt(data, 'round_number'),
+      livesA: _asInt(data, 'lives_a', 3),
+      livesB: _asInt(data, 'lives_b', 3),
+      currentTurnUserId: _asString(data, 'current_turn_user_id'),
+      knockout: _asBool(data, 'knockout'),
+      doubleKnockout: _asBool(data, 'double_knockout'),
+      opener:
+          openerRaw is Map
+              ? PaintBallHalf.fromJson(Map<String, dynamic>.from(openerRaw))
+              : null,
+      closer:
+          closerRaw is Map
+              ? PaintBallHalf.fromJson(Map<String, dynamic>.from(closerRaw))
+              : null,
+      winnerUserId: _asString(data, 'winner_user_id'),
+      penalties:
+          (data['penalties'] as List?)
+              ?.whereType<Map>()
+              .map(
+                (e) => PaintBallPenalty.fromJson(Map<String, dynamic>.from(e)),
+              )
+              .toList() ??
+          const [],
+    );
+  }
+}
+
+/// One player's forfeit. A draw produces two.
+@immutable
+class PaintBallPenalty {
+  const PaintBallPenalty({
+    required this.userId,
+    required this.penaltyType,
+    required this.penaltyStatus,
+    required this.promptSnapshot,
+  });
+
+  final String userId;
+  final String penaltyType;
+  final String penaltyStatus;
+  final String promptSnapshot;
+
+  bool get isPending => penaltyStatus == 'pending';
+
+  factory PaintBallPenalty.fromJson(Map<String, dynamic> json) {
+    final data = _json(json);
+    return PaintBallPenalty(
+      userId: _asString(data, 'user_id') ?? '',
+      penaltyType: _asString(data, 'penalty_type') ?? 'truth',
+      penaltyStatus: _asString(data, 'penalty_status') ?? 'pending',
+      promptSnapshot: _asString(data, 'penalty_prompt_snapshot') ?? '',
+    );
+  }
+}
+
 class PaintBallShotResult {
   final String sessionId;
   final int roundNumber;
@@ -653,6 +788,32 @@ class PaintBallApiError implements Exception {
 // ============================================================
 // Paint Ball UI State
 // ============================================================
+/// A resolved round, ready to animate.
+///
+/// Queued in state and consumed by the field widget, which owns the
+/// animation clock -- driving frames from the provider would make state
+/// responsible for timing.
+@immutable
+class PaintBallReplay {
+  const PaintBallReplay({
+    required this.roundNumber,
+    required this.mine,
+    required this.theirs,
+    required this.knockout,
+    required this.doubleKnockout,
+  });
+
+  final int roundNumber;
+
+  /// Always the viewer's own half, whichever seat they took this round --
+  /// the field draws "mine" at the bottom regardless.
+  final PaintBallHalf mine;
+  final PaintBallHalf theirs;
+
+  final bool knockout;
+  final bool doubleKnockout;
+}
+
 class PaintBallUiState {
   final PaintBallGamePhase phase;
   final bool isLoading;
@@ -662,6 +823,17 @@ class PaintBallUiState {
   final bool showHitFeedback;
   final bool showMissFeedback;
   final bool showKnockout;
+
+  /// Your half is in and the round is waiting on your partner. There is
+  /// nothing to reveal and nothing to animate.
+  final bool awaitingPartner;
+
+  /// A resolved round waiting to be played. Cleared once the field has
+  /// animated it, so reopening the game does not replay it forever.
+  final PaintBallReplay? pendingReplay;
+
+  /// One per player who owes a forfeit. A draw has two.
+  final List<PaintBallPenalty> penalties;
 
   /// The last server-authoritative verdict shown to the player. Kept as an
   /// enum so the opening move cannot accidentally fall through to "miss".
@@ -688,6 +860,9 @@ class PaintBallUiState {
     this.isSubmitting = false,
     this.errorMessage,
     this.session,
+    this.awaitingPartner = false,
+    this.pendingReplay,
+    this.penalties = const [],
     this.showHitFeedback = false,
     this.showMissFeedback = false,
     this.showKnockout = false,
@@ -707,6 +882,9 @@ class PaintBallUiState {
     bool? showHitFeedback,
     bool? showMissFeedback,
     bool? showKnockout,
+    bool? awaitingPartner,
+    Object? pendingReplay = _unset,
+    List<PaintBallPenalty>? penalties,
     Object? lastOutcome = _unset,
     Object? hidePosition = _unset,
     Object? shotPosition = _unset,
@@ -728,6 +906,12 @@ class PaintBallUiState {
       showHitFeedback: showHitFeedback ?? this.showHitFeedback,
       showMissFeedback: showMissFeedback ?? this.showMissFeedback,
       showKnockout: showKnockout ?? this.showKnockout,
+      awaitingPartner: awaitingPartner ?? this.awaitingPartner,
+      pendingReplay:
+          identical(pendingReplay, _unset)
+              ? this.pendingReplay
+              : pendingReplay as PaintBallReplay?,
+      penalties: penalties ?? this.penalties,
       lastOutcome:
           identical(lastOutcome, _unset)
               ? this.lastOutcome

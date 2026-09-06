@@ -226,20 +226,14 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
                                 currentUserId,
                               ),
                               onSelectShot: notifier.selectShot,
+                              onSelectHide: notifier.selectHide,
+                              onFire: state.canFire ? _fire : null,
                               shotProgress:
                                   _shotController.isAnimating &&
                                           !reduceMotionOf(context)
                                       ? _shotController.value
                                       : null,
                             ),
-                      ),
-                      Gap(Spacing.md.h),
-                      _HideChooser(
-                        selected: state.hidePosition,
-                        enabled:
-                            session.isCurrentUserTurn(currentUserId) &&
-                            !state.isSubmitting,
-                        onSelect: notifier.selectHide,
                       ),
                       Gap(Spacing.md.h),
                       _TurnPrompt(
@@ -452,113 +446,6 @@ List<PaintSplat> _splatsFor(
 /// questions -- one is "where am I", the other "where are they" -- and a
 /// single row of taps doing both would make it easy to spend a turn on
 /// the wrong one.
-class _HideChooser extends StatelessWidget {
-  const _HideChooser({
-    required this.selected,
-    required this.enabled,
-    required this.onSelect,
-  });
-
-  final int? selected;
-  final bool enabled;
-  final ValueChanged<int> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Take cover',
-          style: textTheme.labelLarge?.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        Gap(Spacing.xs.h),
-        Text(
-          'They will shoot at where they think you are.',
-          style: textTheme.bodySmall?.copyWith(
-            color: Colors.white.withValues(alpha: 0.6),
-          ),
-        ),
-        Gap(Spacing.sm.h),
-        Row(
-          children: List.generate(kPaintBallPositions, (index) {
-            final isSelected = selected == index;
-            return Expanded(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: Spacing.xs.w),
-                child: Semantics(
-                  button: true,
-                  enabled: enabled,
-                  selected: isSelected,
-                  label: '${paintBallPositionName(index)} cover',
-                  hint: 'Choose where to hide',
-                  child: GestureDetector(
-                    onTap: enabled ? () => onSelect(index) : null,
-                    behavior: HitTestBehavior.opaque,
-                    child: AnimatedContainer(
-                      duration:
-                          reduceMotionOf(context)
-                              ? Duration.zero
-                              : const Duration(milliseconds: 200),
-                      height: 52.h,
-                      decoration: BoxDecoration(
-                        color:
-                            isSelected
-                                ? PaintBallPalette.mine.withValues(alpha: 0.90)
-                                : PaintBallPalette.mine.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(
-                          BorderRadiusTokens.md.r,
-                        ),
-                        border: Border.all(
-                          color: PaintBallPalette.mine.withValues(
-                            alpha: isSelected ? 0.9 : 0.24,
-                          ),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.shield_outlined,
-                            size: 18.h,
-                            color:
-                                isSelected
-                                    ? PaintBallPalette.field
-                                    : PaintBallPalette.mine.withValues(
-                                      alpha: 0.72,
-                                    ),
-                          ),
-                          Gap(Spacing.xs.w),
-                          Text(
-                            paintBallPositionName(index),
-                            style: textTheme.labelSmall?.copyWith(
-                              color:
-                                  isSelected
-                                      ? PaintBallPalette.field
-                                      : PaintBallPalette.mine,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }),
-        ),
-      ],
-    );
-  }
-}
-
-/// What to do next: fire, wait, or read the result.
 class _TurnPrompt extends StatelessWidget {
   const _TurnPrompt({
     required this.state,
@@ -603,23 +490,31 @@ class _TurnPrompt extends StatelessWidget {
     // A resolved shot: hold the reveal until they choose to move on, so
     // the moment the field shows their partner's position is not swept
     // away by an animation they did not ask for.
-    if (state.lastOutcome != null) {
-      final outcome = state.lastOutcome!;
-      final hit = outcome == PaintBallShotOutcome.hit;
-      final opening = outcome == PaintBallShotOutcome.opening;
-      final position = state.revealedPartnerPosition;
+    if (state.pendingReplay != null) {
+      final replay = state.pendingReplay!;
+      final hit = replay.mine.isHit;
+      final wasHit = replay.theirs.isHit;
       final positionCopy =
-          position == null
-              ? 'Their position could not be restored.'
-              : 'They were behind the ${paintBallPositionName(position).toLowerCase()} shield.';
+          'They were behind the '
+          '${paintBallPositionName(replay.theirs.hidePosition).toLowerCase()} '
+          'shield.';
+
+      // Both landing is its own outcome, and naming it as a shared thing
+      // rather than two separate results is what keeps a mutual round
+      // feeling like a moment between two people.
+      final headline =
+          hit && wasHit
+              ? 'You got each other'
+              : hit
+              ? 'Direct hit'
+              : wasHit
+              ? 'They read you'
+              : 'Both missed';
+
       return Column(
         children: [
           Text(
-            opening
-                ? 'Opening move set'
-                : hit
-                ? 'Direct hit'
-                : 'A useful miss',
+            headline,
             style: textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w700,
               color: hit ? PaintBallPalette.mine : PaintBallPalette.player,
@@ -627,10 +522,9 @@ class _TurnPrompt extends StatelessWidget {
           ),
           Gap(Spacing.xs.h),
           Text(
-            opening
-                ? 'Nobody had taken cover yet, so no life was at risk. Your hiding place is now locked in.'
-                : '$positionCopy '
-                    '${hit ? 'You read them right; they lost one life.' : 'No life lost, but your next guess has a clue.'}',
+            '$positionCopy '
+            '${hit ? 'You read them right.' : 'Your next guess has a clue.'}'
+            '${wasHit ? ' They found you too.' : ''}',
             style: textTheme.bodySmall?.copyWith(
               color: Colors.white.withValues(alpha: 0.65),
             ),
