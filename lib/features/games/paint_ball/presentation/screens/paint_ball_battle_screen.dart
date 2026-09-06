@@ -564,96 +564,26 @@ class _TurnPrompt extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    if (shotInFlight) {
-      return Column(
-        children: [
-          Text(
-            'Paint is in the air.',
-            style: textTheme.bodySmall?.copyWith(
-              color: Colors.white.withValues(alpha: 0.62),
-            ),
-          ),
-          Gap(Spacing.sm.h),
-          AppButton(
-            label: 'Firing...',
-            onPressed: null,
-            size: ButtonSize.large,
-            width: double.infinity,
-            isLoading: true,
-            animateButton: !reduceMotionOf(context),
-          ),
-        ],
-      );
-    }
-
-    // A resolved shot: hold the reveal until they choose to move on, so
-    // the moment the field shows their partner's position is not swept
-    // away by an animation they did not ask for.
-    // lastReplay, not pendingReplay: the animation is over by the time
-    // this is read, and the result must stay on screen until dismissed.
-    if (state.lastReplay != null) {
-      final replay = state.lastReplay!;
-      final hit = replay.mine.isHit;
-      final wasHit = replay.theirs.isHit;
-      final positionCopy =
-          'They were behind the '
-          '${paintBallPositionName(replay.theirs.hidePosition).toLowerCase()} '
-          'shield.';
-
-      // Both landing is its own outcome, and naming it as a shared thing
-      // rather than two separate results is what keeps a mutual round
-      // feeling like a moment between two people.
-      final headline =
-          hit && wasHit
-              ? 'You got each other'
-              : hit
-              ? 'Direct hit'
-              : wasHit
-              ? 'They read you'
-              : 'Both missed';
-
-      return Column(
-        children: [
-          Text(
-            headline,
-            style: textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: hit ? PaintBallPalette.mine : PaintBallPalette.player,
-            ),
-          ),
-          Gap(Spacing.xs.h),
-          Text(
-            '$positionCopy '
-            '${hit ? 'You read them right.' : 'Your next guess has a clue.'}'
-            '${wasHit ? ' They found you too.' : ''}',
-            style: textTheme.bodySmall?.copyWith(
-              color: Colors.white.withValues(alpha: 0.65),
-            ),
-            textAlign: TextAlign.center,
-          ),
-          Gap(Spacing.md.h),
-          AppButton(
-            label: 'Done for now',
-            onPressed: onDone,
-            size: ButtonSize.medium,
-            width: double.infinity,
-            animateButton: !reduceMotionOf(context),
-          ),
-        ],
-      );
+    // Deliberately quiet.
+    //
+    // The field already says everything: where you are, where you aimed,
+    // whether it landed. Narrating it underneath ("Direct hit", "They were
+    // behind the middle shield") did two bad things -- it handed out a
+    // read the player should have earned by watching, and it turned a duel
+    // into a scoreboard. This game is a small moment between two people,
+    // not a match report.
+    //
+    // So: nothing while a round is playing, nothing after it resolves. The
+    // only text that stays is the one thing the board cannot show -- that
+    // it is now the other person's turn.
+    if (shotInFlight || state.pendingReplay != null) {
+      return const SizedBox.shrink();
     }
 
     if (!isMyTurn) {
       return Column(
         children: [
           const BreathingDots(size: 6),
-          Gap(Spacing.sm.h),
-          Text(
-            'Your move is saved. Waiting for theirs.',
-            style: textTheme.bodyMedium?.copyWith(
-              color: Colors.white.withValues(alpha: 0.65),
-            ),
-          ),
           Gap(Spacing.md.h),
           AppButton(
             label: 'Back to chat',
@@ -667,26 +597,25 @@ class _TurnPrompt extends StatelessWidget {
       );
     }
 
-    return Column(
-      children: [
-        Text(
-          state.canFire
-              ? 'Cover chosen. Target locked.'
-              : 'Choose your cover and one target.',
-          style: textTheme.bodySmall?.copyWith(
-            color: Colors.white.withValues(alpha: 0.62),
-          ),
-        ),
-        Gap(Spacing.sm.h),
-        AppButton(
-          label: state.isSubmitting ? 'Firing...' : 'Fire',
-          onPressed: state.canFire && !state.isSubmitting ? onFire : null,
-          size: ButtonSize.large,
-          width: double.infinity,
-          isLoading: state.isSubmitting,
-          animateButton: !reduceMotionOf(context),
-        ),
-      ],
+    // Your turn, nothing in flight. There is no Fire button: firing is
+    // tapping your own character once you have aimed (see the field), so
+    // a button here would be a second way to do the same thing and would
+    // pull attention off the board where the game actually is.
+    //
+    // A single line survives only until the player has done both things,
+    // because a board with no instructions is a puzzle the first time.
+    if (state.canFire) {
+      return const SizedBox.shrink();
+    }
+
+    return Text(
+      state.shotPosition == null
+          ? 'Tap a target.'
+          : 'Tap yourself to fire.',
+      style: textTheme.bodySmall?.copyWith(
+        color: Colors.white.withValues(alpha: 0.5),
+      ),
+      textAlign: TextAlign.center,
     );
   }
 }

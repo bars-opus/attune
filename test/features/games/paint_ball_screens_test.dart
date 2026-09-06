@@ -22,6 +22,7 @@ class _ScreenGateway implements PaintBallGateway {
 
   PaintBallSessionState? session;
   PaintBallTurnResult? turnResult;
+  int turnCalls = 0;
   final RealtimeChannel channel;
 
   @override
@@ -84,7 +85,10 @@ class _ScreenGateway implements PaintBallGateway {
     required int roundNumber,
     required int hidePosition,
     required int shotPosition,
-  }) async => turnResult!;
+  }) async {
+    turnCalls++;
+    return turnResult!;
+  }
 }
 
 PaintBallSessionState _session({
@@ -232,31 +236,34 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    AppButton fire() =>
-        tester.widget<AppButton>(find.widgetWithText(AppButton, 'Fire'));
-    expect(fire().onPressed, isNull);
+    // The board is the whole controller: no Fire button exists to
+    // duplicate what tapping your own character already does.
+    expect(find.widgetWithText(AppButton, 'Fire'), findsNothing);
 
     await _scrollToEnd(tester);
-    // v3: the board is the controller. Repositioning is a tap on your own
-    // cover, aiming is a tap on theirs -- there is no button strip to
-    // duplicate the field.
     await tester.tap(find.bySemanticsLabel('Left cover'));
     await tester.tap(find.bySemanticsLabel('Middle target'));
     await tester.pump();
-    expect(fire().onPressed, isNotNull);
 
-    await tester.tap(find.widgetWithText(AppButton, 'Fire'));
-    await tester.pump();
-    await tester.pump();
-
-    expect(find.text('Direct hit'), findsOneWidget);
-    // The reveal must name the position, not just the verdict: the
-    // position is what the next guess is built from.
-    expect(
-      find.textContaining('They were behind the middle shield.'),
-      findsOneWidget,
+    await tester.tap(
+      find
+          .descendant(
+            of: find.bySemanticsLabel('Left cover'),
+            matching: find.byType(CustomPaint),
+          )
+          .first,
+      warnIfMissed: false,
     );
-    expect(find.text('Done for now'), findsOneWidget);
+    await tester.pump();
+    await tester.pump();
+
+    // The round resolves silently. No verdict text, no position readout,
+    // no dismiss button -- the field showed what happened, and narrating
+    // it underneath would hand out a read the player should earn by
+    // watching.
+    expect(find.text('Direct hit'), findsNothing);
+    expect(find.textContaining('They were behind'), findsNothing);
+    expect(find.text('Done for now'), findsNothing);
   });
 
   testWidgets('a fast server verdict waits for projectile impact', (
@@ -295,23 +302,58 @@ void main() {
     await tester.pump();
     await tester.pump();
     await _scrollToEnd(tester);
+    // Settle first: the reposition animation from selecting a cover
+    // would otherwise still be running when the shot begins, and the
+    // frame sampling below would count its frames rather than the
+    // flight's.
+    // Fixed pumps rather than pumpAndSettle: the waiting state breathes
+    // on a repeating animation, so settling never completes.
     await tester.tap(find.bySemanticsLabel('Left cover'));
+    await tester.pump(const Duration(milliseconds: 700));
     await tester.tap(find.bySemanticsLabel('Middle target'));
-    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump(const Duration(milliseconds: 400));
 
-    final fireButton = find.widgetWithText(AppButton, 'Fire');
-    await tester.ensureVisible(fireButton);
-    await tester.pump(const Duration(milliseconds: 100));
-    tester.widget<AppButton>(fireButton).onPressed!.call();
-    await tester.pump();
-    expect(find.text('Paint is in the air.'), findsOneWidget);
-    expect(find.text('Direct hit'), findsNothing);
+    // Fire by tapping your own character.
+    await tester.tap(
+      find
+          .descendant(
+            of: find.bySemanticsLabel('Left cover'),
+            matching: find.byType(CustomPaint),
+          )
+          .first,
+      warnIfMissed: false,
+    );
+    // A server that answers instantly must not cut the animation short --
+    // the paint has to travel before the round is over, or the shot reads
+    // as teleporting. With a resolved round the flight is followed
+    // straight into the replay, which fires both shots again.
+    int projectiles() =>
+        tester
+            .widgetList<CustomPaint>(find.byType(CustomPaint))
+            .where(
+              (widget) =>
+                  widget.painter.runtimeType.toString().contains('Projectile'),
+            )
+            .length;
 
-    await tester.pump(const Duration(milliseconds: 250));
-    expect(find.text('Direct hit'), findsNothing);
+    // Sampled across the whole sequence rather than at one timestamp: the
+    // exact frame paint is visible depends on beat tuning, and a test
+    // pinned to a millisecond would break every time that is adjusted
+    // without the behaviour actually regressing.
+    var framesWithPaint = 0;
+    for (var frame = 0; frame < 30; frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (projectiles() > 0) framesWithPaint++;
+    }
 
-    await tester.pump(const Duration(milliseconds: 350));
-    expect(find.text('Direct hit'), findsOneWidget);
+    expect(
+      framesWithPaint,
+      greaterThan(3),
+      reason: 'paint travels for a visible stretch rather than teleporting',
+    );
+
+    await tester.pump(const Duration(seconds: 1));
+    expect(projectiles(), 0, reason: 'the round has landed');
   });
 
   testWidgets('loser sees one prompt and can always skip freely', (
@@ -381,5 +423,77 @@ void main() {
     expect(find.text('You read them right.'), findsOneWidget);
     expect(find.text(prompt), findsNothing);
     expect(find.text('Waiting for them to wrap up'), findsOneWidget);
+  });
+
+  testWidgets('a finished round says nothing at all', (tester) async {
+    // The field showed what happened. Narrating it underneath hands the
+    // player a read they should have earned by watching, and turns a
+    // duel between two people into a match report.
+    _usePhoneViewport(tester);
+    final gateway = _ScreenGateway(_session(), channel)
+      ..turnResult = const PaintBallTurnResult(
+        roundNumber: 2,
+        livesA: 3,
+        livesB: 2,
+        currentTurnUserId: 'user-a',
+        knockout: false,
+        doubleKnockout: false,
+        opener: PaintBallHalf(
+          userId: 'user-a',
+          hidePosition: 0,
+          shotPosition: 1,
+          shotResult: 'hit',
+        ),
+        closer: PaintBallHalf(
+          userId: 'user-b',
+          hidePosition: 1,
+          shotPosition: 2,
+          shotResult: 'miss',
+        ),
+      );
+
+    await tester.pumpWidget(
+      _wrap(
+        gateway: gateway,
+        child: const PaintBallBattleScreen(sessionId: 'session-1'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await _scrollToEnd(tester);
+
+    await tester.tap(find.bySemanticsLabel('Left cover'));
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.tap(find.bySemanticsLabel('Middle target'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(
+      find
+          .descendant(
+            of: find.bySemanticsLabel('Left cover'),
+            matching: find.byType(CustomPaint),
+          )
+          .first,
+      warnIfMissed: false,
+    );
+    for (var frame = 0; frame < 40; frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    for (final commentary in [
+      'Direct hit',
+      'A useful miss',
+      'Both missed',
+      'You got each other',
+      'They read you',
+      'Done for now',
+      'Opening move set',
+    ]) {
+      expect(
+        find.text(commentary),
+        findsNothing,
+        reason: 'the board speaks for itself; "$commentary" does not',
+      );
+    }
+    expect(find.textContaining('They were behind'), findsNothing);
   });
 }

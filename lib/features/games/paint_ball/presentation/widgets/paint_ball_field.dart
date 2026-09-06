@@ -15,6 +15,14 @@ const int kPaintBallPositions = 3;
 /// was, the character drifted off-centre.
 const double kPaintBallCoverWidth = 74;
 
+/// How much larger the opponent's covers are drawn than your own.
+///
+/// You are aiming AT their row and merely standing in yours, so theirs
+/// are the targets and want the bigger, more forgiving surface. It also
+/// gives the board a shallow sense of depth -- the thing you are shooting
+/// at reads as the thing you are facing.
+const double kPaintBallTargetScale = 1.22;
+
 /// The field's palette is fixed rather than theme-derived.
 ///
 /// This is a diagram, not chrome: it reads as a schematic on black, and a
@@ -409,7 +417,9 @@ class _ShieldRow extends StatelessWidget {
                   position: hiddenAt!,
                   isOpponent: isOpponent,
                   rowWidth: constraints.maxWidth,
-                  coverWidth: kPaintBallCoverWidth.w,
+                  coverWidth:
+                      kPaintBallCoverWidth.w *
+                      (isOpponent ? kPaintBallTargetScale : 1),
                   rowHeight: 92.h,
                   isAiming: isAiming,
                   tilt: rowTilt,
@@ -446,7 +456,9 @@ class _ShieldRow extends StatelessWidget {
             onTap: enabled ? () => onTap?.call(index) : null,
             behavior: HitTestBehavior.opaque,
             child: SizedBox(
-              width: kPaintBallCoverWidth.w,
+              width:
+                  kPaintBallCoverWidth.w *
+                  (isOpponent ? kPaintBallTargetScale : 1),
               height: 92.h,
               child: Stack(
                 alignment: Alignment.center,
@@ -463,17 +475,24 @@ class _ShieldRow extends StatelessWidget {
                     top: isOpponent ? null : 8.h,
                     child: AnimatedOpacity(
                       duration: Duration(milliseconds: reduceMotion ? 0 : 220),
+                      // A wide gap between aimed and not. With no Fire
+                      // button, the aimed cover IS the confirmation that
+                      // a target is chosen, so it has to be obvious at a
+                      // glance rather than a subtle tint.
                       opacity:
                           isAimed
                               ? 1.0
                               : enabled
-                              ? 0.75
-                              : 0.55,
+                              ? 0.45
+                              : 0.35,
                       child: CustomPaint(
-                        size: Size(38.w, 62.h),
+                        size: Size(
+                          38.w * (isOpponent ? kPaintBallTargetScale : 1),
+                          62.h * (isOpponent ? kPaintBallTargetScale : 1),
+                        ),
                         painter: _ShieldPainter(
                           color: base,
-                          strokeWidth: isAimed ? 2.4.r : 1.6.r,
+                          strokeWidth: isAimed ? 3.4.r : 1.5.r,
                           opensDown: isOpponent,
                         ),
                       ),

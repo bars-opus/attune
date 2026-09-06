@@ -202,8 +202,15 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
               ? carriedHide
               : (state.hidePosition ?? carriedHide),
       shotPosition: resetTransient || becameMyTurn ? null : state.shotPosition,
+      // Stamped alongside the carried cover. canFire tests that both
+      // choices belong to THIS round, and a carried position that left
+      // this null made "stay where you are" impossible to act on: the
+      // player aimed, and firing stayed disabled until they re-tapped a
+      // cover they were already standing in.
       selectionRound:
-          resetTransient || becameMyTurn ? null : state.selectionRound,
+          resetTransient || becameMyTurn
+              ? session.currentRound
+              : (state.selectionRound ?? session.currentRound),
       revealedPartnerPosition:
           resetTransient || becameMyTurn ? null : state.revealedPartnerPosition,
       lastOutcome: resetTransient || becameMyTurn ? null : state.lastOutcome,
