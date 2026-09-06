@@ -1,27 +1,14 @@
-// lib/features/games/this_or_that/presentation/screens/reveal_screen.dart
+import 'dart:math' as math;
+
+import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
-import 'package:attune/core/ui/motion/glow_pulse.dart';
-import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/match_indicator.dart';
-import 'package:flutter/services.dart' show HapticFeedback;
+import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class RevealScreen extends ConsumerStatefulWidget {
-  final String questionText;
-  final String userChoice;
-  final String userChoiceText;
-  final String userChoiceEmoji;
-  final String partnerChoice;
-  final String partnerChoiceText;
-  final String partnerChoiceEmoji;
-  final String partnerName;
-  final int roundNumber;
-  final int totalRounds;
-  final bool isMatch;
-  final VoidCallback onNext;
-  final VoidCallback? onPrevious;
-  final bool hasPrevious;
-
   const RevealScreen({
     super.key,
     required this.questionText,
@@ -40,219 +27,288 @@ class RevealScreen extends ConsumerStatefulWidget {
     this.hasPrevious = false,
   });
 
+  final String questionText;
+  final String userChoice;
+  final String userChoiceText;
+  final String userChoiceEmoji;
+  final String partnerChoice;
+  final String partnerChoiceText;
+  final String partnerChoiceEmoji;
+  final String partnerName;
+  final int roundNumber;
+  final int totalRounds;
+  final bool isMatch;
+  final VoidCallback onNext;
+  final VoidCallback? onPrevious;
+  final bool hasPrevious;
+
   @override
   ConsumerState<RevealScreen> createState() => _RevealScreenState();
 }
 
 class _RevealScreenState extends ConsumerState<RevealScreen>
     with SingleTickerProviderStateMixin {
-  late AnimationController _slideController;
-  late Animation<Offset> _leftSlideAnimation;
-  late Animation<Offset> _rightSlideAnimation;
-  late Animation<double> _flashAnimation;
-  SoundService? _sound;
+  late final AnimationController _controller = AnimationController(
+    duration: const Duration(milliseconds: 1180),
+    vsync: this,
+  );
+  bool _started = false;
+
+  Animation<double> get _questionAnimation => CurvedAnimation(
+    parent: _controller,
+    curve: const Interval(0, 0.28, curve: Curves.easeOut),
+  );
+
+  Animation<double> get _cardAnimation => CurvedAnimation(
+    parent: _controller,
+    curve: const Interval(0.16, 0.68, curve: Curves.easeOutCubic),
+  );
+
+  Animation<double> get _resultAnimation => CurvedAnimation(
+    parent: _controller,
+    curve: const Interval(0.62, 1, curve: Curves.easeOutBack),
+  );
 
   @override
   void initState() {
     super.initState();
-    _sound = ref.read(soundServiceProvider);
-    _slideController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-
-    _leftSlideAnimation = Tween<Offset>(
-      begin: const Offset(-0.5, 0),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
-
-    _rightSlideAnimation = Tween<Offset>(
-      begin: const Offset(0.5, 0),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
-
-    _flashAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _slideController,
-        curve: const Interval(0.5, 0.7, curve: Curves.easeOut),
-      ),
-    );
-
-    _slideController.forward();
-
-    // Celebratory tactile + audible punch the moment a match is revealed — the
-    // game's warmest beat. A non-match still gets a soft reveal sound.
     if (widget.isMatch) {
-      HapticFeedback.mediumImpact();
-      _sound?.play(AppSound.gameMatch);
+      ref.read(hapticsProvider).medium();
+      ref.read(soundServiceProvider).play(AppSound.gameMatch);
     } else {
-      _sound?.play(AppSound.gameReveal);
+      ref.read(hapticsProvider).light();
+      ref.read(soundServiceProvider).play(AppSound.gameReveal);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (reduceMotionOf(context)) {
+      _controller.value = 1;
+    } else {
+      _controller.forward();
     }
   }
 
   @override
   void dispose() {
-    _slideController.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'This or That • Round ${widget.roundNumber}/${widget.totalRounds}',
-        ),
-        centerTitle: true,
-      ),
-      body: Padding(
-        padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
-          children: [
-            // Question
-            Text(
-              widget.questionText,
-              style: textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            Gap(Spacing.xl.h),
-            // Two columns
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // User's choice (left, slides in from left)
-                Expanded(
-                  child: AnimatedBuilder(
-                    animation: _slideController,
-                    builder: (context, child) {
-                      return SlideTransition(
-                        position: _leftSlideAnimation,
-                        child: child,
-                      );
-                    },
-                    child: _buildChoiceCard(
-                      label: 'You chose',
-                      text: widget.userChoiceText,
-                      emoji: widget.userChoiceEmoji,
-                      isUser: true,
-                    ),
-                  ),
-                ),
-                Gap(Spacing.md.w),
-                // Partner's choice (right, slides in from right)
-                Expanded(
-                  child: AnimatedBuilder(
-                    animation: _slideController,
-                    builder: (context, child) {
-                      return SlideTransition(
-                        position: _rightSlideAnimation,
-                        child: child,
-                      );
-                    },
-                    child: _buildChoiceCard(
-                      label: '${widget.partnerName} chose',
-                      text: widget.partnerChoiceText,
-                      emoji: widget.partnerChoiceEmoji,
-                      isUser: false,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Gap(Spacing.lg.h),
-            // Match indicator — a match settles into a soft celebratory glow
-            // on top of its own flash; a non-match renders without the glow.
-            GlowPulse(
-              active: widget.isMatch,
-              child: MatchIndicator(
-                isMatch: widget.isMatch,
-                animation: _flashAnimation,
-              ),
-            ),
-            const Spacer(),
-            // Navigation buttons
-            Row(
-              children: [
-                if (widget.hasPrevious)
-                  Expanded(
-                    child: AppButton(
-                      label: 'Previous',
-                      onPressed: widget.onPrevious,
-                      size: ButtonSize.medium,
-                      customColor: colorScheme.surfaceContainerHighest,
-                      textColor: colorScheme.onSurface,
-                    ),
-                  ),
-                if (widget.hasPrevious) Gap(Spacing.md.w),
-                Expanded(
-                  child: AppButton(
-                    label:
-                        widget.roundNumber == widget.totalRounds
-                            ? 'Finish'
-                            : 'Next →',
-                    onPressed: widget.onNext,
-                    size: ButtonSize.medium,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildChoiceCard({
-    required String label,
-    required String text,
-    required String emoji,
-    required bool isUser,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return Container(
-      padding: EdgeInsets.all(Spacing.md.w),
-      decoration: BoxDecoration(
-        color:
-            isUser
-                ? colorScheme.primary.withOpacity(0.05)
-                : colorScheme.surfaceContainerHighest.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
-        border: Border.all(
-          color:
-              isUser
-                  ? colorScheme.primary.withOpacity(0.3)
-                  : Colors.transparent,
-        ),
-      ),
-      child: Column(
+    final palette = ThisOrThatPalette.of(context);
+    return ThisOrThatGameScaffold(
+      roundNumber: widget.roundNumber,
+      totalRounds: widget.totalRounds,
+      bottom: Row(
         children: [
-          Text(
-            label,
-            style: textTheme.bodySmall?.copyWith(
-              color:
-                  isUser
-                      ? colorScheme.primary
-                      : colorScheme.onSurface.withOpacity(0.6),
+          if (widget.hasPrevious) ...[
+            SizedBox(
+              width: 56,
+              height: 56,
+              child: OutlinedButton(
+                onPressed: widget.onPrevious,
+                style: OutlinedButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                ),
+                child: const Icon(Icons.arrow_back_rounded),
+              ),
+            ),
+            const SizedBox(width: 10),
+          ],
+          Expanded(
+            child: ThisOrThatPrimaryAction(
+              label:
+                  widget.roundNumber == widget.totalRounds
+                      ? 'See our result'
+                      : 'Next round',
+              onPressed: widget.onNext,
+              icon:
+                  widget.roundNumber == widget.totalRounds
+                      ? Icons.emoji_events_rounded
+                      : Icons.arrow_forward_rounded,
             ),
           ),
-          Gap(Spacing.md.h),
-          if (emoji.isNotEmpty)
-            Text(emoji, style: const TextStyle(fontSize: 48)),
-          Gap(Spacing.sm.h),
-          Text(
-            text,
-            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-            textAlign: TextAlign.center,
+        ],
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          if (widget.isMatch)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _controller,
+                  builder:
+                      (context, _) => CustomPaint(
+                        painter: _CelebrationPainter(
+                          progress: _resultAnimation.value,
+                          first: palette.thisColor,
+                          second: palette.thatColor,
+                        ),
+                      ),
+                ),
+              ),
+            ),
+          Column(
+            children: [
+              const SizedBox(height: 8),
+              FadeTransition(
+                opacity: _questionAnimation,
+                child: Column(
+                  children: [
+                    const ThisOrThatStageLabel(
+                      text: 'The reveal',
+                      icon: Icons.visibility_rounded,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      widget.questionText,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.headlineSmall?.copyWith(
+                        color: palette.ink,
+                        fontWeight: FontWeight.w800,
+                        height: 1.15,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              Expanded(
+                child: AnimatedBuilder(
+                  animation: _cardAnimation,
+                  builder: (context, _) {
+                    final value = _cardAnimation.value;
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: Opacity(
+                            opacity: value,
+                            child: Transform.translate(
+                              offset: Offset(-54 * (1 - value), 0),
+                              child: ThisOrThatChoiceCard(
+                                side: widget.userChoice == 'b' ? 'b' : 'a',
+                                text: widget.userChoiceText,
+                                emoji: widget.userChoiceEmoji,
+                                selected: true,
+                                badge: 'YOU',
+                              ),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 42,
+                          child: Center(
+                            child: Transform.scale(
+                              scale: 0.75 + (value * 0.25),
+                              child: Container(
+                                width: 34,
+                                height: 34,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: palette.ink,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: palette.canvas,
+                                    width: 3,
+                                  ),
+                                ),
+                                child: Text(
+                                  'VS',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.labelSmall?.copyWith(
+                                    color: palette.canvas,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Opacity(
+                            opacity: value,
+                            child: Transform.translate(
+                              offset: Offset(54 * (1 - value), 0),
+                              child: ThisOrThatChoiceCard(
+                                side: widget.partnerChoice == 'b' ? 'b' : 'a',
+                                text: widget.partnerChoiceText,
+                                emoji: widget.partnerChoiceEmoji,
+                                selected: true,
+                                badge: widget.partnerName.toUpperCase(),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 18),
+              MatchIndicator(
+                isMatch: widget.isMatch,
+                animation: _resultAnimation,
+              ),
+            ],
           ),
         ],
       ),
     );
   }
+}
+
+class _CelebrationPainter extends CustomPainter {
+  const _CelebrationPainter({
+    required this.progress,
+    required this.first,
+    required this.second,
+  });
+
+  final double progress;
+  final Color first;
+  final Color second;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (progress <= 0) return;
+    final center = Offset(size.width / 2, size.height * 0.52);
+    final eased = Curves.easeOut.transform(progress.clamp(0, 1));
+    for (var i = 0; i < 18; i++) {
+      final angle = (math.pi * 2 / 18) * i;
+      final distance = (28 + ((i % 4) * 12)) * eased;
+      final point =
+          center + Offset(math.cos(angle), math.sin(angle)) * distance;
+      final radius = (i.isEven ? 3.2 : 2.2) * (1 - (progress * 0.35));
+      canvas.drawCircle(
+        point,
+        radius,
+        Paint()
+          ..color = (i.isEven ? first : second).withValues(
+            alpha: (1 - progress).clamp(0.12, 0.75),
+          ),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CelebrationPainter oldDelegate) =>
+      oldDelegate.progress != progress ||
+      oldDelegate.first != first ||
+      oldDelegate.second != second;
 }

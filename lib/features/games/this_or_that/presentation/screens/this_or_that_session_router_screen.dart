@@ -1,5 +1,5 @@
-import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
+import 'package:attune/features/games/presentation/widgets/game_icon.dart';
 import 'package:attune/features/games/this_or_that/data/models/game_round.dart';
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_session.dart';
 import 'package:attune/features/games/this_or_that/domain/services/scoring_service.dart';
@@ -8,7 +8,10 @@ import 'package:attune/features/games/this_or_that/presentation/screens/end_scre
 import 'package:attune/features/games/this_or_that/presentation/screens/question_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/reveal_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/waiting_screen.dart';
+import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 class ThisOrThatSessionRouterScreen extends ConsumerWidget {
   const ThisOrThatSessionRouterScreen({super.key, required this.sessionId});
@@ -30,20 +33,31 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
     final userId = ref.watch(currentUserIdProvider);
 
     if (userId == null) {
-      return const Scaffold(
-        body: Center(child: Text('Please sign in to continue.')),
+      return const _GameStatusScreen(
+        title: 'Sign in to keep playing',
+        message: 'Your game is waiting safely for you.',
+        icon: Icons.lock_outline_rounded,
       );
     }
 
     return sessionAsync.when(
-      loading:
-          () =>
-              const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (error, _) => Scaffold(body: Center(child: Text('Error: $error'))),
+      loading: () => const _GameLoadingScreen(),
+      error:
+          (_, __) => _GameStatusScreen(
+            title: 'Could not load the game',
+            message: 'Check your connection and try once more.',
+            icon: Icons.cloud_off_rounded,
+            actionLabel: 'Try again',
+            onAction: () => ref.invalidate(sessionProvider(sessionId)),
+          ),
       data: (session) {
         if (session == null) {
-          return const Scaffold(
-            body: Center(child: Text('Session not found.')),
+          return _GameStatusScreen(
+            title: 'This game has ended',
+            message: 'Start a fresh round whenever you are both ready.',
+            icon: Icons.hourglass_disabled_rounded,
+            actionLabel: 'Back to games',
+            onAction: () => context.pushReplacementNamed('thisOrThatGamesHub'),
           );
         }
 
@@ -53,22 +67,29 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
         );
 
         return partnerNameAsync.when(
-          loading:
-              () => const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
-              ),
+          loading: () => const _GameLoadingScreen(),
           error:
-              (error, _) =>
-                  Scaffold(body: Center(child: Text('Error: $error'))),
+              (_, __) => _GameStatusScreen(
+                title: 'Could not find your partner',
+                message: 'The game will be ready when your connection returns.',
+                icon: Icons.people_outline_rounded,
+                actionLabel: 'Try again',
+                onAction: () => ref.invalidate(partnerNameProvider),
+              ),
           data: (partnerName) {
             return membersAsync.when(
-              loading:
-                  () => const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  ),
+              loading: () => const _GameLoadingScreen(),
               error:
-                  (error, _) =>
-                      Scaffold(body: Center(child: Text('Error: $error'))),
+                  (_, __) => _GameStatusScreen(
+                    title: 'The game is out of reach',
+                    message: 'We could not reconnect both players just yet.',
+                    icon: Icons.link_off_rounded,
+                    actionLabel: 'Try again',
+                    onAction:
+                        () => ref.invalidate(
+                          relationshipMembersProvider(session.relationshipId),
+                        ),
+                  ),
               data: (members) {
                 final isPartnerA = userId == members.userA;
                 final isInitiator = userId == session.initiatorId;
@@ -121,39 +142,15 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
                 }
 
                 if (session.status == 'abandoned') {
-                  return Scaffold(
-                    appBar: AppBar(title: const Text('This or That')),
-                    body: Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(Spacing.lg.w),
-                        child: SemanticContainerWidget(
-                          title: 'Session expired',
-                          content:
-                              'This session is no longer active. Start a new game when you are both ready.',
-                          icon: Icons.hourglass_disabled_outlined,
-                          backgroundColor:
-                              Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainerHighest,
-                          borderColor: Theme.of(
-                            context,
-                          ).colorScheme.outline.withValues(alpha: 0.3),
-                          iconColor: Theme.of(context).colorScheme.onSurface,
-                          textTheme: Theme.of(context).textTheme,
-                          child: Padding(
-                            padding: EdgeInsets.only(top: Spacing.md.h),
-                            child: AppButton(
-                              label: 'Back to games',
-                              onPressed: () {
-                                context.pushReplacementNamed(
-                                  'thisOrThatGamesHub',
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                  return _GameStatusScreen(
+                    title: 'This round has ended',
+                    message:
+                        'No score to settle. Start another whenever the mood is right.',
+                    icon: Icons.hourglass_disabled_rounded,
+                    actionLabel: 'Back to games',
+                    onAction:
+                        () =>
+                            context.pushReplacementNamed('thisOrThatGamesHub'),
                   );
                 }
 
@@ -161,13 +158,18 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
                   sessionRoundsProvider(session.id),
                 );
                 return roundsAsync.when(
-                  loading:
-                      () => const Scaffold(
-                        body: Center(child: CircularProgressIndicator()),
-                      ),
+                  loading: () => const _GameLoadingScreen(),
                   error:
-                      (error, _) =>
-                          Scaffold(body: Center(child: Text('Error: $error'))),
+                      (_, __) => _GameStatusScreen(
+                        title: 'Rounds could not sync',
+                        message: 'Your progress is safe. Try loading it again.',
+                        icon: Icons.sync_problem_rounded,
+                        actionLabel: 'Try again',
+                        onAction:
+                            () => ref.invalidate(
+                              sessionRoundsProvider(session.id),
+                            ),
+                      ),
                   data:
                       (rounds) => _buildActiveFlow(
                         context: context,
@@ -195,7 +197,7 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
     required String partnerName,
   }) {
     if (rounds.isEmpty) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const _GameLoadingScreen();
     }
 
     final scoringService = ref.read(scoringServiceProvider);
@@ -297,9 +299,14 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
                 : (round.answerB == 'a'
                     ? (round.emojiA ?? '')
                     : (round.emojiB ?? '')),
+        optionA: round.optionA ?? 'Option A',
+        optionB: round.optionB ?? 'Option B',
+        emojiA: round.emojiA,
+        emojiB: round.emojiB,
         roundNumber: round.roundNumber,
         totalRounds: session.totalRounds,
         isPartnerA: isPartnerA,
+        partnerName: partnerName,
         onRoundUpdated: () {
           ref.invalidate(sessionRoundsProvider(session.id));
         },
@@ -317,6 +324,7 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
       totalRounds: session.totalRounds,
       tone: session.tone,
       isPartnerA: isPartnerA,
+      partnerName: partnerName,
       isCustom: round.isCustom,
       onAnswerSubmitted: () {
         ref.invalidate(sessionRoundsProvider(session.id));
@@ -382,38 +390,47 @@ class _InviteSentScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Invitation sent')),
-      body: Padding(
-        padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'Invitation sent to $partnerName',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-              textAlign: TextAlign.center,
+    final palette = ThisOrThatPalette.of(context);
+    return ThisOrThatGameScaffold(
+      title: 'Invitation sent',
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const ThisOrThatWaitingMark(size: 132),
+          const SizedBox(height: 20),
+          Text(
+            '$partnerName has the next move',
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+              color: palette.ink,
+              fontWeight: FontWeight.w900,
+              height: 1.1,
+              letterSpacing: 0,
             ),
-            Gap(Spacing.lg.h),
-            const CircularProgressIndicator(),
-            Gap(Spacing.lg.h),
-            AppButton(
-              label: 'Cancel invitation',
-              onPressed: onCancel,
-              customColor:
-                  Theme.of(context).colorScheme.surfaceContainerHighest,
-              textColor: Theme.of(context).colorScheme.onSurface,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'We will bring you back here as soon as they join. You can leave safely in the meantime.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: palette.mutedInk,
+              height: 1.45,
+              letterSpacing: 0,
             ),
-          ],
-        ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 28),
+          OutlinedButton.icon(
+            onPressed: onCancel,
+            icon: const Icon(Icons.close_rounded),
+            label: const Text('Cancel invitation'),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _InvitationDecisionScreen extends StatelessWidget {
+class _InvitationDecisionScreen extends StatefulWidget {
   const _InvitationDecisionScreen({
     required this.partnerName,
     required this.tone,
@@ -427,49 +444,188 @@ class _InvitationDecisionScreen extends StatelessWidget {
   final Future<void> Function() onDecline;
 
   @override
+  State<_InvitationDecisionScreen> createState() =>
+      _InvitationDecisionScreenState();
+}
+
+class _InvitationDecisionScreenState extends State<_InvitationDecisionScreen> {
+  bool _busy = false;
+
+  Future<void> _run(Future<void> Function() action) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await action();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final isIntimate = tone == 'intimate';
-    return Scaffold(
-      appBar: AppBar(title: const Text('Game invite')),
-      body: Padding(
-        padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              '$partnerName invited you to play',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-              textAlign: TextAlign.center,
+    final palette = ThisOrThatPalette.of(context);
+    final isIntimate = widget.tone == 'intimate';
+    final toneLabel =
+        '${widget.tone[0].toUpperCase()}${widget.tone.substring(1)}';
+    return ThisOrThatGameScaffold(
+      title: 'Game invite',
+      bottom: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ThisOrThatPrimaryAction(
+            label: isIntimate ? 'I am in' : 'Let\'s play',
+            onPressed: _busy ? null : () => _run(widget.onAccept),
+            loading: _busy,
+            icon: Icons.play_arrow_rounded,
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _busy ? null : () => _run(widget.onDecline),
+            child: Text(isIntimate ? 'Play at Spicy instead' : 'Maybe later'),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const GameIcon(gameType: 'this_or_that', size: 116),
+          const SizedBox(height: 20),
+          Text(
+            '${widget.partnerName} picked a game for you',
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+              color: palette.ink,
+              fontWeight: FontWeight.w900,
+              height: 1.1,
+              letterSpacing: 0,
             ),
-            Gap(Spacing.md.h),
-            Text(
-              isIntimate
-                  ? 'This tone contains adult content. Do you want to play at this level?'
-                  : 'This or That • ${tone[0].toUpperCase()}${tone.substring(1)} tone • ~5 minutes',
-              textAlign: TextAlign.center,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: palette.thisColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: palette.thisColor.withValues(alpha: 0.35),
+              ),
             ),
-            Gap(Spacing.xl.h),
-            AppButton(
-              label: isIntimate ? 'Yes, I’m in' : 'Let’s play!',
-              onPressed: () async => onAccept(),
-              width: double.infinity,
+            child: Text(
+              '$toneLabel mood  •  about 5 minutes',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: palette.thisColor,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0,
+              ),
             ),
-            Gap(Spacing.md.h),
-            AppButton(
-              label:
-                  isIntimate
-                      ? 'Decline — play at Spicy instead'
-                      : 'Maybe later',
-              onPressed: () async => onDecline(),
-              width: double.infinity,
-              customColor:
-                  Theme.of(context).colorScheme.surfaceContainerHighest,
-              textColor: Theme.of(context).colorScheme.onSurface,
+          ),
+          const SizedBox(height: 18),
+          Text(
+            isIntimate
+                ? 'This mood includes adult questions. Join only if it feels comfortable; choosing Spicy will simply soften the game.'
+                : 'Your answers stay hidden until both of you pick. Then you get the reveal together.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: palette.mutedInk,
+              height: 1.45,
+              letterSpacing: 0,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GameLoadingScreen extends StatelessWidget {
+  const _GameLoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ThisOrThatPalette.of(context);
+    return ThisOrThatGameScaffold(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const ThisOrThatWaitingMark(size: 108),
+          const SizedBox(height: 16),
+          Text(
+            'Setting the cards',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: palette.ink,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GameStatusScreen extends StatelessWidget {
+  const _GameStatusScreen({
+    required this.title,
+    required this.message,
+    required this.icon,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String title;
+  final String message;
+  final IconData icon;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ThisOrThatPalette.of(context);
+    return ThisOrThatGameScaffold(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 76,
+            height: 76,
+            decoration: BoxDecoration(
+              color: palette.thatColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Icon(icon, size: 34, color: palette.thatColor),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: palette.ink,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: palette.mutedInk,
+              height: 1.4,
+              letterSpacing: 0,
+            ),
+          ),
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(height: 24),
+            SizedBox(
+              width: 220,
+              child: ThisOrThatPrimaryAction(
+                label: actionLabel!,
+                onPressed: onAction,
+                icon: Icons.refresh_rounded,
+              ),
             ),
           ],
-        ),
+        ],
       ),
     );
   }

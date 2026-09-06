@@ -1,23 +1,14 @@
-// lib/features/games/this_or_that/presentation/screens/waiting_screen.dart
-
 import 'dart:async';
-import 'package:attune/core/ui/presence/breathing_dots.dart';
-import 'package:attune/core/utils/exports/export_screens.dart';
+
+import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
+import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
+import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class WaitingScreen extends ConsumerStatefulWidget {
-  final String sessionId;
-  final String roundId;
-  final String questionText;
-  final String userChoice;
-  final String userChoiceText;
-  final String userChoiceEmoji;
-  final int roundNumber;
-  final int totalRounds;
-  final bool isPartnerA;
-  final VoidCallback? onRoundUpdated;
-
   const WaitingScreen({
     super.key,
     required this.sessionId,
@@ -26,11 +17,32 @@ class WaitingScreen extends ConsumerStatefulWidget {
     required this.userChoice,
     required this.userChoiceText,
     required this.userChoiceEmoji,
+    required this.optionA,
+    required this.optionB,
+    this.emojiA,
+    this.emojiB,
     required this.roundNumber,
     required this.totalRounds,
     required this.isPartnerA,
+    this.partnerName = 'Partner',
     this.onRoundUpdated,
   });
+
+  final String sessionId;
+  final String roundId;
+  final String questionText;
+  final String userChoice;
+  final String userChoiceText;
+  final String userChoiceEmoji;
+  final String optionA;
+  final String optionB;
+  final String? emojiA;
+  final String? emojiB;
+  final int roundNumber;
+  final int totalRounds;
+  final bool isPartnerA;
+  final String partnerName;
+  final VoidCallback? onRoundUpdated;
 
   @override
   ConsumerState<WaitingScreen> createState() => _WaitingScreenState();
@@ -40,16 +52,16 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
   Timer? _reminderTimer;
   bool _showRemindButton = false;
   bool _isSendingReminder = false;
+  bool _isEditing = false;
+  bool _isUpdatingChoice = false;
+  late String _currentChoice;
   late final StreamSubscription _roundSubscription;
 
   @override
   void initState() {
     super.initState();
-    // Start timer for remind button (2 hours = 7200000 ms)
-    // For testing, use 10 seconds: _reminderTimer = Timer(const Duration(seconds: 10), _enableRemindButton);
+    _currentChoice = widget.userChoice;
     _reminderTimer = Timer(const Duration(hours: 2), _enableRemindButton);
-
-    // Subscribe to round updates to detect when partner answers
     _roundSubscription = ref
         .read(thisOrThatRepositoryProvider)
         .watchRound(widget.roundId)
@@ -68,34 +80,63 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
   }
 
   void _enableRemindButton() {
-    if (mounted) {
-      setState(() {
-        _showRemindButton = true;
-      });
+    if (mounted) setState(() => _showRemindButton = true);
+  }
+
+  Future<void> _changeChoice(String choice) async {
+    if (_isUpdatingChoice || choice == _currentChoice) {
+      if (choice == _currentChoice) setState(() => _isEditing = false);
+      return;
+    }
+
+    final previous = _currentChoice;
+    setState(() {
+      _currentChoice = choice;
+      _isUpdatingChoice = true;
+      _isEditing = false;
+    });
+    ref.read(hapticsProvider).selection();
+    ref.read(soundServiceProvider).play(AppSound.gameTap);
+
+    try {
+      await ref.read(
+        submitAnswerProvider((
+          roundId: widget.roundId,
+          choice: choice,
+          isPartnerA: widget.isPartnerA,
+        )).future,
+      );
+      widget.onRoundUpdated?.call();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _currentChoice = previous);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Your new pick was not saved.')),
+      );
+    } finally {
+      if (mounted) setState(() => _isUpdatingChoice = false);
     }
   }
 
   Future<void> _sendReminder() async {
     if (_isSendingReminder) return;
-
     setState(() => _isSendingReminder = true);
 
     try {
       await ref.read(sendReminderProvider(widget.sessionId).future);
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Reminder sent!')));
-        setState(() => _showRemindButton = false);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to send reminder. Please try again later.'),
-          ),
-        );
-      }
+      if (!mounted) return;
+      ref.read(hapticsProvider).light();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('A gentle nudge was sent to ${widget.partnerName}.'),
+        ),
+      );
+      setState(() => _showRemindButton = false);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('The reminder could not be sent yet.')),
+      );
     } finally {
       if (mounted) setState(() => _isSendingReminder = false);
     }
@@ -103,171 +144,176 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+    final palette = ThisOrThatPalette.of(context);
+    final choiceText = _currentChoice == 'a' ? widget.optionA : widget.optionB;
+    final choiceEmoji = _currentChoice == 'a' ? widget.emojiA : widget.emojiB;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'This or That • Round ${widget.roundNumber}/${widget.totalRounds}',
-        ),
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => _showExitConfirmation(),
-        ),
+    return ThisOrThatGameScaffold(
+      roundNumber: widget.roundNumber,
+      totalRounds: widget.totalRounds,
+      leading: IconButton(
+        icon: const Icon(Icons.close_rounded),
+        tooltip: 'Leave game',
+        onPressed: _showExitConfirmation,
       ),
-      body: Padding(
-        padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Question
-            Text(
-              widget.questionText,
-              style: textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-              textAlign: TextAlign.center,
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          const ThisOrThatWaitingMark(),
+          const SizedBox(height: 12),
+          Text(
+            '${widget.partnerName} is choosing',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: palette.ink,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
             ),
-            Gap(Spacing.xl.h),
-            // Your choice
-            Text('You chose:', style: textTheme.bodyMedium),
-            Gap(Spacing.md.h),
-            Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: Spacing.lg.w,
-                vertical: Spacing.md.h,
-              ),
-              decoration: BoxDecoration(
-                color: colorScheme.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (widget.userChoiceEmoji.isNotEmpty)
-                    Text(
-                      widget.userChoiceEmoji,
-                      style: const TextStyle(fontSize: 32),
-                    ),
-                  Gap(Spacing.sm.w),
-                  Text(
-                    widget.userChoiceText,
-                    style: textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.primary,
-                    ),
-                  ),
-                ],
-              ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Your answer is tucked away. The reveal begins as soon as they lock theirs in.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: palette.mutedInk,
+              height: 1.4,
+              letterSpacing: 0,
             ),
-            Gap(Spacing.xl.h),
-            // Waiting animation
-            Container(
-              padding: EdgeInsets.all(Spacing.lg.w),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.3,
+          ),
+          const SizedBox(height: 24),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: palette.panel.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: palette.line),
+            ),
+            child: Column(
+              children: [
+                ThisOrThatStageLabel(
+                  text: 'Your locked pick',
+                  icon: Icons.lock_rounded,
+                  color: palette.mutedInk,
                 ),
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-              ),
-              child: Column(
-                children: [
-                  TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0.0, end: 1.0),
-                    duration: const Duration(milliseconds: 1500),
-                    builder: (context, value, child) {
-                      return Transform.scale(
-                        scale: 0.8 + (value * 0.4),
-                        child: Container(
-                          width: 60,
-                          height: 60,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: colorScheme.primary.withValues(alpha: 0.2),
-                          ),
-                          child: Center(
-                            child: Container(
-                              width: 30,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: colorScheme.primary,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  Gap(Spacing.md.h),
-                  Text('Waiting for partner...', style: textTheme.titleMedium),
-                  Gap(Spacing.sm.h),
-                  // Continuous breathing presence — signals the wait is live
-                  // (the circle above only pulses once). Reduce-motion safe.
-                  BreathingDots(color: colorScheme.primary),
-                  Gap(Spacing.sm.h),
-                  Text(
-                    'They will see your answer when they pick.',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withValues(alpha: 0.6),
+                const SizedBox(height: 14),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  child: Text(
+                    '${choiceEmoji ?? ''} $choiceText'.trim(),
+                    key: ValueKey(_currentChoice),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: palette.ink,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0,
                     ),
                   ),
-                ],
-              ),
-            ),
-            if (_showRemindButton) ...[
-              Gap(Spacing.xl.h),
-              AppButton(
-                label: 'Remind partner',
-                onPressed: _sendReminder,
-                size: ButtonSize.medium,
-                isLoading: _isSendingReminder,
-                customColor: colorScheme.surfaceContainerHighest,
-                textColor: colorScheme.onSurface,
-              ),
-              Gap(Spacing.sm.h),
-              Text(
-                'Your partner hasn\'t answered yet. A reminder will be sent.',
-                style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
-                textAlign: TextAlign.center,
-              ),
-            ],
+                const SizedBox(height: 8),
+                Text(
+                  widget.questionText,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: palette.mutedInk,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (reduceMotionOf(context))
+            _buildChoiceEditor()
+          else
+            AnimatedSize(
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: _buildChoiceEditor(),
+            ),
+          if (_showRemindButton) ...[
+            const SizedBox(height: 20),
+            OutlinedButton.icon(
+              onPressed: _isSendingReminder ? null : _sendReminder,
+              icon:
+                  _isSendingReminder
+                      ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                      : const Icon(Icons.notifications_active_outlined),
+              label: Text('Nudge ${widget.partnerName}'),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
 
-  void _showExitConfirmation() {
-    showDialog(
+  Widget _buildChoiceEditor() {
+    if (!_isEditing) {
+      return TextButton.icon(
+        key: const ValueKey('change-pick'),
+        onPressed:
+            _isUpdatingChoice ? null : () => setState(() => _isEditing = true),
+        icon: const Icon(Icons.swap_horiz_rounded),
+        label: const Text('Change my pick'),
+      );
+    }
+
+    return SizedBox(
+      key: const ValueKey('choice-editor'),
+      height: 190,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: ThisOrThatChoiceCard(
+              side: 'a',
+              text: widget.optionA,
+              emoji: widget.emojiA,
+              compact: true,
+              selected: _currentChoice == 'a',
+              onTap: () => _changeChoice('a'),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: ThisOrThatChoiceCard(
+              side: 'b',
+              text: widget.optionB,
+              emoji: widget.emojiB,
+              compact: true,
+              selected: _currentChoice == 'b',
+              onTap: () => _changeChoice('b'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showExitConfirmation() async {
+    final exit = await showDialog<bool>(
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('Exit game?'),
+            title: const Text('Leave for now?'),
             content: const Text(
-              'Your progress will be saved. You can continue later.',
+              'Your pick is saved. You can come back when your partner answers.',
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Keep waiting'),
               ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context); // Close dialog
-                  Navigator.pop(context); // Exit screen
-                },
-                style: TextButton.styleFrom(
-                  foregroundColor: Theme.of(context).colorScheme.error,
-                ),
-                child: const Text('Exit'),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Leave game'),
               ),
             ],
           ),
     );
+    if (exit == true && mounted) Navigator.of(context).maybePop();
   }
 }
