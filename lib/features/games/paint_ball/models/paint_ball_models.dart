@@ -93,6 +93,11 @@ class PaintBallRound {
   /// Who took this turn, which decides whose colour the paint is.
   final String? activePartnerId;
 
+  /// Where this player hid. Present only for rounds that have resolved --
+  /// the server withholds it while a round is still half-played, since a
+  /// live hiding place is the secret the game turns on.
+  final int? hidePosition;
+
   const PaintBallRound({
     required this.roundNumber,
     required this.shotResult,
@@ -100,6 +105,7 @@ class PaintBallRound {
     required this.createdAt,
     this.shotPosition,
     this.activePartnerId,
+    this.hidePosition,
   });
 
   factory PaintBallRound.fromJson(Map<String, dynamic> json) {
@@ -110,6 +116,8 @@ class PaintBallRound {
       shotPosition:
           data['shot_position'] == null ? null : _asInt(data, 'shot_position'),
       activePartnerId: _asString(data, 'active_partner_id'),
+      hidePosition:
+          data['hide_position'] == null ? null : _asInt(data, 'hide_position'),
       lifeLost: _asBool(data, 'life_lost'),
       createdAt: _asDateTime(data, 'created_at') ?? DateTime.now(),
     );

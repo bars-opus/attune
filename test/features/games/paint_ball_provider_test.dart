@@ -418,4 +418,69 @@ void main() {
       expect(winnerSound.played, isNot(contains(AppSound.gamePenaltyReveal)));
     },
   );
+
+  test('a player always has a position to stand in', () async {
+    // THE BUG THIS EXISTS FOR: hidePosition started null, so the board
+    // opened with no character on it at all. Every widget test passed
+    // because they all supplied a position explicitly -- none of them
+    // asked what the provider actually hands the field on a fresh turn.
+    final gateway = _FakePaintBallGateway(_session(), channel);
+    final container = _container(
+      gateway: gateway,
+      sound: FakeSoundService(),
+      haptics: FakeHaptics(),
+      analytics: const PaintBallAnalytics(),
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(paintBallSessionProvider.notifier)
+        .loadSession('session-1');
+
+    final state = container.read(paintBallSessionProvider);
+    expect(
+      state.hidePosition,
+      isNotNull,
+      reason: 'a player is dealt a cover; they do not start nowhere',
+    );
+    expect(state.hidePosition, inInclusiveRange(0, 2));
+  });
+
+  test('a later round keeps you where you were', () async {
+    // Staying put must be a real choice made by doing nothing. If each
+    // round re-rolled, a player would be teleported between turns and
+    // "stay where you are" would be impossible to express.
+    final gateway = _FakePaintBallGateway(
+      _session(currentRound: 3).copyWith(
+        rounds: [
+          PaintBallRound(
+            roundNumber: 2,
+            shotResult: 'miss',
+            lifeLost: false,
+            createdAt: DateTime.now(),
+            activePartnerId: 'user-a',
+            hidePosition: 2,
+          ),
+        ],
+      ),
+      channel,
+    );
+    final container = _container(
+      gateway: gateway,
+      sound: FakeSoundService(),
+      haptics: FakeHaptics(),
+      analytics: const PaintBallAnalytics(),
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(paintBallSessionProvider.notifier)
+        .loadSession('session-1');
+
+    expect(
+      container.read(paintBallSessionProvider).hidePosition,
+      2,
+      reason: 'the previous cover carries forward',
+    );
+  });
 }

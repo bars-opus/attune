@@ -1,6 +1,7 @@
 // lib/features/games/paint_ball/presentation/state/paint_ball_provider.dart
 
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -10,6 +11,7 @@ import 'package:attune/core/ui/feedback/haptics.dart';
 import '../../analytics/paint_ball_analytics.dart';
 import '../../models/paint_ball_models.dart';
 import '../../services/paint_ball_service.dart';
+import '../widgets/paint_ball_field.dart' show kPaintBallPositions;
 
 final paintBallServiceProvider = Provider<PaintBallGateway>((ref) {
   final supabase = Supabase.instance.client;
@@ -23,6 +25,23 @@ final paintBallCurrentUserIdProvider = Provider<String?>((ref) {
 final paintBallAnalyticsProvider = Provider<PaintBallAnalytics>((ref) {
   return const PaintBallAnalytics();
 });
+
+/// Where this player hid last round, if the game is already under way.
+///
+/// Read from the resolved rounds rather than kept in memory: a player who
+/// closes the app mid-match and returns must find themselves where they
+/// left off, not somewhere new.
+int? _lastHideFor(PaintBallSessionState session, String? userId) {
+  if (userId == null) return null;
+  for (final round in session.rounds.reversed) {
+    if (round.activePartnerId == userId && round.hidePosition != null) {
+      return round.hidePosition;
+    }
+  }
+  return null;
+}
+
+final _random = Random();
 
 class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
   final Ref _ref;
@@ -162,11 +181,26 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
     final becameMyTurn =
         session.currentTurnUserId == currentUserId &&
         previousSession?.currentTurnUserId != currentUserId;
+    // A player always stands somewhere. Starting with no position meant
+    // the board opened empty -- no character to see, and nothing to move
+    // from -- so the first thing a player did was place themselves rather
+    // than reposition. Spec 3.1: you are dealt a cover and may change it.
+    //
+    // On a later round the previous cover carries forward, so "stay where
+    // you are" is a real choice made by doing nothing rather than by
+    // re-picking the same spot.
+    final carriedHide =
+        _lastHideFor(session, currentUserId) ??
+        _random.nextInt(kPaintBallPositions);
+
     state = state.copyWith(
       session: session,
       phase: phase,
       isLoading: false,
-      hidePosition: resetTransient || becameMyTurn ? null : state.hidePosition,
+      hidePosition:
+          resetTransient || becameMyTurn
+              ? carriedHide
+              : (state.hidePosition ?? carriedHide),
       shotPosition: resetTransient || becameMyTurn ? null : state.shotPosition,
       selectionRound:
           resetTransient || becameMyTurn ? null : state.selectionRound,
