@@ -8,6 +8,13 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 /// The three positions a player can take, drawn as shields.
 const int kPaintBallPositions = 3;
 
+/// The width of one cover's box, in design units.
+///
+/// Shared by the row that lays the covers out and the triangle that
+/// travels between them: when those two disagreed about how wide a cover
+/// was, the character drifted off-centre.
+const double kPaintBallCoverWidth = 74;
+
 /// The field's palette is fixed rather than theme-derived.
 ///
 /// This is a diagram, not chrome: it reads as a schematic on black, and a
@@ -380,7 +387,6 @@ class _ShieldRow extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final slotWidth = constraints.maxWidth / kPaintBallPositions;
         return SizedBox(
           height: 92.h,
           child: Stack(
@@ -393,7 +399,8 @@ class _ShieldRow extends StatelessWidget {
                 _TravellingPlayer(
                   position: hiddenAt!,
                   isOpponent: isOpponent,
-                  slotWidth: slotWidth,
+                  rowWidth: constraints.maxWidth,
+                  coverWidth: kPaintBallCoverWidth.w,
                   rowHeight: 92.h,
                   isAiming: isAiming,
                   tilt: rowTilt,
@@ -430,7 +437,7 @@ class _ShieldRow extends StatelessWidget {
             onTap: enabled ? () => onTap?.call(index) : null,
             behavior: HitTestBehavior.opaque,
             child: SizedBox(
-              width: 74.w,
+              width: kPaintBallCoverWidth.w,
               height: 92.h,
               child: Stack(
                 alignment: Alignment.center,
@@ -543,7 +550,8 @@ class _TravellingPlayer extends StatefulWidget {
   const _TravellingPlayer({
     required this.position,
     required this.isOpponent,
-    required this.slotWidth,
+    required this.rowWidth,
+    required this.coverWidth,
     required this.rowHeight,
     required this.isAiming,
     required this.tilt,
@@ -553,7 +561,12 @@ class _TravellingPlayer extends StatefulWidget {
 
   final int position;
   final bool isOpponent;
-  final double slotWidth;
+  /// The full row, and one cover inside it. Both are needed because the
+  /// covers are a fixed width laid out with even gaps, so their spacing
+  /// is not simply the row divided three ways.
+  final double rowWidth;
+  final double coverWidth;
+
   final double rowHeight;
   final bool isAiming;
   final double tilt;
@@ -626,7 +639,20 @@ class _TravellingPlayerState extends State<_TravellingPlayer>
                 ? Curves.easeInOut.transform(1 - (2 * t - 1).abs())
                 : (widget.isAiming ? 1.0 : 0.0);
 
-        final x = column * widget.slotWidth + widget.slotWidth / 2 - 11.w;
+        // Centre on the COVER, not on a notional slot.
+        //
+        // spaceEvenly lays three fixed-width covers out with four equal
+        // gaps, so a cover's centre is gap*(i+1) + coverWidth*(i+0.5) --
+        // which equals a slot centre only when the row happens to be
+        // exactly three covers wide. Using slot maths drifted the triangle
+        // off-centre everywhere else, worst at the outer covers.
+        final gap =
+            (widget.rowWidth - kPaintBallPositions * widget.coverWidth) /
+            (kPaintBallPositions + 1);
+        final coverCentre =
+            gap * (column + 1) +
+            widget.coverWidth * (column + 0.5);
+        final x = coverCentre - 11.w;
         final baseInset = 34.h;
         final stepOut = 14.h * depth;
 

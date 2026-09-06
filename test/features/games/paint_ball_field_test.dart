@@ -551,4 +551,60 @@ void main() {
       reason: 'the crossing happens clear of cover, not through it',
     );
   });
+
+  testWidgets('the character stands in the centre of its cover', (
+    tester,
+  ) async {
+    // Reported from a device: the triangle sat at the right edge of its
+    // cover rather than inside it.
+    //
+    // The traveller positioned itself on notional slots (row width / 3)
+    // while the covers are a FIXED width laid out with even gaps. Those
+    // two only agree when the row happens to be exactly three covers
+    // wide -- at any other width the character drifts, worst at the
+    // outer covers. So this checks every position at several widths,
+    // since a single width can pass by coincidence.
+    for (final width in [360.0, 390.0, 430.0]) {
+      for (var position = 0; position < kPaintBallPositions; position++) {
+        tester.view.physicalSize = Size(width, 932);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          _wrap(
+            PaintBallField(
+              splats: const [],
+              myPosition: position,
+              selectedShot: null,
+              revealedPartnerPosition: null,
+              isMyTurn: true,
+              onSelectShot: (_) {},
+              onSelectHide: (_) {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final triangle = tester.getRect(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is CustomPaint &&
+                widget.painter.runtimeType.toString().contains('Triangle'),
+          ),
+        );
+        final cover = tester.getRect(
+          find.bySemanticsLabel('${_names[position]} cover'),
+        );
+
+        expect(
+          (triangle.center.dx - cover.center.dx).abs(),
+          lessThan(1.0),
+          reason:
+              'at width $width the character at position $position sits '
+              '${(triangle.center.dx - cover.center.dx).toStringAsFixed(1)}pt '
+              'off the centre of its cover',
+        );
+      }
+    }
+  });
 }
