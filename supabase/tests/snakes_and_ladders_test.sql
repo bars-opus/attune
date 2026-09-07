@@ -406,4 +406,139 @@ BEGIN
   END IF;
 END $$;
 
+-- ---------------------------------------------------------------------
+-- SECURITY: the table is not a back door around the game.
+-- ---------------------------------------------------------------------
+-- Found by review, and confirmed against a live database before the fix:
+-- the shared policies granted members write access to every game except
+-- paint_ball, so a Snakes player could set their own position to 100 and
+-- name themselves the winner without ever rolling. Every other control
+-- in this game -- the server die, the turn lock, idempotency -- was
+-- decorative while that held.
+DO $$
+DECLARE
+  a uuid := '00000000-0000-0000-0000-00000000f001';
+  b uuid := '00000000-0000-0000-0000-00000000f002';
+  v_rel uuid;
+  v_session uuid;
+  v_position int;
+  v_winner uuid;
+  v_rounds int;
+BEGIN
+  INSERT INTO public.relationships(user_a, user_b, status)
+  VALUES (a, b, 'active') RETURNING id INTO v_rel;
+
+  INSERT INTO public.game_sessions(
+    relationship_id, initiator_id, game_type, status,
+    board_position_a, board_position_b, board_version,
+    current_round, current_turn_user_id
+  )
+  VALUES (v_rel, a, 'snakes_and_ladders', 'active', 5, 5, 'v1', 1, b)
+  RETURNING id INTO v_session;
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  SET LOCAL ROLE authenticated;
+
+  UPDATE public.game_sessions
+     SET board_position_a = 100, status = 'completed', winner_user_id = a
+   WHERE id = v_session;
+
+  -- A round insert is REFUSED outright rather than ignored, so it has
+  -- to be caught. Either outcome is fine; what matters is that no round
+  -- exists afterwards.
+  BEGIN
+    INSERT INTO public.game_session_rounds(
+      session_id, round_number, active_partner_id, game_type,
+      die_roll, moved_from, rolled_to, moved_to, movement_kind)
+    VALUES (v_session, 50, a, 'snakes_and_ladders', 6, 5, 11, 11, 'normal');
+  EXCEPTION WHEN insufficient_privilege OR OTHERS THEN
+    NULL;
+  END;
+
+  RESET ROLE;
+
+  SELECT board_position_a, winner_user_id INTO v_position, v_winner
+  FROM public.game_sessions WHERE id = v_session;
+
+  IF v_position <> 5 OR v_winner IS NOT NULL THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: a player wrote the session directly (pos=% winner=%)',
+      v_position, v_winner;
+  END IF;
+
+  SELECT count(*) INTO v_rounds FROM public.game_session_rounds
+  WHERE session_id = v_session;
+  IF v_rounds <> 0 THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: a player inserted a round directly';
+  END IF;
+
+  -- Reads stay open: the board is not secret, and both players draw it.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  SET LOCAL ROLE authenticated;
+  IF NOT EXISTS (SELECT 1 FROM public.game_sessions WHERE id = v_session) THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'a player can no longer read their own game';
+  END IF;
+  RESET ROLE;
+END $$;
+
+-- A board that has been played on is frozen.
+DO $$
+DECLARE
+  v_raised boolean := false;
+BEGIN
+  -- v1 is referenced by the sessions created above.
+  BEGIN
+    UPDATE public.snakes_boards
+       SET features = jsonb_build_object('ladders','{}'::jsonb,
+                                         'snakes','{}'::jsonb)
+     WHERE version = 'v1';
+  EXCEPTION WHEN OTHERS THEN v_raised := true;
+  END;
+  IF NOT v_raised THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: a played board was edited -- every game on it '
+      'would be retroactively rewritten';
+  END IF;
+END $$;
+
+-- Ranges and reachability.
+DO $$
+DECLARE
+  v_raised boolean;
+BEGIN
+  -- A ladder off the end of the board. Landing on it would violate the
+  -- position CHECK, abort the turn, and silently hand the player a
+  -- reroll.
+  v_raised := false;
+  BEGIN
+    INSERT INTO public.snakes_boards(version, features)
+    VALUES ('bad-range', jsonb_build_object(
+      'ladders', jsonb_build_object('99', 101), 'snakes', '{}'::jsonb));
+  EXCEPTION WHEN OTHERS THEN v_raised := true;
+  END;
+  IF NOT v_raised THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a ladder to 101 was accepted';
+  END IF;
+
+  -- Snakes guarding every approach to 100: legal by every other rule,
+  -- and no game on it can ever end.
+  v_raised := false;
+  BEGIN
+    INSERT INTO public.snakes_boards(version, features)
+    VALUES ('bad-reach', jsonb_build_object(
+      'ladders', '{}'::jsonb,
+      'snakes', jsonb_build_object(
+        '94', 5, '95', 6, '96', 7, '97', 8, '98', 9, '99', 10)));
+  EXCEPTION WHEN OTHERS THEN v_raised := true;
+  END;
+  IF NOT v_raised THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: a board where 100 is unreachable was accepted';
+  END IF;
+END $$;
+
 ROLLBACK;
