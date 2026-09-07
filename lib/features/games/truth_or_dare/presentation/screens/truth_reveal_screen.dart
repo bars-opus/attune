@@ -1,5 +1,6 @@
 // lib/features/games/truth_or_dare/presentation/screens/truth_reveal_screen.dart
 
+import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
@@ -57,6 +58,8 @@ class _TruthRevealScreenState extends ConsumerState<TruthRevealScreen> {
     final answer = _answerController.text.trim();
     if (answer.isEmpty || _isSubmitting) return;
 
+    // Sending something you have just said out loud deserves to be felt.
+    ref.read(hapticsProvider).light();
     setState(() => _isSubmitting = true);
 
     try {

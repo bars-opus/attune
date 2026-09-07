@@ -13,6 +13,9 @@ enum AppSound {
   // Games — shared beats across This or That / Truth or Dare / 36 Questions.
   gameMatch, // both partners aligned — the celebratory beat
   gameCardFlip, // Truth or Dare card flip
+  gameTruth, // the flip landed on TRUTH -- a descending fifth, at rest
+  gameDare, // the flip landed on DARE -- a rising third, leaning forward
+  gameAnswer, // a partner's answer landing on the result screen
   gameReveal, // a round result / answer reveal
   gameTap, // option / choice selection
   gameComplete, // session finished (end screen)
@@ -67,6 +70,9 @@ class AudioPlayerSoundService implements SoundService {
     AppSound.chatReceive: 'sounds/chat_receive.wav',
     AppSound.gameMatch: 'sounds/game_match.wav',
     AppSound.gameCardFlip: 'sounds/game_card_flip.wav',
+    AppSound.gameTruth: 'sounds/game_truth.wav',
+    AppSound.gameDare: 'sounds/game_dare.wav',
+    AppSound.gameAnswer: 'sounds/game_answer.wav',
     AppSound.gameReveal: 'sounds/game_reveal.wav',
     AppSound.gameTap: 'sounds/game_tap.wav',
     AppSound.gameComplete: 'sounds/game_complete.wav',

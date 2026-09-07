@@ -120,4 +120,106 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('sound', () {
+    test('truth and dare are sounded differently', () {
+      // The flip landing is the most dramatic moment in the game. One
+      // sound for both verdicts wastes it -- a player should know which
+      // they got before the text resolves.
+      final source =
+          File(
+            'lib/features/games/truth_or_dare/presentation/screens/'
+            'card_flip_screen.dart',
+          ).readAsStringSync();
+
+      expect(source.contains('AppSound.gameTruth'), isTrue);
+      expect(source.contains('AppSound.gameDare'), isTrue);
+    });
+
+    test('the end of a session is not silent', () {
+      final source =
+          File(
+            'lib/features/games/truth_or_dare/presentation/screens/'
+            'truth_or_dare_end_screen.dart',
+          ).readAsStringSync();
+
+      expect(
+        source.contains('AppSound.gameComplete'),
+        isTrue,
+        reason: 'a finished game must sound finished',
+      );
+    });
+
+    test('every Truth or Dare sound has a file behind it', () {
+      // A missing asset fails silently at runtime, so the game would
+      // simply lose a beat with nothing to show for it.
+      for (final name in ['game_truth', 'game_dare', 'game_answer']) {
+        expect(
+          File('assets/sounds/$name.wav').existsSync(),
+          isTrue,
+          reason: '$name.wav is referenced but not generated',
+        );
+      }
+    });
+  });
+
+  group('motion', () {
+    testWidgets('a prompt arrives rather than being already there', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: TruthOrDarePromptCard(
+              kind: 'truth',
+              prompt: 'What made you laugh today?',
+            ),
+          ),
+        ),
+      );
+
+      // Part-way through the entrance it is still fading in.
+      await tester.pump(const Duration(milliseconds: 120));
+      final mid = tester.widget<FadeTransition>(
+        find.byType(FadeTransition).first,
+      );
+      expect(
+        mid.opacity.value,
+        lessThan(1.0),
+        reason: 'the card is already fully present, so it never arrived',
+      );
+
+      await tester.pumpAndSettle();
+      final settled = tester.widget<FadeTransition>(
+        find.byType(FadeTransition).first,
+      );
+      expect(settled.opacity.value, 1.0);
+    });
+
+    testWidgets('reduce motion shows the prompt immediately', (tester) async {
+      await tester.pumpWidget(
+        const MediaQuery(
+          data: MediaQueryData(disableAnimations: true),
+          child: MaterialApp(
+            home: Scaffold(
+              body: TruthOrDarePromptCard(
+                kind: 'dare',
+                prompt: 'Send a voice note.',
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final fade = tester.widget<FadeTransition>(
+        find.byType(FadeTransition).first,
+      );
+      expect(
+        fade.opacity.value,
+        1.0,
+        reason: 'reduce motion must not mean waiting for a fade',
+      );
+    });
+  });
 }

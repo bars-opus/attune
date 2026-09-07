@@ -1,8 +1,12 @@
 // lib/features/games/truth_or_dare/presentation/screens/truth_or_dare_end_screen.dart
+import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/widgets/truth_or_dare_game_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class TruthOrDareEndScreen extends StatelessWidget {
+class TruthOrDareEndScreen extends ConsumerStatefulWidget {
   final int userTruths;
   final int userDares;
   final int partnerTruths;
@@ -32,16 +36,35 @@ class TruthOrDareEndScreen extends StatelessWidget {
   });
 
   @override
+  ConsumerState<TruthOrDareEndScreen> createState() =>
+      _TruthOrDareEndScreenState();
+}
+
+class _TruthOrDareEndScreenState extends ConsumerState<TruthOrDareEndScreen> {
+  bool _announced = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_announced) return;
+    _announced = true;
+    // The game finishing deserves a sound. It was silent here, which made
+    // the end of a session feel like a screen you had wandered onto.
+    ref.read(soundServiceProvider).play(AppSound.gameComplete);
+    ref.read(hapticsProvider).medium();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final palette = TruthOrDarePalette.of(context, tone: tone);
+    final palette = TruthOrDarePalette.of(context, tone: widget.tone);
     final textTheme = Theme.of(context).textTheme;
-    final them = partnerName ?? 'Them';
-    final pickText = mostInterestingPick['text']?.toString().trim();
-    final pickAnswer = mostInterestingPick['answer']?.toString().trim();
+    final them = widget.partnerName ?? 'Them';
+    final pickText = widget.mostInterestingPick['text']?.toString().trim();
+    final pickAnswer = widget.mostInterestingPick['answer']?.toString().trim();
 
     return TruthOrDareScaffold(
       title: 'That was the game',
-      tone: tone,
+      tone: widget.tone,
       scrollable: true,
       bottom: Column(
         mainAxisSize: MainAxisSize.min,
@@ -49,11 +72,11 @@ class TruthOrDareEndScreen extends StatelessWidget {
           TruthOrDarePrimaryAction(
             label: 'Play again',
             icon: Icons.replay_rounded,
-            onPressed: onPlayAgain,
+            onPressed: widget.onPlayAgain,
           ),
           Gap(Spacing.sm.h),
           TextButton(
-            onPressed: onTryAnotherGame,
+            onPressed: widget.onTryAnotherGame,
             style: TextButton.styleFrom(foregroundColor: palette.mutedInk),
             child: const Text('Try a different game'),
           ),
@@ -69,8 +92,8 @@ class TruthOrDareEndScreen extends StatelessWidget {
               Expanded(
                 child: _TallyCard(
                   name: 'You',
-                  truths: userTruths,
-                  dares: userDares,
+                  truths: widget.userTruths,
+                  dares: widget.userDares,
                   palette: palette,
                 ),
               ),
@@ -78,8 +101,8 @@ class TruthOrDareEndScreen extends StatelessWidget {
               Expanded(
                 child: _TallyCard(
                   name: them,
-                  truths: partnerTruths,
-                  dares: partnerDares,
+                  truths: widget.partnerTruths,
+                  dares: widget.partnerDares,
                   palette: palette,
                 ),
               ),
@@ -195,12 +218,24 @@ class _TallyCard extends StatelessWidget {
             style: textTheme.bodySmall?.copyWith(color: palette.mutedInk),
           ),
         ),
-        Text(
-          '$count',
-          style: textTheme.titleMedium?.copyWith(
-            color: palette.ink,
-            fontWeight: FontWeight.w700,
-          ),
+        // Counts up rather than appearing. A tally that ticks reads as a
+        // result being totted up; one that is simply there reads as a
+        // number that was always going to be that.
+        TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: count.toDouble()),
+          duration:
+              reduceMotionOf(context)
+                  ? Duration.zero
+                  : Duration(milliseconds: 420 + (count * 110)),
+          curve: Curves.easeOutCubic,
+          builder:
+              (context, value, _) => Text(
+                '${value.round()}',
+                style: textTheme.titleMedium?.copyWith(
+                  color: palette.ink,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
         ),
       ],
     );

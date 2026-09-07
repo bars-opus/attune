@@ -366,7 +366,12 @@ class TruthOrDareStageLabel extends StatelessWidget {
 }
 
 /// The prompt itself, on the card face it belongs to.
-class TruthOrDarePromptCard extends StatelessWidget {
+///
+/// It ARRIVES rather than simply being present: a short rise and fade as
+/// the screen opens. Animating it here rather than per-screen means every
+/// surface that shows a prompt gets the same beat, and none of them can
+/// forget it.
+class TruthOrDarePromptCard extends StatefulWidget {
   const TruthOrDarePromptCard({
     super.key,
     required this.kind,
@@ -382,16 +387,44 @@ class TruthOrDarePromptCard extends StatelessWidget {
   final bool compact;
 
   @override
+  State<TruthOrDarePromptCard> createState() => _TruthOrDarePromptCardState();
+}
+
+class _TruthOrDarePromptCardState extends State<TruthOrDarePromptCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 480),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (reduceMotionOf(context)) {
+      _controller.value = 1;
+    } else if (!_controller.isAnimating && _controller.value == 0) {
+      _controller.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final palette = TruthOrDarePalette.of(context);
-    final accent = palette.accentFor(kind);
+    final accent = palette.accentFor(widget.kind);
     final textTheme = Theme.of(context).textTheme;
+    final compact = widget.compact;
 
-    return Container(
+    final card = Container(
       width: double.infinity,
       padding: EdgeInsets.all(compact ? 18 : 26),
       decoration: BoxDecoration(
-        color: palette.surfaceFor(kind),
+        color: palette.surfaceFor(widget.kind),
         borderRadius: BorderRadius.circular(compact ? 20 : 28),
         border: Border.all(color: accent.withValues(alpha: 0.5), width: 1.5),
         boxShadow: [
@@ -406,16 +439,16 @@ class TruthOrDarePromptCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TruthOrDareStageLabel(
-            text: kind,
+            text: widget.kind,
             icon:
-                kind == 'dare'
+                widget.kind == 'dare'
                     ? Icons.local_fire_department_rounded
                     : Icons.psychology_alt_rounded,
             color: accent,
           ),
           SizedBox(height: compact ? 10 : 16),
           Text(
-            prompt,
+            widget.prompt,
             style: (compact ? textTheme.titleMedium : textTheme.headlineSmall)
                 ?.copyWith(
                   color: palette.ink,
@@ -423,10 +456,10 @@ class TruthOrDarePromptCard extends StatelessWidget {
                   height: 1.32,
                 ),
           ),
-          if (author != null) ...[
+          if (widget.author != null) ...[
             const SizedBox(height: 14),
             Text(
-              'Written by $author',
+              'Written by ${widget.author}',
               style: textTheme.bodySmall?.copyWith(
                 color: palette.mutedInk,
                 fontStyle: FontStyle.italic,
@@ -434,6 +467,16 @@ class TruthOrDarePromptCard extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+
+    return FadeTransition(
+      opacity: _controller,
+      child: SlideTransition(
+        position: Tween(begin: const Offset(0, 0.06), end: Offset.zero).animate(
+          CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+        ),
+        child: card,
       ),
     );
   }

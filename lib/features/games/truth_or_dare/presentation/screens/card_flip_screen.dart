@@ -87,8 +87,8 @@ class _CardFlipScreenState extends ConsumerState<CardFlipScreen>
       _questionData = questionData;
       _roundId = round.id;
 
-      // Flip the card — the signature Truth or Dare beat: a firm haptic + flip
-      // sound land exactly as the 3D rotation begins.
+      // Flip the card -- the signature Truth or Dare beat: a firm haptic
+      // and the flip sound land exactly as the 3D rotation begins.
       ref.read(hapticsProvider).selection();
       ref.read(soundServiceProvider).play(AppSound.gameCardFlip);
       setState(() {
@@ -96,6 +96,23 @@ class _CardFlipScreenState extends ConsumerState<CardFlipScreen>
         _isLoading = false;
       });
       _flipController.forward();
+
+      // Then the card's VERDICT, a beat later, as the face comes round.
+      // Truth settles down a fifth; dare climbs. A player should know
+      // which they got before the text resolves -- the same sound for
+      // both would waste the most dramatic moment in the game.
+      final landedOn = _selectedType;
+      Future<void>.delayed(const Duration(milliseconds: 280), () {
+        if (!mounted) return;
+        ref
+            .read(soundServiceProvider)
+            .play(landedOn == 'dare' ? AppSound.gameDare : AppSound.gameTruth);
+        if (landedOn == 'dare') {
+          ref.read(hapticsProvider).medium();
+        } else {
+          ref.read(hapticsProvider).light();
+        }
+      });
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {

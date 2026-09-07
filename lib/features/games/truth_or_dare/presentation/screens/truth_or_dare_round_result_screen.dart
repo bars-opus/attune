@@ -57,9 +57,13 @@ class _TruthOrDareRoundResultScreenState
     if (!_announced) {
       _announced = true;
       // Their answer landing is the beat worth marking -- the one moment
-      // in the game where something is actually revealed.
-      ref.read(soundServiceProvider).play(AppSound.gameReveal);
-      ref.read(hapticsProvider).light();
+      // in the game where something is actually revealed. Delayed to meet
+      // the slide-in rather than firing against a still screen.
+      Future<void>.delayed(const Duration(milliseconds: 180), () {
+        if (!mounted) return;
+        ref.read(soundServiceProvider).play(AppSound.gameAnswer);
+        ref.read(hapticsProvider).light();
+      });
     }
   }
 
