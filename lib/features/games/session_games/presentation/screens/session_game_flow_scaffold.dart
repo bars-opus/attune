@@ -8,6 +8,9 @@ import 'package:attune/features/games/session_games/presentation/screens/session
 import 'package:attune/features/games/session_games/presentation/screens/session_game_router_screen.dart';
 import 'package:attune/features/games/session_games/presentation/screens/session_game_waiting_screen.dart';
 import 'package:attune/features/relationships/data/relationship_lifecycle_service.dart';
+import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
+import 'package:attune/features/games/session_games/presentation/widgets/session_game_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -134,71 +137,81 @@ class _SessionGameFlowScaffoldState
     final async = ref.watch(sessionGameFlowProvider);
     final notifier = ref.read(sessionGameFlowProvider.notifier);
 
-    return Scaffold(
-      appBar: AppBar(
-        actions: [
-          // The escape hatch. createSession hands back any 'invited' or
-          // 'active' session, so a half-finished round made the game
-          // unreachable until the seven-day sweep caught it — with no way
-          // for the couple to start over.
-          IconButton(
-            icon: const Icon(Icons.close_rounded),
-            tooltip: 'Leave this game',
-            onPressed: _confirmLeave,
-          ),
-        ],
-      ),
-      body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error:
-            (error, _) => const Center(
-              // Never render the raw error: it can carry row contents.
-              child: Text(_genericErrorMessage),
-            ),
-        data: (flow) {
-          final question = notifier.currentQuestion;
-          if (question == null) {
-            // Either the relationship/user is still resolving, or
-            // start() is in flight. _unavailable (checked above) is
-            // what stops this from spinning forever in the one case
-            // where nothing will ever arrive.
-            return const Center(child: CircularProgressIndicator());
-          }
+    final palette = SessionGamePalette.of(context, gameType: widget.gameType);
 
-          switch (flow.stage) {
-            case SessionGameStage.question:
-              return SessionGameRouterScreen(
-                question: question,
-                onSubmit: notifier.submit,
-                isSubject: flow.isSubject,
-              );
-            case SessionGameStage.waiting:
-              return SessionGameWaitingScreen(
-                roundId: notifier.currentRoundId!,
-                onRevealed: notifier.onRevealed,
-                // Session games are asynchronous -- a partner may answer
-                // in an hour -- so the player returns to the chat and the
-                // game card carries the state from there. The answer is
-                // already saved; reopening the game resumes at the first
-                // unanswered round.
-                onLeaveToChat: () {
-                  if (Navigator.of(context).canPop()) {
-                    Navigator.of(context).pop();
-                  }
-                },
-                // Same repository the rest of the flow uses, so an
-                // override in tests reaches the poll too rather than
-                // letting it fall back to a live client.
-                repository: ref.read(sessionGameRepositoryProvider),
-              );
-            case SessionGameStage.reveal:
-              return _RevealStage(notifier: notifier);
-            case SessionGameStage.judge:
-              return _JudgeStage(notifier: notifier);
-            case SessionGameStage.end:
-              return _EndStage(notifier: notifier, gameType: flow.gameType);
-          }
-        },
+    // Provided once at the top so every screen in the flow -- question,
+    // waiting, reveal, end -- gets this game's accent without being
+    // handed it. A screen that had to forward it would eventually forget
+    // and render another game's colour.
+    return SessionGameTypeScope(
+      gameType: widget.gameType,
+      child: Scaffold(
+        backgroundColor: palette.canvas,
+        appBar: AppBar(
+          actions: [
+            // The escape hatch. createSession hands back any 'invited' or
+            // 'active' session, so a half-finished round made the game
+            // unreachable until the seven-day sweep caught it — with no way
+            // for the couple to start over.
+            IconButton(
+              icon: const Icon(Icons.close_rounded),
+              tooltip: 'Leave this game',
+              onPressed: _confirmLeave,
+            ),
+          ],
+        ),
+        body: async.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error:
+              (error, _) => const Center(
+                // Never render the raw error: it can carry row contents.
+                child: Text(_genericErrorMessage),
+              ),
+          data: (flow) {
+            final question = notifier.currentQuestion;
+            if (question == null) {
+              // Either the relationship/user is still resolving, or
+              // start() is in flight. _unavailable (checked above) is
+              // what stops this from spinning forever in the one case
+              // where nothing will ever arrive.
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            switch (flow.stage) {
+              case SessionGameStage.question:
+                return SessionGameRouterScreen(
+                  question: question,
+                  onSubmit: notifier.submit,
+                  isSubject: flow.isSubject,
+                );
+              case SessionGameStage.waiting:
+                return SessionGameWaitingScreen(
+                  roundId: notifier.currentRoundId!,
+                  onRevealed: notifier.onRevealed,
+                  // Session games are asynchronous -- a partner may answer
+                  // in an hour -- so the player returns to the chat and the
+                  // game card carries the state from there. The answer is
+                  // already saved; reopening the game resumes at the first
+                  // unanswered round.
+                  onLeaveToChat: () {
+                    if (Navigator.of(context).canPop()) {
+                      Navigator.of(context).pop();
+                    }
+                  },
+                  // Same repository the rest of the flow uses, so an
+                  // override in tests reaches the poll too rather than
+                  // letting it fall back to a live client.
+                  repository: ref.read(sessionGameRepositoryProvider),
+                );
+              case SessionGameStage.reveal:
+                return _RevealStage(notifier: notifier);
+              case SessionGameStage.judge:
+                return _JudgeStage(notifier: notifier);
+              case SessionGameStage.end:
+                return _EndStage(notifier: notifier, gameType: flow.gameType);
+            }
+          },
+        ),
       ),
     );
   }

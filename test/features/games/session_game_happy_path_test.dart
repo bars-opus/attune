@@ -194,8 +194,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // ---- Reveal ----
-      expect(find.text('You said'), findsOneWidget);
-      expect(find.text('They said'), findsOneWidget);
+      // Each voice is named and colour-coded rather than both being grey
+      // "You said"/"They said" text, so the labels are uppercased.
+      expect(find.text('YOU'), findsOneWidget);
+      expect(find.text('THEM'), findsOneWidget);
 
       await tester.tap(find.text('Next'));
       await tester.pumpAndSettle();
@@ -291,7 +293,7 @@ void main() {
         findsNothing,
         reason: "the partner's answer must never render before the gate opens",
       );
-      expect(find.text('You said'), findsNothing);
+      expect(find.text('YOU'), findsNothing);
       expect(find.byType(CircularProgressIndicator), findsWidgets);
     },
   );

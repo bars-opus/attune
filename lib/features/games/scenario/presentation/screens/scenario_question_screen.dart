@@ -1,4 +1,5 @@
 import 'package:attune/features/games/session_games/data/models/session_game_question.dart';
+import 'package:attune/features/games/session_games/presentation/widgets/session_game_ui.dart';
 import 'package:flutter/material.dart';
 
 /// Presents a situation and its 3-4 response options (§8.4).
@@ -25,37 +26,38 @@ class ScenarioQuestionScreen extends StatelessWidget {
       padding: const EdgeInsets.all(24),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            question.questionText,
-            style: Theme.of(context).textTheme.titleLarge,
-            textAlign: TextAlign.center,
+          SessionGameQuestionCard(
+            label: 'the situation',
+            text: question.questionText,
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 28),
           // `SessionGameQuestion.options` defaults to `const []`, so the
           // type system does not rule out an options-free scenario
           // question reaching this screen (e.g. a malformed server
           // response). Rather than render zero buttons and strand the
           // user with no way to proceed, show a plain unavailable message
-          // — no fabricated options, no auto-submit, no throw.
+          // -- no fabricated options, no auto-submit, no throw.
           if (question.options.isEmpty)
             Text(
               'This question is unavailable right now.',
               style: Theme.of(context).textTheme.bodyMedium,
               textAlign: TextAlign.center,
             )
-          else
-            for (final option in question.options)
+          else ...[
+            const SessionGameStageLabel(text: 'what would you do?'),
+            const SizedBox(height: 14),
+            for (final (index, option) in question.options.indexed)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: () => onSubmit(option.key),
-                    child: Text(option.text),
-                  ),
+                child: SessionGameOptionCard(
+                  text: option.text,
+                  index: index,
+                  onTap: () => onSubmit(option.key),
                 ),
               ),
+          ],
         ],
       ),
     );
