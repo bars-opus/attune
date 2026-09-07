@@ -96,7 +96,7 @@ class SnakesService implements SnakesGateway {
 
     return SnakesTurn(
       roundNumber: roundNumber,
-      playerId: '${_supabase.auth.currentUser?.id ?? ''}',
+      playerId: _supabase.auth.currentUser?.id ?? '',
       dieRoll: data['die_roll'] as int? ?? 1,
       movedFrom: data['moved_from'] as int? ?? 0,
       rolledTo: data['rolled_to'] as int? ?? 0,

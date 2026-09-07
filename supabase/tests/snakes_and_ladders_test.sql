@@ -94,6 +94,103 @@ BEGIN
   END LOOP;
 END $$;
 
+-- A lost response remains recoverable after relationship teardown. This is
+-- why idempotency is before every state rejection, not merely the rate limit.
+DO $$
+DECLARE
+  a uuid := '00000000-0000-0000-0000-00000000f001';
+  b uuid := '00000000-0000-0000-0000-00000000f002';
+  v_rel uuid;
+  v_session uuid;
+  v_first jsonb;
+  v_retry jsonb;
+BEGIN
+  INSERT INTO public.relationships(user_a, user_b, status)
+  VALUES (a, b, 'active') RETURNING id INTO v_rel;
+  INSERT INTO public.game_sessions(
+    relationship_id, initiator_id, game_type, status,
+    board_position_a, board_position_b, board_version,
+    current_round, current_turn_user_id, started_at)
+  VALUES (v_rel, b, 'snakes_and_ladders', 'active', 0, 0, 'v1', 1, a, now())
+  RETURNING id INTO v_session;
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  v_first := public.snakes_roll_die(v_session, 1);
+  UPDATE public.relationships SET chat_archived_at = now() WHERE id = v_rel;
+  v_retry := public.snakes_roll_die(v_session, 1);
+
+  IF (v_retry->>'existing')::boolean IS NOT TRUE
+     OR v_retry->>'die_roll' IS DISTINCT FROM v_first->>'die_roll'
+     OR v_retry->>'moved_to' IS DISTINCT FROM v_first->>'moved_to' THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: teardown lost or rerolled a committed turn';
+  END IF;
+END $$;
+
+-- Expired invitations disappear during lookup, without waiting for cron.
+DO $$
+DECLARE
+  a uuid := '00000000-0000-0000-0000-00000000f001';
+  b uuid := '00000000-0000-0000-0000-00000000f002';
+  v_rel uuid;
+  v_session uuid;
+  v_result jsonb;
+BEGIN
+  INSERT INTO public.relationships(user_a, user_b, status)
+  VALUES (a, b, 'active') RETURNING id INTO v_rel;
+  INSERT INTO public.game_sessions(
+    relationship_id, initiator_id, game_type, status,
+    board_position_a, board_position_b, board_version,
+    current_round, created_at)
+  VALUES (
+    v_rel, a, 'snakes_and_ladders', 'invited', 0, 0, 'v1', 1,
+    now() - interval '49 hours')
+  RETURNING id INTO v_session;
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  v_result := public.get_active_snakes_session(v_rel);
+  IF v_result->>'session_id' IS NOT NULL THEN
+    RAISE EXCEPTION 'an expired invitation remained active in the lobby';
+  END IF;
+  IF (SELECT status FROM public.game_sessions WHERE id = v_session)
+     <> 'abandoned' THEN
+    RAISE EXCEPTION 'lookup did not retire an expired invitation';
+  END IF;
+END $$;
+
+-- Active expiry is enforced by the roll itself as well as by cron.
+DO $$
+DECLARE
+  a uuid := '00000000-0000-0000-0000-00000000f001';
+  b uuid := '00000000-0000-0000-0000-00000000f002';
+  v_rel uuid;
+  v_session uuid;
+BEGIN
+  INSERT INTO public.relationships(user_a, user_b, status)
+  VALUES (a, b, 'active') RETURNING id INTO v_rel;
+  INSERT INTO public.game_sessions(
+    relationship_id, initiator_id, game_type, status,
+    board_position_a, board_position_b, board_version,
+    current_round, current_turn_user_id, started_at)
+  VALUES (
+    v_rel, b, 'snakes_and_ladders', 'active', 0, 0, 'v1', 1, a,
+    now() - interval '25 hours')
+  RETURNING id INTO v_session;
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  IF (public.snakes_roll_die(v_session, 1)->>'code')
+     IS DISTINCT FROM 'SESSION_EXPIRED' THEN
+    RAISE EXCEPTION 'an inactive-for-24h session still accepted a roll';
+  END IF;
+  IF (SELECT status FROM public.game_sessions WHERE id = v_session)
+     <> 'abandoned' THEN
+    RAISE EXCEPTION 'the roll did not retire an expired active session';
+  END IF;
+END $$;
+
 -- ---------------------------------------------------------------------
 -- The board's own invariants are enforced, not trusted.
 -- ---------------------------------------------------------------------
@@ -404,6 +501,20 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'a player can expire sessions';
   END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname='public'
+      AND p.proname IN (
+        'snakes_error', 'snakes_resolve_move',
+        'guard_snakes_board_immutable', 'validate_snakes_board',
+        'abandon_snakes_on_relationship_change',
+        'expire_snakes_for_relationship')
+      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
+  ) THEN
+    RAISE EXCEPTION 'a player can execute an internal Snakes helper';
+  END IF;
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -452,7 +563,7 @@ BEGIN
       session_id, round_number, active_partner_id, game_type,
       die_roll, moved_from, rolled_to, moved_to, movement_kind)
     VALUES (v_session, 50, a, 'snakes_and_ladders', 6, 5, 11, 11, 'normal');
-  EXCEPTION WHEN insufficient_privilege OR OTHERS THEN
+  EXCEPTION WHEN insufficient_privilege THEN
     NULL;
   END;
 
@@ -502,6 +613,71 @@ BEGIN
     RAISE EXCEPTION
       'CONTRACT VIOLATED: a played board was edited -- every game on it '
       'would be retroactively rewritten';
+  END IF;
+
+  -- Renaming the primary key is just as destructive as editing features:
+  -- every pinned session would point at a board version that no longer
+  -- exists. The first immutability trigger guarded features but missed this.
+  v_raised := false;
+  BEGIN
+    UPDATE public.snakes_boards SET version = 'v1-renamed'
+    WHERE version = 'v1';
+  EXCEPTION WHEN OTHERS THEN v_raised := true;
+  END;
+  IF NOT v_raised THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: a referenced board version was renamed';
+  END IF;
+END $$;
+
+-- Relationship teardown is session teardown, immediately rather than at
+-- the next hourly expiry sweep. An archived couple must not retain a live
+-- game card or be able to accept an old invitation.
+DO $$
+DECLARE
+  a uuid := '00000000-0000-0000-0000-00000000f001';
+  b uuid := '00000000-0000-0000-0000-00000000f002';
+  v_rel uuid;
+  v_session uuid;
+BEGIN
+  INSERT INTO public.relationships(user_a, user_b, status)
+  VALUES (a, b, 'active') RETURNING id INTO v_rel;
+  INSERT INTO public.game_sessions(
+    relationship_id, initiator_id, game_type, status,
+    board_position_a, board_position_b, board_version,
+    current_round, current_turn_user_id)
+  VALUES (v_rel, a, 'snakes_and_ladders', 'invited', 0, 0, 'v1', 1, NULL)
+  RETURNING id INTO v_session;
+
+  UPDATE public.relationships SET chat_archived_at = now() WHERE id = v_rel;
+  IF (SELECT status FROM public.game_sessions WHERE id = v_session)
+     <> 'abandoned' THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: relationship archive left a live Snakes session';
+  END IF;
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  IF (public.snakes_accept_session(v_session)->>'code')
+     IS DISTINCT FROM 'SESSION_EXPIRED' THEN
+    RAISE EXCEPTION 'an archived relationship accepted a game invitation';
+  END IF;
+END $$;
+
+-- SQL and client surfaces must use the same product name.
+DO $$
+BEGIN
+  IF public.game_type_display_name('snakes_and_ladders')
+     <> 'Snakes and Ladders' THEN
+    RAISE EXCEPTION 'Snakes game card has the wrong display name';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.scheduled_notifications
+     WHERE metadata->>'game_type' = 'snakes_and_ladders'
+       AND metadata->>'body' =
+           'Snakes and Ladders ' || U&'\2014' || ' your turn to play.'
+  ) THEN
+    RAISE EXCEPTION 'Snakes invite push has the wrong display name';
   END IF;
 END $$;
 

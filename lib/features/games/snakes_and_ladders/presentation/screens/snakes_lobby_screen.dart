@@ -33,13 +33,13 @@ class _SnakesLobbyScreenState extends ConsumerState<SnakesLobbyScreen> {
   }
 
   Future<void> _refresh() async {
-    final session = await ref
-        .read(snakesProvider.notifier)
-        .findActive(widget.relationshipId);
+    final notifier = ref.read(snakesProvider.notifier)..clearError();
+    final session = await notifier.findActive(widget.relationshipId);
     if (!mounted) return;
     setState(() {
       _existing = session;
       _loading = false;
+      _error = ref.read(snakesProvider).errorMessage;
     });
   }
 
@@ -55,18 +55,18 @@ class _SnakesLobbyScreenState extends ConsumerState<SnakesLobbyScreen> {
         .createSession(widget.relationshipId);
 
     if (!mounted) return;
-    setState(() => _busy = false);
-
     if (sessionId == null) {
-      setState(
-        () =>
-            _error =
-                ref.read(snakesProvider).errorMessage ??
-                'Could not start a game.',
-      );
+      setState(() {
+        _busy = false;
+        _error =
+            ref.read(snakesProvider).errorMessage ?? 'Could not start a game.';
+      });
       return;
     }
-    await _openGame(sessionId);
+    // Creating sends an invitation; the invitee moves first. Keep the
+    // inviter in the lobby rather than opening a board they cannot use.
+    await _refresh();
+    if (mounted) setState(() => _busy = false);
   }
 
   /// Opens the board, and offers a rematch if they asked for one on the
@@ -105,6 +105,29 @@ class _SnakesLobbyScreenState extends ConsumerState<SnakesLobbyScreen> {
       return;
     }
     await _openGame(sessionId);
+  }
+
+  Future<void> _decline(String sessionId) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final ok = await ref
+        .read(snakesProvider.notifier)
+        .declineSession(sessionId);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (ok) {
+      await _refresh();
+    } else {
+      setState(
+        () =>
+            _error =
+                ref.read(snakesProvider).errorMessage ??
+                'Could not decline this game.',
+      );
+    }
   }
 
   @override
@@ -152,15 +175,35 @@ class _SnakesLobbyScreenState extends ConsumerState<SnakesLobbyScreen> {
                         _action('Start a game', _start)
                       else if (existing.isActive)
                         _action('Carry on', () => _openGame(existing.sessionId))
-                      else if (existing.currentTurnUserId == null &&
-                          userId != null &&
-                          existing.userA != userId &&
-                          existing.userB != userId)
-                        const SizedBox.shrink()
+                      else if (existing.isInitiator(userId))
+                        Column(
+                          children: [
+                            Text(
+                              'Waiting for your partner',
+                              style: textTheme.labelLarge?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.65),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _secondaryAction(
+                              'Back to chat',
+                              () => Navigator.of(context).maybePop(),
+                            ),
+                          ],
+                        )
                       else
-                        _action(
-                          'Join the game',
-                          () => _join(existing.sessionId),
+                        Column(
+                          children: [
+                            _action(
+                              'Join the game',
+                              () => _join(existing.sessionId),
+                            ),
+                            const SizedBox(height: 12),
+                            _secondaryAction(
+                              'Decline',
+                              () => _decline(existing.sessionId),
+                            ),
+                          ],
                         ),
                       if (_error != null) ...[
                         const SizedBox(height: 16),
@@ -197,6 +240,20 @@ class _SnakesLobbyScreenState extends ConsumerState<SnakesLobbyScreen> {
                 child: CircularProgressIndicator(strokeWidth: 2.4),
               )
               : Text(label),
+    ),
+  );
+
+  Widget _secondaryAction(String label, VoidCallback onTap) => SizedBox(
+    width: double.infinity,
+    height: 48,
+    child: OutlinedButton(
+      onPressed: _busy ? null : onTap,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.white,
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      child: Text(label),
     ),
   );
 }

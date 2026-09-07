@@ -26,10 +26,12 @@ class SnakesGameScreen extends ConsumerStatefulWidget {
   ConsumerState<SnakesGameScreen> createState() => _SnakesGameScreenState();
 }
 
-class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen> {
+class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
+    with WidgetsBindingObserver {
   /// Where the animating token is right now. Null when nothing is moving
   /// and the board draws from the session's own positions.
   int? _walkCell;
+  SnakesFeatureMotion? _featureMotion;
   bool _walking = false;
 
   /// Guards the automatic exit so a rebuild cannot schedule two pops.
@@ -38,9 +40,25 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(snakesProvider.notifier).load(widget.sessionId);
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || _walking) return;
+    final game = ref.read(snakesProvider);
+    if (!game.isRolling && game.pendingTurn == null) {
+      unawaited(ref.read(snakesProvider.notifier).load(widget.sessionId));
+    }
   }
 
   /// Walks a token cell by cell, then slides it if a snake or ladder
@@ -105,16 +123,25 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen> {
         // token that teleported would leave the drawn snake decorative --
         // the player would never see it used.
         final span = (turn.movedTo - turn.rolledTo).abs();
-        final direction = turn.movedTo > turn.rolledTo ? 1 : -1;
         final hops = math.min(span, 12);
         for (var hop = 1; hop <= hops; hop++) {
           if (!mounted) return;
-          final cell = turn.rolledTo + direction * (span * hop ~/ hops);
-          setState(() => _walkCell = cell);
+          setState(
+            () =>
+                _featureMotion = SnakesFeatureMotion(
+                  from: turn.rolledTo,
+                  to: turn.movedTo,
+                  progress: hop / hops,
+                  movement: turn.movement,
+                ),
+          );
           await Future<void>.delayed(const Duration(milliseconds: 46));
         }
         if (!mounted) return;
-        setState(() => _walkCell = turn.movedTo);
+        setState(() {
+          _walkCell = turn.movedTo;
+          _featureMotion = null;
+        });
         await Future<void>.delayed(const Duration(milliseconds: 240));
       }
     }
@@ -123,6 +150,7 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen> {
     setState(() {
       _walking = false;
       _walkCell = null;
+      _featureMotion = null;
     });
     await ref.read(snakesProvider.notifier).settleTurn();
   }
@@ -134,7 +162,8 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen> {
     // player closed and reopened the game, on a board that still read
     // "Their roll".
     ref.listen(gameSessionLiveProvider(widget.sessionId), (_, _) {
-      if (!_walking) {
+      final game = ref.read(snakesProvider);
+      if (!_walking && !game.isRolling && game.pendingTurn == null) {
         unawaited(ref.read(snakesProvider.notifier).load(widget.sessionId));
       }
     });
@@ -171,10 +200,45 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen> {
       });
     }
 
-    if (state.isLoading || session == null) {
+    if (state.isLoading) {
       return const Scaffold(
         backgroundColor: SnakesPalette.field,
         body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (session == null) {
+      return Scaffold(
+        backgroundColor: SnakesPalette.field,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          title: const Text('Snakes and Ladders'),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  state.errorMessage ?? 'Could not open this game.',
+                  textAlign: TextAlign.center,
+                  style: textTheme.bodyMedium?.copyWith(color: Colors.white70),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton(
+                  onPressed:
+                      () => ref
+                          .read(snakesProvider.notifier)
+                          .load(widget.sessionId),
+                  child: const Text('Try again'),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
 
@@ -208,6 +272,8 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen> {
                             ? _walkCell!
                             : theirs,
                     highlightCell: _walkCell,
+                    featureMotion: _featureMotion,
+                    movingYourToken: animatingMine,
                   ),
                 ),
               ),

@@ -3,6 +3,7 @@ import 'package:attune/features/games/snakes_and_ladders/services/snakes_service
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 /// Local, matching Paint Ball: the games each own their client handle
 /// rather than depending on another feature's provider file.
@@ -73,12 +74,16 @@ class SnakesNotifier extends StateNotifier<SnakesUiState> {
 
   final Ref _ref;
   String? _sessionId;
+  int _loadGeneration = 0;
+  String? _createAttemptRelationshipId;
+  String? _createAttemptKey;
 
   /// The last round this client has animated, so a turn is replayed once
   /// and not again on every refresh.
   int _watchedThrough = 0;
 
   Future<void> load(String sessionId) async {
+    final generation = ++_loadGeneration;
     // A new game restarts the replay bookkeeping. The provider is global,
     // so without this a second game beginning at round 1 would have its
     // first replay suppressed by the round count of the last one.
@@ -91,6 +96,7 @@ class SnakesNotifier extends StateNotifier<SnakesUiState> {
       final session = await _ref
           .read(snakesGatewayProvider)
           .getState(sessionId);
+      if (_sessionId != sessionId || generation != _loadGeneration) return;
 
       // A turn the partner took while this player was away is queued for
       // the replay -- being there when they hit the snake is the entire
@@ -108,8 +114,10 @@ class SnakesNotifier extends StateNotifier<SnakesUiState> {
         pendingTurn: unwatched ? last : null,
       );
     } on SnakesApiError catch (error) {
+      if (_sessionId != sessionId || generation != _loadGeneration) return;
       state = state.copyWith(isLoading: false, errorMessage: error.message);
     } catch (_) {
+      if (_sessionId != sessionId || generation != _loadGeneration) return;
       // Never surface the raw exception: it can carry row contents
       // (checklist 2.4, 5.5).
       state = state.copyWith(
@@ -124,6 +132,9 @@ class SnakesNotifier extends StateNotifier<SnakesUiState> {
     final sessionId = _sessionId;
     if (session == null || sessionId == null || state.isRolling) return;
 
+    // A live refresh started before this roll must not arrive afterwards
+    // and clear the pending turn before the animation can consume it.
+    _loadGeneration++;
     state = state.copyWith(isRolling: true, errorMessage: null);
 
     try {
@@ -185,17 +196,25 @@ class SnakesNotifier extends StateNotifier<SnakesUiState> {
   }
 
   Future<String?> createSession(String relationshipId) async {
+    if (_createAttemptRelationshipId != relationshipId ||
+        _createAttemptKey == null) {
+      _createAttemptRelationshipId = relationshipId;
+      _createAttemptKey = const Uuid().v4();
+    }
+
     try {
-      return await _ref
+      final sessionId = await _ref
           .read(snakesGatewayProvider)
           .createSession(
             relationshipId: relationshipId,
-            // A key per attempt, so a retry after a dropped response
-            // resolves to the same session rather than a second one.
-            idempotencyKey:
-                'snakes-$relationshipId-'
-                '${DateTime.now().millisecondsSinceEpoch ~/ 60000}',
+            idempotencyKey: _createAttemptKey!,
           );
+      // A completed attempt must never be reused by Play again. Failed
+      // attempts deliberately retain the key so a dropped response can be
+      // retried without creating a second session.
+      _createAttemptRelationshipId = null;
+      _createAttemptKey = null;
+      return sessionId;
     } on SnakesApiError catch (error) {
       state = state.copyWith(errorMessage: error.message);
       return null;
@@ -217,6 +236,21 @@ class SnakesNotifier extends StateNotifier<SnakesUiState> {
     } catch (_) {
       state = state.copyWith(
         errorMessage: 'Could not join this game. Please try again.',
+      );
+      return false;
+    }
+  }
+
+  Future<bool> declineSession(String sessionId) async {
+    try {
+      await _ref.read(snakesGatewayProvider).declineSession(sessionId);
+      return true;
+    } on SnakesApiError catch (error) {
+      state = state.copyWith(errorMessage: error.message);
+      return false;
+    } catch (_) {
+      state = state.copyWith(
+        errorMessage: 'Could not decline this game. Please try again.',
       );
       return false;
     }

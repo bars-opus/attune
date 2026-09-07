@@ -1,9 +1,16 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:attune/features/games/snakes_and_ladders/models/snakes_models.dart';
+import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
+import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_game_screen.dart';
+import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_lobby_screen.dart';
+import 'package:attune/features/games/snakes_and_ladders/presentation/state/snakes_provider.dart';
+import 'package:attune/features/games/snakes_and_ladders/services/snakes_service.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/widgets/snakes_board.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/widgets/snakes_die.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -31,6 +38,37 @@ void main() {
       expect(
         snakesCellCentre(11, size).dx,
         greaterThan(snakesCellCentre(12, size).dx),
+      );
+    });
+
+    test('feature motion follows the drawn ladder and snake', () {
+      const size = Size(400, 400);
+      const ladder = SnakesFeatureMotion(
+        from: 2,
+        to: 38,
+        progress: 0.5,
+        movement: SnakesMovement.ladder,
+      );
+      const snake = SnakesFeatureMotion(
+        from: 98,
+        to: 78,
+        progress: 0.25,
+        movement: SnakesMovement.snake,
+      );
+
+      expect(
+        snakesFeaturePoint(ladder, size),
+        Offset.lerp(snakesCellCentre(2, size), snakesCellCentre(38, size), 0.5),
+      );
+      expect(
+        snakesFeaturePoint(snake, size),
+        isNot(
+          Offset.lerp(
+            snakesCellCentre(98, size),
+            snakesCellCentre(78, size),
+            0.25,
+          ),
+        ),
       );
     });
 
@@ -80,6 +118,164 @@ void main() {
       // A board or server ahead of this client must not crash it.
       expect(SnakesMovement.fromWire('teleport'), SnakesMovement.normal);
       expect(SnakesMovement.fromWire(null), SnakesMovement.normal);
+    });
+  });
+
+  group('session lifecycle', () {
+    test('the invitation identifies its initiator', () {
+      final session = _session(initiatorId: 'user-a');
+
+      expect(session.initiatorId, 'user-a');
+      expect(session.isInitiator('user-a'), isTrue);
+      expect(session.isInitiator('user-b'), isFalse);
+    });
+
+    test('successful creates never reuse the previous attempt key', () async {
+      final gateway = _FakeSnakesGateway();
+      final container = ProviderContainer(
+        overrides: [snakesGatewayProvider.overrideWithValue(gateway)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(snakesProvider.notifier);
+      await notifier.createSession('relationship');
+      await notifier.createSession('relationship');
+
+      expect(gateway.createKeys, hasLength(2));
+      expect(gateway.createKeys[1], isNot(gateway.createKeys[0]));
+    });
+
+    test('a failed create keeps its key for a safe retry', () async {
+      final gateway = _FakeSnakesGateway(failFirstCreate: true);
+      final container = ProviderContainer(
+        overrides: [snakesGatewayProvider.overrideWithValue(gateway)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(snakesProvider.notifier);
+      expect(await notifier.createSession('relationship'), isNull);
+      expect(await notifier.createSession('relationship'), isNotNull);
+
+      expect(gateway.createKeys, hasLength(2));
+      expect(gateway.createKeys[1], gateway.createKeys[0]);
+    });
+
+    test('a late load from another session cannot replace this game', () async {
+      final gateway = _FakeSnakesGateway();
+      final oldLoad = Completer<SnakesSession>();
+      final newLoad = Completer<SnakesSession>();
+      gateway.loadResults
+        ..['old'] = oldLoad.future
+        ..['new'] = newLoad.future;
+      final container = ProviderContainer(
+        overrides: [snakesGatewayProvider.overrideWithValue(gateway)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(snakesProvider.notifier);
+      final first = notifier.load('old');
+      final second = notifier.load('new');
+      newLoad.complete(_session(sessionId: 'new'));
+      await second;
+      oldLoad.complete(_session(sessionId: 'old'));
+      await first;
+
+      expect(container.read(snakesProvider).session?.sessionId, 'new');
+    });
+
+    testWidgets('an initial load failure offers a retry instead of spinning', (
+      tester,
+    ) async {
+      final gateway = _FakeSnakesGateway(loadError: true);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            snakesGatewayProvider.overrideWithValue(gateway),
+            snakesCurrentUserIdProvider.overrideWithValue('user-a'),
+            gameSessionLiveProvider.overrideWith(
+              (_, __) => const Stream<void>.empty(),
+            ),
+          ],
+          child: const MaterialApp(
+            home: SnakesGameScreen(sessionId: 'missing'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('Try again'), findsOneWidget);
+      expect(
+        find.text('Could not open this game. Please try again.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the inviter waits instead of joining their own game', (
+      tester,
+    ) async {
+      final gateway = _FakeSnakesGateway(
+        activeSession: _session(initiatorId: 'user-a'),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            snakesGatewayProvider.overrideWithValue(gateway),
+            snakesCurrentUserIdProvider.overrideWithValue('user-a'),
+          ],
+          child: const MaterialApp(
+            home: SnakesLobbyScreen(relationshipId: 'relationship'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Waiting for your partner'), findsOneWidget);
+      expect(find.text('Join the game'), findsNothing);
+    });
+
+    testWidgets('the invitee can either join or decline', (tester) async {
+      final gateway = _FakeSnakesGateway(
+        activeSession: _session(initiatorId: 'user-a'),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            snakesGatewayProvider.overrideWithValue(gateway),
+            snakesCurrentUserIdProvider.overrideWithValue('user-b'),
+          ],
+          child: const MaterialApp(
+            home: SnakesLobbyScreen(relationshipId: 'relationship'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Join the game'), findsOneWidget);
+      expect(find.text('Decline'), findsOneWidget);
+    });
+
+    testWidgets('starting a game stays in the invitation lobby', (
+      tester,
+    ) async {
+      final gateway = _FakeSnakesGateway();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            snakesGatewayProvider.overrideWithValue(gateway),
+            snakesCurrentUserIdProvider.overrideWithValue('user-a'),
+          ],
+          child: const MaterialApp(
+            home: SnakesLobbyScreen(relationshipId: 'relationship'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start a game'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Waiting for your partner'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   });
 
@@ -380,4 +576,71 @@ void main() {
       );
     });
   });
+}
+
+SnakesSession _session({
+  String sessionId = 'session',
+  String initiatorId = 'user-a',
+}) => SnakesSession.fromJson({
+  'session_id': sessionId,
+  'initiator_id': initiatorId,
+  'status': 'invited',
+  'user_a': 'user-a',
+  'user_b': 'user-b',
+  'position_a': 0,
+  'position_b': 0,
+  'current_round': 1,
+  'board': {'ladders': <String, int>{}, 'snakes': <String, int>{}},
+  'rounds': <Object>[],
+});
+
+class _FakeSnakesGateway implements SnakesGateway {
+  _FakeSnakesGateway({
+    this.failFirstCreate = false,
+    this.loadError = false,
+    this.activeSession,
+  });
+
+  final bool failFirstCreate;
+  final bool loadError;
+  SnakesSession? activeSession;
+  final List<String> createKeys = [];
+  final Map<String, Future<SnakesSession>> loadResults = {};
+
+  @override
+  Future<String> createSession({
+    required String relationshipId,
+    required String idempotencyKey,
+  }) async {
+    createKeys.add(idempotencyKey);
+    if (failFirstCreate && createKeys.length == 1) {
+      throw const SnakesApiError(code: 'NETWORK', message: 'Try again.');
+    }
+    final sessionId = 'session-${createKeys.length}';
+    activeSession = _session(sessionId: sessionId, initiatorId: 'user-a');
+    return sessionId;
+  }
+
+  @override
+  Future<SnakesSession> getState(String sessionId) {
+    if (loadError) throw StateError('database details must not reach the UI');
+    return loadResults[sessionId] ??
+        Future.value(_session(sessionId: sessionId));
+  }
+
+  @override
+  Future<void> acceptSession(String sessionId) async {}
+
+  @override
+  Future<void> declineSession(String sessionId) async {}
+
+  @override
+  Future<SnakesSession?> getActiveSession(String relationshipId) async =>
+      activeSession;
+
+  @override
+  Future<SnakesTurn> rollDie({
+    required String sessionId,
+    required int roundNumber,
+  }) => throw UnimplementedError();
 }

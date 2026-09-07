@@ -5,7 +5,8 @@ Audited against `lib/architecture/algorithms/algorithm_quality_review_checklist.
 **Date:** 2026-09-07 · **Scope:** `snakes_*` RPCs, board config, Flutter client
 **Tags:** `[SERVICE]` `[MUTATION]` `[UI]` `[MOBILE]` — not `[FIN]`, not `[BATCH]`
 
-**Verdict: NOT ready. Revised 2026-09-07 after external review.**
+**Verdict: code-complete for device QA, not production-cleared. Revised
+2026-09-07 after two external review passes.**
 
 The first version of this audit said "ships". It was written by the same
 person who wrote the code, and it was wrong — an external review found a
@@ -48,17 +49,17 @@ convinced myself of.
 
 | # | Item | Evidence |
 |---|---|---|
-| 1.1 / 2.18 | Idempotency | `snakes_create_session` on key; `snakes_roll_die` on `(session, round, player)` — **checked first, before rate limit and status**, so a retry never re-rolls. Mutation-tested. |
-| 1.2 | Timeouts | 30s on all five client calls |
-| 1.6 | Concurrency | `FOR UPDATE` on the session row; `pg_advisory_xact_lock` on create |
+| 1.1 / 2.18 | Idempotency | `snakes_create_session` retains one UUID only across a failed attempt and clears it after success; `snakes_roll_die` checks `(session, round, player)` before rate, expiry and status, so even a retry after relationship teardown returns the committed roll. Contract-tested. |
+| 1.2 | Timeouts | 30s on all six client calls |
+| 1.6 | Concurrency | `FOR UPDATE` serialises turns; relationship and idempotency-key advisory locks serialise creation. A true two-connection race test is still absent. |
 | 1.10 | Compensating paths | Single-transaction turns; nothing partial to unwind |
 | 1.11 | Data privacy | No PII; positions are not personal data |
-| 2.11–2.15 | Pools, cancellation, memory | Supabase pool; animation bounded; no caches |
+| 2.11–2.15 | Pools, cancellation, memory | Supabase pool; animation bounded; no caches. `Future.timeout` bounds the UI wait but does not cancel the underlying HTTP request. |
 | 2.16 | Shared state | Server-side, row-locked |
 | 3.10 | No retry on permanent errors | Client does not auto-retry |
 | 6.1 | Edge cases | Boundary sweep over all 600 (position, roll) pairs asserts nothing leaves the board |
 | 6.4 | Negative tests | Outsider refused, out-of-turn refused, finished game refused, retry does not double-move |
-| 7.4 | Least privilege | `anon` revoked on all; `expire_snakes_sessions` is `service_role` only |
+| 7.4 | Least privilege | `anon` revoked on all; internal helpers revoked from players; `expire_snakes_sessions` is `service_role` only; shared table writes exclude Snakes. |
 
 ## 🟢 P2
 
@@ -77,7 +78,7 @@ convinced myself of.
 | 5.1 | Actionable errors | Each code has a player-facing next step |
 | 5.2 | p95 ≤ 200ms | **Unmeasured, not passed.** The die tumbles on tap so first feedback is immediate, but no trace has been taken. |
 | 5.6 | Accessibility | Die is a labelled button; the board now describes itself and its token positions; reduce-motion honoured. **Was failing** — the painted board had no semantics at all. |
-| 6.2 | Failure scenarios | Malformed board, unknown movement kind, absent board version |
+| 6.2 | Failure scenarios | Malformed board, unknown movement kind, absent board version, initial-load failure, stale async load, expired invite/active session, relationship teardown and retry after teardown |
 | 6.7 | Coverage | **Not measured.** Branch coverage was never run. The service, provider and screen paths are largely untested; what exists covers the model, geometry, board parsing and wiring. |
 | 6.8 | Mutation testing | 8 mutants now, all caught — but hand-picked by the author, which is not evidence of a <5% survival rate. Two of them only became effective after a review pointed at what I had not thought to break. |
 
@@ -124,14 +125,14 @@ These cannot be satisfied before deployment and are not claimed:
 | 8.2 | Production smoke test |
 | 8.3 | 24h metric verification |
 
-**Also not done:** no device testing. Everything above is verified by
-tests and golden renders. Whether the walk animation *feels* right, and
+**Also not done:** no device testing and no Snakes golden suite. Everything
+above is verified by contract, unit, and widget tests. Whether the walk animation *feels* right, and
 whether a 10×10 board is legible on a real phone, are judgements a test
 cannot make.
 
 ## Rollback (8.1, Tier 2)
 
-Six migrations. Reverting means:
+Seven migrations. Reverting means:
 
 - `DROP FUNCTION` on the `snakes_*` set and `get_active_snakes_session`
 - `DROP TABLE public.snakes_boards` and its two triggers

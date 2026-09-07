@@ -114,6 +114,7 @@ class SnakesTurn {
 class SnakesSession {
   const SnakesSession({
     required this.sessionId,
+    required this.initiatorId,
     required this.status,
     required this.userA,
     required this.userB,
@@ -127,6 +128,7 @@ class SnakesSession {
   });
 
   final String sessionId;
+  final String initiatorId;
   final String status;
   final String userA;
   final String userB;
@@ -141,7 +143,9 @@ class SnakesSession {
   final List<SnakesTurn> turns;
 
   bool get isActive => status == 'active';
+  bool get isInvited => status == 'invited';
   bool get isFinished => status == 'completed';
+  bool isInitiator(String? userId) => userId != null && initiatorId == userId;
   bool isMyTurn(String? userId) =>
       userId != null && currentTurnUserId == userId;
 
@@ -154,6 +158,7 @@ class SnakesSession {
 
   SnakesSession copyWith({int? positionA, int? positionB}) => SnakesSession(
     sessionId: sessionId,
+    initiatorId: initiatorId,
     status: status,
     userA: userA,
     userB: userB,
@@ -168,6 +173,7 @@ class SnakesSession {
 
   factory SnakesSession.fromJson(Map<String, dynamic> json) => SnakesSession(
     sessionId: '${json['session_id'] ?? ''}',
+    initiatorId: '${json['initiator_id'] ?? ''}',
     status: '${json['status'] ?? 'invited'}',
     userA: '${json['user_a'] ?? ''}',
     userB: '${json['user_b'] ?? ''}',

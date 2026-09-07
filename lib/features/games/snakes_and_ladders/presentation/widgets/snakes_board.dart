@@ -25,6 +25,43 @@ class SnakesPalette {
 const int kSnakesCells = 100;
 const int kSnakesPerRow = 10;
 
+@immutable
+class SnakesFeatureMotion {
+  const SnakesFeatureMotion({
+    required this.from,
+    required this.to,
+    required this.progress,
+    required this.movement,
+  });
+
+  final int from;
+  final int to;
+  final double progress;
+  final SnakesMovement movement;
+}
+
+Offset snakesFeaturePoint(SnakesFeatureMotion motion, Size size) {
+  final a = snakesCellCentre(motion.from, size);
+  final b = snakesCellCentre(motion.to, size);
+  final t = motion.progress.clamp(0.0, 1.0);
+  if (motion.movement != SnakesMovement.snake) {
+    return Offset.lerp(a, b, t)!;
+  }
+
+  final along = b - a;
+  final length = along.distance;
+  if (length == 0) return a;
+  final normal = Offset(-along.dy, along.dx) / length;
+  final wave = math.min(length * 0.16, 26.0);
+  final c1 = a + along * 0.33 + normal * wave;
+  final c2 = a + along * 0.66 - normal * wave;
+  final oneMinusT = 1 - t;
+  return a * (oneMinusT * oneMinusT * oneMinusT) +
+      c1 * (3 * oneMinusT * oneMinusT * t) +
+      c2 * (3 * oneMinusT * t * t) +
+      b * (t * t * t);
+}
+
 /// Where a cell sits, in board coordinates (0,0 top-left).
 ///
 /// Boustrophedon: row 1 runs left to right, row 2 right to left, so the
@@ -64,6 +101,8 @@ class SnakesBoardView extends StatelessWidget {
     required this.theirCell,
     this.highlightCell,
     this.partnerName,
+    this.featureMotion,
+    this.movingYourToken = false,
   });
 
   final SnakesBoard board;
@@ -74,6 +113,8 @@ class SnakesBoardView extends StatelessWidget {
   final int? highlightCell;
 
   final String? partnerName;
+  final SnakesFeatureMotion? featureMotion;
+  final bool movingYourToken;
 
   @override
   Widget build(BuildContext context) {
@@ -114,6 +155,8 @@ class SnakesBoardView extends StatelessWidget {
                   highlightCell: highlightCell,
                   sparseNumerals: sparseNumerals,
                   textDirection: Directionality.of(context),
+                  featureMotion: featureMotion,
+                  movingYourToken: movingYourToken,
                 ),
               ),
             ),
@@ -132,6 +175,8 @@ class _BoardPainter extends CustomPainter {
     required this.highlightCell,
     required this.sparseNumerals,
     required this.textDirection,
+    required this.featureMotion,
+    required this.movingYourToken,
   });
 
   final SnakesBoard board;
@@ -140,6 +185,8 @@ class _BoardPainter extends CustomPainter {
   final int? highlightCell;
   final bool sparseNumerals;
   final TextDirection textDirection;
+  final SnakesFeatureMotion? featureMotion;
+  final bool movingYourToken;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -273,6 +320,8 @@ class _BoardPainter extends CustomPainter {
 
   void _paintTokens(Canvas canvas, Size size) {
     final radius = math.min(size.width, size.height) / kSnakesPerRow * 0.26;
+    final movingCentre =
+        featureMotion == null ? null : snakesFeaturePoint(featureMotion!, size);
 
     if (highlightCell != null) {
       canvas.drawCircle(
@@ -286,13 +335,17 @@ class _BoardPainter extends CustomPainter {
     // visible -- they share cells freely, since there is no capture.
     _paintToken(
       canvas,
-      snakesCellCentre(theirCell, size) + Offset(radius * 0.5, 0),
+      movingCentre != null && !movingYourToken
+          ? movingCentre
+          : snakesCellCentre(theirCell, size) + Offset(radius * 0.5, 0),
       radius,
       SnakesPalette.them,
     );
     _paintToken(
       canvas,
-      snakesCellCentre(yourCell, size) - Offset(radius * 0.5, 0),
+      movingCentre != null && movingYourToken
+          ? movingCentre
+          : snakesCellCentre(yourCell, size) - Offset(radius * 0.5, 0),
       radius,
       SnakesPalette.you,
     );
@@ -321,5 +374,7 @@ class _BoardPainter extends CustomPainter {
       old.theirCell != theirCell ||
       old.highlightCell != highlightCell ||
       old.sparseNumerals != sparseNumerals ||
+      old.featureMotion != featureMotion ||
+      old.movingYourToken != movingYourToken ||
       old.board != board;
 }
