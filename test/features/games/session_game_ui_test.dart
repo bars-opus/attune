@@ -207,4 +207,39 @@ void main() {
       );
     });
   });
+
+  group('waiting', () {
+    testWidgets('waiting breathes rather than spinning', (tester) async {
+      // A spinner says "something is loading and may be stuck". This wait
+      // is on a person who may answer in an hour, and the difference is
+      // the whole feeling of the screen -- one invites anxiety, the other
+      // patience.
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: Center(child: SessionGameWaitingMark())),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.byType(CustomPaint), findsWidgets);
+    });
+
+    testWidgets('reduce motion stops it rather than hanging', (tester) async {
+      await tester.pumpWidget(
+        const MediaQuery(
+          data: MediaQueryData(disableAnimations: true),
+          child: MaterialApp(
+            home: Scaffold(body: Center(child: SessionGameWaitingMark())),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // pumpAndSettle would never return on a repeating animation, so
+      // completing at all is the assertion.
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+  });
 }

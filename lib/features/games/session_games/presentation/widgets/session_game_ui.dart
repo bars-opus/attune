@@ -472,3 +472,99 @@ class SessionGamePrimaryAction extends StatelessWidget {
     );
   }
 }
+
+/// A slow breathing mark for waiting on a partner.
+///
+/// Not a spinner. A spinner says "something is loading and may be stuck";
+/// this wait is on a person who may answer in an hour, and the difference
+/// matters -- one invites anxiety, the other patience.
+class SessionGameWaitingMark extends StatefulWidget {
+  const SessionGameWaitingMark({super.key, this.color});
+
+  final Color? color;
+
+  @override
+  State<SessionGameWaitingMark> createState() => _SessionGameWaitingMarkState();
+}
+
+class _SessionGameWaitingMarkState extends State<SessionGameWaitingMark>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2600),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (reduceMotionOf(context)) {
+      _controller.stop();
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = SessionGamePalette.of(
+      context,
+      gameType: SessionGameTypeScope.of(context),
+    );
+    final tint = widget.color ?? palette.accent;
+
+    if (reduceMotionOf(context)) {
+      return Icon(Icons.more_horiz_rounded, color: tint, size: 30);
+    }
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder:
+          (context, _) => CustomPaint(
+            size: const Size(64, 64),
+            painter: _BreathPainter(_controller.value, tint),
+          ),
+    );
+  }
+}
+
+/// Two rings breathing out of a still centre.
+///
+/// Slow on purpose: the tempo is closer to breathing than to loading.
+class _BreathPainter extends CustomPainter {
+  const _BreathPainter(this.progress, this.color);
+
+  final double progress;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final centre = Offset(size.width / 2, size.height / 2);
+    final maxRadius = size.width / 2;
+
+    for (var ring = 0; ring < 2; ring++) {
+      // Offset so the two rings never pulse together, which would read
+      // as one thick ring rather than something breathing.
+      final phase = (progress + (ring * 0.5)) % 1;
+      canvas.drawCircle(
+        centre,
+        maxRadius * (0.25 + phase * 0.75),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.6
+          ..color = color.withValues(alpha: (1 - phase) * 0.5),
+      );
+    }
+
+    canvas.drawCircle(centre, 5, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_BreathPainter old) =>
+      old.progress != progress || old.color != color;
+}

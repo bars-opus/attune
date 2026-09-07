@@ -181,7 +181,13 @@ class _SessionGameFlowScaffoldState
               case SessionGameStage.question:
                 return SessionGameRouterScreen(
                   question: question,
-                  onSubmit: notifier.submit,
+                  onSubmit: (answer) {
+                    // Committing an answer is the one irreversible act in
+                    // a round, and it happened in silence.
+                    ref.read(soundServiceProvider).play(AppSound.gameTap);
+                    ref.read(hapticsProvider).selection();
+                    notifier.submit(answer);
+                  },
                   isSubject: flow.isSubject,
                 );
               case SessionGameStage.waiting:

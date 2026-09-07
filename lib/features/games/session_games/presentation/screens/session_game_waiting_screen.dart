@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:attune/features/games/session_games/data/repositories/session_game_repository.dart';
 import 'package:flutter/foundation.dart';
+import 'package:attune/features/games/session_games/presentation/widgets/session_game_ui.dart';
 import 'package:flutter/material.dart';
 
 /// Shown after this user submits, until the partner does too.
@@ -143,8 +144,12 @@ class _SessionGameWaitingScreenState extends State<SessionGameWaitingScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
+            // Breathing, not spinning. A spinner says "something is
+            // loading and may be stuck"; this wait is on a person who may
+            // answer in an hour, and the difference is the whole feeling
+            // of the screen.
+            const SessionGameWaitingMark(),
+            const SizedBox(height: 20),
             Text('Waiting for your partner', style: textTheme.titleMedium),
             const SizedBox(height: 8),
             // Says what happens next, so the wait does not read as a

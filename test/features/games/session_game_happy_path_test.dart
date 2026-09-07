@@ -239,8 +239,13 @@ void main() {
       // ---- End: the last round completes the session, and only the
       // viewer's own score is shown (§11.1) ----
       expect(repository.completed, isTrue);
-      expect(find.text('That is the end'), findsOneWidget);
-      expect(find.text('You read them 1 of 4 times'), findsOneWidget);
+      expect(find.text('THAT IS THE END'), findsOneWidget);
+      // The score is now a counted-up figure above its caption, so the
+      // sentence spans two widgets. What matters is unchanged: the
+      // viewer's OWN score and nothing about their partner (§11.1).
+      await tester.pumpAndSettle();
+      expect(find.text('1'), findsOneWidget);
+      expect(find.text('of 4 times you read them right'), findsOneWidget);
 
       // The caller was subject in round 1 only, so exactly one judgement.
       expect(repository.judgements, [true]);
