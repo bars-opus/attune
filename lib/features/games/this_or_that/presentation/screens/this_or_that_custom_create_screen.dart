@@ -1,10 +1,7 @@
-// lib/features/games/this_or_that/presentation/screens/this_or_that_custom_create_screen.dart
-
-import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_custom_providers.dart';
+import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:gap/gap.dart';
 
 class ThisOrThatCustomCreateScreen extends ConsumerStatefulWidget {
   const ThisOrThatCustomCreateScreen({super.key});
@@ -16,32 +13,25 @@ class ThisOrThatCustomCreateScreen extends ConsumerStatefulWidget {
 
 class _ThisOrThatCustomCreateScreenState
     extends ConsumerState<ThisOrThatCustomCreateScreen> {
-  final TextEditingController _questionController = TextEditingController();
-  final TextEditingController _optionAController = TextEditingController();
-  final TextEditingController _optionBController = TextEditingController();
-  String? _selectedEmojiA;
-  String? _selectedEmojiB;
-  String _selectedTone = 'connecting';
+  final _questionController = TextEditingController();
+  final _optionAController = TextEditingController();
+  final _optionBController = TextEditingController();
+
+  String? _emojiA;
+  String? _emojiB;
+  String _tone = 'connecting';
   bool _isPrivate = true;
   bool _isSubmitting = false;
 
-  final List<String> _tones = [
-    'connecting',
-    'romantic',
-    'playful',
-    'spicy',
-    'intimate',
+  static const _tones = <(String, String, IconData)>[
+    ('connecting', 'Connecting', Icons.people_alt_rounded),
+    ('romantic', 'Romantic', Icons.favorite_rounded),
+    ('playful', 'Playful', Icons.celebration_rounded),
+    ('spicy', 'Spicy', Icons.local_fire_department_rounded),
+    ('intimate', 'Intimate', Icons.nights_stay_rounded),
   ];
 
-  final Map<String, String> _toneDisplay = {
-    'connecting': '💙 Connecting',
-    'romantic': '❤️ Romantic',
-    'playful': '😄 Playful',
-    'spicy': '🔥 Spicy',
-    'intimate': '🌙 Intimate',
-  };
-
-  static const List<String> _emojis = [
+  static const _emojis = <String>[
     '😀',
     '😂',
     '🥰',
@@ -86,302 +76,407 @@ class _ThisOrThatCustomCreateScreenState
       _optionBController.text.trim().isNotEmpty &&
       !_isSubmitting;
 
-  Future<void> _saveQuestion() async {
+  @override
+  void initState() {
+    super.initState();
+    for (final controller in [
+      _questionController,
+      _optionAController,
+      _optionBController,
+    ]) {
+      controller.addListener(_draftChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final controller in [
+      _questionController,
+      _optionAController,
+      _optionBController,
+    ]) {
+      controller
+        ..removeListener(_draftChanged)
+        ..dispose();
+    }
+    super.dispose();
+  }
+
+  void _draftChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _save() async {
     if (!_isValid) return;
-
+    FocusScope.of(context).unfocus();
     setState(() => _isSubmitting = true);
-
+    final request = (
+      questionText: _questionController.text.trim(),
+      optionA: _optionAController.text.trim(),
+      optionB: _optionBController.text.trim(),
+      emojiA: _emojiA,
+      emojiB: _emojiB,
+      tone: _tone,
+      isPrivate: _isPrivate,
+    );
     try {
-      await ref.read(
-        createThisOrThatCustomQuestionProvider((
-          questionText: _questionController.text.trim(),
-          optionA: _optionAController.text.trim(),
-          optionB: _optionBController.text.trim(),
-          emojiA: _selectedEmojiA,
-          emojiB: _selectedEmojiB,
-          tone: _selectedTone,
-          isPrivate: _isPrivate,
-        )).future,
+      ref.invalidate(createThisOrThatCustomQuestionProvider(request));
+      await ref.read(createThisOrThatCustomQuestionProvider(request).future);
+      if (mounted) Navigator.pop(context, true);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Your question could not be saved. Try again.'),
+        ),
       );
-
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Question saved!')));
-        Navigator.pop(context, true);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
-      }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
-  Future<void> _selectEmoji(bool isOptionA) async {
-    final emoji = await showDialog<String>(
+  Future<void> _pickEmoji(bool forThis) async {
+    final palette = ThisOrThatPalette.of(context);
+    final emoji = await showModalBottomSheet<String>(
       context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
       builder:
-          (context) => AlertDialog(
-            title: const Text('Choose an emoji'),
-            content: SizedBox(
-              width: 300,
-              height: 350,
-              child: GridView.builder(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 6,
-                  childAspectRatio: 1,
-                ),
-                itemCount: _emojis.length,
-                itemBuilder:
-                    (context, index) => InkWell(
-                      onTap: () => Navigator.pop(context, _emojis[index]),
-                      child: Center(
-                        child: Text(
-                          _emojis[index],
-                          style: const TextStyle(fontSize: 28),
-                        ),
-                      ),
+          (sheetContext) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Give this choice a face',
+                    style: Theme.of(
+                      sheetContext,
+                    ).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0,
                     ),
+                  ),
+                  const SizedBox(height: 14),
+                  GridView.builder(
+                    shrinkWrap: true,
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 6,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                        ),
+                    itemCount: _emojis.length,
+                    itemBuilder:
+                        (_, index) => InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap:
+                              () => Navigator.pop(sheetContext, _emojis[index]),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: palette.panel,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: palette.line),
+                            ),
+                            child: Center(
+                              child: Text(
+                                _emojis[index],
+                                style: const TextStyle(fontSize: 26),
+                              ),
+                            ),
+                          ),
+                        ),
+                  ),
+                ],
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-            ],
           ),
     );
-
-    if (emoji != null && mounted) {
-      setState(() {
-        if (isOptionA) {
-          _selectedEmojiA = emoji;
-        } else {
-          _selectedEmojiB = emoji;
-        }
-      });
-    }
+    if (emoji == null || !mounted) return;
+    setState(() => forThis ? _emojiA = emoji : _emojiB = emoji);
   }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Create custom question'),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.pop(context),
-        ),
+    final palette = ThisOrThatPalette.of(context);
+    return ThisOrThatGameScaffold(
+      title: 'Write a question',
+      scrollable: true,
+      bottom: ThisOrThatPrimaryAction(
+        label: 'Add to my deck',
+        icon: Icons.add_rounded,
+        loading: _isSubmitting,
+        onPressed: _isValid ? _save : null,
       ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Question
-            Text(
-              'Your question',
-              style: textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: ThisOrThatStageLabel(
+              text: 'Make it yours',
+              icon: Icons.edit_note_rounded,
+              color: palette.thisColor,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'What should you both choose between?',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: palette.ink,
+              fontWeight: FontWeight.w900,
+              height: 1.12,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Keep it clear, specific, and fun to reveal together.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: palette.mutedInk,
+              height: 1.4,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 22),
+          _QuestionDraft(controller: _questionController),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _ChoiceDraft(
+                  side: 'THIS',
+                  controller: _optionAController,
+                  emoji: _emojiA,
+                  color: palette.thisColor,
+                  surface: palette.thisSurface,
+                  hint: 'Stay home',
+                  onEmoji: () => _pickEmoji(true),
+                ),
               ),
-            ),
-            Gap(Spacing.sm.h),
-            AppTextFormField(
-              controller: _questionController,
-              hintText: 'e.g., What\'s your perfect Sunday?',
-              maxLength: 100,
-              label: '',
-              // buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
-            ),
-            Gap(Spacing.lg.h),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ChoiceDraft(
+                  side: 'THAT',
+                  controller: _optionBController,
+                  emoji: _emojiB,
+                  color: palette.thatColor,
+                  surface: palette.thatSurface,
+                  hint: 'Head outside',
+                  onEmoji: () => _pickEmoji(false),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _SectionLabel(text: 'MOOD', color: palette.mutedInk),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final tone in _tones)
+                ChoiceChip(
+                  avatar: Icon(tone.$3, size: 17),
+                  label: Text(tone.$2),
+                  selected: _tone == tone.$1,
+                  onSelected: (_) => setState(() => _tone = tone.$1),
+                ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          _PrivacyTile(
+            isPrivate: _isPrivate,
+            onChanged: (shared) => setState(() => _isPrivate = !shared),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-            // Option A
-            Text(
-              'Option A',
-              style: textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
+class _QuestionDraft extends StatelessWidget {
+  const _QuestionDraft({required this.controller});
+
+  final TextEditingController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ThisOrThatPalette.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+      decoration: BoxDecoration(
+        color: palette.panel,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: palette.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SectionLabel(text: 'QUESTION', color: palette.mutedInk),
+          TextField(
+            controller: controller,
+            maxLength: 100,
+            maxLines: 3,
+            textCapitalization: TextCapitalization.sentences,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: palette.ink,
+              fontWeight: FontWeight.w700,
+              height: 1.25,
+              letterSpacing: 0,
+            ),
+            decoration: const InputDecoration(
+              hintText: 'Perfect Sunday: stay home or head outside?',
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.only(top: 8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChoiceDraft extends StatelessWidget {
+  const _ChoiceDraft({
+    required this.side,
+    required this.controller,
+    required this.emoji,
+    required this.color,
+    required this.surface,
+    required this.hint,
+    required this.onEmoji,
+  });
+
+  final String side;
+  final TextEditingController controller;
+  final String? emoji;
+  final Color color;
+  final Color surface;
+  final String hint;
+  final VoidCallback onEmoji;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: surface.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: _SectionLabel(text: side, color: color)),
+              IconButton.outlined(
+                tooltip: 'Choose an emoji',
+                visualDensity: VisualDensity.compact,
+                onPressed: onEmoji,
+                icon: Text(emoji ?? '+', style: const TextStyle(fontSize: 18)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 3,
+            maxLength: 50,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(
+              hintText: hint,
+              counterText: '',
+              filled: true,
+              fillColor: Theme.of(context).colorScheme.surface,
+              contentPadding: const EdgeInsets.all(12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
               ),
             ),
-            Gap(Spacing.sm.h),
-            Row(
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PrivacyTile extends StatelessWidget {
+  const _PrivacyTile({required this.isPrivate, required this.onChanged});
+
+  final bool isPrivate;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ThisOrThatPalette.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: palette.panel,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: palette.line),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isPrivate
+                ? Icons.lock_outline_rounded
+                : Icons.people_outline_rounded,
+            color: isPrivate ? palette.mutedInk : palette.thatColor,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: AppTextFormField(
-                    controller: _optionAController,
-                    hintText: 'e.g., Lazy morning at home',
-                    maxLength: 50,
-                    label: '',
-                    // buildCounter:
-                    //     (
-                    //       context, {
-                    //       required currentLength,
-                    //       required isFocused,
-                    //       maxLength,
-                    //     }) => null,
+                Text(
+                  isPrivate ? 'Only me' : 'Share with my partner',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: palette.ink,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
                   ),
                 ),
-                Gap(Spacing.sm.w),
-                GestureDetector(
-                  onTap: () => _selectEmoji(true),
-                  child: Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest.withOpacity(
-                        0.3,
-                      ),
-                      borderRadius: BorderRadius.circular(
-                        BorderRadiusTokens.md.r,
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        _selectedEmojiA ?? '🎲',
-                        style: const TextStyle(fontSize: 24),
-                      ),
-                    ),
+                Text(
+                  isPrivate
+                      ? 'You can still use it when choosing a card.'
+                      : 'It appears in both of your question decks.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: palette.mutedInk,
+                    letterSpacing: 0,
                   ),
                 ),
               ],
             ),
-            Gap(Spacing.lg.h),
+          ),
+          Switch(value: !isPrivate, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
 
-            // Option B
-            Text(
-              'Option B',
-              style: textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Gap(Spacing.sm.h),
-            Row(
-              children: [
-                Expanded(
-                  child: AppTextFormField(
-                    controller: _optionBController,
-                    hintText: 'e.g., Adventure outdoors',
-                    maxLength: 50,
-                    label: '',
-                    // buildCounter:
-                    //     (
-                    //       context, {
-                    //       required currentLength,
-                    //       required isFocused,
-                    //       maxLength,
-                    //     }) => null,
-                  ),
-                ),
-                Gap(Spacing.sm.w),
-                GestureDetector(
-                  onTap: () => _selectEmoji(false),
-                  child: Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest.withOpacity(
-                        0.3,
-                      ),
-                      borderRadius: BorderRadius.circular(
-                        BorderRadiusTokens.md.r,
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        _selectedEmojiB ?? '🎲',
-                        style: const TextStyle(fontSize: 24),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Gap(Spacing.lg.h),
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.text, required this.color});
 
-            // Tone selector
-            Text(
-              'Tone',
-              style: textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Gap(Spacing.sm.h),
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w),
-              decoration: BoxDecoration(
-                border: Border.all(color: colorScheme.outline.withOpacity(0.3)),
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedTone,
-                  isExpanded: true,
-                  items:
-                      _tones.map((tone) {
-                        return DropdownMenuItem(
-                          value: tone,
-                          child: Text(_toneDisplay[tone]!),
-                        );
-                      }).toList(),
-                  onChanged: (value) {
-                    if (value != null) setState(() => _selectedTone = value);
-                  },
-                ),
-              ),
-            ),
-            Gap(Spacing.lg.h),
+  final String text;
+  final Color color;
 
-            // Privacy setting
-            Row(
-              children: [
-                Switch(
-                  value: _isPrivate,
-                  onChanged: (value) => setState(() => _isPrivate = value),
-                  activeColor: colorScheme.primary,
-                ),
-                Gap(Spacing.sm.w),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _isPrivate ? 'Private' : 'Shared with partner',
-                        style: textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        _isPrivate
-                            ? 'Only you can see and use this question'
-                            : 'Your partner can see and use this question',
-                        style: textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurface.withOpacity(0.6),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            Gap(Spacing.xl.h),
-
-            // Save button
-            AppButton(
-              label: 'Save question',
-              onPressed: _isValid ? _saveQuestion : null,
-              size: ButtonSize.large,
-              width: double.infinity,
-              isLoading: _isSubmitting,
-            ),
-          ],
-        ),
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: color,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 0,
       ),
     );
   }

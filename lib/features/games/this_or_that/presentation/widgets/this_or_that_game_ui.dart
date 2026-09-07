@@ -547,36 +547,46 @@ class ThisOrThatPartnerPresence extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = ThisOrThatPalette.of(context);
     final color = answered ? palette.thisColor : palette.mutedInk;
-    return AnimatedContainer(
-      duration:
-          reduceMotionOf(context)
-              ? Duration.zero
-              : const Duration(milliseconds: 240),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: palette.panel.withValues(alpha: 0.88),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: palette.line),
+    final duration =
+        reduceMotionOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 240);
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: math.min(MediaQuery.sizeOf(context).width * 0.52, 220),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 240),
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            answered ? '$partnerName picked' : '$partnerName is choosing',
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0,
+      child: AnimatedContainer(
+        duration: duration,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: palette.panel.withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: palette.line),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedContainer(
+              duration: duration,
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                answered ? '$partnerName picked' : '$partnerName is choosing',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

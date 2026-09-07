@@ -1,13 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
-import 'package:attune/features/games/this_or_that/data/models/game_round.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class QuestionScreen extends ConsumerStatefulWidget {
   const QuestionScreen({
@@ -23,6 +24,7 @@ class QuestionScreen extends ConsumerStatefulWidget {
     required this.tone,
     required this.isPartnerA,
     this.partnerName = 'Partner',
+    this.partnerAnswered = false,
     this.isCustom = false,
     this.onAnswerSubmitted,
   });
@@ -38,6 +40,7 @@ class QuestionScreen extends ConsumerStatefulWidget {
   final String tone;
   final bool isPartnerA;
   final String partnerName;
+  final bool partnerAnswered;
   final bool isCustom;
   final VoidCallback? onAnswerSubmitted;
 
@@ -49,9 +52,9 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
     with SingleTickerProviderStateMixin {
   String? _selectedChoice;
   bool _isSubmitting = false;
-  bool _partnerAnswered = false;
+  bool _queuedOffline = false;
   bool _startedEntrance = false;
-  StreamSubscription<GameRound>? _roundSubscription;
+  Timer? _retryTimer;
   late final AnimationController _entranceController = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 680),
@@ -60,19 +63,7 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
   @override
   void initState() {
     super.initState();
-    _roundSubscription = ref
-        .read(thisOrThatRepositoryProvider)
-        .watchRound(widget.roundId)
-        .listen((round) {
-          if (!mounted) return;
-          final answered =
-              widget.isPartnerA
-                  ? round.hasUserBAnswered
-                  : round.hasUserAAnswered;
-          if (answered != _partnerAnswered) {
-            setState(() => _partnerAnswered = answered);
-          }
-        });
+    unawaited(_restorePendingAnswer());
   }
 
   @override
@@ -89,35 +80,116 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
 
   @override
   void dispose() {
-    _roundSubscription?.cancel();
+    _retryTimer?.cancel();
     _entranceController.dispose();
     super.dispose();
   }
 
-  Future<void> _submitAnswer() async {
+  Future<void> _submitAnswer({bool automatic = false}) async {
     final selected = _selectedChoice;
     if (selected == null || _isSubmitting) return;
 
     setState(() => _isSubmitting = true);
-    ref.read(hapticsProvider).medium();
+    if (!automatic) ref.read(hapticsProvider).medium();
+
+    final userId = ref.read(currentUserIdProvider);
+    if (userId == null) {
+      setState(() => _isSubmitting = false);
+      return;
+    }
+
+    var savedLocally = false;
+    try {
+      await ref
+          .read(thisOrThatAnswerOutboxProvider)
+          .save(userId: userId, roundId: widget.roundId, choice: selected);
+      savedLocally = true;
+    } catch (_) {
+      // The network request can still succeed even if secure storage is
+      // temporarily unavailable; only claim local safety when it was written.
+    }
 
     try {
-      await ref.read(
-        submitAnswerProvider((
-          roundId: widget.roundId,
-          choice: selected,
-          isPartnerA: widget.isPartnerA,
-        )).future,
+      final request = (
+        roundId: widget.roundId,
+        choice: selected,
+        isPartnerA: widget.isPartnerA,
       );
+      ref.invalidate(submitAnswerProvider(request));
+      await ref.read(submitAnswerProvider(request).future);
+      await _removePendingAnswer(userId);
       if (mounted) widget.onAnswerSubmitted?.call();
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Your pick was not saved. Try again.')),
-      );
+      if (savedLocally && _isRetryable(error)) {
+        setState(() => _queuedOffline = true);
+        _startRetryTimer();
+      } else {
+        if (savedLocally) await _removePendingAnswer(userId);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Your pick was not saved. Try again.')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  Future<void> _restorePendingAnswer() async {
+    final userId = ref.read(currentUserIdProvider);
+    if (userId == null) return;
+    try {
+      final pending = await ref
+          .read(thisOrThatAnswerOutboxProvider)
+          .read(userId: userId, roundId: widget.roundId);
+      if (!mounted || pending == null) return;
+      setState(() {
+        _selectedChoice = pending.choice;
+        _queuedOffline = true;
+      });
+      _startRetryTimer();
+      unawaited(_retryPendingAnswer());
+    } catch (_) {
+      // A cache miss must never prevent the live question from rendering.
+    }
+  }
+
+  void _startRetryTimer() {
+    _retryTimer ??= Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => unawaited(_retryPendingAnswer()),
+    );
+  }
+
+  Future<void> _retryPendingAnswer() async {
+    if (!mounted || !_queuedOffline || _isSubmitting) return;
+    await _submitAnswer(automatic: true);
+  }
+
+  Future<void> _removePendingAnswer(String userId) async {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    try {
+      await ref
+          .read(thisOrThatAnswerOutboxProvider)
+          .remove(userId: userId, roundId: widget.roundId);
+    } catch (_) {
+      // The server is authoritative once submission succeeds. A stale local
+      // entry is discarded on its next permanent rejection.
+    }
+    if (mounted) setState(() => _queuedOffline = false);
+  }
+
+  bool _isRetryable(Object error) {
+    if (error is TimeoutException || error is SocketException) return true;
+    if (error is PostgrestException || error is AuthException) return false;
+    final message = error.toString().toLowerCase();
+    return message.contains('connection') ||
+        message.contains('network') ||
+        message.contains('socket') ||
+        message.contains('failed host lookup') ||
+        message.contains('timed out');
   }
 
   void _selectChoice(String choice) {
@@ -147,7 +219,7 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
             label:
                 selectedText == null
                     ? 'Choose your side'
-                    : 'Lock in $selectedText',
+                    : 'Lock in ${_selectedChoice == 'a' ? 'This' : 'That'}',
             onPressed: selectedText == null ? null : _submitAnswer,
             loading: _isSubmitting,
             icon: Icons.lock_rounded,
@@ -160,6 +232,50 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
               color: palette.mutedInk,
               letterSpacing: 0,
             ),
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child:
+                _queuedOffline
+                    ? Container(
+                      key: const ValueKey('answer-waiting-to-connect'),
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(top: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: palette.thatColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: palette.thatColor.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.cloud_off_rounded,
+                            size: 18,
+                            color: palette.thatColor,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Waiting to connect. Your pick is saved on this device.',
+                              style: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.copyWith(
+                                color: palette.ink,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                    : const SizedBox.shrink(),
           ),
         ],
       ),
@@ -175,7 +291,7 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
               const Spacer(),
               ThisOrThatPartnerPresence(
                 partnerName: widget.partnerName,
-                answered: _partnerAnswered,
+                answered: widget.partnerAnswered,
               ),
             ],
           ),

@@ -128,56 +128,65 @@ class _EndScreenState extends ConsumerState<EndScreen>
             ),
           ),
           const SizedBox(height: 22),
-          AnimatedBuilder(
-            animation: _controller,
-            builder: (context, _) {
-              final progress = Curves.easeOutCubic.transform(
-                const Interval(0.18, 0.82).transform(_controller.value),
-              );
-              return Semantics(
-                label:
-                    '${widget.matchCount} matches out of ${widget.totalRounds} rounds',
-                child: SizedBox.square(
-                  dimension: 164,
-                  child: CustomPaint(
-                    painter: _ScoreRingPainter(
-                      value: matchRatio * progress,
-                      track: palette.line,
-                      first: palette.thisColor,
-                      second: palette.thatColor,
-                    ),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '${(matchRatio * progress * 100).round()}%',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.headlineMedium?.copyWith(
-                              color: palette.ink,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0,
+          if (matchRatio >= 0.6)
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                final progress = Curves.easeOutCubic.transform(
+                  const Interval(0.18, 0.82).transform(_controller.value),
+                );
+                return Semantics(
+                  label:
+                      '${widget.matchCount} matches out of ${widget.totalRounds} rounds',
+                  child: SizedBox.square(
+                    dimension: 164,
+                    child: CustomPaint(
+                      painter: _ScoreRingPainter(
+                        value: matchRatio * progress,
+                        track: palette.line,
+                        first: palette.thisColor,
+                        second: palette.thatColor,
+                      ),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${(matchRatio * progress * 100).round()}%',
+                              style: Theme.of(
+                                context,
+                              ).textTheme.headlineMedium?.copyWith(
+                                color: palette.ink,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0,
+                              ),
                             ),
-                          ),
-                          Text(
-                            '${widget.matchCount} matched',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.labelMedium?.copyWith(
-                              color: palette.mutedInk,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0,
+                            Text(
+                              '${widget.matchCount} matched',
+                              style: Theme.of(
+                                context,
+                              ).textTheme.labelMedium?.copyWith(
+                                color: palette.mutedInk,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              );
-            },
-          ),
+                );
+              },
+            )
+          else
+            ScaleTransition(
+              scale: CurvedAnimation(
+                parent: _controller,
+                curve: const Interval(0.18, 0.82, curve: Curves.easeOutBack),
+              ),
+              child: const _DiscoveryMark(),
+            ),
           if (widget.mostInterestingPick.isNotEmpty) ...[
             const SizedBox(height: 24),
             Container(
@@ -265,6 +274,74 @@ class _EndScreenState extends ConsumerState<EndScreen>
       return 'A little alignment, a little discovery. Exactly the good stuff.';
     }
     return 'Different answers are not misses. They are invitations to know each other better.';
+  }
+}
+
+class _DiscoveryMark extends StatelessWidget {
+  const _DiscoveryMark();
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ThisOrThatPalette.of(context);
+    return Semantics(
+      label: 'Different answers give you more to discover together',
+      child: Container(
+        width: 164,
+        height: 164,
+        decoration: BoxDecoration(
+          color: palette.panel.withValues(alpha: 0.84),
+          shape: BoxShape.circle,
+          border: Border.all(color: palette.line),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned(
+              left: 25,
+              top: 31,
+              child: _DiscoveryDot(
+                color: palette.thisColor,
+                icon: Icons.arrow_back_rounded,
+              ),
+            ),
+            Positioned(
+              right: 25,
+              bottom: 31,
+              child: _DiscoveryDot(
+                color: palette.thatColor,
+                icon: Icons.arrow_forward_rounded,
+              ),
+            ),
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: palette.ink,
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Icon(Icons.forum_rounded, color: palette.canvas, size: 29),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DiscoveryDot extends StatelessWidget {
+  const _DiscoveryDot({required this.color, required this.icon});
+
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: Icon(icon, color: Colors.white, size: 20),
+    );
   }
 }
 

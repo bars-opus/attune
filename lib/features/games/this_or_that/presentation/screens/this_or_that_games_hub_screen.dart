@@ -167,7 +167,7 @@ class ThisOrThatGamesHubScreen extends ConsumerWidget {
                 child: _HubAction(
                   icon: Icons.edit_note_rounded,
                   label: 'Your questions',
-                  onTap: () => context.pushNamed('customQuestionList'),
+                  onTap: () => context.pushNamed('thisOrThatCustomList'),
                 ),
               ),
               const SizedBox(width: 10),

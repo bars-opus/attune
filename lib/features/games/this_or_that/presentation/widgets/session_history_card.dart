@@ -1,12 +1,8 @@
-// Session History Card Widget
-import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_session.dart';
+import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
+import 'package:flutter/material.dart';
 
 class SessionHistoryCard extends StatelessWidget {
-  final ThisOrThatSession session;
-  final VoidCallback onHide;
-  final VoidCallback onTap;
-
   const SessionHistoryCard({
     super.key,
     required this.session,
@@ -14,11 +10,146 @@ class SessionHistoryCard extends StatelessWidget {
     required this.onTap,
   });
 
-  String _formatDate(DateTime date) {
-    return '${date.day} ${_getMonth(date.month)} ${date.year}';
+  final ThisOrThatSession session;
+  final VoidCallback onHide;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ThisOrThatPalette.of(context);
+    final showPercentage = session.matchPercentage >= 60;
+
+    return Material(
+      color: palette.panel.withValues(alpha: 0.96),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: palette.line),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 10, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: palette.thisSurface,
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: Icon(
+                      Icons.style_rounded,
+                      size: 21,
+                      color: palette.thisColor,
+                    ),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _toneLabel(session.tone),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.titleSmall?.copyWith(
+                            color: palette.ink,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _formatDate(session.completedAt ?? session.createdAt),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.copyWith(
+                            color: palette.mutedInk,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Game options',
+                    icon: Icon(
+                      Icons.more_horiz_rounded,
+                      color: palette.mutedInk,
+                    ),
+                    onSelected: (value) {
+                      if (value == 'hide') onHide();
+                    },
+                    itemBuilder:
+                        (_) => const [
+                          PopupMenuItem(
+                            value: 'hide',
+                            child: Row(
+                              children: [
+                                Icon(Icons.visibility_off_outlined),
+                                SizedBox(width: 10),
+                                Text('Hide from my view'),
+                              ],
+                            ),
+                          ),
+                        ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      showPercentage
+                          ? '${session.matchCount} shared picks'
+                          : 'Different perspectives',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: palette.ink,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    showPercentage
+                        ? '${session.matchPercentage.round()}%'
+                        : '${session.totalRoundsCompleted} rounds',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color:
+                          showPercentage
+                              ? palette.thisColor
+                              : palette.thatColor,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 18,
+                    color: palette.mutedInk,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
-  String _getMonth(int month) {
+  static String _toneLabel(String tone) {
+    if (tone.isEmpty) return 'This or That';
+    return '${tone[0].toUpperCase()}${tone.substring(1)} game';
+  }
+
+  static String _formatDate(DateTime date) {
     const months = [
       'Jan',
       'Feb',
@@ -33,161 +164,6 @@ class SessionHistoryCard extends StatelessWidget {
       'Nov',
       'Dec',
     ];
-    return months[month - 1];
-  }
-
-  String _getToneDisplay() {
-    switch (session.tone) {
-      case 'connecting':
-        return 'Connecting';
-      case 'romantic':
-        return 'Romantic';
-      case 'playful':
-        return 'Playful';
-      case 'spicy':
-        return 'Spicy';
-      case 'intimate':
-        return 'Intimate';
-      default:
-        return session.tone;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final matchPercentage = session.matchPercentage;
-    final showMatchText = matchPercentage >= 60;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: EdgeInsets.symmetric(
-          horizontal: Spacing.md.w,
-          vertical: Spacing.xs.h,
-        ),
-        padding: EdgeInsets.all(Spacing.md.w),
-        decoration: BoxDecoration(
-          color: colorScheme.surface,
-          borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-          border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                // Game icon and type
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: Spacing.sm.w,
-                    vertical: Spacing.xs.h,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(
-                      BorderRadiusTokens.sm.r,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Text('🔀', style: TextStyle(fontSize: 14)),
-                      Gap(Spacing.xs.w),
-                      Text(
-                        'This or That',
-                        style: textTheme.labelSmall?.copyWith(
-                          color: colorScheme.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Spacer(),
-                // Tone badge
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: Spacing.sm.w,
-                    vertical: Spacing.xs.h,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(
-                      BorderRadiusTokens.sm.r,
-                    ),
-                  ),
-                  child: Text(_getToneDisplay(), style: textTheme.labelSmall),
-                ),
-                Gap(Spacing.sm.w),
-                // Menu
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert, size: 18),
-                  onSelected: (value) {
-                    if (value == 'hide') onHide();
-                  },
-                  itemBuilder:
-                      (context) => const [
-                        PopupMenuItem(
-                          value: 'hide',
-                          child: Text('Hide from my view'),
-                        ),
-                      ],
-                ),
-              ],
-            ),
-            Gap(Spacing.md.h),
-            // Date
-            Text(
-              _formatDate(session.createdAt),
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurface.withOpacity(0.5),
-              ),
-            ),
-            Gap(Spacing.sm.h),
-            // Match info
-            Row(
-              children: [
-                Text(
-                  '${session.matchCount}/${session.totalRoundsCompleted} matched',
-                  style: textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
-                if (showMatchText)
-                  Text(
-                    '${matchPercentage.toStringAsFixed(0)}%',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                if (!showMatchText)
-                  Text(
-                    'Different picks',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.6),
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-              ],
-            ),
-            if (showMatchText) ...[
-              Gap(Spacing.xs.h),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
-                child: LinearProgressIndicator(
-                  value: matchPercentage / 100,
-                  minHeight: 4,
-                  backgroundColor: colorScheme.surfaceContainerHighest,
-                  color: colorScheme.primary,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 }

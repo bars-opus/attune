@@ -82,6 +82,9 @@ final myThisOrThatCustomQuestionsProvider =
               isPrivate: question.isPrivate,
               timesUsed: question.timesUsed,
               lastUsedAt: question.lastUsedAt,
+              hiddenForReview: question.hiddenForReview,
+              sharedToCommunity: question.sharedToCommunity,
+              communityUsageCount: question.communityUsageCount,
               createdAt: question.createdAt,
             ),
           )
@@ -101,63 +104,58 @@ final partnerThisOrThatCustomQuestionsProvider =
     });
 
 // Create custom question
-final createThisOrThatCustomQuestionProvider = FutureProvider.family<
-  void,
-  ({
-    String questionText,
-    String optionA,
-    String optionB,
-    String? emojiA,
-    String? emojiB,
-    String tone,
-    bool isPrivate,
-  })
->((ref, params) async {
-  final userId = ref.read(currentUserIdProvider);
-  if (userId == null) throw Exception('Not authenticated');
-  final repository = ref.read(thisOrThatRepositoryProvider);
-  await repository.createCustomQuestion(
-    userId: userId,
-    questionText: params.questionText,
-    optionA: params.optionA,
-    optionB: params.optionB,
-    emojiA: params.emojiA,
-    emojiB: params.emojiB,
-    tone: params.tone,
-    isPrivate: params.isPrivate,
-  );
-});
+final createThisOrThatCustomQuestionProvider = FutureProvider.autoDispose
+    .family<
+      void,
+      ({
+        String questionText,
+        String optionA,
+        String optionB,
+        String? emojiA,
+        String? emojiB,
+        String tone,
+        bool isPrivate,
+      })
+    >((ref, params) async {
+      final userId = ref.read(currentUserIdProvider);
+      if (userId == null) throw Exception('Not authenticated');
+      final repository = ref.read(thisOrThatRepositoryProvider);
+      await repository.createCustomQuestion(
+        userId: userId,
+        questionText: params.questionText,
+        optionA: params.optionA,
+        optionB: params.optionB,
+        emojiA: params.emojiA,
+        emojiB: params.emojiB,
+        tone: params.tone,
+        isPrivate: params.isPrivate,
+      );
+    });
 
 // Delete custom question
-final deleteThisOrThatCustomQuestionProvider =
-    FutureProvider.family<void, String>((ref, questionId) async {
+final deleteThisOrThatCustomQuestionProvider = FutureProvider.autoDispose
+    .family<void, String>((ref, questionId) async {
       final repository = ref.read(thisOrThatRepositoryProvider);
       await repository.deleteCustomQuestion(questionId);
     });
 
 // Toggle privacy
-final toggleThisOrThatCustomPrivacyProvider =
-    FutureProvider.family<void, ({String id, bool isPrivate})>((
-      ref,
-      params,
-    ) async {
+final toggleThisOrThatCustomPrivacyProvider = FutureProvider.autoDispose
+    .family<void, ({String id, bool isPrivate})>((ref, params) async {
       final repository = ref.read(thisOrThatRepositoryProvider);
       await repository.updateCustomQuestionPrivacy(params.id, params.isPrivate);
     });
 
 // Toggle community share
-final toggleThisOrThatCommunityShareProvider =
-    FutureProvider.family<void, ({String id, bool share})>((ref, params) async {
+final toggleThisOrThatCommunityShareProvider = FutureProvider.autoDispose
+    .family<void, ({String id, bool share})>((ref, params) async {
       final repository = ref.read(thisOrThatRepositoryProvider);
       await repository.toggleShareToCommunity(params.id, params.share);
     });
 
 // Report custom question
-final reportThisOrThatCustomQuestionProvider =
-    FutureProvider.family<void, ({String id, String reason})>((
-      ref,
-      params,
-    ) async {
+final reportThisOrThatCustomQuestionProvider = FutureProvider.autoDispose
+    .family<void, ({String id, String reason})>((ref, params) async {
       final repository = ref.read(thisOrThatRepositoryProvider);
       await repository.reportCustomQuestion(params.id, params.reason);
     });

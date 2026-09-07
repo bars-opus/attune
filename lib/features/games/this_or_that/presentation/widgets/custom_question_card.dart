@@ -3,9 +3,7 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/this_or_that/data/models/custom_question.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:gap/gap.dart';
 
 class CustomQuestionCard extends ConsumerWidget {
   final CustomQuestion question;
@@ -51,7 +49,7 @@ class CustomQuestionCard extends ConsumerWidget {
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-        border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
+        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -65,7 +63,7 @@ class CustomQuestionCard extends ConsumerWidget {
                   vertical: Spacing.xs.h,
                 ),
                 decoration: BoxDecoration(
-                  color: colorScheme.primary.withOpacity(0.1),
+                  color: colorScheme.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
                 ),
                 child: Text(
@@ -208,7 +206,7 @@ class CustomQuestionCard extends ConsumerWidget {
           Text(
             'Used ${question.timesUsed} time${question.timesUsed != 1 ? 's' : ''}',
             style: textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurface.withOpacity(0.5),
+              color: colorScheme.onSurface.withValues(alpha: 0.5),
             ),
           ),
         ],
@@ -223,7 +221,7 @@ class CustomQuestionCard extends ConsumerWidget {
         vertical: Spacing.xs.h,
       ),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
       ),
       child: Row(

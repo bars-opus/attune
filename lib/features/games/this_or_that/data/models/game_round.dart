@@ -6,9 +6,11 @@ class GameRound {
   final String id;
   final String sessionId;
   final int roundNumber;
-  final String questionId;
+  final String? questionId;
   final String? answerA;
   final String? answerB;
+  final bool? hasAnswerA;
+  final bool? hasAnswerB;
   final DateTime? answerASubmittedAt;
   final DateTime? answerBSubmittedAt;
   final bool bothAnswered;
@@ -26,9 +28,11 @@ class GameRound {
     required this.id,
     required this.sessionId,
     required this.roundNumber,
-    required this.questionId,
+    this.questionId,
     this.answerA,
     this.answerB,
+    this.hasAnswerA,
+    this.hasAnswerB,
     this.answerASubmittedAt,
     this.answerBSubmittedAt,
     required this.bothAnswered,
@@ -56,6 +60,8 @@ class GameRound {
       questionId: json['question_id'],
       answerA: json['answer_a'],
       answerB: json['answer_b'],
+      hasAnswerA: json['has_answer_a'] as bool?,
+      hasAnswerB: json['has_answer_b'] as bool?,
       answerASubmittedAt:
           json['answer_a_submitted_at'] != null
               ? DateTime.parse(json['answer_a_submitted_at'])
@@ -93,8 +99,10 @@ class GameRound {
     );
   }
 
-  bool get hasUserAAnswered => answerA != null && answerA!.isNotEmpty;
-  bool get hasUserBAnswered => answerB != null && answerB!.isNotEmpty;
+  bool get hasUserAAnswered =>
+      hasAnswerA ?? (answerA != null && answerA!.isNotEmpty);
+  bool get hasUserBAnswered =>
+      hasAnswerB ?? (answerB != null && answerB!.isNotEmpty);
   String get displayQuestionText => questionText ?? 'Question unavailable';
   String? get answerAText => _choiceToText(answerA);
   String? get answerBText => _choiceToText(answerB);

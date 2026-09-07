@@ -3,7 +3,6 @@
 import 'dart:convert';
 import 'package:attune/features/games/this_or_that/data/models/custom_question.dart';
 import 'package:attune/features/games/this_or_that/data/models/custom_this_or_that_question.dart';
-import 'package:attune/features/games/this_or_that/data/models/game_round.dart';
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_question.dart';
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_session.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -23,58 +22,15 @@ class ThisOrThatRepository {
     required String tone,
     required String idempotencyKey,
   }) async {
-    final existingSession =
-        await _supabase
-            .from('game_sessions')
-            .select('*')
-            .eq('relationship_id', relationshipId)
-            .eq('game_type', 'this_or_that')
-            .inFilter('status', ['invited', 'active'])
-            .maybeSingle();
-
-    if (existingSession != null) {
-      return ThisOrThatSession.fromJson(existingSession);
-    }
-
-    // Check idempotency
-    final existingKey =
-        await _supabase
-            .from('session_idempotency_keys')
-            .select('session_id')
-            .eq('key', idempotencyKey)
-            .maybeSingle();
-
-    if (existingKey != null) {
-      final sessionData =
-          await _supabase
-              .from('game_sessions')
-              .select('*')
-              .eq('id', existingKey['session_id'])
-              .single();
-      return ThisOrThatSession.fromJson(sessionData);
-    }
-
-    final response =
-        await _supabase
-            .from('game_sessions')
-            .insert({
-              'relationship_id': relationshipId,
-              'initiator_id': initiatorId,
-              'game_type': 'this_or_that',
-              'tone': tone,
-              'status': 'invited',
-              'total_rounds': 10,
-              'intimate_consent_a': tone == 'intimate',
-            })
-            .select()
-            .single();
-
-    await _supabase.from('session_idempotency_keys').insert({
-      'key': idempotencyKey,
-      'session_id': response['id'],
-    });
-
-    return ThisOrThatSession.fromJson(response);
+    final response = await _supabase.rpc(
+      'create_this_or_that_session',
+      params: {
+        'p_relationship_id': relationshipId,
+        'p_tone': tone,
+        'p_idempotency_key': idempotencyKey,
+      },
+    );
+    return _sessionFromRpc(response);
   }
 
   Future<ThisOrThatSession> acceptSession({
@@ -83,80 +39,15 @@ class ThisOrThatRepository {
     required bool intimateConsent,
     String? fallbackTone,
   }) async {
-    final session =
-        await _supabase
-            .from('game_sessions')
-            .select('tone')
-            .eq('id', sessionId)
-            .single();
-
-    final tone = fallbackTone ?? session['tone'];
-    final intimateConsentB =
-        session['tone'] == 'intimate' ? intimateConsent : false;
-
-    final response =
-        await _supabase
-            .from('game_sessions')
-            .update({
-              'status': 'active',
-              'tone': tone,
-              'current_round': 1,
-              'intimate_consent_b': intimateConsentB,
-              'started_at': DateTime.now().toIso8601String(),
-            })
-            .eq('id', sessionId)
-            .select()
-            .single();
-
-    // Generate and insert 10 rounds
-    await _generateRounds(sessionId, tone, response['relationship_id']);
-
-    return ThisOrThatSession.fromJson(response);
-  }
-
-  Future<void> _generateRounds(
-    String sessionId,
-    String tone,
-    String relationshipId,
-  ) async {
-    // Get custom questions first
-    final customQuestions = await getAvailableCustomQuestions(
-      relationshipId,
-      tone,
+    final response = await _supabase.rpc(
+      'accept_this_or_that_session',
+      params: {
+        'p_session_id': sessionId,
+        'p_intimate_consent': intimateConsent,
+        'p_fallback_tone': fallbackTone,
+      },
     );
-    // Get preset questions
-    final presetQuestions = await getUnseenPresetQuestions(
-      relationshipId,
-      tone,
-    );
-
-    // Select up to 3 custom questions, fill rest with preset
-    final selectedCustom = (customQuestions..shuffle()).take(3).toList();
-    final selectedPreset =
-        (presetQuestions..shuffle()).take(10 - selectedCustom.length).toList();
-
-    final allQuestions = [...selectedCustom, ...selectedPreset];
-    allQuestions.shuffle();
-
-    for (int i = 0; i < allQuestions.length; i++) {
-      final q = allQuestions[i];
-      await _supabase.from('game_session_rounds').insert({
-        'session_id': sessionId,
-        'round_number': i + 1,
-        'question_id': q.id,
-        'is_custom': q is CustomQuestion,
-        'custom_question_data':
-            q is CustomQuestion
-                ? jsonEncode({
-                  'question_text': q.questionText,
-                  'option_a': q.optionA,
-                  'option_b': q.optionB,
-                  'emoji_a': q.emojiA,
-                  'emoji_b': q.emojiB,
-                })
-                : null,
-      });
-    }
+    return _sessionFromRpc(response);
   }
 
   // ============================================================
@@ -175,6 +66,7 @@ class ThisOrThatRepository {
         .select('*')
         .or('user_id.eq.$userId,user_id.eq.$partnerId')
         .eq('is_private', false)
+        .eq('hidden_for_review', false)
         .eq('tone', tone)
         .order('times_used', ascending: true)
         .order('last_used_at', ascending: true, nullsFirst: true);
@@ -217,6 +109,17 @@ class ThisOrThatRepository {
     return questions;
   }
 
+  Future<List<ThisOrThatQuestion>> getPresetQuestions(String tone) async {
+    final response = await _supabase
+        .from('game_questions')
+        .select('*')
+        .eq('game_type', 'this_or_that')
+        .eq('active', true)
+        .eq('tone', tone);
+
+    return response.map((json) => ThisOrThatQuestion.fromJson(json)).toList();
+  }
+
   Future<Set<String>> _getSeenQuestionIds(String relationshipId) async {
     final response = await _supabase
         .from('game_questions_seen')
@@ -237,34 +140,32 @@ class ThisOrThatRepository {
     required String choice, // 'a' or 'b'
     required bool isPartnerA,
   }) async {
-    final field = isPartnerA ? 'answer_a' : 'answer_b';
-    final submittedAtField =
-        isPartnerA ? 'answer_a_submitted_at' : 'answer_b_submitted_at';
+    await _supabase.rpc(
+      'submit_this_or_that_answer',
+      params: {'p_round_id': roundId, 'p_choice': choice},
+    );
+  }
 
-    await _supabase
-        .from('game_session_rounds')
-        .update({
-          field: choice,
-          submittedAtField: DateTime.now().toIso8601String(),
-        })
-        .eq('id', roundId);
-
-    // Check if both answered
-    final round =
-        await _supabase
-            .from('game_session_rounds')
-            .select('answer_a, answer_b, both_answered, session_id')
-            .eq('id', roundId)
-            .single();
-
-    final bothAnswered = round['answer_a'] != null && round['answer_b'] != null;
-
-    if (bothAnswered && !(round['both_answered'] as bool)) {
-      await _supabase.rpc(
-        'mark_this_or_that_round_complete',
-        params: {'p_round_id': roundId},
-      );
+  Future<bool> prepareNextRound({
+    required String sessionId,
+    required int roundNumber,
+    required String source,
+    String? customOwnerId,
+  }) async {
+    if (source != 'preset' && source != 'custom') {
+      throw ArgumentError.value(source, 'source', 'Must be preset or custom');
     }
+
+    final result = await _supabase.rpc(
+      'choose_this_or_that_next_question',
+      params: {
+        'p_session_id': sessionId,
+        'p_round_number': roundNumber,
+        'p_source': source,
+        'p_custom_owner_id': customOwnerId,
+      },
+    );
+    return result == 'preset_fallback';
   }
 
   // ============================================================
@@ -363,35 +264,17 @@ class ThisOrThatRepository {
   }
 
   Future<void> hideSession(String sessionId, String userId) async {
-    final response =
-        await _supabase
-            .from('game_sessions')
-            .select('hidden_by_user_ids')
-            .eq('id', sessionId)
-            .single();
-
-    final hiddenByUserIds =
-        response['hidden_by_user_ids'] != null
-            ? List<String>.from(response['hidden_by_user_ids'] as List)
-            : <String>[];
-
-    if (!hiddenByUserIds.contains(userId)) {
-      hiddenByUserIds.add(userId);
-      await _supabase
-          .from('game_sessions')
-          .update({'hidden_by_user_ids': hiddenByUserIds})
-          .eq('id', sessionId);
-    }
+    await _supabase.rpc(
+      'hide_this_or_that_session',
+      params: {'p_session_id': sessionId},
+    );
   }
 
   Future<void> abandonSession(String sessionId) async {
-    await _supabase
-        .from('game_sessions')
-        .update({
-          'status': 'abandoned',
-          'abandoned_at': DateTime.now().toIso8601String(),
-        })
-        .eq('id', sessionId);
+    await _supabase.rpc(
+      'abandon_session_game',
+      params: {'p_session_id': sessionId},
+    );
   }
 
   Future<void> advanceSession({
@@ -401,16 +284,15 @@ class ThisOrThatRepository {
     required int totalRoundsCompleted,
     required bool isCompleted,
   }) async {
-    await _supabase
-        .from('game_sessions')
-        .update({
-          'current_round': nextRound,
-          'match_count': matchCount,
-          'total_rounds_completed': totalRoundsCompleted,
-          if (isCompleted) 'status': 'completed',
-          if (isCompleted) 'completed_at': DateTime.now().toIso8601String(),
-        })
-        .eq('id', sessionId);
+    if (!isCompleted) {
+      throw StateError(
+        'Intermediate rounds advance through question-source selection.',
+      );
+    }
+    await _supabase.rpc(
+      'complete_this_or_that_session',
+      params: {'p_session_id': sessionId},
+    );
   }
 
   // ============================================================
@@ -431,66 +313,21 @@ class ThisOrThatRepository {
   }
 
   Future<bool> sendReminder(String sessionId, String userId) async {
-    // First, get the session to find the partner's ID
-    final session =
-        await _supabase
-            .from('game_sessions')
-            .select('relationship_id, initiator_id')
-            .eq('id', sessionId)
-            .single();
+    final raw = await _supabase.rpc(
+      'request_this_or_that_reminder',
+      params: {'p_session_id': sessionId},
+    );
+    final reminder = Map<String, dynamic>.from(raw as Map);
+    final playerId = reminder['player_id'] as String?;
+    final senderName = reminder['sender_name'] as String? ?? 'Your partner';
 
-    final relationshipId = session['relationship_id'] as String;
-    final initiatorId = session['initiator_id'] as String;
-
-    // Determine who is the partner (the one who hasn't answered yet)
-    final partnerId =
-        initiatorId == userId
-            ? await getPartnerId(relationshipId, userId)
-            : initiatorId;
-
-    // Check rate limit
-    final sessionWithRemind =
-        await _supabase
-            .from('game_sessions')
-            .select('remind_last_sent_at')
-            .eq('id', sessionId)
-            .single();
-
-    final lastSent =
-        sessionWithRemind['remind_last_sent_at'] != null
-            ? DateTime.parse(sessionWithRemind['remind_last_sent_at'])
-            : null;
-
-    if (lastSent != null && DateTime.now().difference(lastSent).inHours < 4) {
-      throw Exception('RATE_LIMITED');
-    }
-
-    // Update last sent time
-    await _supabase
-        .from('game_sessions')
-        .update({'remind_last_sent_at': DateTime.now().toIso8601String()})
-        .eq('id', sessionId);
-
-    // Get partner's push notification player ID
-    final partnerProfile =
-        await _supabase
-            .from('profiles')
-            .select('onesignal_player_id, display_name')
-            .eq('id', partnerId)
-            .single();
-
-    final playerId = partnerProfile['onesignal_player_id'] as String?;
-    final partnerName = partnerProfile['display_name'] as String? ?? 'Partner';
-
-    // Send push notification via OneSignal
     if (playerId != null && playerId.isNotEmpty) {
-      // Call your notification service
       await _supabase.functions.invoke(
         'send-notification',
         body: {
           'player_id': playerId,
           'title': 'Your turn in This or That',
-          'body': '$partnerName is waiting for you to answer.',
+          'body': '$senderName is waiting for your pick.',
           'data': {'type': 'game_reminder', 'session_id': sessionId},
         },
       );
@@ -499,19 +336,9 @@ class ThisOrThatRepository {
     return true;
   }
 
-  Stream<GameRound> watchRound(String roundId) {
-    return _supabase
-        .from('game_session_rounds')
-        .stream(primaryKey: ['id'])
-        .eq('id', roundId)
-        .map((event) {
-          // The stream returns a list, take the first item
-          final data = event.first;
-          return GameRound.fromJson(data);
-        });
+  ThisOrThatSession _sessionFromRpc(dynamic raw) {
+    return ThisOrThatSession.fromJson(Map<String, dynamic>.from(raw as Map));
   }
-
-  // Add to ThisOrThatRepository
 
   Future<String> getPartnerName(String relationshipId, String userId) async {
     final partnerId = await getPartnerId(relationshipId, userId);

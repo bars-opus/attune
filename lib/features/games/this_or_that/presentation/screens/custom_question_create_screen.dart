@@ -2,9 +2,7 @@
 
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:gap/gap.dart';
 
 class CustomQuestionCreateScreen extends ConsumerStatefulWidget {
   const CustomQuestionCreateScreen({super.key});
@@ -236,8 +234,8 @@ class _CustomQuestionCreateScreenState
                     width: 50,
                     height: 50,
                     decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest.withOpacity(
-                        0.3,
+                      color: colorScheme.surfaceContainerHighest.withValues(
+                        alpha: 0.3,
                       ),
                       borderRadius: BorderRadius.circular(
                         BorderRadiusTokens.md.r,
@@ -287,8 +285,8 @@ class _CustomQuestionCreateScreenState
                     width: 50,
                     height: 50,
                     decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest.withOpacity(
-                        0.3,
+                      color: colorScheme.surfaceContainerHighest.withValues(
+                        alpha: 0.3,
                       ),
                       borderRadius: BorderRadius.circular(
                         BorderRadiusTokens.md.r,
@@ -317,7 +315,9 @@ class _CustomQuestionCreateScreenState
             Container(
               padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w),
               decoration: BoxDecoration(
-                border: Border.all(color: colorScheme.outline.withOpacity(0.3)),
+                border: Border.all(
+                  color: colorScheme.outline.withValues(alpha: 0.3),
+                ),
                 borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
               ),
               child: DropdownButtonHideUnderline(
@@ -363,7 +363,7 @@ class _CustomQuestionCreateScreenState
                             ? 'Only you can see and use this question'
                             : 'Your partner can see and use this question',
                         style: textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurface.withOpacity(0.6),
+                          color: colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                     ],

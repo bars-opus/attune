@@ -25,6 +25,7 @@ class WaitingScreen extends ConsumerStatefulWidget {
     required this.totalRounds,
     required this.isPartnerA,
     this.partnerName = 'Partner',
+    this.answeredAt,
     this.onRoundUpdated,
   });
 
@@ -42,6 +43,7 @@ class WaitingScreen extends ConsumerStatefulWidget {
   final int totalRounds;
   final bool isPartnerA;
   final String partnerName;
+  final DateTime? answeredAt;
   final VoidCallback? onRoundUpdated;
 
   @override
@@ -55,32 +57,35 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
   bool _isEditing = false;
   bool _isUpdatingChoice = false;
   late String _currentChoice;
-  late final StreamSubscription _roundSubscription;
 
   @override
   void initState() {
     super.initState();
     _currentChoice = widget.userChoice;
-    _reminderTimer = Timer(const Duration(hours: 2), _enableRemindButton);
-    _roundSubscription = ref
-        .read(thisOrThatRepositoryProvider)
-        .watchRound(widget.roundId)
-        .listen((round) {
-          if (round.bothAnswered && mounted) {
-            widget.onRoundUpdated?.call();
-          }
-        });
+    final elapsed = DateTime.now().difference(
+      widget.answeredAt ?? DateTime.now(),
+    );
+    final reminderDelay = const Duration(hours: 2) - elapsed;
+    if (reminderDelay <= Duration.zero) {
+      _showRemindButton = true;
+    } else {
+      _scheduleReminder(reminderDelay);
+    }
   }
 
   @override
   void dispose() {
     _reminderTimer?.cancel();
-    _roundSubscription.cancel();
     super.dispose();
   }
 
   void _enableRemindButton() {
     if (mounted) setState(() => _showRemindButton = true);
+  }
+
+  void _scheduleReminder(Duration delay) {
+    _reminderTimer?.cancel();
+    _reminderTimer = Timer(delay, _enableRemindButton);
   }
 
   Future<void> _changeChoice(String choice) async {
@@ -99,13 +104,13 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
     ref.read(soundServiceProvider).play(AppSound.gameTap);
 
     try {
-      await ref.read(
-        submitAnswerProvider((
-          roundId: widget.roundId,
-          choice: choice,
-          isPartnerA: widget.isPartnerA,
-        )).future,
+      final request = (
+        roundId: widget.roundId,
+        choice: choice,
+        isPartnerA: widget.isPartnerA,
       );
+      ref.invalidate(submitAnswerProvider(request));
+      await ref.read(submitAnswerProvider(request).future);
       widget.onRoundUpdated?.call();
     } catch (_) {
       if (!mounted) return;
@@ -123,6 +128,7 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
     setState(() => _isSendingReminder = true);
 
     try {
+      ref.invalidate(sendReminderProvider(widget.sessionId));
       await ref.read(sendReminderProvider(widget.sessionId).future);
       if (!mounted) return;
       ref.read(hapticsProvider).light();
@@ -132,6 +138,7 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
         ),
       );
       setState(() => _showRemindButton = false);
+      _scheduleReminder(const Duration(hours: 4));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -197,7 +204,10 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
                 ),
                 const SizedBox(height: 14),
                 AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 220),
+                  duration:
+                      reduceMotionOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 220),
                   child: Text(
                     '${choiceEmoji ?? ''} $choiceText'.trim(),
                     key: ValueKey(_currentChoice),

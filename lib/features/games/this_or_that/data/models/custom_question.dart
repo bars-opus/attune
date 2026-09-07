@@ -10,6 +10,9 @@ class CustomQuestion {
   final bool isPrivate;
   final int timesUsed;
   final DateTime? lastUsedAt;
+  final bool hiddenForReview;
+  final bool sharedToCommunity;
+  final int communityUsageCount;
   final DateTime createdAt;
 
   const CustomQuestion({
@@ -24,6 +27,9 @@ class CustomQuestion {
     this.isPrivate = false,
     this.timesUsed = 0,
     this.lastUsedAt,
+    this.hiddenForReview = false,
+    this.sharedToCommunity = false,
+    this.communityUsageCount = 0,
     required this.createdAt,
   });
 
@@ -43,6 +49,9 @@ class CustomQuestion {
           json['last_used_at'] != null
               ? DateTime.parse(json['last_used_at'])
               : null,
+      hiddenForReview: json['hidden_for_review'] ?? false,
+      sharedToCommunity: json['shared_to_community'] ?? false,
+      communityUsageCount: json['community_usage_count'] ?? 0,
       createdAt: DateTime.parse(json['created_at']),
     );
   }

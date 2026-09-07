@@ -109,11 +109,10 @@ class _ToneSelectorScreenState extends ConsumerState<ToneSelectorScreen> {
 
     setState(() => _isStarting = true);
     try {
+      final request = (relationshipId: relationshipId, tone: _selectedTone);
+      ref.invalidate(createThisOrThatSessionProvider(request));
       final session = await ref.read(
-        createThisOrThatSessionProvider((
-          relationshipId: relationshipId,
-          tone: _selectedTone,
-        )).future,
+        createThisOrThatSessionProvider(request).future,
       );
       if (!mounted) return;
       context.pushReplacementNamed(
@@ -208,14 +207,18 @@ class _ToneCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = ThisOrThatPalette.of(context);
+    final duration =
+        MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 220);
     return Semantics(
       button: true,
       selected: selected,
       label: '${tone.label}. ${tone.description}',
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
+        duration: duration,
         curve: Curves.easeOutCubic,
-        height: 148,
+        height: 156,
         decoration: BoxDecoration(
           color:
               selected
@@ -257,7 +260,7 @@ class _ToneCard extends StatelessWidget {
                       ),
                       const Spacer(),
                       AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 180),
+                        duration: duration,
                         child:
                             selected
                                 ? Icon(

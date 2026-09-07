@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:async';
 
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
@@ -25,6 +26,8 @@ class RevealScreen extends ConsumerStatefulWidget {
     required this.onNext,
     this.onPrevious,
     this.hasPrevious = false,
+    this.nextLabel,
+    this.celebrate = true,
   });
 
   final String questionText;
@@ -38,9 +41,11 @@ class RevealScreen extends ConsumerStatefulWidget {
   final int roundNumber;
   final int totalRounds;
   final bool isMatch;
-  final VoidCallback onNext;
+  final FutureOr<void> Function() onNext;
   final VoidCallback? onPrevious;
   final bool hasPrevious;
+  final String? nextLabel;
+  final bool celebrate;
 
   @override
   ConsumerState<RevealScreen> createState() => _RevealScreenState();
@@ -53,6 +58,7 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
     vsync: this,
   );
   bool _started = false;
+  bool _isAdvancing = false;
 
   Animation<double> get _questionAnimation => CurvedAnimation(
     parent: _controller,
@@ -72,6 +78,7 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
   @override
   void initState() {
     super.initState();
+    if (!widget.celebrate) return;
     if (widget.isMatch) {
       ref.read(hapticsProvider).medium();
       ref.read(soundServiceProvider).play(AppSound.gameMatch);
@@ -97,6 +104,23 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _advance() async {
+    if (_isAdvancing) return;
+    setState(() => _isAdvancing = true);
+    try {
+      await Future<void>.sync(widget.onNext);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('The next round is not ready yet. Try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isAdvancing = false);
+    }
   }
 
   @override
@@ -127,10 +151,12 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
           Expanded(
             child: ThisOrThatPrimaryAction(
               label:
-                  widget.roundNumber == widget.totalRounds
+                  widget.nextLabel ??
+                  (widget.roundNumber == widget.totalRounds
                       ? 'See our result'
-                      : 'Next round',
-              onPressed: widget.onNext,
+                      : 'Next round'),
+              onPressed: _advance,
+              loading: _isAdvancing,
               icon:
                   widget.roundNumber == widget.totalRounds
                       ? Icons.emoji_events_rounded
@@ -142,7 +168,7 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          if (widget.isMatch)
+          if (widget.isMatch && widget.celebrate)
             Positioned.fill(
               child: IgnorePointer(
                 child: AnimatedBuilder(
@@ -300,7 +326,7 @@ class _CelebrationPainter extends CustomPainter {
         radius,
         Paint()
           ..color = (i.isEven ? first : second).withValues(
-            alpha: (1 - progress).clamp(0.12, 0.75),
+            alpha: (1 - progress).clamp(0, 0.75),
           ),
       );
     }

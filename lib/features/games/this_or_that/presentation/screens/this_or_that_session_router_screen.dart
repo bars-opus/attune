@@ -1,4 +1,3 @@
-import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:attune/features/games/presentation/widgets/game_icon.dart';
 import 'package:attune/features/games/this_or_that/data/models/game_round.dart';
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_session.dart';
@@ -6,6 +5,7 @@ import 'package:attune/features/games/this_or_that/domain/services/scoring_servi
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/end_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/question_screen.dart';
+import 'package:attune/features/games/this_or_that/presentation/screens/question_source_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/reveal_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/waiting_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
@@ -23,11 +23,11 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
     // Refreshes what this screen reads whenever the partner acts. Without
     // it, a player waiting on their turn saw nothing until they tapped
     // something — which in a turn-based game is most of the time.
-    ref.listen(gameSessionLiveProvider(sessionId), (_, _) {
+    ref.listen(thisOrThatSessionPulseProvider(sessionId), (_, _) {
       ref.invalidate(sessionProvider(sessionId));
       ref.invalidate(sessionRoundsProvider(sessionId));
     });
-    ref.watch(gameSessionLiveProvider(sessionId));
+    ref.watch(thisOrThatSessionPulseProvider(sessionId));
 
     final sessionAsync = ref.watch(sessionProvider(sessionId));
     final userId = ref.watch(currentUserIdProvider);
@@ -100,6 +100,7 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
                     return _InviteSentScreen(
                       partnerName: resolvedPartnerName,
                       onCancel: () async {
+                        ref.invalidate(abandonSessionProvider(session.id));
                         await ref.read(
                           abandonSessionProvider(session.id).future,
                         );
@@ -113,25 +114,32 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
                     partnerName: resolvedPartnerName,
                     tone: session.tone,
                     onAccept: () async {
+                      final request = (
+                        sessionId: session.id,
+                        intimateConsent: session.tone == 'intimate',
+                        fallbackTone: null as String?,
+                      );
+                      ref.invalidate(acceptThisOrThatSessionProvider(request));
                       await ref.read(
-                        acceptThisOrThatSessionProvider((
-                          sessionId: session.id,
-                          intimateConsent: session.tone == 'intimate',
-                          fallbackTone: null,
-                        )).future,
+                        acceptThisOrThatSessionProvider(request).future,
                       );
                       ref.invalidate(sessionProvider(session.id));
                     },
                     onDecline: () async {
                       if (session.tone == 'intimate') {
+                        final request = (
+                          sessionId: session.id,
+                          intimateConsent: false,
+                          fallbackTone: 'spicy' as String?,
+                        );
+                        ref.invalidate(
+                          acceptThisOrThatSessionProvider(request),
+                        );
                         await ref.read(
-                          acceptThisOrThatSessionProvider((
-                            sessionId: session.id,
-                            intimateConsent: false,
-                            fallbackTone: 'spicy',
-                          )).future,
+                          acceptThisOrThatSessionProvider(request).future,
                         );
                       } else {
+                        ref.invalidate(abandonSessionProvider(session.id));
                         await ref.read(
                           abandonSessionProvider(session.id).future,
                         );
@@ -177,6 +185,9 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
                         session: session,
                         rounds: rounds,
                         isPartnerA: isPartnerA,
+                        userId: userId,
+                        partnerUserId:
+                            isPartnerA ? members.userB : members.userA,
                         partnerName: resolvedPartnerName,
                       ),
                 );
@@ -194,6 +205,8 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
     required ThisOrThatSession session,
     required List<GameRound> rounds,
     required bool isPartnerA,
+    required String userId,
+    required String partnerUserId,
     required String partnerName,
   }) {
     if (rounds.isEmpty) {
@@ -212,11 +225,17 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
             )
             .length;
 
-    final isCompleted =
-        session.status == 'completed' || completedRounds >= session.totalRounds;
+    // The final answered round still needs its reveal and completion action.
+    // Rendering results from the local round count skips both and leaves the
+    // authoritative session active indefinitely.
+    final isCompleted = session.status == 'completed';
 
     if (isCompleted) {
-      final interestingPick = _buildInterestingPick(scoringService, rounds);
+      final interestingPick = _buildInterestingPick(
+        scoringService,
+        rounds,
+        isPartnerA,
+      );
       return EndScreen(
         matchCount: matchCount,
         totalRounds: session.totalRounds,
@@ -235,6 +254,10 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
         isPartnerA ? round.hasUserAAnswered : round.hasUserBAnswered;
 
     if (round.bothAnswered) {
+      final nextRound = round.roundNumber + 1;
+      final isChoosingNext =
+          nextRound <= session.totalRounds &&
+          (nextRound.isEven ? isPartnerA : !isPartnerA);
       return RevealScreen(
         questionText: round.displayQuestionText,
         userChoice: isPartnerA ? (round.answerA ?? '') : (round.answerB ?? ''),
@@ -265,21 +288,63 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
         totalRounds: session.totalRounds,
         isMatch: round.answerA == round.answerB,
         onNext: () async {
-          final nextRound = round.roundNumber + 1;
-          await ref.read(
-            advanceSessionProvider((
-              sessionId: session.id,
-              nextRound:
-                  nextRound > session.totalRounds
-                      ? session.totalRounds
-                      : nextRound,
-              matchCount: matchCount,
-              totalRoundsCompleted: completedRounds,
-              isCompleted: round.roundNumber >= session.totalRounds,
-            )).future,
+          if (nextRound <= session.totalRounds) {
+            final usedFallback = await Navigator.of(context).push<bool>(
+              MaterialPageRoute(
+                builder:
+                    (_) => QuestionSourceScreen(
+                      sessionId: session.id,
+                      nextRound: nextRound,
+                      totalRounds: session.totalRounds,
+                      isChooser: isChoosingNext,
+                      chooserName: isChoosingNext ? 'You' : partnerName,
+                      currentUserId: userId,
+                      partnerUserId: partnerUserId,
+                      partnerName: partnerName,
+                    ),
+              ),
+            );
+            if (usedFallback == true && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'No shared questions were available, so we used a preset.',
+                  ),
+                ),
+              );
+            }
+            return;
+          }
+          final request = (
+            sessionId: session.id,
+            nextRound:
+                nextRound > session.totalRounds
+                    ? session.totalRounds
+                    : nextRound,
+            matchCount: matchCount,
+            totalRoundsCompleted: completedRounds,
+            isCompleted: round.roundNumber >= session.totalRounds,
           );
+          ref.invalidate(advanceSessionProvider(request));
+          await ref.read(advanceSessionProvider(request).future);
         },
-        hasPrevious: false,
+        nextLabel:
+            round.roundNumber >= session.totalRounds
+                ? null
+                : isChoosingNext
+                ? 'Choose next card'
+                : 'See what\'s next',
+        hasPrevious: round.roundNumber > 1,
+        onPrevious:
+            round.roundNumber > 1
+                ? () => _openRoundRecap(
+                  context: context,
+                  rounds: rounds,
+                  roundNumber: round.roundNumber - 1,
+                  isPartnerA: isPartnerA,
+                  partnerName: partnerName,
+                )
+                : null,
       );
     }
 
@@ -307,6 +372,8 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
         totalRounds: session.totalRounds,
         isPartnerA: isPartnerA,
         partnerName: partnerName,
+        answeredAt:
+            isPartnerA ? round.answerASubmittedAt : round.answerBSubmittedAt,
         onRoundUpdated: () {
           ref.invalidate(sessionRoundsProvider(session.id));
         },
@@ -325,11 +392,81 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
       tone: session.tone,
       isPartnerA: isPartnerA,
       partnerName: partnerName,
+      partnerAnswered:
+          isPartnerA ? round.hasUserBAnswered : round.hasUserAAnswered,
       isCustom: round.isCustom,
       onAnswerSubmitted: () {
         ref.invalidate(sessionRoundsProvider(session.id));
       },
     );
+  }
+
+  Future<void> _openRoundRecap({
+    required BuildContext context,
+    required List<GameRound> rounds,
+    required int roundNumber,
+    required bool isPartnerA,
+    required String partnerName,
+    bool replace = false,
+  }) async {
+    final round = rounds.where((item) => item.roundNumber == roundNumber).first;
+    final route = MaterialPageRoute<void>(
+      builder:
+          (routeContext) => RevealScreen(
+            questionText: round.displayQuestionText,
+            userChoice:
+                isPartnerA ? (round.answerA ?? '') : (round.answerB ?? ''),
+            userChoiceText:
+                isPartnerA
+                    ? (round.answerAText ?? '')
+                    : (round.answerBText ?? ''),
+            userChoiceEmoji: _answerEmoji(
+              round: round,
+              answer: isPartnerA ? round.answerA : round.answerB,
+            ),
+            partnerChoice:
+                isPartnerA ? (round.answerB ?? '') : (round.answerA ?? ''),
+            partnerChoiceText:
+                isPartnerA
+                    ? (round.answerBText ?? '')
+                    : (round.answerAText ?? ''),
+            partnerChoiceEmoji: _answerEmoji(
+              round: round,
+              answer: isPartnerA ? round.answerB : round.answerA,
+            ),
+            partnerName: partnerName,
+            roundNumber: round.roundNumber,
+            totalRounds: rounds.length,
+            isMatch: round.answerA == round.answerB,
+            celebrate: false,
+            hasPrevious: round.roundNumber > 1,
+            onPrevious:
+                round.roundNumber > 1
+                    ? () => _openRoundRecap(
+                      context: routeContext,
+                      rounds: rounds,
+                      roundNumber: round.roundNumber - 1,
+                      isPartnerA: isPartnerA,
+                      partnerName: partnerName,
+                      replace: true,
+                    )
+                    : null,
+            nextLabel: 'Current round',
+            onNext: () => Navigator.of(routeContext).pop(),
+          ),
+    );
+
+    if (replace) {
+      await Navigator.of(context).pushReplacement(route);
+    } else {
+      await Navigator.of(context).push(route);
+    }
+  }
+
+  String _answerEmoji({required GameRound round, required String? answer}) {
+    if (answer == 'a') return round.emojiA ?? '';
+    if (answer == 'b') return round.emojiB ?? '';
+    return '';
   }
 
   GameRound _resolveCurrentRound({
@@ -353,6 +490,7 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
   Map<String, dynamic> _buildInterestingPick(
     ScoringService scoringService,
     List<GameRound> rounds,
+    bool isPartnerA,
   ) {
     final mappedRounds =
         rounds
@@ -361,14 +499,20 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
                 'question_text': round.displayQuestionText,
                 'answer_a': round.answerA,
                 'answer_b': round.answerB,
-                'answer_a_text': round.answerAText ?? '',
-                'answer_b_text': round.answerBText ?? '',
+                'answer_a_text':
+                    isPartnerA
+                        ? (round.answerAText ?? '')
+                        : (round.answerBText ?? ''),
+                'answer_b_text':
+                    isPartnerA
+                        ? (round.answerBText ?? '')
+                        : (round.answerAText ?? ''),
                 'answer_a_emoji':
-                    round.answerA == 'a'
+                    (isPartnerA ? round.answerA : round.answerB) == 'a'
                         ? (round.emojiA ?? '')
                         : (round.emojiB ?? ''),
                 'answer_b_emoji':
-                    round.answerB == 'a'
+                    (isPartnerA ? round.answerB : round.answerA) == 'a'
                         ? (round.emojiA ?? '')
                         : (round.emojiB ?? ''),
                 'is_interesting': round.isInteresting,
@@ -382,11 +526,36 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
   }
 }
 
-class _InviteSentScreen extends StatelessWidget {
+class _InviteSentScreen extends StatefulWidget {
   const _InviteSentScreen({required this.partnerName, required this.onCancel});
 
   final String partnerName;
-  final VoidCallback onCancel;
+  final Future<void> Function() onCancel;
+
+  @override
+  State<_InviteSentScreen> createState() => _InviteSentScreenState();
+}
+
+class _InviteSentScreenState extends State<_InviteSentScreen> {
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _cancel() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.onCancel();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = 'The invitation could not be cancelled. Try once more.';
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -399,7 +568,7 @@ class _InviteSentScreen extends StatelessWidget {
           const ThisOrThatWaitingMark(size: 132),
           const SizedBox(height: 20),
           Text(
-            '$partnerName has the next move',
+            '${widget.partnerName} has the next move',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
               color: palette.ink,
               fontWeight: FontWeight.w900,
@@ -420,9 +589,32 @@ class _InviteSentScreen extends StatelessWidget {
           ),
           const SizedBox(height: 28),
           OutlinedButton.icon(
-            onPressed: onCancel,
-            icon: const Icon(Icons.close_rounded),
-            label: const Text('Cancel invitation'),
+            onPressed: _busy ? null : _cancel,
+            icon:
+                _busy
+                    ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : const Icon(Icons.close_rounded),
+            label: Text(_busy ? 'Cancelling...' : 'Cancel invitation'),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            child:
+                _error == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        _error!,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.error,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
           ),
         ],
       ),
@@ -449,15 +641,31 @@ class _InvitationDecisionScreen extends StatefulWidget {
 }
 
 class _InvitationDecisionScreenState extends State<_InvitationDecisionScreen> {
-  bool _busy = false;
+  _InvitationAction? _busyAction;
+  String? _error;
 
-  Future<void> _run(Future<void> Function() action) async {
-    if (_busy) return;
-    setState(() => _busy = true);
+  Future<void> _run(
+    _InvitationAction actionType,
+    Future<void> Function() action,
+  ) async {
+    if (_busyAction != null) return;
+    setState(() {
+      _busyAction = actionType;
+      _error = null;
+    });
     try {
       await action();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _busyAction = null;
+        _error =
+            'That did not go through. Check your connection and try again.';
+      });
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && _busyAction != null) {
+        setState(() => _busyAction = null);
+      }
     }
   }
 
@@ -474,14 +682,45 @@ class _InvitationDecisionScreenState extends State<_InvitationDecisionScreen> {
         children: [
           ThisOrThatPrimaryAction(
             label: isIntimate ? 'I am in' : 'Let\'s play',
-            onPressed: _busy ? null : () => _run(widget.onAccept),
-            loading: _busy,
+            onPressed:
+                _busyAction == null
+                    ? () => _run(_InvitationAction.accept, widget.onAccept)
+                    : null,
+            loading: _busyAction == _InvitationAction.accept,
             icon: Icons.play_arrow_rounded,
           ),
           const SizedBox(height: 8),
           TextButton(
-            onPressed: _busy ? null : () => _run(widget.onDecline),
-            child: Text(isIntimate ? 'Play at Spicy instead' : 'Maybe later'),
+            onPressed:
+                _busyAction == null
+                    ? () => _run(_InvitationAction.decline, widget.onDecline)
+                    : null,
+            child:
+                _busyAction == _InvitationAction.decline
+                    ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : Text(
+                      isIntimate ? 'Play at Spicy instead' : 'Maybe later',
+                    ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            child:
+                _error == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        _error!,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.error,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
           ),
         ],
       ),
@@ -536,6 +775,8 @@ class _InvitationDecisionScreenState extends State<_InvitationDecisionScreen> {
     );
   }
 }
+
+enum _InvitationAction { accept, decline }
 
 class _GameLoadingScreen extends StatelessWidget {
   const _GameLoadingScreen();
