@@ -16,6 +16,10 @@ enum AppSound {
   gameTruth, // the flip landed on TRUTH -- a descending fifth, at rest
   gameDare, // the flip landed on DARE -- a rising third, leaning forward
   gameAnswer, // a partner's answer landing on the result screen
+  gameDice, // Snakes and Ladders: the die landing
+  gameStep, // Snakes and Ladders: one cell of a token's walk
+  gameLadder, // Snakes and Ladders: climbing -- a rising arpeggio
+  gameSnake, // Snakes and Ladders: sliding -- the same shape inverted
   gameReveal, // a round result / answer reveal
   gameTap, // option / choice selection
   gameComplete, // session finished (end screen)
@@ -73,6 +77,10 @@ class AudioPlayerSoundService implements SoundService {
     AppSound.gameTruth: 'sounds/game_truth.wav',
     AppSound.gameDare: 'sounds/game_dare.wav',
     AppSound.gameAnswer: 'sounds/game_answer.wav',
+    AppSound.gameDice: 'sounds/game_dice.wav',
+    AppSound.gameStep: 'sounds/game_step.wav',
+    AppSound.gameLadder: 'sounds/game_ladder.wav',
+    AppSound.gameSnake: 'sounds/game_snake.wav',
     AppSound.gameReveal: 'sounds/game_reveal.wav',
     AppSound.gameTap: 'sounds/game_tap.wav',
     AppSound.gameComplete: 'sounds/game_complete.wav',

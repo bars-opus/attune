@@ -1,0 +1,191 @@
+import 'dart:io';
+
+import 'package:attune/features/games/snakes_and_ladders/models/snakes_models.dart';
+import 'package:attune/features/games/snakes_and_ladders/presentation/widgets/snakes_board.dart';
+import 'package:attune/features/games/snakes_and_ladders/presentation/widgets/snakes_die.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  group('board geometry', () {
+    test('adjacent cells are adjacent on screen', () {
+      // Boustrophedon: row 1 left to right, row 2 right to left. Without
+      // it a token walking through a row end would leap across the board.
+      const size = Size(1000, 1000);
+      for (var cell = 1; cell < 100; cell++) {
+        final gap =
+            (snakesCellCentre(cell + 1, size) - snakesCellCentre(cell, size))
+                .distance;
+        expect(gap, lessThan(105), reason: 'cell $cell to ${cell + 1}');
+      }
+    });
+
+    test('the board is oriented like the physical one', () {
+      const size = Size(1000, 1000);
+      expect(snakesCellCentre(1, size).dy, greaterThan(900));
+      expect(snakesCellCentre(100, size).dy, lessThan(100));
+      expect(
+        snakesCellCentre(1, size).dx,
+        lessThan(snakesCellCentre(2, size).dx),
+      );
+      expect(
+        snakesCellCentre(11, size).dx,
+        greaterThan(snakesCellCentre(12, size).dx),
+      );
+    });
+
+    test('an off-board token sits below the first cell', () {
+      // Starting a game should read as stepping ONTO the board.
+      const size = Size(1000, 1000);
+      expect(
+        snakesCellCentre(0, size).dy,
+        greaterThan(snakesCellCentre(1, size).dy),
+      );
+    });
+  });
+
+  group('the die belongs to the server', () {
+    test('the client cannot send a face value', () {
+      // The entire content of a turn IS the die. A client that could
+      // choose it would not be playing a game.
+      final source =
+          File(
+            'lib/features/games/snakes_and_ladders/services/'
+            'snakes_service.dart',
+          ).readAsStringSync();
+
+      // Matches the parameter name anywhere, not just at a quote: the
+      // first version of this test anchored on a leading quote and a
+      // mutant adding 'p_die_roll' sailed straight past it.
+      expect(
+        RegExp(r'p_(die|roll|face|value)').hasMatch(source),
+        isFalse,
+        reason: 'the service sends a die face to the server',
+      );
+      expect(source.contains("'snakes_roll_die'"), isTrue);
+    });
+  });
+
+  group('movement model', () {
+    test('a bounce and a snake are told apart', () {
+      // Both end below where the die pointed and animate completely
+      // differently -- one walks up and comes back, the other slides.
+      expect(SnakesMovement.fromWire('bounce'), SnakesMovement.bounce);
+      expect(SnakesMovement.fromWire('snake'), SnakesMovement.snake);
+      expect(SnakesMovement.bounce.isFeature, isFalse);
+      expect(SnakesMovement.snake.isFeature, isTrue);
+    });
+
+    test('an unknown movement degrades to a plain move', () {
+      // A board or server ahead of this client must not crash it.
+      expect(SnakesMovement.fromWire('teleport'), SnakesMovement.normal);
+      expect(SnakesMovement.fromWire(null), SnakesMovement.normal);
+    });
+  });
+
+  group('board parsing', () {
+    test('string keys from jsonb become cells', () {
+      final board = SnakesBoard.fromJson({
+        'ladders': {'2': 38},
+        'snakes': {'16': 6},
+      });
+      expect(board.ladders[2], 38);
+      expect(board.snakes[16], 6);
+      expect(board.destinationFor(2), 38);
+      expect(board.destinationFor(50), isNull);
+    });
+
+    test('a malformed board renders empty rather than throwing', () {
+      final board = SnakesBoard.fromJson({'ladders': 'nonsense'});
+      expect(board.ladders, isEmpty);
+      expect(board.snakes, isEmpty);
+    });
+  });
+
+  group('errors', () {
+    test('a refusal carries the server message, never an exception', () {
+      // Checklist 2.4 / 5.5: the UI must never show internals.
+      final error = SnakesApiError.fromJson({
+        'code': 'NOT_YOUR_TURN',
+        'message': "It's not your turn yet.",
+      });
+      expect(error.message, "It's not your turn yet.");
+      expect(error.toString(), isNot(contains('Exception')));
+    });
+
+    test('a message-less refusal still reads as English', () {
+      final error = SnakesApiError.fromJson({'code': 'WEIRD'});
+      expect(error.message, isNotEmpty);
+      expect(error.message, isNot(contains('WEIRD')));
+    });
+  });
+
+  group('die widget', () {
+    testWidgets('it is inert when it is not your turn', (tester) async {
+      var rolled = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SnakesDie(
+              face: 3,
+              rolling: false,
+              enabled: false,
+              onTap: () => rolled = true,
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(SnakesDie));
+      await tester.pump();
+      expect(rolled, isFalse);
+    });
+
+    testWidgets('a roll in flight cannot be tapped again', (tester) async {
+      var rolls = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SnakesDie(face: null, rolling: true, onTap: () => rolls++),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(SnakesDie), warnIfMissed: false);
+      await tester.pump();
+      expect(rolls, 0);
+    });
+
+    testWidgets('reduce motion shows a face rather than a tumble', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MediaQuery(
+          data: MediaQueryData(disableAnimations: true),
+          child: MaterialApp(
+            home: Scaffold(body: SnakesDie(face: 4, rolling: true)),
+          ),
+        ),
+      );
+      await tester.pump();
+      // pumpAndSettle would never return on a repeating tumble.
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('sound', () {
+    test('every sound this game plays has a file', () {
+      for (final name in [
+        'game_dice',
+        'game_step',
+        'game_ladder',
+        'game_snake',
+      ]) {
+        expect(
+          File('assets/sounds/$name.wav').existsSync(),
+          isTrue,
+          reason: '$name.wav is referenced but was never generated',
+        );
+      }
+    });
+  });
+}
