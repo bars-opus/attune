@@ -3,8 +3,6 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-
-
 class CustomTruthOrDareCreateScreen extends ConsumerStatefulWidget {
   const CustomTruthOrDareCreateScreen({super.key});
 
@@ -42,8 +40,7 @@ class _CustomTruthOrDareCreateScreenState
   };
 
   bool get _isValid =>
-      _contentController.text.trim().isNotEmpty &&
-      !_isSubmitting;
+      _contentController.text.trim().isNotEmpty && !_isSubmitting;
 
   Future<void> _saveQuestion() async {
     if (!_isValid) return;
@@ -51,24 +48,26 @@ class _CustomTruthOrDareCreateScreenState
     setState(() => _isSubmitting = true);
 
     try {
-      await ref.read(createCustomTruthOrDareQuestionProvider((
-        questionType: _selectedType,
-        content: _contentController.text.trim(),
-        tone: _selectedTone,
-        isPrivate: _isPrivate,
-      )).future);
+      await ref.read(
+        createCustomTruthOrDareQuestionProvider((
+          questionType: _selectedType,
+          content: _contentController.text.trim(),
+          tone: _selectedTone,
+          isPrivate: _isPrivate,
+        )).future,
+      );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Question saved!')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Question saved!')));
         Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -104,21 +103,20 @@ class _CustomTruthOrDareCreateScreenState
             Container(
               padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w),
               decoration: BoxDecoration(
-                border: Border.all(
-                  color: colorScheme.outline.withOpacity(0.3),
-                ),
+                border: Border.all(color: colorScheme.outline.withOpacity(0.3)),
                 borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: _selectedType,
                   isExpanded: true,
-                  items: _types.map((type) {
-                    return DropdownMenuItem(
-                      value: type,
-                      child: Text(_typeDisplay[type]!),
-                    );
-                  }).toList(),
+                  items:
+                      _types.map((type) {
+                        return DropdownMenuItem(
+                          value: type,
+                          child: Text(_typeDisplay[type]!),
+                        );
+                      }).toList(),
                   onChanged: (value) {
                     if (value != null) setState(() => _selectedType = value);
                   },
@@ -137,14 +135,15 @@ class _CustomTruthOrDareCreateScreenState
             Gap(Spacing.sm.h),
             AppTextFormField(
               controller: _contentController,
-              hintText: _selectedType == 'truth'
-                  ? 'e.g., What is something you have never told anyone?'
-                  : 'e.g., Send a voice note saying three things you love about your partner',
+              hintText:
+                  _selectedType == 'truth'
+                      ? 'e.g., What is something you have never told anyone?'
+                      : 'e.g., Send a voice note saying three things you love about your partner',
               maxLines: 4,
               maxLength: 200,
               // buildCounter: (context, {required currentLength, required isFocused, maxLength}) =>
-                  // null, 
-                  label: '',
+              // null,
+              label: '',
             ),
             Gap(Spacing.lg.h),
 
@@ -159,21 +158,20 @@ class _CustomTruthOrDareCreateScreenState
             Container(
               padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w),
               decoration: BoxDecoration(
-                border: Border.all(
-                  color: colorScheme.outline.withOpacity(0.3),
-                ),
+                border: Border.all(color: colorScheme.outline.withOpacity(0.3)),
                 borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: _selectedTone,
                   isExpanded: true,
-                  items: _tones.map((tone) {
-                    return DropdownMenuItem(
-                      value: tone,
-                      child: Text(_toneDisplay[tone]!),
-                    );
-                  }).toList(),
+                  items:
+                      _tones.map((tone) {
+                        return DropdownMenuItem(
+                          value: tone,
+                          child: Text(_toneDisplay[tone]!),
+                        );
+                      }).toList(),
                   onChanged: (value) {
                     if (value != null) setState(() => _selectedTone = value);
                   },

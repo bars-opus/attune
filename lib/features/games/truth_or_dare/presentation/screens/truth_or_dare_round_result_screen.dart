@@ -1,6 +1,17 @@
+import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
+import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/games/truth_or_dare/presentation/widgets/truth_or_dare_game_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class TruthOrDareRoundResultScreen extends StatelessWidget {
+/// The payoff: their prompt, and what they said to it.
+///
+/// The one screen in the game where you learn something, so the answer
+/// arrives rather than simply being present -- it rises and fades in a
+/// beat after the prompt, which is the difference between reading a
+/// record and being told something.
+class TruthOrDareRoundResultScreen extends ConsumerStatefulWidget {
   const TruthOrDareRoundResultScreen({
     super.key,
     required this.questionType,
@@ -10,6 +21,7 @@ class TruthOrDareRoundResultScreen extends StatelessWidget {
     required this.roundNumber,
     required this.totalRounds,
     required this.onNext,
+    this.tone,
   });
 
   final String questionType;
@@ -19,105 +31,143 @@ class TruthOrDareRoundResultScreen extends StatelessWidget {
   final int roundNumber;
   final int totalRounds;
   final VoidCallback onNext;
+  final String? tone;
+
+  @override
+  ConsumerState<TruthOrDareRoundResultScreen> createState() =>
+      _TruthOrDareRoundResultScreenState();
+}
+
+class _TruthOrDareRoundResultScreenState
+    extends ConsumerState<TruthOrDareRoundResultScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 620),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (reduceMotionOf(context)) {
+      _controller.value = 1;
+    } else if (!_controller.isAnimating && _controller.value == 0) {
+      _controller.forward();
+    }
+    if (!_announced) {
+      _announced = true;
+      // Their answer landing is the beat worth marking -- the one moment
+      // in the game where something is actually revealed.
+      ref.read(soundServiceProvider).play(AppSound.gameReveal);
+      ref.read(hapticsProvider).light();
+    }
+  }
+
+  bool _announced = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final palette = TruthOrDarePalette.of(context, tone: widget.tone);
     final textTheme = Theme.of(context).textTheme;
-    final isTruth = questionType == 'truth';
+    final isTruth = widget.questionType == 'truth';
+    final accent = palette.accentFor(widget.questionType);
+    final answer = widget.answerText?.trim();
+    final hasAnswer = answer != null && answer.isNotEmpty;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Truth or Dare • Round $roundNumber/$totalRounds'),
-        centerTitle: true,
+    // A dare stores the literal string 'completed', which is bookkeeping
+    // rather than something anyone said. Showing it as their answer would
+    // be a lie about what happened.
+    final didDare = !isTruth && answer == 'completed';
+
+    return TruthOrDareScaffold(
+      roundNumber: widget.roundNumber,
+      totalRounds: widget.totalRounds,
+      tone: widget.tone,
+      scrollable: true,
+      bottom: TruthOrDarePrimaryAction(
+        label:
+            widget.roundNumber >= widget.totalRounds
+                ? 'See how it went'
+                : 'Next round',
+        kind: widget.questionType,
+        icon: Icons.arrow_forward_rounded,
+        onPressed: widget.onNext,
       ),
-      body: Padding(
-        padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: Spacing.sm.w,
-                vertical: Spacing.xs.h,
-              ),
-              decoration: BoxDecoration(
-                color:
-                    isTruth
-                        ? Colors.green.withValues(alpha: 0.1)
-                        : Colors.orange.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(isTruth ? '🗣' : '🎯', style: const TextStyle(fontSize: 16)),
-                  Gap(Spacing.xs.w),
-                  Text(
-                    isTruth ? 'Truth completed!' : 'Dare completed!',
-                    style: textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: isTruth ? Colors.green : Colors.orange,
-                    ),
-                  ),
-                ],
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TruthOrDarePromptCard(
+            kind: widget.questionType,
+            prompt: widget.questionText,
+            compact: true,
+          ),
+          Gap(Spacing.lg.h),
+          FadeTransition(
+            opacity: CurvedAnimation(
+              parent: _controller,
+              curve: const Interval(0.25, 1, curve: Curves.easeOut),
             ),
-            Gap(Spacing.lg.h),
-            Text(
-              isTruth
-                  ? '$partnerName answered:'
-                  : '$partnerName completed this dare:',
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+            child: SlideTransition(
+              position: Tween(
+                begin: const Offset(0, 0.08),
+                end: Offset.zero,
+              ).animate(
+                CurvedAnimation(
+                  parent: _controller,
+                  curve: const Interval(0.25, 1, curve: Curves.easeOutCubic),
+                ),
               ),
-            ),
-            Gap(Spacing.sm.h),
-            Text(questionText, style: textTheme.bodyLarge),
-            Gap(Spacing.lg.h),
-            if (isTruth)
-              Container(
+              child: Container(
                 width: double.infinity,
-                padding: EdgeInsets.all(Spacing.md.w),
+                padding: EdgeInsets.all(Spacing.lg.w),
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
+                  color: palette.panel,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: palette.line),
                 ),
-                child: Text(
-                  answerText ?? '',
-                  style: textTheme.bodyLarge,
-                ),
-              )
-            else
-              Container(
-                width: double.infinity,
-                padding: EdgeInsets.all(Spacing.md.w),
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-                ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.check_circle, color: Colors.green),
-                    Gap(Spacing.sm.w),
+                    TruthOrDareStageLabel(
+                      text: widget.partnerName,
+                      icon:
+                          didDare
+                              ? Icons.check_circle_rounded
+                              : Icons.format_quote_rounded,
+                      color: accent,
+                    ),
+                    Gap(Spacing.md.h),
                     Text(
-                      'Completed',
-                      style: textTheme.titleMedium?.copyWith(
+                      didDare
+                          ? 'They did it.'
+                          : hasAnswer
+                          ? answer
+                          : 'They kept this one to themselves.',
+                      style: textTheme.titleLarge?.copyWith(
+                        color:
+                            hasAnswer || didDare
+                                ? palette.ink
+                                : palette.mutedInk,
                         fontWeight: FontWeight.w600,
+                        height: 1.35,
+                        fontStyle:
+                            hasAnswer || didDare
+                                ? FontStyle.normal
+                                : FontStyle.italic,
                       ),
                     ),
                   ],
                 ),
               ),
-            const Spacer(),
-            AppButton(
-              label: roundNumber >= totalRounds ? 'See summary' : 'Next',
-              onPressed: onNext,
-              width: double.infinity,
-              size: ButtonSize.large,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

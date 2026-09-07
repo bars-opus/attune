@@ -4,7 +4,6 @@ import 'package:attune/features/games/truth_or_dare/data/models/custom_truth_or_
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-
 class CustomTruthOrDareCard extends ConsumerWidget {
   final CustomTruthOrDareQuestion question;
   final bool isOwnQuestion;
@@ -55,9 +54,7 @@ class CustomTruthOrDareCard extends ConsumerWidget {
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-        border: Border.all(
-          color: colorScheme.outline.withOpacity(0.1),
-        ),
+        border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -67,19 +64,24 @@ class CustomTruthOrDareCard extends ConsumerWidget {
             children: [
               // Type badge
               Container(
-                padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w, vertical: Spacing.xs.h),
+                padding: EdgeInsets.symmetric(
+                  horizontal: Spacing.sm.w,
+                  vertical: Spacing.xs.h,
+                ),
                 decoration: BoxDecoration(
-                  color: question.questionType == 'truth'
-                      ? Colors.green.withOpacity(0.1)
-                      : Colors.orange.withOpacity(0.1),
+                  color:
+                      question.questionType == 'truth'
+                          ? Colors.green.withOpacity(0.1)
+                          : Colors.orange.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
                 ),
                 child: Text(
                   _typeDisplay,
                   style: textTheme.labelSmall?.copyWith(
-                    color: question.questionType == 'truth'
-                        ? Colors.green
-                        : Colors.orange,
+                    color:
+                        question.questionType == 'truth'
+                            ? Colors.green
+                            : Colors.orange,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -87,7 +89,10 @@ class CustomTruthOrDareCard extends ConsumerWidget {
               Gap(Spacing.sm.w),
               // Tone badge
               Container(
-                padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w, vertical: Spacing.xs.h),
+                padding: EdgeInsets.symmetric(
+                  horizontal: Spacing.sm.w,
+                  vertical: Spacing.xs.h,
+                ),
                 decoration: BoxDecoration(
                   color: colorScheme.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
@@ -107,29 +112,33 @@ class CustomTruthOrDareCard extends ConsumerWidget {
                     if (value == 'delete') {
                       final confirm = await showDialog<bool>(
                         context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Delete question?'),
-                          content: const Text(
-                            'This question will be removed for both you and your partner.',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancel'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              style: TextButton.styleFrom(
-                                foregroundColor: Colors.red,
+                        builder:
+                            (context) => AlertDialog(
+                              title: const Text('Delete question?'),
+                              content: const Text(
+                                'This question will be removed for both you and your partner.',
                               ),
-                              child: const Text('Delete'),
+                              actions: [
+                                TextButton(
+                                  onPressed:
+                                      () => Navigator.pop(context, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.red,
+                                  ),
+                                  child: const Text('Delete'),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
                       );
                       if (confirm == true) {
                         await ref.read(
-                          deleteCustomTruthOrDareQuestionProvider(question.id).future,
+                          deleteCustomTruthOrDareQuestionProvider(
+                            question.id,
+                          ).future,
                         );
                         onDeleted?.call();
                       }
@@ -143,16 +152,20 @@ class CustomTruthOrDareCard extends ConsumerWidget {
                       onPrivacyChanged?.call();
                     }
                   },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(
-                      value: 'toggle_privacy',
-                      child: Text('Share with partner / Make private'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Text('Delete', style: TextStyle(color: Colors.red)),
-                    ),
-                  ],
+                  itemBuilder:
+                      (context) => [
+                        const PopupMenuItem(
+                          value: 'toggle_privacy',
+                          child: Text('Share with partner / Make private'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text(
+                            'Delete',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      ],
                 ),
               if (!isOwnQuestion)
                 PopupMenuButton<String>(
@@ -161,24 +174,32 @@ class CustomTruthOrDareCard extends ConsumerWidget {
                     if (value == 'report') {
                       final reason = await showDialog<String>(
                         context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Report question'),
-                          content: const Text('Why are you reporting this question?'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, null),
-                              child: const Text('Cancel'),
+                        builder:
+                            (context) => AlertDialog(
+                              title: const Text('Report question'),
+                              content: const Text(
+                                'Why are you reporting this question?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, null),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed:
+                                      () => Navigator.pop(
+                                        context,
+                                        'inappropriate',
+                                      ),
+                                  child: const Text('Inappropriate'),
+                                ),
+                                TextButton(
+                                  onPressed:
+                                      () => Navigator.pop(context, 'offensive'),
+                                  child: const Text('Offensive'),
+                                ),
+                              ],
                             ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, 'inappropriate'),
-                              child: const Text('Inappropriate'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, 'offensive'),
-                              child: const Text('Offensive'),
-                            ),
-                          ],
-                        ),
                       );
                       if (reason != null) {
                         await ref.read(
@@ -191,9 +212,10 @@ class CustomTruthOrDareCard extends ConsumerWidget {
                       }
                     }
                   },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'report', child: Text('Report')),
-                  ],
+                  itemBuilder:
+                      (context) => const [
+                        PopupMenuItem(value: 'report', child: Text('Report')),
+                      ],
                 ),
             ],
           ),
@@ -201,9 +223,7 @@ class CustomTruthOrDareCard extends ConsumerWidget {
           // Content
           Text(
             question.content,
-            style: textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
           Gap(Spacing.sm.h),
           // Usage count
@@ -211,10 +231,15 @@ class CustomTruthOrDareCard extends ConsumerWidget {
             children: [
               if (question.isPrivate)
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: Spacing.xs.w, vertical: 2),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: Spacing.xs.w,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
+                    borderRadius: BorderRadius.circular(
+                      BorderRadiusTokens.sm.r,
+                    ),
                   ),
                   child: Text(
                     'Private',

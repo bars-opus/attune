@@ -3,6 +3,7 @@
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
+import 'package:attune/features/games/truth_or_dare/presentation/widgets/truth_or_dare_game_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class TruthRevealScreen extends ConsumerStatefulWidget {
@@ -59,38 +60,22 @@ class _TruthRevealScreenState extends ConsumerState<TruthRevealScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      // Submit answer
-      final field = widget.isPartnerA ? 'answer_a' : 'answer_b';
-      final submittedAtField =
-          widget.isPartnerA ? 'answer_a_submitted_at' : 'answer_b_submitted_at';
-
-      await ref
+      // One RPC, and it writes only this player's column.
+      //
+      // This used to be a direct table update that also set the PARTNER's
+      // answer column to a reveal sentinel -- so whoever answered
+      // second destroyed the first person's answer, in a game whose whole
+      // point is hearing what they said.
+      final result = await ref
           .read(supabaseClientProvider)
-          .from('game_session_rounds')
-          .update({
-            field: answer,
-            widget.isPartnerA ? 'answer_b' : 'answer_a': '__revealed__',
-            submittedAtField: DateTime.now().toIso8601String(),
-          })
-          .eq('id', widget.roundId);
+          .rpc(
+            'submit_truth_or_dare_answer',
+            params: {'p_round_id': widget.roundId, 'p_answer': answer},
+          );
 
-      // Check if both answered
-      final round =
-          await ref
-              .read(supabaseClientProvider)
-              .from('game_session_rounds')
-              .select('answer_a, answer_b, both_answered')
-              .eq('id', widget.roundId)
-              .single();
-
-      final bothAnswered =
-          round['answer_a'] != null && round['answer_b'] != null;
-
-      // If both answered, mark as complete
-      if (bothAnswered && !(round['both_answered'] as bool)) {
-        await ref
-            .read(supabaseClientProvider)
-            .rpc('mark_round_complete', params: {'p_round_id': widget.roundId});
+      final data = Map<String, dynamic>.from(result as Map);
+      if (data['error'] == true) {
+        throw StateError(data['code']?.toString() ?? 'unknown');
       }
 
       // Mark question as seen (preset only)
@@ -137,99 +122,87 @@ class _TruthRevealScreenState extends ConsumerState<TruthRevealScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final palette = TruthOrDarePalette.of(context, tone: widget.tone);
     final textTheme = Theme.of(context).textTheme;
+    final canSubmit =
+        _answerController.text.trim().isNotEmpty && !_isSubmitting;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Truth or Dare • Round ${widget.roundNumber}/${widget.totalRounds}',
-        ),
-        centerTitle: true,
+    return TruthOrDareScaffold(
+      roundNumber: widget.roundNumber,
+      totalRounds: widget.totalRounds,
+      tone: widget.tone,
+      scrollable: true,
+      bottom: TruthOrDarePrimaryAction(
+        label: 'Send it',
+        kind: 'truth',
+        icon: Icons.send_rounded,
+        busy: _isSubmitting,
+        onPressed: canSubmit ? _submitAnswer : null,
       ),
-      body: Padding(
-        padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Truth badge
-            Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: Spacing.sm.w,
-                vertical: Spacing.xs.h,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.green.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('🗣', style: TextStyle(fontSize: 16)),
-                  Gap(Spacing.xs.w),
-                  Text(
-                    'TRUTH',
-                    style: textTheme.labelSmall?.copyWith(
-                      color: Colors.green,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TruthOrDarePromptCard(
+            kind: 'truth',
+            prompt: widget.questionText,
+            author: widget.isCustom ? widget.partnerName : null,
+          ),
+          Gap(Spacing.xl.h),
+          Text(
+            'Your answer',
+            style: textTheme.titleSmall?.copyWith(
+              color: palette.ink,
+              fontWeight: FontWeight.w700,
             ),
-            Gap(Spacing.md.h),
-            // Question
-            Text(
-              widget.questionText,
-              style: textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w600,
+          ),
+          Gap(Spacing.sm.h),
+          // Rebuilds on every keystroke so the action enables the moment
+          // there is something to send, rather than after a blur.
+          TextField(
+            controller: _answerController,
+            maxLines: 5,
+            minLines: 3,
+            maxLength: 200,
+            textCapitalization: TextCapitalization.sentences,
+            style: textTheme.bodyLarge?.copyWith(color: palette.ink),
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'Say it how you would say it out loud...',
+              hintStyle: textTheme.bodyLarge?.copyWith(color: palette.mutedInk),
+              filled: true,
+              fillColor: palette.panel,
+              counterStyle: textTheme.bodySmall?.copyWith(
+                color: palette.mutedInk,
               ),
-            ),
-            Gap(Spacing.xl.h),
-            // Answer input
-            Text(
-              'Your answer',
-              style: textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(18),
+                borderSide: BorderSide(color: palette.line),
               ),
-            ),
-            Gap(Spacing.sm.h),
-            AppTextFormField(
-              controller: _answerController,
-              hintText: 'Type your answer here...',
-              maxLines: 5,
-              maxLength: 200,
-              label: '',
-              // buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
-            ),
-            Gap(Spacing.sm.h),
-            Text(
-              'Your partner will see your answer.',
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurface.withValues(alpha: 0.6),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(18),
+                borderSide: BorderSide(color: palette.truth, width: 2),
               ),
+              contentPadding: const EdgeInsets.all(18),
             ),
-            Gap(Spacing.xs.h),
-            Text(
-              'Stored in your game history.',
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurface.withValues(alpha: 0.4),
-                fontStyle: FontStyle.italic,
+          ),
+          Gap(Spacing.xs.h),
+          Row(
+            children: [
+              Icon(
+                Icons.lock_outline_rounded,
+                size: 14,
+                color: palette.mutedInk,
               ),
-            ),
-            const Spacer(),
-            AppButton(
-              label: 'Submit answer',
-              onPressed:
-                  _answerController.text.trim().isNotEmpty && !_isSubmitting
-                      ? _submitAnswer
-                      : null,
-              size: ButtonSize.large,
-              width: double.infinity,
-              isLoading: _isSubmitting,
-            ),
-          ],
-        ),
+              Gap(Spacing.xs.w),
+              Expanded(
+                child: Text(
+                  '${widget.partnerName} sees this once you send it.',
+                  style: textTheme.bodySmall?.copyWith(color: palette.mutedInk),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

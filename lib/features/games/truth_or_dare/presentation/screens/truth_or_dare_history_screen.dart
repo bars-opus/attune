@@ -56,10 +56,7 @@ class _TruthOrDareHistoryScreenState
                       color: colorScheme.onSurface.withOpacity(0.3),
                     ),
                     Gap(Spacing.md.h),
-                    Text(
-                      'No game history yet',
-                      style: textTheme.titleMedium,
-                    ),
+                    Text('No game history yet', style: textTheme.titleMedium),
                     Gap(Spacing.sm.h),
                     Text(
                       'Play a game of Truth or Dare to see your history here.',
@@ -87,7 +84,9 @@ class _TruthOrDareHistoryScreenState
                   padding: EdgeInsets.all(Spacing.md.w),
                   decoration: BoxDecoration(
                     color: colorScheme.surface,
-                    borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
+                    borderRadius: BorderRadius.circular(
+                      BorderRadiusTokens.md.r,
+                    ),
                     border: Border.all(
                       color: colorScheme.outline.withOpacity(0.1),
                     ),
@@ -172,7 +171,10 @@ class _TruthOrDareHistoryScreenState
 
   Widget _buildStatChip(String label, Color color, ColorScheme colorScheme) {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w, vertical: Spacing.xs.h),
+      padding: EdgeInsets.symmetric(
+        horizontal: Spacing.sm.w,
+        vertical: Spacing.xs.h,
+      ),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
@@ -218,7 +220,7 @@ class _TruthOrDareHistoryScreenState
       'Sep',
       'Oct',
       'Nov',
-      'Dec'
+      'Dec',
     ];
     return months[month - 1];
   }

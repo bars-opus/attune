@@ -40,9 +40,10 @@ class CustomTruthOrDareQuestion {
       tone: json['tone'],
       isPrivate: json['is_private'] ?? true,
       timesUsed: json['times_used'] ?? 0,
-      lastUsedAt: json['last_used_at'] != null
-          ? DateTime.parse(json['last_used_at'])
-          : null,
+      lastUsedAt:
+          json['last_used_at'] != null
+              ? DateTime.parse(json['last_used_at'])
+              : null,
       hiddenForReview: json['hidden_for_review'] ?? false,
       sharedToCommunity: json['shared_to_community'] ?? false,
       communityUsageCount: json['community_usage_count'] ?? 0,
@@ -104,7 +105,10 @@ class TruthOrDareRound {
     this.customQuestionData,
   });
 
-  factory TruthOrDareRound.fromJson(Map<String, dynamic> json, {String? questionText}) {
+  factory TruthOrDareRound.fromJson(
+    Map<String, dynamic> json, {
+    String? questionText,
+  }) {
     Map<String, dynamic>? customData;
     final rawCustomData = json['custom_question_data'];
     if (rawCustomData is Map<String, dynamic>) {
@@ -135,19 +139,23 @@ class TruthOrDareRound {
       activePartnerId: json['active_partner_id'],
       answerA: json['answer_a'],
       answerB: json['answer_b'],
-      answerASubmittedAt: json['answer_a_submitted_at'] != null
-          ? DateTime.parse(json['answer_a_submitted_at'])
-          : null,
-      answerBSubmittedAt: json['answer_b_submitted_at'] != null
-          ? DateTime.parse(json['answer_b_submitted_at'])
-          : null,
+      answerASubmittedAt:
+          json['answer_a_submitted_at'] != null
+              ? DateTime.parse(json['answer_a_submitted_at'])
+              : null,
+      answerBSubmittedAt:
+          json['answer_b_submitted_at'] != null
+              ? DateTime.parse(json['answer_b_submitted_at'])
+              : null,
       bothAnswered: json['both_answered'] ?? false,
-      revealedAt: json['revealed_at'] != null
-          ? DateTime.parse(json['revealed_at'])
-          : null,
-      revealTriggeredAt: json['reveal_triggered_at'] != null
-          ? DateTime.parse(json['reveal_triggered_at'])
-          : null,
+      revealedAt:
+          json['revealed_at'] != null
+              ? DateTime.parse(json['revealed_at'])
+              : null,
+      revealTriggeredAt:
+          json['reveal_triggered_at'] != null
+              ? DateTime.parse(json['reveal_triggered_at'])
+              : null,
       isSkip: json['is_skip'] ?? false,
       skipReplacedType: json['skip_replaced_type'],
       safetyTriggered: json['safety_triggered'] ?? false,

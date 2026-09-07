@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
+import 'package:attune/features/games/truth_or_dare/presentation/widgets/truth_or_dare_game_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class PartnerWatchingScreen extends ConsumerStatefulWidget {
@@ -88,155 +89,84 @@ class _PartnerWatchingScreenState extends ConsumerState<PartnerWatchingScreen> {
   void _confirmExit() {
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Leave for now?'),
-        content: const Text(
-          'Your progress is saved. The game stays in your chat, and you '
-          'can pick it up from there.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Stay'),
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('Leave for now?'),
+            content: const Text(
+              'Your progress is saved. The game stays in your chat, and you '
+              'can pick it up from there.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Stay'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  Navigator.pop(context);
+                },
+                child: const Text('Leave'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              Navigator.pop(context);
-            },
-            child: const Text('Leave'),
-          ),
-        ],
-      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final palette = TruthOrDarePalette.of(context, tone: widget.tone);
     final textTheme = Theme.of(context).textTheme;
+    final isDare = widget.questionType == 'dare';
+    final accent = palette.accentFor(widget.questionType);
 
-    final typeIcon = widget.questionType == 'truth' ? '🗣' : '🎯';
-    final typeLabel = widget.questionType == 'truth' ? 'TRUTH' : 'DARE';
-
-    return Scaffold(
-      appBar: AppBar(
-        // Watching a partner's turn could last as long as they take, and
-        // this screen had no back button at all: the only way out was to
-        // kill the app. Progress is on the server, so leaving costs
-        // nothing but the live view.
-        leading: IconButton(
-          icon: const Icon(Icons.close_rounded),
-          onPressed: _confirmExit,
-        ),
-        title: Text(
-          'Truth or Dare • Round ${widget.roundNumber}/${widget.totalRounds}',
-        ),
-        centerTitle: true,
+    return TruthOrDareScaffold(
+      roundNumber: widget.roundNumber,
+      totalRounds: widget.totalRounds,
+      tone: widget.tone,
+      scrollable: true,
+      // A wait on a partner has no timeout, so there must always be a way
+      // out that is not the system back gesture. Losing this was caught
+      // by waiting_screens_exit_test, which exists for exactly that.
+      leading: IconButton(
+        icon: const Icon(Icons.close_rounded),
+        onPressed: _confirmExit,
       ),
-      body: Padding(
-        padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
-          children: [
-            Text(
-              '${widget.partnerName}\'s turn 👀',
-              style: textTheme.headlineSmall,
-              textAlign: TextAlign.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TruthOrDareStageLabel(
+            text: "${widget.partnerName}'s turn",
+            icon: Icons.hourglass_empty_rounded,
+            color: accent,
+          ),
+          Gap(Spacing.lg.h),
+          TruthOrDarePromptCard(
+            kind: widget.questionType,
+            prompt: widget.content,
+          ),
+          Gap(Spacing.xl.h),
+          Center(child: TruthOrDareWaitingMark(color: accent)),
+          Gap(Spacing.md.h),
+          Text(
+            isDare
+                ? '${widget.partnerName} is doing it.'
+                : '${widget.partnerName} is thinking.',
+            textAlign: TextAlign.center,
+            style: textTheme.titleMedium?.copyWith(
+              color: palette.ink,
+              fontWeight: FontWeight.w600,
             ),
-            Gap(Spacing.md.h),
-            // Type badge
-            Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: Spacing.sm.w,
-                vertical: Spacing.xs.h,
-              ),
-              decoration: BoxDecoration(
-                color:
-                    widget.questionType == 'truth'
-                        ? Colors.green.withOpacity(0.1)
-                        : Colors.orange.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(typeIcon, style: const TextStyle(fontSize: 16)),
-                  Gap(Spacing.xs.w),
-                  Text(
-                    typeLabel,
-                    style: textTheme.labelSmall?.copyWith(
-                      color:
-                          widget.questionType == 'truth'
-                              ? Colors.green
-                              : Colors.orange,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Gap(Spacing.md.h),
-            // Content
-            Container(
-              padding: EdgeInsets.all(Spacing.md.w),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-              ),
-              child: Text(
-                widget.content,
-                style: textTheme.bodyLarge,
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const Spacer(),
-            // Waiting animation
-            Container(
-              padding: EdgeInsets.all(Spacing.lg.w),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-              ),
-              child: Column(
-                children: [
-                  TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0.0, end: 1.0),
-                    duration: const Duration(milliseconds: 1500),
-                    builder: (context, value, child) {
-                      return Transform.scale(
-                        scale: 0.8 + (value * 0.4),
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: colorScheme.primary.withOpacity(0.2),
-                          ),
-                          child: Center(
-                            child: Container(
-                              width: 20,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: colorScheme.primary,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  Gap(Spacing.md.h),
-                  Text(
-                    'Waiting for ${widget.partnerName} to complete...',
-                    style: textTheme.bodyMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+          Gap(Spacing.xs.h),
+          Text(
+            // No countdown and no nudge: this is a person, not a loader,
+            // and pressure is the opposite of what this game is for.
+            'No rush. You will see it here when they are done.',
+            textAlign: TextAlign.center,
+            style: textTheme.bodySmall?.copyWith(color: palette.mutedInk),
+          ),
+        ],
       ),
     );
   }

@@ -47,37 +47,42 @@ final relationshipMembersProvider =
       return repository.getRelationshipMembers(relationshipId);
     });
 
-final partnerIdProvider = FutureProvider.family<String, String>((ref, sessionId) async {
+final partnerIdProvider = FutureProvider.family<String, String>((
+  ref,
+  sessionId,
+) async {
   final userId = ref.read(currentUserIdProvider);
   if (userId == null) throw Exception('Not authenticated');
 
-  final session = await ref
-      .read(supabaseClientProvider)
-      .from('game_sessions')
-      .select('relationship_id')
-      .eq('id', sessionId)
-      .single();
+  final session =
+      await ref
+          .read(supabaseClientProvider)
+          .from('game_sessions')
+          .select('relationship_id')
+          .eq('id', sessionId)
+          .single();
 
   final repository = ref.read(truthOrDareRepositoryProvider);
   return repository.getPartnerId(session['relationship_id'] as String, userId);
 });
 
-final createTruthOrDareSessionProvider = FutureProvider.family<
-  GameSession,
-  ({String relationshipId, String tone})
->((ref, params) async {
-  final repository = ref.read(truthOrDareRepositoryProvider);
-  final userId = ref.read(currentUserIdProvider);
-  if (userId == null) throw Exception('Not authenticated');
+final createTruthOrDareSessionProvider =
+    FutureProvider.family<GameSession, ({String relationshipId, String tone})>((
+      ref,
+      params,
+    ) async {
+      final repository = ref.read(truthOrDareRepositoryProvider);
+      final userId = ref.read(currentUserIdProvider);
+      if (userId == null) throw Exception('Not authenticated');
 
-  final idempotencyKey = '${DateTime.now().millisecondsSinceEpoch}_$userId';
-  return repository.createSession(
-    relationshipId: params.relationshipId,
-    initiatorId: userId,
-    tone: params.tone,
-    idempotencyKey: idempotencyKey,
-  );
-});
+      final idempotencyKey = '${DateTime.now().millisecondsSinceEpoch}_$userId';
+      return repository.createSession(
+        relationshipId: params.relationshipId,
+        initiatorId: userId,
+        tone: params.tone,
+        idempotencyKey: idempotencyKey,
+      );
+    });
 
 final acceptTruthOrDareSessionProvider = FutureProvider.family<
   GameSession,
@@ -95,7 +100,9 @@ final acceptTruthOrDareSessionProvider = FutureProvider.family<
   );
 });
 
-final activeTruthOrDareSessionProvider = FutureProvider<GameSession?>((ref) async {
+final activeTruthOrDareSessionProvider = FutureProvider<GameSession?>((
+  ref,
+) async {
   final relationshipId = await ref.read(currentRelationshipIdProvider.future);
   if (relationshipId == null) return null;
 
@@ -112,28 +119,30 @@ final truthOrDareSessionProvider = FutureProvider.family<GameSession?, String>((
 });
 
 // Custom questions
-final myCustomTruthOrDareQuestionsProvider = FutureProvider<List<CustomTruthOrDareQuestion>>((ref) async {
-  final userId = ref.read(currentUserIdProvider);
-  if (userId == null) return [];
-  final repository = ref.read(truthOrDareRepositoryProvider);
-  return await repository.getMyCustomQuestions(userId);
-});
+final myCustomTruthOrDareQuestionsProvider =
+    FutureProvider<List<CustomTruthOrDareQuestion>>((ref) async {
+      final userId = ref.read(currentUserIdProvider);
+      if (userId == null) return [];
+      final repository = ref.read(truthOrDareRepositoryProvider);
+      return await repository.getMyCustomQuestions(userId);
+    });
 
-final partnerCustomTruthOrDareQuestionsProvider = FutureProvider<List<CustomTruthOrDareQuestion>>((ref) async {
-  final userId = ref.read(currentUserIdProvider);
-  final relationshipId = await ref.read(currentRelationshipIdProvider.future);
-  if (userId == null || relationshipId == null) return [];
-  final repository = ref.read(truthOrDareRepositoryProvider);
-  return await repository.getPartnerCustomQuestions(relationshipId, userId);
-});
+final partnerCustomTruthOrDareQuestionsProvider =
+    FutureProvider<List<CustomTruthOrDareQuestion>>((ref) async {
+      final userId = ref.read(currentUserIdProvider);
+      final relationshipId = await ref.read(
+        currentRelationshipIdProvider.future,
+      );
+      if (userId == null || relationshipId == null) return [];
+      final repository = ref.read(truthOrDareRepositoryProvider);
+      return await repository.getPartnerCustomQuestions(relationshipId, userId);
+    });
 
 // Create custom question
-final createCustomTruthOrDareQuestionProvider = FutureProvider.family<void, ({
-  String questionType,
-  String content,
-  String tone,
-  bool isPrivate,
-})>((ref, params) async {
+final createCustomTruthOrDareQuestionProvider = FutureProvider.family<
+  void,
+  ({String questionType, String content, String tone, bool isPrivate})
+>((ref, params) async {
   final userId = ref.read(currentUserIdProvider);
   if (userId == null) throw Exception('Not authenticated');
   final repository = ref.read(truthOrDareRepositoryProvider);
@@ -147,28 +156,31 @@ final createCustomTruthOrDareQuestionProvider = FutureProvider.family<void, ({
 });
 
 // Delete custom question
-final deleteCustomTruthOrDareQuestionProvider = FutureProvider.family<void, String>((ref, questionId) async {
-  final repository = ref.read(truthOrDareRepositoryProvider);
-  await repository.deleteCustomQuestion(questionId);
-});
+final deleteCustomTruthOrDareQuestionProvider =
+    FutureProvider.family<void, String>((ref, questionId) async {
+      final repository = ref.read(truthOrDareRepositoryProvider);
+      await repository.deleteCustomQuestion(questionId);
+    });
 
 // Toggle privacy
-final toggleCustomTruthOrDarePrivacyProvider = FutureProvider.family<void, ({
-  String id,
-  bool isPrivate,
-})>((ref, params) async {
-  final repository = ref.read(truthOrDareRepositoryProvider);
-  await repository.updateCustomQuestionPrivacy(params.id, params.isPrivate);
-});
+final toggleCustomTruthOrDarePrivacyProvider =
+    FutureProvider.family<void, ({String id, bool isPrivate})>((
+      ref,
+      params,
+    ) async {
+      final repository = ref.read(truthOrDareRepositoryProvider);
+      await repository.updateCustomQuestionPrivacy(params.id, params.isPrivate);
+    });
 
 // Report custom question
-final reportCustomTruthOrDareQuestionProvider = FutureProvider.family<void, ({
-  String id,
-  String reason,
-})>((ref, params) async {
-  final repository = ref.read(truthOrDareRepositoryProvider);
-  await repository.reportCustomQuestion(params.id, params.reason);
-});
+final reportCustomTruthOrDareQuestionProvider =
+    FutureProvider.family<void, ({String id, String reason})>((
+      ref,
+      params,
+    ) async {
+      final repository = ref.read(truthOrDareRepositoryProvider);
+      await repository.reportCustomQuestion(params.id, params.reason);
+    });
 
 // Select random type
 final randomTypeProvider = Provider<String>((ref) {
@@ -177,14 +189,14 @@ final randomTypeProvider = Provider<String>((ref) {
 });
 
 // Select question for round
-final selectQuestionForRoundProvider = FutureProvider.family<Map<String, dynamic>, ({
-  String tone,
-  String questionType,
-  String sessionId,
-})>((ref, params) async {
+final selectQuestionForRoundProvider = FutureProvider.family<
+  Map<String, dynamic>,
+  ({String tone, String questionType, String sessionId})
+>((ref, params) async {
   final userId = ref.read(currentUserIdProvider);
   final relationshipId = await ref.read(currentRelationshipIdProvider.future);
-  if (userId == null || relationshipId == null) throw Exception('Not authenticated');
+  if (userId == null || relationshipId == null)
+    throw Exception('Not authenticated');
   final repository = ref.read(truthOrDareRepositoryProvider);
   return await repository.selectQuestionForRound(
     relationshipId: relationshipId,
@@ -214,7 +226,10 @@ final createTruthOrDareRoundProvider = FutureProvider.family<
 });
 
 final truthOrDareSessionRoundsProvider =
-    FutureProvider.family<List<TruthOrDareRound>, String>((ref, sessionId) async {
+    FutureProvider.family<List<TruthOrDareRound>, String>((
+      ref,
+      sessionId,
+    ) async {
       final repository = ref.read(truthOrDareRepositoryProvider);
       return repository.getSessionRounds(sessionId);
     });
@@ -244,10 +259,16 @@ final advanceTruthOrDareSessionProvider = FutureProvider.family<
 });
 
 // Session history (metadata only)
-final truthOrDareSessionHistoryProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final userId = ref.read(currentUserIdProvider);
-  final relationshipId = await ref.read(currentRelationshipIdProvider.future);
-  if (userId == null || relationshipId == null) return [];
-  final repository = ref.read(truthOrDareRepositoryProvider);
-  return await repository.getSessionHistory(relationshipId: relationshipId, userId: userId);
-});
+final truthOrDareSessionHistoryProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+      final userId = ref.read(currentUserIdProvider);
+      final relationshipId = await ref.read(
+        currentRelationshipIdProvider.future,
+      );
+      if (userId == null || relationshipId == null) return [];
+      final repository = ref.read(truthOrDareRepositoryProvider);
+      return await repository.getSessionHistory(
+        relationshipId: relationshipId,
+        userId: userId,
+      );
+    });

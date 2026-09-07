@@ -5,6 +5,7 @@ import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/games/truth_or_dare/presentation/providers/truth_or_dare_providers.dart';
+import 'package:attune/features/games/truth_or_dare/presentation/widgets/truth_or_dare_game_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class DareRevealScreen extends ConsumerStatefulWidget {
@@ -165,38 +166,22 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // Mark dare as completed
-      final field = widget.isPartnerA ? 'answer_a' : 'answer_b';
-      final submittedAtField =
-          widget.isPartnerA ? 'answer_a_submitted_at' : 'answer_b_submitted_at';
-
-      await ref
+      // One RPC, writing only this player's column.
+      //
+      // The direct update this replaces also set the PARTNER's answer
+      // column to a reveal sentinel, so whoever finished second
+      // destroyed what the first person had said. The RPC derives the
+      // column from auth.uid() and marks the round complete itself.
+      final result = await ref
           .read(supabaseClientProvider)
-          .from('game_session_rounds')
-          .update({
-            field: 'completed',
-            widget.isPartnerA ? 'answer_b' : 'answer_a': '__revealed__',
-            submittedAtField: DateTime.now().toIso8601String(),
-          })
-          .eq('id', widget.roundId);
+          .rpc(
+            'submit_truth_or_dare_answer',
+            params: {'p_round_id': widget.roundId, 'p_answer': 'completed'},
+          );
 
-      // Check if both answered (partner may have also answered something)
-      final round =
-          await ref
-              .read(supabaseClientProvider)
-              .from('game_session_rounds')
-              .select('answer_a, answer_b, both_answered')
-              .eq('id', widget.roundId)
-              .single();
-
-      final bothAnswered =
-          round['answer_a'] != null && round['answer_b'] != null;
-
-      // If both answered, mark as complete
-      if (bothAnswered && !(round['both_answered'] as bool)) {
-        await ref
-            .read(supabaseClientProvider)
-            .rpc('mark_round_complete', params: {'p_round_id': widget.roundId});
+      final data = Map<String, dynamic>.from(result as Map);
+      if (data['error'] == true) {
+        throw StateError(data['code']?.toString() ?? 'unknown');
       }
 
       // Mark question as seen (preset only)
@@ -242,117 +227,93 @@ class _DareRevealScreenState extends ConsumerState<DareRevealScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final palette = TruthOrDarePalette.of(context, tone: widget.tone);
     final textTheme = Theme.of(context).textTheme;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Truth or Dare • Round ${widget.roundNumber}/${widget.totalRounds}',
-        ),
-        centerTitle: true,
+    return TruthOrDareScaffold(
+      roundNumber: widget.roundNumber,
+      totalRounds: widget.totalRounds,
+      tone: widget.tone,
+      scrollable: true,
+      bottom: TruthOrDarePrimaryAction(
+        label: 'Done — I did it',
+        kind: 'dare',
+        icon: Icons.check_circle_outline_rounded,
+        busy: _isLoading,
+        onPressed: _isLoading ? null : _completeDare,
       ),
-      body: Padding(
-        padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Dare badge
-            Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: Spacing.sm.w,
-                vertical: Spacing.xs.h,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TruthOrDarePromptCard(
+            kind: 'dare',
+            prompt: widget.dareText,
+            author: widget.isCustom ? widget.partnerName : null,
+          ),
+          Gap(Spacing.lg.h),
+          Row(
+            children: [
+              Icon(
+                Icons.visibility_outlined,
+                size: 14,
+                color: palette.mutedInk,
               ),
+              Gap(Spacing.xs.w),
+              Expanded(
+                child: Text(
+                  '${widget.partnerName} will see which dare you got.',
+                  style: textTheme.bodySmall?.copyWith(color: palette.mutedInk),
+                ),
+              ),
+            ],
+          ),
+          Gap(Spacing.xl.h),
+          // Skipping is a first-class action, not a hidden escape hatch.
+          // A dare you do not want to do must always have a way out that
+          // costs nothing socially -- so it is a visible, plainly worded
+          // button rather than something to hunt for.
+          if (!_isSkipUsed)
+            OutlinedButton.icon(
+              onPressed: _isLoading ? null : _useSkip,
+              icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+              label: const Text('Swap this for a truth'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: palette.ink,
+                side: BorderSide(color: palette.line),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.sm.r),
+                color: palette.panel,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: palette.line),
               ),
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('🎯', style: TextStyle(fontSize: 16)),
-                  Gap(Spacing.xs.w),
-                  Text(
-                    'DARE',
-                    style: textTheme.labelSmall?.copyWith(
-                      color: Colors.orange,
-                      fontWeight: FontWeight.w600,
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 16,
+                    color: palette.mutedInk,
+                  ),
+                  Gap(Spacing.sm.w),
+                  Expanded(
+                    child: Text(
+                      'You have used your swap for this game.',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: palette.mutedInk,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-            Gap(Spacing.md.h),
-            // Dare text
-            Text(
-              widget.dareText,
-              style: textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Gap(Spacing.xl.h),
-            // Instructions
-            Container(
-              padding: EdgeInsets.all(Spacing.md.w),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.3,
-                ),
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Complete the dare, then tap Done.',
-                    style: textTheme.bodyMedium,
-                  ),
-                  Gap(Spacing.sm.h),
-                  Text(
-                    'Your partner will see what your dare was.',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withValues(alpha: 0.6),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Spacer(),
-            // Skip button
-            if (!_isSkipUsed)
-              Padding(
-                padding: EdgeInsets.only(bottom: Spacing.md.h),
-                child: AppButton(
-                  label: 'Skip this dare — I\'ll take another truth instead',
-                  onPressed: _isLoading ? null : _useSkip,
-                  size: ButtonSize.medium,
-                  customColor: colorScheme.surfaceContainerHighest,
-                  textColor: colorScheme.onSurface,
-                  isLoading: _isLoading,
-                ),
-              ),
-            if (_isSkipUsed)
-              Padding(
-                padding: EdgeInsets.only(bottom: Spacing.md.h),
-                child: Text(
-                  'No skips remaining',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.5),
-                    fontStyle: FontStyle.italic,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            // Done button
-            AppButton(
-              label: 'Done ✓',
-              onPressed: _isLoading ? null : _completeDare,
-              size: ButtonSize.large,
-              width: double.infinity,
-              isLoading: _isLoading,
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }

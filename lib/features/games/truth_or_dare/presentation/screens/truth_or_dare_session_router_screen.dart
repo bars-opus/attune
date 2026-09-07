@@ -205,7 +205,7 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
                   round.questionType == 'truth' &&
                   round.activePartnerId == members.userA &&
                   (round.answerA?.isNotEmpty ?? false) &&
-                  round.answerA != '__revealed__',
+                  round.answerA != kTruthOrDareRevealed,
             )
             .length;
     final truthsForB =
@@ -215,7 +215,7 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
                   round.questionType == 'truth' &&
                   round.activePartnerId == members.userB &&
                   (round.answerB?.isNotEmpty ?? false) &&
-                  round.answerB != '__revealed__',
+                  round.answerB != kTruthOrDareRevealed,
             )
             .length;
     final daresForA =
@@ -225,7 +225,7 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
                   round.questionType == 'dare' &&
                   round.activePartnerId == members.userA &&
                   (round.answerA?.isNotEmpty ?? false) &&
-                  round.answerA != '__revealed__',
+                  round.answerA != kTruthOrDareRevealed,
             )
             .length;
     final daresForB =
@@ -235,7 +235,7 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
                   round.questionType == 'dare' &&
                   round.activePartnerId == members.userB &&
                   (round.answerB?.isNotEmpty ?? false) &&
-                  round.answerB != '__revealed__',
+                  round.answerB != kTruthOrDareRevealed,
             )
             .length;
 
@@ -247,6 +247,8 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
         partnerTruths: isPartnerA ? truthsForB : truthsForA,
         partnerDares: isPartnerA ? daresForB : daresForA,
         mostInterestingPick: _buildMostInterestingPick(rounds),
+        tone: session.tone,
+        partnerName: partnerName,
         onPlayAgain: () {
           context.pushReplacementNamed('truthOrDareToneSelector');
         },
@@ -292,10 +294,10 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
     if (currentRound.bothAnswered) {
       final answerText =
           currentRound.activePartnerId == members.userA
-              ? (currentRound.answerA == '__revealed__'
+              ? (currentRound.answerA == kTruthOrDareRevealed
                   ? currentRound.answerB
                   : currentRound.answerA)
-              : (currentRound.answerB == '__revealed__'
+              : (currentRound.answerB == kTruthOrDareRevealed
                   ? currentRound.answerA
                   : currentRound.answerB);
 
@@ -303,9 +305,13 @@ class TruthOrDareSessionRouterScreen extends ConsumerWidget {
         questionType: currentRound.questionType,
         questionText: currentRound.questionText,
         partnerName: partnerName,
-        answerText: currentRound.questionType == 'truth' ? answerText : null,
+        // Passed for both kinds now: a dare stores 'completed', which the
+        // result screen renders as "They did it." Nulling it here meant a
+        // finished dare read as "they kept this one to themselves".
+        answerText: answerText,
         roundNumber: currentRound.roundNumber,
         totalRounds: session.totalRounds,
+        tone: session.tone,
         onNext: () async {
           final nextRound = currentRound!.roundNumber + 1;
           await ref.read(
