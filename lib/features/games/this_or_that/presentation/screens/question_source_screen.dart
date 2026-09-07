@@ -4,6 +4,7 @@ import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class QuestionSourceScreen extends ConsumerStatefulWidget {
@@ -85,10 +86,10 @@ class _QuestionSourceScreenState extends ConsumerState<QuestionSourceScreen> {
   @override
   Widget build(BuildContext context) {
     if (!widget.isChooser) {
-      ref.listen(thisOrThatSessionPulseProvider(widget.sessionId), (_, __) {
+      ref.listen(gameSessionLiveProvider(widget.sessionId), (_, __) {
         ref.invalidate(sessionProvider(widget.sessionId));
       });
-      ref.watch(thisOrThatSessionPulseProvider(widget.sessionId));
+      ref.watch(gameSessionLiveProvider(widget.sessionId));
       final session = ref.watch(sessionProvider(widget.sessionId)).valueOrNull;
       if (session != null && session.currentRound >= widget.nextRound) {
         _leaveWhenReady();

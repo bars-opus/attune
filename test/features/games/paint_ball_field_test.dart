@@ -793,4 +793,60 @@ void main() {
     expect(find.text('SAME SPOT x3'), findsNothing);
     expect(find.text('AMA'), findsOneWidget);
   });
+
+  testWidgets('a shot crosses the field rather than teleporting', (
+    tester,
+  ) async {
+    // Replaces a screen-level test that sampled animation frames. That
+    // one depended on real wall-clock timing, so it passed alone and
+    // failed whenever the machine was busy -- a flake that said nothing
+    // about the code.
+    //
+    // The property worth holding is geometric: at each step of its
+    // flight the paint is somewhere new, and somewhere between the two
+    // covers. That is checkable without any clock at all.
+    final positions = <double>{};
+    for (final progress in [0.55, 0.62, 0.70, 0.78, 0.85]) {
+      await tester.pumpWidget(
+        _wrap(
+          PaintBallField(
+            splats: const [],
+            myPosition: 0,
+            selectedShot: 2,
+            revealedPartnerPosition: 2,
+            theirRevealedShot: 0,
+            isMyTurn: false,
+            isReplaying: true,
+            replayProgress: progress,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final painters =
+          tester
+              .widgetList<CustomPaint>(find.byType(CustomPaint))
+              .map((widget) => widget.painter)
+              .where(
+                (painter) =>
+                    painter.runtimeType.toString().contains('Projectile'),
+              )
+              .toList();
+
+      expect(
+        painters,
+        isNotEmpty,
+        reason: 'paint is in the air at progress $progress',
+      );
+      for (final painter in painters) {
+        positions.add((painter as dynamic).progress as double);
+      }
+    }
+
+    expect(
+      positions.length,
+      greaterThan(3),
+      reason: 'the shot occupies a new position at each step of its flight',
+    );
+  });
 }

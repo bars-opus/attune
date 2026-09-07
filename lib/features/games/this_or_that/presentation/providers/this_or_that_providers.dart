@@ -1,7 +1,5 @@
 // lib/features/games/this_or_that/presentation/providers/this_or_that_providers.dart
 
-import 'dart:async';
-
 import 'package:attune/features/games/this_or_that/data/models/custom_question.dart';
 import 'package:attune/features/games/this_or_that/data/models/game_round.dart';
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_session.dart';
@@ -322,47 +320,6 @@ final sessionRoundsProvider = FutureProvider.family<List<GameRound>, String>((
   return (response as List<dynamic>)
       .map((json) => GameRound.fromJson(json as Map<String, dynamic>))
       .toList();
-});
-
-/// Safe live signal for This or That.
-///
-/// Round answer rows contain private picks, so this feature never subscribes
-/// to their realtime payload. A trigger bumps the answer-free session row;
-/// polling remains as a fallback when realtime is unavailable.
-final thisOrThatSessionPulseProvider = StreamProvider.family<void, String>((
-  ref,
-  sessionId,
-) async* {
-  final supabase = ref.read(supabaseClientProvider);
-  final controller = StreamController<void>.broadcast();
-  final poll = Timer.periodic(const Duration(seconds: 2), (_) {
-    if (!controller.isClosed) controller.add(null);
-  });
-  final channel =
-      supabase
-          .channel('this-or-that-session:$sessionId')
-          .onPostgresChanges(
-            event: PostgresChangeEvent.update,
-            schema: 'public',
-            table: 'game_sessions',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'id',
-              value: sessionId,
-            ),
-            callback: (_) {
-              if (!controller.isClosed) controller.add(null);
-            },
-          )
-          .subscribe();
-
-  ref.onDispose(() {
-    poll.cancel();
-    unawaited(controller.close());
-    unawaited(supabase.removeChannel(channel));
-  });
-
-  yield* controller.stream;
 });
 
 // Hide session

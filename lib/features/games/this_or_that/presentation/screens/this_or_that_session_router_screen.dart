@@ -10,6 +10,7 @@ import 'package:attune/features/games/this_or_that/presentation/screens/reveal_s
 import 'package:attune/features/games/this_or_that/presentation/screens/waiting_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -23,11 +24,11 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
     // Refreshes what this screen reads whenever the partner acts. Without
     // it, a player waiting on their turn saw nothing until they tapped
     // something — which in a turn-based game is most of the time.
-    ref.listen(thisOrThatSessionPulseProvider(sessionId), (_, _) {
+    ref.listen(gameSessionLiveProvider(sessionId), (_, _) {
       ref.invalidate(sessionProvider(sessionId));
       ref.invalidate(sessionRoundsProvider(sessionId));
     });
-    ref.watch(thisOrThatSessionPulseProvider(sessionId));
+    ref.watch(gameSessionLiveProvider(sessionId));
 
     final sessionAsync = ref.watch(sessionProvider(sessionId));
     final userId = ref.watch(currentUserIdProvider);

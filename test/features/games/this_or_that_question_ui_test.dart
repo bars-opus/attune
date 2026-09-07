@@ -21,6 +21,7 @@ import 'package:attune/features/games/this_or_that/presentation/screens/waiting_
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -716,7 +717,7 @@ void main() {
           relationshipMembersProvider.overrideWith(
             (_, __) async => (userA: 'user-a', userB: 'user-b'),
           ),
-          thisOrThatSessionPulseProvider.overrideWith(
+          gameSessionLiveProvider.overrideWith(
             (_, __) => const Stream<void>.empty(),
           ),
         ],
