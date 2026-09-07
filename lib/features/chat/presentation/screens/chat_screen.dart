@@ -2922,6 +2922,11 @@ Future<void> openGameRoute(
       await context.pushNamed('thisOrThatGamesHub');
     case ChatGameDestination.truthOrDare:
       await context.pushNamed('truthOrDareGame');
+    case ChatGameDestination.snakesAndLadders:
+      await context.pushNamed(
+        'snakesLobby',
+        pathParameters: {'relationshipId': relationshipId},
+      );
     case ChatGameDestination.paintBall:
       final action = await context.pushNamed<PaintBallExitAction>(
         'paintBallLobby',

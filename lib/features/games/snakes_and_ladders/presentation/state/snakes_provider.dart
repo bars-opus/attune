@@ -150,6 +150,61 @@ class SnakesNotifier extends StateNotifier<SnakesUiState> {
     if (_sessionId != null) await load(_sessionId!);
   }
 
+  /// Opens whatever this couple already has, or nothing.
+  Future<SnakesSession?> findActive(String relationshipId) async {
+    try {
+      return await _ref
+          .read(snakesGatewayProvider)
+          .getActiveSession(relationshipId);
+    } on SnakesApiError catch (error) {
+      state = state.copyWith(errorMessage: error.message);
+      return null;
+    } catch (_) {
+      state = state.copyWith(
+        errorMessage: 'Could not open this game. Please try again.',
+      );
+      return null;
+    }
+  }
+
+  Future<String?> createSession(String relationshipId) async {
+    try {
+      return await _ref
+          .read(snakesGatewayProvider)
+          .createSession(
+            relationshipId: relationshipId,
+            // A key per attempt, so a retry after a dropped response
+            // resolves to the same session rather than a second one.
+            idempotencyKey:
+                'snakes-$relationshipId-'
+                '${DateTime.now().millisecondsSinceEpoch ~/ 60000}',
+          );
+    } on SnakesApiError catch (error) {
+      state = state.copyWith(errorMessage: error.message);
+      return null;
+    } catch (_) {
+      state = state.copyWith(
+        errorMessage: 'Could not start a game. Please try again.',
+      );
+      return null;
+    }
+  }
+
+  Future<bool> acceptSession(String sessionId) async {
+    try {
+      await _ref.read(snakesGatewayProvider).acceptSession(sessionId);
+      return true;
+    } on SnakesApiError catch (error) {
+      state = state.copyWith(errorMessage: error.message);
+      return false;
+    } catch (_) {
+      state = state.copyWith(
+        errorMessage: 'Could not join this game. Please try again.',
+      );
+      return false;
+    }
+  }
+
   void clearError() => state = state.copyWith(errorMessage: null);
 }
 

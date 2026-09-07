@@ -10,6 +10,7 @@ enum ChatGameDestination {
   truthOrDare,
   thirtySixQuestions,
   paintBall,
+  snakesAndLadders,
   neverHaveIEver,
   mirror,
   slidingScale,
@@ -45,6 +46,7 @@ String? chatGameTypeForDestination(ChatGameDestination destination) {
     'scenario',
     'love_map',
     'paint_ball',
+    'snakes_and_ladders',
   ]) {
     if (chatGameDestinationForType(gameType) == destination) return gameType;
   }
@@ -61,6 +63,7 @@ ChatGameDestination? chatGameDestinationForType(String gameType) {
     'scenario': ChatGameDestination.scenario,
     'love_map': ChatGameDestination.loveMap,
     'paint_ball': ChatGameDestination.paintBall,
+    'snakes_and_ladders': ChatGameDestination.snakesAndLadders,
   };
 
   return byType[gameType];
@@ -354,6 +357,17 @@ const _chatGameCategories = <_ChatGameCategory>[
         title: 'Paint Ball',
         subtitle: 'Turn-based color battle',
         icon: Icons.sports_esports_outlined,
+        tags: {'Quick', 'Fun'},
+      ),
+      _ChatGameOption(
+        destination: ChatGameDestination.snakesAndLadders,
+        title: 'Snakes and Ladders',
+        // Says plainly what it is FOR. Every other game here promises
+        // something to learn; this one promises the opposite, and a
+        // couple reaching for it after a hard conversation should be
+        // able to tell at a glance.
+        subtitle: 'No questions, just a die',
+        icon: Icons.casino_outlined,
         tags: {'Quick', 'Fun'},
       ),
     ],

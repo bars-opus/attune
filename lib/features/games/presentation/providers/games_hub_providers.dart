@@ -108,6 +108,8 @@ String gameTypeDisplayName(String gameType) {
     'scenario': 'Scenario',
     'love_map': 'Love Map',
     'paint_ball': 'Paint Ball',
+    // The fallback would title-case this to "Snakes And Ladders".
+    'snakes_and_ladders': 'Snakes and Ladders',
   };
 
   final known = names[gameType];

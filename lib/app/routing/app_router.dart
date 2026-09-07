@@ -15,6 +15,8 @@ import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_history_screen.dart';
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_knockout_screen.dart';
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_lobby_screen.dart';
+import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_game_screen.dart';
+import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_lobby_screen.dart';
 import 'package:attune/features/onboarding/presentation/screens/onboarding_gate.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
@@ -1638,6 +1640,22 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         builder: (context, state) {
           final sessionId = state.pathParameters['sessionId']!;
           return PaintBallKnockoutScreen(sessionId: sessionId);
+        },
+      ),
+      GoRoute(
+        path: '/games/snakes/lobby/:relationshipId',
+        name: 'snakesLobby',
+        builder: (context, state) {
+          final relationshipId = state.pathParameters['relationshipId']!;
+          return SnakesLobbyScreen(relationshipId: relationshipId);
+        },
+      ),
+      GoRoute(
+        path: '/games/snakes/game/:sessionId',
+        name: 'snakesGame',
+        builder: (context, state) {
+          final sessionId = state.pathParameters['sessionId']!;
+          return SnakesGameScreen(sessionId: sessionId);
         },
       ),
       GoRoute(

@@ -17,6 +17,9 @@ abstract class SnakesGateway {
   });
 
   Future<SnakesSession> getState(String sessionId);
+
+  /// The invitation or game already open for this couple, if any.
+  Future<SnakesSession?> getActiveSession(String relationshipId);
 }
 
 class SnakesService implements SnakesGateway {
@@ -109,6 +112,20 @@ class SnakesService implements SnakesGateway {
           .rpc('get_snakes_session_state', params: {'p_session_id': sessionId})
           .timeout(_timeout),
     );
+    return SnakesSession.fromJson(data);
+  }
+
+  @override
+  Future<SnakesSession?> getActiveSession(String relationshipId) async {
+    final data = _unwrap(
+      await _supabase
+          .rpc(
+            'get_active_snakes_session',
+            params: {'p_relationship_id': relationshipId},
+          )
+          .timeout(_timeout),
+    );
+    if (data['session_id'] == null) return null;
     return SnakesSession.fromJson(data);
   }
 }

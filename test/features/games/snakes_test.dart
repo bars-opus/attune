@@ -188,4 +188,50 @@ void main() {
       }
     });
   });
+
+  group('wiring', () {
+    test('the game is reachable from the chat', () {
+      // A game nobody can open is not shipped. These three files are the
+      // whole path: the sheet offers it, the chat routes it, the router
+      // resolves it -- and each is a shared file where a later edit
+      // could quietly drop one link.
+      final sheet =
+          File(
+            'lib/features/games/presentation/widgets/chat_games_sheet.dart',
+          ).readAsStringSync();
+      expect(sheet.contains('snakesAndLadders'), isTrue);
+      expect(
+        sheet.contains("'snakes_and_ladders': ChatGameDestination"),
+        isTrue,
+        reason: 'an in-progress game could not resume from the sheet',
+      );
+
+      final chat =
+          File(
+            'lib/features/chat/presentation/screens/chat_screen.dart',
+          ).readAsStringSync();
+      expect(
+        chat.contains('snakesLobby'),
+        isTrue,
+        reason: 'tapping the game in the sheet goes nowhere',
+      );
+
+      final router = File('lib/app/routing/app_router.dart').readAsStringSync();
+      expect(router.contains("name: 'snakesLobby'"), isTrue);
+      expect(router.contains("name: 'snakesGame'"), isTrue);
+    });
+
+    test('the game has a display name rather than a title-cased id', () {
+      final source =
+          File(
+            'lib/features/games/presentation/providers/'
+            'games_hub_providers.dart',
+          ).readAsStringSync();
+      expect(
+        source.contains("'snakes_and_ladders': 'Snakes and Ladders'"),
+        isTrue,
+        reason: 'the chat card would read "Snakes And Ladders"',
+      );
+    });
+  });
 }
