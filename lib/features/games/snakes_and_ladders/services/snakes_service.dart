@@ -102,6 +102,7 @@ class SnakesService implements SnakesGateway {
       rolledTo: data['rolled_to'] as int? ?? 0,
       movedTo: data['moved_to'] as int? ?? 0,
       movement: SnakesMovement.fromWire(data['movement_kind'] as String?),
+      didBounce: data['did_bounce'] == true,
     );
   }
 

@@ -1,14 +1,20 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:attune/features/games/snakes_and_ladders/models/snakes_models.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/state/snakes_provider.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/widgets/snakes_board.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/widgets/snakes_die.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+/// What the player chose on the way out, so the caller can offer a
+/// rematch without this screen knowing how a game is created.
+enum SnakesExitAction { backToChat, playAgain }
 
 /// The whole game: a board, two tokens, and a die.
 class SnakesGameScreen extends ConsumerStatefulWidget {
@@ -25,6 +31,9 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen> {
   /// and the board draws from the session's own positions.
   int? _walkCell;
   bool _walking = false;
+
+  /// Guards the automatic exit so a rebuild cannot schedule two pops.
+  bool _leaving = false;
 
   @override
   void initState() {
@@ -57,7 +66,11 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen> {
       // comes back, which is why rolled_to is stored rather than derived.
       final forward = turn.rolledTo >= turn.movedFrom;
       final steps = <int>[];
-      if (turn.movement == SnakesMovement.bounce) {
+      // didBounce, not movement == bounce: a turn that bounced AND then
+      // hit a snake reports the snake, and reading only movement would
+      // skip the walk to 100 and back -- the most dramatic thing the
+      // game does.
+      if (turn.didBounce) {
         for (var cell = turn.movedFrom + 1; cell <= 100; cell++) {
           steps.add(cell);
         }
@@ -82,13 +95,27 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen> {
       }
 
       if (turn.movement.isFeature) {
-        await Future<void>.delayed(const Duration(milliseconds: 220));
+        await Future<void>.delayed(const Duration(milliseconds: 200));
         if (!mounted) return;
         final climbing = turn.movement == SnakesMovement.ladder;
         sound.play(climbing ? AppSound.gameLadder : AppSound.gameSnake);
         climbing ? haptics.light() : haptics.medium();
+
+        // Travels the feature rather than appearing at the far end. A
+        // token that teleported would leave the drawn snake decorative --
+        // the player would never see it used.
+        final span = (turn.movedTo - turn.rolledTo).abs();
+        final direction = turn.movedTo > turn.rolledTo ? 1 : -1;
+        final hops = math.min(span, 12);
+        for (var hop = 1; hop <= hops; hop++) {
+          if (!mounted) return;
+          final cell = turn.rolledTo + direction * (span * hop ~/ hops);
+          setState(() => _walkCell = cell);
+          await Future<void>.delayed(const Duration(milliseconds: 46));
+        }
+        if (!mounted) return;
         setState(() => _walkCell = turn.movedTo);
-        await Future<void>.delayed(const Duration(milliseconds: 460));
+        await Future<void>.delayed(const Duration(milliseconds: 240));
       }
     }
 
@@ -102,6 +129,17 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Live, like every other game. Without this the screen loaded once
+    // and never again: a partner's roll would not appear until the
+    // player closed and reopened the game, on a board that still read
+    // "Their roll".
+    ref.listen(gameSessionLiveProvider(widget.sessionId), (_, _) {
+      if (!_walking) {
+        unawaited(ref.read(snakesProvider.notifier).load(widget.sessionId));
+      }
+    });
+    ref.watch(gameSessionLiveProvider(widget.sessionId));
+
     final state = ref.watch(snakesProvider);
     final userId = ref.watch(snakesCurrentUserIdProvider);
     final session = state.session;
@@ -113,6 +151,23 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen> {
     if (pending != null && !_walking) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_animate(pending));
+      });
+    }
+
+    // Nothing left to do here: the roll is in and the board is with the
+    // partner. Leaving on its own beats parking the player on a dead
+    // board, and matches Paint Ball. Held until any animation finishes
+    // so the walk the player came to watch is never cut short.
+    if (session != null &&
+        session.isActive &&
+        !session.isMyTurn(userId) &&
+        state.pendingTurn == null &&
+        !_walking &&
+        !state.isRolling &&
+        !_leaving) {
+      _leaving = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).maybePop();
       });
     }
 
@@ -163,6 +218,10 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen> {
                 _Finished(
                   youWon: session.winnerUserId == userId,
                   textTheme: textTheme,
+                  onPlayAgain:
+                      () => Navigator.of(
+                        context,
+                      ).maybePop(SnakesExitAction.playAgain),
                 )
               else ...[
                 // §12.1: the exact-finish rule only frustrates when it is
@@ -266,10 +325,15 @@ class _Readout extends StatelessWidget {
 /// No confetti, no record, no forfeit: a die decided it, and dressing
 /// that up as an achievement would be the opposite of cooling off.
 class _Finished extends StatelessWidget {
-  const _Finished({required this.youWon, required this.textTheme});
+  const _Finished({
+    required this.youWon,
+    required this.textTheme,
+    this.onPlayAgain,
+  });
 
   final bool youWon;
   final TextTheme textTheme;
+  final VoidCallback? onPlayAgain;
 
   @override
   Widget build(BuildContext context) {
@@ -283,6 +347,17 @@ class _Finished extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
+        if (onPlayAgain != null) ...[
+          FilledButton(
+            onPressed: onPlayAgain,
+            style: FilledButton.styleFrom(
+              backgroundColor: SnakesPalette.you,
+              foregroundColor: SnakesPalette.field,
+            ),
+            child: const Text('Play again'),
+          ),
+          const SizedBox(height: 10),
+        ],
         OutlinedButton(
           onPressed: () => Navigator.of(context).maybePop(),
           style: OutlinedButton.styleFrom(

@@ -234,4 +234,150 @@ void main() {
       );
     });
   });
+
+  group('review fixes', () {
+    test('a bounce that hits a snake records both', () {
+      // 97 + 5 bounces to 98, which is a snake head, so it slides to 78.
+      // A single movement_kind could only hold one of those and the
+      // feature overwrote the bounce -- so the animation never showed
+      // the token reach 100 and come back.
+      final turn = SnakesTurn.fromJson({
+        'round_number': 4,
+        'active_partner_id': 'user-a',
+        'die_roll': 5,
+        'moved_from': 97,
+        'rolled_to': 98,
+        'moved_to': 78,
+        'movement_kind': 'snake',
+        'did_bounce': true,
+      });
+
+      expect(turn.movement, SnakesMovement.snake);
+      expect(
+        turn.didBounce,
+        isTrue,
+        reason: 'the walk to 100 and back would be skipped',
+      );
+    });
+
+    test('the walk reads didBounce, not movement', () {
+      // The model carrying the flag is not enough -- the animation has
+      // to branch on it. Reading `movement == bounce` looks correct and
+      // silently drops the walk to 100 whenever a bounce also lands on
+      // a snake, which is the only case where it matters.
+      final source =
+          File(
+            'lib/features/games/snakes_and_ladders/presentation/screens/'
+            'snakes_game_screen.dart',
+          ).readAsStringSync();
+
+      expect(
+        source.contains('turn.didBounce'),
+        isTrue,
+        reason: 'a bounce onto a snake would skip the walk to 100',
+      );
+      expect(
+        source.contains('turn.movement == SnakesMovement.bounce'),
+        isFalse,
+        reason: 'branching on movement misses a compound bounce',
+      );
+    });
+
+    test('the board keeps off-board tokens inside its own bounds', () {
+      // They used to sit below the board, where its clip made both
+      // starting tokens invisible -- so a new game opened showing nobody
+      // on it.
+      const size = Size(500, 500);
+      final start = snakesCellCentre(0, size);
+      expect(start.dy, lessThan(size.height));
+      expect(start.dy, greaterThan(0));
+      expect(start.dx, greaterThan(0));
+      expect(start.dx, lessThan(size.width));
+    });
+
+    testWidgets('a phone-width board drops most numerals', (tester) async {
+      // The breakpoint was 340dp, so a typical 375-393dp phone fell on
+      // the dense side and rendered all one hundred numbers.
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 380,
+              height: 380,
+              child: SnakesBoardView(
+                board: SnakesBoard.empty,
+                yourCell: 5,
+                theirCell: 9,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the board describes itself to a screen reader', (
+      tester,
+    ) async {
+      // Semantics are not built in tests unless asked for.
+      final handle = tester.ensureSemantics();
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            // Sized: the board is an AspectRatio, and an unbounded
+            // parent gives it no height to build into.
+            body: SizedBox(
+              width: 400,
+              height: 400,
+              child: SnakesBoardView(
+                board: SnakesBoard.empty,
+                yourCell: 34,
+                theirCell: 51,
+                partnerName: 'Ama',
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Read from the Semantics widget rather than the merged node: the
+      // board sits inside a LayoutBuilder, so getSemantics on the view
+      // itself finds the wrapper rather than the labelled child.
+      final label = tester
+          .widgetList<Semantics>(find.byType(Semantics))
+          .map((widget) => widget.properties.label ?? '')
+          .firstWhere((text) => text.isNotEmpty, orElse: () => '');
+
+      expect(label, contains('square 34'));
+      expect(label, contains('square 51'));
+      expect(label, contains('Ama'));
+
+      handle.dispose();
+    });
+
+    test('the game screen subscribes to live updates', () {
+      // It loaded once and never again: a partner's roll would not
+      // appear until the screen was closed and reopened, on a board that
+      // still read "Their roll".
+      final source =
+          File(
+            'lib/features/games/snakes_and_ladders/presentation/screens/'
+            'snakes_game_screen.dart',
+          ).readAsStringSync();
+
+      expect(
+        source.contains('gameSessionLiveProvider'),
+        isTrue,
+        reason: 'the board would never update on its own',
+      );
+      expect(
+        source.contains('_leaving'),
+        isTrue,
+        reason: 'the screen never leaves once the turn has passed',
+      );
+    });
+  });
 }

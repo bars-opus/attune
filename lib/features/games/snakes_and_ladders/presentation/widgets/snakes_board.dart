@@ -32,11 +32,13 @@ const int kSnakesPerRow = 10;
 /// across the board at a row end.
 Offset snakesCellCentre(int cell, Size size) {
   if (cell < 1) {
-    // Off-board tokens sit below the first cell, so starting a game
-    // reads as stepping onto the board rather than appearing on it.
+    // Off-board tokens sit at the near corner of cell 1, INSIDE the
+    // board. They used to sit below it, where the board's clip made both
+    // starting tokens invisible -- so a new game opened showing nobody
+    // on it.
     final cw = size.width / kSnakesPerRow;
     final ch = size.height / kSnakesPerRow;
-    return Offset(cw / 2, size.height + ch * 0.42);
+    return Offset(cw * 0.30, size.height - ch * 0.28);
   }
 
   final index = cell - 1;
@@ -82,22 +84,37 @@ class SnakesBoardView extends StatelessWidget {
           // Below this width a full set of numerals is noise rather than
           // information: the player reads the SHAPE of the board and
           // looks up their own cell in the readout underneath.
-          final sparseNumerals = constraints.maxWidth < 340;
+          // 400dp, per the spec. 340 was wrong: a typical 375-393dp
+          // phone would have fallen on the dense side and rendered all
+          // one hundred numerals, which is the exact noise the rule
+          // exists to prevent.
+          final sparseNumerals = constraints.maxWidth < 400;
 
-          return Container(
-            decoration: BoxDecoration(
-              color: SnakesPalette.field,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: CustomPaint(
-              painter: _BoardPainter(
-                board: board,
-                yourCell: yourCell,
-                theirCell: theirCell,
-                highlightCell: highlightCell,
-                sparseNumerals: sparseNumerals,
-                textDirection: Directionality.of(context),
+          return Semantics(
+            // A painted board is invisible to a screen reader. This says
+            // what it shows, which with the readout underneath is enough
+            // to play by.
+            label:
+                'Board of 100 squares. '
+                'You are on ${yourCell == 0 ? "the start" : "square $yourCell"}. '
+                '${partnerName ?? "Your partner"} is on '
+                '${theirCell == 0 ? "the start" : "square $theirCell"}.',
+            image: true,
+            child: Container(
+              decoration: BoxDecoration(
+                color: SnakesPalette.field,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: CustomPaint(
+                painter: _BoardPainter(
+                  board: board,
+                  yourCell: yourCell,
+                  theirCell: theirCell,
+                  highlightCell: highlightCell,
+                  sparseNumerals: sparseNumerals,
+                  textDirection: Directionality.of(context),
+                ),
               ),
             ),
           );

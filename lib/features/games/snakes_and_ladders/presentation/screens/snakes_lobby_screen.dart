@@ -1,4 +1,5 @@
 import 'package:attune/features/games/snakes_and_ladders/models/snakes_models.dart';
+import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_game_screen.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/state/snakes_provider.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/widgets/snakes_board.dart';
 import 'package:flutter/material.dart';
@@ -65,10 +66,22 @@ class _SnakesLobbyScreenState extends ConsumerState<SnakesLobbyScreen> {
       );
       return;
     }
-    context.pushReplacementNamed(
+    await _openGame(sessionId);
+  }
+
+  /// Opens the board, and offers a rematch if they asked for one on the
+  /// way out. Creating the next game here rather than on the end screen
+  /// keeps session creation in one place.
+  Future<void> _openGame(String sessionId) async {
+    final action = await context.pushNamed<SnakesExitAction>(
       'snakesGame',
       pathParameters: {'sessionId': sessionId},
     );
+    if (!mounted) return;
+    await _refresh();
+    if (action == SnakesExitAction.playAgain && mounted) {
+      await _start();
+    }
   }
 
   Future<void> _join(String sessionId) async {
@@ -91,10 +104,7 @@ class _SnakesLobbyScreenState extends ConsumerState<SnakesLobbyScreen> {
       );
       return;
     }
-    context.pushReplacementNamed(
-      'snakesGame',
-      pathParameters: {'sessionId': sessionId},
-    );
+    await _openGame(sessionId);
   }
 
   @override
@@ -141,13 +151,7 @@ class _SnakesLobbyScreenState extends ConsumerState<SnakesLobbyScreen> {
                       if (existing == null)
                         _action('Start a game', _start)
                       else if (existing.isActive)
-                        _action(
-                          'Carry on',
-                          () => context.pushReplacementNamed(
-                            'snakesGame',
-                            pathParameters: {'sessionId': existing.sessionId},
-                          ),
-                        )
+                        _action('Carry on', () => _openGame(existing.sessionId))
                       else if (existing.currentTurnUserId == null &&
                           userId != null &&
                           existing.userA != userId &&

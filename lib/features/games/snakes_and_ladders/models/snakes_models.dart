@@ -73,6 +73,7 @@ class SnakesTurn {
     required this.rolledTo,
     required this.movedTo,
     required this.movement,
+    this.didBounce = false,
   });
 
   final int roundNumber;
@@ -91,6 +92,11 @@ class SnakesTurn {
 
   final SnakesMovement movement;
 
+  /// The roll overshot 100 and came back. Independent of [movement]: a
+  /// turn can bounce, hit a feature, or do both in that order, and the
+  /// animation must show all of it.
+  final bool didBounce;
+
   factory SnakesTurn.fromJson(Map<String, dynamic> json) => SnakesTurn(
     roundNumber: _asInt(json['round_number']),
     playerId: '${json['active_partner_id'] ?? ''}',
@@ -99,6 +105,7 @@ class SnakesTurn {
     rolledTo: _asInt(json['rolled_to']),
     movedTo: _asInt(json['moved_to']),
     movement: SnakesMovement.fromWire(json['movement_kind'] as String?),
+    didBounce: json['did_bounce'] == true,
   );
 }
 
@@ -144,6 +151,20 @@ class SnakesSession {
 
   /// The turn a returning player has not watched yet, if any.
   SnakesTurn? get lastTurn => turns.isEmpty ? null : turns.last;
+
+  SnakesSession copyWith({int? positionA, int? positionB}) => SnakesSession(
+    sessionId: sessionId,
+    status: status,
+    userA: userA,
+    userB: userB,
+    positionA: positionA ?? this.positionA,
+    positionB: positionB ?? this.positionB,
+    currentRound: currentRound,
+    currentTurnUserId: currentTurnUserId,
+    winnerUserId: winnerUserId,
+    board: board,
+    turns: turns,
+  );
 
   factory SnakesSession.fromJson(Map<String, dynamic> json) => SnakesSession(
     sessionId: '${json['session_id'] ?? ''}',

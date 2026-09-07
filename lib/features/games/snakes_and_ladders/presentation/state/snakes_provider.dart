@@ -79,6 +79,13 @@ class SnakesNotifier extends StateNotifier<SnakesUiState> {
   int _watchedThrough = 0;
 
   Future<void> load(String sessionId) async {
+    // A new game restarts the replay bookkeeping. The provider is global,
+    // so without this a second game beginning at round 1 would have its
+    // first replay suppressed by the round count of the last one.
+    if (_sessionId != sessionId) {
+      _watchedThrough = 0;
+      state = const SnakesUiState();
+    }
     _sessionId = sessionId;
     try {
       final session = await _ref
@@ -125,10 +132,20 @@ class SnakesNotifier extends StateNotifier<SnakesUiState> {
           .rollDie(sessionId: sessionId, roundNumber: session.currentRound);
 
       _watchedThrough = turn.roundNumber;
+
+      // Fold the result into the session NOW rather than waiting for the
+      // refetch. The animation walks the token to its new cell, and if
+      // the session still held the old position the token would snap
+      // back for a frame the moment the walk ended.
+      final isA = session.userA == _ref.read(snakesCurrentUserIdProvider);
       state = state.copyWith(
         isRolling: false,
         dieFace: turn.dieRoll,
         pendingTurn: turn,
+        session: session.copyWith(
+          positionA: isA ? turn.movedTo : session.positionA,
+          positionB: isA ? session.positionB : turn.movedTo,
+        ),
       );
     } on SnakesApiError catch (error) {
       state = state.copyWith(isRolling: false, errorMessage: error.message);
