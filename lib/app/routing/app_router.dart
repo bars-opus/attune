@@ -17,6 +17,8 @@ import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_lobby_screen.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_game_screen.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_lobby_screen.dart';
+import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_game_screen.dart';
+import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_lobby_screen.dart';
 import 'package:attune/features/onboarding/presentation/screens/onboarding_gate.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
@@ -1656,6 +1658,22 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         builder: (context, state) {
           final sessionId = state.pathParameters['sessionId']!;
           return SnakesGameScreen(sessionId: sessionId);
+        },
+      ),
+      GoRoute(
+        path: '/games/word-hunt/lobby/:relationshipId',
+        name: 'wordHuntLobby',
+        builder: (context, state) {
+          final relationshipId = state.pathParameters['relationshipId']!;
+          return WordHuntLobbyScreen(relationshipId: relationshipId);
+        },
+      ),
+      GoRoute(
+        path: '/games/word-hunt/game/:sessionId',
+        name: 'wordHuntGame',
+        builder: (context, state) {
+          final sessionId = state.pathParameters['sessionId']!;
+          return WordHuntGameScreen(sessionId: sessionId);
         },
       ),
       GoRoute(

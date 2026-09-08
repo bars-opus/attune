@@ -2927,6 +2927,11 @@ Future<void> openGameRoute(
         'snakesLobby',
         pathParameters: {'relationshipId': relationshipId},
       );
+    case ChatGameDestination.wordHunt:
+      await context.pushNamed(
+        'wordHuntLobby',
+        pathParameters: {'relationshipId': relationshipId},
+      );
     case ChatGameDestination.paintBall:
       final action = await context.pushNamed<PaintBallExitAction>(
         'paintBallLobby',

@@ -136,10 +136,17 @@ void main() {
           'lib/features/chat/presentation/screens/chat_screen.dart',
         ).readAsStringSync();
 
-    final handler = source.substring(
-      source.indexOf('Future<void> _sharePlace()'),
-      source.indexOf('Future<void> _openGameRoute'),
-    );
+    // Sliced between two named functions rather than by line number.
+    // The end anchor used to be `_openGameRoute`, which was renamed to
+    // `openGameRoute` when it moved to a top-level function -- indexOf
+    // then returned -1 and substring threw a RangeError, so this test
+    // failed on a name change rather than on the thing it guards.
+    final start = source.indexOf('Future<void> _sharePlace()');
+    final end = source.indexOf('Future<void> openGameRoute');
+    expect(start, isNonNegative, reason: '_sharePlace was renamed');
+    expect(end, greaterThan(start), reason: 'openGameRoute was renamed');
+
+    final handler = source.substring(start, end);
 
     expect(
       handler.contains('sendImageMessage'),

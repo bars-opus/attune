@@ -11,6 +11,7 @@ enum ChatGameDestination {
   thirtySixQuestions,
   paintBall,
   snakesAndLadders,
+  wordHunt,
   neverHaveIEver,
   mirror,
   slidingScale,
@@ -47,6 +48,7 @@ String? chatGameTypeForDestination(ChatGameDestination destination) {
     'love_map',
     'paint_ball',
     'snakes_and_ladders',
+    'word_hunt',
   ]) {
     if (chatGameDestinationForType(gameType) == destination) return gameType;
   }
@@ -64,6 +66,7 @@ ChatGameDestination? chatGameDestinationForType(String gameType) {
     'love_map': ChatGameDestination.loveMap,
     'paint_ball': ChatGameDestination.paintBall,
     'snakes_and_ladders': ChatGameDestination.snakesAndLadders,
+    'word_hunt': ChatGameDestination.wordHunt,
   };
 
   return byType[gameType];
@@ -368,6 +371,15 @@ const _chatGameCategories = <_ChatGameCategory>[
         // able to tell at a glance.
         subtitle: 'No questions, just a die',
         icon: Icons.casino_outlined,
+        tags: {'Quick', 'Fun'},
+      ),
+      _ChatGameOption(
+        destination: ChatGameDestination.wordHunt,
+        title: 'Word Hunt',
+        // Thirty seconds, next to Snakes' ten minutes. Says what it costs
+        // rather than what it teaches, because it teaches nothing.
+        subtitle: 'One hidden word, who spots it first',
+        icon: Icons.grid_on_outlined,
         tags: {'Quick', 'Fun'},
       ),
     ],
