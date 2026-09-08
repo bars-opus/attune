@@ -120,10 +120,24 @@ A contract test asserts the shipped generator produces exactly one
 occurrence across many trials.
 
 **Measured before specifying it:** 400 generated grids across five words
-of varying length produced an accidental second occurrence **zero
-times**. The scan is cheap insurance, not a bottleneck — but it stays,
-because the one time it fires is the time a player drags the right
-letters in the wrong place and is told they are wrong.
+produced an accidental second occurrence **zero times**. The scan is
+cheap insurance, not a bottleneck.
+
+But that measurement shows duplicates are rare -- it does not show the
+scanner works. A scanner that always returned 1 would pass it. So the
+scanner is tested against grids built to break it:
+
+- a second occurrence planted in each of the eight directions
+- occurrences starting at every edge and corner
+- a maximum-length diagonal
+- two occurrences that overlap
+- a reversed occurrence where the word was placed forwards
+- a word with a repeated letter (`GIGGLE`)
+- a palindrome, where one physical placement reads the same both ways
+  and must be counted **once** -- occurrences are canonicalised by their
+  ordered endpoint pair
+- malformed input: wrong row count, ragged rows, non-letters, and a
+  stored placement whose cells do not spell the stored word
 
 ### 4.3 Difficulty
 
@@ -136,27 +150,80 @@ difficulty is tunable without an app update.
 
 ---
 
-## 5. The disclosure boundary
+## 5. What the server can and cannot prove
 
-**The client is never told where the word is.**
+The first draft of this section claimed the placement was withheld from
+the client and called the timing cheat-proof. Both claims were wrong,
+and the way they were wrong is worth recording.
 
-This is the same rule Paint Ball enforces for a hiding position, and it
-matters more here: the client receives the grid and the word, so if it
-also received the coordinates, any modified client could draw the answer
-on screen.
+### 5.1 The leak, and where it came from
 
-- The grid and the word are sent.
-- The **placement** — start cell, direction, the cell list — is not.
-- Submission sends the **cells the player dragged**; the server compares
-  them to the stored placement and answers hit or miss.
+The draft put `hunt_grid`, `hunt_word` and `hunt_placement` on the
+`game_sessions` row, and argued they were safe because the state RPC
+omitted the placement column.
 
-A contract test greps the state payload for the placement keys and fails
-if they appear, exactly as Paint Ball's does.
+**RLS is row-level. It does not filter columns.** The existing
+`game_sessions_relationship_members_select` policy returns the whole row
+to either partner, so:
 
-**Why the server must judge:** a client that decided its own correctness
-could submit "found it in 3 seconds" without looking at the grid.
+```sql
+select hunt_placement from game_sessions where id = ...;
+```
 
----
+returns the answer. Verified against a local database before rewriting
+this section: the client read the placement in full.
+
+Omitting a column from an RPC hides it from the RPC. It does not hide it
+from the table.
+
+**The fix:** all puzzle material lives in `word_hunt_puzzles`, a table
+with `authenticated` revoked entirely, reachable only through
+`SECURITY DEFINER` RPCs. This is the same shape as
+`this_or_that_round_answers`, which exists for exactly this reason.
+
+### 5.2 The harder problem: the client holds both halves
+
+Even with the placement withheld, **the client is given the grid and the
+word.** Scanning a 10×10 grid in eight directions is trivial, so a
+modified client can compute the answer and submit it immediately.
+
+This is genuinely different from Paint Ball, where the hidden choice
+cannot be reconstructed from anything the client can see. Here it can.
+
+The word cannot be withheld — the player has to know what to look for.
+
+**So this game is not cheat-proof, and the spec must stop saying it
+is.** What the server can prove:
+
+- the clock was started and stopped by the server, not the client
+- the submitted cells match the stored placement
+- no duration was ever accepted from a client
+
+What it cannot prove is that a human searched the grid.
+
+### 5.3 What that means for the product
+
+**This is an honest-client comparison, not a contest.** That is
+acceptable here and would not be elsewhere: there is no score, no
+streak, no record, and nothing to win. The only thing a cheat buys is
+lying to your partner about a number in a game you chose to play
+together for fun — which is a relationship problem, not a security one.
+
+It does mean the copy must never overclaim. No "winner", no ranking, no
+leaderboard. Two times, side by side.
+
+**Times within one second are shown as a tie**, because the measurement
+includes Start-response latency, render time and Submit latency. A
+player on a worse connection should not lose to network noise, and
+ranking two numbers that close would be reporting jitter as skill.
+
+### 5.4 Still enforced
+
+- `started_at`, `found_at` and `elapsed_ms` are RPC-write-only.
+- Submission is validated as a real drag (§10), not a set of cells.
+- No partner timing or outcome is disclosed until **both** attempts are
+  terminal — otherwise the second player starts knowing the benchmark.
+
 
 ## 6. Words
 
@@ -247,69 +314,149 @@ never learning where the word was is maddening rather than kind.
 
 ## 9. Data model
 
-Reuses `game_sessions` with `game_type = 'word_hunt'`.
+Reuses `game_sessions` with `game_type = 'word_hunt'`, but **no puzzle
+material goes on that row** -- see §5.1. It lives in its own table with
+`authenticated` revoked, so there is no column for a client to read and
+no policy to get subtly wrong.
 
 ```sql
-ALTER TABLE public.game_sessions
-  ADD COLUMN IF NOT EXISTS hunt_word text,
-  ADD COLUMN IF NOT EXISTS hunt_grid jsonb,      -- ["ABC...", ...] 10 rows
-  ADD COLUMN IF NOT EXISTS hunt_placement jsonb, -- NEVER sent to a client
-  ADD COLUMN IF NOT EXISTS hunt_word_list_version text;
+CREATE TABLE IF NOT EXISTS public.word_hunt_puzzles (
+  session_id uuid PRIMARY KEY
+    REFERENCES public.game_sessions(id) ON DELETE CASCADE,
+  word text NOT NULL,
+  grid jsonb NOT NULL,       -- ["ABCDEFGHIJ", ...] exactly 10 rows of 10
+  placement jsonb NOT NULL,  -- ordered cells; never leaves the server
+  word_list_version text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.word_hunt_puzzles ENABLE ROW LEVEL SECURITY;
+-- No policy at all: nothing reaches this table except a SECURITY
+-- DEFINER function running as owner. A policy would be a door.
+REVOKE ALL ON public.word_hunt_puzzles FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT ON public.word_hunt_puzzles TO service_role;
 
 CREATE TABLE IF NOT EXISTS public.word_hunt_attempts (
-  session_id uuid NOT NULL REFERENCES public.game_sessions(id) ON DELETE CASCADE,
+  session_id uuid NOT NULL
+    REFERENCES public.game_sessions(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+
+  -- A boolean cannot tell a timeout from a choice. The UI may show them
+  -- identically; the database must not record one as the other.
+  status text NOT NULL DEFAULT 'in_progress'
+    CHECK (status IN ('in_progress', 'found', 'gave_up', 'timed_out')),
+
   started_at timestamptz NOT NULL DEFAULT now(),
-  found_at timestamptz,
-  -- Server-computed on submit. The client never sends a duration.
+  finished_at timestamptz,
   elapsed_ms int,
-  -- Set by the "I can't find it" button, or by the 10-minute sweep.
-  -- Distinguished from a NULL found_at with no gave_up, which is an
-  -- attempt still in progress.
-  -- Set by the "I can't find it" button, or by the 10-minute sweep.
-  -- Distinct from a NULL found_at with gave_up false, which is an
-  -- attempt still in progress.
-  gave_up boolean NOT NULL DEFAULT false,
+
+  -- Rate limiting reads these rather than scanning a log.
+  last_submission_at timestamptz,
+  submission_count int NOT NULL DEFAULT 0,
+
   PRIMARY KEY (session_id, user_id)
 );
+
+ALTER TABLE public.word_hunt_attempts ENABLE ROW LEVEL SECURITY;
+-- Also closed. A readable attempts table would let a player see their
+-- partner's time before starting, and a writable one would let them
+-- rewrite their own clock.
+REVOKE ALL ON public.word_hunt_attempts FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.word_hunt_attempts TO service_role;
 ```
 
-`hunt_placement` sits on the session row deliberately: RLS on
-`game_sessions` will be `word_hunt`-excluded from client writes (§11),
-and the state RPC omits the column, so it is unreachable from a client
-by either path.
+**Neither table joins the realtime publication.** Publishing attempts
+would broadcast a partner's raw row -- their time, their status --
+straight past every RPC that exists to withhold it. Live updates come
+from `game_sessions`, which carries only whose turn it is and whether
+the session has finished.
 
----
 
 ## 10. Server contract
 
-### `word_hunt_start(p_session_id)`
-Writes `started_at` for the caller. Idempotent: a second call returns the
-first timestamp rather than restarting the clock — otherwise closing and
-reopening the app would reset the timer, which is a cheat and an easy
-accident.
+Every mutating RPC takes `SELECT ... FOR UPDATE` on the **session row**
+before touching an attempt. Two players finishing in the same second is
+the ordinary case here, not an edge one -- they are racing -- and
+without the lock each transaction could read the other as unfinished and
+neither would close the session.
 
-### `word_hunt_give_up(p_session_id)`
-Records `gave_up = true` for the caller. Idempotent, and refused once
-that player has already found the word -- giving up after finding it
-would rewrite a result.
+Order in every RPC: **auth, membership, relationship still active,
+idempotency, rate limit, state.** Idempotency before rate limit and
+before the status check, for the reason Snakes learned the hard way -- a
+retry of a committed action must return its stored result, not be
+rejected as spam or as expired.
+
+### `word_hunt_start(p_session_id)`
+
+Creates the attempt and returns the puzzle **in one transaction**. The
+clock cannot start without the player receiving the grid, and the grid
+cannot be received without the clock starting -- otherwise a client
+could fetch the puzzle, solve it, and start the timer afterwards.
+
+```sql
+INSERT INTO word_hunt_attempts (session_id, user_id)
+VALUES (...) ON CONFLICT (session_id, user_id) DO NOTHING;
+```
+
+Then read the row back. A concurrent double-tap, a retried request, or a
+reopened app all resolve to the first `started_at` and the same puzzle.
+
+**Time keeps running** through backgrounding, a phone call, a crash or a
+dropped connection. There is no pause: a client-controlled pause is a
+client-controlled clock.
 
 ### `word_hunt_submit(p_session_id, p_cells jsonb)`
-1. Auth, membership, relationship still active.
-2. Idempotency **first**, as everywhere: an already-found attempt returns
-   its stored result rather than re-timing.
-3. Rate limit — a wrong guess every 300ms is a script, not a finger.
-4. Compare `p_cells` to the stored placement, order-insensitive (the word
-   may be dragged from either end).
-5. On a hit: `found_at = now()`, `elapsed_ms = now() - started_at`.
-6. Return hit or miss, and — **only once both have finished** — both
-   times and the placement.
+
+Validated as a **drag**, not a set of cells:
+
+- exactly `length(word)` cells
+- all in bounds, all distinct
+- consecutive cells differ by exactly one step in a single fixed
+  direction -- a straight line in one of the eight legal directions
+- the sequence equals the stored placement, or its exact reverse (the
+  word may be dragged from either end)
+
+A set comparison would accept the right letters selected in a scattered
+order, which is not the game.
+
+On a hit: `status = 'found'`, `finished_at = now()`,
+`elapsed_ms = (now() - started_at)`.
+
+Returns hit or miss, and partner data **only when both attempts are
+terminal**.
+
+### `word_hunt_give_up(p_session_id)`
+
+`status = 'gave_up'`, no elapsed time. Refused once the caller has
+already found the word: giving up afterwards would rewrite a result.
+
+First terminal action wins. A submit and a give-up racing each other are
+serialised by the session lock, and the second finds the attempt already
+terminal and returns its stored state.
 
 ### `get_word_hunt_state(p_session_id)`
-Grid, word, both players' status, and each elapsed time **only after
-that player has finished**. Placement only when both are done.
 
----
+- **Before the caller starts:** no grid, no word. They are withheld until
+  Start, so a player cannot study the puzzle off the clock.
+- **After the caller starts:** grid and word.
+- **Partner timing and status:** only once both attempts are terminal.
+  The draft leaked each time as that player finished, which let the
+  second player start knowing the number to beat.
+- **Placement:** only once the session is over -- then shown to both,
+  including whoever did not find it (§13.3).
+
+### Expiry
+
+The 10-minute attempt sweep runs on cron, but **every state and mutation
+RPC also expires an overdue attempt lazily before doing anything else**.
+Cron is the backstop; a player opening the game after eleven minutes
+should see the finished state immediately rather than whenever the job
+next runs.
+
+A session where a partner never taps Start at all is covered by the
+shared session expiry, not by the attempt timeout -- there is no attempt
+to time out.
+
 
 ## 11. What this borrows
 
@@ -325,8 +472,14 @@ that player has finished**. Placement only when both are done.
 **Genuinely new:** grid generation with its uniqueness scan, the drag
 gesture with axis snapping, the pill, and the two-attempt timing model.
 
-Estimate: **three to four days.** The gesture and the pill are most of
-it; the server is a day.
+Estimate: **five to eight days.**
+
+The first draft said three to four, counting the gesture and the pill
+and treating the server as a day. That was before the review found the
+puzzle needed its own private tables, the concurrency needed real
+locking, the generator needed adversarial tests, and the grid needed an
+accessible alternative to dragging. None of those are optional and none
+were in the original figure.
 
 ---
 
@@ -336,15 +489,45 @@ it; the server is a day.
 Framing matters more than usual: two people who did not play at the same
 time being told one "beat" the other is a small lie.
 
-**Grid generation can loop.** The uniqueness scan rejects and retries;
-without a bound it could spin. Bounded at 20 attempts, with a fallback
-to a straight-line placement rather than failing to start a game. In
-practice the measurement above suggests it will never retry — the bound
-exists for the case the word list changes to something pathological.
+**Grid generation can loop.** The uniqueness scan rejects and retries,
+bounded at 20 attempts.
 
-**A 10×10 grid of letters is small on a phone**, and this one is
-*dragged on*, not just read — so cells must be large enough to hit
-reliably. Same risk Snakes has, with a harder target.
+The draft's fallback was "place it in a straight line" -- which is
+meaningless, since every legal placement is already a straight line, and
+worse, it bypassed the very validation it was falling back from. **A
+generator that cannot produce a unique grid in 20 attempts fails the
+session creation.** An unstarted game is a minor annoyance; an ambiguous
+puzzle tells a player who found the word that they are wrong.
+
+**A 10×10 grid of letters is small on a phone, and this one is dragged
+on.** At ~340dp of usable width a cell is about 34px -- under the 44px
+touch-target guidance, and this game asks for a *precise path* across
+several of them rather than a single tap.
+
+Mitigations, specified rather than left to discovery:
+
+- hit-testing extends beyond the drawn cell, so the finger does not have
+  to be centred
+- direction locks with hysteresis once a drag establishes an axis: a
+  wobbling finger holds its line instead of flickering between diagonals
+- **tap-first-letter then tap-last-letter** as a complete alternative to
+  dragging, which is also the only path that works with switch control
+- selection is shown by the pill's shape and position, never by colour
+  alone
+- tested on the smallest supported device with the largest text setting,
+  since both shrink the grid
+
+**Competition may work against the reason this slot exists.** Snakes is
+in the Arcade because a couple after an argument want something with no
+stakes. This game has a comparison at the end, and "you were slower"
+lands differently at 11pm after a hard conversation than it does on a
+Sunday afternoon.
+
+Not a reason to cut it -- a small competitive thing between two people
+who are fine is good, and the app should not assume every session
+follows a fight. But it is why the copy is neutral, why sub-second
+differences are a tie, and why `Play again` is the prominent action at
+the end rather than the times themselves.
 
 **Difficulty is unknowable from here.** Whether a diagonal backwards word
 takes 15 seconds or 90 is a device question, and the direction weights
@@ -385,6 +568,30 @@ deleted, because the reasoning is what a later reader needs.
 ## Changelog
 
 - **2026-09-07** — Initial draft.
+- **2026-09-08** — Reviewed. Two security findings, both confirmed
+  against a local database before rewriting:
+
+  - **The puzzle was readable by the client.** The draft put the grid,
+    word and placement on `game_sessions` and claimed the placement was
+    safe because the state RPC omitted it. RLS is row-level: a partner
+    selecting their own session row got every column. Proven, then moved
+    to `word_hunt_puzzles` with `authenticated` revoked outright.
+  - **The game is not cheat-proof and the spec said it was.** The client
+    must be given the grid and the word, and a 10x10 grid is trivially
+    scanned in eight directions, so a modified client can compute the
+    answer without looking. Unlike Paint Ball, the hidden thing is
+    derivable from the visible thing. §5 now says so plainly and frames
+    this as an honest-client comparison.
+
+  Also: attempts get their own closed table with a four-state status
+  rather than a boolean (a timeout is not a surrender), session-row
+  locking for concurrent finishes, submission validated as a contiguous
+  drag rather than a set of cells, partner timing withheld until both
+  attempts are terminal, lazy expiry alongside cron, adversarial
+  generator tests including palindromes and repeated letters, an
+  accessible tap-first/tap-last alternative to dragging, and the
+  estimate raised from three-to-four days to five-to-eight.
+
 - **2026-09-08** — All three open questions settled. A visible "I can't
   find it" button joins the 10-minute timeout; one word per session
   stands; and the placement is revealed to both players at the end,
