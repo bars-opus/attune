@@ -13,7 +13,7 @@ from), `PAINT_BALL_GAME_SPEC.md` (§5.5, the disclosure boundary),
 One hidden word, one grid, both partners. You drag a finger across
 letters — horizontally, vertically or diagonally — and the trail
 highlights as you go. Find the word and your time is recorded. When both
-have found it, you see who was faster.
+attempts end, the two results are revealed together.
 
 Thirty seconds of play, and then it is over. That is the whole game.
 
@@ -44,7 +44,7 @@ somewhere to go.
 | Grid | 10×10 |
 | Skill | Visual search. Nothing about your partner. |
 | Turn model | Asynchronous, **simultaneous** — both play the same puzzle independently |
-| Win condition | Faster time, once both have finished |
+| Result | Times side by side once both finish; differences under 1,000ms are a tie |
 | Penalty | None |
 | Visual language | The reference: a white rounded pill over found letters |
 
@@ -62,13 +62,23 @@ elapsed seconds mean the same thing for both.
 
 **Server-anchored.** `started_at` is written by the server when the
 player taps Start, and the elapsed time is computed server-side on
-submit — `now() - started_at`. The client never sends a duration.
+submit from one captured `clock_timestamp()` value minus `started_at`.
+The client never sends a duration.
+
+The running number on screen is only a display estimate. Start and state
+responses include `started_at` and a `server_observed_at` captured just
+before the response is built. The client seeds the display from their
+difference, then advances it with a monotonic stopwatch rather than the
+device wall clock. On resume or reconnect it refetches state and reseeds.
+The submitted/revealed value always replaces that estimate with the stored
+server result.
 
 A client-supplied time would be the whole game handed to the client, and
 this game is nothing but a number.
 
 **What the reveal may say:** "You found it in 24s. Ama took 31s." A
-comparison of two honest measurements.
+comparison of two server-recorded measurements under the honest-client
+trust model in §5.
 
 **What it must not say:** anything framing this as a race that was won.
 Nobody was present for the other person's attempt.
@@ -78,7 +88,8 @@ Nobody was present for the other person's attempt.
 Two ways an attempt ends without a find.
 
 **"I can't find it"** — a visible button on the grid screen. Records
-`gave_up = true` with no elapsed time, and releases the reveal.
+`status = 'gave_up'` with no elapsed time. It releases the reveal once the
+partner is also terminal.
 
 There is no cost to giving up: no score, no streak, no record. Staring
 at a grid you cannot solve while your partner waits is the harm this
@@ -134,8 +145,8 @@ scanner is tested against grids built to break it:
 - a reversed occurrence where the word was placed forwards
 - a word with a repeated letter (`GIGGLE`)
 - a palindrome, where one physical placement reads the same both ways
-  and must be counted **once** -- occurrences are canonicalised by their
-  ordered endpoint pair
+  and must be counted **once** -- occurrences are canonicalised by the
+  lexicographically sorted pair of endpoints
 - malformed input: wrong row count, ragged rows, non-letters, and a
   stored placement whose cells do not spell the stored word
 
@@ -212,14 +223,19 @@ together for fun — which is a relationship problem, not a security one.
 It does mean the copy must never overclaim. No "winner", no ranking, no
 leaderboard. Two times, side by side.
 
-**Times within one second are shown as a tie**, because the measurement
-includes Start-response latency, render time and Submit latency. A
+**An absolute elapsed difference below 1,000ms is shown as a tie**, because
+the measurement includes Start-response latency, render time and Submit latency. A
 player on a worse connection should not lose to network noise, and
 ranking two numbers that close would be reporting jitter as skill.
 
+If either player does not find the word, there is no speed comparison:
+the reveal shows **found** and **did not find it**. A partner whose session
+expired before they started is shown as **did not play**. These labels are
+results, never wins or losses.
+
 ### 5.4 Still enforced
 
-- `started_at`, `found_at` and `elapsed_ms` are RPC-write-only.
+- `started_at`, `finished_at` and `elapsed_ms` are RPC-write-only.
 - Submission is validated as a real drag (§10), not a set of cells.
 - No partner timing or outcome is disclosed until **both** attempts are
   terminal — otherwise the second player starts knowing the benchmark.
@@ -320,20 +336,32 @@ material goes on that row** -- see §5.1. It lives in its own table with
 no policy to get subtly wrong.
 
 ```sql
+CREATE TABLE IF NOT EXISTS public.word_hunt_configs (
+  version text PRIMARY KEY,
+  words text[] NOT NULL,
+  direction_weights jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  retired_at timestamptz
+);
+
 CREATE TABLE IF NOT EXISTS public.word_hunt_puzzles (
   session_id uuid PRIMARY KEY
     REFERENCES public.game_sessions(id) ON DELETE CASCADE,
   word text NOT NULL,
   grid jsonb NOT NULL,       -- ["ABCDEFGHIJ", ...] exactly 10 rows of 10
   placement jsonb NOT NULL,  -- ordered cells; never leaves the server
-  word_list_version text NOT NULL,
+  word_list_version text NOT NULL
+    REFERENCES public.word_hunt_configs(version),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE public.word_hunt_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.word_hunt_puzzles ENABLE ROW LEVEL SECURITY;
--- No policy at all: nothing reaches this table except a SECURITY
+-- No policies at all: nothing reaches these tables except a SECURITY
 -- DEFINER function running as owner. A policy would be a door.
+REVOKE ALL ON public.word_hunt_configs FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON public.word_hunt_puzzles FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.word_hunt_configs TO service_role;
 GRANT SELECT, INSERT ON public.word_hunt_puzzles TO service_role;
 
 CREATE TABLE IF NOT EXISTS public.word_hunt_attempts (
@@ -354,7 +382,21 @@ CREATE TABLE IF NOT EXISTS public.word_hunt_attempts (
   last_submission_at timestamptz,
   submission_count int NOT NULL DEFAULT 0,
 
-  PRIMARY KEY (session_id, user_id)
+  PRIMARY KEY (session_id, user_id),
+  CHECK (submission_count >= 0),
+  CHECK (finished_at IS NULL OR finished_at >= started_at),
+  CHECK (last_submission_at IS NULL OR last_submission_at >= started_at),
+  CHECK (
+    (status = 'in_progress'
+      AND finished_at IS NULL AND elapsed_ms IS NULL)
+    OR
+    (status = 'found'
+      AND finished_at IS NOT NULL
+      AND elapsed_ms IS NOT NULL AND elapsed_ms BETWEEN 0 AND 599999)
+    OR
+    (status IN ('gave_up', 'timed_out')
+      AND finished_at IS NOT NULL AND elapsed_ms IS NULL)
+  )
 );
 
 ALTER TABLE public.word_hunt_attempts ENABLE ROW LEVEL SECURITY;
@@ -365,41 +407,112 @@ REVOKE ALL ON public.word_hunt_attempts FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.word_hunt_attempts TO service_role;
 ```
 
-**Neither table joins the realtime publication.** Publishing attempts
-would broadcast a partner's raw row -- their time, their status --
+The config table's validator requires a non-empty unique list of uppercase
+ASCII words, each 4 to 8 letters, and exactly eight non-negative direction
+weights with a positive total. Session creation selects the newest
+unretired config by `(created_at, version)` and fails clearly if none exists.
+The puzzle table also has a validating trigger. It independently checks
+that the grid is exactly 10 rows of 10 ASCII letters, the word belongs to
+the referenced config and satisfies
+the configured length and alphabet rules, the placement is in bounds and
+contiguous, its cells spell the word, and the canonical occurrence scan
+finds exactly one physical occurrence. The generator and trigger use the
+same scanner implementation, while the adversarial tests call that scanner
+directly; creation fails rather than storing a puzzle that does not pass.
+
+Puzzle rows and the words/weights of a versioned config are immutable once
+referenced by a session. Tuning creates a new version; it never changes an
+active or historical puzzle. Retirement metadata may change without
+changing the contents a session pinned.
+
+An attempt transition trigger provides a final invariant beneath the RPCs:
+`started_at`, `session_id` and `user_id` never change; `submission_count`
+never decreases; `last_submission_at` never moves backwards; and the only
+status transitions are `in_progress -> found|gave_up|timed_out`. Every
+terminal state is immutable. This catches a future SECURITY DEFINER RPC
+that accidentally tries to reopen or retime an attempt.
+
+Closing the private tables is not enough. The migration must also recreate
+the shared `game_sessions` INSERT, UPDATE and DELETE policies with
+`word_hunt` added to every `game_type NOT IN (...)` carve-out, in both
+`USING` and `WITH CHECK`. Otherwise either partner can directly complete or
+delete the session and bypass the attempt RPCs, repeating the Snakes defect.
+Direct SELECT may remain because the shared row contains no puzzle or raw
+attempt data.
+
+Every exposed function revokes execute from `PUBLIC` and `anon`, grants it
+only to `authenticated`, validates `auth.uid()`, and uses a fixed safe
+`search_path` with fully qualified object names. Internal generator and
+validator functions are not executable by authenticated clients.
+
+**None of these private tables joins the realtime publication.** Publishing
+attempts would broadcast a partner's raw row -- their time, their status --
 straight past every RPC that exists to withhold it. Live updates come
-from `game_sessions`, which carries only whose turn it is and whether
-the session has finished.
+from `game_sessions`, which carries only public lifecycle state. Word Hunt
+has no turn owner. The first terminal attempt does **not** touch a public
+revision or `updated_at`, because that event alone would reveal that the
+partner had finished. The second terminal attempt completes the session,
+which gives both clients a row change to observe before refetching sanitized
+state.
 
 
 ## 10. Server contract
 
 Every mutating RPC takes `SELECT ... FOR UPDATE` on the **session row**
-before touching an attempt. Two players finishing in the same second is
-the ordinary case here, not an edge one -- they are racing -- and
-without the lock each transaction could read the other as unfinished and
-neither would close the session.
+before touching an attempt. Near-simultaneous finishes are ordinary here,
+not an edge case; without the lock each transaction could read the other
+as unfinished and neither would close the session. Lock order is always
+session first, then attempt, so Start, Submit, Give Up and expiry cannot
+deadlock by taking the same rows in different orders.
 
-Order in every RPC: **auth, membership, relationship still active,
-idempotency, rate limit, state.** Idempotency before rate limit and
-before the status check, for the reason Snakes learned the hard way -- a
-retry of a committed action must return its stored result, not be
-rejected as spam or as expired.
+Mutation order is: **auth, membership, relationship still active, session
+lock, action-specific idempotency, lazy expiry, rate limit where applicable,
+then state validation and mutation.** Idempotency precedes expiry, rate
+limit and status rejection so a retry of a committed terminal action
+returns its stored result. An in-progress attempt already beyond its
+deadline is then changed to `timed_out` before a new action can affect it.
+Read RPCs authenticate and lock only when they need to perform lazy expiry.
+For a new action, the RPC captures `v_now := clock_timestamp()` immediately
+after acquiring its locks and uses that one value for deadline checks,
+rate limiting, `finished_at` and elapsed time. PostgreSQL `now()` is fixed at
+transaction start and could predate time spent waiting for the session lock,
+so it is not the clock used for resolution.
+
+### Lifecycle RPCs
+
+The Snakes lifecycle is reused through Word Hunt-specific create, accept,
+decline, hide and active-session lookup RPCs. It is not inherited merely by
+using the same table. Creation validates the relationship and active-session
+limit, selects and pins an unretired config, inserts the session, generates
+and validates the puzzle, and inserts the private puzzle in one transaction.
+A generation failure rolls the whole transaction back, leaving no invite
+without a puzzle. Accepting activates the session but does not start either
+player's clock. Word Hunt never assigns `current_turn_user_id`.
+
+The migration also adds `word_hunt` to every shared game-type constraint,
+resolver and chat-card allowlist used by the lifecycle. The active-session
+uniqueness rule covers invited and active Word Hunt sessions for the same
+relationship, matching the replay/lobby model used by Snakes.
 
 ### `word_hunt_start(p_session_id)`
 
 Creates the attempt and returns the puzzle **in one transaction**. The
-clock cannot start without the player receiving the grid, and the grid
-cannot be received without the clock starting -- otherwise a client
-could fetch the puzzle, solve it, and start the timer afterwards.
+grid cannot be fetched before the clock has committed -- otherwise a
+client could study the puzzle and start the timer afterwards. A database
+transaction cannot guarantee that the response reaches or renders on the
+device: if the response is lost, the clock still runs and the retry returns
+the original timestamp and puzzle.
 
 ```sql
-INSERT INTO word_hunt_attempts (session_id, user_id)
-VALUES (...) ON CONFLICT (session_id, user_id) DO NOTHING;
+INSERT INTO word_hunt_attempts (session_id, user_id, started_at)
+VALUES (..., v_now) ON CONFLICT (session_id, user_id) DO NOTHING;
 ```
 
 Then read the row back. A concurrent double-tap, a retried request, or a
 reopened app all resolve to the first `started_at` and the same puzzle.
+Start is permitted only after the invitation is accepted and while the
+session is active. If the existing attempt is already terminal, Start
+returns that stored state rather than reopening it.
 
 **Time keeps running** through backgrounding, a phone call, a crash or a
 dropped connection. There is no pause: a client-controlled pause is a
@@ -419,18 +532,34 @@ Validated as a **drag**, not a set of cells:
 A set comparison would accept the right letters selected in a scattered
 order, which is not the game.
 
-On a hit: `status = 'found'`, `finished_at = now()`,
-`elapsed_ms = (now() - started_at)`.
+On a hit: `status = 'found'`, `finished_at = v_now`,
+`elapsed_ms = floor(extract(epoch FROM (v_now - started_at)) * 1000)::int`.
 
 Returns hit or miss, and partner data **only when both attempts are
 terminal**.
+
+On every structurally valid miss, the same transaction updates
+`last_submission_at` and increments `submission_count`; a hit does likewise
+before becoming terminal. The 300ms limit is abuse protection, not an
+anti-cheat claim -- a modified client can solve locally without guessing.
+A duplicated miss caused by transport retry may be rate-limited, but it
+cannot change a result or add a player-visible penalty. Successful terminal
+submissions are fully idempotent and return the stored elapsed time.
+
+After any transition to a terminal state, the RPC queries both attempts
+while still holding the session lock. Exactly two terminal attempts move
+the session to `completed` and set `completed_at`; one terminal attempt
+leaves it active. This check is shared by Submit, Give Up and lazy/cron
+expiry rather than reimplemented three ways.
 
 ### `word_hunt_give_up(p_session_id)`
 
 `status = 'gave_up'`, no elapsed time. Refused once the caller has
 already found the word: giving up afterwards would rewrite a result.
+It also requires an existing in-progress attempt; giving up from the lobby
+does not silently start and finish a clock.
 
-First terminal action wins. A submit and a give-up racing each other are
+First terminal action prevails. A submit and a give-up racing each other are
 serialised by the session lock, and the second finds the attempt already
 terminal and returns its stored state.
 
@@ -448,22 +577,60 @@ terminal and returns its stored state.
 ### Expiry
 
 The 10-minute attempt sweep runs on cron, but **every state and mutation
-RPC also expires an overdue attempt lazily before doing anything else**.
+RPC also expires an overdue attempt lazily after authentication, locking
+and any applicable idempotent-result lookup**.
 Cron is the backstop; a player opening the game after eleven minutes
 should see the finished state immediately rather than whenever the job
 next runs.
 
 A session where a partner never taps Start at all is covered by the
 shared session expiry, not by the attempt timeout -- there is no attempt
-to time out.
+to time out. Session expiry is terminal for disclosure purposes: any
+in-progress attempt becomes `timed_out`, the absent partner is represented
+as **did not play** rather than **did not find it**, and the placement may
+then be revealed because nobody can start that expired puzzle. No synthetic
+attempt row is created for the absent partner.
+
+The deadline comparison is `v_now >= started_at + interval '10 minutes'`,
+using the post-lock timestamp captured for the transaction.
+At the boundary, timeout wins. A Submit or Give Up that acquired the session
+lock first may commit before the deadline check in a competing transaction;
+the first committed terminal transition remains authoritative.
+
+### Required contract tests
+
+The backend is not complete until SQL tests prove all of these against the
+authenticated role, not merely by inspecting function source:
+
+- direct SELECT from configs, puzzles and attempts is denied
+- direct INSERT, UPDATE and DELETE of a Word Hunt `game_sessions` row is
+  denied, while an unrelated legacy game retains its intended policy
+- unauthenticated and non-member calls to every RPC are denied
+- state before Start contains no grid, word, placement or partner attempt
+- two concurrent Starts produce one attempt and one immutable timestamp
+- a lost-response Start retry returns that original timestamp and puzzle
+- a finished partner remains undisclosed until the caller is also terminal
+- concurrent Submit/Submit and Submit/Give Up calls produce one legal final
+  state and complete the session exactly once
+- a successful Submit retry returns the stored elapsed time before timeout,
+  rate-limit and terminal-state checks
+- the millisecond before the deadline may finish and the deadline itself
+  times out, through a pure internal deadline helper that accepts the
+  captured server timestamp; tests do not depend on sleeps
+- session expiry with an absent partner reveals **did not play**, closes any
+  in-progress attempt and never creates a synthetic attempt
+- no private table is in the realtime publication, and the first terminal
+  attempt causes no observable `game_sessions` update
+- every adversarial scanner case in §4.2 is rejected or canonicalised as
+  specified
 
 
 ## 11. What this borrows
 
 | Borrowed | From |
 |---|---|
-| Session lifecycle, error envelope, turn guards | Snakes, near-verbatim |
-| Disclosure boundary and its contract test | Paint Ball §5.5 |
+| Session lifecycle and error envelope | Snakes, adapted for simultaneous play |
+| Delayed-disclosure RPC pattern and contract test | Paint Ball §5.5; its secrecy claim does not transfer |
 | Versioned immutable config table | `snakes_boards` |
 | RPC-write-only RLS carve-out | The Snakes security fix |
 | Auto-pop, live sync, breathing wait | Snakes / session games |
@@ -548,7 +715,7 @@ deleted, because the reasoning is what a later reader needs.
    streak, no record. Staring at a grid you cannot solve while your
    partner waits is the actual harm, and a way out is the kinder design.
 
-   Giving up records `gave_up = true` with no elapsed time.
+   Giving up records `status = 'gave_up'` with no elapsed time.
 
 2. ~~**Is one word per session too thin?**~~ **Settled: one word.**
 
@@ -597,3 +764,12 @@ deleted, because the reasoning is what a later reader needs.
   stands; and the placement is revealed to both players at the end,
   including whoever did not find it. Still not implemented, not
   approved.
+
+- **2026-09-08** — Second review pass. Made the shared `game_sessions`
+  RPC-write-only carve-out explicit for Word Hunt; added the versioned config
+  foreign key, private-table grants, validators and attempt transition
+  invariants; defined lifecycle RPCs, lock order, post-lock timestamp capture,
+  terminal completion and session-expiry behaviour; removed the public
+  first-finish realtime signal; and corrected stale references to the deleted
+  `gave_up` boolean. Added an executable security/concurrency contract-test
+  list and clarified that a committed Start may outlive a lost response.
