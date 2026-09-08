@@ -1,6 +1,8 @@
 # ATTUNE — WORD HUNT SPECIFICATION
 
-**Status:** Draft for review. Not implemented.
+**Status:** Implemented 2026-09-08. Not production-cleared — awaiting an
+external review pass and device QA. Audit:
+`docs/reviews/WORD_HUNT_CHECKLIST.md`.
 
 **Reads with:** `SNAKES_AND_LADDERS_SPEC.md` (the game this borrows most
 from), `PAINT_BALL_GAME_SPEC.md` (§5.5, the disclosure boundary),
@@ -773,3 +775,33 @@ deleted, because the reasoning is what a later reader needs.
   first-finish realtime signal; and corrected stale references to the deleted
   `gave_up` boolean. Added an executable security/concurrency contract-test
   list and clarified that a committed Start may outlive a lost response.
+
+- **2026-09-08** — Implemented. Nine migrations, eight client RPCs, and
+  the Flutter client. Three things the spec did not predict, all found by
+  reproducing rather than reasoning:
+
+  - **The session row was writable straight past every RPC** — the same
+    defect Snakes shipped, because the shared policies are permissive by
+    default and a new `game_type` inherits write access unless it opts
+    out. Completing the session directly releases the reveal before the
+    partner has finished, so this was the whole of §10's disclosure
+    boundary bypassed by one UPDATE. Proven against a database, then
+    fixed and covered.
+  - **Two expiry reapers that never ran.** Writing this game's sweep
+    turned up that Snakes' was written, granted and never registered with
+    cron — and since the lobby allows one live session per couple, an
+    abandoned board silently blocked every future game between those two
+    people.
+  - **§6's no-repeat rule could not be tested through the draw.** Four
+    versions were written and measured against a build with the exclusion
+    deleted; the best caught it 8 times in 12. With the exclusion gone the
+    draw is random, and a random draw agrees with the rule often enough
+    that any assertion over draws is a coin flip. The rule now lives in a
+    pure function and is asserted where there is one right answer.
+
+  Also: the generator's own uniqueness scan is the one thing in this
+  feature that cannot be proven by black-box testing — 2000 generated
+  grids produced an accidental duplicate zero times, so a generator that
+  skipped the scan would pass any "generate many and check" test. It is
+  covered at the puzzle trigger, which runs the same scanner, and the
+  limitation is documented in the code rather than hidden.
