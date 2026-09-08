@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:attune/features/games/word_hunt/models/word_hunt_models.dart';
 import 'package:attune/features/games/word_hunt/presentation/state/word_hunt_provider.dart';
 import 'package:attune/features/games/word_hunt/services/word_hunt_service.dart';
@@ -15,6 +17,11 @@ class _FakeGateway implements WordHuntGateway {
   WordHuntApiError? throwOnSubmit;
   int submitCount = 0;
   List<WordHuntCell>? lastCells;
+
+  /// Lets a test hold a getState call open, so a stale response can be
+  /// made to land AFTER a newer write — the ordering that made the
+  /// reveal disappear in review.
+  Completer<WordHuntSession>? gateState;
 
   @override
   Future<String> createSession({
@@ -47,7 +54,11 @@ class _FakeGateway implements WordHuntGateway {
   Future<WordHuntSession> giveUp(String sessionId) async => state;
 
   @override
-  Future<WordHuntSession> getState(String sessionId) async => state;
+  Future<WordHuntSession> getState(String sessionId) {
+    final gate = gateState;
+    if (gate != null) return gate.future;
+    return Future.value(state);
+  }
 
   @override
   Future<WordHuntSession?> getActiveSession(String relationshipId) async =>
@@ -70,8 +81,8 @@ WordHuntSession session({
   'user_b': 'u2',
   'partner_id': 'u2',
   'word_length': 4,
-  'server_observed_at': (observedAt ?? DateTime.utc(2026, 9, 8, 12, 0, 30))
-      .toIso8601String(),
+  'server_observed_at':
+      (observedAt ?? DateTime.utc(2026, 9, 8, 12, 0, 30)).toIso8601String(),
   'both_terminal': bothTerminal,
   'my_status': myStatus,
   if (startedAt != null) 'my_started_at': startedAt.toIso8601String(),
@@ -105,23 +116,26 @@ void main() {
       expect(notifier.displayElapsed.inSeconds, lessThan(32));
     });
 
-    test('a terminal attempt stops the clock rather than drifting on', () async {
-      final gateway = _FakeGateway(
-        session(
-          myStatus: 'found',
-          startedAt: DateTime.utc(2026, 9, 8, 12, 0, 0),
-          observedAt: DateTime.utc(2026, 9, 8, 12, 0, 30),
-          elapsedMs: 30000,
-        ),
-      );
-      final container = host(gateway);
-      addTearDown(container.dispose);
+    test(
+      'a terminal attempt stops the clock rather than drifting on',
+      () async {
+        final gateway = _FakeGateway(
+          session(
+            myStatus: 'found',
+            startedAt: DateTime.utc(2026, 9, 8, 12, 0, 0),
+            observedAt: DateTime.utc(2026, 9, 8, 12, 0, 30),
+            elapsedMs: 30000,
+          ),
+        );
+        final container = host(gateway);
+        addTearDown(container.dispose);
 
-      final notifier = container.read(wordHuntProvider('s1').notifier);
-      await Future<void>.delayed(Duration.zero);
+        final notifier = container.read(wordHuntProvider('s1').notifier);
+        await Future<void>.delayed(Duration.zero);
 
-      expect(notifier.displayElapsed, Duration.zero);
-    });
+        expect(notifier.displayElapsed, Duration.zero);
+      },
+    );
 
     test('a server_observed_at before started_at clamps to zero', () async {
       // Clock skew must not produce a negative running time.
@@ -199,11 +213,12 @@ void main() {
       // It fires on a double-submit from one drag. A red banner for that
       // is noise mid-hunt.
       final gateway = _FakeGateway(
-        session(startedAt: DateTime.utc(2026, 9, 8, 12)),
-      )..throwOnSubmit = const WordHuntApiError(
-        code: 'RATE_LIMITED',
-        message: 'Slow down a moment.',
-      );
+          session(startedAt: DateTime.utc(2026, 9, 8, 12)),
+        )
+        ..throwOnSubmit = const WordHuntApiError(
+          code: 'RATE_LIMITED',
+          message: 'Slow down a moment.',
+        );
       final container = host(gateway);
       addTearDown(container.dispose);
 
@@ -218,11 +233,12 @@ void main() {
 
     test('any other server error IS shown', () async {
       final gateway = _FakeGateway(
-        session(startedAt: DateTime.utc(2026, 9, 8, 12)),
-      )..throwOnSubmit = const WordHuntApiError(
-        code: 'SESSION_EXPIRED',
-        message: 'This session expired. Start a new game.',
-      );
+          session(startedAt: DateTime.utc(2026, 9, 8, 12)),
+        )
+        ..throwOnSubmit = const WordHuntApiError(
+          code: 'SESSION_EXPIRED',
+          message: 'This session expired. Start a new game.',
+        );
       final container = host(gateway);
       addTearDown(container.dispose);
 
@@ -277,13 +293,136 @@ void main() {
     });
   });
 
-  test('a load failure leaves a message rather than an endless spinner',
-      () async {
-    final gateway = _FakeGateway(session());
-    final container = host(gateway);
-    addTearDown(container.dispose);
-    final notifier = container.read(wordHuntProvider('s1').notifier);
-    await Future<void>.delayed(Duration.zero);
-    expect(container.read(wordHuntProvider('s1')).isLoading, isFalse);
+  test(
+    'a load failure leaves a message rather than an endless spinner',
+    () async {
+      final gateway = _FakeGateway(session());
+      final container = host(gateway);
+      addTearDown(container.dispose);
+      final notifier = container.read(wordHuntProvider('s1').notifier);
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(wordHuntProvider('s1')).isLoading, isFalse);
+    },
+  );
+
+  group('a stale response cannot undo a newer one', () {
+    // FOUND IN REVIEW. refresh() runs from construction, from lifecycle
+    // resume, and from every realtime event, so several are in flight at
+    // once and return in whatever order the network decides. Without
+    // sequencing: refresh A reads an in-progress snapshot and stalls,
+    // submit installs the terminal reveal, then refresh A returns and
+    // overwrites it — the reveal vanishes and the player is back on a
+    // grid whose clock has already stopped.
+    test('a slow refresh does not overwrite a finished submit', () async {
+      final playing = session(startedAt: DateTime.utc(2026, 9, 8, 12));
+      final gateway = _FakeGateway(playing)..nextHit = true;
+      final container = host(gateway);
+      addTearDown(container.dispose);
+
+      final notifier = container.read(wordHuntProvider('s1').notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      // A refresh starts and is held open, carrying the in-progress view.
+      final gate = Completer<WordHuntSession>();
+      gateway.gateState = gate;
+      final slow = notifier.refresh();
+
+      // The submit lands first and finishes the attempt.
+      gateway.gateState = null;
+      gateway.state = session(
+        myStatus: 'found',
+        startedAt: DateTime.utc(2026, 9, 8, 12),
+        elapsedMs: 30000,
+        bothTerminal: true,
+      );
+      await notifier.submit(const [WordHuntCell(0, 0), WordHuntCell(0, 1)]);
+      expect(
+        container.read(wordHuntProvider('s1')).session!.myStatus,
+        WordHuntStatus.found,
+      );
+
+      // Now the stale refresh returns with the OLD in-progress snapshot.
+      gate.complete(playing);
+      await slow;
+
+      expect(
+        container.read(wordHuntProvider('s1')).session!.myStatus,
+        WordHuntStatus.found,
+        reason: 'a stale refresh reopened a finished attempt',
+      );
+      expect(
+        container.read(wordHuntProvider('s1')).session!.bothTerminal,
+        isTrue,
+        reason: 'a stale refresh closed the reveal',
+      );
+    });
+
+    test('a stale refresh cannot reopen a completed session', () async {
+      final open = session(
+        status: 'active',
+        startedAt: DateTime.utc(2026, 9, 8, 12),
+      );
+      final gateway = _FakeGateway(open);
+      final container = host(gateway);
+      addTearDown(container.dispose);
+
+      final notifier = container.read(wordHuntProvider('s1').notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      final gate = Completer<WordHuntSession>();
+      gateway.gateState = gate;
+      final slow = notifier.refresh();
+
+      gateway.gateState = null;
+      gateway.state = session(
+        status: 'completed',
+        myStatus: 'gave_up',
+        startedAt: DateTime.utc(2026, 9, 8, 12),
+        bothTerminal: true,
+      );
+      await notifier.giveUp();
+      expect(container.read(wordHuntProvider('s1')).session!.isOver, isTrue);
+
+      gate.complete(open);
+      await slow;
+
+      expect(
+        container.read(wordHuntProvider('s1')).session!.isOver,
+        isTrue,
+        reason: 'a stale refresh reopened a completed session',
+      );
+    });
+
+    test('a fresher refresh still installs normally', () async {
+      // The guard must not freeze the screen: ordinary forward progress
+      // has to keep working, or a waiting player never sees the reveal.
+      final gateway = _FakeGateway(
+        session(startedAt: DateTime.utc(2026, 9, 8, 12)),
+      );
+      final container = host(gateway);
+      addTearDown(container.dispose);
+
+      final notifier = container.read(wordHuntProvider('s1').notifier);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(wordHuntProvider('s1')).session!.bothTerminal,
+        isFalse,
+      );
+
+      gateway.state = session(
+        status: 'completed',
+        myStatus: 'found',
+        startedAt: DateTime.utc(2026, 9, 8, 12),
+        elapsedMs: 9000,
+        bothTerminal: true,
+      );
+      await notifier.refresh();
+
+      expect(
+        container.read(wordHuntProvider('s1')).session!.bothTerminal,
+        isTrue,
+        reason: 'the guard blocked legitimate forward progress',
+      );
+    });
   });
 }

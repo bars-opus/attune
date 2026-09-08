@@ -31,32 +31,44 @@ final gameSessionLiveProvider = StreamProvider.family<void, String>((
     if (!controller.isClosed) controller.add(null);
   }
 
-  final channel =
-      supabase
-          .channel('game-session:$sessionId')
-          .onPostgresChanges(
-            event: PostgresChangeEvent.all,
-            schema: 'public',
-            table: 'game_sessions',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'id',
-              value: sessionId,
-            ),
-            callback: emit,
-          )
-          .onPostgresChanges(
-            event: PostgresChangeEvent.all,
-            schema: 'public',
-            table: 'game_session_rounds',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'session_id',
-              value: sessionId,
-            ),
-            callback: emit,
-          )
-          .subscribe();
+  final channel = supabase
+      .channel('game-session:$sessionId')
+      .onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'game_sessions',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'id',
+          value: sessionId,
+        ),
+        callback: emit,
+      )
+      .onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'game_session_rounds',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'session_id',
+          value: sessionId,
+        ),
+        callback: emit,
+      )
+      .subscribe((status, error) {
+        // EMIT ON SUBSCRIBE AND ON EVERY RECONNECT, not only on
+        // database changes. Found in review: postgres_changes
+        // callbacks fire for events that happen WHILE subscribed, and
+        // anything that happened during a dropped connection is never
+        // replayed. A player on the waiting screen when the socket
+        // drops, whose partner finishes in that gap, stayed on
+        // "waiting" until they backgrounded the app -- the one screen
+        // in these games that exists to leave on its own.
+        //
+        // Every listener treats this as "refetch", so an extra emit
+        // costs one query and closes the gap.
+        if (status == RealtimeSubscribeStatus.subscribed) emit(null);
+      });
 
   // A channel outliving its provider leaks a socket subscription for the
   // rest of the session, and these are created per game played.

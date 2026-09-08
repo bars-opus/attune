@@ -29,6 +29,26 @@ LANGUAGE sql AS $$
     json_build_object('sub', p_user, 'role', 'authenticated')::text, true);
 $$;
 
+CREATE OR REPLACE FUNCTION pg_temp.retire_session(p_sid uuid)
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  -- FIXTURE TEARDOWN, not a product path.
+  --
+  -- These blocks used to call word_hunt_decline_session to clean up after
+  -- themselves, which worked only because decline would abandon a session
+  -- at any status. A review found that was the bug -- either partner
+  -- could end a live hunt and be handed the answer -- so decline is now
+  -- restricted to invitations, and the fixtures need their own way to
+  -- retire a session without asserting anything about product behaviour.
+  UPDATE public.word_hunt_attempts
+     SET status = 'timed_out',
+         finished_at = GREATEST(clock_timestamp(), started_at)
+   WHERE session_id = p_sid AND status = 'in_progress';
+  UPDATE public.game_sessions
+     SET status = 'abandoned', abandoned_at = clock_timestamp()
+   WHERE id = p_sid;
+END; $$;
+
 CREATE OR REPLACE FUNCTION pg_temp.new_session(p_key text)
 RETURNS uuid LANGUAGE plpgsql AS $$
 DECLARE v jsonb;
@@ -320,7 +340,7 @@ BEGIN
   UPDATE public.word_hunt_configs SET retired_at = now() WHERE version = 'v1';
   UPDATE public.word_hunt_configs SET retired_at = NULL WHERE version = 'v1';
 
-  PERFORM public.word_hunt_decline_session(v_sid);
+  PERFORM pg_temp.retire_session(v_sid);
 END $$;
 
 -- THE UNIQUENESS SCAN, WHERE IT ACTUALLY BITES.
@@ -448,7 +468,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  PERFORM public.word_hunt_decline_session(v_sid);
+  PERFORM pg_temp.retire_session(v_sid);
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -509,7 +529,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  PERFORM public.word_hunt_decline_session(v_sid);
+  PERFORM pg_temp.retire_session(v_sid);
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -1006,7 +1026,7 @@ BEGIN
 
   -- Close this session out: one live Word Hunt per couple, so leaving it
   -- open would hand the next create() this session instead of a new one.
-  PERFORM public.word_hunt_decline_session(sid);
+  PERFORM pg_temp.retire_session(sid);
 END $$;
 
 -- Session expiry with an absent partner: did not play, no synthetic row.
@@ -1334,11 +1354,439 @@ BEGIN
       RAISE EXCEPTION 'draw % came from outside the pinned config: %',
         i, v_word;
     END IF;
-    PERFORM public.word_hunt_decline_session(v_sid);
+    PERFORM pg_temp.retire_session(v_sid);
   END LOOP;
 END $$;
 
 UPDATE public.word_hunt_configs SET retired_at = NULL WHERE version = 'v1';
+
+-- ---------------------------------------------------------------------
+-- REGRESSIONS FROM THE IMPLEMENTATION REVIEW
+-- ---------------------------------------------------------------------
+-- Ten findings, every one reproduced against a database before it was
+-- fixed. The three below were release-blocking. What they have in common
+-- is that none of them lived in a path the original tests exercised --
+-- the tests were written by the same person who decided which paths
+-- mattered, which is the whole argument for an external pass.
+
+-- BLOCKER 1: a partner could kill a live hunt and be handed the answer.
+--
+--   B is hunting: attempt=in_progress
+--   A declines an ACTIVE session -> {"ok": true}
+--   session: abandoned   B attempt: timed_out
+--   WARNING: A destroyed B's live hunt AND got the answer: [[6,0],...]
+--
+-- A had not started, so A risked nothing: a griefing move with a reward.
+DO $$
+DECLARE
+  v_sid uuid;
+  v jsonb;
+BEGIN
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e001');
+  v_sid := pg_temp.new_session('wh-decline-active');
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e002');
+  PERFORM public.word_hunt_accept_session(v_sid);
+  PERFORM public.word_hunt_start(v_sid);
+
+  -- The initiator, who never started, tries to end it.
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e001');
+  v := public.word_hunt_decline_session(v_sid);
+  IF v->>'code' IS DISTINCT FROM 'GAME_IN_PROGRESS' THEN
+    RAISE EXCEPTION
+      'a partner ended an ACTIVE session unilaterally: %', v;
+  END IF;
+
+  IF (SELECT status FROM public.game_sessions WHERE id = v_sid)
+     IS DISTINCT FROM 'active' THEN
+    RAISE EXCEPTION 'declining an active session still abandoned it';
+  END IF;
+  IF (SELECT status FROM public.word_hunt_attempts
+       WHERE session_id = v_sid
+         AND user_id = '00000000-0000-0000-0000-00000000e002')
+     IS DISTINCT FROM 'in_progress' THEN
+    RAISE EXCEPTION 'a live hunt was destroyed by the other player';
+  END IF;
+
+  -- And the answer stays withheld.
+  v := public.word_hunt_state_payload(
+    v_sid, '00000000-0000-0000-0000-00000000e001');
+  IF v ? 'placement' THEN
+    RAISE EXCEPTION 'declining leaked the placement: %', v->'placement';
+  END IF;
+
+  -- Give Up is still available: it ends only the caller's attempt.
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e001');
+  IF public.word_hunt_give_up(v_sid)->>'code' IS DISTINCT FROM 'NOT_STARTED'
+  THEN
+    RAISE EXCEPTION 'give up from the lobby should be refused';
+  END IF;
+
+  -- This session is deliberately left ACTIVE by the assertions above --
+  -- that is the whole point of the case -- so retire it explicitly or the
+  -- next fixture gets handed it instead of a fresh invitation.
+  PERFORM pg_temp.retire_session(v_sid);
+END $$;
+
+-- Declining an INVITATION -- the legitimate use -- still works.
+DO $$
+DECLARE v_sid uuid; v jsonb;
+BEGIN
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e001');
+  v_sid := pg_temp.new_session('wh-decline-invite');
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e002');
+  v := public.word_hunt_decline_session(v_sid);
+  IF v ? 'error' THEN
+    RAISE EXCEPTION 'declining an invitation was refused: %', v;
+  END IF;
+  IF (SELECT status FROM public.game_sessions WHERE id = v_sid)
+     IS DISTINCT FROM 'abandoned' THEN
+    RAISE EXCEPTION 'declining an invitation did not abandon it';
+  END IF;
+  -- Idempotent.
+  IF public.word_hunt_decline_session(v_sid) ? 'error' THEN
+    RAISE EXCEPTION 'declining twice errored';
+  END IF;
+END $$;
+
+-- BLOCKER 2: gameplay and expiry took opposite lock orders.
+--
+-- Reproduced with two concurrent sessions: gameplay locked session then
+-- attempt, expiry wrote attempts then sessions, and PostgreSQL aborted
+-- one with "deadlock detected". A deadlock cannot be provoked from
+-- inside one transaction, so what is asserted here is the invariant that
+-- made it possible: every path that closes a session must take the
+-- SESSION lock before touching its attempts.
+DO $$
+DECLARE
+  v_src text;
+  v_fn text;
+BEGIN
+  FOREACH v_fn IN ARRAY ARRAY[
+    'word_hunt_expire_sessions_for',
+    'word_hunt_expire_session_if_stale',
+    'abandon_word_hunt_on_relationship_change']
+  LOOP
+    SELECT pg_get_functiondef(p.oid) INTO v_src
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = v_fn
+    LIMIT 1;
+
+    IF v_src IS NULL THEN
+      RAISE EXCEPTION '% does not exist', v_fn;
+    END IF;
+
+    -- The attempts UPDATE must not appear before a session lock is taken.
+    IF position('word_hunt_attempts' in v_src) > 0
+       AND position('FOR UPDATE' in v_src) > 0
+       AND position('FOR UPDATE' in v_src)
+           > position('UPDATE public.word_hunt_attempts' in v_src) THEN
+      RAISE EXCEPTION
+        '%: attempts are written before the session is locked -- this is '
+        'the lock-order inversion that deadlocked against gameplay', v_fn;
+    END IF;
+  END LOOP;
+END $$;
+
+-- BLOCKER 3: expiry could leave an in-progress attempt under an
+-- abandoned session.
+--
+--   session  |   attempt
+--   abandoned | in_progress
+--
+-- A clock running on a dead game that no RPC would ever close. The fix
+-- re-checks staleness UNDER the session lock, so a session that came
+-- back to life between selection and locking is left alone.
+DO $$
+DECLARE
+  v_sid uuid;
+  v_session text;
+  v_attempt text;
+BEGIN
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e001');
+  v_sid := pg_temp.new_session('wh-expire-consistency');
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e002');
+  PERFORM public.word_hunt_accept_session(v_sid);
+  PERFORM public.word_hunt_start(v_sid);
+
+  -- Age both so the sweep takes it.
+  UPDATE public.game_sessions
+     SET started_at = now() - interval '25 hours',
+         created_at = now() - interval '25 hours'
+   WHERE id = v_sid;
+  ALTER TABLE public.word_hunt_attempts
+    DISABLE TRIGGER word_hunt_attempts_transition;
+  UPDATE public.word_hunt_attempts
+     SET started_at = now() - interval '25 hours'
+   WHERE session_id = v_sid;
+  ALTER TABLE public.word_hunt_attempts
+    ENABLE TRIGGER word_hunt_attempts_transition;
+
+  PERFORM public.expire_word_hunt_sessions();
+
+  SELECT s.status, a.status INTO v_session, v_attempt
+  FROM public.game_sessions s
+  JOIN public.word_hunt_attempts a ON a.session_id = s.id
+  WHERE s.id = v_sid;
+
+  IF v_session <> 'abandoned' THEN
+    RAISE EXCEPTION 'the sweep did not close a stale session (%)', v_session;
+  END IF;
+  IF v_attempt = 'in_progress' THEN
+    RAISE EXCEPTION
+      'an attempt is still running under an abandoned session -- neither '
+      'playable nor finished';
+  END IF;
+END $$;
+
+-- FINDING 4: an expired session stayed playable until cron or the lobby.
+--
+-- A client reaching a session directly -- a push notification, a deep
+-- link, a resumed screen -- never passed the lobby, so during the hourly
+-- cron gap it could accept a 50-hour-old invitation and start hunting.
+DO $$
+DECLARE v_sid uuid; v jsonb;
+BEGIN
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e001');
+  v_sid := pg_temp.new_session('wh-stale-invite');
+  UPDATE public.game_sessions
+     SET created_at = now() - interval '50 hours' WHERE id = v_sid;
+
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e002');
+  v := public.word_hunt_accept_session(v_sid);
+  IF v->>'code' IS DISTINCT FROM 'SESSION_EXPIRED' THEN
+    RAISE EXCEPTION 'accepted a 50-hour-old invitation: %', v;
+  END IF;
+  IF public.word_hunt_start(v_sid)->>'code'
+     IS DISTINCT FROM 'SESSION_EXPIRED' THEN
+    RAISE EXCEPTION 'started a hunt on an expired session';
+  END IF;
+  IF (SELECT status FROM public.game_sessions WHERE id = v_sid)
+     IS DISTINCT FROM 'abandoned' THEN
+    RAISE EXCEPTION 'the stale session was not closed on the way past';
+  END IF;
+END $$;
+
+-- Start's own session-deadline guard, isolated.
+--
+-- The case above closes the session inside accept(), so start() only ever
+-- sees it already abandoned -- which means a mutant that removes start's
+-- guard survives. This one accepts first and ages the session AFTER, so
+-- start is the first call to meet a stale-but-active session.
+DO $$
+DECLARE v_sid uuid; v jsonb;
+BEGIN
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e001');
+  v_sid := pg_temp.new_session('wh-stale-active');
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e002');
+  PERFORM public.word_hunt_accept_session(v_sid);
+
+  -- Now active, and nobody has started. Age it past the 24h rule.
+  UPDATE public.game_sessions
+     SET started_at = now() - interval '25 hours',
+         created_at = now() - interval '25 hours'
+   WHERE id = v_sid;
+
+  v := public.word_hunt_start(v_sid);
+  IF v->>'code' IS DISTINCT FROM 'SESSION_EXPIRED' THEN
+    RAISE EXCEPTION
+      'Start began a hunt on a stale ACTIVE session: %', v;
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.word_hunt_attempts
+              WHERE session_id = v_sid) THEN
+    RAISE EXCEPTION 'Start created an attempt on an expired session';
+  END IF;
+  IF (SELECT status FROM public.game_sessions WHERE id = v_sid)
+     IS DISTINCT FROM 'abandoned' THEN
+    RAISE EXCEPTION 'Start did not close the stale session on its way past';
+  END IF;
+END $$;
+
+-- BLOCKER 3, the structural half: the sweep re-checks under the lock.
+--
+-- The race itself needs two connections and cannot be expressed inside
+-- this transaction, so it was reproduced separately:
+--
+--   session  |   attempt
+--   abandoned | in_progress
+--
+-- What IS assertable here is the invariant that made the fix work: the
+-- expiry loop must re-read staleness after taking each session lock,
+-- because the set was chosen before the lock was held. Without that
+-- re-check a session that came back to life in between gets half-closed.
+DO $$
+DECLARE v_src text;
+BEGIN
+  SELECT pg_get_functiondef(p.oid) INTO v_src
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'word_hunt_expire_sessions_for';
+
+  IF position('FOR UPDATE' in v_src) = 0 THEN
+    RAISE EXCEPTION 'the sweep does not lock the session at all';
+  END IF;
+
+  -- The staleness call must appear AFTER the lock, not only in the
+  -- selection query above it.
+  IF (length(v_src) - length(replace(v_src, 'word_hunt_session_is_stale', '')))
+     / length('word_hunt_session_is_stale') < 2 THEN
+    RAISE EXCEPTION
+      'the sweep checks staleness once, before locking -- a session that '
+      'restarted between selection and locking would be half-closed';
+  END IF;
+
+  IF position('word_hunt_session_is_stale' in
+              substr(v_src, position('FOR UPDATE' in v_src))) = 0 THEN
+    RAISE EXCEPTION
+      'the sweep never re-checks staleness under the session lock';
+  END IF;
+END $$;
+
+-- And the re-check must ACT, not merely run.
+--
+-- Source inspection cannot tell a live guard from a dead one: replacing
+-- `CONTINUE WHEN NOT v_still_due` with `NULL` leaves the staleness call
+-- in place and the function still reads correct. So this drives the
+-- behaviour: a session that is NOT stale must survive a sweep that was
+-- told to consider it.
+DO $$
+DECLARE
+  v_stale uuid;
+  v_fresh uuid;
+BEGIN
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e004');
+
+  -- One genuinely stale session for this couple.
+  v_stale := (public.word_hunt_create_session(
+    '00000000-0000-0000-0000-0000000000e2', 'wh-sweep-stale')
+    ->>'session_id')::uuid;
+  UPDATE public.game_sessions
+     SET created_at = now() - interval '50 hours' WHERE id = v_stale;
+
+  -- And one that is brand new. Both are visible to the same sweep.
+  UPDATE public.game_sessions
+     SET created_at = created_at - interval '2 hours'
+   WHERE relationship_id = '00000000-0000-0000-0000-0000000000e2'
+     AND created_at > now() - interval '1 hour';
+  v_fresh := (public.word_hunt_create_session(
+    '00000000-0000-0000-0000-0000000000e2', 'wh-sweep-fresh')
+    ->>'session_id')::uuid;
+
+  PERFORM public.expire_word_hunt_sessions();
+
+  IF (SELECT status FROM public.game_sessions WHERE id = v_stale)
+     IS DISTINCT FROM 'abandoned' THEN
+    RAISE EXCEPTION 'the sweep did not close a 50-hour-old invitation';
+  END IF;
+  IF (SELECT status FROM public.game_sessions WHERE id = v_fresh)
+     = 'abandoned' THEN
+    RAISE EXCEPTION
+      'the sweep closed a session that was not stale -- the under-lock '
+      're-check is not gating anything';
+  END IF;
+
+  PERFORM pg_temp.retire_session(v_fresh);
+END $$;
+
+-- FINDING 7: decimal, oversized and non-numeric coordinates escaped the
+-- structured error contract as raw SQL exceptions carrying Postgres type
+-- names to the client.
+DO $$
+DECLARE
+  v_sid uuid;
+  v_word text;
+  v_case text;
+  v jsonb;
+  v_cells jsonb;
+  v_len int;
+BEGIN
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e001');
+  v_sid := pg_temp.new_session('wh-bad-cells');
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e002');
+  PERFORM public.word_hunt_accept_session(v_sid);
+  PERFORM public.word_hunt_start(v_sid);
+  SELECT word INTO v_word FROM public.word_hunt_puzzles
+  WHERE session_id = v_sid;
+  v_len := char_length(v_word);
+
+  FOREACH v_case IN ARRAY ARRAY['decimal', 'huge', 'negative_huge',
+                                'string', 'null', 'bool', 'nested']
+  LOOP
+    v_cells := CASE v_case
+      WHEN 'decimal' THEN
+        (SELECT jsonb_agg(jsonb_build_array(0.5, i))
+         FROM generate_series(0, v_len - 1) i)
+      WHEN 'huge' THEN
+        (SELECT jsonb_agg(jsonb_build_array(99999999999999999999, i))
+         FROM generate_series(0, v_len - 1) i)
+      WHEN 'negative_huge' THEN
+        (SELECT jsonb_agg(jsonb_build_array(-99999999999999999999, i))
+         FROM generate_series(0, v_len - 1) i)
+      WHEN 'string' THEN
+        (SELECT jsonb_agg(jsonb_build_array('x', i))
+         FROM generate_series(0, v_len - 1) i)
+      WHEN 'null' THEN
+        (SELECT jsonb_agg(jsonb_build_array(NULL, i))
+         FROM generate_series(0, v_len - 1) i)
+      WHEN 'bool' THEN
+        (SELECT jsonb_agg(jsonb_build_array(true, i))
+         FROM generate_series(0, v_len - 1) i)
+      WHEN 'nested' THEN
+        (SELECT jsonb_agg(jsonb_build_array(jsonb_build_array(1), i))
+         FROM generate_series(0, v_len - 1) i)
+    END;
+
+    BEGIN
+      v := public.word_hunt_submit(v_sid, v_cells);
+    EXCEPTION WHEN OTHERS THEN
+      RAISE EXCEPTION
+        'coordinate case "%" raised a raw SQL error instead of '
+        'INVALID_INPUT: %', v_case, SQLERRM;
+    END;
+
+    IF v->>'code' IS DISTINCT FROM 'INVALID_INPUT' THEN
+      RAISE EXCEPTION
+        'coordinate case "%" was not rejected as INVALID_INPUT: %',
+        v_case, v;
+    END IF;
+  END LOOP;
+END $$;
+
+-- FINDING 9: completed_at could precede the finish that caused it,
+-- because attempts used a post-lock clock_timestamp() and completion
+-- used now(), which is transaction-start time.
+DO $$
+DECLARE
+  v_sid uuid;
+  v_place jsonb;
+  v_completed timestamptz;
+  v_last_finish timestamptz;
+BEGIN
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e001');
+  v_sid := pg_temp.new_session('wh-chronology');
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e002');
+  PERFORM public.word_hunt_accept_session(v_sid);
+  PERFORM public.word_hunt_start(v_sid);
+  SELECT placement INTO v_place FROM public.word_hunt_puzzles
+  WHERE session_id = v_sid;
+  PERFORM public.word_hunt_submit(v_sid, v_place);
+
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e001');
+  PERFORM public.word_hunt_start(v_sid);
+  PERFORM public.word_hunt_submit(v_sid, v_place);
+
+  SELECT completed_at INTO v_completed
+  FROM public.game_sessions WHERE id = v_sid;
+  SELECT max(finished_at) INTO v_last_finish
+  FROM public.word_hunt_attempts WHERE session_id = v_sid;
+
+  IF v_completed IS NULL THEN
+    RAISE EXCEPTION 'two finishes did not complete the session';
+  END IF;
+  IF v_completed < v_last_finish THEN
+    RAISE EXCEPTION
+      'the session completed (%) before its last move (%)',
+      v_completed, v_last_finish;
+  END IF;
+END $$;
 
 -- No private table joins the realtime publication: publishing an attempt
 -- would broadcast a partner's time straight past every RPC that exists

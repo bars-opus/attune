@@ -95,6 +95,66 @@ class WordHuntNotifier extends StateNotifier<WordHuntUiState> {
   /// The estimated elapsed time to show right now.
   Duration get displayElapsed => _seed + _stopwatch.elapsed;
 
+  /// Incremented by every write that installs a session.
+  ///
+  /// THE RACE THIS CLOSES, found in review. refresh() runs from
+  /// construction, from lifecycle resume, and from every realtime event,
+  /// so several can be in flight at once and they return in whatever
+  /// order the network decides. Without sequencing:
+  ///
+  ///   refresh A reads an in-progress snapshot and stalls
+  ///   submit completes and installs the terminal reveal
+  ///   refresh A returns and overwrites it with the stale snapshot
+  ///
+  /// The reveal disappears and the player is back on a grid whose clock
+  /// has already stopped.
+  int _generation = 0;
+
+  /// True when [snapshot] may replace what is already installed.
+  ///
+  /// Two rules, because either alone leaves a hole. The generation check
+  /// rejects a response that started before a newer write finished. The
+  /// lifecycle check additionally refuses to walk BACKWARDS through the
+  /// game's states -- a terminal attempt never becomes in-progress again,
+  /// and a completed session never reopens -- which also covers a stale
+  /// response that happens to carry a current generation.
+  bool _canInstall(WordHuntSession snapshot, int startedAtGeneration) {
+    if (startedAtGeneration != _generation) return false;
+
+    final current = state.session;
+    if (current == null) return true;
+
+    if (current.myStatus.isTerminal && !snapshot.myStatus.isTerminal) {
+      return false;
+    }
+    if (current.bothTerminal && !snapshot.bothTerminal) return false;
+    if (current.isOver && !snapshot.isOver) return false;
+    return true;
+  }
+
+  /// Installs a session and claims the next generation.
+  ///
+  /// Every path that writes a session goes through here, so nothing can
+  /// install one without advancing the generation and invalidating the
+  /// responses still in flight behind it.
+  void _install(
+    WordHuntSession session, {
+    bool isSubmitting = false,
+    Object? missCells = WordHuntUiState._unset,
+    int? missNonce,
+  }) {
+    _generation++;
+    _reseedClock(session);
+    state = state.copyWith(
+      session: session,
+      isLoading: false,
+      isSubmitting: isSubmitting,
+      errorMessage: null,
+      missCells: missCells,
+      missNonce: missNonce,
+    );
+  }
+
   void _reseedClock(WordHuntSession session) {
     final startedAt = session.myStartedAt;
     if (startedAt == null || session.myStatus.isTerminal) {
@@ -112,17 +172,16 @@ class WordHuntNotifier extends StateNotifier<WordHuntUiState> {
   }
 
   Future<void> refresh() async {
+    final generation = _generation;
     try {
       final session = await _ref
           .read(wordHuntGatewayProvider)
           .getState(sessionId);
       if (!mounted) return;
-      _reseedClock(session);
-      state = state.copyWith(
-        session: session,
-        isLoading: false,
-        errorMessage: null,
-      );
+      // A refresh that started before a newer write finished is stale by
+      // the time it lands, and installing it would undo that write.
+      if (!_canInstall(session, generation)) return;
+      _install(session);
     } on WordHuntApiError catch (error) {
       if (!mounted) return;
       state = state.copyWith(isLoading: false, errorMessage: error.message);
@@ -142,12 +201,7 @@ class WordHuntNotifier extends StateNotifier<WordHuntUiState> {
     try {
       final session = await _ref.read(wordHuntGatewayProvider).start(sessionId);
       if (!mounted) return;
-      _reseedClock(session);
-      state = state.copyWith(
-        session: session,
-        isLoading: false,
-        isSubmitting: false,
-      );
+      _install(session);
     } on WordHuntApiError catch (error) {
       if (!mounted) return;
       state = state.copyWith(isSubmitting: false, errorMessage: error.message);
@@ -168,10 +222,11 @@ class WordHuntNotifier extends StateNotifier<WordHuntUiState> {
           .read(wordHuntGatewayProvider)
           .submit(sessionId: sessionId, cells: cells);
       if (!mounted) return;
-      _reseedClock(result.session);
-      state = state.copyWith(
-        session: result.session,
-        isSubmitting: false,
+      // A submit result is authoritative -- it is the newest thing that
+      // happened -- so it installs unconditionally and invalidates any
+      // refresh still in flight.
+      _install(
+        result.session,
         // A miss says nothing and costs nothing: no message, no error,
         // just the pill animating off.
         missCells: result.hit ? null : cells,
@@ -206,8 +261,7 @@ class WordHuntNotifier extends StateNotifier<WordHuntUiState> {
           .read(wordHuntGatewayProvider)
           .giveUp(sessionId);
       if (!mounted) return;
-      _reseedClock(session);
-      state = state.copyWith(session: session, isSubmitting: false);
+      _install(session);
     } on WordHuntApiError catch (error) {
       if (!mounted) return;
       state = state.copyWith(isSubmitting: false, errorMessage: error.message);

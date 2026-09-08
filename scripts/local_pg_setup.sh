@@ -65,4 +65,20 @@ for t in supabase/tests/*.sql; do
     status=1
   fi
 done
+
+# Concurrency contracts run separately because they need MORE THAN ONE
+# CONNECTION -- a lock race cannot be expressed inside the single
+# transaction the suite above uses. Every case in there exists because a
+# review found a defect that a single-connection test could not catch:
+# a lock-order deadlock between gameplay and expiry, and a session left
+# half-closed when a player started during a sweep.
+if [ -x scripts/concurrency/word_hunt_races.sh ]; then
+  echo "==> Running concurrency contracts"
+  if scripts/concurrency/word_hunt_races.sh "$DB" 2>&1 | sed 's/^/    /'; then
+    :
+  else
+    status=1
+  fi
+fi
+
 exit $status

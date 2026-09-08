@@ -26,8 +26,20 @@ class WordHuntReveal extends StatelessWidget {
   final VoidCallback onPlayAgain;
   final VoidCallback onBackToChat;
 
-  /// Below this, the two times are called a tie.
+  /// Below this, the two times are presented as level rather than
+  /// ordered. The measurement includes Start-response latency, render
+  /// time and Submit latency, so a player on a worse connection should
+  /// not be shown as slower because of network noise.
   static const tieThresholdMs = 1000;
+
+  /// True when both found it and the difference is inside the noise
+  /// floor. Drives a single line under the two times, never a ranking.
+  bool get _tooCloseToSeparate {
+    final mine = session.myElapsedMs;
+    final theirs = session.partnerElapsedMs;
+    if (mine == null || theirs == null) return false;
+    return (mine - theirs).abs() < tieThresholdMs;
+  }
 
   String _time(int ms) => '${(ms / 1000).toStringAsFixed(1)}s';
 
@@ -48,8 +60,20 @@ class WordHuntReveal extends StatelessWidget {
       return 'Neither of you found it';
     }
 
-    if ((mine - theirs).abs() < tieThresholdMs) return 'Dead even';
-    return mine < theirs ? 'You were quicker' : 'They were quicker';
+    // NO RANKING, and this is the second attempt at that.
+    //
+    // The first version said "You were quicker" / "They were quicker" and
+    // a review pointed out that this is functionally a winner
+    // declaration even without the word "won" -- and that my own test
+    // banned "beat" while requiring "quicker", which is the same claim in
+    // a politer register.
+    //
+    // Nobody was present for the other person's attempt, and a modified
+    // client can solve the grid without looking. The honest headline for
+    // two people who both found it is that they both found it; the two
+    // numbers are shown side by side underneath and the reader can see
+    // for themselves.
+    return 'You both found it';
   }
 
   @override
@@ -108,6 +132,14 @@ class WordHuntReveal extends StatelessWidget {
               ),
             ],
           ),
+          if (_tooCloseToSeparate) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Within a second of each other.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: WordHuntPalette.dim, fontSize: 13),
+            ),
+          ],
           const SizedBox(height: 24),
           if (grid != null)
             AspectRatio(

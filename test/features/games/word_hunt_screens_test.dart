@@ -252,7 +252,11 @@ void main() {
     );
     await show(tester, gateway);
 
-    expect(find.text('You were quicker'), findsOneWidget);
+    // Not "You were quicker" — a review pointed out that a comparative
+    // is a winner declaration in a politer register, and this game has
+    // no winner.
+    expect(find.text('You both found it'), findsOneWidget);
+    expect(find.textContaining('quicker'), findsNothing);
     expect(find.text('Play again'), findsOneWidget);
     // The board comes back so both players see WHERE it was.
     expect(find.byType(WordHuntBoard), findsOneWidget);

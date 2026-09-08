@@ -5,8 +5,15 @@ Audited against `lib/architecture/algorithms/algorithm_quality_review_checklist.
 **Date:** 2026-09-08 · **Scope:** `word_hunt_*` RPCs, puzzle generation, Flutter client
 **Tags:** `[SERVICE]` `[MUTATION]` `[UI]` `[MOBILE]` — not `[FIN]`, not `[BATCH]`, not `[ASYNC]` beyond one cron sweep
 
-**Verdict: code-complete, awaiting device QA and an external review pass.
-Not production-cleared.**
+**Verdict: externally reviewed, ten findings fixed, awaiting device QA.
+Still not production-cleared.**
+
+**Revised 2026-09-08 after an external implementation review.** It found
+ten defects, three release-blocking. All ten were reproduced against a
+live database before being fixed, and all ten now have regression tests
+that fail against the unfixed code — verified by reverting each fix in
+turn. Two of the ten were claims *in this document* that the code did not
+support.
 
 The Snakes audit that preceded this one said "ships", was written by the
 author of the code, and was wrong — an external review found a
@@ -21,7 +28,69 @@ recorded in full rather than smoothed over.
 
 ---
 
-## What was actually wrong, found before shipping
+## What the external review found
+
+Three release blockers, none of which any existing test touched — the
+tests were written by the same person who decided which paths mattered.
+
+**1. Either partner could kill a live hunt and be handed the answer.**
+`word_hunt_decline_session` checked membership and then abandoned the
+session at any status. Reproduced:
+
+```
+B is hunting: attempt=in_progress
+A declines an ACTIVE session -> {"ok": true, "existing": false}
+session is now: abandoned   B attempt is now: timed_out
+WARNING: A destroyed B's live hunt AND got the answer: [[6,0],...]
+```
+
+Worse than the disclosure leak it looks like: because an abandoned
+session is terminal for disclosure, A — who never started, and so risked
+nothing — ends B's attempt mid-hunt and is handed the placement. A
+griefing move with a reward attached. Decline now means *decline an
+invitation*; leaving a live game is Give Up, which ends only the caller's
+own attempt.
+
+**2. Gameplay and expiry took opposite lock orders.** Gameplay locks
+session then attempt; expiry wrote attempts then sessions. Reproduced:
+`ERROR: deadlock detected`. This directly disproved item 1.6 below.
+
+**3. Expiry could leave a clock running on a dead game.** The sweep
+snapshotted ids, updated attempts, then updated sessions — so a Start
+landing in that window survived as `in_progress` under an `abandoned`
+session, a state no RPC would ever close. Reproduced:
+
+```
+ session  |   attempt
+abandoned | in_progress
+```
+
+Both are fixed by the same rewrite: iterate session by session, take the
+**session** lock first, re-read staleness *under* that lock, then close
+attempts and session together.
+
+**Also found:** the session deadline was enforced only from the lobby, so
+a client arriving by push notification could accept a 50-hour-old
+invitation (4); decimal and oversized coordinates escaped as raw SQL
+exceptions instead of `INVALID_INPUT` (7); `completed_at` used
+transaction-start time and could precede the finish that caused it (9);
+a slow `refresh()` could overwrite a finished submit and make the reveal
+vanish (5); the realtime provider never refreshed on reconnect, so a
+waiting player could stay waiting indefinitely (6); the reveal said "You
+were quicker", which is a winner declaration in a politer register (8);
+and this document's "provably undetectable" mutant claim was too
+strong (10).
+
+### The concurrency tests that now exist
+
+Three of these could not be expressed in `supabase/tests/`, which runs
+inside a single transaction — a lock race needs two connections. They
+live in `scripts/concurrency/word_hunt_races.sh`, run by the local
+harness, and each was verified to fail against its own reverted fix.
+
+---
+
+## What was wrong before that, found during implementation
 
 **1. The session row was writable straight past every RPC.** The same
 defect Snakes shipped. Reproduced against a local database before it was
@@ -98,7 +167,7 @@ Only 2.6 and 7.6 apply; both addressed above.
 |---|---|---|
 | 1.1 / 2.18 | Idempotency for all mutations | Creation takes a client key and an advisory lock. **Start** returns the original `started_at` and puzzle on retry — a lost response does not restart the clock, because the server genuinely did start. **Submit** checks terminal state *first*, before expiry, rate limit and status, so a retry of a committed result returns that result rather than an error about the state it produced. Give Up on an already-found attempt returns the found result. All four have contract tests. |
 | 1.2 | Timeouts on external calls | 30s on every RPC in `WordHuntService`, matching the rest of the app. |
-| 1.6 | Concurrency identified and mitigated | Near-simultaneous finishes are ordinary here, not an edge case. Every mutating RPC takes the **session** row `FOR UPDATE` then the attempt — one lock order, so nothing here deadlocks against itself. Verified with real concurrent processes: two simultaneous finds complete the session exactly once, submit-vs-give-up resolves to the first terminal action, four concurrent Starts produce one attempt with one timestamp. |
+| 1.6 | Concurrency identified and mitigated | **Was FAILING when first audited.** I claimed "one lock order, so nothing here deadlocks against itself" on the strength of races I had run between *gameplay paths* — submit vs submit, submit vs give-up, start vs start. Expiry and the relationship trigger wrote **attempts before sessions**, the inverse, and an external review found it. Reproduced: `ERROR: deadlock detected`. The claim was about the paths I had thought to test, not about the system. Now: every path that closes a session takes the session lock first, iterating session-by-session in id order, and a contract test asserts the ordering in all three closing functions. |
 | 1.10 | Rollback for multi-step failures | Session creation, puzzle generation and puzzle insert are one transaction. A generation failure rolls the session back, so there is never an invitation with no puzzle behind it. |
 | 1.11 | Privacy | No PII in this feature. The grid, the word and two integers. |
 | 2.16 | Shared mutable state protected | The session lock, above. |
@@ -147,7 +216,7 @@ Only 2.6 and 7.6 apply; both addressed above.
 |---|---|---|
 | 6.5 | Property-based tests | The selection sweep: for all 100 target cells, every path the client can produce is a straight line of distinct in-bounds cells in one of the eight legal directions — the same property the server independently enforces, so the two cannot drift into the client submitting what the server rejects. |
 | 6.6 | Determinism | Generation is deliberately random; the scanner, the deadline helper and `word_hunt_pool()` are `IMMUTABLE` and tested directly. The flaky-test episode above is recorded because it is the interesting part. |
-| 6.8 | Mutation testing | **36 mutants, 35 killed.** The survivor — deleting the generator's *own* uniqueness scan — is provably undetectable by black-box means: 2000 generated grids produced an accidental duplicate zero times, so any "generate many and check" test passes without it. It is covered where it bites: the puzzle trigger runs the same scanner and refuses an ambiguous grid, proven with a deliberately ambiguous fixture. Documented in the code rather than papered over. |
+| 6.8 | Mutation testing | **41 mutants, 40 killed.** The survivor deletes the generator's *own* uniqueness scan. I called this "provably undetectable" and **that was too strong** — a review pointed out the two versions differ in AVAILABILITY, not just correctness: with the scan, generation retries up to 20 times; without it, an ambiguous first candidate reaches the table trigger and aborts session creation outright. Correctness is preserved either way (the trigger refuses the bad grid), so no player is ever told a right answer is wrong — but "equivalent mutant" was the wrong words for it. It is a *correctness*-equivalent mutant with a different failure rate, and the honest reason it survives is that the difference only shows at a frequency my tests do not sample. |
 | 5.4 | Retry guidance | Terminal codes offer a way out instead of a retry. |
 | 5.6 | Accessibility | Tap-first-letter / tap-last-letter is a complete alternative to dragging and the only path that works with switch control. Every cell carries a label naming its letter, row and column. Selection is shown by the pill's shape and position, never colour alone. `reduceMotionOf` suppresses the breathing mark and the dismissal animation. **Not audited with a real screen reader on a device** — that is device QA. |
 | 3.5, 3.6, 3.11, 3.13, 4.2, 4.3, 4.14 | Parallelisation, I/O batching, circuit breaker, bulkheads, correlation IDs, tracing, DLQ | **N/A** at this scale, or not implemented. Not claimed. |
@@ -158,8 +227,20 @@ Only 2.6 and 7.6 apply; both addressed above.
 
 **Passing and evidenced:** authorization at the table as well as the RPC,
 the disclosure boundary, idempotency on all four mutations, concurrency
-under real races, input validation as a drag rather than a set, least
-privilege, the adversarial scanner suite, and mutation testing at 35/36.
+under real races *including gameplay against expiry*, input validation as
+a drag rather than a set with integer coordinates checked before any
+cast, least privilege, the adversarial scanner suite, and mutation
+testing at 40/41.
+
+**What the review changed about how this document should be read.** Two
+of its ten findings were claims made here that the code did not support:
+item 1.6 asserted one lock order on the strength of races I had run
+between gameplay paths only, and item 6.8 called a surviving mutant
+"provably undetectable" when the two versions differ in availability.
+Both are corrected in place, with the original claim left visible. The
+pattern is the same one the Snakes audit taught and this one repeated:
+**the dangerous items are not the ones marked failing, they are the ones
+marked passing on the strength of evidence I chose myself.**
 
 **Failing or not done, stated as such:**
 
