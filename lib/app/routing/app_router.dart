@@ -17,6 +17,7 @@ import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_lobby_screen.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_game_screen.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_lobby_screen.dart';
+import 'package:attune/features/games/dots_and_boxes/prototype/dots_boxes_prototype_screen.dart';
 import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_game_screen.dart';
 import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_lobby_screen.dart';
 import 'package:attune/features/onboarding/presentation/screens/onboarding_gate.dart';
@@ -1659,6 +1660,16 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
           final sessionId = state.pathParameters['sessionId']!;
           return SnakesGameScreen(sessionId: sessionId);
         },
+      ),
+      // PROTOTYPE ROUTE, not a shipped game. DOTS_AND_BOXES_SPEC.md §15
+      // recommends against building the real thing; this pass-and-play
+      // build exists to answer whether one partner wins every time.
+      // Reachable only by typing the path -- deliberately not in the
+      // games sheet, so it cannot be found by accident.
+      GoRoute(
+        path: '/games/dots-and-boxes/prototype',
+        name: 'dotsBoxesPrototype',
+        builder: (context, state) => const DotsBoxesPrototypeScreen(),
       ),
       GoRoute(
         path: '/games/word-hunt/lobby/:relationshipId',
