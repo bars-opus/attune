@@ -8,8 +8,8 @@
 # could not have caught.
 #
 # Run:  scripts/concurrency/word_hunt_races.sh [dbname]
-set -uo pipefail
-cd /Users/user/attune
+set -euo pipefail
+cd "$(dirname "$0")/../.."
 export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
 DB="${1:-attune_test}"
 

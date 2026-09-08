@@ -1788,6 +1788,34 @@ BEGIN
   END IF;
 END $$;
 
+-- A state read is itself a lazy session-expiry entry point. Deep links and
+-- resumed game screens do not necessarily pass through the lobby or press an
+-- action first, so they must not render a stale session as active until cron.
+DO $$
+DECLARE v_sid uuid; v jsonb;
+BEGIN
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e001');
+  v_sid := pg_temp.new_session('wh-stale-state-read');
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e002');
+  PERFORM public.word_hunt_accept_session(v_sid);
+
+  UPDATE public.game_sessions
+     SET started_at = now() - interval '25 hours',
+         created_at = now() - interval '25 hours'
+   WHERE id = v_sid;
+
+  v := public.get_word_hunt_state(v_sid);
+  IF v->>'status' IS DISTINCT FROM 'abandoned' THEN
+    RAISE EXCEPTION 'state read returned a stale session as active: %', v;
+  END IF;
+  IF v->>'both_terminal' IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'state read did not expose the terminal stale state: %', v;
+  END IF;
+  IF NOT (v ? 'placement') THEN
+    RAISE EXCEPTION 'state read closed the session but withheld its reveal';
+  END IF;
+END $$;
+
 -- No private table joins the realtime publication: publishing an attempt
 -- would broadcast a partner's time straight past every RPC that exists
 -- to withhold it.
