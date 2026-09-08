@@ -34,6 +34,11 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- the two cannot drift.
 \i supabase/migrations/20260930190000_game_table_grants.sql
 
+-- Same replay for Word Hunt's three private tables, which have no RLS
+-- policy at all: the table privilege is their only gate, so the blanket
+-- grant above would open the puzzle and both players' attempts.
+\i supabase/migrations/20260936150000_word_hunt_table_grants.sql
+
 -- Deliberately NOT granting EXECUTE on all functions.
 --
 -- Supabase's default is EXECUTE for PUBLIC on new functions, and the
