@@ -1204,6 +1204,142 @@ BEGIN
   END IF;
 END $$;
 
+-- The expiry sweep is actually SCHEDULED.
+--
+-- Not a formality. Snakes shipped with expire_snakes_sessions() written,
+-- granted and never registered with cron, so an abandoned board stayed
+-- 'active' forever -- and because the lobby allows one live session per
+-- couple, a game somebody walked away from silently blocked every future
+-- game between those two people. A function nobody calls is not a reaper.
+DO $$
+DECLARE v_missing text;
+BEGIN
+  SELECT string_agg(want, ', ') INTO v_missing
+  FROM unnest(ARRAY['expire-word-hunt-sessions', 'expire-snakes-sessions'])
+       AS t(want)
+  WHERE NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = t.want);
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION 'expiry sweep is not scheduled: %', v_missing;
+  END IF;
+END $$;
+
+-- A word is not repeated within a couple's recent sessions.
+--
+-- TESTED AS A PURE FUNCTION, not through random draws.
+--
+-- Four probabilistic versions of this test were written and MEASURED
+-- against a build with the exclusion deleted: six draws from the 36-word
+-- list caught it 5 times in 12, a three-word list 8 in 12, a two-word
+-- list 7 in 15, and asserting the whole sequence 4 in 15. The reason is
+-- structural rather than tunable -- with the exclusion gone the draw is
+-- random, and a random draw AGREES with the rule often enough that any
+-- assertion over draws is a coin flip. A coin-flip test is worse than
+-- none: green proves nothing and red gets rerun until it agrees.
+--
+-- word_hunt_pool() is that rule with the randomness taken out. These
+-- assertions have exactly one right answer and fail every time if the
+-- exclusion is removed.
+DO $$
+DECLARE v_pool text[];
+BEGIN
+  -- A seen word is excluded.
+  v_pool := public.word_hunt_pool(
+    ARRAY['LOVE', 'KISS', 'WARM'], ARRAY['KISS']);
+  IF v_pool @> ARRAY['KISS'] THEN
+    RAISE EXCEPTION 'a recently seen word stayed in the pool: %', v_pool;
+  END IF;
+  IF NOT (v_pool @> ARRAY['LOVE', 'WARM']) OR cardinality(v_pool) <> 2 THEN
+    RAISE EXCEPTION 'the exclusion removed the wrong words: %', v_pool;
+  END IF;
+
+  -- Several seen words are all excluded.
+  v_pool := public.word_hunt_pool(
+    ARRAY['LOVE', 'KISS', 'WARM', 'HOME'], ARRAY['KISS', 'HOME']);
+  IF cardinality(v_pool) <> 2 OR NOT (v_pool @> ARRAY['LOVE', 'WARM']) THEN
+    RAISE EXCEPTION 'multiple seen words were not all excluded: %', v_pool;
+  END IF;
+
+  -- Nothing seen: the whole list is available.
+  v_pool := public.word_hunt_pool(ARRAY['LOVE', 'KISS'], ARRAY[]::text[]);
+  IF cardinality(v_pool) <> 2 THEN
+    RAISE EXCEPTION 'an empty history narrowed the pool: %', v_pool;
+  END IF;
+
+  v_pool := public.word_hunt_pool(ARRAY['LOVE', 'KISS'], NULL);
+  IF cardinality(v_pool) <> 2 THEN
+    RAISE EXCEPTION 'a null history narrowed the pool: %', v_pool;
+  END IF;
+
+  -- EXHAUSTED: every word seen. Falls back to the full list rather than
+  -- returning nothing -- a short config plus a chatty couple must never
+  -- mean no game.
+  v_pool := public.word_hunt_pool(
+    ARRAY['LOVE', 'KISS'], ARRAY['LOVE', 'KISS']);
+  IF cardinality(v_pool) <> 2 OR NOT (v_pool @> ARRAY['LOVE', 'KISS']) THEN
+    RAISE EXCEPTION 'an exhausted pool did not fall back: %', v_pool;
+  END IF;
+
+  -- A history containing words that are not in the list at all (a
+  -- retired config's words) must not shrink or corrupt the pool.
+  v_pool := public.word_hunt_pool(
+    ARRAY['LOVE', 'KISS'], ARRAY['ANCIENT', 'RETIRED']);
+  IF cardinality(v_pool) <> 2 THEN
+    RAISE EXCEPTION 'a stale history narrowed the pool: %', v_pool;
+  END IF;
+END $$;
+
+-- And the RPC actually uses it: one word in the config, one session
+-- played, and the next creation must still produce a puzzle -- which only
+-- happens because the exhausted pool falls back rather than returning
+-- empty.
+INSERT INTO auth.users(id) VALUES
+  ('00000000-0000-0000-0000-00000000e004'),
+  ('00000000-0000-0000-0000-00000000e005') ON CONFLICT DO NOTHING;
+INSERT INTO public.users(id, phone, display_name) VALUES
+  ('00000000-0000-0000-0000-00000000e004', '+15554450014', 'WH4'),
+  ('00000000-0000-0000-0000-00000000e005', '+15554450015', 'WH5')
+  ON CONFLICT (id) DO NOTHING;
+INSERT INTO public.relationships(id, user_a, user_b, status)
+VALUES ('00000000-0000-0000-0000-0000000000e2',
+        '00000000-0000-0000-0000-00000000e004',
+        '00000000-0000-0000-0000-00000000e005', 'active')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.word_hunt_configs(version, words, direction_weights)
+VALUES ('test-single', ARRAY['LOVE'],
+        jsonb_build_array(1, 1, 1, 1, 1, 1, 1, 1));
+UPDATE public.word_hunt_configs SET retired_at = now() WHERE version = 'v1';
+
+DO $$
+DECLARE
+  v_result jsonb;
+  v_sid uuid;
+  v_word text;
+  i int;
+BEGIN
+  PERFORM pg_temp.act('00000000-0000-0000-0000-00000000e004');
+  FOR i IN 1..2 LOOP
+    UPDATE public.game_sessions
+       SET created_at = created_at - interval '2 hours'
+     WHERE relationship_id = '00000000-0000-0000-0000-0000000000e2';
+    v_result := public.word_hunt_create_session(
+      '00000000-0000-0000-0000-0000000000e2', 'wh-pool-' || i);
+    IF v_result ? 'error' THEN
+      RAISE EXCEPTION 'creation % failed: %', i, v_result;
+    END IF;
+    v_sid := (v_result->>'session_id')::uuid;
+    SELECT word INTO v_word FROM public.word_hunt_puzzles
+    WHERE session_id = v_sid;
+    IF v_word IS DISTINCT FROM 'LOVE' THEN
+      RAISE EXCEPTION 'draw % came from outside the pinned config: %',
+        i, v_word;
+    END IF;
+    PERFORM public.word_hunt_decline_session(v_sid);
+  END LOOP;
+END $$;
+
+UPDATE public.word_hunt_configs SET retired_at = NULL WHERE version = 'v1';
+
 -- No private table joins the realtime publication: publishing an attempt
 -- would broadcast a partner's time straight past every RPC that exists
 -- to withhold it.

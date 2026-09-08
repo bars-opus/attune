@@ -347,15 +347,10 @@ BEGIN
     LIMIT 10
   ) recent;
 
-  SELECT COALESCE(array_agg(w), ARRAY[]::text[]) INTO v_pool
-  FROM unnest(v_words) w
-  WHERE NOT (w = ANY(v_recent_words));
-
-  -- Falls back to the full list rather than failing: a short config plus
-  -- a chatty couple must never mean no game.
-  IF v_pool IS NULL OR cardinality(v_pool) = 0 THEN
-    v_pool := v_words;
-  END IF;
+  -- The rule itself lives in a pure function so it can be tested without
+  -- going through a random draw -- see 20260936170000 for why that
+  -- matters. Fallback to the full list is part of it.
+  v_pool := public.word_hunt_pool(v_words, v_recent_words);
 
   v_word := v_pool[1 + floor(random() * cardinality(v_pool))::int];
 
