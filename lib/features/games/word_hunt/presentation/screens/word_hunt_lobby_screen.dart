@@ -66,7 +66,7 @@ class _WordHuntLobbyScreenState extends ConsumerState<WordHuntLobbyScreen> {
       _error = null;
     });
     try {
-      final sessionId = await ref
+      await ref
           .read(wordHuntGatewayProvider)
           .createSession(
             relationshipId: widget.relationshipId,
@@ -81,7 +81,6 @@ class _WordHuntLobbyScreenState extends ConsumerState<WordHuntLobbyScreen> {
       // has not agreed to play.
       await _refresh();
       if (mounted) setState(() => _busy = false);
-      debugPrint('word hunt session $sessionId invited');
     } on WordHuntApiError catch (error) {
       if (!mounted) return;
       setState(() {

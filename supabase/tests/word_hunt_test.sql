@@ -1155,7 +1155,7 @@ BEGIN
     'word_hunt_authorize', 'word_hunt_maybe_complete',
     'word_hunt_expire_attempts', 'word_hunt_expire_sessions_for',
     'word_hunt_error', 'word_hunt_is_expired', 'word_hunt_directions',
-    'expire_word_hunt_sessions']
+    'word_hunt_pool', 'expire_word_hunt_sessions']
   LOOP
     SELECT bool_or(has_function_privilege('authenticated', p.oid, 'EXECUTE'))
       INTO v_ok

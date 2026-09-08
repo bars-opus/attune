@@ -33,6 +33,26 @@ abstract class WordHuntGateway {
   Future<WordHuntSession?> getActiveSession(String relationshipId);
 }
 
+/// Turns an RPC response into a payload or an error.
+///
+/// Every RPC in this game answers with a jsonb object rather than an HTTP
+/// status, so "did it work" is a field. Lifted out of the service because
+/// it is the only real logic there -- everything else is a named call --
+/// and a bad unwrap would either swallow an error or throw on a success.
+Map<String, dynamic> unwrapWordHuntResponse(Object? response) {
+  if (response is! Map) {
+    // A null or a scalar means the call did not reach the function we
+    // think it did. Failing loudly beats handing the UI an empty session.
+    throw const WordHuntApiError(
+      code: 'UNKNOWN',
+      message: 'Something went wrong. Please try again.',
+    );
+  }
+  final data = Map<String, dynamic>.from(response);
+  if (data['error'] == true) throw WordHuntApiError.fromJson(data);
+  return data;
+}
+
 class WordHuntService implements WordHuntGateway {
   WordHuntService(this._supabase);
 
@@ -42,11 +62,8 @@ class WordHuntService implements WordHuntGateway {
   /// grid whose clock is already running on the server.
   static const _timeout = Duration(seconds: 30);
 
-  Map<String, dynamic> _unwrap(Object? response) {
-    final data = Map<String, dynamic>.from(response! as Map);
-    if (data['error'] == true) throw WordHuntApiError.fromJson(data);
-    return data;
-  }
+  Map<String, dynamic> _unwrap(Object? response) =>
+      unwrapWordHuntResponse(response);
 
   @override
   Future<String> createSession({
