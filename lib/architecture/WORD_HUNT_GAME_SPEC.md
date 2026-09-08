@@ -73,14 +73,26 @@ comparison of two honest measurements.
 **What it must not say:** anything framing this as a race that was won.
 Nobody was present for the other person's attempt.
 
-### 3.1 Abandonment
+### 3.1 Giving up, and running out of time
 
-A player who starts and never submits does not block the other forever.
-After **10 minutes** of an unsubmitted attempt the session records it as
-unfinished; the reveal then shows one time and says the other person did
-not finish. No penalty, no comment.
+Two ways an attempt ends without a find.
 
----
+**"I can't find it"** — a visible button on the grid screen. Records
+`gave_up = true` with no elapsed time, and releases the reveal.
+
+There is no cost to giving up: no score, no streak, no record. Staring
+at a grid you cannot solve while your partner waits is the harm this
+button prevents, and a game with nothing to lose should not make anyone
+sit it out.
+
+**The 10-minute timeout** — a started attempt that is never submitted is
+swept as unfinished, so one player cannot block the other forever by
+walking away mid-hunt.
+
+The reveal says a person **did not find it**. It never says they quit:
+the button is a kindness the game offers, and reporting it as a
+surrender would turn that into something to be embarrassed about.
+
 
 ## 4. The grid
 
@@ -227,7 +239,9 @@ shown, and an exit to the chat. The screen leaves on its own once the
 partner finishes, matching Paint Ball and Snakes.
 
 **Reveal** — both times, and the pill drawn on the grid so you see where
-it was. `Play again` and `Back to chat`.
+it was. Shown to **both** players, including whoever did not find it:
+never learning where the word was is maddening rather than kind.
+`Play again` and `Back to chat`.
 
 ---
 
@@ -249,6 +263,12 @@ CREATE TABLE IF NOT EXISTS public.word_hunt_attempts (
   found_at timestamptz,
   -- Server-computed on submit. The client never sends a duration.
   elapsed_ms int,
+  -- Set by the "I can't find it" button, or by the 10-minute sweep.
+  -- Distinguished from a NULL found_at with no gave_up, which is an
+  -- attempt still in progress.
+  -- Set by the "I can't find it" button, or by the 10-minute sweep.
+  -- Distinct from a NULL found_at with gave_up false, which is an
+  -- attempt still in progress.
   gave_up boolean NOT NULL DEFAULT false,
   PRIMARY KEY (session_id, user_id)
 );
@@ -268,6 +288,11 @@ Writes `started_at` for the caller. Idempotent: a second call returns the
 first timestamp rather than restarting the clock — otherwise closing and
 reopening the app would reset the timer, which is a cheat and an easy
 accident.
+
+### `word_hunt_give_up(p_session_id)`
+Records `gave_up = true` for the caller. Idempotent, and refused once
+that player has already found the word -- giving up after finding it
+would rewrite a result.
 
 ### `word_hunt_submit(p_session_id, p_cells jsonb)`
 1. Auth, membership, relationship still active.
@@ -327,20 +352,41 @@ exist so it can be tuned after finding out.
 
 ---
 
-## 13. Open questions
+## 13. Questions, settled
 
-1. **Should a player be able to give up?** Currently only the 10-minute
-   timeout ends an attempt. A visible "I can't find it" would be kinder,
-   but also an obvious way to end a losing round early.
-2. **Is one word per session too thin?** It is over in thirty seconds.
-   The instruction was explicit, and `Play again` covers it — but worth
-   watching whether people play once and leave.
-3. **Should the loser see the answer?** Currently the placement is
-   revealed only when both finish, so a player who never finds it never
-   learns where it was. Kind, or maddening?
+All three are now settled. Kept here with their reasoning rather than
+deleted, because the reasoning is what a later reader needs.
+
+1. ~~**Should a player be able to give up?**~~ **Settled: yes — an
+   "I can't find it" button, alongside the 10-minute timeout.**
+
+   The objection was that it lets someone bail on a losing round. That
+   assumes losing costs something, and here it does not: no score, no
+   streak, no record. Staring at a grid you cannot solve while your
+   partner waits is the actual harm, and a way out is the kinder design.
+
+   Giving up records `gave_up = true` with no elapsed time.
+
+2. ~~**Is one word per session too thin?**~~ **Settled: one word.**
+
+   It is over in thirty seconds and that is the point — this is the
+   quick game beside the slow one. `Play again` is one tap, and a couple
+   who want five words can have five sessions.
+
+3. ~~**Should the loser see the answer?**~~ **Settled: yes, everyone
+   sees the placement once the session ends.**
+
+   Never learning where it was is maddening rather than kind. The word
+   is drawn on the grid at the reveal for whoever did not find it,
+   exactly as for whoever did.
 
 ---
 
 ## Changelog
 
-- **2026-09-07** — Initial draft. Not implemented, not approved.
+- **2026-09-07** — Initial draft.
+- **2026-09-08** — All three open questions settled. A visible "I can't
+  find it" button joins the 10-minute timeout; one word per session
+  stands; and the placement is revealed to both players at the end,
+  including whoever did not find it. Still not implemented, not
+  approved.
