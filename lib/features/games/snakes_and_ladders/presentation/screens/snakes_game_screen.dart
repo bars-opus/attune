@@ -146,6 +146,12 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
       }
     }
 
+    // The result sits on screen before anything moves on. The walk ends
+    // and the board is immediately correct, but the player has had no
+    // moment to READ it -- the number they rolled, where they landed.
+    // Without this the screen left the instant the token stopped.
+    await Future<void>.delayed(const Duration(milliseconds: 1400));
+
     if (!mounted) return;
     setState(() {
       _walking = false;
@@ -312,17 +318,32 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
                   },
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  _walking
-                      ? ''
-                      : isMine
-                      ? 'Your roll'
-                      : 'Their roll',
-                  style: textTheme.labelLarge?.copyWith(
-                    color: Colors.white.withValues(alpha: 0.7),
-                    letterSpacing: 1.2,
+                // THE NUMBER, large, while the roll plays out. Pips on a
+                // die read at a glance only if you are looking at the
+                // die -- and during the walk the player is watching their
+                // token, not the corner of the screen. The digit says
+                // what happened without being read.
+                if (state.dieFace != null && !state.isRolling)
+                  Text(
+                    '${state.dieFace}',
+                    style: textTheme.displaySmall?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      height: 1,
+                    ),
+                  )
+                else
+                  Text(
+                    _walking
+                        ? ''
+                        : isMine
+                        ? 'Your roll'
+                        : 'Their roll',
+                    style: textTheme.labelLarge?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      letterSpacing: 1.2,
+                    ),
                   ),
-                ),
               ],
               if (state.errorMessage != null) ...[
                 const SizedBox(height: 10),

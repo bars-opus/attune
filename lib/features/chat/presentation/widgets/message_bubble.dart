@@ -125,7 +125,8 @@ class MessageBubble extends StatelessWidget {
 
   /// Opens a game card's session. Given the game_type so the caller owns
   /// routing -- the chat should not know how each game is reached.
-  final void Function(String gameType)? onGameTap;
+  final void Function(String gameType, String sessionId, bool autoAccept)?
+  onGameTap;
 
   final VoidCallback? onRetry;
   final VoidCallback? onRemove;
@@ -940,7 +941,8 @@ class _BubbleBody extends StatelessWidget {
   final void Function(String messageId, int viewsRemaining)? onStreakViewSpent;
 
   /// Opens a game card's session, by game_type.
-  final void Function(String gameType)? onGameTap;
+  final void Function(String gameType, String sessionId, bool autoAccept)?
+  onGameTap;
 
   /// The viewer, used to phrase a game card as "Your move" vs "Their
   /// move". Nullable so an unauthenticated preview still renders.
@@ -1147,7 +1149,9 @@ class _BubbleBody extends StatelessWidget {
           // -- it keeps the card from flashing empty while the session
           // stream delivers its first row.
           fallbackLabel: message.content.isEmpty ? null : message.content,
-          onTap: (gameType) => onGameTap?.call(gameType),
+          onTap:
+              (gameType, sessionId, autoAccept) =>
+                  onGameTap?.call(gameType, sessionId, autoAccept),
         ),
       );
     } else if (message.isStreak) {

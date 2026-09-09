@@ -2172,7 +2172,7 @@ class _MessageListState extends ConsumerState<_MessageList>
                           // The viewer reports what the server left after
                           // spending a view; applying it is what stops a
                           // streak reopening past its budget.
-                          onGameTap: (gameType) {
+                          onGameTap: (gameType, sessionId, autoAccept) {
                             // Reuses the sheet's type -> destination map,
                             // so a card and the picker open a game exactly
                             // the same way. Unknown types (a game added
@@ -2188,6 +2188,8 @@ class _MessageListState extends ConsumerState<_MessageList>
                                 destination,
                                 relationshipId:
                                     widget.conversation.relationshipId,
+                                sessionId: sessionId,
+                                autoAccept: autoAccept,
                               ),
                             );
                           },
@@ -2906,6 +2908,15 @@ Future<void> openGameRoute(
   BuildContext context,
   ChatGameDestination destination, {
   required String relationshipId,
+  /// The session a chat card refers to. Null when the picker opened this,
+  /// because starting a game from the hub has no session yet.
+  String? sessionId,
+
+  /// Accept [sessionId] before opening, so tapping an invitation someone
+  /// sent you lands on the board rather than a screen asking whether you
+  /// meant it. Only ever true from a card, and only for an invitation the
+  /// viewer did not send -- see GameMessageBubble.
+  bool autoAccept = false,
 }) async {
   switch (destination) {
     case ChatGameDestination.neverHaveIEver:
@@ -2934,6 +2945,9 @@ Future<void> openGameRoute(
       await context.pushNamed(
         'snakesLobby',
         pathParameters: {'relationshipId': relationshipId},
+        queryParameters: {
+          if (autoAccept && sessionId != null) 'accept': sessionId,
+        },
       );
     case ChatGameDestination.wordHunt:
       await context.pushNamed(

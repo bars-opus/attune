@@ -255,10 +255,71 @@ void main() {
       expect(find.text('Decline'), findsOneWidget);
     });
 
-    testWidgets('starting a game stays in the invitation lobby', (
+    testWidgets('sending an invitation returns to the chat', (tester) async {
+      // It used to stay put and show "Waiting for your partner" over a
+      // "Back to chat" button -- a screen whose only purpose was to be
+      // left. The invitation IS the chat card, posted by a database
+      // trigger the moment the session row lands, so the conversation
+      // already shows the game by the time this pops.
+      //
+      // Pushed onto a host route rather than being the home widget: a
+      // root route has nothing to pop back to, so maybePop would be a
+      // no-op and the test would pass whatever the lobby did.
+      final gateway = _FakeSnakesGateway();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            snakesGatewayProvider.overrideWithValue(gateway),
+            snakesCurrentUserIdProvider.overrideWithValue('user-a'),
+          ],
+          child: MaterialApp(
+            home: Builder(
+              builder:
+                  (context) => Scaffold(
+                    body: Center(
+                      child: ElevatedButton(
+                        onPressed:
+                            () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder:
+                                    (_) => const SnakesLobbyScreen(
+                                      relationshipId: 'relationship',
+                                    ),
+                              ),
+                            ),
+                        child: const Text('open'),
+                      ),
+                    ),
+                  ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Start a game'), findsOneWidget);
+      await tester.tap(find.text('Start a game'));
+      await tester.pumpAndSettle();
+
+      // Back on the host screen: the lobby popped itself.
+      expect(find.text('open'), findsOneWidget);
+      expect(find.text('Start a game'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('tapping your own invitation offers to cancel it', (
       tester,
     ) async {
-      final gateway = _FakeSnakesGateway();
+      // The lobby is still reachable -- by tapping the card you sent --
+      // and what is useful there is cancelling, not a button that says
+      // "back" when the system gesture already does that.
+      // _session already defaults to an invited session from user-a.
+      final gateway = _FakeSnakesGateway(
+        activeSession: _session(initiatorId: 'user-a'),
+      );
+
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
@@ -271,11 +332,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Start a game'));
-      await tester.pumpAndSettle();
 
-      expect(find.text('Waiting for your partner'), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      expect(find.text('Cancel invitation'), findsOneWidget);
+      expect(find.text('Back to chat'), findsNothing);
     });
   });
 

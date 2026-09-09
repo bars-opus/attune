@@ -1651,7 +1651,12 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         name: 'snakesLobby',
         builder: (context, state) {
           final relationshipId = state.pathParameters['relationshipId']!;
-          return SnakesLobbyScreen(relationshipId: relationshipId);
+          return SnakesLobbyScreen(
+            relationshipId: relationshipId,
+            // Set by a tap on an invitation the partner sent: the lobby
+            // accepts it and opens the board without stopping to ask.
+            acceptSessionId: state.uri.queryParameters['accept'],
+          );
         },
       ),
       GoRoute(

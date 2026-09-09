@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:attune/features/games/snakes_and_ladders/models/snakes_models.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_game_screen.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/state/snakes_provider.dart';
@@ -12,9 +13,18 @@ import 'package:go_router/go_router.dart';
 /// talking for a bit, and a lobby that explained itself at length would
 /// be asking for exactly the attention they came here to put down.
 class SnakesLobbyScreen extends ConsumerStatefulWidget {
-  const SnakesLobbyScreen({super.key, required this.relationshipId});
+  const SnakesLobbyScreen({
+    super.key,
+    required this.relationshipId,
+    this.acceptSessionId,
+  });
 
   final String relationshipId;
+
+  /// An invitation to accept on arrival, from a tap on the partner's chat
+  /// card. The lobby joins and opens the board without rendering itself,
+  /// so the tap goes straight from the conversation to the game.
+  final String? acceptSessionId;
 
   @override
   ConsumerState<SnakesLobbyScreen> createState() => _SnakesLobbyScreenState();
@@ -29,7 +39,14 @@ class _SnakesLobbyScreenState extends ConsumerState<SnakesLobbyScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final accept = widget.acceptSessionId;
+      if (accept != null) {
+        unawaited(_join(accept));
+      } else {
+        unawaited(_refresh());
+      }
+    });
   }
 
   Future<void> _refresh() async {
@@ -63,10 +80,15 @@ class _SnakesLobbyScreenState extends ConsumerState<SnakesLobbyScreen> {
       });
       return;
     }
-    // Creating sends an invitation; the invitee moves first. Keep the
-    // inviter in the lobby rather than opening a board they cannot use.
-    await _refresh();
-    if (mounted) setState(() => _busy = false);
+    // Straight back to the chat. The invitation IS the chat card -- the
+    // database trigger posts it the moment the session row lands -- so
+    // the conversation already shows the game by the time this pops.
+    //
+    // The lobby used to stay put and show "Waiting for your partner"
+    // over a "Back to chat" button, which is a screen whose only purpose
+    // is to be left. Tapping your own unaccepted card is where you go to
+    // cancel it (see the build method), so nothing is lost.
+    if (mounted) Navigator.of(context).maybePop();
   }
 
   /// Opens the board, and offers a rematch if they asked for one on the
@@ -96,12 +118,16 @@ class _SnakesLobbyScreenState extends ConsumerState<SnakesLobbyScreen> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (!ok) {
+      // Arriving by auto-accept means this screen was never meant to be
+      // seen -- but a failed join is exactly when it has something to
+      // say, so it stays and shows why rather than popping silently.
       setState(
         () =>
             _error =
                 ref.read(snakesProvider).errorMessage ??
                 'Could not join this game.',
       );
+      await _refresh();
       return;
     }
     await _openGame(sessionId);
@@ -119,7 +145,10 @@ class _SnakesLobbyScreenState extends ConsumerState<SnakesLobbyScreen> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (ok) {
-      await _refresh();
+      // Back to the chat: the invitation is gone, so is the reason to be
+      // on this screen. Refreshing in place would leave the player on a
+      // lobby offering to start the game they just cancelled.
+      if (mounted) Navigator.of(context).maybePop();
     } else {
       setState(
         () =>
@@ -176,6 +205,10 @@ class _SnakesLobbyScreenState extends ConsumerState<SnakesLobbyScreen> {
                       else if (existing.isActive)
                         _action('Carry on', () => _openGame(existing.sessionId))
                       else if (existing.isInitiator(userId))
+                        // Reached by tapping your own unaccepted card.
+                        // The useful thing here is cancelling, not a
+                        // button that says "back" -- the system back
+                        // gesture already does that.
                         Column(
                           children: [
                             Text(
@@ -186,8 +219,8 @@ class _SnakesLobbyScreenState extends ConsumerState<SnakesLobbyScreen> {
                             ),
                             const SizedBox(height: 12),
                             _secondaryAction(
-                              'Back to chat',
-                              () => Navigator.of(context).maybePop(),
+                              'Cancel invitation',
+                              () => _decline(existing.sessionId),
                             ),
                           ],
                         )

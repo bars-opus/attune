@@ -88,7 +88,14 @@ class GameMessageBubble extends ConsumerWidget {
   final bool viewerIsSender;
 
   /// Called with the game_type, so the caller owns routing.
-  final void Function(String gameType) onTap;
+  /// Given the game type, the session, and whether tapping should ACCEPT
+  /// rather than merely open.
+  ///
+  /// The picker cannot auto-accept -- choosing "Snakes" from the hub must
+  /// not accept an invitation the player has not seen -- so the decision
+  /// is made here, where the card knows whose invite it is and what state
+  /// it is in, and passed on rather than re-derived downstream.
+  final void Function(String gameType, String sessionId, bool autoAccept) onTap;
 
   /// Shown while the session is still loading -- the game's name, already
   /// on the message row. Without it the card flashes empty on every build.
@@ -122,11 +129,19 @@ class GameMessageBubble extends ConsumerWidget {
         state.status != 'completed' &&
         state.status != 'abandoned';
 
+    // Tapping an invitation SOMEBODY ELSE sent accepts it and drops you
+    // into the game -- one tap from "they invited me" to playing.
+    //
+    // Never for your own invitation: that tap goes to the lobby, where
+    // the useful action is cancelling. And never for an active game,
+    // which is already accepted.
+    final autoAccept = state?.status == 'invited' && !viewerIsSender;
+
     return Semantics(
       button: isOpenable,
       label: '$title. $label',
       child: InkWell(
-        onTap: isOpenable ? () => onTap(gameType) : null,
+        onTap: isOpenable ? () => onTap(gameType, sessionId, autoAccept) : null,
         borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
         child: Container(
           width: 240.w,
@@ -174,7 +189,10 @@ class GameMessageBubble extends ConsumerWidget {
             showTrailingArrow: isOpenable,
             titleFontSize: 14,
             subTitleFontSize: 12,
-            onTap: isOpenable ? () => onTap(gameType) : null,
+            onTap:
+                isOpenable
+                    ? () => onTap(gameType, sessionId, autoAccept)
+                    : null,
           ),
         ),
       ),
