@@ -1,3 +1,4 @@
+import 'package:attune/features/games/presentation/widgets/game_grid_tile.dart';
 import 'package:attune/features/games/presentation/widgets/continue_playing_card.dart';
 import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
@@ -127,7 +128,15 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'color battle');
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Paint Ball'), warnIfMissed: false);
+    // Tap the CARD, not the label. The grid tile now paints its own
+    // gradient with the text inside it, so the Text widget sits under the
+    // InkWell rather than being the tap target itself.
+    final tile = find.ancestor(
+      of: find.text('Paint Ball'),
+      matching: find.byType(GameGridTile),
+    );
+    expect(tile, findsOneWidget);
+    await tester.tap(tile, warnIfMissed: false);
     await tester.pump();
 
     expect(selected, ChatGameDestination.paintBall);

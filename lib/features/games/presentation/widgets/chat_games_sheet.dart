@@ -454,13 +454,12 @@ class _ChatGameCategorySection extends StatelessWidget {
           ),
         ),
         SizedBox(height: Spacing.sm.h),
-        // THREE across, not two. The tile is a square icon over two short
-        // lines, so it stays legible narrow -- and three fits every game
-        // in a category on one screen instead of scrolling past a
-        // two-column list of wide cards.
+        // TWO across. The card carries its own name and description now
+        // rather than captioning below, so it needs the width -- three
+        // across truncated every subtitle to a word and a half.
         LayoutBuilder(
           builder: (context, constraints) {
-            const columns = 3;
+            const columns = 2;
             final gap = Spacing.sm.w;
             final tileWidth =
                 (constraints.maxWidth - gap * (columns - 1)) / columns;
@@ -469,7 +468,7 @@ class _ChatGameCategorySection extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w),
               child: Wrap(
                 spacing: gap,
-                runSpacing: Spacing.xs.h,
+                runSpacing: gap,
                 children: [
                   for (final option in category.options)
                     SizedBox(

@@ -3,12 +3,14 @@ import 'package:attune/features/games/presentation/widgets/game_icon.dart';
 import 'package:attune/features/games/presentation/widgets/game_palette.dart';
 import 'package:flutter/material.dart';
 
-/// One game in the hub's grid.
+/// One game in the hub's grid: a coloured card with its icon and its
+/// words on it.
 ///
-/// The tile, the name, and one line of what it is. The colour comes from
-/// the game rather than the theme, so a player learns the shelf by hue
-/// before they learn it by name — which is the whole reason for
-/// GamePalette existing.
+/// THE CARD IS THE COLOUR, not just the icon. An icon-over-caption layout
+/// puts the game's identity in a 56px square and leaves the rest of the
+/// tile as background, so a grid of ten reads as a grid of grey with
+/// coloured dots. Filling the card means the shelf is legible by hue from
+/// arm's length, which is the whole point of giving each game one.
 class GameGridTile extends StatelessWidget {
   const GameGridTile({
     super.key,
@@ -34,54 +36,71 @@ class GameGridTile extends StatelessWidget {
       label: comingSoon ? '$title, coming soon' : '$title. $subtitle',
       child: Opacity(
         // Dimmed rather than hidden: the catalogue doubles as a roadmap,
-        // and a greyed row still tells you the game is planned.
-        opacity: comingSoon ? 0.45 : 1,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: comingSoon ? null : onTap,
-            borderRadius: BorderRadius.circular(18),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // A subtle wash of the game's colour behind the tile,
-                  // so the identity extends past the icon's edges without
-                  // needing a second gradient.
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: palette.glow.withValues(alpha: 0.07),
-                      borderRadius: BorderRadius.circular(22),
-                    ),
-                    child: GameIcon(gameType: gameType, size: 56),
+        // and a greyed card still says the game is planned.
+        opacity: comingSoon ? 0.5 : 1,
+        child: AspectRatio(
+          // Slightly taller than wide, as the reference is: a square card
+          // leaves the two text lines cramped against the icon.
+          aspectRatio: 0.86,
+          child: Material(
+            color: Colors.transparent,
+            child: Ink(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  // The card's own gradient, deeper than the icon tile's
+                  // so the icon still reads as a distinct object sitting
+                  // ON it rather than dissolving into it.
+                  colors: [
+                    Color.lerp(palette.start, Colors.black, 0.42)!,
+                    Color.lerp(palette.end, Colors.black, 0.55)!,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: InkWell(
+                onTap: comingSoon ? null : onTap,
+                borderRadius: BorderRadius.circular(20),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GameIcon(gameType: gameType, size: 54),
+                      const Spacer(),
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: GameHubTheme.primaryText,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          height: 1.15,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        comingSoon ? 'Coming soon' : subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          // Tinted toward the card's own hue rather than
+                          // flat grey, so the subtitle belongs to the
+                          // card instead of sitting on top of it.
+                          color: Color.lerp(
+                            palette.start,
+                            GameHubTheme.primaryText,
+                            0.55,
+                          )!.withValues(alpha: 0.85),
+                          fontSize: 12,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: GameHubTheme.primaryText,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600,
-                      height: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    comingSoon ? 'Coming soon' : subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: GameHubTheme.mutedText,
-                      fontSize: 11.5,
-                      height: 1.25,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
