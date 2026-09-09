@@ -30,5 +30,27 @@ cultural/clinical sound review as the chat clips.
 | `game_knockout.wav` | Paint Ball final life |
 | `game_penalty_reveal.wav` | losing partner sees their prompt |
 
+## Streak sounds
+
+Generated with `dart run tool/generate_streak_sounds.dart`. Capture gestures
+remain haptic-only while the microphone is live so app audio is never baked
+into the streak itself.
+
+| File | Moment |
+|------|--------|
+| `streak_capture_ready.wav` | a valid take has stopped and is ready to review |
+| `streak_send.wav` | the approved take enters the chat outbox |
+
 Keep them short (~150–300ms), warm, and consistent with the chat sounds; run
 them through the same cultural/clinical review before launch.
+
+## Voice-note sounds
+
+Generated with `dart run tool/generate_voice_note_sounds.dart`. Recording,
+locking, pausing and resuming remain haptic-only while the microphone is live;
+audio cues play only after the recorder has closed.
+
+| File | Moment |
+|------|--------|
+| `voice_send.wav` | a valid voice note has stopped and enters the chat outbox |
+| `voice_delete.wav` | the captured take has been discarded |

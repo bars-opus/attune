@@ -965,6 +965,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                 translatorEnabled.valueOrNull == true,
                             showVoiceMessage:
                                 voiceMessagesEnabled.valueOrNull == true,
+                            haptics: ref.read(hapticsProvider),
+                            recordingHaptics: ref.read(
+                              recordingHapticsProvider,
+                            ),
+                            soundService: ref.read(soundServiceProvider),
+                            soundsEnabled: ref.watch(
+                              messageSoundsEnabledProvider,
+                            ),
                             onVoiceMessageRecorded:
                                 voiceMessagesEnabled.valueOrNull == true
                                     ? (recording) {

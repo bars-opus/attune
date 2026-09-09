@@ -1,3 +1,4 @@
+import AVFAudio
 import Flutter
 import UIKit
 
@@ -14,6 +15,7 @@ import UIKit
   // always-on screenshot surveillance anywhere else in the app.
   private var screenshotChannel: FlutterMethodChannel?
   private var screenshotObserver: NSObjectProtocol?
+  private var recordingHapticsChannel: FlutterMethodChannel?
 
   override func application(
     _ application: UIApplication,
@@ -40,6 +42,42 @@ import UIKit
         result(nil)
       default:
         result(FlutterMethodNotImplemented)
+      }
+    }
+
+    let hapticsChannel = FlutterMethodChannel(
+      name: "attune/recording_haptics",
+      binaryMessenger: controller.binaryMessenger
+    )
+    recordingHapticsChannel = hapticsChannel
+    hapticsChannel.setMethodCallHandler { call, result in
+      guard call.method == "setEnabled" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let enabled = call.arguments as? Bool else {
+        result(FlutterError(
+          code: "INVALID_ARGUMENT",
+          message: "setEnabled expects a boolean",
+          details: nil
+        ))
+        return
+      }
+
+      guard #available(iOS 13.0, *) else {
+        result(nil)
+        return
+      }
+      do {
+        try AVAudioSession.sharedInstance()
+          .setAllowHapticsAndSystemSoundsDuringRecording(enabled)
+        result(nil)
+      } catch {
+        result(FlutterError(
+          code: "AUDIO_SESSION_ERROR",
+          message: "Could not configure recording haptics",
+          details: error.localizedDescription
+        ))
       }
     }
 

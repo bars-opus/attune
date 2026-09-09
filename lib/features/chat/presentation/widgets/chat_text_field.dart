@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:attune/core/services/media/voice_recorder_service.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/core/ui/motion/scale_pop.dart';
@@ -60,6 +61,9 @@ class ChatTextField extends StatefulWidget {
     this.sendButtonColor,
     this.onSendButtonColor,
     this.haptics = const SystemHaptics(),
+    this.recordingHaptics = const PlatformRecordingHaptics(),
+    this.soundService,
+    this.soundsEnabled = false,
   });
 
   final TextEditingController controller;
@@ -119,6 +123,16 @@ class ChatTextField extends StatefulWidget {
   /// Injected so tests can count the three transitions that must buzz:
   /// press-to-record, swipe-to-lock, and crossing into cancel.
   final Haptics haptics;
+
+  /// Keeps iOS haptics physically available while the microphone owns the
+  /// audio session. The recorder can reconfigure that session during start,
+  /// so this is reasserted after [VoiceRecorderService.start] completes.
+  final RecordingHaptics recordingHaptics;
+
+  /// Optional because this composer is reused outside chat. ChatScreen
+  /// supplies the shared sound service and the user's sound preference.
+  final SoundService? soundService;
+  final bool soundsEnabled;
 
   /// Optional external focus node — e.g. so a caller can programmatically
   /// focus the field (tapping "Reply" on a comment) without owning its
@@ -681,7 +695,8 @@ class _ChatTextFieldState extends State<ChatTextField>
             animation: _scrimController,
             data: _scrimData,
             micRect: micRect,
-            onCancel: () => unawaited(_cancelRecording()),
+            onCancel:
+                () => unawaited(_cancelRecording(fromDeleteControl: true)),
             onSend: () => unawaited(_finishRecording()),
             onTogglePause: () => unawaited(_togglePause()),
           ),
@@ -747,6 +762,7 @@ class _ChatTextFieldState extends State<ChatTextField>
     // a disposed notifier.
     final recorder = _recorder;
     if (recorder != null) _releaseRecorder(recorder);
+    unawaited(widget.recordingHaptics.disable());
     super.dispose();
   }
 
@@ -852,6 +868,14 @@ class _ChatTextFieldState extends State<ChatTextField>
     _startInFlight = true;
     _releasedDuringStart = false;
     _dragOffset = Offset.zero;
+    // This native opt-in must happen before the physical haptic. iOS
+    // suppresses haptics while an audio-input session is active by default;
+    // enabling it on every take also covers immediate repeat recordings.
+    await widget.recordingHaptics.enable();
+    if (!mounted) {
+      _startInFlight = false;
+      return;
+    }
     widget.haptics.light();
     // Raised BEFORE the permission and start awaits, not after: on a
     // first-ever recording the OS permission sheet can sit up for seconds,
@@ -863,6 +887,8 @@ class _ChatTextFieldState extends State<ChatTextField>
     final recorder = (widget.recorderFactory ?? VoiceRecorderService.new)();
     final granted = await recorder.requestPermission();
     if (!granted) {
+      recorder.dispose();
+      unawaited(widget.recordingHaptics.disable());
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -884,7 +910,12 @@ class _ChatTextFieldState extends State<ChatTextField>
 
     try {
       await recorder.start();
+      // The record plugin may replace AVAudioSession configuration while it
+      // starts. Reassert after that configuration has settled.
+      await widget.recordingHaptics.enable();
     } on VoiceRecordingException {
+      recorder.dispose();
+      unawaited(widget.recordingHaptics.disable());
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1028,8 +1059,11 @@ class _ChatTextFieldState extends State<ChatTextField>
 
   /// Discards the recording and its file. Shared by the slide-to-cancel
   /// gesture and the locked stage's delete button.
-  Future<void> _cancelRecording() async {
+  Future<void> _cancelRecording({bool fromDeleteControl = false}) async {
     final recorder = _recorder;
+    // A slide-to-cancel already buzzed as the finger crossed its threshold;
+    // the explicit locked delete button has no earlier destructive beat.
+    if (recorder != null && fromDeleteControl) widget.haptics.medium();
     _stopTicker();
     if (mounted) {
       setState(() {
@@ -1042,14 +1076,20 @@ class _ChatTextFieldState extends State<ChatTextField>
       });
     }
     if (recorder == null) return;
-    await recorder.cancel();
-    _releaseRecorder(recorder);
+    try {
+      await recorder.cancel();
+    } finally {
+      _releaseRecorder(recorder);
+      await widget.recordingHaptics.disable();
+    }
+    _playSound(AppSound.voiceDelete);
   }
 
   /// Stops and hands off the recording. Shared by releasing the hold and
   /// the locked stage's send button.
   Future<void> _finishRecording() async {
     final recorder = _recorder;
+    if (recorder != null) widget.haptics.medium();
     _stopTicker();
     if (mounted) {
       setState(() {
@@ -1064,11 +1104,12 @@ class _ChatTextFieldState extends State<ChatTextField>
 
     if (recorder == null) return;
 
+    VoiceRecording? completed;
     try {
       final recording = await recorder.stop();
       if (recording.durationMs >=
           VoiceRecorderService.minDuration.inMilliseconds) {
-        widget.onVoiceMessageRecorded?.call(recording);
+        completed = recording;
       }
       // A too-short recording is silently discarded per the design spec —
       // no callback, no error.
@@ -1084,6 +1125,14 @@ class _ChatTextFieldState extends State<ChatTextField>
       }
     } finally {
       _releaseRecorder(recorder);
+      await widget.recordingHaptics.disable();
+    }
+
+    if (completed != null) {
+      // The recorder is closed before any app audio is allowed to play, so
+      // this confirmation cannot become part of the voice note itself.
+      _playSound(AppSound.voiceSend);
+      widget.onVoiceMessageRecorded?.call(completed);
     }
   }
 
@@ -1105,6 +1154,16 @@ class _ChatTextFieldState extends State<ChatTextField>
       setState(() => _isPaused = recorder.isPaused);
       _syncScrim();
     }
+    if (recorder.isPaused) {
+      widget.haptics.medium();
+    } else {
+      widget.haptics.light();
+    }
+  }
+
+  void _playSound(AppSound sound) {
+    if (!widget.soundsEnabled) return;
+    widget.soundService?.play(sound);
   }
 
   /// Called by both stop paths — cancel and finish — and nowhere else,

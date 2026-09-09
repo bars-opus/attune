@@ -68,4 +68,20 @@ void main() {
         ).readAsStringSync();
     expect(src, contains('BoxFit.cover'));
   });
+
+  test('capture sounds respect preference and never mark the lock moment', () {
+    final src =
+        File(
+          'lib/features/chat/presentation/screens/streak_camera_screen.dart',
+        ).readAsStringSync();
+
+    expect(src, contains('messageSoundsEnabledProvider'));
+    expect(src, contains('AppSound.streakCaptureReady'));
+    expect(src, contains('AppSound.streakSend'));
+    expect(
+      src,
+      isNot(contains('AppSound.streakLock')),
+      reason: 'a speaker cue while recording would be captured in the clip',
+    );
+  });
 }

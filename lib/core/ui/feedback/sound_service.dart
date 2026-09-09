@@ -10,6 +10,10 @@ enum AppSound {
   // Chat
   chatSend,
   chatReceive,
+  streakCaptureReady, // recording stopped and a valid take is ready to review
+  streakSend, // captured streak entered the chat outbox
+  voiceSend, // a valid voice note stopped and entered the chat outbox
+  voiceDelete, // a captured voice note was deliberately discarded
   // Games — shared beats across This or That / Truth or Dare / 36 Questions.
   gameMatch, // both partners aligned — the celebratory beat
   gameCardFlip, // Truth or Dare card flip
@@ -72,6 +76,10 @@ class AudioPlayerSoundService implements SoundService {
   static const _assets = {
     AppSound.chatSend: 'sounds/chat_send.wav',
     AppSound.chatReceive: 'sounds/chat_receive.wav',
+    AppSound.streakCaptureReady: 'sounds/streak_capture_ready.wav',
+    AppSound.streakSend: 'sounds/streak_send.wav',
+    AppSound.voiceSend: 'sounds/voice_send.wav',
+    AppSound.voiceDelete: 'sounds/voice_delete.wav',
     AppSound.gameMatch: 'sounds/game_match.wav',
     AppSound.gameCardFlip: 'sounds/game_card_flip.wav',
     AppSound.gameTruth: 'sounds/game_truth.wav',

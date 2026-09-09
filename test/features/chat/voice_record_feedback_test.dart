@@ -1,5 +1,6 @@
 import 'package:attune/core/services/media/voice_recorder_service.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_lock_pill.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_mic_halo.dart';
@@ -51,7 +52,12 @@ class _FakeRecorder extends VoiceRecorderService {
   void dispose() {}
 }
 
-Widget _harness(_FakeRecorder recorder, Haptics haptics) {
+Widget _harness(
+  _FakeRecorder recorder,
+  Haptics haptics, {
+  RecordingHaptics? recordingHaptics,
+  SoundService? sounds,
+}) {
   return withScreenUtil(
     MaterialApp(
       home: Scaffold(
@@ -62,6 +68,9 @@ Widget _harness(_FakeRecorder recorder, Haptics haptics) {
           showGames: true,
           recorderFactory: () => recorder,
           haptics: haptics,
+          recordingHaptics: recordingHaptics ?? FakeRecordingHaptics(),
+          soundService: sounds,
+          soundsEnabled: sounds != null,
           onVoiceMessageRecorded: (_) {},
         ),
       ),
@@ -71,6 +80,127 @@ Widget _harness(_FakeRecorder recorder, Haptics haptics) {
 
 void main() {
   group('haptics', () {
+    testWidgets(
+      'locked controls give distinct haptics and post-capture sounds',
+      (tester) async {
+        final haptics = FakeHaptics();
+        final recordingHaptics = FakeRecordingHaptics();
+        final sounds = FakeSoundService();
+        final recorder = _FakeRecorder();
+        await tester.pumpWidget(
+          _harness(
+            recorder,
+            haptics,
+            recordingHaptics: recordingHaptics,
+            sounds: sounds,
+          ),
+        );
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+        );
+        await tester.pump(const Duration(milliseconds: 60));
+        await gesture.moveBy(const Offset(0, -80));
+        await tester.pump(const Duration(milliseconds: 16));
+        await gesture.up();
+        await tester.pump(const Duration(milliseconds: 400));
+
+        expect(recordingHaptics.enableCount, greaterThanOrEqualTo(2));
+        expect(haptics.lightCount, 1, reason: 'start');
+        expect(haptics.mediumCount, 1, reason: 'lock');
+
+        await tester.tap(find.byKey(const ValueKey('voice-scrim-pause')));
+        await tester.pump();
+        expect(haptics.mediumCount, 2, reason: 'pause');
+
+        await tester.tap(find.byKey(const ValueKey('voice-scrim-pause')));
+        await tester.pump();
+        expect(haptics.lightCount, 2, reason: 'continue');
+
+        await tester.tap(find.byKey(const ValueKey('voice-scrim-send')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(haptics.mediumCount, 3, reason: 'stop and send');
+        expect(sounds.played, [AppSound.voiceSend]);
+        expect(recordingHaptics.disableCount, 1);
+      },
+    );
+
+    testWidgets('locked delete has destructive feedback after capture ends', (
+      tester,
+    ) async {
+      final haptics = FakeHaptics();
+      final recordingHaptics = FakeRecordingHaptics();
+      final sounds = FakeSoundService();
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(
+        _harness(
+          recorder,
+          haptics,
+          recordingHaptics: recordingHaptics,
+          sounds: sounds,
+        ),
+      );
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await gesture.moveBy(const Offset(0, -80));
+      await tester.pump(const Duration(milliseconds: 16));
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      await tester.tap(find.byKey(const ValueKey('voice-scrim-delete')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(recorder.cancelled, isTrue);
+      expect(haptics.mediumCount, 2, reason: 'lock, then delete');
+      expect(sounds.played, [AppSound.voiceDelete]);
+      expect(recordingHaptics.disableCount, 1);
+    });
+
+    testWidgets('feedback is re-armed for an immediate second voice note', (
+      tester,
+    ) async {
+      final haptics = FakeHaptics();
+      final recordingHaptics = FakeRecordingHaptics();
+      final sounds = FakeSoundService();
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(
+        _harness(
+          recorder,
+          haptics,
+          recordingHaptics: recordingHaptics,
+          sounds: sounds,
+        ),
+      );
+
+      Future<void> recordOnce() async {
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+        );
+        await tester.pump(const Duration(milliseconds: 60));
+        await gesture.up();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+      }
+
+      await recordOnce();
+      await recordOnce();
+
+      expect(haptics.lightCount, 2, reason: 'each press starts with a haptic');
+      expect(
+        haptics.mediumCount,
+        2,
+        reason: 'each release stops with a haptic',
+      );
+      expect(recordingHaptics.enableCount, 4, reason: 'before and after start');
+      expect(recordingHaptics.disableCount, 2);
+      expect(sounds.played, [AppSound.voiceSend, AppSound.voiceSend]);
+    });
+
     testWidgets('fire on press-to-record, on lock, and on cancel', (
       tester,
     ) async {

@@ -18,6 +18,8 @@ import 'package:attune/core/widgets/animated_rolling_counter.dart';
 import 'package:video_player/video_player.dart';
 import 'package:attune/features/chat/presentation/widgets/streak_lock_hint.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
+import 'package:attune/features/settings/data/sound_preference.dart';
 
 /// Press-and-hold streak capture, auto-splitting into 60-second segments.
 ///
@@ -35,6 +37,7 @@ class StreakCameraScreen extends ConsumerStatefulWidget {
 }
 
 class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
+  late final RecordingHaptics _recordingHaptics;
   CameraController? _controller;
   List<CameraDescription> _cameras = const [];
   int _cameraIndex = 0;
@@ -68,9 +71,19 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
 
   static const Duration _tick = Duration(milliseconds: 100);
 
+  void _playSound(AppSound sound) {
+    if (!ref.read(messageSoundsEnabledProvider)) return;
+    ref.read(soundServiceProvider).play(sound);
+  }
+
   @override
   void initState() {
     super.initState();
+    _recordingHaptics = ref.read(recordingHapticsProvider);
+    // iOS suppresses haptics by default while audio input is active. Enable
+    // before the camera owns the audio session so lock, stop and a quick
+    // second take all remain tactile on a physical device.
+    unawaited(_recordingHaptics.enable());
     unawaited(_initCamera());
   }
 
@@ -154,7 +167,15 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     _releasedDuringStart = false;
 
     try {
+      // Camera plugins may reconfigure AVAudioSession between takes. Refresh
+      // the permission immediately before each recording rather than relying
+      // only on the screen-entry call.
+      await _recordingHaptics.enable();
       await controller.startVideoRecording();
+      // startVideoRecording may itself reconfigure AVAudioSession. Reassert
+      // after that transition so haptics are permitted by the session that
+      // is actually consuming microphone input.
+      await _recordingHaptics.enable();
     } on CameraException {
       _startInFlight = false;
       if (!mounted) return;
@@ -224,6 +245,9 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
       _ticker?.cancel();
       if (mounted) setState(() => _isRecording = false);
       ref.read(hapticsProvider).medium();
+      // The camera has stopped before this cue plays, so it cannot leak
+      // into the clip the user is about to review.
+      _playSound(AppSound.streakCaptureReady);
       unawaited(_openReviewGuarded());
       return;
     }
@@ -276,6 +300,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     // A partial final segment is kept: it is what the user recorded, and
     // dropping it would make the last thing they said disappear.
     _segments.add(StreakSegment(path: file.path, duration: held));
+    _playSound(AppSound.streakCaptureReady);
     unawaited(_openReviewGuarded());
   }
 
@@ -389,6 +414,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
             viewsRemaining: streakViewBudget(allowReplays: allowReplays),
           ),
     );
+    _playSound(AppSound.streakSend);
 
     // The staged file now belongs to the outbox, so clear the local
     // reference WITHOUT deleting it — _attemptSend still needs to read it.
@@ -491,6 +517,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     _ticker?.cancel();
     _previewController?.dispose();
     _controller?.dispose();
+    unawaited(_recordingHaptics.disable());
     super.dispose();
   }
 

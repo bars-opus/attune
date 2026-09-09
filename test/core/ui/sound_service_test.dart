@@ -1,5 +1,4 @@
 import 'package:attune/core/ui/feedback/sound_service.dart';
-import 'package:audioplayers/audioplayers.dart'; // ensure resolves
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -52,5 +51,19 @@ void main() {
       AppSound.gameKnockout,
       AppSound.gamePenaltyReveal,
     ]);
+  });
+
+  test('FakeSoundService records streak capture sounds', () {
+    final s = FakeSoundService();
+    s.play(AppSound.streakCaptureReady);
+    s.play(AppSound.streakSend);
+    expect(s.played, [AppSound.streakCaptureReady, AppSound.streakSend]);
+  });
+
+  test('FakeSoundService records voice-note sounds', () {
+    final s = FakeSoundService();
+    s.play(AppSound.voiceSend);
+    s.play(AppSound.voiceDelete);
+    expect(s.played, [AppSound.voiceSend, AppSound.voiceDelete]);
   });
 }

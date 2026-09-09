@@ -230,10 +230,25 @@ void main() {
 
       // Silence reads as a dead button. A stuck flag downstream should
       // cost the recording, never the feedback that the tap landed.
-      final order =
-          button.indexOf('HapticFeedback.lightImpact()') <
-          button.indexOf('onPressStart()');
-      expect(order, isTrue, reason: 'haptic fires before the start attempt');
+      final haptic = button.indexOf('haptics.light()');
+      final start = button.indexOf('onPressStart()');
+      expect(haptic, greaterThanOrEqualTo(0));
+      expect(start, greaterThan(haptic), reason: 'haptic fires first');
+    });
+
+    test('iOS recording haptics span the camera screen and every take', () {
+      expect(src, contains('recordingHapticsProvider'));
+      expect(src, contains('_recordingHaptics.enable()'));
+      expect(
+        RegExp(
+          r'_recordingHaptics\.enable\(\)[\s\S]{0,200}'
+          r'startVideoRecording\(\)[\s\S]{0,300}'
+          r'_recordingHaptics\.enable\(\)',
+        ).hasMatch(src),
+        isTrue,
+        reason: 'the iOS flag must bracket the camera audio-session change',
+      );
+      expect(src, contains('_recordingHaptics.disable()'));
     });
   });
 }
