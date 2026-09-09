@@ -164,16 +164,24 @@ around a different model.
 A scene is an explicit state machine:
 
 ```
-state  →  2 or 3 choices
-choice →  { from_star, to_star, reveal_layers, next_state }
+state  →  { common_layers, 2 or 3 choices }
+choice →  { id, from_star, to_star, variant_layers, next_state }
 ```
 
-- A **state** is a point in the story of the pattern
+- A **state** is a point in the story of the pattern. Its
+  `common_layers` reveal once on entry, whichever route arrived there
 - Each state offers exactly the choices authored for it — no more
 - A **choice** names the line drawn (`from_star` → `to_star`), the
-  **layers** of the pattern it reveals, and the state it leads to
+  mutually exclusive **variant layers** it reveals, and the state it
+  leads to
 - A **terminal state** has no choices, and reaching one completes the
   session
+
+The scene also names an **origin star**. It is visible before the first
+turn and seeds the reached-star dataflow in §4.2b. Entering the origin
+state reveals its common layers; each later move reveals its choice's
+variant layers and then the destination state's common layers, exactly
+once and in that order.
 
 **A playthrough is complete when it reaches a terminal state**, not when
 it has reached every star. That single change is what makes divergence
@@ -209,15 +217,28 @@ each checkable in a single pass:
 1. **Every variant layer has exactly one owning choice, scene-wide.** No
    two choices anywhere reveal the same variant layer.
 2. **Every choice reveals at least two variant layers.**
-3. **Material that appears on every route is not a variant layer at
-   all** — it lives in a state's `common_layers`, revealed on entry
-   however you arrived, and is excluded from divergence entirely.
+3. **Material revealed on entry regardless of which route reached a
+   state is not a variant layer at all** — it lives in that state's
+   `common_layers` and is excluded from the local divergence bound.
 
-Those three give the global property for free. Two routes that diverge at
+Those three give the global property locally. Two routes that diverge at
 any choice differ by that choice's layers *and* its sibling's, and since
-no other choice can reveal them, they survive to the end. Minimum
-symmetric difference is therefore at least `2 × 2 = 4`, above the floor
-of 3, **without looking at a single outcome**.
+no other choice can reveal them, they survive to the end. The validator
+computes:
+
+```
+guaranteed_divergence = min(
+  cardinality(choice_a.variant_layers)
+  + cardinality(choice_b.variant_layers)
+) over every sibling pair
+```
+
+It requires `min_divergence >= 3` **and**
+`guaranteed_divergence >= min_divergence`. Two layers per choice gives a
+default lower bound of four, but a scene declaring six must actually
+provide sibling bundles whose combined cardinality is at least six. The
+second review established the bound of four but did not connect a
+larger configured `min_divergence` to that bound.
 
 Verified rather than argued: predicted 4, measured 4 by full enumeration
 on the same scene.
@@ -299,14 +320,23 @@ choices" example is only a valid scene if this is checked, and it was
 not.
 
 **So every choice's `from_star` must lie in the intersection of stars
-reached along all routes into its state.** Computed by forward dataflow —
-propagate the reached-star intersection through the state machine to a
-fixed point — which is polynomial and needs no enumeration, the same
-discipline as §4.2.
+reached along all routes into its state.** Seed the origin state's set
+with the scene's `origin_star`, then process the acyclic state machine in
+topological order: each successor receives its predecessor's guaranteed
+set plus the chosen `to_star`, and a reconverged state intersects all
+incoming sets. This is polynomial and needs no outcome enumeration.
 
 Equivalently an author may give each state a **canonical anchor**: a star
 every incoming choice is guaranteed to have drawn. The validator accepts
 either, because both produce the same guarantee.
+
+The same forward pass propagates the **union** of possibly reached stars.
+Every sibling choice must name a distinct `to_star`; `to_star` must
+differ from `from_star` and be absent from that state's possibly-reached
+union. Choices are selected by tapping destination stars: duplicate
+destinations would create two server actions behind one tap target, while
+an already reached destination would make a turn look as though nothing
+grew.
 
 ### 4.3 No objective optimisation — the honest version of "no skill"
 
@@ -316,8 +346,8 @@ aesthetic influence, and without further rules one player could
 systematically get the consequential turns.
 
 The defensible claim is **no objective optimisation**: no choice is
-better, and none is worth more. Three invariants make it true, all
-validator-enforced:
+better, and none is worth more. Three enforced gates make it credible,
+split between PostgreSQL and authoring/CI as §4.3a records:
 
 1. **Equal, EVEN depth.** Every route has the same number of choices,
    *and* that number is even.
@@ -335,6 +365,12 @@ validator-enforced:
    ```
 
    So the depth is even and within 12–20, giving 6–10 decisions each.
+
+   **Every state also belongs to exactly one depth.** During forward
+   traversal, reaching an already-seen state at a different move count
+   rejects the scene. Reconvergence is allowed only within a layer; this
+   keeps turn ownership, depth-wide arity and authoring previews
+   unambiguous.
 2. **Comparable visual weight per turn.** No choice may reveal
    dramatically more of the pattern than its siblings, and the budget is
    balanced across odd and even turns so neither slot systematically gets
@@ -368,15 +404,30 @@ numbers.
 | ≥2 variant layers per choice | **Postgres** | Cardinality |
 | Equal depth, arity, non-narrowing | **Postgres** | Forward dataflow |
 | `from_star` connectivity | **Postgres** | Forward dataflow (§4.2b) |
+| Distinct, newly reached destinations | **Postgres** | Forward reached-star union (§4.2b) |
 | Reachability, termination, 2–3 choices | **Postgres** | Traversal over states |
 | Format bounds and identifier rules | **Postgres** | §4.4a |
-| **Comparable visual weight** | **Authoring/CI** | Renders every terminal outcome, measures illuminated area and spatial distribution |
-| **Perceptual difference** | **A person** | Contact-sheet review of rendered outcomes |
+| **Comparable visual weight** | **Authoring/CI** | Renders every sibling bundle, measures illuminated area and spatial distribution, and compares odd/even-turn budgets |
+| **Perceptual difference** | **A person** | Contact-sheet review of a bounded deterministic outcome sample |
 
 The bottom two rows are **not** database guarantees and are not claimed
 as such anywhere. A scene passing every Postgres rule can still look
 identical whichever way it is played; only a render and a human eye
 catch that, and pretending otherwise is how the first draft went wrong.
+
+CI also does **not** enumerate every finished picture. Reconvergence
+makes authored states linear, but 20 ternary turns still imply billions
+of terminal outcomes. The bounded visual gate renders:
+
+- every sibling bundle in isolation and over one deterministic canonical
+  prefix into its state (at most 160 choices)
+- odd-turn and even-turn aggregate ink/area budgets
+- a deterministic sample of at most 64 complete routes, including the
+  all-first/all-last routes and single-choice perturbations where they fit
+
+The contact sheet uses that same bounded corpus. This is strong evidence,
+not a proof over every possible image; perceptual acceptance remains a
+human product judgement.
 
 ### 4.4 What else the validator proves
 
@@ -388,11 +439,14 @@ A scene is refused storage unless:
 3. **Every non-terminal state offers 2 or 3 choices.** A state with one
    choice is not a decision, and rather than asking for a ceremonial tap
    the authoring format forbids it
-4. **Equal depth, comparable weight, non-narrowing** (§4.3)
-5. **Mutually exclusive sibling bundles and minimum divergence** (§4.2),
-   and **at least two layers per choice** (§4.2a) — with reconvergence,
-   single-layer choices put the closest outcomes below the floor
-6. Stars referenced by choices exist and sit inside the field
+4. **Equal even depth, one depth per state, and depth-wide arity** (§4.3)
+5. **Unique variant-layer ownership, the locally proved configured
+   divergence, and at least two variant layers per choice** (§4.2)
+6. Every layer id has exactly one owner: either one state's common bundle
+   or one choice's variant bundle; the two namespaces cannot overlap
+7. Stars referenced by choices exist and sit inside the field; the
+   origin star exists; and sibling destinations are distinct, non-zero
+   length and not previously reachable on any incoming route
 
 **Checked by memoised traversal over reachable STATES, not over
 playthroughs.** The first draft claimed exhaustive traversal was safe
@@ -400,12 +454,15 @@ playthroughs.** The first draft claimed exhaustive traversal was safe
 which was asserted rather than computed. It is not small:
 
 ```
-16 nodes: up to 20,922,789,888,000 orderings
-16 states: up to 65,536 reachable state sets
+free graph, 16 nodes: up to 20,922,789,888,000 orderings
+free graph, 16 nodes: up to 65,536 reached-node subsets
+explicit machine:     at most 64 authored states
 ```
 
-Orderings are intractable; states are trivial. The layered model is what
-makes rule 4 checkable at all.
+Free-graph orderings are intractable; the bounded explicit state machine
+is trivial to traverse. Outcome sets are still exponential and are never
+materialised — §4.2's local ownership proof is what makes divergence
+checkable.
 
 **A scene that fails validation is not stored.** It fails at insert, in
 front of whoever authored it — never in front of a couple.
@@ -421,19 +478,34 @@ the format's maximum" as though one existed.
 | Choices per state | 2 or 3 (non-terminal), 0 (terminal) |
 | Choices per scene | ≤ 160 |
 | Stars | ≤ 64 |
-| Variant layers | ≤ 512 |
+| Layer ids, common + variant | ≤ 512 |
 | Depth | even, 12–20 |
 | `states` blob | ≤ 64 KB |
 | Identifier length | ≤ 32 characters, `[a-z0-9_]` |
+| Semantic key length | ≤ 64 characters, `[a-z0-9_.]` |
+| Bundle hash | SHA-256, exactly 64 lowercase hexadecimal characters |
+| Supported bundles per invitation | ≤ 16 and ≤ 4 KB total |
 
 And two identity rules the moves table depends on:
 
 - **Choice ids are unique scene-wide**, not per state. `constellation_moves`
   stores only `choice_id`, so a duplicate would make history ambiguous.
-- **A layer may not be revealed twice along any route.** Reconvergence
-  makes this possible to author accidentally, and a layer revealed twice
-  would break the divergence arithmetic in §4.2, which assumes each
-  contributes once.
+- **Every layer id is owned exactly once scene-wide**, either by one
+  state's `common_layers` or one choice's `variant_layers`. This stronger
+  local rule prevents a layer being revealed twice without requiring
+  path enumeration and preserves §4.2's divergence proof.
+
+The validator also checks JSON types rather than relying on casts: state,
+choice and semantic ids match their bounds; layer/star ids are integral
+and in range; coordinates are finite and within `[0,1]`; arrays contain
+no duplicate elements; every `next` names a state; and the origin state
+exists. Malformed JSON fails with the scene-validation error, not a raw
+cast or missing-key exception.
+
+Authoring/CI additionally checks that sibling destination centres remain
+at least one 48dp target diameter apart on the smallest supported field.
+Nearest-target hit testing is not permission to draw visually ambiguous
+choices on top of each other.
 
 ### 4.5 Authoring cost, flagged as a risk
 
@@ -450,25 +522,42 @@ more as a batch to measure real throughput before committing to twenty.
 
 ### 4.6 The library, and repeats
 
-**A scene is never repeated until the library is exhausted**, tracked the
-way Word Hunt tracks recently-seen words.
+**A scene is never repeated until the compatible library is exhausted.**
+This is a cycle/bag, not Word Hunt's simpler fallback pool:
+
+- pinning a scene on acceptance consumes it for that relationship's
+  current cycle, even if the activity is later ended or expires
+- an invitation that is never accepted consumes nothing, because no
+  scene was pinned or shown
+- acceptance chooses among compatible, active scenes not yet consumed in
+  the current cycle
+- only when that set is empty does the server increment the cycle and
+  begin a fresh bag; when at least two compatible scenes exist, the first
+  scene in the new cycle cannot be the immediately previous scene
+- selection and history insertion happen under the same relationship-
+  scoped lock, so concurrent accepts cannot consume the same slot; the
+  chosen scene row is then locked and its compatibility and
+  `retired_at IS NULL` status are re-checked before it is pinned, so an
+  administrative retirement cannot race acceptance
 
 The library is therefore the content budget: twenty scenes is twenty
 sessions before anything returns. That is the trade accepted in exchange
 for abstract art being cheap enough to author that a real library is
 achievable.
 
-When every scene has been played the exclusion falls back to the full
-list rather than failing — a couple who play the library out must never
-be told there is no game.
+The cycle is evaluated against the scene versions both clients can render
+at acceptance time (§8.1). Adding a newly compatible scene makes it
+eligible in the current cycle before that cycle resets. A couple who
+plays the compatible library out begins another cycle rather than being
+told there is no game.
 
 ## 5. Turn structure
 
 ### 5.1 One star, then it is their turn
 
-No extra turns, no chains, no combinations. One tap moves the game
-forward by exactly one node and hands it over. The simplest turn model in
-the Arcade, deliberately.
+No extra turns, no chains, no combinations. One tap takes exactly one
+choice, enters exactly one state and hands it over. The simplest turn
+model in the Arcade, deliberately.
 
 ### 5.2 Asynchronous, and frozen between turns
 
@@ -666,12 +755,15 @@ CREATE TABLE IF NOT EXISTS public.constellation_scenes (
   -- The state machine (§4.1). Every non-terminal state offers 2 or 3
   -- choices; a terminal state offers none and completes the session.
   --
-  --   {"S0": [{"id": "c1", "from": 0, "to": 3,
-  --            "layers": [1, 2], "next": "S1"},
-  --           {"id": "c2", "from": 0, "to": 4,
-  --            "layers": [7, 8], "next": "S2"}],
-  --    "S1": [...],
-  --    "S3": []}
+  --   {"s0": {"common_layers": [100], "choices": [
+  --      {"id": "c1", "from": 0, "to": 3,
+  --       "variant_layers": [1, 2], "next": "s1",
+  --       "semantic_key": "scene_1_c1"},
+  --      {"id": "c2", "from": 0, "to": 4,
+  --       "variant_layers": [7, 8], "next": "s2",
+  --       "semantic_key": "scene_1_c2"}]},
+  --    "s1": {"common_layers": [101], "choices": [...]},
+  --    "s3": {"common_layers": [110], "choices": []}}
   --
   -- Sibling choices reveal MUTUALLY EXCLUSIVE layer bundles, which is
   -- what makes two routes produce different material rather than the
@@ -679,11 +771,12 @@ CREATE TABLE IF NOT EXISTS public.constellation_scenes (
   states jsonb NOT NULL,
 
   origin_state text NOT NULL,
+  origin_star smallint NOT NULL,
 
   -- §4.2. Minimum symmetric difference in revealed layers between any
-  -- two terminal outcomes. Floor of 3, though the local rules in §4.2
-  -- guarantee 4 without measuring it.
-  min_divergence smallint NOT NULL,
+  -- two terminal outcomes. The validator computes the local sibling-pair
+  -- lower bound from §4.2 and requires it to meet this declaration.
+  min_divergence smallint NOT NULL CHECK (min_divergence >= 3),
 
   -- THE ARTWORK'S SOURCE OF TRUTH. Layer ids alone are not enough: a
   -- scene inserted today can be selected for an app build that has never
@@ -691,17 +784,18 @@ CREATE TABLE IF NOT EXISTS public.constellation_scenes (
   -- builds. That renders missing artwork for one of them, or -- worse --
   -- different pictures from the same history.
   --
-  -- Layers ship BUNDLED with the client as SVG groups, not delivered by
-  -- the server: they are static art, and a game whose payoff is a
-  -- picture should not have that picture arrive over a flaky connection
-  -- mid-session.
+  -- Layers ship BUNDLED with the client, not delivered by the server:
+  -- they are static art, and a game whose payoff is a picture should not
+  -- have that picture arrive over a flaky connection mid-session.
   --
   -- So the scene pins the asset bundle it was authored against and the
   -- minimum client build that contains it. Scene selection (§9.6) offers
   -- only scenes both partners' builds can render.
-  asset_bundle_id text NOT NULL,
-  asset_bundle_hash text NOT NULL,
-  min_client_build int NOT NULL,
+  asset_bundle_id text NOT NULL
+    CHECK (asset_bundle_id ~ '^[a-z0-9_]{1,32}$'),
+  asset_bundle_hash text NOT NULL
+    CHECK (asset_bundle_hash ~ '^[0-9a-f]{64}$'),
+  min_client_build int NOT NULL CHECK (min_client_build > 0),
 
   created_at timestamptz NOT NULL DEFAULT now(),
   retired_at timestamptz
@@ -711,11 +805,82 @@ CREATE TABLE IF NOT EXISTS public.constellation_scenes (
 **The SQL manifest and the Flutter asset manifest are generated from one
 authoring source**, so a layer cannot exist in one and not the other. Two
 hand-maintained lists of the same 512 ids will drift, and the failure is
-invisible until a couple opens a scene with a hole in it.
+invisible until a couple opens a scene with a hole in it. The same bundle
+contains the localised semantic strings named by each choice's
+`semantic_key`; server-authored English is not the accessibility plan.
+
+The authoring source may be one SVG with named groups, but that is **not
+the runtime format**. The installed `flutter_svg`/`vector_graphics` path
+does not expose a supported API for selectively toggling arbitrary SVG
+groups after compilation. The authoring pipeline therefore validates and
+splits named groups into independently addressable, precompiled `.vec`
+layer assets plus the generated manifest. Flutter never parses an SVG
+string or searches XML by id during play.
+
+At runtime, previously revealed layers are composited behind a
+`RepaintBoundary` and cached; only the newly entered common/variant layers
+and the current line animate. The maximum-depth, maximum-layer scene gets
+a frame-time and memory benchmark on the oldest supported phone. The
+game must not rebuild and repaint dozens of independent vector widgets on
+every pulse tick.
 
 Immutable once played on, exactly as `snakes_boards` is: retuning a scene
 would rewrite the history of every pattern already made on it. Tuning
 means a new version; retirement metadata may still change.
+
+Bundled assets need an explicit asynchronous compatibility handshake;
+the server cannot infer what an absent partner's current device can
+render. `create_constellation_session` records the initiator's bounded
+list of supported `(bundle_id, bundle_hash)` pairs and client build in an
+RPC-only invitation-capability row. Acceptance supplies the invitee's
+list and build, and **only then** pins a scene supported by their
+intersection. No intersection returns `CONTENT_UPDATE_REQUIRED` and
+leaves the invitation pending rather than creating a broken board.
+
+A later open from an older device is also fail-closed: the state response
+names the pinned bundle and hash, and a client that lacks it shows the
+update-required state without attempting a partial render. Capability
+claims are bounded and validated but are not a security boundary; lying
+can only make that caller unable to draw the game.
+
+Asset bundles are immutable and client support is **additive**. A later
+release may add a bundle but may not remove one while any retained scene
+state references it; otherwise a reinstall could make an old completed
+or partially ended pattern permanently unviewable. CI checks the bundle
+hashes referenced by retained scene manifests against the Flutter asset
+manifest before release. This retention cost belongs in the content
+budget.
+
+```sql
+CREATE TABLE public.constellation_invite_capabilities (
+  session_id uuid PRIMARY KEY
+    REFERENCES public.game_sessions(id) ON DELETE CASCADE,
+  initiator_build int NOT NULL,
+  initiator_bundles jsonb NOT NULL
+);
+
+CREATE TABLE public.constellation_scene_history (
+  relationship_id uuid NOT NULL
+    REFERENCES public.relationships(id) ON DELETE CASCADE,
+  cycle_number int NOT NULL CHECK (cycle_number > 0),
+  scene_version text NOT NULL
+    REFERENCES public.constellation_scenes(version),
+  -- Nullable so ordinary session-retention cleanup cannot erase the bag
+  -- history and make an old scene look unseen. Relationship deletion
+  -- still removes the history through relationship_id.
+  session_id uuid UNIQUE
+    REFERENCES public.game_sessions(id) ON DELETE SET NULL,
+  selected_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (relationship_id, cycle_number, scene_version)
+);
+```
+
+`initiator_bundles` is at most 16 entries and 4 KB; ids and hashes use
+the identifier/hash bounds in §4.4a. Capability rows and scene history
+are RPC-only. Scene-history rows are durable records of consumption and
+are not deleted when a session later ends. Acceptance supplies the
+post-lock `v_now` explicitly for `selected_at`; it does not rely on the
+transaction-start `DEFAULT now()` after waiting for the selection lock.
 
 ### 8.2 Session state
 
@@ -730,18 +895,21 @@ CREATE TABLE IF NOT EXISTS public.constellation_state (
   -- Where in the state machine this session stands.
   current_state text NOT NULL,
 
-  -- The layers revealed so far, accumulated from the choices made.
-  -- Slots, not user ids: a finished pattern should not carry an identity
-  -- that can be deleted out from under it (the Dots and Boxes lesson).
+  -- Canonically sorted layer ids revealed so far: origin common layers,
+  -- then the union of each choice's variant layers and entered state's
+  -- common layers. Attribution lives in slot-based move rows, not here.
   revealed_layers smallint[] NOT NULL,
 
-  moves_played smallint NOT NULL DEFAULT 0,
+  moves_played smallint NOT NULL DEFAULT 0
+    CHECK (moves_played BETWEEN 0 AND 20),
 
-  -- Both completion RPCs write this and the second draft gave it
+  -- Terminal operations write this and the second draft gave it
   -- nowhere to live -- game_sessions has no such column, verified
   -- against the live schema.
   completion_reason text
-    CHECK (completion_reason IN ('pattern_complete', 'ended')),
+    CHECK (completion_reason IN (
+      'pattern_complete', 'ended', 'expired', 'relationship_ended'
+    )),
 
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -752,6 +920,25 @@ whichever acquires it first wins. A session already `pattern_complete`
 cannot become `ended` — the pattern was finished, and recording it as
 abandoned would be a lie about a thing that happened. A session already
 `ended` refuses further choices with `GAME_OVER`.
+
+State and moves deliberately duplicate a projection for fast reads, so a
+**deferred integrity trigger** checks them at transaction end. Folding the
+at-most-20 moves through the pinned scene must reproduce
+`current_state`, `revealed_layers`, `moves_played`, turn parity and the
+session's `current_round`. It also enforces the terminal matrix:
+
+- active session → non-terminal current state, null `completion_reason`
+- `game_sessions.status = 'completed'` → terminal current state,
+  `pattern_complete`, null `winner_user_id`
+- `game_sessions.status = 'abandoned'` → reason is `ended`, `expired`
+  or `relationship_ended`, any otherwise valid partial state, null
+  `winner_user_id`; the shared coarse reason is `user_initiated` for
+  `ended` and `relationship_ended`, or `inactivity` for `expired`, and
+  the matching abandonment timestamp is set
+
+This is defence against a future `SECURITY DEFINER` function drifting
+the cached state from append-only history; RPC-only grants alone do not
+make two sources of truth agree.
 
 ### 8.3 Moves
 
@@ -804,13 +991,48 @@ CREATE TABLE IF NOT EXISTS public.constellation_replay_cursors (
 
 A caller receives their own cursor and never their partner's.
 
+### 8.4a Request throttle
+
+There is no brute-forceable secret, but a buggy client can still emit a
+burst of distinct invalid or out-of-turn choices and repeatedly acquire
+the session lock. A small RPC-only limiter contains that failure:
+
+```sql
+CREATE TABLE public.constellation_action_limits (
+  session_id uuid NOT NULL
+    REFERENCES public.game_sessions(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  last_attempt_at timestamptz NOT NULL,
+  PRIMARY KEY (session_id, user_id)
+);
+```
+
+After idempotency recovery, `take_choice` locks the caller's limiter row
+in the global session → state → auxiliary-row order. A fresh
+non-idempotent request within 300 ms of the prior admitted request returns
+`RATE_LIMITED`; accepted and rejected attempts both advance the limiter.
+An exact idempotent retry bypasses it, so transport recovery cannot be
+throttled away. `end_activity` and replay acknowledgement are naturally
+idempotent and do not use this limiter.
+
+Rejected attempts use the ordinary committed RPC error envelope; they
+do **not** raise a PostgreSQL exception after updating the limiter. An
+exception would roll the transaction back, erase `last_attempt_at`, and
+silently make the claimed rejected-attempt throttle ineffective.
+
+This is a gameplay debounce, **not denial-of-service protection**. A
+caller can repeatedly send an exact idempotent retry, so platform/gateway
+request quotas remain responsible for intentional floods. The RPC must
+not claim a 300 ms row as an abuse-control boundary.
+
 ### 8.5 RLS and grants
 
 Scenes are readable by `authenticated` — the field must be drawn, and
 there is nothing secret in it.
 
-**State, moves and cursors are RPC-only.** `authenticated` gets no direct
-privilege, and the REVOKE is repeated in the file replayed by
+**State, moves, cursors, limiter rows, invitation capabilities and scene
+history are RPC-only.** `authenticated` gets no direct privilege, and the REVOKE is
+repeated in the file replayed by
 `scripts/local_pg_grants.sql` after its blanket grant — otherwise the
 local harness re-grants write access and the contract test passes or
 fails by script ordering rather than by the schema.
@@ -839,8 +1061,9 @@ That is a separate requirement, and it was the fix Word Hunt needed
 
 ### 9.2 Mutation order
 
-**auth → session lock → membership → idempotency → relationship-active
-and lazy expiry → turn check → move validation → mutation.**
+**auth → session lock → membership → idempotency recovery → state
+lock → limiter lock/throttle → relationship-active and lazy expiry →
+turn check → move validation → mutation.**
 
 Membership gates early; relationship *state* does not gate the retry
 path, or a committed move becomes unrecoverable once a relationship is
@@ -862,7 +1085,9 @@ the server validates against exactly those. There is no gap to exploit
 because there is no arbitrary subset.
 
 - **Idempotent on `(session_id, action_id)`**, checked before every other
-  rejection. A retry returns that move's stored result.
+  rejection. A retry returns the identity of the committed move plus the
+  current authoritative projection; it does not pretend the move row
+  stores an old transient state snapshot.
 - A reused `action_id` with a **different** choice is
   `IDEMPOTENCY_CONFLICT` — not a silent replay, not a second move. An
   action owned by the other member is also a conflict; action identity is
@@ -871,10 +1096,12 @@ because there is no arbitrary subset.
   belong to the session's `current_state`), `INVALID_INPUT`.
 - The available set is read **server-side** from the pinned scene's
   `current_state`. The client never asserts what it was offered.
-- Appends the move, unions the choice's layers into `revealed_layers`,
-  advances `current_state` to the choice's `next`, increments
-  `moves_played`, and mirrors that into `game_sessions.current_round` so
-  the shared realtime channel emits on every move.
+- Appends the move, unions the choice's `variant_layers` and the
+  destination state's `common_layers` into the canonical
+  `revealed_layers`, advances `current_state` to the choice's `next`,
+  increments `moves_played`, and mirrors that into
+  `game_sessions.current_round` so the shared realtime channel emits on
+  every move. Acceptance seeded the origin state's common layers.
 - On reaching a **terminal state**: `status = 'completed'`,
   `completed_at` from the post-lock timestamp, `completion_reason =
   'pattern_complete'`. **No `winner_user_id` is ever set** — there is no
@@ -887,18 +1114,21 @@ structured error rather than a raw SQL exception.
 ### 9.3a `constellation_end_activity(p_session_id)`
 
 Available to either partner while the session is active (§5.6). Closes it
-with `completion_reason = 'ended'`, no winner, and the partial pattern
-intact. Idempotent by its own terminal state, so it needs no action id: a
-second call, by either partner, returns the stored result.
+with `game_sessions.status = 'abandoned'`, `abandoned_at` from the
+post-lock timestamp, the shared user-initiated abandon reason,
+`completion_reason = 'ended'`, no winner, and the partial pattern intact.
+Idempotent by its own terminal state, so it needs no action id: a second
+call, by either partner, returns the stored result. If the pattern had
+already completed, it returns that completed result and never relabels it.
 
 Not resignation, and not reported as one.
 
 ### 9.4 `get_constellation_state(p_session_id)`
 
 Scene stars, revealed layers, `current_state` **with its available
-choices**, whose turn it is, the caller's cursor, and every move after it
-— bounded by the scene's depth. Excludes `created_at`, `action_id` and
-the partner's cursor.
+choices**, pinned asset bundle id/hash/minimum build, whose turn it is,
+the caller's cursor, and every move after it — bounded by the scene's
+depth. Excludes `created_at`, `action_id` and the partner's cursor.
 
 The available choices come from the server, so the client renders what
 the server will accept and the two cannot disagree.
@@ -928,7 +1158,9 @@ plays the completion.
 second draft left it ungated, so a buggy client could set it during an
 active game and permanently suppress the one moment this game exists for.
 It is accepted only when the session is `pattern_complete` **and** the
-caller's cursor has reached the final move; otherwise `INVALID_INPUT`.
+call's effective cursor `GREATEST(stored_cursor, p_through_move)` has
+reached the final move; otherwise `INVALID_INPUT`. This permits one call
+to acknowledge both the final line and its subsequent completion bloom.
 Applied monotonically by boolean OR, so it can never be un-seen and a
 retry is harmless.
 
@@ -938,7 +1170,7 @@ have seen.
 
 ### 9.6 Lifecycle
 
-Snakes' create / accept / decline / active-lookup, with:
+Snakes' create / accept / decline / active-lookup shape, with:
 
 - **Decline is for invitations only** — the ordinary lifecycle for an
   invitation nobody accepted. Ending an *active* session is
@@ -946,16 +1178,35 @@ Snakes' create / accept / decline / active-lookup, with:
   draft kept a sentence here saying active ending "is not one person's
   decision", which directly contradicted the operation it had just added
   two sections earlier.
-- Acceptance pins a scene version, seeds both cursors at zero, assigns
-  the first turn to the invitee, and seeds `updated_at`.
-- Scene selection excludes those the couple has recently played (§4.6),
-  falling back to the full library when exhausted.
+- Create records the initiator's client build and bounded supported asset
+  bundle ids/hashes in `constellation_invite_capabilities`; it does not
+  pin or expose a scene.
+- `constellation_refresh_invite_capabilities` lets only the initiator
+  replace that declaration while the session remains invited. Without
+  it, updating the app after `CONTENT_UPDATE_REQUIRED` would leave the
+  original invitation permanently stuck on its stale create-time list.
+- Acceptance supplies the invitee's build and supported bundles, locks
+  the relationship's Constellation selection key, chooses from the
+  compatible scene-cycle bag (§4.6), locks and re-checks the selected
+  scene row, inserts its history row, pins the scene version, seeds the
+  origin state/star/common layers, seeds both cursors at zero, assigns
+  the first turn to the invitee, and seeds `updated_at` in one
+  transaction.
+- If the clients share no active compatible scene, acceptance returns
+  `CONTENT_UPDATE_REQUIRED` without accepting or consuming a scene.
+- Active lookup never selects content; it returns the already pinned
+  session and its required bundle identity.
 
 ### 9.7 Expiry
 
 48h for an unaccepted invitation, **7 days** of inactivity for an active
 game — longer than Snakes' 24h, because this is explicitly a game played
 across days.
+
+Expiry of an accepted session sets shared status `abandoned`, the shared
+inactivity reason and timestamp, plus Constellation
+`completion_reason = 'expired'`. Relationship termination uses
+`relationship_ended`. Neither produces or consumes a completion bloom.
 
 Cron **and** lazily on every RPC including the state read. The cron job
 must be *registered*: writing Word Hunt's sweep turned up that
@@ -970,31 +1221,42 @@ role, not by inspecting function source:
 
 - direct INSERT/UPDATE/DELETE of a `constellation` session row is denied,
   while an unrelated legacy game keeps its intended access
-- direct read or write of state, moves and cursors is denied
+- direct read or write of state, moves, cursors, limiter rows, invitation
+  capabilities and scene history is denied
 - unauthenticated and non-member calls to every RPC are denied
 - **the validator refuses**: an unreachable state; a route that does not
   terminate; a non-terminal state offering other than 2 or 3 choices; a
   variant layer owned by two choices; a choice revealing fewer than two
-  variant layers; a layer revealed twice along one route; a duplicate
-  choice id; routes of unequal depth; an odd depth; states at one depth
-  with differing arity; a `from_star` outside the reached-star
-  intersection for its state; and every format bound in §4.4a
+  variant layers; any common/variant layer id with zero or multiple
+  owners; a duplicate choice id; routes of unequal depth; an odd depth;
+  a state reachable at multiple depths; states at one depth with
+  differing arity; a `from_star` outside the reached-star intersection
+  for its state; sibling choices sharing a destination; a destination
+  already reachable on an incoming route; a zero-length line; a missing
+  origin star; and every format bound in §4.4a
 - **the validator never enumerates outcomes.** Given a scene at the
   format maximum, validation completes in bounded time — the local
   ownership rules of §4.2 imply divergence without measuring it, and
-  memoising over states does NOT bound the work because the memo's value
-  grows exponentially
-- **`min_divergence` below 3 is refused**, and a conforming scene's
-  actual minimum is at least 4 by construction
+  no memo may contain route or outcome sets whose values grow
+  exponentially. State/edge facts such as reachability, depth and star
+  intersections/unions are the only memoised values
+- **`min_divergence` below 3 is refused**, as is a value above the local
+  sibling-pair bound computed in §4.2; the validator never enumerates
+  terminal outcomes to establish either result
 - **the validator does NOT claim to check visual weight or perceptual
   difference** (§4.3a) — those are authoring/CI and human review, and no
   SQL test asserts them
 - a choice not belonging to the session's `current_state` is refused; the
   available set is derived server-side and a client claim is ignored
+- an invalid admitted choice returns the standard error envelope while
+  retaining its limiter timestamp; an immediate distinct retry is
+  `RATE_LIMITED` (proving rejection did not roll the limiter write back)
 - a choice cannot be taken twice
 - a reused `action_id` with the same choice replays; with a different
   choice it returns `IDEMPOTENCY_CONFLICT`; owned by the other member,
   likewise
+- accepted and rejected non-idempotent choices are throttled per caller,
+  while an exact idempotent retry bypasses the limiter
 - the client cannot influence `move_number`
 - reaching a terminal state completes the session exactly once, with
   `completion_reason = 'pattern_complete'`, and `winner_user_id`
@@ -1003,7 +1265,14 @@ role, not by inspecting function source:
   completed pattern never becomes `ended`, and an ended session refuses
   further choices
 - a scene whose `min_client_build` exceeds either partner's build is not
-  offered
+  offered; unsupported bundle hashes are also excluded, no common bundle
+  returns `CONTENT_UPDATE_REQUIRED` without accepting, and opening a
+  pinned scene on an older device fails closed rather than partially
+  rendering
+- malformed or oversized capability lists return `INVALID_INPUT`; an
+  unaccepted invitation has no pinned scene or history row; only the
+  initiator can refresh invite capabilities, only while invited, and a
+  subsequent accept uses the refreshed list
 - `end_activity` is available to either partner while active, closes with
   `completion_reason = 'ended'`, names no winner, keeps the partial
   pattern readable, and is idempotent for both callers
@@ -1022,18 +1291,61 @@ role, not by inspecting function source:
 - malformed, over-long and unknown choice ids return `INVALID_INPUT`
   rather than a raw SQL error
 - `completed_at` never precedes the move that caused it
-- a scene played by a couple is not offered again until the library is
-  exhausted, and an exhausted library falls back rather than failing
+- acceptance seeds the origin star/state/common layers, and each move
+  adds exactly its variant layers followed by destination common layers
+- the deferred integrity trigger rejects any transaction whose folded
+  moves disagree with cached state, turn parity, terminal reason or
+  `game_sessions.current_round`
+- accepted scenes are not repeated within a relationship cycle; unused
+  invitations consume nothing; exhaustion starts a new cycle; and with
+  at least two compatible scenes the cycle boundary cannot immediately
+  repeat the previous scene
+- deleting a retained session does not delete its scene-cycle history;
+  retiring a scene excludes it from new selection without breaking a
+  pinned session; and played scene content, bundle identity and hash
+  cannot be mutated or deleted
 
 ### 9.9 Concurrency contracts
 
-Three need two connections and cannot live in the single-transaction
+Five need two connections and cannot live in the single-transaction
 suite. They belong in `scripts/concurrency/`, as Word Hunt's do:
 
 - gameplay against the expiry sweep does not deadlock
 - a sweep that selected a session, then waited on a live move's lock,
   does not abandon the now-fresh session
 - two simultaneous choices resolve to one state with one turn owner
+- final choice racing `end_activity` produces exactly one terminal reason
+  and cannot relabel a completed pattern as ended
+- gameplay racing relationship closure follows the global lock order and
+  produces either one final committed choice before closure or a refused
+  choice after closure, never a half-updated state
+
+### 9.10 Client and content-pipeline contracts
+
+The SQL suite cannot establish that the generated art bundle is usable.
+Before the feature is complete, client/content tests also prove:
+
+- one authoring input deterministically generates the SQL scene manifest,
+  Flutter manifest, localised semantic keys and independently addressable
+  `.vec` layers; missing, duplicate or unreferenced layers fail generation
+- recomputing a bundle produces its declared hash, and a changed layer
+  changes that hash
+- the Dart scene parser rejects malformed or over-bound server data
+  without attempting to paint it
+- folding the server move list reproduces the same state, lines and layer
+  order as the server's cached projection, including common layers on
+  state entry and replay after process death
+- golden/contact-sheet tests cover every sibling bundle and the bounded
+  deterministic route corpus on the smallest and largest supported field
+- pointer cancellation does not commit, semantics activation commits
+  once, and reduced motion renders the final state without intermediate
+  animation
+- a missing pinned bundle produces the update-required state, never an
+  empty or partially drawn field
+- on the oldest supported physical phone at 60 Hz, the maximum-depth
+  scene keeps warm build+raster frame time at p95 ≤ 16.7 ms and p99 ≤
+  32 ms, produces no stall ≥ 100 ms, and adds ≤ 24 MB peak memory while
+  stars pulse and a new layer animates
 
 ---
 
@@ -1047,19 +1359,20 @@ suite. They belong in `scripts/concurrency/`, as Word Hunt's do:
 | Lock order, under-lock re-check, post-lock timestamps | Word Hunt's review |
 | Lazy expiry at every entry point including reads | Word Hunt's review |
 | Slot-based ownership, ack-based replay cursor | Dots and Boxes' review |
-| Recently-played exclusion as a pure function | Word Hunt's `word_hunt_pool` |
+| Compatible-pool filtering shape | Word Hunt's `word_hunt_pool` |
 | Auto-pop, live sync, breathing wait | Snakes / session games |
 
-**Genuinely new:** the scene validator and its divergence rule, the
-layered choice-state format and its traversal, and the completion
+**Genuinely new:** the scene validator and its local divergence proof,
+the layered choice-state format and its traversal, the relationship
+scene-cycle bag, the asset-capability handshake, and the completion
 animation with its accessible form.
 
 ---
 
 ## 11. Estimate
 
-**Eight to twelve days**, plus scene authoring measured separately
-(§4.5) and an authoring/CI rendering pipeline that is not in that figure.
+**Twelve to eighteen engineering days**, plus production scene authoring
+measured separately (§4.5).
 
 Raised twice. The first draft's scene model was a free graph, which was
 both simpler and impossible (§4.0). The layered state machine that
@@ -1068,14 +1381,21 @@ review added forward-dataflow connectivity checks (§4.2b), format bounds
 (§4.4a), an asset-compatibility gate (§8.1), and a generated dual
 manifest so the SQL and Flutter layer lists cannot drift.
 
-**The rendering pipeline is excluded from this figure** and is real work:
-§4.3a puts perceptual difference outside the database, which means
-authoring/CI must render every terminal outcome and produce a contact
-sheet. Without it the divergence guarantee is structural only.
+The earlier eight-to-twelve figure excluded the authoring/CI rendering
+pipeline even though that pipeline is required for the game's
+load-bearing perceptual claim. That was not an honest ship estimate.
+§4.3a requires every sibling comparison, a bounded deterministic
+terminal sample and a contact sheet; the implementation also now includes
+the compatibility handshake, cycle bag and deferred consistency check.
+Those are in the twelve-to-eighteen figure. Creating the remaining
+production library after the measured trial scenes is not.
 
-Cheaper than Word Hunt's five-to-eight-plus because there is **no hidden
-information**: no private table, no disclosure boundary, no generator, no
-timing model, no rate-limit subtlety. Both players see everything.
+The gameplay RPC itself is simpler than Word Hunt because there is **no
+hidden information**: no private answer table, disclosure boundary,
+generator or timing model. The total feature is not cheaper, because its
+authoring validator, visual pipeline, compatibility handshake and scene
+cycle are new infrastructure. The request throttle is operational only;
+it protects the session lock rather than a hidden answer.
 
 Not cheaper than that figure suggests, because the six inherited
 hardening requirements — the carve-out, one lock order, the under-lock
@@ -1105,8 +1425,15 @@ before it exists on a device.
 server work, and if the third takes a day the art direction is wrong.
 
 **The library runs out.** Twenty scenes is twenty sessions. The fallback
-is honest rather than clever: replay a scene, and the choices differ. But
-a couple who play often will notice.
+is honest rather than clever: begin a fresh cycle, avoid an immediate
+repeat where possible, and let different choices produce a different
+pattern. But a couple who play often will still notice the base scene.
+
+**Bundled art is retained indefinitely.** Historical and partially ended
+patterns must survive reinstall, so supported scene bundles are additive
+while retained sessions reference them. Vector assets are small, but an
+unbounded content library creates app-size pressure; bundle size is
+measured and reported before each content release.
 
 **Nobody wants a game with no stakes.** The real product risk, and it
 cannot be argued away in a spec. It can only be found out.
@@ -1154,12 +1481,15 @@ solo mini-games with a shared frame painted over them.
 Every item here is a **failure** against the checklist, not a pass.
 
 **Cannot be evidenced until built:** branch coverage, mutation testing,
-a benchmark for the move path, 24-hour soak, 2× load, chaos with
-Postgres killed mid-move, `EXPLAIN` for both access patterns.
+the deterministic SVG-to-`.vec` compiler and manifest/hash checks, Dart
+parser/reducer contracts, golden/contact-sheet rendering, a benchmark
+for the move path, 24-hour soak, 2× load, chaos with Postgres killed
+mid-move, `EXPLAIN` for both access patterns.
 
 **Cannot be evidenced without a device:** whether the completion animation
 lands (§3, §7.3) — the single highest-risk unknown in the build; first-
-feedback latency at p95; screen-reader navigation of the field.
+feedback latency at p95; the maximum-scene frame-time and memory budgets
+in §8.1; screen-reader navigation of the field.
 
 **Not solved here:** observability (4.1–4.14) — no structured logs,
 metrics, alerts or runbook, for this game or any Attune game, a
@@ -1172,6 +1502,36 @@ stakes. §12's last risk.
 ---
 
 ## Changelog
+
+- **2026-09-09** — Implementation-readiness pass. Existing second-review
+  corrections were retained; remaining representational gaps and newly
+  exposed edge cases were closed before server work.
+
+  `common_layers` now exists in the actual JSON shape, choices explicitly
+  own `variant_layers`, and an `origin_star` seeds connectivity. The local
+  divergence proof now checks a scene's configured `min_divergence`
+  against the minimum sibling-bundle bound rather than merely proving a
+  hard-coded four. Every layer has one scene-wide owner.
+
+  Destination stars are distinct, non-zero-length and new on every route
+  into a state. The content pipeline compiles authored SVG groups into
+  independently addressable `.vec` assets because the installed runtime
+  has no supported selective-group API; revealed layers are cached behind
+  a repaint boundary and the maximum scene has physical-device budgets.
+  Visual review is bounded over sibling comparisons and a deterministic
+  outcome sample, not an impossible enumeration of billions of outcomes.
+
+  Bundled-content compatibility is now an explicit create/accept
+  handshake and old bundles are retained additively. Scene repetition is
+  a durable relationship cycle/bag rather than a full-pool fallback that
+  could repeat forever after the first exhaustion. Cached state is checked
+  against folded move history by a deferred integrity trigger; terminal
+  reasons now cover user ending, inactivity and relationship closure.
+
+  Added a retry-safe gameplay throttle, lifecycle/content race contracts,
+  client/content-pipeline tests, generated-manifest checks, and an honest
+  twelve-to-eighteen-day engineering estimate that includes the required
+  rendering pipeline but excludes production scene-library authoring.
 
 - **2026-09-09** — Second review. Eight findings, one of them a blocker
   again, and all eight confirmed by computation before being applied.
