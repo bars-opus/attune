@@ -1,3 +1,5 @@
+import 'package:attune/features/games/presentation/widgets/game_palette.dart';
+import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/games/presentation/providers/game_card_provider.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
@@ -127,45 +129,45 @@ class GameMessageBubble extends ConsumerWidget {
         onTap: isOpenable ? () => onTap(gameType) : null,
         borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
         child: Container(
-          width: 220.w,
-          padding: EdgeInsets.all(Spacing.md.w),
+          width: 240.w,
+          padding: EdgeInsets.symmetric(
+            horizontal: Spacing.sm.w,
+            vertical: Spacing.xs.h,
+          ),
           decoration: BoxDecoration(
             color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
             borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // The game's tile, in its own colour.
-              //
-              // No fallback branch any more: every game has a palette, so
-              // the "art exists / art does not" split that used to live
-              // here is gone. Two illustrations beside six tinted discs
-              // is what made this look unfinished.
-              Center(
-                child: GameIcon(
-                  gameType: gameType,
-                  size: 84.h,
-                  // Bare here: the chat card has no colour of its own.
-                  filled: true,
-                ),
-              ),
-              SizedBox(height: Spacing.sm.h),
-              Text(
-                title,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withValues(alpha: 0.65),
-                ),
-              ),
-            ],
+          // The same row the games hub uses, rather than a bespoke column.
+          //
+          // The card was a 220pt column with an 84pt icon centred above
+          // the title, which made a one-line status message occupy the
+          // height of a photo in the transcript. A game card is a small
+          // piece of state -- whose move it is -- and a row says that in
+          // the space it deserves.
+          //
+          // The glyph and colour go straight to the row rather than
+          // through GameIcon: InfoRowWidget sizes a leadingWidget to
+          // avatarRadius and centres it, so passing a pre-sized tile
+          // fights it for control. Its own IconAvatar does the sizing.
+          child: InfoRowWidget(
+            pinAvatar: true,
+            title: title,
+            subtitle: label,
+            icon: gameGlyphFor(gameType),
+            iconColor: Colors.white,
+            backgroundColor: GamePalette.of(gameType).end,
+            avatarRadius: 44.h,
+            iconSize: 22.h,
+            circularRadius: 12.r,
+            // TRUE, or IconAvatar drops its coloured container and the
+            // game's identity with it.
+            showAvatar: true,
+            showDivider: false,
+            showTrailingArrow: isOpenable,
+            titleFontSize: 14,
+            subTitleFontSize: 12,
+            onTap: isOpenable ? () => onTap(gameType) : null,
           ),
         ),
       ),
