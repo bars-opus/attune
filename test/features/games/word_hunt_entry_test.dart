@@ -1,17 +1,21 @@
+import 'dart:io';
+
 import 'package:attune/features/games/word_hunt/models/word_hunt_models.dart';
-import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_lobby_screen.dart';
+import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_game_screen.dart';
+import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:attune/features/games/word_hunt/presentation/state/word_hunt_provider.dart';
 import 'package:attune/features/games/word_hunt/services/word_hunt_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// The lobby's job is to offer exactly one thing at a time, correctly.
+/// Opening Word Hunt must land on exactly the right state, every time.
 ///
-/// Four states share this screen -- nothing open, my invitation pending,
-/// their invitation waiting for me, and a game in progress -- and showing
-/// the wrong one either starts a game nobody agreed to or hides one
-/// already running.
+/// The lobby that used to make this decision is gone; the hunt itself
+/// makes it now. Four states share the screen -- nothing open, my
+/// invitation pending, their invitation waiting for me, and a game in
+/// progress -- and showing the wrong one either starts a game nobody
+/// agreed to or hides one already running.
 class _LobbyGateway implements WordHuntGateway {
   _LobbyGateway({this.active, this.currentUser = 'u1'});
 
@@ -81,53 +85,67 @@ WordHuntSession invitation({
 });
 
 void main() {
-  Future<void> show(WidgetTester tester, _LobbyGateway gateway) async {
+  /// Opens the hunt the way the picker does: no session in hand, so the
+  /// screen resolves one.
+  Future<void> show(
+    WidgetTester tester,
+    _LobbyGateway gateway, {
+    String? sessionId,
+  }) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           wordHuntGatewayProvider.overrideWithValue(gateway),
           wordHuntCurrentUserIdProvider.overrideWithValue(gateway.currentUser),
+          gameSessionLiveProvider.overrideWith(
+            (_, __) => const Stream<void>.empty(),
+          ),
         ],
-        child: const MaterialApp(
-          home: WordHuntLobbyScreen(relationshipId: 'r1'),
+        child: MaterialApp(
+          home: WordHuntGameScreen(relationshipId: 'r1', sessionId: sessionId),
         ),
       ),
     );
     await tester.pump();
     await tester.pump();
+    await tester.pump();
   }
 
-  testWidgets('nothing open: offers to invite, and says what the game is', (
+  testWidgets('nothing open: starts a hunt instead of asking twice', (
     tester,
   ) async {
-    await show(tester, _LobbyGateway());
-
-    expect(find.text('Invite them to hunt'), findsOneWidget);
-    expect(find.text('One hidden word.'), findsOneWidget);
-    // The clock is stated up front, because tapping Start later is what
-    // begins it and that must not surprise anyone.
-    expect(find.textContaining('starts when you tap Start'), findsOneWidget);
-  });
-
-  testWidgets('inviting asks the server once', (tester) async {
+    // From the picker. The tap on the game already said what the player
+    // wants; the lobby's "Invite them to hunt" button asked it again.
     final gateway = _LobbyGateway();
     await show(tester, gateway);
 
-    await tester.tap(find.text('Invite them to hunt'));
-    await tester.pump();
-    await tester.pump();
-
     expect(gateway.createCalls, 1);
+    expect(find.text('Invite them to hunt'), findsNothing);
+    expect(find.text('One hidden word.'), findsNothing);
   });
 
-  testWidgets('my own pending invitation waits rather than opening a board', (
+  testWidgets('a hunt already open is resumed, never duplicated', (
     tester,
   ) async {
-    // Both players hunt the same grid. Opening a board here would start a
-    // clock against a partner who has not agreed to play.
+    final gateway = _LobbyGateway(
+      active: invitation(initiator: 'u2', status: 'active'),
+      currentUser: 'u1',
+    );
+    await show(tester, gateway);
+
+    expect(gateway.createCalls, 0);
+  });
+
+  testWidgets('my own pending invitation waits, over the hunt itself', (
+    tester,
+  ) async {
+    // Both players hunt the same grid, so there is genuinely nothing for
+    // the sender to do yet -- but that is a line, not a screen, and no
+    // clock starts by being here.
     await show(
       tester,
       _LobbyGateway(active: invitation(initiator: 'u1'), currentUser: 'u1'),
+      sessionId: 's1',
     );
 
     expect(find.textContaining('Waiting for them'), findsOneWidget);
@@ -141,10 +159,25 @@ void main() {
     await show(
       tester,
       _LobbyGateway(active: invitation(initiator: 'u2'), currentUser: 'u1'),
+      sessionId: 's1',
     );
 
     expect(find.text('Join the hunt'), findsOneWidget);
     expect(find.text('Not now'), findsOneWidget);
+  });
+
+  testWidgets('joining tells the server', (tester) async {
+    final gateway = _LobbyGateway(
+      active: invitation(initiator: 'u2'),
+      currentUser: 'u1',
+    );
+    await show(tester, gateway, sessionId: 's1');
+
+    await tester.tap(find.text('Join the hunt'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(gateway.acceptCalls, 1);
   });
 
   testWidgets('declining tells the server and clears the invitation', (
@@ -154,7 +187,7 @@ void main() {
       active: invitation(initiator: 'u2'),
       currentUser: 'u1',
     );
-    await show(tester, gateway);
+    await show(tester, gateway, sessionId: 's1');
 
     await tester.tap(find.text('Not now'));
     await tester.pump();
@@ -163,50 +196,51 @@ void main() {
     expect(gateway.declineCalls, 1);
   });
 
-  testWidgets('an accepted game offers to open it, not to start another', (
+  testWidgets('an accepted hunt opens the start gate, not a lobby button', (
     tester,
   ) async {
-    final gateway = _LobbyGateway(
-      active: invitation(initiator: 'u2', status: 'active'),
-      currentUser: 'u1',
-    );
-    await show(tester, gateway);
-
-    expect(find.text('Open the hunt'), findsOneWidget);
-    expect(find.text('Invite them to hunt'), findsNothing);
-    expect(gateway.createCalls, 0);
-  });
-
-  testWidgets('a hunt already begun says so, so the clock is not a surprise', (
-    tester,
-  ) async {
+    // The clock still cannot start by accident: the hunt's own start
+    // gate says so, which is what the lobby's copy was duplicating.
     await show(
       tester,
       _LobbyGateway(
-        active: invitation(initiator: 'u2', status: 'active', started: true),
+        active: invitation(initiator: 'u2', status: 'active'),
         currentUser: 'u1',
       ),
+      sessionId: 's1',
     );
 
-    expect(find.text('Back to your hunt'), findsOneWidget);
+    expect(
+      find.textContaining('Tapping Start begins your clock'),
+      findsOneWidget,
+    );
+    expect(find.text('Open the hunt'), findsNothing);
   });
 
   testWidgets('a create failure is shown in the player\'s language', (
     tester,
   ) async {
-    final gateway = _LobbyGateway()
-      ..failCreate = const WordHuntApiError(
-        code: 'RATE_LIMITED',
-        message: 'Slow down a moment.',
-      );
+    final gateway =
+        _LobbyGateway()
+          ..failCreate = const WordHuntApiError(
+            code: 'RATE_LIMITED',
+            message: 'Slow down a moment.',
+          );
     await show(tester, gateway);
-
-    await tester.tap(find.text('Invite them to hunt'));
-    await tester.pump();
-    await tester.pump();
 
     expect(find.text('Slow down a moment.'), findsOneWidget);
     // Checklist 5.5: the code is internal.
     expect(find.textContaining('RATE_LIMITED'), findsNothing);
+  });
+
+  testWidgets('the lobby is gone and must not come back', (tester) async {
+    final router = File('lib/app/routing/app_router.dart').readAsStringSync();
+    final chat =
+        File(
+          'lib/features/chat/presentation/screens/chat_screen.dart',
+        ).readAsStringSync();
+    expect(router.contains('wordHuntLobby'), isFalse);
+    expect(chat.contains('wordHuntLobby'), isFalse);
+    expect(router.contains("name: 'wordHuntGame'"), isTrue);
   });
 }

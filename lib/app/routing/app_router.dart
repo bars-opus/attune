@@ -19,7 +19,6 @@ import 'package:attune/features/games/snakes_and_ladders/presentation/screens/sn
 import 'package:attune/features/games/constellation/prototype/constellation_prototype_screen.dart';
 import 'package:attune/features/games/dots_and_boxes/prototype/dots_boxes_prototype_screen.dart';
 import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_game_screen.dart';
-import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_lobby_screen.dart';
 import 'package:attune/features/onboarding/presentation/screens/onboarding_gate.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
@@ -1682,20 +1681,18 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         name: 'dotsBoxesPrototype',
         builder: (context, state) => const DotsBoxesPrototypeScreen(),
       ),
+      // One Word Hunt route, as with Snakes. The lobby is gone: every tap
+      // that opens this game lands on the hunt, which resolves the
+      // session itself.
       GoRoute(
-        path: '/games/word-hunt/lobby/:relationshipId',
-        name: 'wordHuntLobby',
-        builder: (context, state) {
-          final relationshipId = state.pathParameters['relationshipId']!;
-          return WordHuntLobbyScreen(relationshipId: relationshipId);
-        },
-      ),
-      GoRoute(
-        path: '/games/word-hunt/game/:sessionId',
+        path: '/games/word-hunt/:relationshipId',
         name: 'wordHuntGame',
         builder: (context, state) {
-          final sessionId = state.pathParameters['sessionId']!;
-          return WordHuntGameScreen(sessionId: sessionId);
+          final relationshipId = state.pathParameters['relationshipId']!;
+          return WordHuntGameScreen(
+            relationshipId: relationshipId,
+            sessionId: state.uri.queryParameters['session'],
+          );
         },
       ),
       GoRoute(

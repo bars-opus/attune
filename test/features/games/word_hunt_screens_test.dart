@@ -107,7 +107,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [wordHuntGatewayProvider.overrideWithValue(gateway)],
-        child: const MaterialApp(home: WordHuntGameScreen(sessionId: 's1')),
+        child: const MaterialApp(
+          home: WordHuntGameScreen(relationshipId: 'r1', sessionId: 's1'),
+        ),
       ),
     );
     await tester.pump();

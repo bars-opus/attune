@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
+import 'package:attune/features/games/presentation/widgets/round_handoff.dart';
 import 'package:attune/features/games/word_hunt/models/word_hunt_models.dart';
 import 'package:attune/features/games/word_hunt/presentation/state/word_hunt_provider.dart';
 import 'package:attune/features/games/word_hunt/presentation/widgets/word_hunt_board.dart';
@@ -9,6 +10,7 @@ import 'package:attune/features/games/word_hunt/presentation/widgets/word_hunt_r
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:uuid/uuid.dart';
 
 /// The hunt: the grid, the word, and a running number.
 ///
@@ -16,15 +18,140 @@ import 'package:go_router/go_router.dart';
 /// is those three things, and the rest of it -- the partner, the result,
 /// the comparison -- is deliberately absent until both attempts are over.
 class WordHuntGameScreen extends ConsumerStatefulWidget {
-  const WordHuntGameScreen({super.key, required this.sessionId});
+  const WordHuntGameScreen({
+    super.key,
+    required this.relationshipId,
+    this.sessionId,
+  });
 
-  final String sessionId;
+  /// Whose hunt. Needed to start one, and to find the hunt already open
+  /// when the player arrived without a session in hand.
+  final String relationshipId;
+
+  /// The session a chat card pointed at. Null when the player came from
+  /// the picker, in which case this screen finds or starts the hunt.
+  final String? sessionId;
 
   @override
   ConsumerState<WordHuntGameScreen> createState() => _WordHuntGameScreenState();
 }
 
-class _WordHuntGameScreenState extends ConsumerState<WordHuntGameScreen>
+/// Resolves which hunt this is, then hands off to the hunt itself.
+///
+/// The lobby that used to do this was a toll gate: it re-stated the
+/// rules the board states better, and made the player press a button to
+/// see a grid they had already asked for. Everything it decided --
+/// start one, join theirs, resume the one in progress -- is decided here
+/// without a screen.
+///
+/// It exists as a separate widget because the hunt's own state provider
+/// is keyed by session id, and there is no session id until this runs.
+class _WordHuntGameScreenState extends ConsumerState<WordHuntGameScreen> {
+  String? _sessionId;
+  bool _resolving = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_resolve()));
+  }
+
+  Future<void> _resolve() async {
+    final given = widget.sessionId;
+    if (given != null) {
+      setState(() {
+        _sessionId = given;
+        _resolving = false;
+      });
+      return;
+    }
+
+    // From the picker: resume the couple's open hunt, or start one. The
+    // tap on the game already said what the player wants; the lobby
+    // asking "Invite them to hunt?" was asking it twice.
+    final gateway = ref.read(wordHuntGatewayProvider);
+    try {
+      final existing = await gateway.getActiveSession(widget.relationshipId);
+      if (!mounted) return;
+      final sessionId =
+          existing?.sessionId ??
+          await gateway.createSession(
+            relationshipId: widget.relationshipId,
+            idempotencyKey:
+                'word_hunt:${widget.relationshipId}:${const Uuid().v4()}',
+          );
+      if (!mounted) return;
+      setState(() {
+        _sessionId = sessionId;
+        _resolving = false;
+      });
+    } on WordHuntApiError catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _resolving = false;
+        _error = error.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _resolving = false;
+        _error = 'Could not reach the game. Check your connection.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sessionId = _sessionId;
+    if (_resolving || sessionId == null) {
+      return Scaffold(
+        backgroundColor: WordHuntPalette.field,
+        appBar: AppBar(
+          backgroundColor: WordHuntPalette.field,
+          foregroundColor: WordHuntPalette.letter,
+          elevation: 0,
+          title: const Text('Word Hunt'),
+        ),
+        body: SafeArea(
+          child:
+              _error == null
+                  ? const Center(
+                    child: CircularProgressIndicator(
+                      color: WordHuntPalette.found,
+                    ),
+                  )
+                  : _Message(
+                    text: _error!,
+                    actionLabel: 'Try again',
+                    onAction: () {
+                      setState(() {
+                        _resolving = true;
+                        _error = null;
+                      });
+                      unawaited(_resolve());
+                    },
+                  ),
+        ),
+      );
+    }
+
+    return _WordHuntSessionView(sessionId: sessionId);
+  }
+}
+
+/// The hunt itself, once there is a session to hunt in.
+class _WordHuntSessionView extends ConsumerStatefulWidget {
+  const _WordHuntSessionView({required this.sessionId});
+
+  final String sessionId;
+
+  @override
+  ConsumerState<_WordHuntSessionView> createState() =>
+      _WordHuntSessionViewState();
+}
+
+class _WordHuntSessionViewState extends ConsumerState<_WordHuntSessionView>
     with WidgetsBindingObserver {
   final WordHuntBoardController _board = WordHuntBoardController();
   Timer? _tick;
@@ -192,10 +319,41 @@ class _WordHuntGameScreenState extends ConsumerState<WordHuntGameScreen>
     // Finished, waiting on the partner. Their own time is shown; nothing
     // of the partner's is, because nothing of it has been sent.
     if (session.isWaitingForPartner) {
-      return _WaitingView(
-        elapsed: session.myElapsedMs,
-        foundIt: session.myStatus.foundIt,
-        onBackToChat: () => context.pop(),
+      // Their attempt is over and the hunt is with the partner, who may
+      // answer in an hour. The result is held long enough to read, then
+      // the game leaves on its own -- it used to sit here behind a
+      // button the player had to press to leave a screen that had
+      // nothing more to say.
+      return RoundHandoff(
+        onLeave: () {
+          if (context.mounted) Navigator.of(context).maybePop();
+        },
+        child: _WaitingView(
+          elapsed: session.myElapsedMs,
+          foundIt: session.myStatus.foundIt,
+          onBackToChat: () => context.pop(),
+        ),
+      );
+    }
+
+    // An invitation, from either end. Both used to be a lobby: the
+    // sender got "Waiting for them to join" over a cancel button, the
+    // receiver got a screen asking whether they meant to tap the thing
+    // they tapped. Neither is a screen; both are a line and a choice.
+    if (session.isInvited) {
+      final me = ref.read(wordHuntCurrentUserIdProvider);
+      return _InvitationView(
+        mine: session.initiatorId == me,
+        busy: state.isSubmitting,
+        error: state.errorMessage,
+        onJoin: notifier.accept,
+        onDecline: () async {
+          await notifier.decline();
+          // Navigator rather than context.pop(): the invitation is gone,
+          // so is the reason to be here, and maybePop leaves correctly
+          // whether this was pushed by GoRouter or anything else.
+          if (context.mounted) Navigator.of(context).maybePop();
+        },
       );
     }
 
@@ -567,5 +725,145 @@ class _Message extends StatelessWidget {
         ],
       ),
     ),
+  );
+}
+
+/// An unaccepted invitation, from either end.
+///
+/// Replaces two lobby states: "Waiting for them to join" over a cancel
+/// button, and a screen asking the receiver to confirm the tap they just
+/// made. The sender's side has no primary action on purpose -- there is
+/// nothing for them to do but wait, and a button would imply otherwise.
+class _InvitationView extends StatelessWidget {
+  const _InvitationView({
+    required this.mine,
+    required this.busy,
+    required this.error,
+    required this.onJoin,
+    required this.onDecline,
+  });
+
+  /// True when this player sent the invitation.
+  final bool mine;
+  final bool busy;
+  final String? error;
+  final Future<void> Function() onJoin;
+  final Future<void> Function() onDecline;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Spacer(),
+          Text(
+            mine ? 'Waiting for them to join.' : 'They started a hunt.',
+            style: const TextStyle(
+              color: WordHuntPalette.letter,
+              fontSize: 24,
+              fontWeight: FontWeight.w600,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            mine
+                ? 'One word is hidden in a grid you will both search. '
+                    'Nothing starts until they open it.'
+                : 'One word is hidden in a grid you will both search. '
+                    'Your clock starts when you do, not now.',
+            style: const TextStyle(
+              color: WordHuntPalette.dim,
+              fontSize: 15,
+              height: 1.45,
+            ),
+          ),
+          const Spacer(),
+          if (error != null) ...[
+            Text(
+              error!,
+              style: const TextStyle(color: Color(0xFFFF8A8A), fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (!mine)
+            _PrimaryButton(
+              label: 'Join the hunt',
+              busy: busy,
+              onPressed: () => onJoin(),
+            ),
+          if (!mine) const SizedBox(height: 12),
+          _SecondaryButton(
+            label: mine ? 'Cancel the invitation' : 'Not now',
+            busy: busy,
+            onPressed: () => onDecline(),
+          ),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _PrimaryButton extends StatelessWidget {
+  const _PrimaryButton({
+    required this.label,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool busy;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => FilledButton(
+    onPressed: busy ? null : onPressed,
+    style: FilledButton.styleFrom(
+      backgroundColor: WordHuntPalette.found,
+      foregroundColor: const Color(0xFF04201C),
+      disabledBackgroundColor: WordHuntPalette.grid,
+      disabledForegroundColor: WordHuntPalette.dim,
+      minimumSize: const Size.fromHeight(52),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    ),
+    child:
+        busy
+            ? const SizedBox(
+              height: 20,
+              width: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: WordHuntPalette.dim,
+              ),
+            )
+            : Text(
+              label,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+  );
+}
+
+class _SecondaryButton extends StatelessWidget {
+  const _SecondaryButton({
+    required this.label,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool busy;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => TextButton(
+    onPressed: busy ? null : onPressed,
+    style: TextButton.styleFrom(
+      foregroundColor: WordHuntPalette.dim,
+      minimumSize: const Size.fromHeight(48),
+    ),
+    child: Text(label, style: const TextStyle(fontSize: 15)),
   );
 }

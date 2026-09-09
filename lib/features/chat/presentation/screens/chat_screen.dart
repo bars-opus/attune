@@ -2953,9 +2953,12 @@ Future<void> openGameRoute(
         queryParameters: {if (sessionId != null) 'session': sessionId},
       );
     case ChatGameDestination.wordHunt:
+      // Straight to the hunt, like Snakes. It shows the invitation, the
+      // start gate, the grid or the reveal itself.
       await context.pushNamed(
-        'wordHuntLobby',
+        'wordHuntGame',
         pathParameters: {'relationshipId': relationshipId},
+        queryParameters: {if (sessionId != null) 'session': sessionId},
       );
     // Prototypes take no relationship: they are pass-and-play on one
     // device, with no session, no server and no partner.
