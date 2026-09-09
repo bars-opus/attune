@@ -1,6 +1,9 @@
 # ATTUNE — CONSTELLATION SPECIFICATION
 
-**Status:** Revised after two reviews. Not implemented, not approved.
+**Status:** **BLOCKED.** The §4.5 gate was run and the content model
+failed it — see §4.4b. The format as specified can only express a
+starburst. Not implemented, not approved, and not estimable until the
+drawing model is redesigned.
 
 **Reads with:** `SNAKES_AND_LADDERS_SPEC.md` (the lifecycle and the
 versioned-content table this reuses), `WORD_HUNT_GAME_SPEC.md` (§10, the
@@ -506,6 +509,67 @@ Authoring/CI additionally checks that sibling destination centres remain
 at least one 48dp target diameter apart on the smallest supported field.
 Nearest-target hit testing is not permission to draw visually ambiguous
 choices on top of each other.
+
+### 4.4b THE GATE FAILED: the format can only express a starburst
+
+**§4.5's gate was run before any server code, and the content model did
+not survive it.** Not because scenes were slow to author — because the
+rules as written admit almost nothing.
+
+Three rules interact fatally:
+
+- **§4.2b** — a choice's `from_star` must lie in the *intersection* of
+  stars reached on all routes into its state
+- **§4.4.7** — sibling destinations are distinct
+- **§4.4.3** — every non-terminal state offers 2 or 3 choices, never 1
+
+Take any state with two siblings that reconverge. Route A reached
+`{origin, p}`, route B reached `{origin, q}`. The intersection is
+`{origin}`. **The guaranteed set never grows**, at any depth, on any
+scene — so every line in the entire constellation must be drawn from the
+origin star.
+
+The alternative is not reconverging at all, which makes the machine a
+tree: 8,191 states at depth 12 against a bound of 64. And branching early
+then rejoining buys nothing, because the intersection collapses the
+moment routes meet.
+
+```
+depth 12 tree:     8,191 states      (bound: 64)
+depth 20 tree: 2,097,151 states      (bound: 64)
+reconverging:   anchor frozen at {origin_star}
+```
+
+The first scene authored under these rules validates clean and looks like
+this: twelve lines radiating from one point. A wheel, not a growing
+constellation. `starburst_v1.json` is kept in the repository as the
+evidence, because it passes every rule and is exactly the wrong picture.
+
+**What this costs and what it does not.** It does not invalidate the
+game — "choices without wrong answers", frozen boards, local divergence
+proofs and the whole server contract are unaffected. It invalidates the
+*drawing* model: lines from stars to stars, with connectivity enforced by
+intersection.
+
+**The fix is not yet designed, and this section will not pretend
+otherwise.** Two directions look plausible and both need working through
+before any further estimate is credible:
+
+1. **Drop `from_star` entirely.** A choice reveals layers; it does not
+   draw a line between two named stars. The picture grows as regions of
+   light rather than as a connected graph, and §4.2b becomes unnecessary
+   because there is no line to disconnect. Cheapest, and loses the
+   "constellation" metaphor.
+2. **Per-route anchors.** The state carries no anchor; each *choice*
+   names the star its successors may draw from, so a reconverged state
+   has as many valid anchors as incoming routes. Keeps connected drawing
+   but makes the state machine's meaning route-dependent, which is
+   exactly the property §4.2b's forward dataflow exists to avoid.
+
+**Estimate is suspended, not revised.** Twelve to eighteen days was
+costed against a content model that cannot express the game. A number
+produced before the drawing model is redesigned would be a guess wearing
+a range.
 
 ### 4.5 Authoring cost, flagged as a risk
 
@@ -1371,8 +1435,12 @@ animation with its accessible form.
 
 ## 11. Estimate
 
-**Twelve to eighteen engineering days**, plus production scene authoring
-measured separately (§4.5).
+**Suspended.** See §4.4b: the twelve-to-eighteen figure was costed
+against a content model that cannot express the game. The number below is
+kept for its reasoning, not as a current estimate.
+
+~~**Twelve to eighteen engineering days**, plus production scene
+authoring measured separately (§4.5).~~
 
 Raised twice. The first draft's scene model was a free graph, which was
 both simpler and impossible (§4.0). The layered state machine that
