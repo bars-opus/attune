@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:attune/features/games/snakes_and_ladders/models/snakes_models.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
+import 'package:attune/features/games/presentation/widgets/round_handoff.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_game_screen.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/state/snakes_provider.dart';
 import 'package:attune/features/games/snakes_and_ladders/services/snakes_service.dart';
@@ -278,6 +279,29 @@ void main() {
       expect(find.byType(SnakesBoardView), findsOneWidget);
       expect(find.byType(SnakesDie), findsNothing);
       expect(find.text("Your partner's turn"), findsOneWidget);
+    });
+
+    testWidgets('opening a board that is already theirs does not leave', (
+      tester,
+    ) async {
+      // The hold is for a turn you just took. A player who opens the
+      // game to look at the board while it is their partner's must not
+      // have it close under them -- that is the game walking out of the
+      // room.
+      final gateway = _FakeSnakesGateway(
+        session: _session(
+          initiatorId: 'user-a',
+          status: 'active',
+          currentTurnUserId: 'user-b',
+        ),
+      );
+      await tester.pumpWidget(_host(gateway, viewer: 'user-a'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(RoundHandoff), findsNothing);
+
+      await tester.pump(kRoundHandoffDuration * 2);
+      expect(find.byType(SnakesBoardView), findsOneWidget);
     });
 
     testWidgets('arriving without a session starts one', (tester) async {

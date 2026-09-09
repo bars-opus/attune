@@ -5,6 +5,7 @@ import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
+import 'package:attune/features/games/presentation/widgets/round_handoff.dart';
 import 'package:attune/features/games/snakes_and_ladders/models/snakes_models.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/state/snakes_provider.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/widgets/snakes_board.dart';
@@ -55,6 +56,15 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
   /// session this is. Distinct from the notifier's isLoading, which is
   /// about fetching a session's state.
   bool _resolving = true;
+
+  /// True once this player has taken their turn on this visit.
+  ///
+  /// Distinguishes "you just rolled, the board is theirs now" from
+  /// "you opened a board that was already theirs". Only the first should
+  /// hold the result and leave -- the second is a board the player came
+  /// to look at, and closing it under them would be the game walking out
+  /// of the room.
+  bool _rolledThisVisit = false;
 
   /// Set once the player has been offered the invitation and joined it,
   /// so a rebuild cannot accept twice.
@@ -271,6 +281,11 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
       _walking = false;
       _walkCell = null;
       _featureMotion = null;
+      // Only YOUR roll ends your turn. A partner's roll replayed on
+      // arrival leaves the board with you, so it must not arm the exit.
+      if (turn.playerId == ref.read(snakesCurrentUserIdProvider)) {
+        _rolledThisVisit = true;
+      }
     });
     await ref.read(snakesProvider.notifier).settleTurn();
   }
@@ -361,6 +376,132 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
     final isMine = session.isMyTurn(userId);
     final animatingMine = pending?.playerId == userId;
 
+    // Your roll is in, the walk is over and the board is theirs: hold the
+    // result long enough to read, then leave. Only after a roll YOU took
+    // on this visit -- opening a board that was already the partner's is
+    // a board you came to look at, and closing it under you would be the
+    // game walking out of the room.
+    final handingOff =
+        _rolledThisVisit &&
+        session.isActive &&
+        !isMine &&
+        !_walking &&
+        !state.isRolling &&
+        state.pendingTurn == null;
+
+    final body = SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: SnakesBoardView(
+                  board: session.board,
+                  yourCell:
+                      _walkCell != null && animatingMine ? _walkCell! : yours,
+                  theirCell:
+                      _walkCell != null && !animatingMine ? _walkCell! : theirs,
+                  highlightCell: _walkCell,
+                  featureMotion: _featureMotion,
+                  movingYourToken: animatingMine,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _Readout(yours: yours, theirs: theirs),
+            const SizedBox(height: 12),
+            if (session.isFinished)
+              _Finished(
+                youWon: session.winnerUserId == userId,
+                textTheme: textTheme,
+                busy: _joining,
+                // The rematch starts here rather than being handed
+                // back to a caller: with the lobby gone there is no
+                // screen behind this one that knows how to start a
+                // game, and the player asked for one HERE.
+                onPlayAgain: _playAgain,
+              )
+            else if (session.isInvited)
+              // An invitation, seen from either end, over the real
+              // board. No die: there is no turn to take yet, and a die
+              // that cannot be rolled is a button that ignores you.
+              _Invitation(
+                mine: session.isInitiator(userId),
+                busy: _joining,
+                textTheme: textTheme,
+                onJoin: () => _join(sessionId),
+                onDecline: () => _decline(sessionId),
+              )
+            else ...[
+              // §12.1: the exact-finish rule only frustrates when it is
+              // a surprise. Said out loud in the last stretch, it reads
+              // as the board being cheeky rather than the app refusing
+              // to let you finish.
+              if (yours >= 94)
+                Text(
+                  'Needs an exact roll to finish',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.55),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              // The die is only there on your turn. Waiting for the
+              // partner, what matters is the board and the last thing
+              // that happened on it -- an idle die just invites taps
+              // that do nothing.
+              if (isMine || _walking || state.isRolling)
+                SnakesDie(
+                  face: state.dieFace,
+                  rolling: state.isRolling,
+                  enabled: isMine && !_walking,
+                  onTap: () {
+                    ref.read(hapticsProvider).selection();
+                    unawaited(ref.read(snakesProvider.notifier).roll());
+                  },
+                ),
+              const SizedBox(height: 10),
+              // THE NUMBER, large, while the roll plays out. Pips on a
+              // die read at a glance only if you are looking at the
+              // die -- and during the walk the player is watching their
+              // token, not the corner of the screen. The digit says
+              // what happened without being read.
+              if (state.dieFace != null && !state.isRolling)
+                Text(
+                  '${state.dieFace}',
+                  style: textTheme.displaySmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    height: 1,
+                  ),
+                )
+              else
+                Text(
+                  _walking
+                      ? ''
+                      : isMine
+                      ? 'Your roll'
+                      : "Your partner's turn",
+                  style: textTheme.labelLarge?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    letterSpacing: 1.2,
+                  ),
+                ),
+            ],
+            if (state.errorMessage != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                state.errorMessage!,
+                textAlign: TextAlign.center,
+                style: textTheme.bodySmall?.copyWith(color: SnakesPalette.them),
+              ),
+            ],
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+
     return Scaffold(
       backgroundColor: SnakesPalette.field,
       appBar: AppBar(
@@ -370,122 +511,15 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
         title: const Text('Snakes and Ladders'),
         centerTitle: true,
       ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            children: [
-              Expanded(
-                child: Center(
-                  child: SnakesBoardView(
-                    board: session.board,
-                    yourCell:
-                        _walkCell != null && animatingMine ? _walkCell! : yours,
-                    theirCell:
-                        _walkCell != null && !animatingMine
-                            ? _walkCell!
-                            : theirs,
-                    highlightCell: _walkCell,
-                    featureMotion: _featureMotion,
-                    movingYourToken: animatingMine,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              _Readout(yours: yours, theirs: theirs),
-              const SizedBox(height: 12),
-              if (session.isFinished)
-                _Finished(
-                  youWon: session.winnerUserId == userId,
-                  textTheme: textTheme,
-                  busy: _joining,
-                  // The rematch starts here rather than being handed
-                  // back to a caller: with the lobby gone there is no
-                  // screen behind this one that knows how to start a
-                  // game, and the player asked for one HERE.
-                  onPlayAgain: _playAgain,
-                )
-              else if (session.isInvited)
-                // An invitation, seen from either end, over the real
-                // board. No die: there is no turn to take yet, and a die
-                // that cannot be rolled is a button that ignores you.
-                _Invitation(
-                  mine: session.isInitiator(userId),
-                  busy: _joining,
-                  textTheme: textTheme,
-                  onJoin: () => _join(sessionId),
-                  onDecline: () => _decline(sessionId),
-                )
-              else ...[
-                // §12.1: the exact-finish rule only frustrates when it is
-                // a surprise. Said out loud in the last stretch, it reads
-                // as the board being cheeky rather than the app refusing
-                // to let you finish.
-                if (yours >= 94)
-                  Text(
-                    'Needs an exact roll to finish',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.55),
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                // The die is only there on your turn. Waiting for the
-                // partner, what matters is the board and the last thing
-                // that happened on it -- an idle die just invites taps
-                // that do nothing.
-                if (isMine || _walking || state.isRolling)
-                  SnakesDie(
-                    face: state.dieFace,
-                    rolling: state.isRolling,
-                    enabled: isMine && !_walking,
-                    onTap: () {
-                      ref.read(hapticsProvider).selection();
-                      unawaited(ref.read(snakesProvider.notifier).roll());
-                    },
-                  ),
-                const SizedBox(height: 10),
-                // THE NUMBER, large, while the roll plays out. Pips on a
-                // die read at a glance only if you are looking at the
-                // die -- and during the walk the player is watching their
-                // token, not the corner of the screen. The digit says
-                // what happened without being read.
-                if (state.dieFace != null && !state.isRolling)
-                  Text(
-                    '${state.dieFace}',
-                    style: textTheme.displaySmall?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      height: 1,
-                    ),
-                  )
-                else
-                  Text(
-                    _walking
-                        ? ''
-                        : isMine
-                        ? 'Your roll'
-                        : "Your partner's turn",
-                    style: textTheme.labelLarge?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.7),
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-              ],
-              if (state.errorMessage != null) ...[
-                const SizedBox(height: 10),
-                Text(
-                  state.errorMessage!,
-                  textAlign: TextAlign.center,
-                  style: textTheme.bodySmall?.copyWith(
-                    color: SnakesPalette.them,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-            ],
-          ),
-        ),
-      ),
+      body:
+          handingOff
+              ? RoundHandoff(
+                onLeave: () {
+                  if (mounted) Navigator.of(context).maybePop();
+                },
+                child: body,
+              )
+              : body,
     );
   }
 }
