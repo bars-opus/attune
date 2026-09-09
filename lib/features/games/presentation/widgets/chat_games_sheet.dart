@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/games/presentation/widgets/game_icon.dart';
 import 'package:attune/features/games/presentation/widgets/game_hub_theme.dart';
 import 'package:attune/features/games/presentation/widgets/game_grid_tile.dart';
-import 'package:attune/features/games/presentation/widgets/continue_playing_card.dart';
 
 enum ChatGameDestination {
   thisOrThat,
@@ -441,7 +440,7 @@ class _ChatGameCategorySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(height: Spacing.lg.h),
+        SizedBox(height: Spacing.xxl.h),
         Padding(
           padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w),
           child: Text(
@@ -489,39 +488,6 @@ class _ChatGameCategorySection extends StatelessWidget {
           },
         ),
       ],
-    );
-  }
-}
-
-class _ChatGamePill extends StatelessWidget {
-  const _ChatGamePill({required this.label, this.muted = false});
-
-  final String label;
-  final bool muted;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final foreground =
-        muted ? colorScheme.onSurfaceVariant : colorScheme.primary;
-    final background =
-        muted
-            ? colorScheme.surfaceContainerHighest
-            : colorScheme.primary.withValues(alpha: 0.12);
-
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 5.h),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: foreground,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
     );
   }
 }
@@ -585,38 +551,12 @@ class _ChatGamesInProgress extends ConsumerWidget {
           Gap(Spacing.md.h),
           _ChatGamesSectionLabel(label: 'Continue playing'),
           Gap(Spacing.sm.h),
-          // A HORIZONTAL RAIL rather than stacked rows. There are rarely
-          // more than two or three of these, and a full-width row each
-          // pushed the catalogue below the fold -- the thing most people
-          // opened the sheet for. The rail shows two and cuts the third,
-          // which is also how a person knows to swipe.
-          SizedBox(
-            height: 78,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.symmetric(horizontal: Spacing.sm.w),
-              itemCount: active.length,
-              separatorBuilder: (_, _) => SizedBox(width: Spacing.sm.w),
-              itemBuilder: (context, index) {
-                final game = active[index];
-                final gameType = game['game_type'] as String? ?? '';
-                final destination = chatGameDestinationForType(gameType);
-                final status = game['status'] as String? ?? '';
-                return ContinuePlayingCard(
-                  gameType: gameType,
-                  title: gameTypeDisplayName(gameType),
-                  status:
-                      status == 'invited'
-                          ? 'Invitation waiting'
-                          : 'In progress',
-                  isYourTurn: status == 'invited',
-                  onTap:
-                      destination == null ? null : () => onSelect(destination),
-                );
-              },
-            ),
-          ),
+          // The same row as Recently played, deliberately. A horizontal
+          // rail put in-progress games in a different visual language
+          // from finished ones, which made the sheet read as two
+          // unrelated lists rather than one history with a live top.
+          for (final game in active)
+            _ChatGameSessionRow(game: game, onSelect: onSelect),
           Gap(Spacing.lg.h),
         ],
         if (recent.isNotEmpty) ...[
@@ -677,9 +617,20 @@ class _ChatGamesSectionLabel extends StatelessWidget {
 /// there is no destination to open -- Paint Ball is the one game with a
 /// full recap, which is what [onOpenPaintBallSession] is for.
 class _ChatGameSessionRow extends StatelessWidget {
-  const _ChatGameSessionRow({required this.game, this.onOpenPaintBallSession});
+  const _ChatGameSessionRow({
+    required this.game,
+    this.onSelect,
+    this.onOpenPaintBallSession,
+  });
 
   final Map<String, dynamic> game;
+
+  /// Non-null for "Continue playing": an unfinished session has somewhere
+  /// to go. Null for "Recently played", where a finished session does
+  /// not -- Paint Ball's recap is the one exception, which is what
+  /// [onOpenPaintBallSession] is for.
+  final ValueChanged<ChatGameDestination>? onSelect;
+
   final ValueChanged<String>? onOpenPaintBallSession;
 
   @override
@@ -702,15 +653,14 @@ class _ChatGameSessionRow extends StatelessWidget {
         gameType == 'paint_ball' &&
         sessionId != null &&
         onOpenPaintBallSession != null;
-    // Only a Paint Ball recap is openable from here: everything in this
-    // list is finished, and a finished session has nothing to resume.
+    final destination =
+        onSelect == null ? null : chatGameDestinationForType(gameType);
     final VoidCallback? rowOnTap =
-        canOpenPaintBallRecap ? () => onOpenPaintBallSession!(sessionId) : null;
-    final statusLabel = switch (status) {
-      'invited' => 'Invitation waiting',
-      'completed' => 'Completed',
-      _ => 'In progress',
-    };
+        destination != null
+            ? () => onSelect!(destination)
+            : canOpenPaintBallRecap
+            ? () => onOpenPaintBallSession!(sessionId)
+            : null;
     final subtitle = switch (status) {
       'invited' => 'Invitation waiting for your partner',
       'completed' => 'Recently played together',
@@ -720,84 +670,33 @@ class _ChatGameSessionRow extends StatelessWidget {
     return CardInkWell(
       onTap: rowOnTap,
       borderRadius: BorderRadius.circular(24),
-      color: colorScheme.surface,
+      color: Colors.grey.withValues(alpha: 0.1),
       padding: EdgeInsets.all(Spacing.md.w),
       margin: EdgeInsets.only(bottom: Spacing.sm.h),
       // elevation: 0,
       borderColor: colorScheme.outline.withValues(alpha: 0.08),
       child: InfoRowWidget(
+        pinAvatar: false,
         title: title,
         subtitle: subtitle,
         // The illustration where one exists; GameIcon falls back to this
         // glyph itself for the games not yet drawn.
         leadingWidget: GameIcon(
           gameType: gameType,
-          size: 34.h,
+          size: 80.h,
           // A recently-played row has no colour of its own.
           filled: true,
+          radius: 10.r,
         ),
         icon: icon,
+
         showAvatar: false,
         showDivider: false,
         showTrailingArrow: rowOnTap != null,
         padAvatarTop: true,
-        bottomWidget: _ChatGamePill(
-          label: statusLabel,
-          muted: status == 'completed',
-        ),
 
         onTap: rowOnTap,
       ),
-
-      // Row(
-      //   children: [
-      //     Container(
-      //       width: 46.h,
-      //       height: 46.h,
-      //       decoration: BoxDecoration(
-      //         color: colorScheme.primary,
-      //         shape: BoxShape.circle,
-      //       ),
-      //       child: Icon(icon, color: colorScheme.onPrimary, size: 23.h),
-      //     ),
-      //     SizedBox(width: Spacing.md.w),
-      //     Expanded(
-      //       child: Column(
-      //         crossAxisAlignment: CrossAxisAlignment.start,
-      //         children: [
-      //           Row(
-      //             children: [
-      //               Expanded(
-      //                 child: Text(
-      //                   title,
-      //                   maxLines: 1,
-      //                   overflow: TextOverflow.ellipsis,
-      //                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
-      //                     color: colorScheme.onSurface,
-      //                     fontWeight: FontWeight.w800,
-      //                   ),
-      //                 ),
-      //               ),
-      // _ChatGamePill(
-      //   label: statusLabel,
-      //   muted: status == 'completed',
-      // ),
-      //             ],
-      //           ),
-      //           SizedBox(height: 3.h),
-      //           Text(
-      //             subtitle,
-      //             maxLines: 1,
-      //             overflow: TextOverflow.ellipsis,
-      //             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-      //               color: colorScheme.onSurface.withValues(alpha: 0.62),
-      //             ),
-      //           ),
-      //         ],
-      //       ),
-      //     ),
-      //   ],
-      // ),
     );
   }
 }

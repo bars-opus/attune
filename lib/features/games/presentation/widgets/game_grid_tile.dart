@@ -47,17 +47,7 @@ class GameGridTile extends StatelessWidget {
             child: Ink(
               decoration: BoxDecoration(
                 color: palette.end,
-                // gradient: LinearGradient(
-                //   // The card's own gradient, deeper than the icon tile's
-                //   // so the icon still reads as a distinct object sitting
-                //   // ON it rather than dissolving into it.
-                //   colors: [
-                //     Color.lerp(palette.start, Colors.black, 0.42)!,
-                //     Color.lerp(palette.end, Colors.black, 0.55)!,
-                //   ],
-                //   begin: Alignment.topLeft,
-                //   end: Alignment.bottomRight,
-                // ),
+
                 borderRadius: BorderRadius.circular(20),
               ),
               child: InkWell(
