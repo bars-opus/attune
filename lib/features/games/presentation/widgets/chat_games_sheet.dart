@@ -4,6 +4,7 @@ import 'package:attune/core/widgets/search_text_field.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/games/presentation/widgets/game_icon.dart';
+import 'package:attune/features/games/presentation/widgets/game_palette.dart';
 import 'package:attune/features/games/presentation/widgets/game_hub_theme.dart';
 import 'package:attune/features/games/presentation/widgets/game_grid_tile.dart';
 
@@ -644,8 +645,6 @@ class _ChatGameSessionRow extends StatelessWidget {
     final title =
         game['game_type_display'] as String? ?? gameTypeDisplayName(gameType);
 
-    final icon = chatGameIconForType(gameType) ?? Icons.sports_esports_outlined;
-
     final status = game['status'] as String? ?? '';
     final sessionId = game['id'] as String?;
     final canOpenPaintBallRecap =
@@ -676,25 +675,27 @@ class _ChatGameSessionRow extends StatelessWidget {
       // elevation: 0,
       borderColor: colorScheme.outline.withValues(alpha: 0.08),
       child: InfoRowWidget(
-        pinAvatar: false,
+        pinAvatar: true,
         title: title,
         subtitle: subtitle,
-        // The illustration where one exists; GameIcon falls back to this
-        // glyph itself for the games not yet drawn.
-        leadingWidget: GameIcon(
-          gameType: gameType,
-          size: 80.h,
-          // A recently-played row has no colour of its own.
-          filled: true,
-          radius: 10.r,
-        ),
-        icon: icon,
-
-        showAvatar: false,
+        // The game's colour and glyph handed straight to the row rather
+        // than wrapped in a GameIcon. InfoRowWidget puts a leadingWidget
+        // inside a SizedBox of avatarRadius and centres it, so an 80px
+        // tile in a 45px box overflowed and sat off-centre. Going through
+        // the row's own IconAvatar means one widget owns the sizing.
+        icon: gameGlyphFor(gameType),
+        iconColor: Colors.white,
+        backgroundColor: GamePalette.of(gameType).end,
+        avatarRadius: 52.h,
+        iconSize: 26.h,
+        circularRadius: 14.r,
+        // TRUE, or IconAvatar renders a bare glyph and skips its
+        // coloured container entirely -- which is what made the game's
+        // colour vanish from the row.
+        showAvatar: true,
         showDivider: false,
         showTrailingArrow: rowOnTap != null,
         padAvatarTop: true,
-
         onTap: rowOnTap,
       ),
     );
