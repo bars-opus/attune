@@ -1326,7 +1326,18 @@ class _BubbleBody extends StatelessWidget {
         ),
       );
     }
-    final hasText = message.content.trim().isNotEmpty;
+    // A game card's content IS its title -- the trigger writes the game's
+    // display name there so the card has something to show before the
+    // session stream delivers its first row. GameMessageBubble renders it
+    // as the row's title, so letting the generic text block below run too
+    // printed the game's name twice: once in the card, once under it.
+    //
+    // A trail is the same: GameTrailLine already draws the name beside
+    // its icon.
+    final hasText =
+        message.content.trim().isNotEmpty &&
+        !message.isGame &&
+        !message.isGameTrail;
     if (hasText) {
       if (children.isNotEmpty) {
         children.add(const SizedBox(height: 8));
