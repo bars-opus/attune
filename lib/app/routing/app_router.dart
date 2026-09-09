@@ -16,7 +16,6 @@ import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_knockout_screen.dart';
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_lobby_screen.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_game_screen.dart';
-import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_lobby_screen.dart';
 import 'package:attune/features/games/constellation/prototype/constellation_prototype_screen.dart';
 import 'package:attune/features/games/dots_and_boxes/prototype/dots_boxes_prototype_screen.dart';
 import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_game_screen.dart';
@@ -1646,25 +1645,21 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
           return PaintBallKnockoutScreen(sessionId: sessionId);
         },
       ),
+      // One Snakes route, not two. The lobby that used to sit in front of
+      // the board is gone: every tap that opens this game -- from the
+      // picker, from a card you sent, from a card they sent -- lands on
+      // the board, which resolves the session itself.
       GoRoute(
-        path: '/games/snakes/lobby/:relationshipId',
-        name: 'snakesLobby',
-        builder: (context, state) {
-          final relationshipId = state.pathParameters['relationshipId']!;
-          return SnakesLobbyScreen(
-            relationshipId: relationshipId,
-            // Set by a tap on an invitation the partner sent: the lobby
-            // accepts it and opens the board without stopping to ask.
-            acceptSessionId: state.uri.queryParameters['accept'],
-          );
-        },
-      ),
-      GoRoute(
-        path: '/games/snakes/game/:sessionId',
+        path: '/games/snakes/:relationshipId',
         name: 'snakesGame',
         builder: (context, state) {
-          final sessionId = state.pathParameters['sessionId']!;
-          return SnakesGameScreen(sessionId: sessionId);
+          final relationshipId = state.pathParameters['relationshipId']!;
+          return SnakesGameScreen(
+            relationshipId: relationshipId,
+            // Set by a tap on a chat card. Absent when the picker opened
+            // this, in which case the screen finds or starts the game.
+            sessionId: state.uri.queryParameters['session'],
+          );
         },
       ),
       // PROTOTYPE ROUTE. CONSTELLATION_GAME_SPEC.md §4.4c: the scene

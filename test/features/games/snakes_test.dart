@@ -4,7 +4,6 @@ import 'dart:async';
 import 'package:attune/features/games/snakes_and_ladders/models/snakes_models.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_game_screen.dart';
-import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_lobby_screen.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/state/snakes_provider.dart';
 import 'package:attune/features/games/snakes_and_ladders/services/snakes_service.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/widgets/snakes_board.dart';
@@ -188,18 +187,7 @@ void main() {
     ) async {
       final gateway = _FakeSnakesGateway(loadError: true);
       await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            snakesGatewayProvider.overrideWithValue(gateway),
-            snakesCurrentUserIdProvider.overrideWithValue('user-a'),
-            gameSessionLiveProvider.overrideWith(
-              (_, __) => const Stream<void>.empty(),
-            ),
-          ],
-          child: const MaterialApp(
-            home: SnakesGameScreen(sessionId: 'missing'),
-          ),
-        ),
+        _host(gateway, viewer: 'user-a', session: 'missing'),
       );
       await tester.pumpAndSettle();
 
@@ -211,130 +199,114 @@ void main() {
       );
     });
 
-    testWidgets('the inviter waits instead of joining their own game', (
+    testWidgets('tapping your own invitation shows the board, no die', (
+      tester,
+    ) async {
+      // The single thing this whole flow is for. Tapping the card you
+      // sent used to land on a lobby that said "no talking required"
+      // over a "Waiting for your partner" line. It now lands on the
+      // board itself, with the die put away because there is no turn to
+      // take -- a die that cannot be rolled is a button that ignores
+      // you.
+      final gateway = _FakeSnakesGateway(
+        session: _session(initiatorId: 'user-a'),
+      );
+      await tester.pumpWidget(_host(gateway, viewer: 'user-a'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SnakesBoardView), findsOneWidget);
+      expect(find.byType(SnakesDie), findsNothing);
+      expect(find.text("Your partner's turn"), findsOneWidget);
+      expect(find.text('Cancel invitation'), findsOneWidget);
+      expect(find.text('Join the game'), findsNothing);
+      expect(find.text('No talking required.'), findsNothing);
+    });
+
+    testWidgets('the invitee is offered the game over the board', (
       tester,
     ) async {
       final gateway = _FakeSnakesGateway(
-        activeSession: _session(initiatorId: 'user-a'),
+        session: _session(initiatorId: 'user-a'),
       );
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            snakesGatewayProvider.overrideWithValue(gateway),
-            snakesCurrentUserIdProvider.overrideWithValue('user-a'),
-          ],
-          child: const MaterialApp(
-            home: SnakesLobbyScreen(relationshipId: 'relationship'),
-          ),
-        ),
-      );
+      await tester.pumpWidget(_host(gateway, viewer: 'user-b'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Waiting for your partner'), findsOneWidget);
-      expect(find.text('Join the game'), findsNothing);
-    });
-
-    testWidgets('the invitee can either join or decline', (tester) async {
-      final gateway = _FakeSnakesGateway(
-        activeSession: _session(initiatorId: 'user-a'),
-      );
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            snakesGatewayProvider.overrideWithValue(gateway),
-            snakesCurrentUserIdProvider.overrideWithValue('user-b'),
-          ],
-          child: const MaterialApp(
-            home: SnakesLobbyScreen(relationshipId: 'relationship'),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
+      expect(find.byType(SnakesBoardView), findsOneWidget);
       expect(find.text('Join the game'), findsOneWidget);
       expect(find.text('Decline'), findsOneWidget);
     });
 
-    testWidgets('sending an invitation returns to the chat', (tester) async {
-      // It used to stay put and show "Waiting for your partner" over a
-      // "Back to chat" button -- a screen whose only purpose was to be
-      // left. The invitation IS the chat card, posted by a database
-      // trigger the moment the session row lands, so the conversation
-      // already shows the game by the time this pops.
-      //
-      // Pushed onto a host route rather than being the home widget: a
-      // root route has nothing to pop back to, so maybePop would be a
-      // no-op and the test would pass whatever the lobby did.
-      final gateway = _FakeSnakesGateway();
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            snakesGatewayProvider.overrideWithValue(gateway),
-            snakesCurrentUserIdProvider.overrideWithValue('user-a'),
-          ],
-          child: MaterialApp(
-            home: Builder(
-              builder:
-                  (context) => Scaffold(
-                    body: Center(
-                      child: ElevatedButton(
-                        onPressed:
-                            () => Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder:
-                                    (_) => const SnakesLobbyScreen(
-                                      relationshipId: 'relationship',
-                                    ),
-                              ),
-                            ),
-                        child: const Text('open'),
-                      ),
-                    ),
-                  ),
-            ),
-          ),
-        ),
+    testWidgets('joining puts the die in the invitee\'s hand', (tester) async {
+      // Accepting used to mean a lobby button, a route push and a fresh
+      // screen. It is now a reload in place: same board, die appears.
+      final gateway = _FakeSnakesGateway(
+        session: _session(initiatorId: 'user-a'),
       );
-      await tester.tap(find.text('open'));
+      await tester.pumpWidget(_host(gateway, viewer: 'user-b'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Start a game'), findsOneWidget);
-      await tester.tap(find.text('Start a game'));
+      gateway.session = _session(
+        initiatorId: 'user-a',
+        status: 'active',
+        currentTurnUserId: 'user-b',
+      );
+      await tester.tap(find.text('Join the game'));
       await tester.pumpAndSettle();
 
-      // Back on the host screen: the lobby popped itself.
-      expect(find.text('open'), findsOneWidget);
-      expect(find.text('Start a game'), findsNothing);
-      expect(tester.takeException(), isNull);
+      expect(gateway.accepted, ['session']);
+      expect(find.byType(SnakesDie), findsOneWidget);
+      expect(find.text('Join the game'), findsNothing);
     });
 
-    testWidgets('tapping your own invitation offers to cancel it', (
+    testWidgets('the die is hidden while it is the partner\'s turn', (
       tester,
     ) async {
-      // The lobby is still reachable -- by tapping the card you sent --
-      // and what is useful there is cancelling, not a button that says
-      // "back" when the system gesture already does that.
-      // _session already defaults to an invited session from user-a.
+      // Previously the screen popped itself the moment the turn passed,
+      // which is what put the player back on the lobby's "carry on"
+      // screen after every roll. It stays now, and simply puts the die
+      // away.
       final gateway = _FakeSnakesGateway(
-        activeSession: _session(initiatorId: 'user-a'),
-      );
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            snakesGatewayProvider.overrideWithValue(gateway),
-            snakesCurrentUserIdProvider.overrideWithValue('user-a'),
-          ],
-          child: const MaterialApp(
-            home: SnakesLobbyScreen(relationshipId: 'relationship'),
-          ),
+        session: _session(
+          initiatorId: 'user-a',
+          status: 'active',
+          currentTurnUserId: 'user-b',
         ),
       );
+      await tester.pumpWidget(_host(gateway, viewer: 'user-a'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Cancel invitation'), findsOneWidget);
-      expect(find.text('Back to chat'), findsNothing);
+      expect(find.byType(SnakesBoardView), findsOneWidget);
+      expect(find.byType(SnakesDie), findsNothing);
+      expect(find.text("Your partner's turn"), findsOneWidget);
+    });
+
+    testWidgets('arriving without a session starts one', (tester) async {
+      // From the picker. The tap on the game already said what the
+      // player wants; a lobby asking them to press "Start a game" was
+      // asking the same question twice.
+      final gateway = _FakeSnakesGateway();
+      await tester.pumpWidget(_host(gateway, viewer: 'user-a', session: null));
+      await tester.pumpAndSettle();
+
+      expect(gateway.createKeys, hasLength(1));
+      expect(find.byType(SnakesBoardView), findsOneWidget);
+    });
+
+    testWidgets('arriving without a session resumes the game in progress', (
+      tester,
+    ) async {
+      final gateway = _FakeSnakesGateway(
+        session: _session(
+          sessionId: 'in-progress',
+          status: 'active',
+          currentTurnUserId: 'user-a',
+        ),
+      );
+      await tester.pumpWidget(_host(gateway, viewer: 'user-a', session: null));
+      await tester.pumpAndSettle();
+
+      expect(gateway.createKeys, isEmpty);
+      expect(find.byType(SnakesDie), findsOneWidget);
     });
   });
 
@@ -466,14 +438,17 @@ void main() {
             'lib/features/chat/presentation/screens/chat_screen.dart',
           ).readAsStringSync();
       expect(
-        chat.contains('snakesLobby'),
+        chat.contains('snakesGame'),
         isTrue,
         reason: 'tapping the game in the sheet goes nowhere',
       );
 
       final router = File('lib/app/routing/app_router.dart').readAsStringSync();
-      expect(router.contains("name: 'snakesLobby'"), isTrue);
       expect(router.contains("name: 'snakesGame'"), isTrue);
+      // One route, not two. The lobby is gone and must not come back by
+      // accident: every entry point lands on the board.
+      expect(router.contains('snakesLobby'), isFalse);
+      expect(chat.contains('snakesLobby'), isFalse);
     });
 
     test('the game has a display name rather than a title-cased id', () {
@@ -628,10 +603,15 @@ void main() {
         isTrue,
         reason: 'the board would never update on its own',
       );
+      // The screen used to pop itself the moment the turn passed. With
+      // the lobby gone there is nothing sensible behind it to pop TO,
+      // and popping is what put the player on a "carry on" screen after
+      // every roll. It stays and hides the die instead -- covered live
+      // by "the die is hidden while it is the partner's turn".
       expect(
         source.contains('_leaving'),
-        isTrue,
-        reason: 'the screen never leaves once the turn has passed',
+        isFalse,
+        reason: 'the screen pops itself again after a roll',
       );
     });
   });
@@ -640,30 +620,57 @@ void main() {
 SnakesSession _session({
   String sessionId = 'session',
   String initiatorId = 'user-a',
+  String status = 'invited',
+  String? currentTurnUserId,
 }) => SnakesSession.fromJson({
   'session_id': sessionId,
   'initiator_id': initiatorId,
-  'status': 'invited',
+  'status': status,
   'user_a': 'user-a',
   'user_b': 'user-b',
   'position_a': 0,
   'position_b': 0,
   'current_round': 1,
+  if (currentTurnUserId != null) 'current_turn_user_id': currentTurnUserId,
   'board': {'ladders': <String, int>{}, 'snakes': <String, int>{}},
   'rounds': <Object>[],
 });
+
+/// The game screen under a host route, so a pop has somewhere to go.
+///
+/// [session] is the session id the chat card pointed at; null stands for
+/// arriving from the picker, with no session in hand.
+Widget _host(
+  _FakeSnakesGateway gateway, {
+  required String viewer,
+  String? session = 'session',
+}) => ProviderScope(
+  overrides: [
+    snakesGatewayProvider.overrideWithValue(gateway),
+    snakesCurrentUserIdProvider.overrideWithValue(viewer),
+    gameSessionLiveProvider.overrideWith((_, __) => const Stream<void>.empty()),
+  ],
+  child: MaterialApp(
+    home: SnakesGameScreen(relationshipId: 'relationship', sessionId: session),
+  ),
+);
 
 class _FakeSnakesGateway implements SnakesGateway {
   _FakeSnakesGateway({
     this.failFirstCreate = false,
     this.loadError = false,
-    this.activeSession,
+    this.session,
   });
 
   final bool failFirstCreate;
   final bool loadError;
-  SnakesSession? activeSession;
+
+  /// What getState and getActiveSession both return. Tests reassign it to
+  /// stand for the partner acting between two loads.
+  SnakesSession? session;
   final List<String> createKeys = [];
+  final List<String> accepted = [];
+  final List<String> declined = [];
   final Map<String, Future<SnakesSession>> loadResults = {};
 
   @override
@@ -676,26 +683,35 @@ class _FakeSnakesGateway implements SnakesGateway {
       throw const SnakesApiError(code: 'NETWORK', message: 'Try again.');
     }
     final sessionId = 'session-${createKeys.length}';
-    activeSession = _session(sessionId: sessionId, initiatorId: 'user-a');
+    session = _session(sessionId: sessionId, initiatorId: 'user-a');
     return sessionId;
   }
 
   @override
   Future<SnakesSession> getState(String sessionId) {
     if (loadError) throw StateError('database details must not reach the UI');
-    return loadResults[sessionId] ??
-        Future.value(_session(sessionId: sessionId));
+    final queued = loadResults[sessionId];
+    if (queued != null) return queued;
+    final current = session;
+    // Only serves the configured session when it IS the one asked for --
+    // a fake that answered every id with the same row would hide a
+    // screen loading the wrong game.
+    if (current != null && current.sessionId == sessionId) {
+      return Future.value(current);
+    }
+    return Future.value(_session(sessionId: sessionId));
   }
 
   @override
-  Future<void> acceptSession(String sessionId) async {}
+  Future<void> acceptSession(String sessionId) async => accepted.add(sessionId);
 
   @override
-  Future<void> declineSession(String sessionId) async {}
+  Future<void> declineSession(String sessionId) async =>
+      declined.add(sessionId);
 
   @override
   Future<SnakesSession?> getActiveSession(String relationshipId) async =>
-      activeSession;
+      session;
 
   @override
   Future<SnakesTurn> rollDie({

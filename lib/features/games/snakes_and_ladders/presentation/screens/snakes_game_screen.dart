@@ -12,15 +12,28 @@ import 'package:attune/features/games/snakes_and_ladders/presentation/widgets/sn
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// What the player chose on the way out, so the caller can offer a
-/// rematch without this screen knowing how a game is created.
-enum SnakesExitAction { backToChat, playAgain }
-
-/// The whole game: a board, two tokens, and a die.
+/// The whole game, and the only Snakes screen: a board, two tokens, and
+/// a die.
+///
+/// There used to be a lobby in front of this -- a screen that said "no
+/// talking required" over a button to press before the game would open.
+/// It was a toll gate. Every state it handled (start one, join theirs,
+/// wait for them, carry on) is a state the board can show while ALSO
+/// showing the board, so the board shows them and the lobby is gone.
 class SnakesGameScreen extends ConsumerStatefulWidget {
-  const SnakesGameScreen({super.key, required this.sessionId});
+  const SnakesGameScreen({
+    super.key,
+    required this.relationshipId,
+    this.sessionId,
+  });
 
-  final String sessionId;
+  /// Whose game. Needed to start one, and to find the game in progress
+  /// when the player arrived without a session in hand.
+  final String relationshipId;
+
+  /// The session a chat card pointed at. Null when the player came from
+  /// the picker, in which case this screen finds or starts the game.
+  final String? sessionId;
 
   @override
   ConsumerState<SnakesGameScreen> createState() => _SnakesGameScreenState();
@@ -34,16 +47,25 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
   SnakesFeatureMotion? _featureMotion;
   bool _walking = false;
 
-  /// Guards the automatic exit so a rebuild cannot schedule two pops.
-  bool _leaving = false;
+  /// The session this screen settled on: the one it was given, the one it
+  /// found in progress, or the one it started.
+  String? _sessionId;
+
+  /// True while starting, finding, joining -- anything that changes which
+  /// session this is. Distinct from the notifier's isLoading, which is
+  /// about fetching a session's state.
+  bool _resolving = true;
+
+  /// Set once the player has been offered the invitation and joined it,
+  /// so a rebuild cannot accept twice.
+  bool _joining = false;
+  String? _resolveError;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(snakesProvider.notifier).load(widget.sessionId);
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_resolve()));
   }
 
   @override
@@ -52,12 +74,104 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
     super.dispose();
   }
 
+  /// Works out which game this is, and opens it.
+  ///
+  /// Given a session, that is the game -- including one that is still an
+  /// unaccepted invitation, which is the whole point: tapping a card you
+  /// sent shows the board with the die put away rather than a screen
+  /// apologising for the wait.
+  ///
+  /// Given none, the couple's game in progress is the game, and if they
+  /// have none, one is started. Starting from the picker used to need a
+  /// button press on a lobby; the tap on the game in the picker already
+  /// said what the player wants.
+  Future<void> _resolve() async {
+    final notifier = ref.read(snakesProvider.notifier)..clearError();
+
+    var sessionId = widget.sessionId;
+    if (sessionId == null) {
+      final existing = await notifier.findActive(widget.relationshipId);
+      if (!mounted) return;
+      sessionId =
+          existing?.sessionId ??
+          await notifier.createSession(widget.relationshipId);
+      if (!mounted) return;
+      if (sessionId == null) {
+        setState(() {
+          _resolving = false;
+          _resolveError =
+              ref.read(snakesProvider).errorMessage ??
+              'Could not start a game.';
+        });
+        return;
+      }
+    }
+
+    setState(() {
+      _sessionId = sessionId;
+      _resolving = false;
+    });
+    await notifier.load(sessionId);
+  }
+
+  /// Accepts the partner's invitation, then reloads so the board is live.
+  Future<void> _join(String sessionId) async {
+    if (_joining) return;
+    setState(() {
+      _joining = true;
+      _resolveError = null;
+    });
+    final ok = await ref.read(snakesProvider.notifier).acceptSession(sessionId);
+    if (!mounted) return;
+    setState(() => _joining = false);
+    if (!ok) return;
+    await ref.read(snakesProvider.notifier).load(sessionId);
+  }
+
+  /// Cancels an invitation, or declines the partner's, and leaves. The
+  /// reason to be on this screen goes with it.
+  Future<void> _decline(String sessionId) async {
+    if (_joining) return;
+    setState(() {
+      _joining = true;
+      _resolveError = null;
+    });
+    final ok = await ref
+        .read(snakesProvider.notifier)
+        .declineSession(sessionId);
+    if (!mounted) return;
+    setState(() => _joining = false);
+    if (ok && mounted) Navigator.of(context).maybePop();
+  }
+
+  /// Starts the next game and swaps this screen onto it, so a rematch
+  /// is one tap and stays where the players already are.
+  Future<void> _playAgain() async {
+    if (_joining) return;
+    setState(() {
+      _joining = true;
+      _resolveError = null;
+    });
+    final next = await ref
+        .read(snakesProvider.notifier)
+        .createSession(widget.relationshipId);
+    if (!mounted) return;
+    setState(() {
+      _joining = false;
+      if (next != null) _sessionId = next;
+    });
+    if (next != null) await ref.read(snakesProvider.notifier).load(next);
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed || _walking) return;
+    final sessionId = _sessionId;
+    if (state != AppLifecycleState.resumed || _walking || sessionId == null) {
+      return;
+    }
     final game = ref.read(snakesProvider);
     if (!game.isRolling && game.pendingTurn == null) {
-      unawaited(ref.read(snakesProvider.notifier).load(widget.sessionId));
+      unawaited(ref.read(snakesProvider.notifier).load(sessionId));
     }
   }
 
@@ -163,17 +277,23 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
 
   @override
   Widget build(BuildContext context) {
+    final sessionId = _sessionId;
+
     // Live, like every other game. Without this the screen loaded once
     // and never again: a partner's roll would not appear until the
     // player closed and reopened the game, on a board that still read
-    // "Their roll".
-    ref.listen(gameSessionLiveProvider(widget.sessionId), (_, _) {
-      final game = ref.read(snakesProvider);
-      if (!_walking && !game.isRolling && game.pendingTurn == null) {
-        unawaited(ref.read(snakesProvider.notifier).load(widget.sessionId));
-      }
-    });
-    ref.watch(gameSessionLiveProvider(widget.sessionId));
+    // "Their roll". It also carries the invitation the moment the
+    // partner accepts it, which turns the waiting board into a live one
+    // with nothing to press.
+    if (sessionId != null) {
+      ref.listen(gameSessionLiveProvider(sessionId), (_, _) {
+        final game = ref.read(snakesProvider);
+        if (!_walking && !game.isRolling && game.pendingTurn == null) {
+          unawaited(ref.read(snakesProvider.notifier).load(sessionId));
+        }
+      });
+      ref.watch(gameSessionLiveProvider(sessionId));
+    }
 
     final state = ref.watch(snakesProvider);
     final userId = ref.watch(snakesCurrentUserIdProvider);
@@ -189,31 +309,14 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
       });
     }
 
-    // Nothing left to do here: the roll is in and the board is with the
-    // partner. Leaving on its own beats parking the player on a dead
-    // board, and matches Paint Ball. Held until any animation finishes
-    // so the walk the player came to watch is never cut short.
-    if (session != null &&
-        session.isActive &&
-        !session.isMyTurn(userId) &&
-        state.pendingTurn == null &&
-        !_walking &&
-        !state.isRolling &&
-        !_leaving) {
-      _leaving = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Navigator.of(context).maybePop();
-      });
-    }
-
-    if (state.isLoading) {
+    if (_resolving || (state.isLoading && session == null)) {
       return const Scaffold(
         backgroundColor: SnakesPalette.field,
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
-    if (session == null) {
+    if (session == null || sessionId == null) {
       return Scaffold(
         backgroundColor: SnakesPalette.field,
         appBar: AppBar(
@@ -229,16 +332,21 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  state.errorMessage ?? 'Could not open this game.',
+                  _resolveError ??
+                      state.errorMessage ??
+                      'Could not open this game.',
                   textAlign: TextAlign.center,
                   style: textTheme.bodyMedium?.copyWith(color: Colors.white70),
                 ),
                 const SizedBox(height: 16),
                 OutlinedButton(
-                  onPressed:
-                      () => ref
-                          .read(snakesProvider.notifier)
-                          .load(widget.sessionId),
+                  onPressed: () {
+                    setState(() {
+                      _resolving = true;
+                      _resolveError = null;
+                    });
+                    unawaited(_resolve());
+                  },
                   child: const Text('Try again'),
                 ),
               ],
@@ -290,10 +398,23 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
                 _Finished(
                   youWon: session.winnerUserId == userId,
                   textTheme: textTheme,
-                  onPlayAgain:
-                      () => Navigator.of(
-                        context,
-                      ).maybePop(SnakesExitAction.playAgain),
+                  busy: _joining,
+                  // The rematch starts here rather than being handed
+                  // back to a caller: with the lobby gone there is no
+                  // screen behind this one that knows how to start a
+                  // game, and the player asked for one HERE.
+                  onPlayAgain: _playAgain,
+                )
+              else if (session.isInvited)
+                // An invitation, seen from either end, over the real
+                // board. No die: there is no turn to take yet, and a die
+                // that cannot be rolled is a button that ignores you.
+                _Invitation(
+                  mine: session.isInitiator(userId),
+                  busy: _joining,
+                  textTheme: textTheme,
+                  onJoin: () => _join(sessionId),
+                  onDecline: () => _decline(sessionId),
                 )
               else ...[
                 // §12.1: the exact-finish rule only frustrates when it is
@@ -308,15 +429,20 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
                     ),
                   ),
                 const SizedBox(height: 8),
-                SnakesDie(
-                  face: state.dieFace,
-                  rolling: state.isRolling,
-                  enabled: isMine && !_walking,
-                  onTap: () {
-                    ref.read(hapticsProvider).selection();
-                    unawaited(ref.read(snakesProvider.notifier).roll());
-                  },
-                ),
+                // The die is only there on your turn. Waiting for the
+                // partner, what matters is the board and the last thing
+                // that happened on it -- an idle die just invites taps
+                // that do nothing.
+                if (isMine || _walking || state.isRolling)
+                  SnakesDie(
+                    face: state.dieFace,
+                    rolling: state.isRolling,
+                    enabled: isMine && !_walking,
+                    onTap: () {
+                      ref.read(hapticsProvider).selection();
+                      unawaited(ref.read(snakesProvider.notifier).roll());
+                    },
+                  ),
                 const SizedBox(height: 10),
                 // THE NUMBER, large, while the roll plays out. Pips on a
                 // die read at a glance only if you are looking at the
@@ -338,7 +464,7 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
                         ? ''
                         : isMine
                         ? 'Your roll'
-                        : 'Their roll',
+                        : "Your partner's turn",
                     style: textTheme.labelLarge?.copyWith(
                       color: Colors.white.withValues(alpha: 0.7),
                       letterSpacing: 1.2,
@@ -415,11 +541,13 @@ class _Finished extends StatelessWidget {
   const _Finished({
     required this.youWon,
     required this.textTheme,
+    this.busy = false,
     this.onPlayAgain,
   });
 
   final bool youWon;
   final TextTheme textTheme;
+  final bool busy;
   final VoidCallback? onPlayAgain;
 
   @override
@@ -436,12 +564,19 @@ class _Finished extends StatelessWidget {
         const SizedBox(height: 14),
         if (onPlayAgain != null) ...[
           FilledButton(
-            onPressed: onPlayAgain,
+            onPressed: busy ? null : onPlayAgain,
             style: FilledButton.styleFrom(
               backgroundColor: SnakesPalette.you,
               foregroundColor: SnakesPalette.field,
             ),
-            child: const Text('Play again'),
+            child:
+                busy
+                    ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2.4),
+                    )
+                    : const Text('Play again'),
           ),
           const SizedBox(height: 10),
         ],
@@ -452,6 +587,80 @@ class _Finished extends StatelessWidget {
             side: BorderSide(color: Colors.white.withValues(alpha: 0.25)),
           ),
           child: const Text('Back to chat'),
+        ),
+      ],
+    );
+  }
+}
+
+/// An unaccepted invitation, shown under the real board.
+///
+/// Both ends see the same board; only the offer differs. The sender's
+/// side deliberately has no primary action -- there is nothing for them
+/// to do but wait, and a button would imply otherwise.
+class _Invitation extends StatelessWidget {
+  const _Invitation({
+    required this.mine,
+    required this.busy,
+    required this.textTheme,
+    required this.onJoin,
+    required this.onDecline,
+  });
+
+  /// True when this player sent the invitation.
+  final bool mine;
+  final bool busy;
+  final TextTheme textTheme;
+  final VoidCallback onJoin;
+  final VoidCallback onDecline;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          mine ? "Your partner's turn" : 'They started a game',
+          style: textTheme.titleMedium?.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          mine
+              ? 'They roll first once they open it.'
+              : 'Roll whenever you like. There is no clock.',
+          textAlign: TextAlign.center,
+          style: textTheme.bodySmall?.copyWith(
+            color: Colors.white.withValues(alpha: 0.6),
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (!mine) ...[
+          FilledButton(
+            onPressed: busy ? null : onJoin,
+            style: FilledButton.styleFrom(
+              backgroundColor: SnakesPalette.you,
+              foregroundColor: SnakesPalette.field,
+            ),
+            child:
+                busy
+                    ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2.4),
+                    )
+                    : const Text('Join the game'),
+          ),
+          const SizedBox(height: 10),
+        ],
+        OutlinedButton(
+          onPressed: busy ? null : onDecline,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white,
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.25)),
+          ),
+          child: Text(mine ? 'Cancel invitation' : 'Decline'),
         ),
       ],
     );

@@ -2908,6 +2908,7 @@ Future<void> openGameRoute(
   BuildContext context,
   ChatGameDestination destination, {
   required String relationshipId,
+
   /// The session a chat card refers to. Null when the picker opened this,
   /// because starting a game from the hub has no session yet.
   String? sessionId,
@@ -2942,12 +2943,14 @@ Future<void> openGameRoute(
     case ChatGameDestination.truthOrDare:
       await context.pushNamed('truthOrDareGame');
     case ChatGameDestination.snakesAndLadders:
+      // Straight to the board, whatever state the game is in. It shows
+      // the invitation, the wait, the turn or the result itself -- there
+      // is no lobby left to route through, and autoAccept is not needed
+      // because the board asks before joining a game you did not start.
       await context.pushNamed(
-        'snakesLobby',
+        'snakesGame',
         pathParameters: {'relationshipId': relationshipId},
-        queryParameters: {
-          if (autoAccept && sessionId != null) 'accept': sessionId,
-        },
+        queryParameters: {if (sessionId != null) 'session': sessionId},
       );
     case ChatGameDestination.wordHunt:
       await context.pushNamed(
