@@ -233,6 +233,12 @@ class MessageBubble extends StatelessWidget {
       groupedBelow: isGroupedWithPrevious,
     );
     final isMediaGroup = mediaGroup.length > 1;
+    // A game card paints its own surface, so the bubble must not paint
+    // one behind it. On the receiver side the two happened to stack as
+    // neutral-on-neutral and looked fine; on the sender side the card's
+    // grey sat on the accent-coloured sender bubble and read as a panel
+    // floating inside a coloured frame.
+    final isSelfSurfaced = message.isGame && message.gameSessionId != null;
     // Only a media group is bare now.
     //
     // Game trails used to be bare too, on the reasoning that a trail is a
@@ -241,7 +247,7 @@ class MessageBubble extends StatelessWidget {
     // a trail gave no sign of who had moved, which is the one thing it
     // exists to record. They now take the ordinary sender/receiver bubble
     // like any other message.
-    final isBare = isMediaGroup;
+    final isBare = isMediaGroup || isSelfSurfaced;
     final onBubbleColor =
         isMine ? chatColors.onSenderBubble : chatColors.onReceiverBubble;
     // The footer sits on the chat wallpaper now rather than inside a

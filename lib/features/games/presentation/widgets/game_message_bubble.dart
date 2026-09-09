@@ -135,8 +135,15 @@ class GameMessageBubble extends ConsumerWidget {
             vertical: Spacing.xs.h,
           ),
           decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+            // Opaque now that the bubble no longer paints behind it. At
+            // 55% the card was translucent over whatever surface it sat
+            // on, which is why it took the sender bubble's accent colour
+            // and read as tinted.
+            color: colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
+            border: Border.all(
+              color: colorScheme.outline.withValues(alpha: 0.10),
+            ),
           ),
           // The same row the games hub uses, rather than a bespoke column.
           //
