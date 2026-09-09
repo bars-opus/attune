@@ -1,6 +1,6 @@
 # ATTUNE — CONSTELLATION SPECIFICATION
 
-**Status:** Draft for review. Not implemented, not approved.
+**Status:** Revised after review. Not implemented, not approved.
 
 **Reads with:** `SNAKES_AND_LADDERS_SPEC.md` (the lifecycle and the
 versioned-content table this reuses), `WORD_HUNT_GAME_SPEC.md` (§10, the
@@ -54,9 +54,10 @@ because there is nothing here to be better at.
 
 **Choices without wrong answers.**
 
-Each turn offers two or three valid stars. Every one of them advances the
-work. No route is optimal, faster, or worth more. What a choice changes
-is the shape of the thing you are making together.
+Each turn offers two or three valid choices. Every one advances the work
+by exactly one step, and every route is the same length. No choice is
+optimal, faster, or worth more. What a choice changes is the shape of the
+thing you are making together.
 
 That sentence is the whole design, and §4 exists to enforce it. The
 question this game asks is *"what will we make?"* — never *"can we solve
@@ -132,110 +133,225 @@ as unevidenced until it exists on a device.
 
 ## 4. The scene, and the property that makes or breaks it
 
-### 4.1 Shape
+### 4.0 What the first draft got wrong
 
-A scene is a hand-authored directed graph, versioned exactly like
-`snakes_boards`:
+The first draft modelled a scene as **a graph of stars where a
+playthrough ends when every node is reached** (§5.5), and then demanded
+that any two playthroughs differ by at least three revealed regions
+(§4.3).
 
-- **Nodes** are stars, each with a position on a normalised field
-- **Edges** are legal connections between them
-- Each node names the **region** of the pattern that reveals on arrival
-- One node is the **origin**, where the constellation begins
+**Those two rules cannot both hold.** If completion means reaching every
+node, and every node names a fixed region, then every playthrough reveals
+the identical set of regions and differs only in the *order* they
+appeared. Divergence is always exactly zero. A correct validator would
+have rejected every scene ever authored; an implementation that accepted
+scenes would not have been implementing the spec.
 
-The **frontier** is the set of unreached nodes adjacent to reached ones.
-A turn offers two or three of them; tapping one commits that edge,
-reveals that node's region, and moves the frontier.
+Proven rather than argued, on the smallest case — a diamond `0 → {1,2}`:
 
-### 4.2 Why there is no skill
+```
+complete playthroughs: [(0,1,2), (0,2,1)]
+distinct region sets:  1
+max divergence:        0        (the rule demands >= 3)
+```
 
-Not a mitigation — a structural property, and the reason this game and
-not Lantern Relay (§13).
+This is not a rule that was too weak. It was self-contradicting, and it
+was the load-bearing claim of the entire design. §4 is therefore rebuilt
+around a different model.
 
-Every offered star advances the work by exactly one node. There is no
-resource, no ordering that scores better, no position to be in later.
-A player thinking ten moves ahead arrives at the same place as one
-tapping whichever star is nearest their thumb. **There is nothing to
-optimise, so there is no one to be better at it.**
+### 4.1 Scenes are layered choice states, not a free graph
 
-Compare the alternative that was considered and rejected: a path-laying
-puzzle where the light must reach three lanterns. Curated boards and
-hidden future choices reduce the *visibility* of the skill gap; they do
-not remove it, because an objectively better route still exists. Once
-optimisation exists, one partner becomes the solver and the other becomes
-an input device. That is the Dots and Boxes failure wearing a
-co-operative coat.
+A scene is an explicit state machine:
 
-### 4.3 Branch divergence, enforced in the database
+```
+state  →  2 or 3 choices
+choice →  { from_star, to_star, reveal_layers, next_state }
+```
 
-**The failure this design is most at risk of is becoming a progress bar
-disguised as a game.** An author can produce a graph that branches on
-paper while every path yields a visually identical pattern. The choices
-would then be decoration, and §1.2 would be a lie the spec tells itself.
+- A **state** is a point in the story of the pattern
+- Each state offers exactly the choices authored for it — no more
+- A **choice** names the line drawn (`from_star` → `to_star`), the
+  **layers** of the pattern it reveals, and the state it leads to
+- A **terminal state** has no choices, and reaching one completes the
+  session
 
-So it is a validator rule, not a matter of authorial judgement:
+**A playthrough is complete when it reaches a terminal state**, not when
+it has reached every star. That single change is what makes divergence
+possible: two routes reveal genuinely different material because they
+never visited the same choices.
 
-**Any two complete playthroughs of a scene must differ by at least `N`
-revealed regions.**
+This also fixes three problems the graph model had:
 
-The same discipline as Word Hunt's uniqueness scan, which exists because
-"the word appears exactly once" was too important to trust to a
-generator's good behaviour. Here the equivalent claim is "the choices
-matter", and it gets the same treatment.
+- **The offered set is now exact.** The graph model said "a turn offers
+  two or three" of a frontier that could hold more, so the server's legal
+  set and the client's visible set were different things and the spec
+  never said which 2–3 were offered. A modified client could pick any
+  frontier node. Now the state names its choices and both sides read the
+  same list.
+- **The line to draw is unambiguous.** With a graph, a node reachable
+  from two reached predecessors left `node_id` unable to say which edge
+  to animate, so two clients could draw different pictures from the same
+  history. A choice names both endpoints.
+- **Moves store the choice id**, not the node, so replay is exact.
 
-`N` is stored per scene rather than hard-coded, because the right value
-depends on the scene's size. A floor applies: **no scene may declare an
-`N` below 3.**
+### 4.2 Divergence, redefined so it can be true
+
+**Sibling choices must reveal mutually exclusive layer bundles**, and any
+two terminal outcomes must differ by at least `min_divergence` layers,
+floor of 3.
+
+Measured as the symmetric difference of the layer sets, which is now a
+real quantity because different routes genuinely reveal different layers.
+Verified on a worked example before being specified:
+
+```
+4 terminal outcomes, all at depth 2
+minimum symmetric difference between any two: 2
+```
+
+(That example is below the floor of 3 — deliberately, to show the
+validator has something to reject.)
+
+**What this proves and what it does not.** It proves the *material*
+differs. It does not prove two finished patterns look different to a
+person: three changed layers could be three faint sparks beside an
+otherwise identical composition, and the database has no geometry, no
+visual weight and no rendering with which to judge.
+
+So validation is two-level, and the spec says so plainly rather than
+implying the database can do more than it can:
+
+- **Structural, in Postgres:** mutually exclusive sibling bundles, and a
+  minimum symmetric difference between terminal outcomes. Enforced at
+  insert, cannot be bypassed.
+- **Visual, in authoring/CI:** every terminal outcome is rendered, the
+  changed illuminated area and its spatial distribution measured, and the
+  results reviewed by a person on a contact sheet.
+
+The database can prove the choices lead somewhere different. **Only a
+rendered comparison can prove the pictures look different**, and pretending
+otherwise is how the first draft went wrong.
+
+### 4.2a Reconvergence, and why the format needs it
+
+A pure branching tree is unauthorable at the depth this game wants.
+Computed rather than assumed:
+
+```
+turns   states   choices   outcomes
+    3       15        14          8
+    6      127       126         64
+   12    8,191     8,190      4,096
+```
+
+Twelve turns of pure branching is eight thousand hand-authored states.
+The library would never exist.
+
+**So routes must reconverge**: different choices may lead to the *same*
+next state. A chain of twelve reconverging pairs is 13 states and 24
+choices, and still yields 4,096 distinct outcomes — author effort linear
+in depth rather than exponential.
+
+That creates one tension, and the spec resolves it rather than leaving it
+to be discovered. With reconvergence, the two most similar outcomes
+differ only by the layers of a single choice. With one layer per choice
+the minimum divergence is 2, below the floor of 3:
+
+```
+bundle width 1: min divergence 2   below floor
+bundle width 2: min divergence 4   OK
+```
+
+**So each choice must reveal at least two layers.** That is an authoring
+rule the validator enforces, and the reason it exists is that
+reconvergence — the thing that makes authoring possible — is also what
+pushes the closest outcomes together.
+
+### 4.3 No objective optimisation — the honest version of "no skill"
+
+The first draft claimed "no skill, structurally". That is overstated.
+There is no *scoring* to optimise, but choices can still differ in
+aesthetic influence, and without further rules one player could
+systematically get the consequential turns.
+
+The defensible claim is **no objective optimisation**: no choice is
+better, and none is worth more. Three invariants make it true, all
+validator-enforced:
+
+1. **Equal depth.** Every route from the origin to a terminal state has
+   the same number of choices, so both players always make the same
+   number of decisions. Unequal routes would let one branch finish faster
+   and hand one slot more turns.
+2. **Comparable visual weight per turn.** No choice may reveal
+   dramatically more of the pattern than its siblings. Without this, an
+   early high-impact choice decides half the composition while later
+   turns add accents — and whoever moves first would hold real
+   positional advantage.
+3. **No choice reduces the partner's future options.** A choice may not
+   lead to a state with fewer offered choices than its siblings do.
+
+With those three, a player thinking ten moves ahead arrives where one
+tapping their nearest thumb does: at a different pattern, not a better
+one.
 
 ### 4.4 What else the validator proves
 
 A scene is refused storage unless:
 
-1. **Every node is reachable** from the origin — no scene can strand a
-   couple mid-pattern
-2. **Every path terminates in a complete pattern** — no dead ends, no
-   playthrough that ends with the illustration half-drawn
-3. **Every frontier state offers at least two choices**, until the last
-   move — a scene that funnels into a single legal tap for several turns
-   in a row is a progress bar for those turns
-4. **Divergence** as in §4.3
-5. Node positions are inside the field, edges connect existing nodes, and
-   the graph is acyclic in the direction of growth
+1. **Every state is reachable** from the origin
+2. **Every route terminates** — no cycles, no dead ends that are not
+   terminal states
+3. **Every non-terminal state offers 2 or 3 choices.** A state with one
+   choice is not a decision, and rather than asking for a ceremonial tap
+   the authoring format forbids it
+4. **Equal depth, comparable weight, non-narrowing** (§4.3)
+5. **Mutually exclusive sibling bundles and minimum divergence** (§4.2),
+   and **at least two layers per choice** (§4.2a) — with reconvergence,
+   single-layer choices put the closest outcomes below the floor
+6. Stars referenced by choices exist and sit inside the field
 
-Rules 1, 2 and 3 are checkable by exhaustive traversal at authoring time,
-because a scene is 12–20 nodes and the space of playthroughs is small.
-Rule 4 is checked over the same traversal.
+**Checked by memoised traversal over reachable STATES, not over
+playthroughs.** The first draft claimed exhaustive traversal was safe
+"because a scene is 12–20 nodes and the space of playthroughs is small",
+which was asserted rather than computed. It is not small:
+
+```
+16 nodes: up to 20,922,789,888,000 orderings
+16 states: up to 65,536 reachable state sets
+```
+
+Orderings are intractable; states are trivial. The layered model is what
+makes rule 4 checkable at all.
 
 **A scene that fails validation is not stored.** It fails at insert, in
-the migration, in front of whoever authored it — never in front of a
-couple.
+front of whoever authored it — never in front of a couple.
 
 ### 4.5 Authoring cost, flagged as a risk
 
-An abstract scene should be quick to author, but the divergence rule
-makes each one a small construction problem rather than free drawing.
-**If a scene takes a day to build, the content cost dwarfs the code**,
-and the estimate in §11 is wrong.
+An abstract scene should be quick to author, but the divergence and
+equal-depth rules make each one a small construction problem.
+**If a scene takes a day, the content cost dwarfs the code** and the
+estimate in §11 is wrong.
 
-The honest mitigation is to author **three scenes before writing any
-server code** and measure how long the third takes. If it is hours, the
-library is viable. If it is a day, the art direction needs to loosen
-before the build proceeds, not after.
+So: author **three scenes before any server code** — a simple one, a
+median one, and the most complex the format allows. Count rejected
+drafts and time spent fixing validator failures, not just the final
+draft. Three is a kill test, not an estimate: if they pass, author two
+more as a batch to measure real throughput before committing to twenty.
 
 ### 4.6 The library, and repeats
 
 **A scene is never repeated until the library is exhausted**, tracked the
 way Word Hunt tracks recently-seen words.
 
-This makes the library the content budget: twenty scenes is twenty
+The library is therefore the content budget: twenty scenes is twenty
 sessions before anything returns. That is the trade accepted in exchange
 for abstract art being cheap enough to author that a real library is
 achievable.
 
-When every scene has been played, the exclusion falls back to the full
+When every scene has been played the exclusion falls back to the full
 list rather than failing — a couple who play the library out must never
 be told there is no game.
-
----
 
 ## 5. Turn structure
 
@@ -283,8 +399,12 @@ blocking replay for good.
 
 ### 5.5 Ending
 
-The session ends when every node is reached. The completed pattern
-animates once and holds.
+The session ends when a **terminal state** is reached (§4.1) — not when
+every star is reached. That distinction is what makes divergence possible
+at all; the first draft had it the other way round and the two rules
+contradicted each other (§4.0).
+
+The completed pattern animates once and holds.
 
 There is no winner to name and no score to report. The end screen says
 what was made, offers `Play again` prominently and `Back to chat`
@@ -292,14 +412,29 @@ secondarily — matching Snakes §5.4 and Word Hunt §13.
 
 ### 5.6 Leaving
 
-There is no resign, because there is nothing to resign from — no loss to
-avoid and no opponent to concede to. A couple who stop simply stop, and
-the session expires on the shared schedule (§9.7).
+There is no **resign**, because there is nothing to resign from — no loss
+to avoid and no opponent to concede to. The word does not belong here.
 
-Either partner may **abandon an invitation** that has not been accepted.
-Once both are in, ending it is not one person's decision — the lesson
-Word Hunt's review taught, and it applies here even though there is no
-hidden answer to be released early.
+But there is an **`End activity`** operation, available to either partner
+at any time, with a confirmation. It closes the session with a neutral
+`ended` reason, names no winner, and keeps the partial pattern viewable.
+
+**The first draft got this wrong by importing a conclusion without its
+reason** — the same mistake Dots and Boxes made and had to correct.
+Word Hunt restricted unilateral ending because ending a live game there
+destroyed a partner's in-progress attempt *and* released the hidden
+answer early. **Neither exists here.** There is no secret, no result to
+protect, and nothing to destroy — the pattern stays exactly as far as the
+two of you took it.
+
+What the restriction actually achieved was stranding a partner. If one
+person stops on their turn, the other cannot move, cannot close it, and —
+because the lobby allows one live session per couple — cannot start
+another for seven days. That is worse than the thing the rule was
+guarding against.
+
+An unaccepted invitation may still be declined by either partner, which
+is the ordinary lifecycle and not this operation.
 
 ---
 
@@ -368,6 +503,23 @@ and had to fix.
 The turn is a live region. Offered stars are distinguished by pulse and
 size as well as brightness, so the field never depends on colour alone.
 
+**The reward needs an accessible form, not only the field.** A screen
+reader user can navigate and activate stars, but this game's entire
+payoff is a finished abstract picture — and "upper-left available star"
+plus a brightness animation is functionally nothing. Navigation without a
+perceivable ending is access to the chore and not to the game.
+
+So two things beyond the usual:
+
+- **Each choice carries a short, non-interpretive description** of what
+  it draws — "a long arc to the upper left", not "a hopeful sweep". It
+  describes the mark, never what it might mean, because meaning is the
+  insight layer this slot does not have.
+- **The completion has an audio and haptic form** that follows the actual
+  build order: each contribution sounds in the sequence the two of you
+  made it, so the record of taking turns survives into a form that does
+  not require sight.
+
 ---
 
 ## 8. Data model
@@ -390,16 +542,30 @@ play and a game board should not double as an activity log.
 CREATE TABLE IF NOT EXISTS public.constellation_scenes (
   version text PRIMARY KEY,
 
-  -- [{"id": 0, "x": 0.14, "y": 0.62, "region": 3}, ...]
-  nodes jsonb NOT NULL,
+  -- Stars are positions only. They carry no game meaning; the state
+  -- machine below decides what is offered and what it reveals.
+  -- [{"id": 0, "x": 0.14, "y": 0.62}, ...]
+  stars jsonb NOT NULL,
 
-  -- [[0, 3], [0, 4], [3, 7], ...] -- legal growth directions
-  edges jsonb NOT NULL,
+  -- The state machine (§4.1). Every non-terminal state offers 2 or 3
+  -- choices; a terminal state offers none and completes the session.
+  --
+  --   {"S0": [{"id": "c1", "from": 0, "to": 3,
+  --            "layers": [1, 2], "next": "S1"},
+  --           {"id": "c2", "from": 0, "to": 4,
+  --            "layers": [7, 8], "next": "S2"}],
+  --    "S1": [...],
+  --    "S3": []}
+  --
+  -- Sibling choices reveal MUTUALLY EXCLUSIVE layer bundles, which is
+  -- what makes two routes produce different material rather than the
+  -- same material in a different order (§4.0).
+  states jsonb NOT NULL,
 
-  origin_node smallint NOT NULL,
+  origin_state text NOT NULL,
 
-  -- §4.3. Minimum revealed regions by which any two complete
-  -- playthroughs must differ. Floor of 3, enforced by the validator.
+  -- §4.2. Minimum symmetric difference in revealed layers between any
+  -- two terminal outcomes. Floor of 3, enforced by the validator.
   min_divergence smallint NOT NULL,
 
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -421,10 +587,13 @@ CREATE TABLE IF NOT EXISTS public.constellation_state (
   scene_version text NOT NULL
     REFERENCES public.constellation_scenes(version),
 
-  -- Reached nodes in order, each with the slot that chose it.
+  -- Where in the state machine this session stands.
+  current_state text NOT NULL,
+
+  -- The layers revealed so far, accumulated from the choices made.
   -- Slots, not user ids: a finished pattern should not carry an identity
   -- that can be deleted out from under it (the Dots and Boxes lesson).
-  reached jsonb NOT NULL,
+  revealed_layers smallint[] NOT NULL,
 
   moves_played smallint NOT NULL DEFAULT 0,
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -445,7 +614,11 @@ CREATE TABLE IF NOT EXISTS public.constellation_moves (
   move_number smallint NOT NULL,        -- server-assigned
   player_slot smallint NOT NULL CHECK (player_slot IN (1, 2)),
   action_id uuid NOT NULL,              -- client idempotency key
-  node_id smallint NOT NULL,
+
+  -- The CHOICE, not the star. A star reachable by two different choices
+  -- left the replay unable to say which line to draw, so two clients
+  -- could render different pictures from the same history.
+  choice_id text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
 
   PRIMARY KEY (session_id, move_number)
@@ -454,9 +627,9 @@ CREATE TABLE IF NOT EXISTS public.constellation_moves (
 CREATE UNIQUE INDEX constellation_moves_action
   ON public.constellation_moves(session_id, action_id);
 
--- A node is reached once.
-CREATE UNIQUE INDEX constellation_moves_node
-  ON public.constellation_moves(session_id, node_id);
+-- A choice is taken once.
+CREATE UNIQUE INDEX constellation_moves_choice
+  ON public.constellation_moves(session_id, choice_id);
 ```
 
 ### 8.4 Replay cursors
@@ -467,6 +640,11 @@ CREATE TABLE IF NOT EXISTS public.constellation_replay_cursors (
     REFERENCES public.game_sessions(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   last_seen_move smallint NOT NULL DEFAULT 0,
+
+  -- Separate from the cursor: the completion bloom is its own event, and
+  -- a crash between the final line and the bloom must not consume it.
+  completion_seen boolean NOT NULL DEFAULT false,
+
   PRIMARY KEY (session_id, user_id)
 );
 ```
@@ -518,44 +696,80 @@ archived.
 `v_now := clock_timestamp()` is captured after the final blocking lock.
 `now()` is transaction-start time and can predate a lock wait.
 
-### 9.3 `constellation_choose_star(p_session_id, p_action_id, p_node_id)`
+### 9.3 `constellation_take_choice(p_session_id, p_action_id, p_choice_id)`
 
-`p_node_id` is accepted as `numeric` so the function can reject NULL,
-fractions and out-of-range values **inside the error envelope** — an
-integer parameter would let Postgres reject a decimal before the envelope
-runs, leaking a type name to the client.
+Takes a **choice id**, not a star. The first draft took a node, which
+left the offered set and the legal set as different things: a turn was
+said to offer "two or three" of a frontier that could hold more, the spec
+never said which, and the RPC accepted anything on the whole frontier —
+so a modified client could take a star it was never shown.
+
+Now the state names its choices, the client renders exactly those, and
+the server validates against exactly those. There is no gap to exploit
+because there is no arbitrary subset.
 
 - **Idempotent on `(session_id, action_id)`**, checked before every other
   rejection. A retry returns that move's stored result.
-- A reused `action_id` with a **different** node is `IDEMPOTENCY_CONFLICT`
-  — not a silent replay and not a second move. An action owned by the
-  other member is also a conflict; action identity is never transferable.
-- Refuses `NOT_YOUR_TURN`, `NODE_NOT_OFFERED` (the node is not on the
-  current frontier), `INVALID_INPUT`.
-- The frontier is computed **server-side** from the stored scene and
-  reached set. The client never asserts what was offered.
-- Appends the move, updates `reached` and `moves_played`, and mirrors
-  `moves_played` into `game_sessions.current_round` so the shared
-  realtime channel emits on every move.
-- On the final node: `status = 'completed'`, `completed_at` from the
-  post-lock timestamp. **No `winner_user_id` is ever set** — there is no
+- A reused `action_id` with a **different** choice is
+  `IDEMPOTENCY_CONFLICT` — not a silent replay, not a second move. An
+  action owned by the other member is also a conflict; action identity is
+  never transferable.
+- Refuses `NOT_YOUR_TURN`, `CHOICE_NOT_AVAILABLE` (the choice does not
+  belong to the session's `current_state`), `INVALID_INPUT`.
+- The available set is read **server-side** from the pinned scene's
+  `current_state`. The client never asserts what it was offered.
+- Appends the move, unions the choice's layers into `revealed_layers`,
+  advances `current_state` to the choice's `next`, increments
+  `moves_played`, and mirrors that into `game_sessions.current_round` so
+  the shared realtime channel emits on every move.
+- On reaching a **terminal state**: `status = 'completed'`,
+  `completed_at` from the post-lock timestamp, `completion_reason =
+  'pattern_complete'`. **No `winner_user_id` is ever set** — there is no
   winner, and a null there is the honest record.
+
+`p_choice_id` is text and is validated for length and membership in the
+current state's choice list before any use, so a malformed value is a
+structured error rather than a raw SQL exception.
+
+### 9.3a `constellation_end_activity(p_session_id)`
+
+Available to either partner while the session is active (§5.6). Closes it
+with `completion_reason = 'ended'`, no winner, and the partial pattern
+intact. Idempotent by its own terminal state, so it needs no action id: a
+second call, by either partner, returns the stored result.
+
+Not resignation, and not reported as one.
 
 ### 9.4 `get_constellation_state(p_session_id)`
 
-Scene, reached set, whose turn, the caller's cursor, and every move after
-it — bounded by the whole game, at most 20 projections. Excludes
-`created_at`, `action_id` and the partner's cursor.
+Scene stars, revealed layers, `current_state` **with its available
+choices**, whose turn it is, the caller's cursor, and every move after it
+— bounded by the scene's depth. Excludes `created_at`, `action_id` and
+the partner's cursor.
+
+The available choices come from the server, so the client renders what
+the server will accept and the two cannot disagree.
 
 **Reading does not advance the cursor.** Performs lazy session expiry:
 deep links and resumed screens call this directly without pressing
 anything, and Word Hunt shipped with that gap.
 
-### 9.5 `constellation_ack_replay(p_session_id, p_through_move)`
+### 9.5 `constellation_ack_replay(p_session_id, p_through_move, p_completion_seen)`
 
 Called after the client has rendered, skipped or suppressed the replay.
 Monotonic `GREATEST`, so retries need no action id. Valid after
 completion, or a final replay could never be acknowledged.
+
+**`completion_seen` is tracked separately from the move cursor**, because
+the completion bloom (§7.3) is a distinct event from the last move's
+line. Acknowledging the final move and then crashing before the bloom
+would otherwise mark everything seen and silently eat the one moment this
+game exists for — the payoff, gone to a race.
+
+So the cursor advances when a move has been drawn, and `completion_seen`
+only when the bloom has finished or been explicitly skipped. A client
+that reopens with `moves_played` acknowledged but `completion_seen` false
+plays the completion.
 
 ### 9.6 Lifecycle
 
@@ -589,25 +803,39 @@ role, not by inspecting function source:
   while an unrelated legacy game keeps its intended access
 - direct read or write of state, moves and cursors is denied
 - unauthenticated and non-member calls to every RPC are denied
-- **the validator refuses**: an unreachable node, a dead-end path, a
-  frontier that offers one choice before the last move, a scene whose
-  playthroughs diverge by less than its `min_divergence`, and a
-  `min_divergence` below the floor of 3
-- a node not on the frontier is refused; the frontier is derived
-  server-side and a client claim about it is ignored
-- a node cannot be reached twice
-- a reused `action_id` with the same node replays; with a different node
-  it returns `IDEMPOTENCY_CONFLICT`; owned by the other member, likewise
+- **the validator refuses**: an unreachable state, a route that does not
+  terminate, a non-terminal state offering fewer than 2 or more than 3
+  choices, sibling choices whose layer bundles overlap, terminal outcomes
+  differing by less than `min_divergence`, a `min_divergence` below the
+  floor of 3, routes of unequal depth, a choice revealing dramatically
+  more than its siblings, and a choice that narrows the partner's next
+  options
+- **the validator's traversal is over reachable STATES, not
+  playthroughs** — a scene sized at the format's maximum validates in
+  bounded time rather than enumerating orderings
+- a choice not belonging to the session's `current_state` is refused; the
+  available set is derived server-side and a client claim is ignored
+- a choice cannot be taken twice
+- a reused `action_id` with the same choice replays; with a different
+  choice it returns `IDEMPOTENCY_CONFLICT`; owned by the other member,
+  likewise
 - the client cannot influence `move_number`
-- the final node completes the session exactly once, and
-  `winner_user_id` **stays null**
+- reaching a terminal state completes the session exactly once, with
+  `completion_reason = 'pattern_complete'`, and `winner_user_id`
+  **stays null**
+- `end_activity` is available to either partner while active, closes with
+  `completion_reason = 'ended'`, names no winner, keeps the partial
+  pattern readable, and is idempotent for both callers
+- `completion_seen` advances independently of the move cursor: a client
+  that acknowledged the final move but not the completion still gets the
+  completion on reopening
 - concurrent choices by both players produce one legal state and one turn
   owner
 - fetching does not advance the cursor; acknowledgement advances only the
   caller's, never backwards, and rejects a value beyond `moves_played`
 - session expiry is enforced by every RPC including the state read
 - the expiry sweep is registered with cron
-- non-integer, decimal and out-of-range node ids return `INVALID_INPUT`
+- malformed, over-long and unknown choice ids return `INVALID_INPUT`
   rather than a raw SQL error
 - `completed_at` never precedes the move that caused it
 - a scene played by a couple is not offered again until the library is
@@ -639,13 +867,20 @@ suite. They belong in `scripts/concurrency/`, as Word Hunt's do:
 | Auto-pop, live sync, breathing wait | Snakes / session games |
 
 **Genuinely new:** the scene validator and its divergence rule, the
-frontier computation, and the completion animation.
+layered choice-state format and its traversal, and the completion
+animation with its accessible form.
 
 ---
 
 ## 11. Estimate
 
-**Five to eight days**, plus scene authoring measured separately (§4.5).
+**Seven to ten days**, plus scene authoring measured separately (§4.5).
+
+Raised from five-to-eight after review. The first draft's scene model was
+a free graph, which was both simpler and impossible (§4.0). The layered
+state machine that replaces it is more to author, more to validate — six
+structural rules, three of them new — and needs a rendering step in CI
+that the database cannot substitute for (§4.2).
 
 Cheaper than Word Hunt's five-to-eight-plus because there is **no hidden
 information**: no private table, no disclosure boundary, no generator, no
@@ -662,9 +897,14 @@ review cycle. They are not free for being known.
 ## 12. Risks
 
 **It becomes a progress bar.** The failure this design is most at risk
-of, and §4.3 puts the guard in the database rather than in good
-intentions. Still the thing to watch first in testing: if a couple cannot
-tell their pattern from a stranger's, the divergence floor is too low.
+of. §4.2 puts a structural guard in the database — mutually exclusive
+sibling bundles and a minimum symmetric difference — but is explicit that
+Postgres cannot prove two pictures *look* different, only that the
+material differs. The rendered comparison in CI and a human contact-sheet
+review are the other half, and neither is optional.
+
+Still the thing to watch first in testing: if a couple cannot tell their
+pattern from a stranger's, the floor is too low or the layers too faint.
 
 **The completion falls flat.** With abstract art there is no object to
 name, so the ending carries the whole payoff (§3, §7.3). Untestable
@@ -741,6 +981,68 @@ stakes. §12's last risk.
 ---
 
 ## Changelog
+
+- **2026-09-09** — Revised after an external review. Eight findings, one
+  of them fatal to the design as written.
+
+  **§4.3's divergence rule was self-contradicting, not merely weak.** The
+  first draft said a playthrough completes when every node is reached
+  (§5.5) *and* that any two playthroughs must differ by at least three
+  revealed regions (§4.3). If completion means reaching every node, every
+  playthrough reveals the identical set and differs only in order —
+  divergence is always exactly zero, so a correct validator rejects every
+  scene that could ever be authored. Proven on a three-node diamond
+  before the rewrite. This was the load-bearing claim of the whole
+  design.
+
+  §4 is rebuilt around an explicit **layered choice-state machine**:
+  states offer 2–3 named choices, each naming the line drawn, the layers
+  it reveals and the next state; completion is reaching a *terminal
+  state*, not every star; sibling choices reveal mutually exclusive
+  bundles. That makes divergence a real quantity, and fixes two further
+  defects the graph model had — the offered set and the legal set were
+  different things (so a modified client could take an unshown star), and
+  a star reachable two ways left the replay unable to say which line to
+  draw.
+
+  **Divergence is now two-level and says so.** Postgres proves the
+  material differs; only a rendered comparison in CI plus human review
+  can prove two pictures look different. The first draft implied the
+  database could do more than it can.
+
+  **"No skill, structurally" was overstated** and is now "no objective
+  optimisation", earned by three validator-enforced invariants: equal
+  depth on every route, comparable visual weight per turn, and no choice
+  that narrows the partner's future options. Without them, an early
+  high-impact choice plus unequal route lengths would hand one slot real
+  positional advantage.
+
+  **§4.4's "exhaustive traversal is safe" was asserted, not computed** —
+  16 nodes is up to 2×10¹³ orderings. Validation is over reachable
+  *states* (65k) with memoisation.
+
+  **§5.6 imported Word Hunt's conclusion without its reason** — the same
+  mistake Dots and Boxes made. Restricting unilateral ending protected a
+  hidden answer there; here there is nothing to protect, and the rule
+  stranded a partner for seven days with no way to move, close, or start
+  another game. Replaced with a neutral `End activity`.
+
+  Also: `completion_seen` is tracked separately from the replay cursor,
+  because a crash between the final line and the completion bloom would
+  otherwise consume the one moment this game exists for; and the
+  accessible path gains per-choice mark descriptions and an audio/haptic
+  completion, since navigation without a perceivable ending is access to
+  the chore rather than to the game.
+
+  **One finding of my own, while checking the rewrite was buildable:** a
+  pure branching tree at twelve turns is 8,191 hand-authored states, so
+  the format needs *reconvergence* — different choices leading to the
+  same next state — which makes author effort linear rather than
+  exponential. That in turn pushes the two closest outcomes together, so
+  each choice must reveal at least two layers to stay above the
+  divergence floor. Both computed, not assumed (§4.2a).
+
+  Estimate raised from five-to-eight days to seven-to-ten.
 
 - **2026-09-09** — Initial draft, after a brainstorm that rejected four
   alternative mechanics (§13). Written after Word Hunt's and Dots and
