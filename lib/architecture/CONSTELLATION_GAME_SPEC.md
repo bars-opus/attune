@@ -1,9 +1,10 @@
 # ATTUNE — CONSTELLATION SPECIFICATION
 
-**Status:** **BLOCKED.** The §4.5 gate was run and the content model
-failed it — see §4.4b. The format as specified can only express a
-starburst. Not implemented, not approved, and not estimable until the
-drawing model is redesigned.
+**Status:** Gate passed, structurally. The §4.5 content-model gate has
+been run (§4.4b, §4.4c): three scenes authored and validated, and the
+graph turns out to be mechanical rather than expensive. **The art budget
+is still unmeasured**, and the product question — whether a couple wants
+a game with no stakes — is untested. Not implemented, not approved.
 
 **Reads with:** `SNAKES_AND_LADDERS_SPEC.md` (the lifecycle and the
 versioned-content table this reuses), `WORD_HUNT_GAME_SPEC.md` (§10, the
@@ -510,66 +511,80 @@ at least one 48dp target diameter apart on the smallest supported field.
 Nearest-target hit testing is not permission to draw visually ambiguous
 choices on top of each other.
 
-### 4.4b THE GATE FAILED: the format can only express a starburst
+### 4.4b The gate was run: the anchor lattice
 
-**§4.5's gate was run before any server code, and the content model did
-not survive it.** Not because scenes were slow to author — because the
-rules as written admit almost nothing.
+**§4.5's gate has been run.** Three scenes were authored and validated
+before any server code, and the content model survives — but only in one
+shape, and finding that shape took a wrong turn worth recording.
 
-Three rules interact fatally:
+**The wrong turn.** The first attempt reconverged routes **by depth**:
+both siblings at turn *n* led to the same state at turn *n+1*. Under
+§4.2b that freezes the anchor forever. Route A arrives having reached
+`{origin, p}`, route B `{origin, q}`, and the intersection is `{origin}`
+— so every line in the scene must be drawn from the origin star. The only
+legal 12-turn scene under that reading is twelve lines radiating from one
+point: a wheel, not a constellation. It validated completely clean, which
+is what made it worth keeping as a warning rather than a bug.
 
-- **§4.2b** — a choice's `from_star` must lie in the *intersection* of
-  stars reached on all routes into its state
-- **§4.4.7** — sibling destinations are distinct
-- **§4.4.3** — every non-terminal state offers 2 or 3 choices, never 1
-
-Take any state with two siblings that reconverge. Route A reached
-`{origin, p}`, route B reached `{origin, q}`. The intersection is
-`{origin}`. **The guaranteed set never grows**, at any depth, on any
-scene — so every line in the entire constellation must be drawn from the
-origin star.
-
-The alternative is not reconverging at all, which makes the machine a
-tree: 8,191 states at depth 12 against a bound of 64. And branching early
-then rejoining buys nothing, because the intersection collapses the
-moment routes meet.
+**The shape that works: reconverge by DESTINATION STAR.**
 
 ```
-depth 12 tree:     8,191 states      (bound: 64)
-depth 20 tree: 2,097,151 states      (bound: 64)
-reconverging:   anchor frozen at {origin_star}
+S0@origin  →  S1@A  or  S1@B
+
+S1@A:  A → C  or  D
+S1@B:  B → C  or  D
+
+both "→ C" land in S2@C, where C is guaranteed on every incoming route
 ```
 
-The first scene authored under these rules validates clean and looks like
-this: twelve lines radiating from one point. A wheel, not a growing
-constellation. `starburst_v1.json` is kept in the repository as the
-evidence, because it passes every rule and is exactly the wrong picture.
+Because routes only merge when they have arrived at the *same star*, that
+star survives the intersection and the anchor advances. Verified by
+forward dataflow on the authored scene:
 
-**What this costs and what it does not.** It does not invalidate the
-game — "choices without wrong answers", frozen boards, local divergence
-proofs and the whole server contract are unaffected. It invalidates the
-*drawing* model: lines from stars to stars, with connectivity enforced by
-intersection.
+```
+s00     guaranteed stars: [0]
+s01_0   guaranteed stars: [0, 1]
+s02_0   guaranteed stars: [0, 3]
+s03_0   guaranteed stars: [0, 5]
+...
+s12_1   guaranteed stars: [0, 24]
+```
 
-**The fix is not yet designed, and this section will not pretend
-otherwise.** Two directions look plausible and both need working through
-before any further estimate is credible:
+The constellation grows outward from its edge, which is the thing the
+game is for.
 
-1. **Drop `from_star` entirely.** A choice reveals layers; it does not
-   draw a line between two named stars. The picture grows as regions of
-   light rather than as a connected graph, and §4.2b becomes unnecessary
-   because there is no line to disconnect. Cheapest, and loses the
-   "constellation" metaphor.
-2. **Per-route anchors.** The state carries no anchor; each *choice*
-   names the star its successors may draw from, so a reconverged state
-   has as many valid anchors as incoming routes. Keeps connected drawing
-   but makes the state machine's meaning route-dependent, which is
-   exactly the property §4.2b's forward dataflow exists to avoid.
+### 4.4c What the three trial scenes cost
 
-**Estimate is suspended, not revised.** Twelve to eighteen days was
-costed against a content model that cannot express the game. A number
-produced before the drawing model is redesigned would be a guess wearing
-a range.
+The gate asked whether the content model is practical. Measured, not
+estimated:
+
+| Scene | Depth × width | States | Choices | Stars |
+|---|---|---|---|---|
+| `drift_v1` | 12 × 2 | 25 | 46 | 25 |
+| `tide_v1` | 16 × 2 | 33 | 62 | 33 |
+| `bloom_v1` | 18 × 3 | 55 | 156 | 55 |
+
+All three validate clean. **The lattice structure is mechanical**, so a
+generator produces it from a depth, a width and a star layout — the
+authoring work is the *star positions and the layer artwork*, not the
+graph. That is the finding that matters for cost: the graph was the part
+feared expensive and it turns out to be free; the art is the real budget,
+and it is not yet measured because no layers exist.
+
+**Choice bound pressure at width 3.** `bloom_v1` uses 156 of the 160
+allowed choices. The general form is `1 + D·W` states and
+`W + (D−1)·W²` choices:
+
+```
+depth 18 width 3:  55 states, 156 choices
+depth 20 width 3:  61 states, 174 choices   OVER BOUND
+```
+
+So **ternary scenes cap at depth 18**; binary scenes fit the full 12–20
+range. Rather than raise the bound, the format keeps it and the
+constraint is documented — a 20-turn scene offering three choices every
+turn is a long game with a lot of art, and the bound is a reasonable
+place to stop.
 
 ### 4.5 Authoring cost, flagged as a risk
 
@@ -1435,12 +1450,12 @@ animation with its accessible form.
 
 ## 11. Estimate
 
-**Suspended.** See §4.4b: the twelve-to-eighteen figure was costed
-against a content model that cannot express the game. The number below is
-kept for its reasoning, not as a current estimate.
-
-~~**Twelve to eighteen engineering days**, plus production scene
-authoring measured separately (§4.5).~~
+**Twelve to eighteen engineering days** stands, with one correction to
+what it covers. §4.4c found the scene *graph* is mechanical — a generator
+produces the lattice from a depth, a width and a layout — so the
+authoring risk §4.5 flagged is not where it was expected. **The art is
+the unmeasured budget**: 92 layers for a 12×2 scene, none of which
+exist.
 
 Raised twice. The first draft's scene model was a free graph, which was
 both simpler and impossible (§4.0). The layered state machine that
@@ -1570,6 +1585,35 @@ stakes. §12's last risk.
 ---
 
 ## Changelog
+
+- **2026-09-09** — **The §4.5 gate was run**, and a third review
+  corrected the conclusion I drew from it.
+
+  I authored the simplest legal scene, it failed §4.2b, and I concluded
+  the format could only express a starburst — every line radiating from
+  the origin — and marked the spec BLOCKED with the estimate suspended.
+  **That conclusion was wrong.** It applied to reconvergence keyed by
+  *depth*, not to every bounded reconverging design. Keying reconvergence
+  by **destination star** keeps that star in every incoming route's
+  intersection, so the anchor advances and the constellation grows from
+  its edge (§4.4b). Verified by forward dataflow, then by validating an
+  authored scene.
+
+  Three trial scenes now exist and pass: 12×2, 16×2 and 18×3. The finding
+  that matters is not the pass but *where the cost is*: the lattice graph
+  is mechanical and a generator produces it, so the authoring risk §4.5
+  feared is not in the graph. **The art is the unmeasured budget** — 92
+  layers for the smallest scene, none of which exist.
+
+  Two validator defects found in the same review and fixed: it never
+  implemented §4.4.7's possibly-reached **union** check, so a scene could
+  redraw a line to a star already reached; and it threw raw cast
+  exceptions on malformed JSON and silently accepted duplicate star ids,
+  which §4.4a explicitly forbids. Both now fail with rule-tagged
+  messages, verified against malformed input.
+
+  Also confirmed: ternary scenes cap at depth 18 (156 of 160 choices);
+  depth 20 at width 3 needs 174 and is refused (§4.4c).
 
 - **2026-09-09** — Implementation-readiness pass. Existing second-review
   corrections were retained; remaining representational gaps and newly

@@ -83,45 +83,143 @@ class Scene {
   final int minDivergence;
   final Map<String, SceneState> states;
 
-  static Scene parse(Map<String, dynamic> json) {
-    final stars = <int, ({double x, double y})>{};
-    for (final raw in (json['stars'] as List)) {
-      final s = raw as Map<String, dynamic>;
-      stars[s['id'] as int] = (
-        x: (s['x'] as num).toDouble(),
-        y: (s['y'] as num).toDouble(),
+  /// Parses defensively and reports rather than throwing.
+  ///
+  /// §4.4a requires malformed JSON to fail with the scene-validation
+  /// error rather than a raw cast or missing-key exception. The first
+  /// version of this tool threw a raw cast exception on a scene missing
+  /// its stars, which is exactly the
+  /// unhelpful failure the spec says not to produce.
+  static (Scene?, List<SceneError>) parse(Object? raw) {
+    final errors = <SceneError>[];
+    void fail(String rule, String message) =>
+        errors.add(SceneError(rule, message));
+
+    if (raw is! Map<String, dynamic>) {
+      return (null, [SceneError('4.4a', 'scene is not a JSON object')]);
+    }
+
+    T? typed<T>(String key, String rule) {
+      final v = raw[key];
+      if (v is T) return v;
+      fail(
+        rule,
+        v == null
+            ? 'missing "$key"'
+            : '"$key" is ${v.runtimeType}, expected $T',
       );
+      return null;
+    }
+
+    final version = typed<String>('version', '4.4a') ?? '<unnamed>';
+    final originStar = typed<int>('origin_star', '4.4.7');
+    final originState = typed<String>('origin_state', '4.4.1');
+    final minDivergence = typed<int>('min_divergence', '4.2');
+    final rawStars = typed<List<dynamic>>('stars', '4.4.7');
+    final rawStates = typed<Map<String, dynamic>>('states', '4.4.1');
+
+    final stars = <int, ({double x, double y})>{};
+    for (final entry in rawStars ?? const []) {
+      if (entry is! Map<String, dynamic>) {
+        fail('4.4.7', 'a star is not an object');
+        continue;
+      }
+      final id = entry['id'];
+      final x = entry['x'];
+      final y = entry['y'];
+      if (id is! int || x is! num || y is! num) {
+        fail('4.4.7', 'star $id has a non-numeric id or coordinate');
+        continue;
+      }
+      // Duplicates were silently overwritten by the first version, so a
+      // scene with two star 7s validated against whichever won.
+      if (stars.containsKey(id)) {
+        fail('4.4.7', 'star id $id is declared more than once');
+        continue;
+      }
+      stars[id] = (x: x.toDouble(), y: y.toDouble());
     }
 
     final states = <String, SceneState>{};
-    (json['states'] as Map<String, dynamic>).forEach((id, raw) {
-      final entry = raw as Map<String, dynamic>;
-      states[id] = SceneState(
-        id: id,
-        commonLayers:
-            ((entry['common_layers'] as List?) ?? const []).cast<int>(),
-        choices: ((entry['choices'] as List?) ?? const [])
-            .map((c) {
-              final m = c as Map<String, dynamic>;
-              return Choice(
-                id: m['id'] as String,
-                next: m['next'] as String,
-                fromStar: m['from'] as int,
-                toStar: m['to'] as int,
-                variantLayers: (m['variant_layers'] as List).cast<int>(),
-              );
-            })
-            .toList(growable: false),
-      );
+    (rawStates ?? const <String, dynamic>{}).forEach((id, entry) {
+      if (entry is! Map<String, dynamic>) {
+        fail('4.4.1', 'state "$id" is not an object');
+        return;
+      }
+      final commonRaw = entry['common_layers'] ?? const [];
+      final choicesRaw = entry['choices'] ?? const [];
+      if (commonRaw is! List || choicesRaw is! List) {
+        fail('4.4.1', 'state "$id" has a non-list common_layers or choices');
+        return;
+      }
+
+      final common = <int>[];
+      for (final l in commonRaw) {
+        if (l is int) {
+          common.add(l);
+        } else {
+          fail('4.4.6', 'state "$id" lists a non-integer common layer');
+        }
+      }
+
+      final choices = <Choice>[];
+      for (final c in choicesRaw) {
+        if (c is! Map<String, dynamic>) {
+          fail('4.4.3', 'state "$id" has a choice that is not an object');
+          continue;
+        }
+        final cid = c['id'];
+        final next = c['next'];
+        final from = c['from'];
+        final to = c['to'];
+        final variantRaw = c['variant_layers'];
+        if (cid is! String ||
+            next is! String ||
+            from is! int ||
+            to is! int ||
+            variantRaw is! List) {
+          fail(
+            '4.4.3',
+            'state "$id" has a choice with a missing or mistyped field',
+          );
+          continue;
+        }
+        final variant = <int>[];
+        for (final l in variantRaw) {
+          if (l is int) {
+            variant.add(l);
+          } else {
+            fail('4.4.6', 'choice "$cid" lists a non-integer variant layer');
+          }
+        }
+        choices.add(
+          Choice(
+            id: cid,
+            next: next,
+            fromStar: from,
+            toStar: to,
+            variantLayers: variant,
+          ),
+        );
+      }
+
+      states[id] = SceneState(id: id, commonLayers: common, choices: choices);
     });
 
-    return Scene(
-      version: json['version'] as String,
-      stars: stars,
-      originStar: json['origin_star'] as int,
-      originState: json['origin_state'] as String,
-      minDivergence: json['min_divergence'] as int,
-      states: states,
+    if (originStar == null || originState == null || minDivergence == null) {
+      return (null, errors);
+    }
+
+    return (
+      Scene(
+        version: version,
+        stars: stars,
+        originStar: originStar,
+        originState: originState,
+        minDivergence: minDivergence,
+        states: states,
+      ),
+      errors,
     );
   }
 }
@@ -428,6 +526,30 @@ List<SceneError> validate(Scene scene, {int blobBytes = 0}) {
     }
   }
 
+  // §4.4.7, the half the first version of this tool never implemented:
+  // a destination must not be POSSIBLY reachable already on any route in.
+  // The guaranteed-star intersection above proves a line starts
+  // somewhere real; this union proves it does not redraw a line that may
+  // already exist. Same forward pass, union instead of intersection.
+  final possibleStars = <String, Set<int>>{
+    scene.originState: {scene.originStar},
+  };
+  for (final id in order) {
+    final here = possibleStars[id];
+    if (here == null) continue;
+    for (final c in scene.states[id]!.choices) {
+      if (!reachable.contains(c.next)) continue;
+      if (here.contains(c.toStar)) {
+        fail(
+          '4.4.7',
+          'choice ${c.id} draws to star ${c.toStar}, which may already '
+              'have been reached on a route into $id',
+        );
+      }
+      (possibleStars[c.next] ??= <int>{}).addAll({...here, c.toStar});
+    }
+  }
+
   return errors;
 }
 
@@ -442,9 +564,29 @@ void main(List<String> args) {
   var failed = 0;
   for (final path in args) {
     final raw = File(path).readAsStringSync();
-    final json = jsonDecode(raw) as Map<String, dynamic>;
-    final scene = Scene.parse(json);
-    final errors = validate(scene, blobBytes: utf8.encode(raw).length);
+    Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException catch (e) {
+      stdout.writeln('FAIL  $path');
+      stdout.writeln('        [4.4a] not valid JSON: ${e.message}');
+      failed++;
+      continue;
+    }
+
+    final (scene, parseErrors) = Scene.parse(decoded);
+    if (scene == null) {
+      stdout.writeln('FAIL  $path');
+      for (final e in parseErrors) {
+        stdout.writeln('        $e');
+      }
+      failed++;
+      continue;
+    }
+    final errors = [
+      ...parseErrors,
+      ...validate(scene, blobBytes: utf8.encode(raw).length),
+    ];
 
     final states = scene.states.length;
     final choices = scene.states.values.fold<int>(
