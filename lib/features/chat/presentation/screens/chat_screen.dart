@@ -2830,7 +2830,7 @@ Future<void> showChatGamesPicker(
 }) async {
   await BottomSheetUtils.showDocumentationBottomSheet<void>(
     context: context,
-    backgroundColor: Theme.of(context).colorScheme.neutral,
+    backgroundColor: Color(0xFF0B0B0F),
     maxHeight: MediaQuery.sizeOf(context).height * 0.86,
     padding: Spacing.md,
     widget: ChatGamesSheet(

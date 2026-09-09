@@ -20,6 +20,7 @@ class GameIcon extends StatelessWidget {
     required this.size,
     this.fallbackColor,
     this.radius,
+    this.filled = false,
   });
 
   final String gameType;
@@ -31,6 +32,19 @@ class GameIcon extends StatelessWidget {
 
   final double? radius;
 
+  /// Whether the glyph carries its own filled tile.
+  ///
+  /// False where the icon already sits ON the game's colour -- the grid
+  /// card and the continue-playing card both paint palette.end
+  /// themselves, and a second filled square inside them would be a tile
+  /// on a tile.
+  ///
+  /// True everywhere the icon appears bare: a recently-played row and a
+  /// chat card have no coloured background of their own, so without this
+  /// the glyph would be a white mark floating on the sheet with no
+  /// identity at all.
+  final bool filled;
+
   @override
   Widget build(BuildContext context) {
     final palette = GamePalette.of(gameType);
@@ -40,25 +54,14 @@ class GameIcon extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        gradient: palette.gradient,
+        color: filled ? palette.end : null,
         borderRadius: BorderRadius.circular(corner),
-        boxShadow: [
-          // A COLOURED shadow, not a neutral one. A grey drop shadow
-          // reads as a card lying on a surface; the tile's own hue
-          // bleeding underneath reads as something lit, which is what
-          // makes a dark shelf feel alive rather than flat.
-          BoxShadow(
-            color: palette.glow.withValues(alpha: 0.35),
-            blurRadius: size * 0.32,
-            offset: Offset(0, size * 0.10),
-          ),
-        ],
       ),
       child: Center(
         child: Icon(
           gameGlyphFor(gameType),
           size: size * 0.52,
-          color: palette.onTile,
+          color: Colors.white,
         ),
       ),
     );

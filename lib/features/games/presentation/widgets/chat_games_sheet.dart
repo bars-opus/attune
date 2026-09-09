@@ -472,7 +472,7 @@ class _ChatGameCategorySection extends StatelessWidget {
                 children: [
                   for (final option in category.options)
                     SizedBox(
-                      width: tileWidth,
+                      width: tileWidth - 10.w,
                       child: GameGridTile(
                         gameType:
                             chatGameTypeForDestination(option.destination) ??
@@ -730,7 +730,12 @@ class _ChatGameSessionRow extends StatelessWidget {
         subtitle: subtitle,
         // The illustration where one exists; GameIcon falls back to this
         // glyph itself for the games not yet drawn.
-        leadingWidget: GameIcon(gameType: gameType, size: 34.h),
+        leadingWidget: GameIcon(
+          gameType: gameType,
+          size: 34.h,
+          // A recently-played row has no colour of its own.
+          filled: true,
+        ),
         icon: icon,
         showAvatar: false,
         showDivider: false,

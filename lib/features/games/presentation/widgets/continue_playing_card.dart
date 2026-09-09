@@ -46,20 +46,13 @@ class ContinuePlayingCard extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                // The card takes a faint version of the game's own
-                // gradient, so a rail of three in-progress games reads as
-                // three different games at a glance rather than three
-                // identical grey cards.
-                gradient: LinearGradient(
-                  colors: [
-                    palette.start.withValues(alpha: 0.16),
-                    palette.end.withValues(alpha: 0.06),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                // Flat palette.end, matching the grid card. The same fill
+                // in both places means one game looks like itself
+                // wherever it appears -- the translucent gradient this
+                // replaced rendered as near-black on the dark sheet, so
+                // a rail of three read as three identical grey cards.
+                color: palette.end,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: palette.glow.withValues(alpha: 0.22)),
               ),
               child: Row(
                 children: [
@@ -87,8 +80,8 @@ class ContinuePlayingCard extends StatelessWidget {
                               Container(
                                 width: 6,
                                 height: 6,
-                                decoration: BoxDecoration(
-                                  color: palette.start,
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
                                   shape: BoxShape.circle,
                                 ),
                               ),
@@ -101,9 +94,13 @@ class ContinuePlayingCard extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color:
-                                      isYourTurn
-                                          ? palette.start
-                                          : GameHubTheme.secondaryText,
+                                  // On a solid card the old
+                                  // secondary grey sank into the
+                                  // fill. White at reduced opacity
+                                  // reads against every palette.end.
+                                  Colors.white.withValues(
+                                    alpha: isYourTurn ? 0.95 : 0.62,
+                                  ),
                                   fontSize: 11.5,
                                   fontWeight:
                                       isYourTurn

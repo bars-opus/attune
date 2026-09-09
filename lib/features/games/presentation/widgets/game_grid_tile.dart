@@ -46,17 +46,18 @@ class GameGridTile extends StatelessWidget {
             color: Colors.transparent,
             child: Ink(
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  // The card's own gradient, deeper than the icon tile's
-                  // so the icon still reads as a distinct object sitting
-                  // ON it rather than dissolving into it.
-                  colors: [
-                    Color.lerp(palette.start, Colors.black, 0.42)!,
-                    Color.lerp(palette.end, Colors.black, 0.55)!,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                color: palette.end,
+                // gradient: LinearGradient(
+                //   // The card's own gradient, deeper than the icon tile's
+                //   // so the icon still reads as a distinct object sitting
+                //   // ON it rather than dissolving into it.
+                //   colors: [
+                //     Color.lerp(palette.start, Colors.black, 0.42)!,
+                //     Color.lerp(palette.end, Colors.black, 0.55)!,
+                //   ],
+                //   begin: Alignment.topLeft,
+                //   end: Alignment.bottomRight,
+                // ),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: InkWell(
@@ -67,7 +68,7 @@ class GameGridTile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      GameIcon(gameType: gameType, size: 54),
+                      Center(child: GameIcon(gameType: gameType, size: 100)),
                       const Spacer(),
                       Text(
                         title,

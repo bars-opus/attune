@@ -143,7 +143,14 @@ class GameMessageBubble extends ConsumerWidget {
               // the "art exists / art does not" split that used to live
               // here is gone. Two illustrations beside six tinted discs
               // is what made this look unfinished.
-              Center(child: GameIcon(gameType: gameType, size: 84.h)),
+              Center(
+                child: GameIcon(
+                  gameType: gameType,
+                  size: 84.h,
+                  // Bare here: the chat card has no colour of its own.
+                  filled: true,
+                ),
+              ),
               SizedBox(height: Spacing.sm.h),
               Text(
                 title,
