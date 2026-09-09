@@ -1,7 +1,6 @@
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/games/presentation/providers/game_card_provider.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
-import 'package:attune/features/games/presentation/widgets/chat_games_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -121,8 +120,6 @@ class GameMessageBubble extends ConsumerWidget {
         state.status != 'completed' &&
         state.status != 'abandoned';
 
-    final icon = chatGameIconForType(gameType) ?? Icons.sports_esports_outlined;
-
     return Semantics(
       button: isOpenable,
       label: '$title. $label',
@@ -140,25 +137,13 @@ class GameMessageBubble extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // The game's illustration, on its own tile.
+              // The game's tile, in its own colour.
               //
-              // A game without art yet falls back to the catalogue glyph
-              // on a tinted disc, so the set can be filled in one game at
-              // a time without a gap appearing in the meantime.
-              if (gameIconAsset(gameType) != null)
-                Center(child: GameIcon(gameType: gameType, size: 96.h))
-              else
-                Container(
-                  height: 96.h,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(
-                      BorderRadiusTokens.md.r,
-                    ),
-                  ),
-                  child: Icon(icon, size: 40.h, color: colorScheme.primary),
-                ),
+              // No fallback branch any more: every game has a palette, so
+              // the "art exists / art does not" split that used to live
+              // here is gone. Two illustrations beside six tinted discs
+              // is what made this look unfinished.
+              Center(child: GameIcon(gameType: gameType, size: 84.h)),
               SizedBox(height: Spacing.sm.h),
               Text(
                 title,

@@ -1,3 +1,4 @@
+import 'package:attune/features/games/presentation/widgets/continue_playing_card.dart';
 import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
 import 'package:attune/features/games/presentation/widgets/chat_games_sheet.dart';
@@ -157,19 +158,24 @@ void main() {
     expect(find.text('Continue playing'), findsOneWidget);
     expect(find.text('In progress'), findsOneWidget);
 
-    // Scoped to the session row: the catalogue below lists a 'Mirror'
-    // entry too, and tapping that one would start a game rather than
-    // resume this one — the exact confusion this test has to rule out.
-    final row = find.ancestor(
+    // Scoped to the rail card: the catalogue below lists a 'Mirror' entry
+    // too, and tapping that one would start a game rather than resume
+    // this one — the exact confusion this test has to rule out.
+    //
+    // In-progress games moved from a stacked list into a horizontal rail
+    // of ContinuePlayingCards, so this looks for the card rather than the
+    // CardInkWell the old rows used.
+    final card = find.ancestor(
       of: find.text('In progress'),
-      matching: find.byType(CardInkWell),
+      matching: find.byType(ContinuePlayingCard),
     );
+    expect(card, findsOneWidget);
     expect(
-      find.descendant(of: row, matching: find.text('Mirror')),
+      find.descendant(of: card, matching: find.text('Mirror')),
       findsOneWidget,
     );
 
-    await tester.tap(row, warnIfMissed: false);
+    await tester.tap(card, warnIfMissed: false);
     await tester.pump();
 
     expect(selected, ChatGameDestination.mirror);

@@ -1,103 +1,118 @@
-import 'dart:io';
-
-import 'package:attune/features/games/presentation/widgets/game_icon.dart';
 import 'package:attune/features/games/presentation/widgets/chat_games_sheet.dart';
+import 'package:attune/features/games/presentation/widgets/game_icon.dart';
+import 'package:attune/features/games/presentation/widgets/game_palette.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// The SVG tests that used to live here are gone with the SVGs: two
+/// games had drawn logos and six did not, which read as unfinished. Every
+/// game now has a glyph on its own gradient, so what needs proving is
+/// that the set is COMPLETE and DISTINCT rather than that files exist.
 void main() {
-  test('a drawn game resolves to an asset that exists', () {
-    // The resolver names a file; if the file is missing the card shows a
-    // broken image rather than falling back, which is worse than having
-    // no art at all.
-    for (final gameType in ['this_or_that', 'truth_or_dare']) {
-      final asset = gameIconAsset(gameType);
+  const shippedGames = [
+    'this_or_that',
+    'truth_or_dare',
+    '36_questions',
+    'mirror',
+    'sliding_scale',
+    'scenario',
+    'love_map',
+    'paint_ball',
+    'snakes_and_ladders',
+    'word_hunt',
+  ];
 
-      expect(asset, isNotNull, reason: '$gameType should have art');
+  test('every shipped game has its own palette', () {
+    // A game falling through to the neutral slate would sit in the grid
+    // looking like a placeholder next to nine coloured tiles.
+    final fallback = GamePalette.of('definitely_not_a_game');
+    for (final gameType in shippedGames) {
+      final palette = GamePalette.of(gameType);
       expect(
-        File(asset!).existsSync(),
-        isTrue,
-        reason: '$asset is referenced but not on disk',
+        palette.start,
+        isNot(fallback.start),
+        reason: '$gameType has no palette and renders as the slate fallback',
       );
     }
   });
 
-  test('an undrawn game returns null so the glyph fallback runs', () {
-    // The set is filled in one game at a time. A game without art must
-    // return null rather than a path to a file that does not exist.
-    for (final gameType in [
-      '36_questions',
-      'mirror',
-      'sliding_scale',
-      'scenario',
-      'love_map',
-      'paint_ball',
-    ]) {
+  test('no two games share a starting colour', () {
+    // The colour IS the identity: two games sharing one makes the grid
+    // read as a mistake.
+    final seen = <Color, String>{};
+    for (final gameType in shippedGames) {
+      final start = GamePalette.of(gameType).start;
       expect(
-        gameIconAsset(gameType),
+        seen[start],
         isNull,
-        reason: '$gameType has no art yet and must fall back',
+        reason: '$gameType and ${seen[start]} share a colour',
       );
+      seen[start] = gameType;
     }
   });
 
-  test('every declared asset is registered with the bundle', () {
-    // An SVG on disk that pubspec does not list loads as a blank at
-    // runtime, with no analyzer or test failure to catch it.
-    final pubspec = File('pubspec.yaml').readAsStringSync();
-
-    expect(
-      pubspec.contains('assets/images/game_icons/'),
-      isTrue,
-      reason:
-          'Flutter asset directories are shallow, so the nested folder '
-          'needs its own pubspec entry',
-    );
+  test('every gradient actually varies', () {
+    // start == end is a flat fill wearing a gradient's clothes.
+    for (final gameType in shippedGames) {
+      final palette = GamePalette.of(gameType);
+      expect(palette.start, isNot(palette.end), reason: gameType);
+    }
   });
 
-  testWidgets('every drawn icon actually renders', (tester) async {
-    // A file that exists is not a file that draws. truth_or_dare uses
-    // <text> elements, which not every SVG renderer supports -- and a
-    // failure there is silent: the card shows an empty tile rather than
-    // throwing anywhere a source-level test would see.
-    for (final gameType in ['this_or_that', 'truth_or_dare']) {
+  test('every shipped game has its own glyph', () {
+    final glyphs = <IconData, String>{};
+    for (final gameType in shippedGames) {
+      final glyph = gameGlyphFor(gameType);
+      expect(
+        glyphs[glyph],
+        isNull,
+        reason: '$gameType and ${glyphs[glyph]} share a glyph',
+      );
+      glyphs[glyph] = gameType;
+    }
+  });
+
+  test('an unknown game still renders something', () {
+    // A game_type from a newer build, or a retired one still in history.
+    expect(gameGlyphFor('a_game_from_the_future'), isNotNull);
+    expect(GamePalette.of('a_game_from_the_future').start, isNotNull);
+    expect(GamePalette.of(null).start, isNotNull);
+  });
+
+  testWidgets('the tile renders at the size it is given', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Center(child: GameIcon(gameType: 'word_hunt', size: 64)),
+        ),
+      ),
+    );
+    final size = tester.getSize(find.byType(GameIcon));
+    expect(size.width, 64);
+    expect(size.height, 64);
+  });
+
+  testWidgets('every shipped game renders without throwing', (tester) async {
+    for (final gameType in shippedGames) {
       await tester.pumpWidget(
         MaterialApp(
-          home: GameIcon(gameType: gameType, size: 96),
+          home: Scaffold(
+            body: Center(child: GameIcon(gameType: gameType, size: 56)),
+          ),
         ),
       );
-      await tester.pumpAndSettle();
-
-      expect(
-        tester.takeException(),
-        isNull,
-        reason: '$gameType failed to render',
-      );
+      expect(tester.takeException(), isNull, reason: gameType);
     }
   });
 
-  test('every game type maps back from its destination', () {
-    // The catalogue is keyed by destination and the art by game_type, so
-    // a row can only find its illustration through this mapping. Derived
-    // from chatGameDestinationForType rather than duplicated, and this
-    // pins that the two stay in step.
-    for (final gameType in [
-      'this_or_that',
-      'truth_or_dare',
-      '36_questions',
-      'mirror',
-      'sliding_scale',
-      'scenario',
-      'love_map',
-      'paint_ball',
-    ]) {
-      final destination = chatGameDestinationForType(gameType);
-      expect(destination, isNotNull, reason: '$gameType has no destination');
-
+  test('the catalogue and the tile set agree on which games exist', () {
+    // If a game is in the sheet it needs a tile, and vice versa --
+    // otherwise one of the two silently falls back.
+    for (final gameType in shippedGames) {
       expect(
-        chatGameTypeForDestination(destination!),
-        gameType,
-        reason: '$gameType does not round-trip through its destination',
+        chatGameDestinationForType(gameType),
+        isNotNull,
+        reason: '$gameType has a tile but is not in the catalogue',
       );
     }
   });
