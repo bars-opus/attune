@@ -58,6 +58,17 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
   bool _isUpdatingChoice = false;
   late String _currentChoice;
 
+  Timer? _handoff;
+
+  /// How long the round stays on screen before the game hands off to the
+  /// chat card.
+  ///
+  /// Matches the session games' grace window rather than the shorter
+  /// RoundHandoff pause: partners playing in the same room answer within
+  /// seconds, and bouncing them out only to tap back in would be worse
+  /// than a brief wait. Past this they are not in the same room.
+  static const _graceWindow = Duration(seconds: 20);
+
   @override
   void initState() {
     super.initState();
@@ -71,11 +82,28 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
     } else {
       _scheduleReminder(reminderDelay);
     }
+
+    // This round is answered and saved; the game is with the partner,
+    // who may answer in an hour. Holding the player on a spinner until
+    // then made the game feel broken -- the chat card carries the state
+    // better than a screen nobody is looking at.
+    _handoff = Timer(_graceWindow, _leaveToChat);
+  }
+
+  /// Leaves for the chat, unless the player is mid-edit.
+  ///
+  /// Changing your pick is the one thing this screen is FOR beyond
+  /// waiting, and closing it under someone's fingers would discard the
+  /// change they were making.
+  void _leaveToChat() {
+    if (!mounted || _isEditing || _isUpdatingChoice) return;
+    Navigator.of(context).maybePop();
   }
 
   @override
   void dispose() {
     _reminderTimer?.cancel();
+    _handoff?.cancel();
     super.dispose();
   }
 

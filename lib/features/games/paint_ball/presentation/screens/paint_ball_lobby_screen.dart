@@ -25,6 +25,9 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
   bool _allowPartnerPrompts = false;
   bool _routing = false;
 
+  /// Guards the automatic accept so a rebuild cannot accept twice.
+  bool _accepting = false;
+
   @override
   void initState() {
     super.initState();
@@ -77,6 +80,17 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
         session.isInvited &&
         currentUserId != null &&
         session.initiatorId != currentUserId;
+
+    // Tapping the invitation IS the acceptance. Asking again on a screen
+    // of its own made the partner confirm the thing they just did, and
+    // the game cannot leave the invited state until someone says yes --
+    // so say it, and let the phase listener route on to the battle.
+    if (isIncomingInvite && !_accepting) {
+      _accepting = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(notifier.acceptSession(session.sessionId));
+      });
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -220,47 +234,23 @@ class _PaintBallLobbyScreenState extends ConsumerState<PaintBallLobbyScreen> {
               ),
               Gap(Spacing.md.h),
             ],
-            if (state.isLoading)
+            if (state.isLoading || isIncomingInvite)
+              // Accepting, on its way to the battle. No Accept button:
+              // the tap that got here was the acceptance.
               const Center(child: CircularProgressIndicator())
-            else if (isIncomingInvite)
-              Row(
-                children: [
-                  Expanded(
-                    child: AppButton(
-                      label: 'Decline',
-                      onPressed: () async {
-                        await notifier.declineSession(session.sessionId);
-                        if (!context.mounted) return;
-                        final declined =
-                            ref
-                                .read(paintBallSessionProvider)
-                                .session
-                                ?.isAbandoned;
-                        if (declined == true) {
-                          Navigator.of(context).maybePop();
-                        }
-                      },
-                      variant: ButtonVariant.outline,
-                      size: ButtonSize.small,
-                      animateButton: !reduceMotionOf(context),
-                    ),
-                  ),
-                  Gap(Spacing.md.w),
-                  Expanded(
-                    child: AppButton(
-                      label: 'Accept',
-                      onPressed:
-                          () => notifier.acceptSession(session.sessionId),
-                      size: ButtonSize.small,
-                      animateButton: !reduceMotionOf(context),
-                    ),
-                  ),
-                ],
-              )
             else if (session?.isInvited == true)
+              // The invitation this player sent, still unanswered. The
+              // useful thing here is cancelling it -- "Back to chat" was
+              // a button whose only job was to leave a screen that had
+              // nothing to say, and the system back gesture already
+              // does that.
               AppButton(
-                label: 'Back to chat',
-                onPressed: () => Navigator.of(context).maybePop(),
+                label: 'Cancel invitation',
+                onPressed: () async {
+                  await notifier.declineSession(session!.sessionId);
+                  if (!context.mounted) return;
+                  Navigator.of(context).maybePop();
+                },
                 variant: ButtonVariant.outline,
                 size: ButtonSize.small,
                 width: double.infinity,

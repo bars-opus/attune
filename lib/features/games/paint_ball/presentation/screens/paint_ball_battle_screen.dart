@@ -8,6 +8,7 @@ import '../../models/paint_ball_models.dart';
 import '../state/paint_ball_provider.dart';
 import '../widgets/paint_ball_lives_display.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart';
+import 'package:attune/features/games/presentation/widgets/round_handoff.dart';
 import 'package:attune/core/ui/presence/breathing_dots.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart';
@@ -42,7 +43,7 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
   bool _shotInFlight = false;
   bool _replayInFlight = false;
 
-  /// Guards the automatic exit so a rebuild cannot schedule a second pop.
+  /// True once the hold has fired, so a rebuild cannot pop twice.
   bool _leaving = false;
 
   @override
@@ -209,22 +210,19 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
     // callback starting where neither flag is set -- and leaving in that
     // gap would cut the exchange the player came to watch.
     // beginNextTurn clears it, which is exactly when leaving is right.
-    if (session.status == 'active' &&
+    // Held rather than popped on the spot. Leaving the instant the round
+    // resolved swallowed the thing the player came for -- where the shot
+    // landed, what it cost -- so the board now stays long enough to read
+    // and then leaves (RoundHandoff, below).
+    final handingOff =
+        session.status == 'active' &&
         !session.isCurrentUserTurn(currentUserId) &&
         state.pendingReplay == null &&
         state.lastReplay == null &&
         !_shotInFlight &&
-        !_replayInFlight &&
-        !_leaving) {
-      _leaving = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        ref.read(paintBallSessionProvider.notifier).beginNextTurn();
-        Navigator.of(context).pop(PaintBallExitAction.backToChat);
-      });
-    }
+        !_replayInFlight;
 
-    return Scaffold(
+    final scaffold = Scaffold(
       // Black regardless of theme, matching the field. Paint Ball is a
       // schematic on a dark ground; a light surface would leave the field
       // as a black rectangle floating on white.
@@ -446,6 +444,20 @@ class _PaintBallBattleScreenState extends ConsumerState<PaintBallBattleScreen>
           ),
         ],
       ),
+    );
+
+    if (!handingOff) return scaffold;
+
+    // The round is resolved and the board is theirs. Hold it, then leave
+    // -- beginNextTurn on the way out, exactly as the instant pop did.
+    return RoundHandoff(
+      onLeave: () {
+        if (_leaving || !mounted) return;
+        _leaving = true;
+        ref.read(paintBallSessionProvider.notifier).beginNextTurn();
+        Navigator.of(context).pop(PaintBallExitAction.backToChat);
+      },
+      child: scaffold,
     );
   }
 

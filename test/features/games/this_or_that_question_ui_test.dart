@@ -64,6 +64,22 @@ void _usePhoneViewport(WidgetTester tester) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
+/// The waiting screen under test, with the fields every case shares.
+WaitingScreen _waiting() => const WaitingScreen(
+  sessionId: 'session-1',
+  roundId: 'round-3',
+  questionText: 'Stay in or go out?',
+  userChoice: 'a',
+  userChoiceText: 'Stay in',
+  userChoiceEmoji: '🛋️',
+  optionA: 'Stay in',
+  optionB: 'Go out',
+  roundNumber: 3,
+  totalRounds: 10,
+  isPartnerA: true,
+  partnerName: 'Ama',
+);
+
 Widget _wrap({
   required Widget child,
   required ThisOrThatRepository repository,
@@ -263,6 +279,104 @@ void main() {
       ),
     ).called(1);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('waiting hands off to the chat instead of spinning forever', (
+    tester,
+  ) async {
+    // The round is answered and saved; the game is with the partner, who
+    // may answer in an hour. Holding the player on a spinner until then
+    // made the game feel broken -- the chat card carries the state.
+    //
+    // Pushed onto a host route rather than being the home widget: a root
+    // route has nothing to pop back to, so maybePop is a no-op and the
+    // test would pass whatever the screen did.
+    _usePhoneViewport(tester);
+    await tester.pumpWidget(
+      _wrap(
+        repository: repository,
+        child: Navigator(
+          onGenerateRoute:
+              (_) => MaterialPageRoute<void>(
+                builder:
+                    (context) => Scaffold(
+                      body: Center(
+                        child: ElevatedButton(
+                          onPressed:
+                              () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => _waiting(),
+                                ),
+                              ),
+                          child: const Text('host'),
+                        ),
+                      ),
+                    ),
+              ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('host'));
+    await tester.pumpAndSettle();
+    expect(find.text('host'), findsNothing);
+
+    // Still there a moment later: the pick is not swallowed.
+    await tester.pump(const Duration(seconds: 5));
+    expect(find.text('host'), findsNothing);
+
+    await tester.pump(const Duration(seconds: 20));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('host'),
+      findsOneWidget,
+      reason: 'the round never handed off to the chat',
+    );
+  });
+
+  testWidgets('waiting stays put while a pick is being changed', (
+    tester,
+  ) async {
+    // Changing your pick is the one thing this screen is FOR beyond
+    // waiting. Closing it under someone's fingers would discard the
+    // change they were making.
+    _usePhoneViewport(tester);
+    await tester.pumpWidget(
+      _wrap(
+        repository: repository,
+        child: Navigator(
+          onGenerateRoute:
+              (_) => MaterialPageRoute<void>(
+                builder:
+                    (context) => Scaffold(
+                      body: Center(
+                        child: ElevatedButton(
+                          onPressed:
+                              () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => _waiting(),
+                                ),
+                              ),
+                          child: const Text('host'),
+                        ),
+                      ),
+                    ),
+              ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('host'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Change my pick'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.pump(const Duration(seconds: 25));
+    await tester.pump();
+    expect(
+      find.text('host'),
+      findsNothing,
+      reason: 'the edit in progress was closed under the player',
+    );
   });
 
   testWidgets('waiting lets a player reopen and change their saved pick', (

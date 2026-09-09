@@ -8,6 +8,7 @@ import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_lobby_screen.dart';
 import 'package:attune/features/games/paint_ball/presentation/state/paint_ball_provider.dart';
 import 'package:attune/features/games/paint_ball/services/paint_ball_service.dart';
+import 'package:attune/features/games/presentation/widgets/round_handoff.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -26,8 +27,10 @@ class _ScreenGateway implements PaintBallGateway {
   int turnCalls = 0;
   final RealtimeChannel channel;
 
+  int acceptCalls = 0;
+
   @override
-  Future<void> acceptSession(String sessionId) async {}
+  Future<void> acceptSession(String sessionId) async => acceptCalls++;
 
   @override
   Future<PaintBallCreateSessionResponse> createSession({
@@ -94,6 +97,7 @@ class _ScreenGateway implements PaintBallGateway {
 
 PaintBallSessionState _session({
   String status = 'active',
+  String initiatorId = 'user-a',
   String? currentTurnUserId = 'user-a',
   int currentRound = 2,
   int livesA = 3,
@@ -104,7 +108,7 @@ PaintBallSessionState _session({
 }) => PaintBallSessionState.fromJson({
   'session_id': 'session-1',
   'relationship_id': 'relationship-1',
-  'initiator_id': 'user-a',
+  'initiator_id': initiatorId,
   'user_a_id': 'user-a',
   'user_b_id': 'user-b',
   'status': status,
@@ -202,6 +206,60 @@ void main() {
     expect(find.text('Start game'), findsOneWidget);
   });
 
+  testWidgets('an invitation from the partner is accepted by the tap', (
+    tester,
+  ) async {
+    // Tapping their card IS the acceptance. Asking again on a screen of
+    // its own made the partner confirm the thing they had just done --
+    // and the game cannot leave the invited state until someone says
+    // yes, so this says it.
+    _usePhoneViewport(tester);
+    final gateway = _ScreenGateway(
+      _session(status: 'invited', initiatorId: 'user-b'),
+      channel,
+    );
+
+    await tester.pumpWidget(
+      _wrap(
+        gateway: gateway,
+        child: const PaintBallLobbyScreen(relationshipId: 'relationship-1'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(gateway.acceptCalls, 1);
+    expect(find.text('Accept'), findsNothing);
+    expect(find.text('Decline'), findsNothing);
+  });
+
+  testWidgets('an invitation you sent offers to cancel, not to go back', (
+    tester,
+  ) async {
+    // "Back to chat" was a button whose only job was to leave a screen
+    // with nothing to say. Cancelling is the useful thing here; the
+    // system back gesture already covers the other.
+    _usePhoneViewport(tester);
+    final gateway = _ScreenGateway(
+      _session(status: 'invited', initiatorId: 'user-a'),
+      channel,
+    );
+
+    await tester.pumpWidget(
+      _wrap(
+        gateway: gateway,
+        child: const PaintBallLobbyScreen(relationshipId: 'relationship-1'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await _scrollToEnd(tester);
+
+    expect(gateway.acceptCalls, 0);
+    expect(find.text('Cancel invitation'), findsOneWidget);
+    expect(find.text('Back to chat'), findsNothing);
+  });
+
   testWidgets('battle requires both choices and reveals server verdict', (
     tester,
   ) async {
@@ -265,6 +323,11 @@ void main() {
     expect(find.text('Direct hit'), findsNothing);
     expect(find.textContaining('They were behind'), findsNothing);
     expect(find.text('Done for now'), findsNothing);
+
+    // The turn has passed, so the hold before the hand-off to the chat
+    // is now running. Let it finish rather than leaving a live timer.
+    await tester.pump(kRoundHandoffDuration);
+    await tester.pumpAndSettle();
   });
 
   testWidgets('loser sees one prompt and can always skip freely', (
@@ -408,10 +471,14 @@ void main() {
     expect(find.textContaining('They were behind'), findsNothing);
   });
 
-  testWidgets('the screen leaves once the turn has passed', (tester) async {
-    // Your move is in and the round is with your partner: nothing is left
-    // to do, so the game returns to the chat by itself rather than
-    // parking the player on a dead board behind a dismiss button.
+  testWidgets('the screen holds the result, then leaves on its own', (
+    tester,
+  ) async {
+    // Your move is in and the round is with your partner. It used to pop
+    // on the spot, which swallowed the thing the player came for: where
+    // the shot landed and what it cost. The board is held long enough to
+    // read, then the game returns to the chat by itself -- never parking
+    // the player behind a dismiss button.
     _usePhoneViewport(tester);
     final gateway = _ScreenGateway(
       _session(currentTurnUserId: 'user-b'),
@@ -428,6 +495,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
+    // Still there: the result has not been swallowed.
+    expect(find.byType(RoundHandoff), findsOneWidget);
     expect(
       find.text('Back to chat'),
       findsNothing,
@@ -438,6 +507,11 @@ void main() {
       findsNothing,
       reason: 'no waiting copy on a screen that is leaving',
     );
+
+    // And then it goes, without anyone pressing anything.
+    await tester.pump(kRoundHandoffDuration);
+    await tester.pumpAndSettle();
+    expect(find.byType(PaintBallBattleScreen), findsNothing);
   });
 
   testWidgets('past rounds leave no paint on the board', (tester) async {
