@@ -233,10 +233,15 @@ class MessageBubble extends StatelessWidget {
       groupedBelow: isGroupedWithPrevious,
     );
     final isMediaGroup = mediaGroup.length > 1;
-    // A trail is a one-line record, not a message: given a bubble, a
-    // ten-round game would read as twenty bubbles rather than an
-    // exchange with a card moving through it.
-    final isBare = isMediaGroup || message.isGameTrail;
+    // Only a media group is bare now.
+    //
+    // Game trails used to be bare too, on the reasoning that a trail is a
+    // record rather than a message and a ten-round game would otherwise
+    // read as twenty bubbles. That cost them their SIDE: with no fill,
+    // a trail gave no sign of who had moved, which is the one thing it
+    // exists to record. They now take the ordinary sender/receiver bubble
+    // like any other message.
+    final isBare = isMediaGroup;
     final onBubbleColor =
         isMine ? chatColors.onSenderBubble : chatColors.onReceiverBubble;
     // The footer sits on the chat wallpaper now rather than inside a
@@ -1108,9 +1113,14 @@ class _BubbleBody extends StatelessWidget {
       );
     }
     if (message.isGameTrail) {
-      // No bubble: it is a record of a move, not a message. Rendering it
-      // as one would make a ten-round game look like twenty messages.
-      children.add(GameTrailLine(label: message.content, isMine: isMine));
+      // In the ordinary bubble, so the trail shows which side moved.
+      children.add(
+        GameTrailLine(
+          label: message.content,
+          isMine: isMine,
+          foregroundColor: onBubbleColor,
+        ),
+      );
     } else if (message.isPlace) {
       // The label lives on the message content, so the card renders from
       // the row alone -- no second fetch, and it still shows if the
