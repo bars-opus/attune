@@ -1,6 +1,6 @@
 # ATTUNE — CONSTELLATION SPECIFICATION
 
-**Status:** Revised after review. Not implemented, not approved.
+**Status:** Revised after two reviews. Not implemented, not approved.
 
 **Reads with:** `SNAKES_AND_LADDERS_SPEC.md` (the lifecycle and the
 versioned-content table this reuses), `WORD_HUNT_GAME_SPEC.md` (§10, the
@@ -194,43 +194,50 @@ This also fixes three problems the graph model had:
   history. A choice names both endpoints.
 - **Moves store the choice id**, not the node, so replay is exact.
 
-### 4.2 Divergence, redefined so it can be true
+### 4.2 Divergence, proved locally rather than enumerated
 
-**Sibling choices must reveal mutually exclusive layer bundles**, and any
-two terminal outcomes must differ by at least `min_divergence` layers,
-floor of 3.
+**Divergence must be provable without enumerating outcomes.** The second
+draft said validation memoises over reachable states, which sounded
+bounded and was not: the memo's *value* is a set of outcomes, and that
+set grows exponentially even when the state count does not. Measured on
+the 13-state chain in §4.2a — 4,096 outcomes either way, memo or no memo.
+Twenty ternary turns would be billions.
 
-Measured as the symmetric difference of the layer sets, which is now a
-real quantity because different routes genuinely reveal different layers.
-Verified on a worked example before being specified:
+So divergence is not measured. It is **implied by three local rules**,
+each checkable in a single pass:
+
+1. **Every variant layer has exactly one owning choice, scene-wide.** No
+   two choices anywhere reveal the same variant layer.
+2. **Every choice reveals at least two variant layers.**
+3. **Material that appears on every route is not a variant layer at
+   all** — it lives in a state's `common_layers`, revealed on entry
+   however you arrived, and is excluded from divergence entirely.
+
+Those three give the global property for free. Two routes that diverge at
+any choice differ by that choice's layers *and* its sibling's, and since
+no other choice can reveal them, they survive to the end. Minimum
+symmetric difference is therefore at least `2 × 2 = 4`, above the floor
+of 3, **without looking at a single outcome**.
+
+Verified rather than argued: predicted 4, measured 4 by full enumeration
+on the same scene.
 
 ```
-4 terminal outcomes, all at depth 2
-minimum symmetric difference between any two: 2
+every variant layer uniquely owned: True
+min layers per choice:              2
+guaranteed minimum difference:      4
+empirical minimum difference:       4
 ```
-
-(That example is below the floor of 3 — deliberately, to show the
-validator has something to reject.)
 
 **What this proves and what it does not.** It proves the *material*
-differs. It does not prove two finished patterns look different to a
-person: three changed layers could be three faint sparks beside an
-otherwise identical composition, and the database has no geometry, no
-visual weight and no rendering with which to judge.
+differs, in polynomial time. It does not prove two finished patterns look
+different to a person: four changed layers could be four faint sparks
+beside an otherwise identical composition, and the database has no
+geometry, no visual weight and no rendering with which to judge.
 
-So validation is two-level, and the spec says so plainly rather than
-implying the database can do more than it can:
-
-- **Structural, in Postgres:** mutually exclusive sibling bundles, and a
-  minimum symmetric difference between terminal outcomes. Enforced at
-  insert, cannot be bypassed.
-- **Visual, in authoring/CI:** every terminal outcome is rendered, the
-  changed illuminated area and its spatial distribution measured, and the
-  results reviewed by a person on a contact sheet.
-
-The database can prove the choices lead somewhere different. **Only a
-rendered comparison can prove the pictures look different**, and pretending
-otherwise is how the first draft went wrong.
+So validation is two-level, and §4.3a states exactly which half does
+what — because the second draft asserted this split and then contradicted
+it two sections later.
 
 ### 4.2a Reconvergence, and why the format needs it
 
@@ -267,6 +274,40 @@ rule the validator enforces, and the reason it exists is that
 reconvergence — the thing that makes authoring possible — is also what
 pushes the closest outcomes together.
 
+### 4.2b Reconvergence must not disconnect the drawing
+
+A state records where the story is, not which stars exist — and with
+reconvergence, different routes into the same state have reached
+different stars. A choice leaving that state names one `from_star`, and
+it can be a star that route never drew.
+
+Demonstrated on the smallest case. Two siblings draw `0→3` and `0→4`,
+both reconverging on `S1`:
+
+```
+stars reached at S1, via a: {0, 3}
+stars reached at S1, via b: {0, 4}
+intersection:               {0}
+
+from_star = 3 -> disconnected if they came via b
+from_star = 4 -> disconnected if they came via a
+from_star = 0 -> valid on both
+```
+
+The line would float, attached to nothing. §4.2a's "13 states and 24
+choices" example is only a valid scene if this is checked, and it was
+not.
+
+**So every choice's `from_star` must lie in the intersection of stars
+reached along all routes into its state.** Computed by forward dataflow —
+propagate the reached-star intersection through the state machine to a
+fixed point — which is polynomial and needs no enumeration, the same
+discipline as §4.2.
+
+Equivalently an author may give each state a **canonical anchor**: a star
+every incoming choice is guaranteed to have drawn. The validator accepts
+either, because both produce the same guarantee.
+
 ### 4.3 No objective optimisation — the honest version of "no skill"
 
 The first draft claimed "no skill, structurally". That is overstated.
@@ -278,21 +319,64 @@ The defensible claim is **no objective optimisation**: no choice is
 better, and none is worth more. Three invariants make it true, all
 validator-enforced:
 
-1. **Equal depth.** Every route from the origin to a terminal state has
-   the same number of choices, so both players always make the same
-   number of decisions. Unequal routes would let one branch finish faster
-   and hand one slot more turns.
+1. **Equal, EVEN depth.** Every route has the same number of choices,
+   *and* that number is even.
+
+   The second draft required only equal depth and claimed both players
+   therefore "always make the same number of decisions". That is false at
+   odd depth — with turns alternating, depth 13 gives the invitee seven
+   moves and their partner six:
+
+   ```
+   depth 11: invitee 6, partner 5   INVITEE +1
+   depth 12: invitee 6, partner 6   equal
+   depth 13: invitee 7, partner 6   INVITEE +1
+   depth 20: invitee 10, partner 10 equal
+   ```
+
+   So the depth is even and within 12–20, giving 6–10 decisions each.
 2. **Comparable visual weight per turn.** No choice may reveal
-   dramatically more of the pattern than its siblings. Without this, an
-   early high-impact choice decides half the composition while later
-   turns add accents — and whoever moves first would hold real
-   positional advantage.
-3. **No choice reduces the partner's future options.** A choice may not
-   lead to a state with fewer offered choices than its siblings do.
+   dramatically more of the pattern than its siblings, and the budget is
+   balanced across odd and even turns so neither slot systematically gets
+   the consequential ones. Without this, an early high-impact choice
+   decides half the composition while later turns add accents.
+
+   **Postgres checks bundle cardinality; it cannot check weight** — see
+   §4.3a. Rendered area and distribution are measured in authoring/CI.
+3. **No choice reduces the partner's future options.** Not merely the
+   immediate successor's arity, which the second draft compared and which
+   is too shallow — two states can offer the same two choices now and
+   very different counts two turns later. All states at a given depth
+   must share an arity, so the shape of what remains is the same whichever
+   route was taken.
 
 With those three, a player thinking ten moves ahead arrives where one
 tapping their nearest thumb does: at a different pattern, not a better
 one.
+
+### 4.3a Which validator enforces what
+
+The second draft said Postgres has no geometry and cannot judge visual
+weight, and then two sections later listed comparable visual weight among
+the database validator's guarantees and demanded a SQL test rejecting a
+visually dominant choice. Both cannot be true. The table holds layer
+numbers.
+
+| Property | Enforced by | How |
+|---|---|---|
+| Unique layer ownership | **Postgres** | One pass over the states blob |
+| ≥2 variant layers per choice | **Postgres** | Cardinality |
+| Equal depth, arity, non-narrowing | **Postgres** | Forward dataflow |
+| `from_star` connectivity | **Postgres** | Forward dataflow (§4.2b) |
+| Reachability, termination, 2–3 choices | **Postgres** | Traversal over states |
+| Format bounds and identifier rules | **Postgres** | §4.4a |
+| **Comparable visual weight** | **Authoring/CI** | Renders every terminal outcome, measures illuminated area and spatial distribution |
+| **Perceptual difference** | **A person** | Contact-sheet review of rendered outcomes |
+
+The bottom two rows are **not** database guarantees and are not claimed
+as such anywhere. A scene passing every Postgres rule can still look
+identical whichever way it is played; only a render and a human eye
+catch that, and pretending otherwise is how the first draft went wrong.
 
 ### 4.4 What else the validator proves
 
@@ -325,6 +409,31 @@ makes rule 4 checkable at all.
 
 **A scene that fails validation is not stored.** It fails at insert, in
 front of whoever authored it — never in front of a couple.
+
+### 4.4a Format bounds and identity rules
+
+Unstated in the second draft, which then referred to "a scene sized at
+the format's maximum" as though one existed.
+
+| Bound | Value |
+|---|---|
+| States | ≤ 64 |
+| Choices per state | 2 or 3 (non-terminal), 0 (terminal) |
+| Choices per scene | ≤ 160 |
+| Stars | ≤ 64 |
+| Variant layers | ≤ 512 |
+| Depth | even, 12–20 |
+| `states` blob | ≤ 64 KB |
+| Identifier length | ≤ 32 characters, `[a-z0-9_]` |
+
+And two identity rules the moves table depends on:
+
+- **Choice ids are unique scene-wide**, not per state. `constellation_moves`
+  stores only `choice_id`, so a duplicate would make history ambiguous.
+- **A layer may not be revealed twice along any route.** Reconvergence
+  makes this possible to author accidentally, and a layer revealed twice
+  would break the divergence arithmetic in §4.2, which assumes each
+  contributes once.
 
 ### 4.5 Authoring cost, flagged as a risk
 
@@ -460,12 +569,19 @@ partner plays.
 Offered stars pulse gently. Unreachable stars are drawn faintly or not at
 all, so the field never looks like a menu of 40 options.
 
-**Tap-once commits.** This is deliberate and differs from Dots and Boxes,
-which needed confirm-on-second-tap because an edge there was an
-irreversible move in a game that could be lost. Here **no choice can be
-wrong**, so a mis-tap costs nothing but a different pattern — and a
-confirmation step for a decision with no downside is friction pretending
-to be care.
+**Tap-once commits**, but not because the choice is meaningless — the
+layered model makes choices visibly consequential, and the second draft's
+claim that "a mis-tap costs nothing" stopped being true when §4 was
+rebuilt. A mis-tap costs you the pattern you would have made.
+
+It differs from Dots and Boxes, which needed confirm-on-second-tap
+because an edge there was irreversible *in a game that could be lost*.
+Here there is no loss, so a modal confirmation is too heavy — but a slip
+should still not commit.
+
+So: **highlight on pointer-down, commit on pointer-up inside the target,
+cancel if the finger moves away.** The rhythm of a single tap, with the
+slip protection a consequential choice deserves.
 
 Hit-testing is by nearest offered star within a threshold, not by the
 drawn circle, so a finger need not be precise.
@@ -565,13 +681,37 @@ CREATE TABLE IF NOT EXISTS public.constellation_scenes (
   origin_state text NOT NULL,
 
   -- §4.2. Minimum symmetric difference in revealed layers between any
-  -- two terminal outcomes. Floor of 3, enforced by the validator.
+  -- two terminal outcomes. Floor of 3, though the local rules in §4.2
+  -- guarantee 4 without measuring it.
   min_divergence smallint NOT NULL,
+
+  -- THE ARTWORK'S SOURCE OF TRUTH. Layer ids alone are not enough: a
+  -- scene inserted today can be selected for an app build that has never
+  -- heard of its layers, and the two partners can be on different
+  -- builds. That renders missing artwork for one of them, or -- worse --
+  -- different pictures from the same history.
+  --
+  -- Layers ship BUNDLED with the client as SVG groups, not delivered by
+  -- the server: they are static art, and a game whose payoff is a
+  -- picture should not have that picture arrive over a flaky connection
+  -- mid-session.
+  --
+  -- So the scene pins the asset bundle it was authored against and the
+  -- minimum client build that contains it. Scene selection (§9.6) offers
+  -- only scenes both partners' builds can render.
+  asset_bundle_id text NOT NULL,
+  asset_bundle_hash text NOT NULL,
+  min_client_build int NOT NULL,
 
   created_at timestamptz NOT NULL DEFAULT now(),
   retired_at timestamptz
 );
 ```
+
+**The SQL manifest and the Flutter asset manifest are generated from one
+authoring source**, so a layer cannot exist in one and not the other. Two
+hand-maintained lists of the same 512 ids will drift, and the failure is
+invisible until a couple opens a scene with a hole in it.
 
 Immutable once played on, exactly as `snakes_boards` is: retuning a scene
 would rewrite the history of every pattern already made on it. Tuning
@@ -596,9 +736,22 @@ CREATE TABLE IF NOT EXISTS public.constellation_state (
   revealed_layers smallint[] NOT NULL,
 
   moves_played smallint NOT NULL DEFAULT 0,
+
+  -- Both completion RPCs write this and the second draft gave it
+  -- nowhere to live -- game_sessions has no such column, verified
+  -- against the live schema.
+  completion_reason text
+    CHECK (completion_reason IN ('pattern_complete', 'ended')),
+
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 ```
+
+**`take_choice` racing `end_activity`:** both take the session lock, so
+whichever acquires it first wins. A session already `pattern_complete`
+cannot become `ended` — the pattern was finished, and recording it as
+abandoned would be a lie about a thing that happened. A session already
+`ended` refuses further choices with `GAME_OVER`.
 
 ### 8.3 Moves
 
@@ -771,12 +924,28 @@ only when the bloom has finished or been explicitly skipped. A client
 that reopens with `moves_played` acknowledged but `completion_seen` false
 plays the completion.
 
+**And `completion_seen = true` is refused unless it can be true.** The
+second draft left it ungated, so a buggy client could set it during an
+active game and permanently suppress the one moment this game exists for.
+It is accepted only when the session is `pattern_complete` **and** the
+caller's cursor has reached the final move; otherwise `INVALID_INPUT`.
+Applied monotonically by boolean OR, so it can never be un-seen and a
+retry is harmless.
+
+Note it is gated on `pattern_complete` specifically, not on any terminal
+status: a session closed by `end_activity` has no completion bloom to
+have seen.
+
 ### 9.6 Lifecycle
 
 Snakes' create / accept / decline / active-lookup, with:
 
-- **Decline is for invitations only.** Once both are in, ending the game
-  is not one person's decision.
+- **Decline is for invitations only** — the ordinary lifecycle for an
+  invitation nobody accepted. Ending an *active* session is
+  `end_activity` (§5.6, §9.3a), available to either partner. The second
+  draft kept a sentence here saying active ending "is not one person's
+  decision", which directly contradicted the operation it had just added
+  two sections earlier.
 - Acceptance pins a scene version, seeds both cursors at zero, assigns
   the first turn to the invitee, and seeds `updated_at`.
 - Scene selection excludes those the couple has recently played (§4.6),
@@ -803,16 +972,23 @@ role, not by inspecting function source:
   while an unrelated legacy game keeps its intended access
 - direct read or write of state, moves and cursors is denied
 - unauthenticated and non-member calls to every RPC are denied
-- **the validator refuses**: an unreachable state, a route that does not
-  terminate, a non-terminal state offering fewer than 2 or more than 3
-  choices, sibling choices whose layer bundles overlap, terminal outcomes
-  differing by less than `min_divergence`, a `min_divergence` below the
-  floor of 3, routes of unequal depth, a choice revealing dramatically
-  more than its siblings, and a choice that narrows the partner's next
-  options
-- **the validator's traversal is over reachable STATES, not
-  playthroughs** — a scene sized at the format's maximum validates in
-  bounded time rather than enumerating orderings
+- **the validator refuses**: an unreachable state; a route that does not
+  terminate; a non-terminal state offering other than 2 or 3 choices; a
+  variant layer owned by two choices; a choice revealing fewer than two
+  variant layers; a layer revealed twice along one route; a duplicate
+  choice id; routes of unequal depth; an odd depth; states at one depth
+  with differing arity; a `from_star` outside the reached-star
+  intersection for its state; and every format bound in §4.4a
+- **the validator never enumerates outcomes.** Given a scene at the
+  format maximum, validation completes in bounded time — the local
+  ownership rules of §4.2 imply divergence without measuring it, and
+  memoising over states does NOT bound the work because the memo's value
+  grows exponentially
+- **`min_divergence` below 3 is refused**, and a conforming scene's
+  actual minimum is at least 4 by construction
+- **the validator does NOT claim to check visual weight or perceptual
+  difference** (§4.3a) — those are authoring/CI and human review, and no
+  SQL test asserts them
 - a choice not belonging to the session's `current_state` is refused; the
   available set is derived server-side and a client claim is ignored
 - a choice cannot be taken twice
@@ -823,12 +999,20 @@ role, not by inspecting function source:
 - reaching a terminal state completes the session exactly once, with
   `completion_reason = 'pattern_complete'`, and `winner_user_id`
   **stays null**
+- `take_choice` racing `end_activity` produces one terminal state: a
+  completed pattern never becomes `ended`, and an ended session refuses
+  further choices
+- a scene whose `min_client_build` exceeds either partner's build is not
+  offered
 - `end_activity` is available to either partner while active, closes with
   `completion_reason = 'ended'`, names no winner, keeps the partial
   pattern readable, and is idempotent for both callers
 - `completion_seen` advances independently of the move cursor: a client
   that acknowledged the final move but not the completion still gets the
   completion on reopening
+- `completion_seen = true` is **refused** while the session is active,
+  before the caller's cursor reaches the final move, and for a session
+  closed by `end_activity`; it is monotonic and a retry is harmless
 - concurrent choices by both players produce one legal state and one turn
   owner
 - fetching does not advance the cursor; acknowledgement advances only the
@@ -874,13 +1058,20 @@ animation with its accessible form.
 
 ## 11. Estimate
 
-**Seven to ten days**, plus scene authoring measured separately (§4.5).
+**Eight to twelve days**, plus scene authoring measured separately
+(§4.5) and an authoring/CI rendering pipeline that is not in that figure.
 
-Raised from five-to-eight after review. The first draft's scene model was
-a free graph, which was both simpler and impossible (§4.0). The layered
-state machine that replaces it is more to author, more to validate — six
-structural rules, three of them new — and needs a rendering step in CI
-that the database cannot substitute for (§4.2).
+Raised twice. The first draft's scene model was a free graph, which was
+both simpler and impossible (§4.0). The layered state machine that
+replaces it is more to author and more to validate — and the second
+review added forward-dataflow connectivity checks (§4.2b), format bounds
+(§4.4a), an asset-compatibility gate (§8.1), and a generated dual
+manifest so the SQL and Flutter layer lists cannot drift.
+
+**The rendering pipeline is excluded from this figure** and is real work:
+§4.3a puts perceptual difference outside the database, which means
+authoring/CI must render every terminal outcome and produce a contact
+sheet. Without it the divergence guarantee is structural only.
 
 Cheaper than Word Hunt's five-to-eight-plus because there is **no hidden
 information**: no private table, no disclosure boundary, no generator, no
@@ -981,6 +1172,64 @@ stakes. §12's last risk.
 ---
 
 ## Changelog
+
+- **2026-09-09** — Second review. Eight findings, one of them a blocker
+  again, and all eight confirmed by computation before being applied.
+
+  **Memoising over states did not bound validation.** The first revision
+  answered "exhaustive traversal is intractable" with "memoise over
+  reachable states", which sounded bounded and was not: the memo's
+  *value* is a set of outcomes and grows exponentially regardless. Same
+  4,096 outcomes on the 13-state chain, memo or no memo. Divergence is
+  now **proved locally** — every variant layer owned by exactly one
+  choice scene-wide, at least two per choice, common material excluded —
+  which implies a minimum symmetric difference of 4 with no enumeration
+  at all. Predicted 4, measured 4.
+
+  **Reconvergence could disconnect the drawing.** Two siblings drawing
+  `0→3` and `0→4` reconverge on a state whose next choice has one fixed
+  `from_star`, and that star exists on only one of the routes — the line
+  would float, attached to nothing. §4.2a's own worked example was
+  invalid for this reason. Now every `from_star` must lie in the
+  intersection of stars reached along all routes into its state,
+  computed by forward dataflow.
+
+  **"Comparable visual weight" was claimed as a database guarantee** two
+  sections after the spec correctly said Postgres has no geometry to
+  judge it with. §4.3a is now a table naming which of Postgres, CI and a
+  human enforces each property, and the contract tests explicitly do not
+  assert the last two.
+
+  **The artwork had no source of truth.** Layer ids with no asset
+  identifier, hash or client-compatibility constraint: a scene inserted
+  today could be selected for a build that has never heard of its layers,
+  or render differently for each partner. Scenes now pin an asset bundle
+  and minimum client build, selection filters on it, and both manifests
+  are generated from one source so 512 ids cannot drift across two
+  hand-maintained lists.
+
+  **Equal depth did not mean equal participation.** With alternating
+  turns, depth 13 gives the invitee seven moves and their partner six.
+  Depth is now even. The non-narrowing rule also compared only immediate
+  successor arity, which is too shallow — all states at a depth now share
+  an arity.
+
+  **`completion_reason` had nowhere to live** — neither table declared
+  it, and `game_sessions` has no such column, verified against the live
+  schema. Added, with the `take_choice`/`end_activity` race resolved: a
+  completed pattern never becomes `ended`.
+
+  Also: `completion_seen` was ungated, so a buggy client could consume
+  the payoff during an active game; a stale lifecycle sentence still said
+  active ending "is not one person's decision", contradicting the
+  `end_activity` added two sections earlier; format bounds and identifier
+  rules were referred to but never stated; and tap-once kept its rhythm
+  but lost the claim that "a mis-tap costs nothing", which stopped being
+  true when §4 was rebuilt — now highlight on pointer-down, commit on
+  pointer-up inside the target.
+
+  Estimate seven-to-ten to eight-to-twelve, with the rendering pipeline
+  called out as excluded.
 
 - **2026-09-09** — Revised after an external review. Eight findings, one
   of them fatal to the design as written.
