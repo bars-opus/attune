@@ -586,6 +586,56 @@ constraint is documented — a 20-turn scene offering three choices every
 turn is a long game with a lot of art, and the bound is a reasonable
 place to stop.
 
+### 4.4d The prototype was built. What it showed.
+
+A throwaway pass-and-play build (`lib/features/games/constellation/
+prototype/`) plays `drift_v1` end to end with derived layer geometry —
+no server, no session, no cursor. It exists to answer the two things a
+spec cannot, and it answered one of them clearly and the other badly.
+
+**§4.2's central claim holds, visually.** Two routes through the same
+scene produce pictures nobody would confuse: one a spiral, one a tangled
+star. The divergence rule is not merely structural — it shows.
+
+**But the scene's star LAYOUT decides whether a picture is beautiful or a
+scribble, and nothing in this spec constrains it.**
+
+The lattice places lanes on opposite sides of the field. A player who
+keeps choosing the same lane walks a continuous spiral outward. Two
+players *alternating* — which is what taking turns means — jump across
+the field on every move:
+
+```
+always one lane:  total line length 1.86
+alternating:      total line length 6.17     (3.3x)
+```
+
+The alternating picture is the tangled one. And alternating is not an
+unlucky route: **it is the most natural thing two people politely taking
+turns will do.** So the default experience of this scene is the ugly one,
+produced by a layout that satisfies every rule in §4.4.
+
+This is a genuine gap, not a prototype artefact. §4.4 constrains the
+*graph* exhaustively and says nothing about where stars sit, so an
+author can satisfy every structural rule and still ship a scene whose
+common routes look like scribble. Two candidate rules, neither designed:
+
+- **Lane adjacency** — sibling destinations must be near each other, so
+  any route stays locally continuous. Cheap to check, and it removes the
+  crossing entirely.
+- **Total-length bounds per route** — computable by the same forward
+  dataflow as §4.2b, but it constrains the *outcome* rather than the
+  authoring, which is harder to act on when it fails.
+
+Lane adjacency looks right and is not yet specified. **Layout is now a
+first-class part of the format, not decoration**, and §4.4c's claim that
+"the graph is mechanical and the art is the budget" needs the correction
+that *layout sits between them* and is neither.
+
+**What the prototype did not answer**: whether a game with no stakes is
+worth opening. That needs two people and a real evening, not a golden
+test.
+
 ### 4.5 Authoring cost, flagged as a risk
 
 An abstract scene should be quick to author, but the divergence and

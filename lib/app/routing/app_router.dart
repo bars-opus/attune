@@ -17,6 +17,7 @@ import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_lobby_screen.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_game_screen.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_lobby_screen.dart';
+import 'package:attune/features/games/constellation/prototype/constellation_prototype_screen.dart';
 import 'package:attune/features/games/dots_and_boxes/prototype/dots_boxes_prototype_screen.dart';
 import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_game_screen.dart';
 import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_lobby_screen.dart';
@@ -1660,6 +1661,16 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
           final sessionId = state.pathParameters['sessionId']!;
           return SnakesGameScreen(sessionId: sessionId);
         },
+      ),
+      // PROTOTYPE ROUTE. CONSTELLATION_GAME_SPEC.md §4.4c: the scene
+      // graph turned out to be mechanical, so this exists to test the two
+      // things a spec cannot -- whether a game with no stakes is worth
+      // opening, and whether the finished picture reads as something two
+      // people made. Not in the games sheet.
+      GoRoute(
+        path: '/games/constellation/prototype',
+        name: 'constellationPrototype',
+        builder: (context, state) => const ConstellationPrototypeScreen(),
       ),
       // PROTOTYPE ROUTE, not a shipped game. DOTS_AND_BOXES_SPEC.md §15
       // recommends against building the real thing; this pass-and-play

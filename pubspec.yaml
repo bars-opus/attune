@@ -196,6 +196,10 @@ flutter:
     - assets/images/game_icons/
     - assets/config/
     - assets/sounds/
+    # Constellation scene graphs. Prototype only -- see
+    # CONSTELLATION_GAME_SPEC.md §15; real scenes would ship as .vec
+    # layers alongside these.
+    - assets/constellation/scenes/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
