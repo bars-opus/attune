@@ -13,6 +13,10 @@ enum ChatGameDestination {
   snakesAndLadders,
   wordHunt,
   neverHaveIEver,
+  // Throwaway builds, reachable so they can actually be played and
+  // judged. Neither is a game Attune offers.
+  dotsAndBoxesPrototype,
+  constellationPrototype,
   mirror,
   slidingScale,
   scenario,
@@ -381,6 +385,33 @@ const _chatGameCategories = <_ChatGameCategory>[
         subtitle: 'One hidden word, who spots it first',
         icon: Icons.grid_on_outlined,
         tags: {'Quick', 'Fun'},
+      ),
+    ],
+  ),
+  // PROTOTYPES — deliberately their own category, and deliberately last.
+  //
+  // Both are throwaway builds that exist to answer a question a spec
+  // cannot, and both are pass-and-play on one device rather than real
+  // asynchronous games. They are here so they can be PLAYED and judged;
+  // mixing them into the Arcade would imply Attune offers them.
+  _ChatGameCategory(
+    title: 'Prototypes',
+    options: [
+      _ChatGameOption(
+        destination: ChatGameDestination.dotsAndBoxesPrototype,
+        title: 'Dots and Boxes',
+        // The question: does a skill-dominant game ruin a cooldown slot?
+        subtitle: 'Prototype · pass the phone · does one of you always win?',
+        icon: Icons.grid_4x4_outlined,
+        tags: {'Prototype'},
+      ),
+      _ChatGameOption(
+        destination: ChatGameDestination.constellationPrototype,
+        title: 'Constellation',
+        // The question: is a game with no stakes worth opening at all?
+        subtitle: 'Prototype · pass the phone · no winner, nothing to lose',
+        icon: Icons.auto_awesome_outlined,
+        tags: {'Prototype'},
       ),
     ],
   ),

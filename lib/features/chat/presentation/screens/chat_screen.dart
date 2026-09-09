@@ -2932,6 +2932,12 @@ Future<void> openGameRoute(
         'wordHuntLobby',
         pathParameters: {'relationshipId': relationshipId},
       );
+    // Prototypes take no relationship: they are pass-and-play on one
+    // device, with no session, no server and no partner.
+    case ChatGameDestination.dotsAndBoxesPrototype:
+      await context.pushNamed('dotsBoxesPrototype');
+    case ChatGameDestination.constellationPrototype:
+      await context.pushNamed('constellationPrototype');
     case ChatGameDestination.paintBall:
       final action = await context.pushNamed<PaintBallExitAction>(
         'paintBallLobby',
