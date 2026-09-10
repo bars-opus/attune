@@ -337,6 +337,31 @@ class SessionGameRepository {
   /// gets a partnerId from, and start()'s own contract requires it be
   /// the real partner because nothing downstream — not RLS, not the
   /// repository — checks that it actually belongs to this relationship.
+  /// The invitation this couple has open for [gameType], if there is one.
+  ///
+  /// Returns the initiator's id alongside the session, because who sent
+  /// it decides what opening it means: the receiver accepts and plays,
+  /// the sender is still waiting and must not accept their own invite.
+  Future<({String sessionId, String initiatorId})?> pendingInvite({
+    required String relationshipId,
+    required String gameType,
+  }) async {
+    final row =
+        await _safeClient
+            .from('game_sessions')
+            .select('id, initiator_id')
+            .eq('relationship_id', relationshipId)
+            .eq('game_type', gameType)
+            .eq('status', 'invited')
+            .maybeSingle();
+
+    if (row == null) return null;
+    return (
+      sessionId: row['id'] as String,
+      initiatorId: row['initiator_id'] as String,
+    );
+  }
+
   Future<String> getPartnerId(String relationshipId, String userId) async {
     final row =
         await _safeClient

@@ -46,8 +46,16 @@ class _FakeRepository extends SessionGameRepository {
     required String initiatorId,
     required String gameType,
     required String partnerId,
-  }) async =>
-      _sessionId;
+  }) async => _sessionId;
+
+  /// No invitation outstanding: these tests exercise a game being
+  /// played, not one waiting to be answered. Without the override the
+  /// real repository reaches for a Supabase client that no test has.
+  @override
+  Future<({String sessionId, String initiatorId})?> pendingInvite({
+    required String relationshipId,
+    required String gameType,
+  }) async => null;
 
   @override
   Future<String> getPartnerId(String relationshipId, String userId) async =>
@@ -55,43 +63,42 @@ class _FakeRepository extends SessionGameRepository {
 
   @override
   Future<List<SessionGameRound>> fetchRounds(String sessionId) async => const [
-        // Round 1: the caller is the subject, so they answer about
-        // themselves and judge their partner's guess.
-        SessionGameRound(
-          id: 'round-1',
-          roundNumber: 1,
-          questionId: 'q1',
-          bothAnswered: false,
-          subjectId: _me,
-        ),
-        // Round 2: the partner is the subject, so the caller guesses
-        // and never reaches the judge step.
-        SessionGameRound(
-          id: 'round-2',
-          roundNumber: 2,
-          questionId: 'q2',
-          bothAnswered: false,
-          subjectId: _them,
-        ),
-      ];
+    // Round 1: the caller is the subject, so they answer about
+    // themselves and judge their partner's guess.
+    SessionGameRound(
+      id: 'round-1',
+      roundNumber: 1,
+      questionId: 'q1',
+      bothAnswered: false,
+      subjectId: _me,
+    ),
+    // Round 2: the partner is the subject, so the caller guesses
+    // and never reaches the judge step.
+    SessionGameRound(
+      id: 'round-2',
+      roundNumber: 2,
+      questionId: 'q2',
+      bothAnswered: false,
+      subjectId: _them,
+    ),
+  ];
 
   @override
   Future<List<SessionGameQuestion>> fetchQuestions({
     required String gameType,
     required int limit,
-  }) async =>
-      const [
-        SessionGameQuestion(
-          id: 'q1',
-          gameType: 'mirror',
-          questionText: 'What is weighing on them most this week?',
-        ),
-        SessionGameQuestion(
-          id: 'q2',
-          gameType: 'mirror',
-          questionText: 'What are they most looking forward to?',
-        ),
-      ];
+  }) async => const [
+    SessionGameQuestion(
+      id: 'q1',
+      gameType: 'mirror',
+      questionText: 'What is weighing on them most this week?',
+    ),
+    SessionGameQuestion(
+      id: 'q2',
+      gameType: 'mirror',
+      questionText: 'What are they most looking forward to?',
+    ),
+  ];
 
   @override
   Future<bool> submitAnswer({
@@ -114,7 +121,8 @@ class _FakeRepository extends SessionGameRepository {
   Future<bool> isUserA(String relationshipId) async => false;
 
   @override
-  Future<String?> fetchMirrorTruth(String roundId) async => 'work has been hard';
+  Future<String?> fetchMirrorTruth(String roundId) async =>
+      'work has been hard';
 
   @override
   Future<void> judgeRound({
@@ -155,8 +163,9 @@ void main() {
         ProviderScope(
           overrides: [
             currentUserProvider.overrideWithValue(_signedInUser),
-            activeRelationshipIdProvider
-                .overrideWith((ref) async => _relationshipId),
+            activeRelationshipIdProvider.overrideWith(
+              (ref) async => _relationshipId,
+            ),
             sessionGameRepositoryProvider.overrideWithValue(repository),
           ],
           child: const MaterialApp(
@@ -265,8 +274,9 @@ void main() {
         ProviderScope(
           overrides: [
             currentUserProvider.overrideWithValue(_signedInUser),
-            activeRelationshipIdProvider
-                .overrideWith((ref) async => _relationshipId),
+            activeRelationshipIdProvider.overrideWith(
+              (ref) async => _relationshipId,
+            ),
             sessionGameRepositoryProvider.overrideWithValue(repository),
           ],
           child: const MaterialApp(
@@ -287,9 +297,10 @@ void main() {
       // half-empty comparison.
       repository.answerAWhileClosed = 'their guess about me';
       final element = tester.element(find.byType(SessionGameFlowScaffold));
-      ProviderScope.containerOf(element, listen: false)
-          .read(sessionGameFlowProvider.notifier)
-          .onRevealed();
+      ProviderScope.containerOf(
+        element,
+        listen: false,
+      ).read(sessionGameFlowProvider.notifier).onRevealed();
       await tester.pump();
       await tester.pump();
 

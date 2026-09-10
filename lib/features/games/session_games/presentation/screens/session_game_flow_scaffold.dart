@@ -1,4 +1,9 @@
+import 'dart:async';
+
 import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/games/invites/services/game_invite_service.dart';
+import 'package:attune/features/games/invites/state/game_invite_provider.dart';
+import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
 import 'package:attune/features/games/mirror/presentation/screens/mirror_judge_screen.dart';
 import 'package:attune/features/games/session_games/data/repositories/session_game_repository.dart';
 import 'package:attune/features/games/session_games/domain/session_game_flow_state.dart';
@@ -49,6 +54,12 @@ class _SessionGameFlowScaffoldState
   /// stop and show the generic message, or the user spins forever.
   bool _unavailable = false;
 
+  /// Set when this player has an invitation OUT for this game that the
+  /// partner has not answered. Opening it must not start the game --
+  /// accepting your own invitation would play both sides of it -- so the
+  /// screen says what is actually true and offers to withdraw.
+  String? _awaitingReplyToSessionId;
+
   @override
   void initState() {
     super.initState();
@@ -71,6 +82,19 @@ class _SessionGameFlowScaffoldState
     }
 
     final repository = ref.read(sessionGameRepositoryProvider);
+
+    // An invitation this player sent and the partner has not answered.
+    // Starting here would accept it on their behalf.
+    final pending = await repository.pendingInvite(
+      relationshipId: relationshipId,
+      gameType: widget.gameType,
+    );
+    if (!mounted) return;
+    if (pending != null && pending.initiatorId == userId) {
+      setState(() => _awaitingReplyToSessionId = pending.sessionId);
+      return;
+    }
+
     final partnerId = await repository.getPartnerId(relationshipId, userId);
     if (!mounted) return;
 
@@ -85,6 +109,18 @@ class _SessionGameFlowScaffoldState
           // partner, because nothing downstream validates it.
           partnerId: partnerId,
         );
+  }
+
+  /// Withdraws an invitation the partner has not answered, and leaves.
+  Future<void> _withdrawInvite(String sessionId) async {
+    try {
+      await ref.read(gameInviteGatewayProvider).decline(sessionId);
+    } on GameInviteApiError catch (_) {
+      // Nothing useful to say here: the invitation is either gone
+      // already or the partner just answered it, and both mean this
+      // screen has nothing left to do.
+    }
+    if (mounted) Navigator.of(context).maybePop();
   }
 
   /// Confirms, then abandons the session so the couple can start again.
@@ -132,6 +168,17 @@ class _SessionGameFlowScaffoldState
   Widget build(BuildContext context) {
     if (_unavailable) {
       return const Scaffold(body: Center(child: Text(_genericErrorMessage)));
+    }
+
+    // Your own invitation, still unanswered. Says so plainly rather than
+    // starting the game: this player has already done their part, and
+    // the only thing left to decide here is whether to withdraw it.
+    final awaiting = _awaitingReplyToSessionId;
+    if (awaiting != null) {
+      return _AwaitingReply(
+        gameType: widget.gameType,
+        onWithdraw: () => unawaited(_withdrawInvite(awaiting)),
+      );
     }
 
     final async = ref.watch(sessionGameFlowProvider);
@@ -383,6 +430,61 @@ class _EndStage extends ConsumerWidget {
           totalRounds: snapshot.data != null ? 4 : null,
         );
       },
+    );
+  }
+}
+
+/// An invitation this player sent, waiting on the partner.
+///
+/// A screen rather than a spinner: nothing is loading, and there is no
+/// clock. The session games are asynchronous, so the honest thing to say
+/// is that the ball is in the other court -- and the only useful action
+/// is taking the invitation back.
+class _AwaitingReply extends StatelessWidget {
+  const _AwaitingReply({required this.gameType, required this.onWithdraw});
+
+  final String gameType;
+  final VoidCallback onWithdraw;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      appBar: AppBar(title: Text(gameTypeDisplayName(gameType))),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'Invitation sent.',
+                textAlign: TextAlign.center,
+                style: textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'The game starts when they open it. There is no rush and '
+                'no clock.',
+                textAlign: TextAlign.center,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.6),
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 28),
+              OutlinedButton(
+                onPressed: onWithdraw,
+                child: const Text('Cancel invitation'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

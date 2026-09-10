@@ -30,8 +30,16 @@ class _FakeRepository extends SessionGameRepository {
     required String initiatorId,
     required String gameType,
     required String partnerId,
-  }) async =>
-      _sessionId;
+  }) async => _sessionId;
+
+  /// No invitation outstanding: these tests exercise a game being
+  /// played, not one waiting to be answered. Without the override the
+  /// real repository reaches for a Supabase client that no test has.
+  @override
+  Future<({String sessionId, String initiatorId})?> pendingInvite({
+    required String relationshipId,
+    required String gameType,
+  }) async => null;
 
   @override
   Future<String> getPartnerId(String relationshipId, String userId) async =>
@@ -39,27 +47,26 @@ class _FakeRepository extends SessionGameRepository {
 
   @override
   Future<List<SessionGameRound>> fetchRounds(String sessionId) async => const [
-        SessionGameRound(
-          id: 'round-1',
-          roundNumber: 1,
-          questionId: 'q1',
-          bothAnswered: false,
-          subjectId: _me,
-        ),
-      ];
+    SessionGameRound(
+      id: 'round-1',
+      roundNumber: 1,
+      questionId: 'q1',
+      bothAnswered: false,
+      subjectId: _me,
+    ),
+  ];
 
   @override
   Future<List<SessionGameQuestion>> fetchQuestions({
     required String gameType,
     required int limit,
-  }) async =>
-      const [
-        SessionGameQuestion(
-          id: 'q1',
-          gameType: 'mirror',
-          questionText: 'What is weighing on them most this week?',
-        ),
-      ];
+  }) async => const [
+    SessionGameQuestion(
+      id: 'q1',
+      gameType: 'mirror',
+      questionText: 'What is weighing on them most this week?',
+    ),
+  ];
 
   @override
   Future<void> abandonSession(String sessionId) async {
@@ -68,8 +75,9 @@ class _FakeRepository extends SessionGameRepository {
 }
 
 void main() {
-  testWidgets('a stuck game can be left, which abandons the session',
-      (tester) async {
+  testWidgets('a stuck game can be left, which abandons the session', (
+    tester,
+  ) async {
     final repository = _FakeRepository();
 
     await tester.pumpWidget(
