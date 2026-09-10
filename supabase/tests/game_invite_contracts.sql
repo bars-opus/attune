@@ -346,6 +346,21 @@ BEGIN
       COALESCE(v_chapter::text, 'NULL');
   END IF;
 
+  -- And its twelve questions, with real text. The journey overview's
+  -- "Start" routes straight into the chapter with whatever rounds
+  -- exist, so an invite without them opens onto nothing.
+  SELECT count(*) INTO v_count FROM public.game_session_rounds
+   WHERE session_id = (v_res->>'session_id')::uuid;
+  IF v_count <> 12 THEN
+    RAISE EXCEPTION '36 Questions invite has % rounds, needs 12', v_count;
+  END IF;
+  SELECT count(*) INTO v_count FROM public.game_session_rounds
+   WHERE session_id = (v_res->>'session_id')::uuid
+     AND COALESCE(question_text_snapshot, '') = '';
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION '% of the chapter''s questions have no text', v_count;
+  END IF;
+
   -- Love Map is sessionless by design: nothing in it ever accepts, so an
   -- invitation left 'invited' would read "Waiting for them" forever.
   UPDATE public.game_sessions SET created_at = now() - interval '2 hours'
