@@ -27,6 +27,8 @@ import 'package:attune/features/conflict_translator/presentation/providers/trans
     as translator_providers;
 import 'package:attune/features/conflict_translator/presentation/screens/translator_sheet.dart';
 import 'package:attune/features/games/paint_ball/models/paint_ball_models.dart';
+import 'package:attune/features/games/invites/presentation/game_composer_bar.dart';
+import 'package:attune/features/games/invites/state/game_invite_provider.dart';
 import 'package:attune/features/games/presentation/widgets/chat_games_sheet.dart';
 import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
@@ -451,6 +453,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
+  /// Sends the game staged in the composer.
+  ///
+  /// Nothing happens here on failure beyond the message the composer
+  /// shows: the game stays staged and the idempotency key is kept, so
+  /// the retry is the same request rather than a second invitation.
+  Future<void> _sendStagedGame() async {
+    final sessionId = await ref
+        .read(gameComposerProvider.notifier)
+        .send(relationshipId: widget.conversation.relationshipId);
+    if (sessionId == null || !mounted) return;
+
+    // Stays in the chat. The card the trigger just posted is the
+    // confirmation -- pushing into the game would take the player away
+    // from the conversation they chose to send it in.
+    ref.read(hapticsProvider).selection();
+  }
+
   void _openGames() {
     FocusScope.of(context).unfocus();
     _closeHeaderExpanded();
@@ -458,6 +477,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       showChatGamesPicker(
         context,
         relationshipId: widget.conversation.relationshipId,
+        onStageNewGame:
+            (gameType) =>
+                ref.read(gameComposerProvider.notifier).stage(gameType),
       ),
     );
   }
@@ -704,6 +726,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     // comment, which is the source of truth to keep in sync with.
     final captureVideoEnabled =
         ephemeralVideoEnabled.valueOrNull == true && videoAttachEnabled;
+    // The game waiting to be sent, if any. Drives the composer swap
+    // below: a staged game replaces the text field.
+    final stagedGame = ref.watch(gameComposerProvider).gameType;
     final voiceMessagesEnabled = ref.watch(chatVoiceMessagesEnabledProvider);
     final translatorEnabled = ref.watch(chatTranslatorEntryEnabledProvider);
     final headerDrawerEnabled = ref.watch(
@@ -922,7 +947,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                               ),
                             ),
                           ),
-                        if (conversation.canSend)
+                        // A staged game replaces the text field entirely.
+                        // The player picked a game to SEND, so the field
+                        // has nothing to offer until that resolves --
+                        // and leaving both would ask them to choose
+                        // between two things to send.
+                        if (conversation.canSend && stagedGame != null)
+                          GameComposerBar(
+                            gameType: stagedGame,
+                            onSend: () => unawaited(_sendStagedGame()),
+                            onCancel:
+                                () =>
+                                    ref
+                                        .read(gameComposerProvider.notifier)
+                                        .cancel(),
+                          )
+                        else if (conversation.canSend)
                           ChatTextField(
                             controller: _controller,
                             onSend: () {
@@ -2837,6 +2877,11 @@ const _monthNames = <String>[
 Future<void> showChatGamesPicker(
   BuildContext context, {
   required String relationshipId,
+
+  /// Called when a NEW game is picked from the catalogue, with the game
+  /// type to stage in the composer. Absent for callers with no composer
+  /// (the sheet then opens the game directly, as it always did).
+  void Function(String gameType)? onStageNewGame,
 }) async {
   await BottomSheetUtils.showDocumentationBottomSheet<void>(
     context: context,
@@ -2850,6 +2895,30 @@ Future<void> showChatGamesPicker(
           openGameRoute(context, destination, relationshipId: relationshipId),
         );
       },
+      // A new game is staged, not started. The sheet closes and the
+      // composer shows the card that is about to be sent, so backing out
+      // costs nothing -- picking a game used to create the session and
+      // post a card the moment it was tapped.
+      onStageNewGame:
+          onStageNewGame == null
+              ? null
+              : (destination) {
+                final gameType = chatGameTypeForDestination(destination);
+                Navigator.of(context).pop();
+                if (gameType != null) {
+                  onStageNewGame(gameType);
+                } else {
+                  // Prototypes have no game type and so no invitation:
+                  // they are pass-and-play on one device.
+                  unawaited(
+                    openGameRoute(
+                      context,
+                      destination,
+                      relationshipId: relationshipId,
+                    ),
+                  );
+                }
+              },
       onOpenPaintBallSession: (sessionId) {
         Navigator.of(context).pop();
         unawaited(

@@ -83,10 +83,25 @@ class ChatGamesSheet extends ConsumerStatefulWidget {
   const ChatGamesSheet({
     super.key,
     required this.onSelect,
+    this.onStageNewGame,
     this.onOpenPaintBallSession,
   });
 
+  /// Opening a game that already exists -- "Continue playing". Goes
+  /// straight in, because the invitation happened long ago.
   final ValueChanged<ChatGameDestination> onSelect;
+
+  /// Picking a NEW game from the catalogue, which stages it in the
+  /// composer rather than starting it.
+  ///
+  /// Separate from [onSelect] deliberately. The two used to be one
+  /// callback and the difference was inferred downstream, which is how a
+  /// glance at the catalogue ended up creating a session: there was no
+  /// point in the code that knew "this is a game the player has not
+  /// agreed to start yet". Falls back to [onSelect] when absent, so a
+  /// caller that has no composer still works.
+  final ValueChanged<ChatGameDestination>? onStageNewGame;
+
   final ValueChanged<String>? onOpenPaintBallSession;
 
   @override
@@ -150,6 +165,7 @@ class _ChatGamesSheetState extends ConsumerState<ChatGamesSheet> {
             mood: _moodForTab(tab),
             categories: _filteredCategoriesFor(_moodForTab(tab), query),
             onSelect: widget.onSelect,
+            onStageNewGame: widget.onStageNewGame ?? widget.onSelect,
             onOpenPaintBallSession: widget.onOpenPaintBallSession,
           ),
         ),
@@ -203,6 +219,7 @@ class _ChatGamesTabContent extends StatelessWidget {
     required this.mood,
     required this.categories,
     required this.onSelect,
+    required this.onStageNewGame,
     required this.onOpenPaintBallSession,
   });
 
@@ -210,6 +227,7 @@ class _ChatGamesTabContent extends StatelessWidget {
   final String? mood;
   final List<_ChatGameCategory> categories;
   final ValueChanged<ChatGameDestination> onSelect;
+  final ValueChanged<ChatGameDestination> onStageNewGame;
   final ValueChanged<String>? onOpenPaintBallSession;
 
   @override
@@ -246,7 +264,11 @@ class _ChatGamesTabContent extends StatelessWidget {
         final categoryIndex = showInProgress ? index - 1 : index;
         final category = categories[categoryIndex];
 
-        return _ChatGameCategorySection(category: category, onSelect: onSelect);
+        // The catalogue stages; only "Continue playing" above opens.
+        return _ChatGameCategorySection(
+          category: category,
+          onSelect: onStageNewGame,
+        );
       },
     );
   }

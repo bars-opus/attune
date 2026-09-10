@@ -113,14 +113,28 @@ class SessionGameRepository {
     final existingSession =
         await _safeClient
             .from('game_sessions')
-            .select('id')
+            .select('id, status, total_rounds')
             .eq('relationship_id', relationshipId)
             .eq('game_type', gameType)
             .inFilter('status', ['invited', 'active'])
             .maybeSingle();
 
     if (existingSession != null) {
-      return existingSession['id'] as String;
+      final sessionId = existingSession['id'] as String;
+
+      // An invitation sent from the composer is a session row and
+      // nothing else: game_invite_create deliberately does not know what
+      // a round is. Opening it is what accepts it and builds the rounds,
+      // which is why this cannot just hand the id back.
+      if (existingSession['status'] == 'invited') {
+        await _activateInvitedSession(
+          sessionId: sessionId,
+          gameType: gameType,
+          initiatorId: initiatorId,
+          partnerId: partnerId,
+        );
+      }
+      return sessionId;
     }
 
     const requestedRounds = 8;
@@ -165,6 +179,56 @@ class SessionGameRepository {
     ]);
 
     return sessionId;
+  }
+
+  /// Turns an accepted invitation into a playable session.
+  ///
+  /// The invite path creates the session row alone, so the rounds and
+  /// the questions behind them are built here, on first open. Idempotent
+  /// on the rounds: two partners opening at once must not each insert a
+  /// set, so an existing round means the work is already done.
+  Future<void> _activateInvitedSession({
+    required String sessionId,
+    required String gameType,
+    required String initiatorId,
+    required String partnerId,
+  }) async {
+    final existingRounds = await _safeClient
+        .from('game_session_rounds')
+        .select('id')
+        .eq('session_id', sessionId)
+        .limit(1);
+
+    if ((existingRounds as List).isEmpty) {
+      final questions = await fetchQuestions(gameType: gameType, limit: 8);
+      if (questions.isEmpty) {
+        throw StateError('No questions available for $gameType');
+      }
+
+      await _safeClient.from('game_session_rounds').insert([
+        for (var i = 0; i < questions.length; i++)
+          {
+            'session_id': sessionId,
+            'round_number': i + 1,
+            'question_id': questions[i].id,
+            if (gameType == 'mirror')
+              'active_partner_id': i.isEven ? initiatorId : partnerId,
+          },
+      ]);
+
+      await _safeClient
+          .from('game_sessions')
+          .update({'total_rounds': questions.length})
+          .eq('id', sessionId);
+    }
+
+    // Accepting goes through the RPC rather than a direct update: it is
+    // the one path that checks the caller is in the relationship, and it
+    // is idempotent, so both partners opening at once is safe.
+    await _safeClient.rpc(
+      'game_invite_accept',
+      params: {'p_session_id': sessionId},
+    );
   }
 
   /// Submits this user's answer for a round.
