@@ -168,7 +168,14 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
     if (!mounted) return;
     setState(() {
       _joining = false;
-      if (next != null) _sessionId = next;
+      if (next != null) {
+        _sessionId = next;
+        // A new game is a new visit. Carrying the last game's flag over
+        // would arm the hand-off on a board this player has not rolled
+        // in yet, closing the rematch the moment it became the
+        // partner's turn.
+        _rolledThisVisit = false;
+      }
     });
     if (next != null) await ref.read(snakesProvider.notifier).load(next);
   }

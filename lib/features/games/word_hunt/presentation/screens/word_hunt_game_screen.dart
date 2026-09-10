@@ -51,6 +51,15 @@ class _WordHuntGameScreenState extends ConsumerState<WordHuntGameScreen> {
   bool _resolving = true;
   String? _error;
 
+  /// The idempotency key for THIS attempt to start a hunt.
+  ///
+  /// Held across retries on purpose (checklist 1.1, 2.18). A create whose
+  /// response was dropped may well have succeeded on the server, and
+  /// minting a fresh key on "Try again" would start a second hunt for a
+  /// couple who asked for one. Cleared once a create returns, so a later
+  /// hunt is genuinely new.
+  String? _createKey;
+
   @override
   void initState() {
     super.initState();
@@ -74,13 +83,23 @@ class _WordHuntGameScreenState extends ConsumerState<WordHuntGameScreen> {
     try {
       final existing = await gateway.getActiveSession(widget.relationshipId);
       if (!mounted) return;
-      final sessionId =
-          existing?.sessionId ??
-          await gateway.createSession(
-            relationshipId: widget.relationshipId,
-            idempotencyKey:
-                'word_hunt:${widget.relationshipId}:${const Uuid().v4()}',
-          );
+
+      String sessionId;
+      if (existing != null) {
+        sessionId = existing.sessionId;
+      } else {
+        final key =
+            _createKey ??=
+                'word_hunt:${widget.relationshipId}:${const Uuid().v4()}';
+        sessionId = await gateway.createSession(
+          relationshipId: widget.relationshipId,
+          idempotencyKey: key,
+        );
+        // Only a create that came back retires its key. A failure keeps
+        // it, so the retry is the same request rather than a new one.
+        _createKey = null;
+      }
+
       if (!mounted) return;
       setState(() {
         _sessionId = sessionId;

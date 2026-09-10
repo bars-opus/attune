@@ -281,6 +281,71 @@ void main() {
       expect(find.text("Your partner's turn"), findsOneWidget);
     });
 
+    testWidgets('a rematch does not inherit the last game\'s hand-off', (
+      tester,
+    ) async {
+      // Play again swaps this screen onto a new session. Carrying the
+      // finished game's "you have rolled" flag across would arm the exit
+      // on a board this player has not rolled in, closing the rematch
+      // the moment it became the partner's turn.
+      //
+      // The player must genuinely roll first: the flag is only set by a
+      // settled turn of their own, so a test that skips the roll proves
+      // nothing about carrying it over.
+      final gateway = _FakeSnakesGateway(
+        session: _session(
+          initiatorId: 'user-a',
+          status: 'active',
+          currentTurnUserId: 'user-a',
+        ),
+      );
+      gateway.rollResult = SnakesTurn.fromJson({
+        'round_number': 1,
+        'active_partner_id': 'user-a',
+        'die_roll': 3,
+        'moved_from': 0,
+        'rolled_to': 3,
+        'moved_to': 3,
+        'movement_kind': 'normal',
+        'did_bounce': false,
+      });
+
+      await tester.pumpWidget(_host(gateway, viewer: 'user-a'));
+      await tester.pumpAndSettle();
+
+      // Roll, and let the walk and the read-time settle. The board is
+      // now the partner's, so the hand-off is armed.
+      gateway.session = _session(
+        initiatorId: 'user-a',
+        status: 'completed',
+        currentTurnUserId: 'user-b',
+      );
+      await tester.tap(find.byType(SnakesDie));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Play again'), findsOneWidget);
+
+      // The rematch: a fresh session, already the partner's turn.
+      gateway.nextSession = _session(
+        sessionId: 'session-1',
+        initiatorId: 'user-a',
+        status: 'active',
+        currentTurnUserId: 'user-b',
+      );
+      await tester.tap(find.text('Play again'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byType(RoundHandoff),
+        findsNothing,
+        reason: 'the rematch armed the exit before anyone rolled',
+      );
+      await tester.pump(kRoundHandoffDuration * 2);
+      expect(find.byType(SnakesBoardView), findsOneWidget);
+    });
+
     testWidgets('opening a board that is already theirs does not leave', (
       tester,
     ) async {
@@ -692,6 +757,10 @@ class _FakeSnakesGateway implements SnakesGateway {
   /// What getState and getActiveSession both return. Tests reassign it to
   /// stand for the partner acting between two loads.
   SnakesSession? session;
+
+  /// Served instead of the default once createSession runs, so a test
+  /// can describe the game a rematch lands on.
+  SnakesSession? nextSession;
   final List<String> createKeys = [];
   final List<String> accepted = [];
   final List<String> declined = [];
@@ -707,7 +776,8 @@ class _FakeSnakesGateway implements SnakesGateway {
       throw const SnakesApiError(code: 'NETWORK', message: 'Try again.');
     }
     final sessionId = 'session-${createKeys.length}';
-    session = _session(sessionId: sessionId, initiatorId: 'user-a');
+    session =
+        nextSession ?? _session(sessionId: sessionId, initiatorId: 'user-a');
     return sessionId;
   }
 
@@ -738,8 +808,16 @@ class _FakeSnakesGateway implements SnakesGateway {
       session;
 
   @override
+  /// The turn a roll returns, when a test needs one to actually happen.
+  SnakesTurn? rollResult;
+
+  @override
   Future<SnakesTurn> rollDie({
     required String sessionId,
     required int roundNumber,
-  }) => throw UnimplementedError();
+  }) async {
+    final turn = rollResult;
+    if (turn == null) throw UnimplementedError();
+    return turn;
+  }
 }

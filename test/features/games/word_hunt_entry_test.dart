@@ -22,6 +22,10 @@ class _LobbyGateway implements WordHuntGateway {
   WordHuntSession? active;
   String currentUser;
   WordHuntApiError? failCreate;
+
+  /// Fails only the first create, so a retry can be observed.
+  bool failFirstCreateOnly = false;
+  final List<String> createKeys = [];
   int createCalls = 0;
   int acceptCalls = 0;
   int declineCalls = 0;
@@ -32,6 +36,10 @@ class _LobbyGateway implements WordHuntGateway {
     required String idempotencyKey,
   }) async {
     createCalls++;
+    createKeys.add(idempotencyKey);
+    if (failFirstCreateOnly && createCalls == 1) {
+      throw const WordHuntApiError(code: 'NETWORK', message: 'Try again.');
+    }
     final error = failCreate;
     if (error != null) throw error;
     return 's1';
@@ -232,6 +240,31 @@ void main() {
     // Checklist 5.5: the code is internal.
     expect(find.textContaining('RATE_LIMITED'), findsNothing);
   });
+
+  testWidgets(
+    'a retried start reuses its key rather than starting a second hunt',
+    (tester) async {
+      // Checklist 1.1 / 2.18. A create whose response was dropped may well
+      // have succeeded on the server. Minting a fresh key on "Try again"
+      // would start a SECOND hunt for a couple who asked for one -- so the
+      // failed attempt keeps its key and the retry is the same request.
+      final gateway = _LobbyGateway()..failFirstCreateOnly = true;
+      await show(tester, gateway);
+
+      expect(find.text('Try again'), findsOneWidget);
+      await tester.tap(find.text('Try again'));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      expect(gateway.createKeys, hasLength(2));
+      expect(
+        gateway.createKeys[1],
+        gateway.createKeys[0],
+        reason: 'the retry started a second hunt instead of retrying the first',
+      );
+    },
+  );
 
   testWidgets('the lobby is gone and must not come back', (tester) async {
     final router = File('lib/app/routing/app_router.dart').readAsStringSync();

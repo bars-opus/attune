@@ -62,6 +62,12 @@ class _RoundHandoffState extends State<RoundHandoff>
   bool _left = false;
   bool _started = false;
 
+  /// The reduce-motion path's timer, held so dispose can cancel it
+  /// (checklist 2.10, 2.13). An uncancelled Timer keeps this State
+  /// object alive until it fires -- harmless in a single game, a leak
+  /// across a session of them.
+  Timer? _timer;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -72,7 +78,7 @@ class _RoundHandoffState extends State<RoundHandoff>
     // the pause is reading time, and taking it away would leave those
     // players with the abrupt exit everyone else just stopped getting.
     if (reduceMotionOf(context)) {
-      Timer(widget.duration, _leave);
+      _timer = Timer(widget.duration, _leave);
     } else {
       _controller.forward().whenComplete(_leave);
     }
@@ -86,6 +92,7 @@ class _RoundHandoffState extends State<RoundHandoff>
 
   @override
   void dispose() {
+    _timer?.cancel();
     _controller.dispose();
     super.dispose();
   }

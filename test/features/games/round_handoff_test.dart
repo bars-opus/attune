@@ -73,6 +73,28 @@ void main() {
       expect(left, 1);
     });
 
+    testWidgets('disposing cancels the wait rather than leaking it', (
+      tester,
+    ) async {
+      // Checklist 2.10 / 2.13. An uncancelled Timer keeps the State
+      // object alive until it fires. The `mounted` guard inside the
+      // callback hides that from any behavioural assertion -- the timer
+      // is still queued either way -- so this test deliberately never
+      // pumps past the duration. A leaked timer is then still pending
+      // when the test ends, and the framework fails it as such.
+      var left = 0;
+      await tester.pumpWidget(host(onLeave: () => left++, reduceMotion: true));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Replace the subtree: the handoff is disposed mid-wait.
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: Text('gone'))),
+      );
+
+      expect(left, 0, reason: 'a disposed handoff still fired');
+      expect(find.text('gone'), findsOneWidget);
+    });
+
     testWidgets('the pause is long enough to read a result', (tester) async {
       // A number the tests can point at, so a later edit that quietly
       // trims it back toward the old instant exit fails here.
