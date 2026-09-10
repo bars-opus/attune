@@ -37,8 +37,9 @@ void main() {
           state: _state(status: 'invited'),
           viewerId: me,
           viewerIsSender: true,
+          partnerName: 'Ama',
         ),
-        'Waiting for them',
+        'Waiting for Ama',
       );
       expect(
         gameCardLabel(
@@ -68,8 +69,31 @@ void main() {
           state: _state(turn: them),
           viewerId: me,
           viewerIsSender: true,
+          partnerName: 'Ama',
         ),
-        'Their move',
+        "Ama's move",
+      );
+    });
+
+    test('without a name it stays readable, never blank', () {
+      // The name can be absent: still loading, or a profile with none.
+      // A label with a hole in it ("Waiting for ") is worse than a
+      // formal one, so the default has to read as a sentence.
+      expect(
+        gameCardLabel(
+          state: _state(status: 'invited'),
+          viewerId: me,
+          viewerIsSender: true,
+        ),
+        'Waiting for your partner',
+      );
+      expect(
+        gameCardLabel(
+          state: _state(turn: them),
+          viewerId: me,
+          viewerIsSender: true,
+        ),
+        "your partner's move",
       );
     });
 
@@ -153,8 +177,9 @@ void main() {
           state: _state(viewerAnswered: true, partnerAnswered: false),
           viewerId: me,
           viewerIsSender: true,
+          partnerName: 'Ama',
         ),
-        'Waiting for your partner',
+        'Waiting for Ama',
       );
     });
 

@@ -1,4 +1,5 @@
 import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
 import 'package:attune/features/games/mirror/presentation/screens/mirror_judge_screen.dart';
 import 'package:attune/features/games/mirror/presentation/screens/mirror_question_screen.dart';
 import 'package:attune/features/games/session_games/data/models/session_game_question.dart';
@@ -167,6 +168,7 @@ void main() {
               (ref) async => _relationshipId,
             ),
             sessionGameRepositoryProvider.overrideWithValue(repository),
+            gamePartnerNameProvider.overrideWith((ref) async => 'Ama'),
           ],
           child: const MaterialApp(
             home: SessionGameFlowScaffold(gameType: 'mirror'),
@@ -205,8 +207,12 @@ void main() {
       // ---- Reveal ----
       // Each voice is named and colour-coded rather than both being grey
       // "You said"/"They said" text, so the labels are uppercased.
+      //
+      // The partner's side carries their NAME. "Them" is how you label a
+      // stranger, and this is the moment the two answers sit together.
       expect(find.text('YOU'), findsOneWidget);
-      expect(find.text('THEM'), findsOneWidget);
+      expect(find.text('AMA'), findsOneWidget);
+      expect(find.text('THEM'), findsNothing);
 
       await tester.tap(find.text('Next'));
       await tester.pumpAndSettle();
@@ -278,6 +284,7 @@ void main() {
               (ref) async => _relationshipId,
             ),
             sessionGameRepositoryProvider.overrideWithValue(repository),
+            gamePartnerNameProvider.overrideWith((ref) async => 'Ama'),
           ],
           child: const MaterialApp(
             home: SessionGameFlowScaffold(gameType: 'mirror'),

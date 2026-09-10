@@ -2,6 +2,7 @@ import 'package:attune/features/games/presentation/widgets/game_palette.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/games/presentation/providers/game_card_provider.dart';
+import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,11 +19,19 @@ String gameCardLabel({
   required GameCardState state,
   required String viewerId,
   required bool viewerIsSender,
+
+  /// What to call the other player. Their name, not "them" -- the card
+  /// sits in a conversation between two people who chose each other,
+  /// and "Their move" is how you would describe a stranger.
+  ///
+  /// Falls back to a neutral word rather than rendering empty: a label
+  /// with a hole in it is worse than a formal one.
+  String partnerName = 'your partner',
 }) {
   switch (state.status) {
     case 'invited':
       // The sender is waiting; the recipient is being asked.
-      return viewerIsSender ? 'Waiting for them' : "Let's play!";
+      return viewerIsSender ? 'Waiting for $partnerName' : "Let's play!";
     case 'completed':
       final winner = state.winnerUserId;
       // Not every game names a winner -- 36 Questions and the session
@@ -42,7 +51,7 @@ String gameCardLabel({
         final partnerAnswered = state.partnerAnswered;
         if (viewerAnswered != null && partnerAnswered != null) {
           if (viewerAnswered && !partnerAnswered) {
-            return 'Waiting for your partner';
+            return 'Waiting for $partnerName';
           }
           if (!viewerAnswered && partnerAnswered) {
             return 'Your turn';
@@ -60,7 +69,7 @@ String gameCardLabel({
         }
         return 'Tap to play';
       }
-      return turn == viewerId ? 'Your move' : 'Their move';
+      return turn == viewerId ? 'Your move' : "$partnerName's move";
     default:
       return 'In progress';
   }
@@ -120,6 +129,7 @@ class GameMessageBubble extends ConsumerWidget {
               state: state,
               viewerId: viewerId,
               viewerIsSender: viewerIsSender,
+              partnerName: partnerNameOr(ref, fallback: 'your partner'),
             );
 
     // A finished or abandoned game is a record, not a destination: tapping

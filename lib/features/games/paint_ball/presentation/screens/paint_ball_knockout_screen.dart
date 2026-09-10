@@ -9,6 +9,7 @@ import 'package:attune/features/games/paint_ball/models/paint_ball_models.dart';
 import 'package:attune/features/games/paint_ball/presentation/state/paint_ball_provider.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
 
 class PaintBallKnockoutScreen extends ConsumerStatefulWidget {
   const PaintBallKnockoutScreen({super.key, required this.sessionId});
@@ -431,7 +432,10 @@ class _PaintBallEndView extends ConsumerWidget {
             children: [
               _RecapRow(label: 'Your hits', value: '$myHits'),
               Gap(Spacing.md.h),
-              _RecapRow(label: 'Their hits', value: '$partnerHits'),
+              _RecapRow(
+                label: '${partnerNameOr(ref)}\'s hits',
+                value: '$partnerHits',
+              ),
               Gap(Spacing.md.h),
               _RecapRow(
                 label: session.penaltyType == 'dare' ? 'Dare' : 'Truth',

@@ -4,6 +4,7 @@ import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
 
 /// Shows both answers side by side once the gate has opened.
 ///
@@ -91,7 +92,7 @@ class _SessionGameRevealScreenState
           ),
           const SizedBox(height: 14),
           SessionGameAnswerCard(
-            speaker: 'Them',
+            speaker: partnerNameOr(ref),
             answer: theirs,
             isYours: false,
             matched: matched,

@@ -417,7 +417,8 @@ class _WaitingForRevealScreen extends StatelessWidget {
           child: SemanticContainerWidget(
             title: '$partnerName is up',
             content:
-                'They are about to flip the card and see whether they got a truth or a dare.',
+                '$partnerName is about to flip the card and see '
+                'whether they got a truth or a dare.',
             icon: Icons.visibility_outlined,
             backgroundColor:
                 Theme.of(context).colorScheme.surfaceContainerHighest,

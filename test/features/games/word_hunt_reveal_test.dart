@@ -39,6 +39,7 @@ void main() {
           home: Scaffold(
             body: WordHuntReveal(
               session: s,
+              partnerName: 'Ama',
               onPlayAgain: () {},
               onBackToChat: () {},
             ),

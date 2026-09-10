@@ -10,11 +10,17 @@ import 'package:flutter/material.dart';
 /// screen must not give it back.
 class MirrorJudgeScreen extends StatelessWidget {
   const MirrorJudgeScreen({
+    this.partnerName = 'Your partner',
     super.key,
     required this.yourTruth,
     required this.theirGuess,
     required this.onJudge,
   });
+
+  /// What to call the other player. Passed in rather than read from a
+  /// provider so this stays a plain widget: it is rendered inside a
+  /// Consumer that already has the name.
+  final String partnerName;
 
   /// What the subject said about themselves.
   final String yourTruth;
@@ -38,7 +44,7 @@ class MirrorJudgeScreen extends StatelessWidget {
           const SizedBox(height: 8),
           Text(yourTruth, textAlign: TextAlign.center),
           const SizedBox(height: 32),
-          Text('They guessed', style: textTheme.labelLarge),
+          Text('$partnerName guessed', style: textTheme.labelLarge),
           const SizedBox(height: 8),
           Text(theirGuess, textAlign: TextAlign.center),
           const SizedBox(height: 40),

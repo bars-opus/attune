@@ -256,7 +256,7 @@ class _ThirtySixWaitingScreenState
                   ),
                   Gap(Spacing.sm.h),
                   Text(
-                    'They will see your answer after they submit.',
+                    '$partnerName will see your answer after they submit.',
                     style: textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurface.withOpacity(0.6),
                     ),

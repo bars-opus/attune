@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 /// produced.
 class LoveMapRevealScreen extends StatelessWidget {
   const LoveMapRevealScreen({
+    this.partnerName = 'Your partner',
     super.key,
     required this.yourAnswer,
     required this.theirAnswer,
@@ -19,6 +20,10 @@ class LoveMapRevealScreen extends StatelessWidget {
   final String yourAnswer;
   final String theirAnswer;
   final bool isSubject;
+
+  /// What to call the other player, passed in by the Consumer that
+  /// renders this.
+  final String partnerName;
 
   /// The subject's own answer from a previous round of this question, when
   /// it has come round again after six months.
@@ -42,7 +47,7 @@ class LoveMapRevealScreen extends StatelessWidget {
               const SizedBox(height: 4),
               Text(yourAnswer, textAlign: TextAlign.center),
               const SizedBox(height: 24),
-              Text('They said', style: textTheme.labelLarge),
+              Text('$partnerName said', style: textTheme.labelLarge),
               const SizedBox(height: 4),
               Text(theirAnswer, textAlign: TextAlign.center),
 

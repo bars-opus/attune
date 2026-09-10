@@ -58,7 +58,10 @@ class _TruthOrDareEndScreenState extends ConsumerState<TruthOrDareEndScreen> {
   Widget build(BuildContext context) {
     final palette = TruthOrDarePalette.of(context, tone: widget.tone);
     final textTheme = Theme.of(context).textTheme;
-    final them = widget.partnerName ?? 'Them';
+    // "Partner" rather than "Them" when the name has not loaded: both
+    // are placeholders, but one of them is a word you would use about a
+    // person you know.
+    final them = widget.partnerName ?? 'Partner';
     final pickText = widget.mostInterestingPick['text']?.toString().trim();
     final pickAnswer = widget.mostInterestingPick['answer']?.toString().trim();
 

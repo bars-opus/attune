@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:attune/features/games/word_hunt/models/word_hunt_models.dart';
 import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_game_screen.dart';
+import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:attune/features/games/word_hunt/presentation/state/word_hunt_provider.dart';
 import 'package:attune/features/games/word_hunt/services/word_hunt_service.dart';
@@ -108,6 +109,8 @@ void main() {
           gameSessionLiveProvider.overrideWith(
             (_, __) => const Stream<void>.empty(),
           ),
+          // A real name, so the hunt is asserted to USE it.
+          gamePartnerNameProvider.overrideWith((ref) async => 'Ama'),
         ],
         child: MaterialApp(
           home: WordHuntGameScreen(relationshipId: 'r1', sessionId: sessionId),
@@ -156,7 +159,7 @@ void main() {
       sessionId: 's1',
     );
 
-    expect(find.textContaining('Waiting for them'), findsOneWidget);
+    expect(find.textContaining('Waiting for Ama'), findsOneWidget);
     expect(find.text('Cancel the invitation'), findsOneWidget);
     expect(find.text('Join the hunt'), findsNothing);
   });

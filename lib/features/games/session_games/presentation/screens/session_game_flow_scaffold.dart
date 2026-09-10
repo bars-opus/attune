@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/games/invites/services/game_invite_service.dart';
 import 'package:attune/features/games/invites/state/game_invite_provider.dart';
+import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
 import 'package:attune/features/games/mirror/presentation/screens/mirror_judge_screen.dart';
 import 'package:attune/features/games/session_games/data/repositories/session_game_repository.dart';
@@ -380,6 +381,7 @@ class _JudgeStage extends ConsumerWidget {
         final theirGuess = round.answerA ?? round.answerB ?? '';
 
         return MirrorJudgeScreen(
+          partnerName: partnerNameOr(ref),
           yourTruth: truth ?? '',
           theirGuess: theirGuess,
           onJudge: notifier.judge,

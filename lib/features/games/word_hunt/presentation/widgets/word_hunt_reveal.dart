@@ -18,9 +18,13 @@ class WordHuntReveal extends StatelessWidget {
   const WordHuntReveal({
     super.key,
     required this.session,
+    required this.partnerName,
     required this.onPlayAgain,
     required this.onBackToChat,
   });
+
+  /// What to call the other player, by name rather than "Them".
+  final String partnerName;
 
   final WordHuntSession session;
   final VoidCallback onPlayAgain;
@@ -56,7 +60,7 @@ class WordHuntReveal extends StatelessWidget {
     // compare a time against.
     if (mine == null || theirs == null) {
       if (session.myStatus.foundIt) return 'You found it';
-      if (partnerStatus?.foundIt == true) return 'They found it';
+      if (partnerStatus?.foundIt == true) return '$partnerName found it';
       return 'Neither of you found it';
     }
 
@@ -123,7 +127,7 @@ class WordHuntReveal extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: _ResultTile(
-                  who: 'Them',
+                  who: partnerName,
                   status: session.partnerStatus ?? WordHuntStatus.didNotPlay,
                   elapsedMs: session.partnerElapsedMs,
                   accent: WordHuntPalette.reveal,

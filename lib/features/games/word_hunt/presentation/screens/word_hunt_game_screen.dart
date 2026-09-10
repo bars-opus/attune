@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
+import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
 import 'package:attune/features/games/presentation/widgets/round_handoff.dart';
 import 'package:attune/features/games/word_hunt/models/word_hunt_models.dart';
 import 'package:attune/features/games/word_hunt/presentation/state/word_hunt_provider.dart';
@@ -330,6 +331,7 @@ class _WordHuntSessionViewState extends ConsumerState<_WordHuntSessionView>
     if (session.bothTerminal) {
       return WordHuntReveal(
         session: session,
+        partnerName: partnerNameOr(ref),
         onPlayAgain: () => context.pop(),
         onBackToChat: () => context.pop(),
       );
@@ -363,6 +365,7 @@ class _WordHuntSessionViewState extends ConsumerState<_WordHuntSessionView>
       final me = ref.read(wordHuntCurrentUserIdProvider);
       return _InvitationView(
         mine: session.initiatorId == me,
+        partnerName: partnerNameOr(ref),
         busy: state.isSubmitting,
         error: state.errorMessage,
         onJoin: notifier.accept,
@@ -756,6 +759,7 @@ class _Message extends StatelessWidget {
 class _InvitationView extends StatelessWidget {
   const _InvitationView({
     required this.mine,
+    required this.partnerName,
     required this.busy,
     required this.error,
     required this.onJoin,
@@ -764,6 +768,9 @@ class _InvitationView extends StatelessWidget {
 
   /// True when this player sent the invitation.
   final bool mine;
+
+  /// What to call the other player, by name rather than "them".
+  final String partnerName;
   final bool busy;
   final String? error;
   final Future<void> Function() onJoin;
@@ -778,7 +785,9 @@ class _InvitationView extends StatelessWidget {
         children: [
           const Spacer(),
           Text(
-            mine ? 'Waiting for them to join.' : 'They started a hunt.',
+            mine
+                ? 'Waiting for $partnerName to join.'
+                : '$partnerName started a hunt.',
             style: const TextStyle(
               color: WordHuntPalette.letter,
               fontSize: 24,

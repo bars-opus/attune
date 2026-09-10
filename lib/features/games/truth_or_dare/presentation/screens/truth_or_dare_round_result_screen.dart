@@ -149,10 +149,11 @@ class _TruthOrDareRoundResultScreenState
                     Gap(Spacing.md.h),
                     Text(
                       didDare
-                          ? 'They did it.'
+                          ? '${widget.partnerName} did it.'
                           : hasAnswer
                           ? answer
-                          : 'They kept this one to themselves.',
+                          : '${widget.partnerName} kept this one to '
+                              'themselves.',
                       style: textTheme.titleLarge?.copyWith(
                         color:
                             hasAnswer || didDare

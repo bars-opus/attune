@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:attune/features/games/snakes_and_ladders/models/snakes_models.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
+import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
 import 'package:attune/features/games/presentation/widgets/round_handoff.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_game_screen.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/state/snakes_provider.dart';
@@ -217,7 +218,12 @@ void main() {
 
       expect(find.byType(SnakesBoardView), findsOneWidget);
       expect(find.byType(SnakesDie), findsNothing);
-      expect(find.text("Your partner's turn"), findsOneWidget);
+      expect(find.text("Ama's turn"), findsOneWidget);
+      expect(
+        find.textContaining('partner'),
+        findsNothing,
+        reason: 'the board still calls them "partner" rather than by name',
+      );
       expect(find.text('Cancel invitation'), findsOneWidget);
       expect(find.text('Join the game'), findsNothing);
       expect(find.text('No talking required.'), findsNothing);
@@ -278,7 +284,12 @@ void main() {
 
       expect(find.byType(SnakesBoardView), findsOneWidget);
       expect(find.byType(SnakesDie), findsNothing);
-      expect(find.text("Your partner's turn"), findsOneWidget);
+      expect(find.text("Ama's turn"), findsOneWidget);
+      expect(
+        find.textContaining('partner'),
+        findsNothing,
+        reason: 'the board still calls them "partner" rather than by name',
+      );
     });
 
     testWidgets('a rematch does not inherit the last game\'s hand-off', (
@@ -738,6 +749,9 @@ Widget _host(
     snakesGatewayProvider.overrideWithValue(gateway),
     snakesCurrentUserIdProvider.overrideWithValue(viewer),
     gameSessionLiveProvider.overrideWith((_, __) => const Stream<void>.empty()),
+    // A real name, so the board is asserted to USE it rather than to
+    // fall back to a generic label.
+    gamePartnerNameProvider.overrideWith((ref) async => 'Ama'),
   ],
   child: MaterialApp(
     home: SnakesGameScreen(relationshipId: 'relationship', sessionId: session),

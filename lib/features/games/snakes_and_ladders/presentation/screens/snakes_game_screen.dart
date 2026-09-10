@@ -5,6 +5,7 @@ import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
+import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
 import 'package:attune/features/games/presentation/widgets/round_handoff.dart';
 import 'package:attune/features/games/snakes_and_ladders/models/snakes_models.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/state/snakes_provider.dart';
@@ -382,6 +383,7 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
     final theirs = session.partnerPositionFor(userId);
     final isMine = session.isMyTurn(userId);
     final animatingMine = pending?.playerId == userId;
+    final partnerName = partnerNameOr(ref);
 
     // Your roll is in, the walk is over and the board is theirs: hold the
     // result long enough to read, then leave. Only after a roll YOU took
@@ -416,11 +418,12 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
               ),
             ),
             const SizedBox(height: 12),
-            _Readout(yours: yours, theirs: theirs),
+            _Readout(yours: yours, theirs: theirs, partnerName: partnerName),
             const SizedBox(height: 12),
             if (session.isFinished)
               _Finished(
                 youWon: session.winnerUserId == userId,
+                partnerName: partnerName,
                 textTheme: textTheme,
                 busy: _joining,
                 // The rematch starts here rather than being handed
@@ -435,6 +438,7 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
               // that cannot be rolled is a button that ignores you.
               _Invitation(
                 mine: session.isInitiator(userId),
+                partnerName: partnerName,
                 busy: _joining,
                 textTheme: textTheme,
                 onJoin: () => _join(sessionId),
@@ -488,7 +492,7 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
                       ? ''
                       : isMine
                       ? 'Your roll'
-                      : "Your partner's turn",
+                      : "$partnerName's turn",
                   style: textTheme.labelLarge?.copyWith(
                     color: Colors.white.withValues(alpha: 0.7),
                     letterSpacing: 1.2,
@@ -536,7 +540,15 @@ class _SnakesGameScreenState extends ConsumerState<SnakesGameScreen>
 /// A 10x10 grid on a phone makes "where am I" a squinting exercise; this
 /// is the reliable answer regardless of whether a numeral is visible.
 class _Readout extends StatelessWidget {
-  const _Readout({required this.yours, required this.theirs});
+  const _Readout({
+    required this.yours,
+    required this.theirs,
+    required this.partnerName,
+  });
+
+  /// What to call the other player. Their name, not "Them" -- the board
+  /// is showing two people who chose each other.
+  final String partnerName;
 
   final int yours;
   final int theirs;
@@ -568,7 +580,7 @@ class _Readout extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         entry('You', yours, SnakesPalette.you),
-        entry('Them', theirs, SnakesPalette.them),
+        entry(partnerName, theirs, SnakesPalette.them),
       ],
     );
   }
@@ -581,12 +593,17 @@ class _Readout extends StatelessWidget {
 class _Finished extends StatelessWidget {
   const _Finished({
     required this.youWon,
+    required this.partnerName,
     required this.textTheme,
     this.busy = false,
     this.onPlayAgain,
   });
 
   final bool youWon;
+
+  /// Named, not "They": losing to someone you know reads differently
+  /// from losing to an anonymous opponent.
+  final String partnerName;
   final TextTheme textTheme;
   final bool busy;
   final VoidCallback? onPlayAgain;
@@ -596,7 +613,7 @@ class _Finished extends StatelessWidget {
     return Column(
       children: [
         Text(
-          youWon ? 'You got there first.' : 'They got there first.',
+          youWon ? 'You got there first.' : '$partnerName got there first.',
           style: textTheme.titleMedium?.copyWith(
             color: Colors.white,
             fontWeight: FontWeight.w600,
@@ -642,6 +659,7 @@ class _Finished extends StatelessWidget {
 class _Invitation extends StatelessWidget {
   const _Invitation({
     required this.mine,
+    required this.partnerName,
     required this.busy,
     required this.textTheme,
     required this.onJoin,
@@ -650,6 +668,8 @@ class _Invitation extends StatelessWidget {
 
   /// True when this player sent the invitation.
   final bool mine;
+
+  final String partnerName;
   final bool busy;
   final TextTheme textTheme;
   final VoidCallback onJoin;
@@ -660,7 +680,7 @@ class _Invitation extends StatelessWidget {
     return Column(
       children: [
         Text(
-          mine ? "Your partner's turn" : 'They started a game',
+          mine ? "$partnerName's turn" : '$partnerName started a game',
           style: textTheme.titleMedium?.copyWith(
             color: Colors.white,
             fontWeight: FontWeight.w600,
@@ -669,7 +689,7 @@ class _Invitation extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           mine
-              ? 'They roll first once they open it.'
+              ? '$partnerName rolls first once they open it.'
               : 'Roll whenever you like. There is no clock.',
           textAlign: TextAlign.center,
           style: textTheme.bodySmall?.copyWith(
