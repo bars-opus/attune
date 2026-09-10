@@ -4,21 +4,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
-/// The games whose invitation is a bare session row.
+/// Every game that can be invited -- which is now all of them.
 ///
-/// Must match game_invite_type_allowed in the migration: the server
+/// Must match game_invite_type_allowed in the migrations: the server
 /// refuses anything else, and a game staged here that the server will
-/// not create is a Send that always fails.
+/// not create is a Send that always fails. A test parses the SQL and
+/// compares, so the two cannot drift.
 ///
-/// The four missing games are not oversights. 36 Questions needs a
-/// journey and a chapter, This or That builds its rounds in its own RPC,
-/// Truth or Dare needs a round count and a tone, and Love Map has no
-/// session at all by spec -- each starts through its own screen, which
-/// is where that setup happens.
+/// The RPC gives each game the session shape it expects (a round count,
+/// a tone, a journey and chapter for 36 Questions) and the games build
+/// the rest on first open. Love Map is the exception it makes: it is
+/// sessionless by design, so its invitation opens already active -- the
+/// card points at prompts both partners already share.
 const kInvitableGameTypes = {
+  'this_or_that',
+  'truth_or_dare',
+  '36_questions',
   'mirror',
   'sliding_scale',
   'scenario',
+  'love_map',
   'paint_ball',
   'snakes_and_ladders',
   'word_hunt',

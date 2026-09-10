@@ -29,10 +29,12 @@ void main() {
     testWidgets('submits a value inside 1-10', (tester) async {
       String? submitted;
       await tester.pumpWidget(
-        wrap(SlidingScaleQuestionScreen(
-          question: question,
-          onSubmit: (v) => submitted = v,
-        )),
+        wrap(
+          SlidingScaleQuestionScreen(
+            question: question,
+            onSubmit: (v) => submitted = v,
+          ),
+        ),
       );
       await tester.tap(find.text('Submit'));
       await tester.pump();
@@ -44,8 +46,9 @@ void main() {
       expect(value, lessThanOrEqualTo(10));
     });
 
-    testWidgets('slider is configured to exactly 1-10 in 9 divisions',
-        (tester) async {
+    testWidgets('slider is configured to exactly 1-10 in 9 divisions', (
+      tester,
+    ) async {
       // Pins the actual widget configuration, not just an emitted value,
       // so this fails if someone widens the range (e.g. min: 0, max: 100)
       // even before anyone drags it.
@@ -63,10 +66,12 @@ void main() {
       // so a widened range would surface as a wrong emitted value too.
       String? submitted;
       await tester.pumpWidget(
-        wrap(SlidingScaleQuestionScreen(
-          question: question,
-          onSubmit: (v) => submitted = v,
-        )),
+        wrap(
+          SlidingScaleQuestionScreen(
+            question: question,
+            onSubmit: (v) => submitted = v,
+          ),
+        ),
       );
 
       await tester.drag(find.byType(Slider), const Offset(-500, 0));
@@ -109,18 +114,21 @@ void main() {
       // keys, so submitting display text would be rejected.
       String? submitted;
       await tester.pumpWidget(
-        wrap(ScenarioQuestionScreen(
-          question: question,
-          onSubmit: (v) => submitted = v,
-        )),
+        wrap(
+          ScenarioQuestionScreen(
+            question: question,
+            onSubmit: (v) => submitted = v,
+          ),
+        ),
       );
       await tester.tap(find.text('Pause'));
       await tester.pump();
       expect(submitted, 'b');
     });
 
-    testWidgets('empty options renders no buttons and never submits',
-        (tester) async {
+    testWidgets('empty options renders no buttons and never submits', (
+      tester,
+    ) async {
       // SessionGameQuestion.options defaults to const [], so an
       // options-free scenario question can reach this screen without a
       // malformed server response being impossible. The screen must show
@@ -132,10 +140,12 @@ void main() {
       );
       var submitCount = 0;
       await tester.pumpWidget(
-        wrap(ScenarioQuestionScreen(
-          question: emptyQuestion,
-          onSubmit: (_) => submitCount++,
-        )),
+        wrap(
+          ScenarioQuestionScreen(
+            question: emptyQuestion,
+            onSubmit: (_) => submitCount++,
+          ),
+        ),
       );
       expect(find.byType(OutlinedButton), findsNothing);
       expect(submitCount, 0);
@@ -151,14 +161,18 @@ void main() {
 
     testWidgets('shows the prompt and a text field', (tester) async {
       await tester.pumpWidget(
-        wrap(MirrorQuestionScreen(
-          question: question,
-          onSubmit: (_) {},
-          isSubject: false,
-        )),
+        wrap(
+          MirrorQuestionScreen(
+            question: question,
+            onSubmit: (_) {},
+            isSubject: false,
+          ),
+        ),
       );
-      expect(find.text('What is weighing on them most this week?'),
-          findsOneWidget);
+      expect(
+        find.text('What is weighing on them most this week?'),
+        findsOneWidget,
+      );
       expect(find.byType(TextField), findsOneWidget);
     });
 
@@ -167,11 +181,13 @@ void main() {
       // reach that error.
       var submitCount = 0;
       await tester.pumpWidget(
-        wrap(MirrorQuestionScreen(
-          question: question,
-          onSubmit: (_) => submitCount++,
-          isSubject: false,
-        )),
+        wrap(
+          MirrorQuestionScreen(
+            question: question,
+            onSubmit: (_) => submitCount++,
+            isSubject: false,
+          ),
+        ),
       );
       await tester.tap(find.text('Submit'));
       await tester.pump();
@@ -184,11 +200,13 @@ void main() {
       // is ever called.
       var submitCount = 0;
       await tester.pumpWidget(
-        wrap(MirrorQuestionScreen(
-          question: question,
-          onSubmit: (_) => submitCount++,
-          isSubject: false,
-        )),
+        wrap(
+          MirrorQuestionScreen(
+            question: question,
+            onSubmit: (_) => submitCount++,
+            isSubject: false,
+          ),
+        ),
       );
       await tester.enterText(find.byType(TextField), '   ');
       await tester.tap(find.text('Submit'));
@@ -196,23 +214,23 @@ void main() {
       expect(submitCount, 0);
     });
 
-    testWidgets('guesser sees third-person guess copy, no subject framing',
-        (tester) async {
+    testWidgets('guesser sees third-person guess copy, no subject framing', (
+      tester,
+    ) async {
       // isSubject: false is the guesser's view. They must see the
       // original third-person hint and none of the subject-only framing
       // text, or a regression here would blur who is answering about
       // whom.
       await tester.pumpWidget(
-        wrap(MirrorQuestionScreen(
-          question: question,
-          onSubmit: (_) {},
-          isSubject: false,
-        )),
+        wrap(
+          MirrorQuestionScreen(
+            question: question,
+            onSubmit: (_) {},
+            isSubject: false,
+          ),
+        ),
       );
-      expect(
-        find.text('What do you think they would say?'),
-        findsOneWidget,
-      );
+      expect(find.text('What do you think they would say?'), findsOneWidget);
       expect(
         find.textContaining('Answer honestly about yourself'),
         findsNothing,
@@ -220,49 +238,51 @@ void main() {
     });
 
     testWidgets(
-        'subject sees second-person framing and a self-facing input hint',
-        (tester) async {
-      // C3: the SUBJECT's job is to report their own real state, which is
-      // stored as the truth the guess is scored against. The seeded
-      // question is third-person and written for the guesser, so without
-      // this the subject would answer about their partner and every
-      // score downstream would be computed against meaningless data.
-      await tester.pumpWidget(
-        wrap(MirrorQuestionScreen(
-          question: question,
-          onSubmit: (_) {},
-          isSubject: true,
-        )),
-      );
-      expect(
-        find.textContaining('Answer honestly about yourself'),
-        findsOneWidget,
-      );
-      expect(
-        find.text("What's actually true for you right now?"),
-        findsOneWidget,
-      );
-      // The guesser's hint must not also be showing.
-      expect(
-        find.text('What do you think they would say?'),
-        findsNothing,
-      );
-      // The seeded topic question is unchanged either way — it still
-      // supplies the topic, only the framing around it changes.
-      expect(
-        find.text('What is weighing on them most this week?'),
-        findsOneWidget,
-      );
-    });
+      'subject sees second-person framing and a self-facing input hint',
+      (tester) async {
+        // C3: the SUBJECT's job is to report their own real state, which is
+        // stored as the truth the guess is scored against. The seeded
+        // question is third-person and written for the guesser, so without
+        // this the subject would answer about their partner and every
+        // score downstream would be computed against meaningless data.
+        await tester.pumpWidget(
+          wrap(
+            MirrorQuestionScreen(
+              question: question,
+              onSubmit: (_) {},
+              isSubject: true,
+            ),
+          ),
+        );
+        expect(
+          find.textContaining('Answer honestly about yourself'),
+          findsOneWidget,
+        );
+        expect(
+          find.text("What's actually true for you right now?"),
+          findsOneWidget,
+        );
+        // The guesser's hint must not also be showing.
+        expect(find.text('What do you think they would say?'), findsNothing);
+        // The seeded topic question is unchanged either way — it still
+        // supplies the topic, only the framing around it changes.
+        expect(
+          find.text('What is weighing on them most this week?'),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets('subject can still submit their own answer', (tester) async {
       String? submitted;
       await tester.pumpWidget(
-        wrap(MirrorQuestionScreen(
-          question: question,
-          onSubmit: (v) => submitted = v,
-          isSubject: true,
-        )),
+        wrap(
+          MirrorQuestionScreen(
+            question: question,
+            onSubmit: (v) => submitted = v,
+            isSubject: true,
+          ),
+        ),
       );
       await tester.enterText(
         find.byType(TextField),

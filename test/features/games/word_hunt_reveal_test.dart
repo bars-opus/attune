@@ -33,8 +33,8 @@ void main() {
     partnerElapsedMs: theirMs,
   );
 
-  Future<void> show(WidgetTester tester, WordHuntSession s) => tester
-      .pumpWidget(
+  Future<void> show(WidgetTester tester, WordHuntSession s) =>
+      tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: WordHuntReveal(
@@ -46,9 +46,7 @@ void main() {
         ),
       );
 
-  testWidgets('never ranks the two players, however politely', (
-    tester,
-  ) async {
+  testWidgets('never ranks the two players, however politely', (tester) async {
     // THE BANNED LIST GREW AFTER A REVIEW. The first version of this test
     // banned "won", "lost" and "beat" while a sibling test REQUIRED the
     // headline "You were quicker" -- which is the same claim in a politer
@@ -64,10 +62,24 @@ void main() {
       ),
     );
     for (final banned in [
-      'won', 'Won', 'lost', 'Lost', 'beat', 'Beat',
-      'winner', 'Winner', 'loser', 'Loser',
-      'quicker', 'Quicker', 'faster', 'Faster',
-      'slower', 'Slower', 'first', 'First',
+      'won',
+      'Won',
+      'lost',
+      'Lost',
+      'beat',
+      'Beat',
+      'winner',
+      'Winner',
+      'loser',
+      'Loser',
+      'quicker',
+      'Quicker',
+      'faster',
+      'Faster',
+      'slower',
+      'Slower',
+      'first',
+      'First',
     ]) {
       expect(
         find.textContaining(banned, findRichText: true),
@@ -95,9 +107,7 @@ void main() {
     expect(find.text('You both found it'), findsOneWidget);
   });
 
-  testWidgets('both finding it says exactly that, at any gap', (
-    tester,
-  ) async {
+  testWidgets('both finding it says exactly that, at any gap', (tester) async {
     // 12s against 40s is a wide gap and still not a contest: the two
     // attempts happened at different times, possibly days apart.
     await show(
@@ -112,9 +122,7 @@ void main() {
     expect(find.text('You both found it'), findsOneWidget);
   });
 
-  testWidgets('times within a second are called out as level', (
-    tester,
-  ) async {
+  testWidgets('times within a second are called out as level', (tester) async {
     // The measurement includes Start-response latency, render time and
     // Submit latency. Presenting two numbers this close as ordered would
     // report network jitter as skill -- so the screen says so plainly
@@ -184,8 +192,11 @@ void main() {
     // about.
     await show(
       tester,
-      session(mine: WordHuntStatus.found, myMs: 9000,
-              theirs: WordHuntStatus.gaveUp),
+      session(
+        mine: WordHuntStatus.found,
+        myMs: 9000,
+        theirs: WordHuntStatus.gaveUp,
+      ),
     );
     expect(find.text("Didn't find it"), findsOneWidget);
     expect(find.textContaining('gave up'), findsNothing);
@@ -194,8 +205,11 @@ void main() {
 
     await show(
       tester,
-      session(mine: WordHuntStatus.found, myMs: 9000,
-              theirs: WordHuntStatus.timedOut),
+      session(
+        mine: WordHuntStatus.found,
+        myMs: 9000,
+        theirs: WordHuntStatus.timedOut,
+      ),
     );
     expect(find.text("Didn't find it"), findsOneWidget);
     expect(find.textContaining('ran out'), findsNothing);
@@ -221,10 +235,7 @@ void main() {
   ) async {
     await show(
       tester,
-      session(
-        mine: WordHuntStatus.timedOut,
-        theirs: WordHuntStatus.gaveUp,
-      ),
+      session(mine: WordHuntStatus.timedOut, theirs: WordHuntStatus.gaveUp),
     );
     expect(find.text('Neither of you found it'), findsOneWidget);
   });

@@ -72,6 +72,7 @@ class _RecordingInviteGateway implements GameInviteGateway {
     required String relationshipId,
     required String gameType,
     required String idempotencyKey,
+    String tone = 'connecting',
   }) async => const GameInvite(sessionId: _sessionId, existing: false);
 
   @override

@@ -149,6 +149,44 @@ class ThirtySixQuestionRepository {
       ..sort((a, b) => a.chapterNumber.compareTo(b.chapterNumber));
   }
 
+  /// Fills in a chapter session's rounds if it has none.
+  ///
+  /// Idempotent: both partners may open the invitation at the same
+  /// moment, and a second set of rounds would give them different
+  /// questions for the same chapter.
+  Future<void> _ensureChapterRounds({
+    required String sessionId,
+    required int chapter,
+    required List<Map<String, dynamic>> questions,
+  }) async {
+    final existingRounds = await _supabase
+        .from('game_session_rounds')
+        .select('id')
+        .eq('session_id', sessionId)
+        .limit(1);
+
+    if ((existingRounds as List).isNotEmpty) return;
+    if (questions.length < 12) {
+      throw Exception('Not enough questions available for Chapter $chapter.');
+    }
+
+    for (var i = 0; i < 12; i++) {
+      final question = questions[i];
+      await _supabase.from('game_session_rounds').insert({
+        'session_id': sessionId,
+        'round_number': i + 1,
+        'canonical_question_id': question['canonical_id'],
+        'question_text_snapshot': question['question_text'],
+        'level': chapter,
+      });
+    }
+
+    await _supabase
+        .from('game_sessions')
+        .update({'total_rounds': 12, 'current_round': 1})
+        .eq('id', sessionId);
+  }
+
   Future<ThirtySixQuestionChapter?> getActiveChapterForJourney({
     required String journeyId,
     required int chapter,
@@ -502,13 +540,26 @@ class ThirtySixQuestionRepository {
       journeyId: journeyId,
       chapter: chapter,
     );
-    if (existing != null) return existing;
 
     final questions = await selectChapterQuestions(
       relationshipId: relationshipId,
       chapter: chapter,
       locale: locale,
     );
+
+    if (existing != null) {
+      // An invitation sent from the chat composer is a session row and
+      // a journey, and nothing else -- game_invite_create deliberately
+      // does not know what a chapter question is. Its rounds are built
+      // here, on first open, so the card leads to a real chapter rather
+      // than twelve blanks.
+      await _ensureChapterRounds(
+        sessionId: existing.sessionId,
+        chapter: chapter,
+        questions: questions,
+      );
+      return existing;
+    }
 
     final chapterSession = await createChapterSession(
       journeyId: journeyId,

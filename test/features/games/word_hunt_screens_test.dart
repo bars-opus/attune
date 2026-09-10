@@ -164,9 +164,7 @@ void main() {
     expect(find.text("Can't find it"), findsOneWidget);
   });
 
-  testWidgets('the give-up affordance is absent before Start', (
-    tester,
-  ) async {
+  testWidgets('the give-up affordance is absent before Start', (tester) async {
     // Separate test, not a second pump in the one above: the provider is
     // keyed by session id, so re-pumping in the same test reuses the
     // first notifier and its state rather than building a new one.
@@ -211,11 +209,7 @@ void main() {
     // attempt must not show the other's time, or the second player starts
     // knowing the number to beat.
     final gateway = _ScriptedGateway(
-      session(
-        started: true,
-        myStatus: 'found',
-        myElapsedMs: 12400,
-      ),
+      session(started: true, myStatus: 'found', myElapsedMs: 12400),
     );
     await show(tester, gateway);
 
@@ -238,9 +232,7 @@ void main() {
     expect(find.textContaining('quit'), findsNothing);
   });
 
-  testWidgets('both terminal: the reveal, with the board back', (
-    tester,
-  ) async {
+  testWidgets('both terminal: the reveal, with the board back', (tester) async {
     final gateway = _ScriptedGateway(
       session(
         started: true,
@@ -282,9 +274,7 @@ void main() {
   testWidgets('a grid that failed to parse says so rather than drawing junk', (
     tester,
   ) async {
-    final gateway = _ScriptedGateway(
-      session(started: true, withGrid: false),
-    );
+    final gateway = _ScriptedGateway(session(started: true, withGrid: false));
     await show(tester, gateway);
 
     expect(find.textContaining('did not load'), findsOneWidget);

@@ -31,8 +31,10 @@ void main() {
     await tester.pump();
 
     expect(
-      left, isTrue,
-      reason: 'a player who knows their partner is asleep must be able to '
+      left,
+      isTrue,
+      reason:
+          'a player who knows their partner is asleep must be able to '
           'leave without waiting out a timer',
     );
   });
@@ -91,7 +93,8 @@ void main() {
     }
 
     expect(
-      left, isFalse,
+      left,
+      isFalse,
       reason: 'once revealed, nothing may navigate away from the result',
     );
   });

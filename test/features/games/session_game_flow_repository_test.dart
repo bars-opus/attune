@@ -31,8 +31,7 @@ void main() {
       expect(round.subjectId, isNull);
     });
 
-    test('is populated when the row has fetchRounds\' exact column shape',
-        () {
+    test('is populated when the row has fetchRounds\' exact column shape', () {
       // fetchRounds selects id, round_number, question_id, both_answered
       // and active_partner_id — no more, no less. This proves subjectId
       // actually comes through that shape, not just a hand-built row
@@ -53,20 +52,30 @@ void main() {
       // caught here. This is what would have caught the missing
       // active_partner_id column fixed in commit 75c978d5: that bug was
       // invisible to a test that only exercised fromRow in isolation.
-      final source = File(
-        'lib/features/games/session_games/data/repositories/session_game_repository.dart',
-      ).readAsStringSync();
+      final source =
+          File(
+            'lib/features/games/session_games/data/repositories/session_game_repository.dart',
+          ).readAsStringSync();
 
-      final fetchRoundsIndex = source.indexOf('Future<List<SessionGameRound>> fetchRounds(');
-      expect(fetchRoundsIndex, isNot(-1),
-          reason: 'fetchRounds method not found in session_game_repository.dart');
+      final fetchRoundsIndex = source.indexOf(
+        'Future<List<SessionGameRound>> fetchRounds(',
+      );
+      expect(
+        fetchRoundsIndex,
+        isNot(-1),
+        reason: 'fetchRounds method not found in session_game_repository.dart',
+      );
 
       // Scope to this method's body only, so we can't accidentally match
       // fetchQuestions' unrelated .select() call further up the file.
-      final nextMethodIndex = source.indexOf('\n  Future<', fetchRoundsIndex + 1);
-      final methodBody = nextMethodIndex == -1
-          ? source.substring(fetchRoundsIndex)
-          : source.substring(fetchRoundsIndex, nextMethodIndex);
+      final nextMethodIndex = source.indexOf(
+        '\n  Future<',
+        fetchRoundsIndex + 1,
+      );
+      final methodBody =
+          nextMethodIndex == -1
+              ? source.substring(fetchRoundsIndex)
+              : source.substring(fetchRoundsIndex, nextMethodIndex);
 
       // Whitespace-tolerant: dart format wraps .select( onto its own
       // line once the column list grows, and a single-line pattern then
@@ -75,8 +84,12 @@ void main() {
         r"\.select\(\s*'([^']*)'\s*,?\s*\)",
         dotAll: true,
       ).firstMatch(methodBody);
-      expect(selectMatch, isNotNull,
-          reason: 'fetchRounds does not call .select(\'...\') with an explicit column list');
+      expect(
+        selectMatch,
+        isNotNull,
+        reason:
+            'fetchRounds does not call .select(\'...\') with an explicit column list',
+      );
 
       final selectList = selectMatch!.group(1)!;
       expect(selectList, contains('active_partner_id'));
@@ -129,22 +142,23 @@ void main() {
       // source: it must declare no field or fromRow assignment that
       // carries an answer. This is what actually fails if someone adds
       // an `answerA` field populated from row['answer_a'].
-      final modelSource = File(
-        'lib/features/games/session_games/data/models/session_game_round.dart',
-      ).readAsStringSync();
+      final modelSource =
+          File(
+            'lib/features/games/session_games/data/models/session_game_round.dart',
+          ).readAsStringSync();
 
       final classIndex = modelSource.indexOf('class SessionGameRound');
-      expect(classIndex, isNot(-1),
-          reason: 'SessionGameRound class not found in session_game_round.dart');
+      expect(
+        classIndex,
+        isNot(-1),
+        reason: 'SessionGameRound class not found in session_game_round.dart',
+      );
       // Exclude the file's leading doc comment, which legitimately
       // discusses "answer_a"/"answer_b" in prose when explaining why
       // they're absent.
       final classBody = modelSource.substring(classIndex);
 
-      final forbidden = RegExp(
-        r'answer[_]?[aAbB]\b',
-        caseSensitive: false,
-      );
+      final forbidden = RegExp(r'answer[_]?[aAbB]\b', caseSensitive: false);
       expect(
         forbidden.hasMatch(classBody),
         isFalse,

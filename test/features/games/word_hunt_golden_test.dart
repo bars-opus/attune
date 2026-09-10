@@ -27,9 +27,7 @@ void main() {
   Widget host(Widget child) => MaterialApp(
     home: Scaffold(
       backgroundColor: WordHuntPalette.field,
-      body: Center(
-        child: SizedBox(width: 340, height: 340, child: child),
-      ),
+      body: Center(child: SizedBox(width: 340, height: 340, child: child)),
     ),
   );
 

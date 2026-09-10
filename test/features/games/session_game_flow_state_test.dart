@@ -94,8 +94,11 @@ void main() {
     test('handles a short session, not just the nominal 8', () {
       // Sliding Scale has only 6 seeded questions, so totalRounds is 6.
       expect(
-        stateFor(gameType: 'sliding_scale', roundIndex: 5, totalRounds: 6)
-            .isLastRound,
+        stateFor(
+          gameType: 'sliding_scale',
+          roundIndex: 5,
+          totalRounds: 6,
+        ).isLastRound,
         isTrue,
       );
     });

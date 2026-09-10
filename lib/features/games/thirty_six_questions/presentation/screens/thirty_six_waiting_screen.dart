@@ -132,26 +132,27 @@ class _ThirtySixWaitingScreenState
   void _confirmExit() {
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Leave for now?'),
-        content: const Text(
-          'Your progress is saved. The game stays in your chat, and you '
-          'can pick it up from there.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Stay'),
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('Leave for now?'),
+            content: const Text(
+              'Your progress is saved. The game stays in your chat, and you '
+              'can pick it up from there.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Stay'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  Navigator.pop(context);
+                },
+                child: const Text('Leave'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              Navigator.pop(context);
-            },
-            child: const Text('Leave'),
-          ),
-        ],
-      ),
     );
   }
 

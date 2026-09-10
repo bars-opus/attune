@@ -18,13 +18,13 @@ void main() {
   const waitingScreens = <String, String>{
     'thirty_six_waiting_screen':
         'lib/features/games/thirty_six_questions/presentation/screens/'
-            'thirty_six_waiting_screen.dart',
+        'thirty_six_waiting_screen.dart',
     'partner_watching_screen':
         'lib/features/games/truth_or_dare/presentation/screens/'
-            'partner_watching_screen.dart',
+        'partner_watching_screen.dart',
     'this_or_that_waiting_screen':
         'lib/features/games/this_or_that/presentation/screens/'
-            'waiting_screen.dart',
+        'waiting_screen.dart',
   };
 
   waitingScreens.forEach((name, path) {

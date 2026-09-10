@@ -46,13 +46,16 @@ void main() {
       expect(scoring.getMostInterestingPick(rounds)['round_number'], 2);
     });
 
-    test('falls back to round 5 when nothing differs and nothing is flagged', () {
-      final rounds = List.generate(
-        8,
-        (i) => _round(number: i + 1, a: 'left', b: 'left'),
-      );
-      expect(scoring.getMostInterestingPick(rounds)['round_number'], 5);
-    });
+    test(
+      'falls back to round 5 when nothing differs and nothing is flagged',
+      () {
+        final rounds = List.generate(
+          8,
+          (i) => _round(number: i + 1, a: 'left', b: 'left'),
+        );
+        expect(scoring.getMostInterestingPick(rounds)['round_number'], 5);
+      },
+    );
 
     test('a short all-matching session falls back to its first round', () {
       final rounds = List.generate(

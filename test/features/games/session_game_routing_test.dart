@@ -63,18 +63,22 @@ void main() {
       questionText: 'What is weighing on them most this week?',
     );
 
-    testWidgets('isSubject: true reaches MirrorQuestionScreen as true',
-        (tester) async {
+    testWidgets('isSubject: true reaches MirrorQuestionScreen as true', (
+      tester,
+    ) async {
       await tester.pumpWidget(
-        wrap(SessionGameRouterScreen(
-          question: mirrorQuestion,
-          onSubmit: (_) {},
-          isSubject: true,
-        )),
+        wrap(
+          SessionGameRouterScreen(
+            question: mirrorQuestion,
+            onSubmit: (_) {},
+            isSubject: true,
+          ),
+        ),
       );
 
-      final mirrorScreen =
-          tester.widget<MirrorQuestionScreen>(find.byType(MirrorQuestionScreen));
+      final mirrorScreen = tester.widget<MirrorQuestionScreen>(
+        find.byType(MirrorQuestionScreen),
+      );
       expect(mirrorScreen.isSubject, isTrue);
       // Confirms the subject-facing copy actually renders through the
       // router, not just that a bool field was set.
@@ -84,23 +88,24 @@ void main() {
       );
     });
 
-    testWidgets('isSubject: false reaches MirrorQuestionScreen as false',
-        (tester) async {
+    testWidgets('isSubject: false reaches MirrorQuestionScreen as false', (
+      tester,
+    ) async {
       await tester.pumpWidget(
-        wrap(SessionGameRouterScreen(
-          question: mirrorQuestion,
-          onSubmit: (_) {},
-          isSubject: false,
-        )),
+        wrap(
+          SessionGameRouterScreen(
+            question: mirrorQuestion,
+            onSubmit: (_) {},
+            isSubject: false,
+          ),
+        ),
       );
 
-      final mirrorScreen =
-          tester.widget<MirrorQuestionScreen>(find.byType(MirrorQuestionScreen));
-      expect(mirrorScreen.isSubject, isFalse);
-      expect(
-        find.text('What do you think they would say?'),
-        findsOneWidget,
+      final mirrorScreen = tester.widget<MirrorQuestionScreen>(
+        find.byType(MirrorQuestionScreen),
       );
+      expect(mirrorScreen.isSubject, isFalse);
+      expect(find.text('What do you think they would say?'), findsOneWidget);
     });
   });
 }

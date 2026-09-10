@@ -8,7 +8,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// no grid, and throwing on a success loses a finished result.
 void main() {
   test('a plain payload passes through', () {
-    final out = unwrapWordHuntResponse({'session_id': 's1', 'status': 'active'});
+    final out = unwrapWordHuntResponse({
+      'session_id': 's1',
+      'status': 'active',
+    });
     expect(out['session_id'], 's1');
   });
 
@@ -41,10 +44,7 @@ void main() {
   });
 
   test('a scalar response throws', () {
-    expect(
-      () => unwrapWordHuntResponse(42),
-      throwsA(isA<WordHuntApiError>()),
-    );
+    expect(() => unwrapWordHuntResponse(42), throwsA(isA<WordHuntApiError>()));
     expect(
       () => unwrapWordHuntResponse('ok'),
       throwsA(isA<WordHuntApiError>()),

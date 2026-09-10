@@ -29,10 +29,12 @@ void main() {
     });
 
     test('horizontal spans 4 rows x 3 cols, vertical 3 x 4', () {
-      final h = [for (var i = 0; i < kDotsEdgeCount; i++) DotsEdge.fromIndex(i)]
-          .where((e) => e.horizontal);
-      final v = [for (var i = 0; i < kDotsEdgeCount; i++) DotsEdge.fromIndex(i)]
-          .where((e) => !e.horizontal);
+      final h = [
+        for (var i = 0; i < kDotsEdgeCount; i++) DotsEdge.fromIndex(i),
+      ].where((e) => e.horizontal);
+      final v = [
+        for (var i = 0; i < kDotsEdgeCount; i++) DotsEdge.fromIndex(i),
+      ].where((e) => !e.horizontal);
       expect(h.map((e) => e.row).toSet(), {0, 1, 2, 3});
       expect(h.map((e) => e.col).toSet(), {0, 1, 2});
       expect(v.map((e) => e.row).toSet(), {0, 1, 2});
@@ -47,8 +49,11 @@ void main() {
         expect(touching.toSet().length, touching.length);
         // If an edge names a box, that box must name the edge back.
         for (final box in touching) {
-          expect(dotsBoxEdges(box), contains(i),
-              reason: 'edge $i claims box $box but the box disagrees');
+          expect(
+            dotsBoxEdges(box),
+            contains(i),
+            reason: 'edge $i claims box $box but the box disagrees',
+          );
         }
       }
     });
@@ -104,10 +109,11 @@ void main() {
 
     test('one edge can close two boxes and scores both', () {
       // Take an interior edge, complete both its boxes except for it.
-      final shared = [
-        for (var i = 0; i < kDotsEdgeCount; i++)
-          if (dotsBoxesTouching(i).length == 2) i,
-      ].first;
+      final shared =
+          [
+            for (var i = 0; i < kDotsEdgeCount; i++)
+              if (dotsBoxesTouching(i).length == 2) i,
+          ].first;
       final both = dotsBoxesTouching(shared);
 
       var board = DotsBoard.empty();
@@ -158,10 +164,15 @@ void main() {
           board = result.board;
           if (!result.keepsTurn) turn = turn.other;
         }
-        expect(board.scoreOf(DotsSlot.a) + board.scoreOf(DotsSlot.b),
-            kDotsBoxCount);
-        expect(board.scoreOf(DotsSlot.a), isNot(board.scoreOf(DotsSlot.b)),
-            reason: 'a draw occurred, which 9 boxes should make impossible');
+        expect(
+          board.scoreOf(DotsSlot.a) + board.scoreOf(DotsSlot.b),
+          kDotsBoxCount,
+        );
+        expect(
+          board.scoreOf(DotsSlot.a),
+          isNot(board.scoreOf(DotsSlot.b)),
+          reason: 'a draw occurred, which 9 boxes should make impossible',
+        );
         expect(board.winner, isNotNull);
       }
     });
@@ -190,10 +201,12 @@ void main() {
 
           // A box is owned IFF all four of its edges are drawn.
           for (var box = 0; box < kDotsBoxCount; box++) {
-            final surrounded =
-                dotsBoxEdges(box).every((e) => board.isDrawn(e));
-            expect(board.boxOwners[box] != null, surrounded,
-                reason: 'box $box ownership disagrees with its edges');
+            final surrounded = dotsBoxEdges(box).every((e) => board.isDrawn(e));
+            expect(
+              board.boxOwners[box] != null,
+              surrounded,
+              reason: 'box $box ownership disagrees with its edges',
+            );
           }
 
           // Scores are derivable from the board, never drifting.
@@ -228,7 +241,11 @@ void main() {
         for (var box = 0; box < kDotsBoxCount; box++) {
           final owner = board.boxOwners[box];
           if (owner == null) continue;
-          expect(settled[box] ?? owner, owner, reason: 'box $box changed hands');
+          expect(
+            settled[box] ?? owner,
+            owner,
+            reason: 'box $box changed hands',
+          );
           settled[box] = owner;
         }
         if (!result.keepsTurn) turn = turn.other;
@@ -267,8 +284,11 @@ void main() {
         if (result.keepsTurn) kept++;
       }
 
-      expect(kept, kDotsBoxSize,
-          reason: 'each closure should have kept the turn');
+      expect(
+        kept,
+        kDotsBoxSize,
+        reason: 'each closure should have kept the turn',
+      );
       expect(board.scoreOf(DotsSlot.b), kDotsBoxSize);
       expect(board.isComplete, isTrue);
     });

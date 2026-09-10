@@ -23,6 +23,7 @@ class _FakeInviteGateway implements GameInviteGateway {
     required String relationshipId,
     required String gameType,
     required String idempotencyKey,
+    String tone = 'connecting',
   }) async {
     keys.add(idempotencyKey);
     gameTypes.add(gameType);
@@ -260,9 +261,13 @@ void main() {
       // title-cased id ("Snakes And Ladders") or worse, and the composer
       // is the first place anyone would see it.
       const expected = {
+        'this_or_that': 'This or That',
+        'truth_or_dare': 'Truth or Dare',
+        '36_questions': '36 Questions',
         'mirror': 'Mirror',
         'sliding_scale': 'Sliding Scale',
         'scenario': 'Scenario',
+        'love_map': 'Love Map',
         'paint_ball': 'Paint Ball',
         'snakes_and_ladders': 'Snakes and Ladders',
         'word_hunt': 'Word Hunt',
@@ -342,6 +347,7 @@ class _ThrowingGateway implements GameInviteGateway {
     required String relationshipId,
     required String gameType,
     required String idempotencyKey,
+    String tone = 'connecting',
   }) async => throw StateError('connection to postgres://secret failed');
 
   @override

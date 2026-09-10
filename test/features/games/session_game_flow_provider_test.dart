@@ -19,10 +19,7 @@ void main() {
       // state of a user returning to a round they answered before
       // backgrounding the app or losing signal. Surfacing it as an error
       // would show a scary message on a round that is perfectly fine.
-      expect(
-        isAlreadySubmitted(Exception('Answer already submitted')),
-        isTrue,
-      );
+      expect(isAlreadySubmitted(Exception('Answer already submitted')), isTrue);
     });
 
     test('does not swallow other failures', () {
@@ -39,10 +36,7 @@ void main() {
 
   group('isAlreadyJudged', () {
     test('recognises the server\'s judge-once guard message', () {
-      expect(
-        isAlreadyJudged(Exception('Round already judged')),
-        isTrue,
-      );
+      expect(isAlreadyJudged(Exception('Round already judged')), isTrue);
     });
 
     test('does not match other server messages', () {
@@ -63,8 +57,7 @@ void main() {
     // at the first round they have not yet answered — landing them back
     // on round 0 would force them to re-answer completed rounds, or
     // worse, overwrite an in-flight one.
-    test('a brand-new session with no rounds answered starts at round 0',
-        () {
+    test('a brand-new session with no rounds answered starts at round 0', () {
       final rounds = [
         roundAt(1, bothAnswered: false),
         roundAt(2, bothAnswered: false),

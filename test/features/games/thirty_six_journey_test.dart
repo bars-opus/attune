@@ -87,8 +87,14 @@ void main() {
     test('allows two skips, then no more', () {
       // §"skips": two per chapter. The boundary is what matters — an
       // off-by-one here either steals a skip or grants a third.
-      expect(_chapter(status: 'active', skipsUsed: 0).hasSkipsRemaining, isTrue);
-      expect(_chapter(status: 'active', skipsUsed: 1).hasSkipsRemaining, isTrue);
+      expect(
+        _chapter(status: 'active', skipsUsed: 0).hasSkipsRemaining,
+        isTrue,
+      );
+      expect(
+        _chapter(status: 'active', skipsUsed: 1).hasSkipsRemaining,
+        isTrue,
+      );
       expect(
         _chapter(status: 'active', skipsUsed: 2).hasSkipsRemaining,
         isFalse,

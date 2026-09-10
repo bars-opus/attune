@@ -26,39 +26,58 @@ void main() {
     ];
 
     test('prefers a domain matching a detected topic', () {
-      final picked =
-          selectQuestions(pool: pool, detectedTopics: const ['stressors'], count: 1);
+      final picked = selectQuestions(
+        pool: pool,
+        detectedTopics: const ['stressors'],
+        count: 1,
+      );
       expect(picked.single.valueDomain, 'stressors');
     });
 
     test('falls back to plain rotation when nothing is detected', () {
-      final picked =
-          selectQuestions(pool: pool, detectedTopics: const [], count: 3);
+      final picked = selectQuestions(
+        pool: pool,
+        detectedTopics: const [],
+        count: 3,
+      );
       expect(picked, hasLength(3));
     });
 
     test('never returns more than the pool holds', () {
-      final picked =
-          selectQuestions(pool: pool, detectedTopics: const [], count: 99);
+      final picked = selectQuestions(
+        pool: pool,
+        detectedTopics: const [],
+        count: 99,
+      );
       expect(picked, hasLength(3));
     });
 
     test('never returns the same question twice', () {
-      final picked =
-          selectQuestions(pool: pool, detectedTopics: const [], count: 3);
+      final picked = selectQuestions(
+        pool: pool,
+        detectedTopics: const [],
+        count: 3,
+      );
       expect(picked.map((q) => q.id).toSet(), hasLength(3));
     });
 
     test('an empty pool yields nothing rather than throwing', () {
       expect(
-        selectQuestions(pool: const [], detectedTopics: const ['fears'], count: 3),
+        selectQuestions(
+          pool: const [],
+          detectedTopics: const ['fears'],
+          count: 3,
+        ),
         isEmpty,
       );
     });
 
     test('a detected topic matching nothing still returns questions', () {
       final picked = selectQuestions(
-          pool: pool, detectedTopics: const ['nonexistent'], count: 2);
+        pool: pool,
+        detectedTopics: const ['nonexistent'],
+        count: 2,
+      );
       expect(picked, hasLength(2));
     });
   });

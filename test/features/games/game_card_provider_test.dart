@@ -143,8 +143,7 @@ void main() {
     expect(
       source.contains("from('game_session_rounds')"),
       isTrue,
-      reason:
-          'without a rounds subscription the card cannot notice an answer',
+      reason: 'without a rounds subscription the card cannot notice an answer',
     );
     expect(
       source.contains("from('game_sessions')"),

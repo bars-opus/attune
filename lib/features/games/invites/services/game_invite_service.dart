@@ -38,6 +38,12 @@ abstract class GameInviteGateway {
     required String relationshipId,
     required String gameType,
     required String idempotencyKey,
+
+    /// Which question set the game draws from, and for Truth or Dare
+    /// whether the inviter is consenting to intimate content. The server
+    /// allowlists it, because it is written to the row and read back by
+    /// the games.
+    String tone = 'connecting',
   });
 
   Future<void> accept(String sessionId);
@@ -79,6 +85,7 @@ class GameInviteService implements GameInviteGateway {
     required String relationshipId,
     required String gameType,
     required String idempotencyKey,
+    String tone = 'connecting',
   }) async {
     final data = _unwrap(
       await _supabase
@@ -88,6 +95,7 @@ class GameInviteService implements GameInviteGateway {
               'p_relationship_id': relationshipId,
               'p_game_type': gameType,
               'p_idempotency_key': idempotencyKey,
+              'p_tone': tone,
             },
           )
           .timeout(_timeout),

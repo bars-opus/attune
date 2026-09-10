@@ -28,12 +28,15 @@ void main() {
       expect(WordHuntSelection.nearestDirection(dRow: 3, dCol: 1), (1, 0));
     });
 
-    test('the boundary between an axis and a diagonal is the halfway angle', () {
-      // 22.5 degrees is the tie point. Just under holds the axis, just
-      // over commits to the diagonal.
-      expect(WordHuntSelection.nearestDirection(dRow: 4, dCol: 10), (0, 1));
-      expect(WordHuntSelection.nearestDirection(dRow: 6, dCol: 10), (1, 1));
-    });
+    test(
+      'the boundary between an axis and a diagonal is the halfway angle',
+      () {
+        // 22.5 degrees is the tie point. Just under holds the axis, just
+        // over commits to the diagonal.
+        expect(WordHuntSelection.nearestDirection(dRow: 4, dCol: 10), (0, 1));
+        expect(WordHuntSelection.nearestDirection(dRow: 6, dCol: 10), (1, 1));
+      },
+    );
   });
 
   group('extend', () {
@@ -151,15 +154,24 @@ void main() {
             target: WordHuntCell(row, col),
             maxLength: 7,
           );
-          expect(s.cells.toSet().length, s.cells.length,
-              reason: 'duplicate cell targeting ($row,$col)');
-          expect(s.cells.every((c) => c.inBounds), isTrue,
-              reason: 'out of bounds targeting ($row,$col)');
+          expect(
+            s.cells.toSet().length,
+            s.cells.length,
+            reason: 'duplicate cell targeting ($row,$col)',
+          );
+          expect(
+            s.cells.every((c) => c.inBounds),
+            isTrue,
+            reason: 'out of bounds targeting ($row,$col)',
+          );
           if (s.cells.length >= 2) {
             final dr = s.cells[1].row - s.cells[0].row;
             final dc = s.cells[1].col - s.cells[0].col;
-            expect(kWordHuntDirections.contains((dr, dc)), isTrue,
-                reason: 'illegal step targeting ($row,$col)');
+            expect(
+              kWordHuntDirections.contains((dr, dc)),
+              isTrue,
+              reason: 'illegal step targeting ($row,$col)',
+            );
             for (var i = 2; i < s.cells.length; i++) {
               expect(s.cells[i].row - s.cells[i - 1].row, dr);
               expect(s.cells[i].col - s.cells[i - 1].col, dc);

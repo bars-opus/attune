@@ -15,10 +15,10 @@ void main() {
   const selectors = <String, String>{
     'Truth or Dare':
         'lib/features/games/truth_or_dare/presentation/screens/'
-            'truth_or_dare_tone_selector_screen.dart',
+        'truth_or_dare_tone_selector_screen.dart',
     'This or That':
         'lib/features/games/this_or_that/presentation/screens/'
-            'tone_selector_screen.dart',
+        'tone_selector_screen.dart',
   };
 
   selectors.forEach((game, path) {

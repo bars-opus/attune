@@ -120,11 +120,7 @@ void main() {
 
     test('a turnless game with no round data still says something', () {
       expect(
-        gameCardLabel(
-          state: _state(),
-          viewerId: me,
-          viewerIsSender: false,
-        ),
+        gameCardLabel(state: _state(), viewerId: me, viewerIsSender: false),
         // "Tap to play", not "In progress": current_round defaults to 0
         // and the session games never update it, so this branch is what a
         // card falls back to -- and it should invite the next move rather

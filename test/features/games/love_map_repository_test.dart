@@ -34,13 +34,14 @@ void main() {
     test('carries no answer fields', () {
       // The §8.4 gate lives on the server, but a model with answer fields
       // invites a select() that reads around it. This pins the shape.
-      final props = LoveMapRound.fromRow(const {
-        'id': 'r1',
-        'round_number': 1,
-        'question_id': 'q1',
-        'both_answered': true,
-        'active_partner_id': 'user-a',
-      }).toString();
+      final props =
+          LoveMapRound.fromRow(const {
+            'id': 'r1',
+            'round_number': 1,
+            'question_id': 'q1',
+            'both_answered': true,
+            'active_partner_id': 'user-a',
+          }).toString();
       expect(props.contains('answer'), isFalse);
     });
   });
@@ -49,12 +50,13 @@ void main() {
     // Reads the source rather than the runtime: the column list is the
     // guarantee, and a future edit adding answer_a here would bypass the
     // reveal gate without any test noticing.
-    final src = File(
-      'lib/features/games/love_map/data/repositories/love_map_repository.dart',
-    ).readAsStringSync();
-    final selectLine = RegExp(r"\.select\('([^']*round_number[^']*)'\)")
-        .firstMatch(src)
-        ?.group(1);
+    final src =
+        File(
+          'lib/features/games/love_map/data/repositories/love_map_repository.dart',
+        ).readAsStringSync();
+    final selectLine = RegExp(
+      r"\.select\('([^']*round_number[^']*)'\)",
+    ).firstMatch(src)?.group(1);
 
     expect(selectLine, isNotNull);
     expect(selectLine, contains('active_partner_id'));

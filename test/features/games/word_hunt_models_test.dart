@@ -43,11 +43,13 @@ void main() {
 
     test('a present partner_status is read', () {
       final s = WordHuntSession.fromJson(
-        base(extra: {
-          'both_terminal': true,
-          'partner_status': 'gave_up',
-          'partner_elapsed_ms': null,
-        }),
+        base(
+          extra: {
+            'both_terminal': true,
+            'partner_status': 'gave_up',
+            'partner_elapsed_ms': null,
+          },
+        ),
       );
       expect(s.partnerStatus, WordHuntStatus.gaveUp);
       expect(s.bothTerminal, isTrue);
@@ -91,12 +93,14 @@ void main() {
   group('placement parsing', () {
     test('reads a well-formed placement', () {
       final s = WordHuntSession.fromJson(
-        base(extra: {
-          'placement': [
-            [0, 0],
-            [0, 1],
-          ],
-        }),
+        base(
+          extra: {
+            'placement': [
+              [0, 0],
+              [0, 1],
+            ],
+          },
+        ),
       );
       expect(s.placement, const [WordHuntCell(0, 0), WordHuntCell(0, 1)]);
     });
@@ -104,24 +108,28 @@ void main() {
     test('rejects an out-of-bounds cell wholesale', () {
       // Partially trusting it would draw a pill off the board.
       final s = WordHuntSession.fromJson(
-        base(extra: {
-          'placement': [
-            [0, 0],
-            [0, 99],
-          ],
-        }),
+        base(
+          extra: {
+            'placement': [
+              [0, 0],
+              [0, 99],
+            ],
+          },
+        ),
       );
       expect(s.placement, isNull);
     });
 
     test('rejects a malformed cell', () {
       final s = WordHuntSession.fromJson(
-        base(extra: {
-          'placement': [
-            [0, 0],
-            [1],
-          ],
-        }),
+        base(
+          extra: {
+            'placement': [
+              [0, 0],
+              [1],
+            ],
+          },
+        ),
       );
       expect(s.placement, isNull);
     });
@@ -135,11 +143,13 @@ void main() {
   group('derived state', () {
     test('waiting means terminal for me and not yet for both', () {
       final s = WordHuntSession.fromJson(
-        base(extra: {
-          'my_status': 'found',
-          'my_started_at': '2026-09-08T12:00:00Z',
-          'my_elapsed_ms': 12000,
-        }),
+        base(
+          extra: {
+            'my_status': 'found',
+            'my_started_at': '2026-09-08T12:00:00Z',
+            'my_elapsed_ms': 12000,
+          },
+        ),
       );
       expect(s.isWaitingForPartner, isTrue);
       expect(s.myStatus.foundIt, isTrue);
@@ -147,22 +157,26 @@ void main() {
 
     test('not waiting once both are terminal', () {
       final s = WordHuntSession.fromJson(
-        base(extra: {
-          'both_terminal': true,
-          'my_status': 'found',
-          'my_started_at': '2026-09-08T12:00:00Z',
-          'partner_status': 'timed_out',
-        }),
+        base(
+          extra: {
+            'both_terminal': true,
+            'my_status': 'found',
+            'my_started_at': '2026-09-08T12:00:00Z',
+            'partner_status': 'timed_out',
+          },
+        ),
       );
       expect(s.isWaitingForPartner, isFalse);
     });
 
     test('not waiting while still hunting', () {
       final s = WordHuntSession.fromJson(
-        base(extra: {
-          'my_status': 'in_progress',
-          'my_started_at': '2026-09-08T12:00:00Z',
-        }),
+        base(
+          extra: {
+            'my_status': 'in_progress',
+            'my_started_at': '2026-09-08T12:00:00Z',
+          },
+        ),
       );
       expect(s.isWaitingForPartner, isFalse);
     });
@@ -209,8 +223,10 @@ void main() {
     test('an unknown status is treated as still playing, never as found', () {
       // The safe default: a status this client does not understand must
       // not open the reveal or claim someone finished.
-      expect(WordHuntStatus.fromWire('something_new'),
-          WordHuntStatus.inProgress);
+      expect(
+        WordHuntStatus.fromWire('something_new'),
+        WordHuntStatus.inProgress,
+      );
       expect(WordHuntStatus.fromWire(null), WordHuntStatus.inProgress);
       expect(WordHuntStatus.fromWire('something_new').isTerminal, isFalse);
     });
@@ -259,10 +275,7 @@ void main() {
   test('cells compare by value, which the drag path relies on', () {
     expect(const WordHuntCell(2, 3), const WordHuntCell(2, 3));
     expect(const WordHuntCell(2, 3), isNot(const WordHuntCell(3, 2)));
-    expect(
-      {const WordHuntCell(1, 1), const WordHuntCell(1, 1)},
-      hasLength(1),
-    );
+    expect({const WordHuntCell(1, 1), const WordHuntCell(1, 1)}, hasLength(1));
     expect(const WordHuntCell(9, 9).inBounds, isTrue);
     expect(const WordHuntCell(10, 0).inBounds, isFalse);
     expect(const WordHuntCell(-1, 0).inBounds, isFalse);

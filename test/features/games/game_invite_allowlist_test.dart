@@ -9,27 +9,30 @@ void main() {
     // always fails, with no recourse and no way for the player to tell
     // why. The lists are pinned to each other here rather than
     // discovered in production.
+    //
+    // Reads the LATEST migration to define the allowlist: an earlier one
+    // narrowed it to six while four games were unfinished, and a test
+    // anchored on that file would now be asserting history.
     final migration =
         File(
-          'supabase/migrations/20260937110000_game_invite_allowlist_fix.sql',
+          'supabase/migrations/20260937120000_game_invite_all_games.sql',
         ).readAsStringSync();
 
+    final body = migration.substring(
+      migration.indexOf('SELECT p_game_type IN ('),
+      migration.indexOf(');', migration.indexOf('p_game_type IN (')),
+    );
     final allowed =
-        RegExp(r"'([a-z0-9_]+)'")
-            .allMatches(
-              migration.substring(
-                migration.indexOf('SELECT p_game_type IN ('),
-                migration.indexOf(');', migration.indexOf('p_game_type IN (')),
-              ),
-            )
-            .map((m) => m.group(1)!)
-            .toSet();
+        RegExp(
+          r"'([a-z0-9_]+)'",
+        ).allMatches(body).map((m) => m.group(1)!).toSet();
 
     expect(
       allowed,
       kInvitableGameTypes,
       reason: 'the client would stage a game the server refuses',
     );
+    expect(allowed, hasLength(10), reason: 'a game lost its invitation');
   });
 
   test('every invitable game has a display name and a destination', () {
@@ -59,27 +62,34 @@ void main() {
     }
   });
 
-  test('the games left out each have their own way in', () {
-    // Not oversights, and this test exists so a later reader does not
-    // "fix" them back onto the generic path: each needs setup that
-    // game_invite_create deliberately does not do.
-    const excluded = {
-      // needs journey_id and chapter
-      '36_questions',
-      // builds rounds in create_this_or_that_session
-      'this_or_that',
-      // needs total_rounds, current_round and a tone
-      'truth_or_dare',
-      // no session at all, by spec
-      'love_map',
-    };
+  test('the games needing a session shape are given one', () {
+    // These four could not start from a bare session row, which is why
+    // they had no invitation at first. The RPC now supplies what each
+    // needs, and this pins the reasons so a later reader does not strip
+    // the special cases back out.
+    final migration =
+        File(
+          'supabase/migrations/20260937120000_game_invite_all_games.sql',
+        ).readAsStringSync();
 
-    for (final game in excluded) {
-      expect(
-        kInvitableGameTypes.contains(game),
-        isFalse,
-        reason: '$game cannot start from a bare session row',
-      );
-    }
+    // Truth or Dare and This or That read total_rounds; a bare row made
+    // their cards say "Round 1 of 0".
+    expect(migration.contains("WHEN 'truth_or_dare' THEN 10"), isTrue);
+    expect(migration.contains("WHEN 'this_or_that'  THEN 10"), isTrue);
+
+    // 36 Questions is invisible to its own queries without a journey.
+    expect(migration.contains("WHEN '36_questions'  THEN 12"), isTrue);
+    expect(migration.contains('thirty_six_question_journeys'), isTrue);
+    expect(migration.contains("p_game_type = '36_questions'"), isTrue);
+
+    // Love Map is sessionless by design, so its invitation opens active
+    // -- nothing in Love Map ever accepts one, and the card would
+    // otherwise read "Waiting for them" forever.
+    final loveMap =
+        File(
+          'supabase/migrations/20260937130000_love_map_invite_shape.sql',
+        ).readAsStringSync();
+    expect(loveMap.contains("IF p_game_type = 'love_map' THEN"), isTrue);
+    expect(loveMap.contains("SET status = 'active'"), isTrue);
   });
 }

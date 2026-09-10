@@ -63,8 +63,7 @@ void main() {
         File(
           'lib/features/community/presentation/widgets/community_questions_entry.dart',
         ).readAsStringSync();
-    final router =
-        File('lib/app/routing/app_router.dart').readAsStringSync();
+    final router = File('lib/app/routing/app_router.dart').readAsStringSync();
 
     expect(
       entry,
