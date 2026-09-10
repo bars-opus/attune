@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 class _FakeInviteGateway implements GameInviteGateway {
   final List<String> keys = [];
   final List<String> gameTypes = [];
+  final List<String> relationshipIds = [];
   final List<String> accepted = [];
   final List<String> declined = [];
 
@@ -25,6 +26,7 @@ class _FakeInviteGateway implements GameInviteGateway {
   }) async {
     keys.add(idempotencyKey);
     gameTypes.add(gameType);
+    relationshipIds.add(relationshipId);
     if (failFirstCreate && keys.length == 1) {
       throw const GameInviteApiError(
         code: 'NETWORK',
@@ -60,10 +62,10 @@ void main() {
       final gateway = _FakeInviteGateway();
       final container = harness(gateway);
 
-      container.read(gameComposerProvider.notifier).stage('mirror');
+      container.read(gameComposerProvider('r1').notifier).stage('mirror');
 
-      expect(container.read(gameComposerProvider).isStaged, isTrue);
-      expect(container.read(gameComposerProvider).gameType, 'mirror');
+      expect(container.read(gameComposerProvider('r1')).isStaged, isTrue);
+      expect(container.read(gameComposerProvider('r1')).gameType, 'mirror');
       expect(gateway.keys, isEmpty, reason: 'staging reached the server');
     });
 
@@ -71,11 +73,11 @@ void main() {
       final gateway = _FakeInviteGateway();
       final container = harness(gateway);
       final notifier =
-          container.read(gameComposerProvider.notifier)
+          container.read(gameComposerProvider('r1').notifier)
             ..stage('mirror')
             ..cancel();
 
-      expect(container.read(gameComposerProvider).isStaged, isFalse);
+      expect(container.read(gameComposerProvider('r1')).isStaged, isFalse);
       expect(gateway.keys, isEmpty);
       expect(notifier, isNotNull);
     });
@@ -83,14 +85,14 @@ void main() {
     test('sending creates the invitation and clears the composer', () async {
       final gateway = _FakeInviteGateway();
       final container = harness(gateway);
-      final notifier = container.read(gameComposerProvider.notifier)
+      final notifier = container.read(gameComposerProvider('r1').notifier)
         ..stage('scenario');
 
-      final sessionId = await notifier.send(relationshipId: 'r1');
+      final sessionId = await notifier.send();
 
       expect(sessionId, 'session-1');
       expect(gateway.gameTypes, ['scenario']);
-      expect(container.read(gameComposerProvider).isStaged, isFalse);
+      expect(container.read(gameComposerProvider('r1')).isStaged, isFalse);
     });
 
     test(
@@ -101,11 +103,11 @@ void main() {
         // a SECOND card for a player who thinks they sent one.
         final gateway = _FakeInviteGateway()..failFirstCreate = true;
         final container = harness(gateway);
-        final notifier = container.read(gameComposerProvider.notifier)
+        final notifier = container.read(gameComposerProvider('r1').notifier)
           ..stage('mirror');
 
-        expect(await notifier.send(relationshipId: 'r1'), isNull);
-        expect(await notifier.send(relationshipId: 'r1'), isNotNull);
+        expect(await notifier.send(), isNull);
+        expect(await notifier.send(), isNotNull);
 
         expect(gateway.keys, hasLength(2));
         expect(
@@ -121,11 +123,11 @@ void main() {
       () async {
         final gateway = _FakeInviteGateway()..failFirstCreate = true;
         final container = harness(gateway);
-        final notifier = container.read(gameComposerProvider.notifier)
+        final notifier = container.read(gameComposerProvider('r1').notifier)
           ..stage('mirror');
-        await notifier.send(relationshipId: 'r1');
+        await notifier.send();
 
-        final state = container.read(gameComposerProvider);
+        final state = container.read(gameComposerProvider('r1'));
         expect(state.isStaged, isTrue, reason: 'the player lost their game');
         expect(state.sending, isFalse);
         expect(state.errorMessage, 'Slow down a moment.');
@@ -137,7 +139,7 @@ void main() {
       // and row contents.
       final gateway = _FakeInviteGateway();
       final container = harness(gateway);
-      final notifier = container.read(gameComposerProvider.notifier)
+      final notifier = container.read(gameComposerProvider('r1').notifier)
         ..stage('mirror');
       gateway.failWith = null;
 
@@ -147,11 +149,11 @@ void main() {
         overrides: [gameInviteGatewayProvider.overrideWithValue(broken)],
       );
       addTearDown(container2.dispose);
-      final notifier2 = container2.read(gameComposerProvider.notifier)
+      final notifier2 = container2.read(gameComposerProvider('r1').notifier)
         ..stage('mirror');
-      await notifier2.send(relationshipId: 'r1');
+      await notifier2.send();
 
-      final message = container2.read(gameComposerProvider).errorMessage;
+      final message = container2.read(gameComposerProvider('r1')).errorMessage;
       expect(message, 'Could not send. Check your connection.');
       expect(message, isNot(contains('postgres')));
       expect(notifier, isNotNull);
@@ -162,28 +164,54 @@ void main() {
       // back the previous game or refuse the mismatch.
       final gateway = _FakeInviteGateway()..failFirstCreate = true;
       final container = harness(gateway);
-      final notifier = container.read(gameComposerProvider.notifier)
+      final notifier = container.read(gameComposerProvider('r1').notifier)
         ..stage('mirror');
-      await notifier.send(relationshipId: 'r1');
+      await notifier.send();
 
       notifier.stage('scenario');
-      await notifier.send(relationshipId: 'r1');
+      await notifier.send();
 
       expect(gateway.keys, hasLength(2));
       expect(gateway.keys[1], isNot(gateway.keys[0]));
       expect(gateway.gameTypes, ['mirror', 'scenario']);
     });
 
+    test('a game staged in one chat never appears in another', () async {
+      // The composer was a single global instance, so a game staged
+      // while looking at one partner turned up in the next conversation
+      // opened -- and Send would have invited the WRONG PERSON, because
+      // the relationship comes from the screen, not the staged game.
+      final gateway = _FakeInviteGateway();
+      final container = harness(gateway);
+
+      container.read(gameComposerProvider('r1').notifier).stage('mirror');
+
+      expect(container.read(gameComposerProvider('r1')).gameType, 'mirror');
+      expect(
+        container.read(gameComposerProvider('r2')).gameType,
+        isNull,
+        reason: 'a staged game leaked into another conversation',
+      );
+    });
+
+    test('sending invites the conversation it was staged in', () async {
+      final gateway = _FakeInviteGateway();
+      final container = harness(gateway);
+      final notifier = container.read(gameComposerProvider('r2').notifier)
+        ..stage('mirror');
+
+      await notifier.send();
+
+      expect(gateway.relationshipIds, ['r2']);
+    });
+
     test('a send already in flight is not sent twice', () async {
       final gateway = _FakeInviteGateway();
       final container = harness(gateway);
-      final notifier = container.read(gameComposerProvider.notifier)
+      final notifier = container.read(gameComposerProvider('r1').notifier)
         ..stage('mirror');
 
-      await Future.wait([
-        notifier.send(relationshipId: 'r1'),
-        notifier.send(relationshipId: 'r1'),
-      ]);
+      await Future.wait([notifier.send(), notifier.send()]);
 
       expect(gateway.keys, hasLength(1));
     });
@@ -204,6 +232,7 @@ void main() {
               theme: AppTheme.lightTheme,
               home: Scaffold(
                 body: GameComposerBar(
+                  relationshipId: 'r1',
                   gameType: gameType,
                   onSend: onSend ?? () {},
                   onCancel: onCancel ?? () {},
@@ -278,7 +307,7 @@ void main() {
       final container = ProviderScope.containerOf(
         tester.element(find.byType(GameComposerBar)),
       );
-      container.read(gameComposerProvider.notifier).stage('mirror');
+      container.read(gameComposerProvider('r1').notifier).stage('mirror');
       await tester.pump();
 
       await tester.tap(find.byIcon(Icons.send_rounded));
@@ -294,9 +323,9 @@ void main() {
       final container = ProviderScope.containerOf(
         tester.element(find.byType(GameComposerBar)),
       );
-      final notifier = container.read(gameComposerProvider.notifier)
+      final notifier = container.read(gameComposerProvider('r1').notifier)
         ..stage('mirror');
-      await notifier.send(relationshipId: 'r1');
+      await notifier.send();
       await tester.pumpAndSettle();
 
       expect(find.text('Slow down a moment.'), findsOneWidget);

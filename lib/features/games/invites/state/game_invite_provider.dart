@@ -49,9 +49,19 @@ class GameComposerState {
 }
 
 class GameComposerNotifier extends StateNotifier<GameComposerState> {
-  GameComposerNotifier(this._ref) : super(const GameComposerState());
+  GameComposerNotifier(this._ref, this.relationshipId)
+    : super(const GameComposerState());
 
   final Ref _ref;
+
+  /// Whose conversation this composer belongs to.
+  ///
+  /// The composer is per-relationship, not global. A single instance let
+  /// a game staged while looking at one partner appear in the next
+  /// conversation opened -- and Send would then have invited the wrong
+  /// person, because the relationship id comes from the screen rather
+  /// than from the staged game.
+  final String relationshipId;
 
   /// The idempotency key for the game currently staged.
   ///
@@ -84,7 +94,7 @@ class GameComposerNotifier extends StateNotifier<GameComposerState> {
   /// Returns the session id on success, null on failure -- with the
   /// reason left in [state.errorMessage] and the game still staged, so
   /// the player can retry rather than having to find the game again.
-  Future<String?> send({required String relationshipId}) async {
+  Future<String?> send() async {
     final gameType = state.gameType;
     if (gameType == null || state.sending) return null;
 
@@ -130,7 +140,9 @@ class GameComposerNotifier extends StateNotifier<GameComposerState> {
   }
 }
 
-final gameComposerProvider =
-    StateNotifierProvider<GameComposerNotifier, GameComposerState>(
-      GameComposerNotifier.new,
-    );
+/// The composer for one conversation, keyed by relationship.
+final gameComposerProvider = StateNotifierProvider.family<
+  GameComposerNotifier,
+  GameComposerState,
+  String
+>(GameComposerNotifier.new);

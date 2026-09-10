@@ -459,9 +459,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   /// shows: the game stays staged and the idempotency key is kept, so
   /// the retry is the same request rather than a second invitation.
   Future<void> _sendStagedGame() async {
-    final sessionId = await ref
-        .read(gameComposerProvider.notifier)
-        .send(relationshipId: widget.conversation.relationshipId);
+    final sessionId =
+        await ref
+            .read(
+              gameComposerProvider(widget.conversation.relationshipId).notifier,
+            )
+            .send();
     if (sessionId == null || !mounted) return;
 
     // Stays in the chat. The card the trigger just posted is the
@@ -478,8 +481,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         context,
         relationshipId: widget.conversation.relationshipId,
         onStageNewGame:
-            (gameType) =>
-                ref.read(gameComposerProvider.notifier).stage(gameType),
+            (gameType) => ref
+                .read(
+                  gameComposerProvider(
+                    widget.conversation.relationshipId,
+                  ).notifier,
+                )
+                .stage(gameType),
       ),
     );
   }
@@ -728,7 +736,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         ephemeralVideoEnabled.valueOrNull == true && videoAttachEnabled;
     // The game waiting to be sent, if any. Drives the composer swap
     // below: a staged game replaces the text field.
-    final stagedGame = ref.watch(gameComposerProvider).gameType;
+    final stagedGame =
+        ref.watch(gameComposerProvider(conversation.relationshipId)).gameType;
     final voiceMessagesEnabled = ref.watch(chatVoiceMessagesEnabledProvider);
     final translatorEnabled = ref.watch(chatTranslatorEntryEnabledProvider);
     final headerDrawerEnabled = ref.watch(
@@ -954,12 +963,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                         // between two things to send.
                         if (conversation.canSend && stagedGame != null)
                           GameComposerBar(
+                            relationshipId: conversation.relationshipId,
                             gameType: stagedGame,
                             onSend: () => unawaited(_sendStagedGame()),
                             onCancel:
                                 () =>
                                     ref
-                                        .read(gameComposerProvider.notifier)
+                                        .read(
+                                          gameComposerProvider(
+                                            conversation.relationshipId,
+                                          ).notifier,
+                                        )
                                         .cancel(),
                           )
                         else if (conversation.canSend)

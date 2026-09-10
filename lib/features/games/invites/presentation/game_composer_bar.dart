@@ -22,10 +22,15 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 class GameComposerBar extends ConsumerWidget {
   const GameComposerBar({
     super.key,
+    required this.relationshipId,
     required this.gameType,
     required this.onSend,
     required this.onCancel,
   });
+
+  /// Whose conversation. The composer is per-relationship, so a game
+  /// staged for one partner never appears in another chat.
+  final String relationshipId;
 
   final String gameType;
   final VoidCallback onSend;
@@ -33,7 +38,7 @@ class GameComposerBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(gameComposerProvider);
+    final state = ref.watch(gameComposerProvider(relationshipId));
     final chatColors = Theme.of(context).chatColors;
     final colorScheme = Theme.of(context).colorScheme;
     final title = gameTypeDisplayName(gameType);
