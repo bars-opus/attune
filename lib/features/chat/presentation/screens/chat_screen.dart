@@ -2919,7 +2919,12 @@ Future<void> showChatGamesPicker(
               : (destination) {
                 final gameType = chatGameTypeForDestination(destination);
                 Navigator.of(context).pop();
-                if (gameType != null) {
+                // Only games the server will actually create from a bare
+                // session row are staged. The rest open their own screen,
+                // which is where their setup happens -- staging them
+                // would be a Send that always fails.
+                if (gameType != null &&
+                    kInvitableGameTypes.contains(gameType)) {
                   onStageNewGame(gameType);
                 } else {
                   // Prototypes have no game type and so no invitation:

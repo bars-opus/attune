@@ -285,15 +285,32 @@ BEGIN
   END IF;
 
   -- =================================================================
-  -- All ten games can be invited. A game missing here has no invite.
+  -- Exactly the games a bare session row can start.
+  --
+  -- Both directions matter. A game missing from the first list has no
+  -- invitation at all; a game wrongly in the second gets an invitation
+  -- that creates a card its own screens cannot open.
   -- =================================================================
   RESET ROLE;
   FOR v_type IN SELECT unnest(ARRAY[
-    'this_or_that','truth_or_dare','36_questions','mirror','sliding_scale',
-    'scenario','love_map','paint_ball','snakes_and_ladders','word_hunt'])
+    'mirror','sliding_scale','scenario',
+    'paint_ball','snakes_and_ladders','word_hunt'])
   LOOP
     IF NOT public.game_invite_type_allowed(v_type) THEN
       RAISE EXCEPTION 'game % cannot be invited', v_type;
+    END IF;
+  END LOOP;
+
+  -- 36 Questions needs a journey and a chapter, This or That builds its
+  -- rounds in its own RPC, Truth or Dare needs a round count and a tone,
+  -- and Love Map has no session at all. Each starts through its own
+  -- screen, and a generic invite for them would be a dead card.
+  FOR v_type IN SELECT unnest(ARRAY[
+    '36_questions','this_or_that','truth_or_dare','love_map'])
+  LOOP
+    IF public.game_invite_type_allowed(v_type) THEN
+      RAISE EXCEPTION
+        'game % would get an invite it cannot start from', v_type;
     END IF;
   END LOOP;
 

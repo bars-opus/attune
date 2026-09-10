@@ -253,24 +253,23 @@ void main() {
       expect(find.byIcon(Icons.send_rounded), findsOneWidget);
     });
 
-    testWidgets('every one of the ten games renders a name, not a fallback', (
+    testWidgets('every invitable game renders a name, not a fallback', (
       tester,
     ) async {
       // A game whose type is missing from the display map would show a
       // title-cased id ("Snakes And Ladders") or worse, and the composer
       // is the first place anyone would see it.
       const expected = {
-        'this_or_that': 'This or That',
-        'truth_or_dare': 'Truth or Dare',
-        '36_questions': '36 Questions',
         'mirror': 'Mirror',
         'sliding_scale': 'Sliding Scale',
         'scenario': 'Scenario',
-        'love_map': 'Love Map',
         'paint_ball': 'Paint Ball',
         'snakes_and_ladders': 'Snakes and Ladders',
         'word_hunt': 'Word Hunt',
       };
+      // The composer only ever stages invitable games, so this covers
+      // every game it can show.
+      expect(expected.keys.toSet(), kInvitableGameTypes);
 
       for (final entry in expected.entries) {
         await tester.pumpWidget(

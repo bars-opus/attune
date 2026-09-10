@@ -4,6 +4,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+/// The games whose invitation is a bare session row.
+///
+/// Must match game_invite_type_allowed in the migration: the server
+/// refuses anything else, and a game staged here that the server will
+/// not create is a Send that always fails.
+///
+/// The four missing games are not oversights. 36 Questions needs a
+/// journey and a chapter, This or That builds its rounds in its own RPC,
+/// Truth or Dare needs a round count and a tone, and Love Map has no
+/// session at all by spec -- each starts through its own screen, which
+/// is where that setup happens.
+const kInvitableGameTypes = {
+  'mirror',
+  'sliding_scale',
+  'scenario',
+  'paint_ball',
+  'snakes_and_ladders',
+  'word_hunt',
+};
+
 final gameInviteClientProvider = Provider<SupabaseClient>(
   (ref) => Supabase.instance.client,
 );
