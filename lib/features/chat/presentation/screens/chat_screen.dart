@@ -212,6 +212,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   Future<void> _send() async {
     final text = _controller.text.trim();
+
+    // A staged game is the thing being sent; the text, if any, is a note
+    // about it. Checked BEFORE the empty-text guard below, or a game with
+    // no caption would return here and Send would do nothing.
+    if (ref
+        .read(gameComposerProvider(widget.conversation.relationshipId))
+        .isStaged) {
+      await _sendStagedGame(caption: text);
+      return;
+    }
+
     if (text.isEmpty) return;
     ref.read(hapticsProvider).light(); // instant tactile confirm (Spec §3.1)
     if (ref.read(messageSoundsEnabledProvider)) {
@@ -994,6 +1005,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                             onSend: () {
                               unawaited(_send());
                             },
+                            // Drops the camera, attachments and the mic,
+                            // keeps the games icon, and makes Send live
+                            // with an empty field -- the staged game is
+                            // the payload, the text is an optional note.
+                            gameStaged: stagedGame != null,
                             focusNode: _composerFocusNode,
                             onAttachImage:
                                 imageSharingEnabled.valueOrNull == true
