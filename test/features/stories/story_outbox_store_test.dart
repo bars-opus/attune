@@ -22,7 +22,19 @@
 // The io backend is used directly (not through the stub) because
 // durability is the property under test — an in-memory stub would pass
 // test 1 trivially without proving anything about SQLite persistence.
+//
+// Fix round 1: spec §6.1 says the queue "reuses the encrypted
+// SQLite/cache patterns behind the chat outbox" — the store originally
+// wrote plaintext JSON. A fourth test now proves the payload column is
+// actually encrypted on disk: write a record carrying a recognisable
+// marker string, read the RAW bytes of the sqlite file (not through the
+// store), and assert the marker is absent — then assert the record
+// still round-trips correctly through the store. A round-trip check
+// alone proves nothing about encryption, since it passes identically on
+// plaintext; reading the file's raw bytes is the only way to prove the
+// marker isn't sitting there in the clear.
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:attune/features/stories/data/story_outbox_backend_io.dart';
@@ -177,5 +189,74 @@ void main() {
     // Only an explicit remove (Discard, or success) clears it.
     await store.remove(userId, 'permanently-failed');
     expect(await store.readAll(userId), isEmpty);
+  });
+
+  test('the payload is encrypted at rest, not written as plaintext', () async {
+    const userId = 'user-1';
+    const marker = '/tmp/story-secret-marker.jpg';
+    final store = StoryOutboxStore.forTesting(
+      createStoryOutboxBackend(file: dbFile),
+    );
+
+    final base = buildRecord();
+    // buildRecord's localMediaPath is fixed; rebuild with the marker path
+    // so it's unambiguously ours and easy to grep for below. localMediaPath
+    // isn't one of copyWith's fields, so a record literal is used instead.
+    final markedRecord = StoryOutboxRecord(
+      clientStoryId: base.clientStoryId,
+      relationshipId: base.relationshipId,
+      localMediaPath: marker,
+      localThumbnailPath: base.localThumbnailPath,
+      mediaType: base.mediaType,
+      mimeType: base.mimeType,
+      width: base.width,
+      height: base.height,
+      durationMs: base.durationMs,
+      utcOffsetMinutes: base.utcOffsetMinutes,
+      state: base.state,
+      attempts: base.attempts,
+      lastErrorCode: base.lastErrorCode,
+      createdAt: base.createdAt,
+    );
+
+    await store.put(userId, markedRecord);
+    // Force a checkpoint so WAL contents land in the main db file before
+    // it's read directly — otherwise a recent write can still be sitting
+    // in the -wal sidecar file instead of story_outbox.sqlite itself.
+    await store.disposeForTesting();
+
+    // Read every file the sqlite/WAL machinery may have written, not
+    // just the main db file, so a marker sitting in a -wal or -shm
+    // sidecar can't slip past this check.
+    final candidateFiles = [
+      dbFile,
+      File('${dbFile.path}-wal'),
+      File('${dbFile.path}-shm'),
+      File('${dbFile.path}-journal'),
+    ].where((f) => f.existsSync());
+
+    for (final file in candidateFiles) {
+      final rawBytes = file.readAsBytesSync();
+      final rawLatin1 = latin1.decode(rawBytes, allowInvalid: true);
+      expect(
+        rawLatin1,
+        isNot(contains(marker)),
+        reason:
+            'Found the plaintext marker in ${file.path} — the payload '
+            'column is not encrypted at rest.',
+      );
+    }
+
+    // The record still round-trips correctly through the store — proves
+    // this is encryption, not corruption or data loss.
+    final reopenedStore = StoryOutboxStore.forTesting(
+      createStoryOutboxBackend(file: dbFile),
+    );
+    final rows = await reopenedStore.readAll(userId);
+    await reopenedStore.disposeForTesting();
+
+    expect(rows, hasLength(1));
+    expect(rows.single.localMediaPath, marker);
+    expect(rows.single.clientStoryId, markedRecord.clientStoryId);
   });
 }

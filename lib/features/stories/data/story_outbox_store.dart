@@ -12,10 +12,23 @@
 /// This is persistence only: write, read, update, delete. It does not
 /// drive [StoryOutboxState] transitions or retry timing — that is
 /// Task 6's state machine, built on top of this store.
+///
+/// **Encryption at rest.** Spec §6.1: the queue "reuses the encrypted
+/// SQLite/cache patterns behind the chat outbox." This store's record
+/// carries local file paths and a relationship id, so the payload column
+/// is encrypted the same way `ChatCacheService` encrypts `chat_outbox`
+/// (`chat_cache_service.dart:147-157`): [ChatCacheCipher] (AES-256-GCM,
+/// keystore-backed) over the JSON payload before it reaches SQLite. The
+/// cipher is reused directly rather than a separate `StoryOutboxCipher`
+/// — see the class doc on [_cipher] for why. The indexing columns
+/// (`user_id`, `client_story_id`, `created_at`) stay plaintext, same
+/// rule chat follows (`chat_cache_cipher.dart:19`): they carry no story
+/// content and the backend needs them to key and order rows.
 library;
 
 import 'dart:convert';
 
+import 'package:attune/features/chat/data/cache/chat_cache_cipher.dart';
 import 'package:flutter/foundation.dart';
 
 import 'story_outbox_backend.dart';
@@ -27,18 +40,50 @@ class StoryOutboxStore {
   /// Test seam: inject a backend directly (an in-memory stub, or a
   /// `dart:io` backend pointed at a controlled temp file) so durability
   /// and restart behaviour can be exercised without the app-support
-  /// directory or platform channels.
+  /// directory or platform channels. [cipher] defaults to
+  /// [ChatCacheCipher.forTesting] (a fixed in-memory key) so encryption
+  /// round-trips are exercised without the platform keystore, matching
+  /// `ChatCacheService.forTesting`.
   @visibleForTesting
-  StoryOutboxStore.forTesting(StoryOutboxBackend backend) : _backend = backend;
+  StoryOutboxStore.forTesting(StoryOutboxBackend backend, {ChatCacheCipher? cipher})
+    : _backend = backend,
+      _cipher = cipher ?? ChatCacheCipher.forTesting();
 
   final StoryOutboxBackend _backend;
   bool _initialized = false;
 
+  /// Reused from chat rather than a new `StoryOutboxCipher`: the 256-bit
+  /// data key is already provisioned in the platform keystore (iOS
+  /// Keychain / Android Keystore) by the time either feature needs it,
+  /// so a second cipher would mean a second keystore round-trip and a
+  /// second independent fail-closed path for no isolation benefit that
+  /// matters here — both stores already live in the same app-private
+  /// sandbox, so a compromise able to read one key can read the other
+  /// regardless of how many keys exist. The cost: [ChatCacheCipher]'s
+  /// name and its storage key constant (`attune_chat_cache_key_v1`) both
+  /// read as chat-only to a future reader who hasn't seen this comment —
+  /// worth renaming to something feature-neutral (e.g.
+  /// `AttuneLocalCacheCipher` / `attune_local_cache_key_v1`) the next
+  /// time either file changes, rather than as a drive-by here.
+  ChatCacheCipher? _cipher;
+
   Future<void> _ensureInitialized() async {
     if (_initialized) return;
     await _backend.init();
+    // Fail-closed on privacy, same as ChatCacheService.init(): if key
+    // setup fails, this store operates without persistence rather than
+    // writing plaintext story metadata to disk.
+    try {
+      _cipher ??= await ChatCacheCipher.create();
+    } catch (_) {
+      _cipher = null;
+    }
     _initialized = true;
   }
+
+  String? _encrypt(String plaintext) => _cipher?.encryptString(plaintext);
+
+  String? _decrypt(String envelope) => _cipher?.decryptString(envelope);
 
   /// All records for [userId], oldest-first — the order a single-item
   /// queue should drain them in. Includes every state, `failedPermanent`
@@ -48,10 +93,12 @@ class StoryOutboxStore {
     final rows = await _backend.readAll(userId);
     final records = <StoryOutboxRecord>[];
     for (final row in rows) {
+      final raw = _decrypt(row);
+      if (raw == null) continue; // no cipher, or an undecryptable row
       try {
         records.add(
           StoryOutboxRecord.fromJson(
-            Map<String, dynamic>.from(jsonDecode(row) as Map),
+            Map<String, dynamic>.from(jsonDecode(raw) as Map),
           ),
         );
       } catch (_) {
@@ -65,13 +112,15 @@ class StoryOutboxStore {
   /// new capture and updating an existing record's state/attempts both
   /// go through this — [StoryOutboxRecord.clientStoryId] is what makes
   /// the second case an update rather than a duplicate row.
+  ///
+  /// If the cipher is unavailable (keystore failure), the write is
+  /// silently dropped rather than persisting plaintext — same
+  /// fail-closed behaviour as `ChatCacheService.writeMessages` et al.
   Future<void> put(String userId, StoryOutboxRecord record) async {
     await _ensureInitialized();
-    await _backend.put(
-      userId,
-      record.clientStoryId,
-      jsonEncode(record.toJson()),
-    );
+    final payload = _encrypt(jsonEncode(record.toJson()));
+    if (payload == null) return;
+    await _backend.put(userId, record.clientStoryId, payload);
   }
 
   /// Removes a record entirely — used on success (posted) or an explicit
