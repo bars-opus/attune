@@ -268,3 +268,19 @@ END $$;
 RESET ROLE;
 DROP FUNCTION IF EXISTS public.test_set_stories_auth(uuid);
 ROLLBACK;
+
+-- ---------------------------------------------------------------------
+-- The bucket must be PRIVATE. A public bucket makes every storage key a
+-- permanent unauthenticated URL, which defeats deletion entirely.
+-- Runs outside the transaction above: storage.buckets is catalog state
+-- created by the migration, not test fixture data to roll back.
+-- ---------------------------------------------------------------------
+RESET ROLE;
+DO $$
+DECLARE v_public boolean;
+BEGIN
+  SELECT public INTO v_public FROM storage.buckets WHERE id = 'story-media';
+  IF v_public IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'EXPLOIT: story-media bucket is public or missing';
+  END IF;
+END $$;
