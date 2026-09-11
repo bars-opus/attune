@@ -30,7 +30,8 @@ permanence is not a nice extra — it is the reason the feature exists.
 | Stories live in their own table | The calendar merges them at read time; nothing is copied |
 | Expiry hides, never deletes | `expires_at` gates the reel query only |
 | Deleting a story removes it from the calendar too | One row, one `deleted_at`; no cleanup logic to get wrong |
-| Only the author may delete | Enforced in RLS, not in the UI |
+| Only the author may delete | Enforced in a SECURITY DEFINER RPC; clients get no DELETE grant (§3.3) |
+| Clients get SELECT only | Every write goes through an RPC that owns the server-side fields (§3.3) |
 | Retention is forever unless the author deletes | No sweep job, no expiry of the calendar copy |
 | No posting limit | A couple may post as much as they like |
 | No chat trail when a story is posted | See §7 |
@@ -67,17 +68,29 @@ CREATE TABLE public.story_items (
                       ON DELETE CASCADE,
 
   media_type        text NOT NULL CHECK (media_type IN ('image', 'video')),
-  media_url         text NOT NULL,
-  thumbnail_url     text,
-  media_width       int,
-  media_height      int,
-  duration_ms       int,
 
-  -- The date the calendar groups by. A separate column, not a cast of
-  -- created_at: a story posted at 01:00 belongs to the night before in
-  -- the poster's head, and a date decided ONCE server-side beats every
-  -- reader re-deriving it from a timestamp and disagreeing across
-  -- timezones.
+  -- KEYS, not URLs. The bucket is private and reads mint a signed URL
+  -- per request (§4.1). A stored URL would either expire in the row or
+  -- imply a public object.
+  media_key         text NOT NULL,
+
+  -- NOT NULL: the rings have nothing to draw without it, so a story is
+  -- not finalized until its thumbnail exists (§4.3).
+  thumbnail_key     text NOT NULL,
+
+  media_width       int CHECK (media_width IS NULL OR media_width > 0),
+  media_height      int CHECK (media_height IS NULL OR media_height > 0),
+
+  -- Present for video, absent for image.
+  duration_ms       int,
+  CONSTRAINT story_duration_matches_type CHECK (
+    (media_type = 'video' AND duration_ms IS NOT NULL AND duration_ms > 0)
+    OR (media_type = 'image' AND duration_ms IS NULL)
+  ),
+
+  -- The date the calendar groups by. Frozen at creation from the
+  -- poster's civil date -- see §3.5. A stored date beats every reader
+  -- re-deriving one from created_at and disagreeing across timezones.
   occurred_on       date NOT NULL,
 
   created_at        timestamptz NOT NULL DEFAULT now(),
@@ -89,9 +102,11 @@ CREATE TABLE public.story_items (
   -- because both read this row.
   deleted_at        timestamptz,
 
-  -- Null until the downscale job has run. Also the job's own idempotency
-  -- marker.
-  downscaled_at     timestamptz
+  -- Null until the downscale job has run. NOT sufficient as the job's
+  -- idempotency mechanism on its own -- see §4.4.
+  downscaled_at     timestamptz,
+
+  CONSTRAINT story_expires_after_creation CHECK (expires_at > created_at)
 );
 
 CREATE INDEX idx_story_reel
@@ -121,57 +136,210 @@ reel the instant the clock passes it, whether or not any scheduled task
 ran — and a job that failed to run can never take the calendar's copy
 with it.
 
-### 3.3 RLS follows `timeline_events` exactly
+### 3.3 Security contract: read-only RLS, everything else through RPCs
 
-The existing timeline policies are the precedent, and they already
-encode the rule we want:
+The first draft said "RLS follows `timeline_events` exactly." That is
+wrong for mutations, and the reason is worth stating because it is easy
+to repeat.
 
-- **SELECT** — `deleted_at IS NULL` AND the caller is in the
-  relationship.
-- **INSERT / UPDATE / DELETE** — `auth.uid() = author_id`.
-
-So "only the author may delete" is a database guarantee, not a hidden
-button. A partner who calls the RPC directly is refused by Postgres.
-
-`story_views` is narrower still: a viewer may insert only their own row
-(`auth.uid() = viewer_id`); both partners may read views for items in
-their relationship, so a poster can see who watched.
-
-## 4. Media lifecycle
+The timeline policies are:
 
 ```
-post ──► full quality, in the reel ──24h──► leaves the reel
-                                              │
-                                    (hourly job) downscale
-                                              │
-                                              ▼
-                                    in the calendar, forever
-                                              │
-                                  author deletes ──► gone from both,
-                                                     storage object removed
+UPDATE  USING (auth.uid() = logged_by)  WITH CHECK (auth.uid() = logged_by)
+DELETE  USING (auth.uid() = logged_by)
 ```
 
-**Upload is two steps.** `create_story_upload_intent` mints a signed
-upload URL, the client uploads, then `create_story_item` writes the row.
-Two steps so that a failed upload can never leave a story row pointing
-at a file that does not exist. This mirrors
-`create_chat_media_upload_intent`, which exists for the same reason.
+Authorship and nothing else. No column restriction, no re-check of
+relationship membership. For a timeline event — a title, a note, a mood
+score, all author-owned — that is fine. For a story it is not, because
+these columns are **server-owned**:
 
-**Downscaling is an hourly cron → edge function.** It selects items
-where `expires_at < now() AND downscaled_at IS NULL AND deleted_at IS
-NULL`, re-encodes to a smaller long-lived rendition, swaps `media_url`,
-and stamps `downscaled_at`.
+- `expires_at` — an author could extend their story indefinitely
+- `occurred_on` — could be moved to any date in the calendar
+- `media_key` — could be repointed at another object
+- `relationship_id` — could move a story to a different couple
+- `downscaled_at` — could suppress the job
 
-The job is deliberately not load-bearing. If it never runs, the calendar
-still works — it just shows full-size media and costs more storage. That
-is degradation, not failure, and it is the difference between a job
-whose outage is a bill and one whose outage is a bug.
+And a direct `DELETE` would bypass the soft-delete contract entirely,
+removing the row while its storage object is never enqueued.
 
-**Permanent deletion.** Setting `deleted_at` hides the item everywhere
-immediately. Removing the storage object is queued to the same edge
-function rather than done inline, so a slow storage call cannot fail a
-user-facing delete. The UI states that this cannot be undone — it is the
-only irreversible action in the feature.
+**So the grants are:**
+
+| Table | authenticated may |
+|---|---|
+| `story_items` | `SELECT` only, scoped to relationship members with `deleted_at IS NULL` |
+| `story_views` | nothing directly — see §3.4 |
+
+Everything that writes goes through a `SECURITY DEFINER` RPC:
+
+- **`create_story_item`** — derives `author_id` from `auth.uid()`,
+  validates ACTIVE relationship membership, consumes a matching upload
+  intent, and sets `created_at`, `expires_at` and `occurred_on` itself.
+  The client cannot supply any of them.
+- **`delete_story_item`** — verifies authorship, stamps `deleted_at`,
+  and enqueues every associated object (media, thumbnail, and any
+  superseded rendition) in the SAME transaction, so a tombstone can
+  never exist without its cleanup work.
+- **`mark_story_viewed`** — see §3.4.
+
+No `UPDATE` grant exists at all. There is no story field a client has
+any business changing after the fact.
+
+### 3.5 `occurred_on`: the poster's civil date, no cutoff
+
+"Server-side" does not explain how the server learns the poster's local
+date, and the first draft's "01:00 belongs to the night before"
+smuggled in a day cutoff that was never defined.
+
+**Decision: `create_story_item` takes `p_utc_offset_minutes`, and
+`occurred_on` is the poster's civil date at `now()` — midnight to
+midnight, no cutoff.**
+
+The offset is validated to `[-840, 840]` and clamped, following the
+precedent already in the repo: the streak RPC accepts
+`p_utc_offset_minutes` the same way. It is advisory, not trusted — the
+worst a wrong offset does is file a story one day off in its own
+couple's calendar.
+
+The night-before idea is dropped rather than left vague. A cutoff needs
+a defensible hour, would differ per couple, and buys little: a story
+posted at 01:00 appearing on the new day is what every calendar app
+already does, so it will not surprise anyone.
+
+### 3.4 `story_views`: derived status, not a readable table
+
+With an audience of one, *who* viewed is not a disclosure — there is
+only one other person. The real surface is the exact `viewed_at`
+timestamp, which says when your partner was awake and looking at their
+phone. The product promises seen / not-seen, so that is all the client
+gets.
+
+`story_views` is therefore **not readable by clients**. Story queries
+return derived booleans instead:
+
+- `viewed_by_me` — drives the ring's bright/faded state
+- `viewed_by_partner` — drives "seen" on the author's own reel
+
+`mark_story_viewed` is a `SECURITY DEFINER` RPC that derives the viewer
+from `auth.uid()` and refuses unless all of these hold:
+
+- the caller belongs to the story's relationship
+- **the caller is not the author** — otherwise reviewing your own reel
+  marks your own story seen, and the author's "seen" indicator becomes
+  meaningless
+- the story is not deleted
+
+It uses `ON CONFLICT DO NOTHING`, so the first view is the recorded one
+and re-watching does not move the timestamp.
+
+**Expired stories viewed from the calendar do not record a view.** The
+view state answers "has my partner seen what I posted today"; a view
+recorded eight months later would silently flip a long-settled
+indicator.
+
+## 4. Storage and media lifecycle
+
+```
+capture ─► intent ─► upload ─► finalize ─► in the reel (24h) ─► leaves reel
+                                   │                               │
+                            (never finalized)              (downscale job)
+                                   │                               │
+                            cleanup job                            ▼
+                                                        in the calendar, forever
+                                                                   │
+                                              author deletes ─► tombstone + enqueue
+```
+
+### 4.1 Keys, not URLs
+
+The bucket `story-media` is **private**, and the table stores
+**`media_key` / `thumbnail_key`**, never durable URLs. Reads mint a
+signed URL per request, with the same 600-second TTL chat already uses
+(`_signedUrlTtl`).
+
+Storage SELECT is authorized by a policy requiring that the key belong
+to a `story_items` row that is `deleted_at IS NULL` and whose
+relationship contains the caller. Deletion therefore stops *new* reads
+immediately; see §4.5 for the window on already-issued URLs.
+
+### 4.2 Upload is intent → upload → finalize
+
+`create_story_upload_intent` returns an intent id, a storage key, a
+bucket and an expiry. It does **not** mint a signed upload URL — the
+client uploads normally and Storage RLS authorizes it. (The first draft
+said "signed upload URL"; `create_chat_media_upload_intent` does no
+signing, and the story version follows the same shape.)
+
+`create_story_item` then finalizes: it consumes the intent, validates
+the object's MIME type and size against the intent, and writes the row.
+
+**The failure mode this creates** is the opposite of an orphaned row: an
+object uploaded but never finalized. Chat already solves this with
+`cleanup_expired_chat_media_intents()`; stories get the equivalent, and
+the risk table says so rather than claiming the two-step flow is free.
+
+### 4.3 Thumbnails are required, and generated by the client
+
+The rings show the newest item's thumbnail, so a story without one has
+nothing to render. `thumbnail_key` is therefore **NOT NULL**.
+
+The client generates it before finalizing and uploads it under its own
+intent: for a video, a frame grab; for an image, a downscaled rendition.
+Both target **400px on the long edge, JPEG, quality 75** — the same
+numbers `process-chat-media` already uses for chat thumbnails. Loading a
+full original inside a 64px circle would be wasteful on both bandwidth
+and memory.
+
+A story becomes visible only when finalization succeeds, which means it
+never appears without its thumbnail.
+
+### 4.4 Downscaling needs a video runtime, which does not exist yet
+
+`process-chat-media` uses Supabase Storage's **image** transform. It is
+not a transcoder, and no video-processing runtime exists in this
+project. "Cron → edge function re-encodes video" named a capability we
+do not have.
+
+**Decision: images are downscaled at 24h; video is not, in v1.**
+
+- **Images**: the existing transform handles this — 1600px long edge,
+  quality 80.
+- **Video**: keeps its original rendition. Video is already capped at
+  60 seconds and 25MB by `ChatVideoPreparer`, so the unbounded growth
+  the downscale job was protecting against is already bounded at the
+  point of capture.
+
+Choosing a transcoding runtime is real work with its own operational
+surface, and it is not on this feature's critical path. Deferring it is
+stated here rather than discovered when the job is written.
+
+The image job therefore needs, and gets: a claim/lease so two runs
+cannot process the same row, deterministic output keys, and this
+ordering — **create the new rendition, then conditionally swap the key,
+then enqueue the old one for deletion**. `downscaled_at` alone is not
+idempotency if the worker dies between upload and update; the lease plus
+deterministic keys is.
+
+The old rendition's deletion is delayed by at least the signed-URL TTL
+(§4.1), or a player holding a fresh URL breaks mid-playback.
+
+### 4.5 Deletion
+
+`delete_story_item` stamps `deleted_at` and enqueues every object —
+media, thumbnail, and any superseded rendition — in one transaction.
+
+Deferring the physical delete is safe because the bucket is private and
+its SELECT policy requires a live story row: new requests fail
+immediately. What survives is any signed URL already issued, for up to
+its 600-second TTL. That is the accepted window, and it is bounded by
+the TTL rather than by the queue's latency.
+
+The queue retries with backoff and dead-letters after exhausting them;
+a dead-lettered object is a cost and monitoring concern, never a
+correctness one, because the row is already invisible.
+
+Relationship deletion cascades (`ON DELETE CASCADE`), and the same
+enqueue runs for every story in it.
 
 ## 5. Surfaces
 
@@ -201,16 +369,29 @@ An empty partner ring renders nothing rather than a placeholder. A
 placeholder reads as "they have something" and makes the row feel like a
 prompt to check on someone.
 
-### 5.2 The reel
+### 5.2 The reel — a new module
 
-The streak viewer's shape: segmented progress bars across the top, tap
-right for next, tap left for back, hold to pause, swipe down to dismiss.
-Images hold for 5 seconds; videos run their length.
+Segmented progress bars across the top, tap right for next, tap left for
+back, hold to pause, swipe down to dismiss. Images hold for 5 seconds;
+videos run their length.
 
-The existing streak viewer is **video-only** — it has no image branch at
-all. The reel therefore reuses its structure and gesture handling but
-adds image rendering. See §6, which is where the real cost of "photos
-and videos" sits.
+**The streak viewer provides almost none of this, and stays unchanged.**
+It is a single-item video player whose only gesture is
+`onTap: () => _finish()` — no segments, no navigation, no pause, no
+dismissal gesture, no image branch. Turning it into the story reel would
+put a shipped feature's viewer at risk for no gain.
+
+| Reusable from the streak viewer | New in the reel |
+|---|---|
+| Signed-media loading and its two open states | Reel controller and item sequencing |
+| `VideoPlayerController` setup and disposal | Segmented progress bars |
+| Black-field presentation | Tap-left / tap-right / hold-to-pause / swipe-down |
+| | Image rendering and its 5-second timer |
+| | Lifecycle pause/resume (backgrounding mid-item) |
+| | Next-item preloading |
+
+The reel is therefore a new screen that borrows two patterns, not an
+adaptation of an existing one.
 
 Viewing an item writes a `story_views` row. The poster's own reel shows
 whether each item has been seen.
@@ -223,26 +404,73 @@ opens that day's reel, expired items included.
 
 This is where deletion-from-the-past lives, and it is author-only.
 
-### 5.4 Replying
+### 5.4 Replying needs a column on `messages`
 
-From the reel, a reply composes a chat message quoting the story item —
-the same gesture both reference apps use. It lands in the couple's only
-chat, which is where a reply would have gone anyway.
+Replies today reference another **message**: `reply_to_message_id` and
+`quoted_text`. There is no way to quote a story, so this is not
+implementable without a schema change.
 
-## 6. Reusing the streak camera, and what it does not give us
+**Decision: `messages` gains `story_item_id uuid NULL REFERENCES
+story_items(id) ON DELETE SET NULL`, plus a snapshot of the thumbnail
+key.**
 
-`streak_camera_screen.dart` is 760 lines of camera control, segment
-recording, transcoding and outbox queueing. For **video**, all of it
-applies unchanged. The single story-specific line is the last one:
+- **A snapshot, not a live reference.** The reply must still read
+  sensibly after the story is deleted or expired — a quote that empties
+  itself later rewrites history in the conversation.
+- **`ON DELETE SET NULL`**, so a deleted story leaves the reply intact
+  with its snapshot, and the tap-through simply stops working.
+- **Tapping the quote** opens the story if it is still live; if it is
+  deleted, the reply says so rather than opening an empty reel. An
+  expired-but-kept story opens from the calendar as normal.
+- **The RPC validates** that the story's `relationship_id` matches the
+  message's, so a reply can never quote another couple's story.
 
-```dart
-// today
-.sendStreakMessage(localPath: ..., durationMs: ..., viewsRemaining: ...)
-```
+## 6. The camera: extract, do not branch
 
-The camera gains a destination parameter; the story path calls the
-stories repository instead. Nothing about capture, permissions,
-transcoding or the 25MB ceiling is duplicated or re-solved.
+`streak_camera_screen.dart` is 760 lines, and its *capture* half —
+permissions, camera switching, segment recording, the ticker, transcode
+through `ChatVideoPreparer`, the 25MB ceiling — is genuinely reusable.
+
+Its other half is streak behaviour, and it is not one line. Verified:
+
+| Line | Streak coupling |
+|---|---|
+| 31 | Requires a `Conversation` |
+| 250, 303, 417 | `AppSound.streakCaptureReady` / `streakSend` |
+| 372 | Reads `streakReplayPreferenceProvider` |
+| 410 | Sends through `chatControllerProvider` |
+| 414 | `streakViewBudget(allowReplays:)` |
+| 377-420 | Streak review sheet and copy |
+
+A destination enum would scatter `if (isStory)` through all six points
+of a module that already carries a shipped feature. Instead:
+
+**Extract a camera module** that owns capture, review, permissions,
+switching and video preparation, and *returns a result* —
+`CapturedMedia(path, type, durationMs)`. It knows nothing about
+destinations.
+
+**Two thin adapters consume it.** The streak adapter does what
+`_send` does today: replay preference, view budget, chat outbox. The
+story adapter calls the stories repository. Each owns its own sounds and
+copy.
+
+This is more work than a flag and less risk: the streak path keeps its
+exact behaviour, and neither adapter can grow branches in the other.
+
+### 6.0 Story posting needs its own outbox decision
+
+Calling a stories repository does **not** inherit the chat outbox. The
+streak path gets retries, optimistic UI and durable queueing from
+`chatControllerProvider`; a story sent through a new repository gets
+none of that for free.
+
+**Decision: stories post through a durable local queue of their own.**
+A story is captured in the moment, often on poor connectivity, and a
+failed upload that silently vanishes is worse here than in chat —
+there is no bubble to show a retry affordance. The queue is small (one
+pending item at a time is the normal case) but it must survive app
+restart.
 
 ### 6.1 Photos are new work
 
@@ -266,9 +494,10 @@ timer, since a photo has no natural duration to drive the progress bar.
 This is the largest single piece of new client work in the feature and
 is called out here so it is planned rather than discovered.
 
-The server side is already done, which narrows it usefully:
-`create_chat_media_upload_intent` takes `p_media_type` and defaults to
-`'image'`. The gap is entirely client-side — capture and rendering.
+The server-side *validation pattern* already exists —
+`create_chat_media_upload_intent` takes `p_media_type` and validates
+MIME and size — but story storage policies, intents, finalization and
+reads are all new (§4).
 
 ### 6.1.1 Streaks want photos too, separately
 
@@ -322,32 +551,56 @@ author deletes. This is a promise that is easy to make now and
 impossible to retract later, so it is stated explicitly rather than
 defaulted into.
 
-## 8. Risks
+**No push notification on post** (§8), for the same reason as the trail.
+
+Deferred by this revision, each with its reason in place:
+
+- **No video downscaling in v1** — no transcoding runtime exists, and
+  capture already bounds video at 60s / 25MB (§4.4).
+- **No day cutoff** for `occurred_on` — midnight to midnight (§3.5).
+- **No streak photo support** — sequenced to follow (§6.1.1).
+
+## 8. Remaining decisions
+
+Settled here rather than left to implementation:
+
+| Question | Decision |
+|---|---|
+| Max video duration | 60s — `kStreakSegmentDuration`, already the capture ceiling |
+| Reel fetch size | Page at 50 items, newest first. "No posting limit" must not mean an unbounded single query |
+| Rings with many items | Segments cap at 12 arcs; beyond that the ring is drawn solid. Thirty hairlines read as a circle anyway |
+| Push notification on post | **No.** Same reasoning as the chat trail (§7): a push makes an ambient thing demand attention |
+| Realtime | Rings and view state subscribe to `story_items` / view changes for the relationship, matching how game cards refresh |
+| Former partners | Access ends when the relationship does. Follows the chat-media precedent (`status = 'active' AND chat_archived_at IS NULL`), not the laxer timeline one — stories are personal media, and the timeline's own looseness is arguably a bug rather than a model to copy |
+| Viewing an expired story from the calendar | Does **not** record a view (§3.4) |
+| DB constraints | `media_width`/`media_height` positive when present; `duration_ms` NOT NULL for video and NULL for image; `thumbnail_key` NOT NULL; `expires_at > created_at` |
+
+## 9. Risks
 
 | Risk | Mitigation |
 |---|---|
-| Storage grows without bound | Downscaling after 24h; accepted cost, stated in §2 |
-| A shared camera edit breaks streaks | Cover existing streak behaviour with tests first (§6.2) |
-| Photo capture is new, not reused | Called out explicitly in §6.1 rather than assumed |
-| Streaks need photos later, and share the camera | Capture is built into the shared camera first, so the streak follow-up is a destination change, not a rebuild (§6.1.1) |
-| Timezone disagreement on which day a story belongs to | `occurred_on` decided once, server-side |
-| An orphaned row if upload fails | Two-step intent-then-insert |
-| A storage object left behind after delete | Deletion queued to the same job, retried |
-| The calendar merge slows the timeline screen | Partial indexes on both read paths (§3.1) |
+| An author rewrites server-owned fields | No UPDATE grant at all; RPC owns them (§3.3) |
+| A direct DELETE bypasses the storage queue | No DELETE grant; `delete_story_item` tombstones and enqueues in one transaction (§4.5) |
+| An author marks their own story seen | `mark_story_viewed` refuses the author (§3.4) |
+| `viewed_at` leaks a partner's activity pattern | `story_views` unreadable; only derived booleans returned (§3.4) |
+| Object uploaded, never finalized | Cleanup job, mirroring `cleanup_expired_chat_media_intents()` (§4.2) |
+| Worker dies between upload and DB update | Lease plus deterministic output keys; `downscaled_at` alone is insufficient (§4.4) |
+| Deleting an old rendition breaks a live player | Old-key deletion delayed past the signed-URL TTL (§4.4) |
+| Signed URL outlives a deletion | Bounded at 600s by the TTL; accepted (§4.5) |
+| A shared camera edit breaks streaks | Capture is EXTRACTED, not branched; streak adapter keeps today's behaviour (§6) |
+| A story post lost on bad connectivity | Durable local queue of its own (§6.0) |
+| Storage grows without bound | Images downscaled; video bounded at capture by the 60s / 25MB ceiling (§4.4) |
+| A reply outlives its story | Snapshot, not live reference; `ON DELETE SET NULL` (§5.4) |
+| Timezone disagreement on a story's date | `occurred_on` frozen at creation from a validated offset (§3.5) |
 
-## 9. Open questions
+## 10. Testing
 
-None. Every question raised during design was answered:
-
-- Audience: partner only.
-- Calendar model: separate table, merged at read (§3.1).
-- Media after 24h: downscaled, kept, author-deletable (§4).
-- Delete: removes from both surfaces; author only.
-- Retention: forever unless deleted.
-- Limits: none.
-- Chat trail: no (§7).
-- Rings: two, thumbnail-filled, partner's hidden when empty (§5.1).
-- Camera: reuse the streak camera with a destination parameter for
-  video; photo capture and image rendering are new work (§6.1).
-- Streak photos: a separate, later change, sequenced so this feature's
-  camera work pays for it (§6.1.1).
+| Area | What must be covered |
+|---|---|
+| RLS and grants | An author cannot UPDATE or DELETE directly; a non-member sees nothing; `story_views` is unreadable |
+| RPC contracts | `create_story_item` ignores client-supplied `expires_at` / `occurred_on` / `author_id`; `mark_story_viewed` refuses the author and the non-member |
+| Storage policies | A key whose story is deleted is unreadable; a non-member cannot read any key |
+| Worker idempotency | Two concurrent runs produce one rendition; a crash between upload and update leaves a recoverable state |
+| Timezone boundaries | Offsets at ±840 and around local midnight file the expected `occurred_on` |
+| Camera regression | Streak capture, replay preference, view budget and sounds are unchanged by the extraction — written BEFORE it |
+| Reel | Segment advance, tap-left/right, hold-to-pause, image timer, backgrounding mid-item |
