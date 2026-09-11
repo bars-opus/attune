@@ -1,6 +1,7 @@
 import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
+import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/games/invites/state/game_invite_provider.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
 import 'package:attune/features/games/presentation/widgets/game_icon.dart';
@@ -64,55 +65,111 @@ class GameComposerBar extends ConsumerWidget {
                 style: TextStyle(color: colorScheme.error, fontSize: 12),
               ),
             ),
-          Row(
-            children: [
-              // Cancel first, in the position the attach button occupies
-              // in the normal composer: the thing that puts the text
-              // field back is where the thing that replaced it was.
-              IconButton(
-                onPressed: state.sending ? null : onCancel,
-                icon: const Icon(Icons.close_rounded),
-                iconSize: 22,
-                color: colorScheme.onSurface.withValues(alpha: 0.6),
-                tooltip: 'Cancel',
-              ),
-              Expanded(
-                child: Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: Spacing.sm.w,
-                    vertical: Spacing.xs.h,
-                  ),
-                  decoration: BoxDecoration(
-                    color: chatColors.senderBubble,
-                    borderRadius: BorderRadius.circular(
-                      BorderRadiusTokens.lg.r,
+          // The same pill the text field uses -- same surface, same
+          // shadow, same radius -- because this REPLACES it. Floating the
+          // game card on the wallpaper made it look like something that
+          // had already been sent rather than something about to be.
+          Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: Spacing.xs.w,
+              vertical: Spacing.xs.h,
+            ),
+            decoration: BoxDecoration(
+              color: colorScheme.surface.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(BorderRadiusTokens.xl.r),
+              boxShadow: kComposerShadows,
+            ),
+            child: Row(
+              children: [
+                // A filled circle, so the ✕ reads as a control on the
+                // pill rather than a glyph floating on it. onSurface at
+                // low alpha rather than a fixed white: on the dark theme
+                // a white disc would be the brightest thing on screen.
+                _CancelButton(
+                  onCancel: state.sending ? null : onCancel,
+                  colorScheme: colorScheme,
+                ),
+                SizedBox(width: Spacing.xs.w),
+                Expanded(
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: Spacing.sm.w,
+                      vertical: Spacing.xs.h,
+                    ),
+                    decoration: BoxDecoration(
+                      color: chatColors.senderBubble,
+                      borderRadius: BorderRadius.circular(
+                        BorderRadiusTokens.lg.r,
+                      ),
+                    ),
+                    child: InfoRowWidget(
+                      pinAvatar: true,
+                      title: title,
+                      // Says what Send will do, in the words the card
+                      // will use once it exists.
+                      subtitle: 'Invite them to play',
+                      icon: gameGlyphFor(gameType),
+                      iconColor: Colors.white,
+                      backgroundColor: GamePalette.of(gameType).end,
+                      avatarRadius: 40.h,
+                      iconSize: 20.h,
+                      circularRadius: 12.r,
+                      showAvatar: true,
+                      showDivider: false,
+                      showTrailingArrow: false,
+                      titleFontSize: 14,
+                      subTitleFontSize: 12,
+                      // The sender bubble is the SAME mint green in both
+                      // themes, so its ink is the same near-black in
+                      // both. A theme-derived onSurface would go white in
+                      // dark mode and vanish.
+                      titleFontColor: chatColors.onSenderBubble,
+                      subTitleFontColor: chatColors.onSenderBubble.withValues(
+                        alpha: 0.65,
+                      ),
                     ),
                   ),
-                  child: InfoRowWidget(
-                    pinAvatar: true,
-                    title: title,
-                    // Says what Send will do, in the words the card will
-                    // use once it exists.
-                    subtitle: 'Invite them to play',
-                    icon: gameGlyphFor(gameType),
-                    iconColor: Colors.white,
-                    backgroundColor: GamePalette.of(gameType).end,
-                    avatarRadius: 44.h,
-                    iconSize: 22.h,
-                    circularRadius: 12.r,
-                    showAvatar: true,
-                    showDivider: false,
-                    showTrailingArrow: false,
-                    titleFontSize: 14,
-                    subTitleFontSize: 12,
-                  ),
                 ),
-              ),
-              SizedBox(width: Spacing.xs.w),
-              _SendButton(sending: state.sending, onSend: onSend),
-            ],
+                SizedBox(width: Spacing.xs.w),
+                _SendButton(sending: state.sending, onSend: onSend),
+              ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The ✕ that puts the text field back.
+class _CancelButton extends StatelessWidget {
+  const _CancelButton({required this.onCancel, required this.colorScheme});
+
+  final VoidCallback? onCancel;
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      enabled: onCancel != null,
+      label: 'Cancel game invitation',
+      child: SizedBox(
+        width: 36,
+        height: 36,
+        child: Material(
+          color: colorScheme.onSurface.withValues(alpha: 0.08),
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onCancel,
+            child: Icon(
+              Icons.close_rounded,
+              size: 20,
+              color: colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
+          ),
+        ),
       ),
     );
   }

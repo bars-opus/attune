@@ -15,7 +15,13 @@ import 'voice_recording_bar.dart';
 import 'voice_recording_scrim.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_mic_halo.dart';
 
-const List<BoxShadow> _composerShadows = [
+/// The composer pill's elevation.
+///
+/// Public so anything that REPLACES the pill -- the staged-game bar --
+/// can sit on the same surface rather than approximating it. Two
+/// recipes for one visual role drift apart the first time either is
+/// touched.
+const List<BoxShadow> kComposerShadows = [
   BoxShadow(
     offset: Offset(0, 1),
     blurRadius: 1,
@@ -187,7 +193,7 @@ class _ComposerSatellite extends StatelessWidget {
         child: DecoratedBox(
           decoration: const BoxDecoration(
             shape: BoxShape.circle,
-            boxShadow: _composerShadows,
+            boxShadow: kComposerShadows,
           ),
           child: Material(
             color: fillColor ?? colorScheme.surface.withValues(alpha: 0.94),
@@ -235,7 +241,7 @@ class _ComposerSatelliteSurface extends StatelessWidget {
       child: DecoratedBox(
         decoration: const BoxDecoration(
           shape: BoxShape.circle,
-          boxShadow: _composerShadows,
+          boxShadow: kComposerShadows,
         ),
         child: Material(
           color: colorScheme.surface.withValues(alpha: 0.94),
@@ -1332,7 +1338,7 @@ class _ChatTextFieldState extends State<ChatTextField>
                     decoration: BoxDecoration(
                       color: colorScheme.surface.withValues(alpha: 0.94),
                       borderRadius: BorderRadius.circular(radius),
-                      boxShadow: _composerShadows,
+                      boxShadow: kComposerShadows,
                     ),
                     child: Row(
                       crossAxisAlignment:

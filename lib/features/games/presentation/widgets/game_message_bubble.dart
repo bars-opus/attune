@@ -1,5 +1,6 @@
 import 'package:attune/features/games/presentation/widgets/game_palette.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
+import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/games/presentation/providers/game_card_provider.dart';
 import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
@@ -113,7 +114,24 @@ class GameMessageBubble extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
+    final chatColors = Theme.of(context).chatColors;
     final session = ref.watch(gameCardProvider(sessionId));
+
+    // The card IS the bubble, so it takes the bubble's colour: a game you
+    // sent is green like everything else you sent. It used to paint a
+    // neutral grey on both sides, which made your own invitation read as
+    // if your partner had sent it -- the one thing a chat bubble's colour
+    // exists to say.
+    //
+    // Painted here rather than behind the card (the transcript makes the
+    // bubble transparent for games) because a grey panel inside a green
+    // frame reads as a floating panel, not a message.
+    final surface =
+        viewerIsSender ? chatColors.senderBubble : chatColors.receiverBubble;
+    final onSurface =
+        viewerIsSender
+            ? chatColors.onSenderBubble
+            : chatColors.onReceiverBubble;
 
     final state = session.valueOrNull;
     final gameType = state?.gameType ?? '';
@@ -160,11 +178,7 @@ class GameMessageBubble extends ConsumerWidget {
             vertical: Spacing.xs.h,
           ),
           decoration: BoxDecoration(
-            // Opaque now that the bubble no longer paints behind it. At
-            // 55% the card was translucent over whatever surface it sat
-            // on, which is why it took the sender bubble's accent colour
-            // and read as tinted.
-            color: colorScheme.surfaceContainerHighest,
+            color: surface,
             borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
             border: Border.all(
               color: colorScheme.outline.withValues(alpha: 0.10),
@@ -199,6 +213,11 @@ class GameMessageBubble extends ConsumerWidget {
             showTrailingArrow: isOpenable,
             titleFontSize: 14,
             subTitleFontSize: 12,
+            titleFontColor: onSurface,
+            // The status line is the quieter half of the pair, but it
+            // must still read against a green bubble, so it is the same
+            // ink at lower opacity rather than a grey from the app theme.
+            subTitleFontColor: onSurface.withValues(alpha: 0.65),
             onTap:
                 isOpenable
                     ? () => onTap(gameType, sessionId, autoAccept)
