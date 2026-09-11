@@ -63,3 +63,6 @@ app.*.map.json
 
 # Test coverage output (flutter test --coverage)
 coverage/
+
+# Superpowers isolated worktrees (scratch; never committed)
+.worktrees/
