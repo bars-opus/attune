@@ -176,12 +176,45 @@ class StoryOutboxController extends StateNotifier<List<StoryOutboxRecord>> {
   /// Clears backoff and drives a `failedPermanent` record through the
   /// machine again, from a user's explicit Retry tap. Returns the
   /// [flush] future for the same reason [enqueue] does.
+  ///
+  /// Resets [StoryOutboxRecord.attempts] to 0, not just `nextAttemptAt`
+  /// and `lastErrorCode`: a record only reaches `failedPermanent` once
+  /// `attempts >= _maxAutomaticAttempts`, so leaving the old count in
+  /// place would let the very next failure land back at the ceiling
+  /// immediately regardless of whether it was retryable — turning Retry
+  /// into "try once more, then give up forever" instead of a real
+  /// restart of the backoff cycle. A manual tap is a deliberate act on a
+  /// (presumably) changed network situation and deserves a full new run
+  /// at the automatic ceiling, the same as a fresh capture gets.
+  ///
+  /// Also drops any cached upload intents for this id (fix round 1,
+  /// finding 2 — option (a)): a record can sit in `failedPermanent` for
+  /// as long as the user leaves it there, which can easily exceed the
+  /// server's 15-minute intent expiry, and the automatic backoff path
+  /// alone can span minutes too. Rather than track `expiresAt` and a
+  /// near-expiry margin on every cached pair (more correct in general,
+  /// but more machinery), a manual retry unconditionally re-mints: it is
+  /// a single, infrequent, user-triggered event, so paying for two fresh
+  /// intent calls every time is cheap and certain to be correct, where a
+  /// time-based check would still need a safety margin and a clock.
+  /// The AUTOMATIC path does not get this treatment and does not need
+  /// it: every automatic retry either (a) is still within the same
+  /// upload/thumbnail step with intents minted moments-to-low-minutes
+  /// earlier under the bounded 5-attempt/64s-cap backoff schedule, comfortably
+  /// inside the 15-minute window, or (b) already went through the
+  /// finalize-`UNAVAILABLE` branch, which mints fresh intents itself
+  /// precisely because that call already told the server the old ones
+  /// don't work. There is no automatic-path scenario where a stale pair
+  /// both survives long enough to expire AND gets reused without going
+  /// through one of those two existing resets.
   Future<void> retry(String clientStoryId) async {
     final rows = await _store.readAll(_userId);
     final record = rows.where((r) => r.clientStoryId == clientStoryId).firstOrNull;
     if (record == null) return;
+    _intents.remove(clientStoryId);
     final reset = record.copyWith(
       state: StoryOutboxState.queued,
+      attempts: 0,
       clearNextAttemptAt: true,
       clearLastErrorCode: true,
     );

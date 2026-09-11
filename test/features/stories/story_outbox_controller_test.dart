@@ -516,6 +516,134 @@ void main() {
     },
   );
 
+  test(
+    'retry restarts the backoff cycle rather than granting one attempt',
+    () async {
+      // Fix round 1, finding 1: retry() must reset `attempts` to 0, not
+      // just clear nextAttemptAt/lastErrorCode. Otherwise the very next
+      // failure after a manual Retry computes attempts >= the ceiling and
+      // lands straight back at failedPermanent regardless of whether
+      // that failure was retryable — Retry would be "try once more, then
+      // give up forever" instead of a real restart.
+      final h = harness();
+      final mediaFile = writeTempFile('media.jpg');
+      final thumbFile = writeTempFile('thumb.jpg');
+      final record = buildRecord(
+        clientStoryId: 'story-retry-restarts-backoff',
+        mediaFile: mediaFile,
+        thumbFile: thumbFile,
+      );
+
+      // Drive it to failedPermanent by exhausting automatic attempts on a
+      // retryable error.
+      h.gateway.failIntentWith = StoryApiError.network();
+      await h.controller.enqueue(record);
+      await h.controller.flush();
+      for (var i = 0; i < 10; i++) {
+        final rows = await h.store.readAll(_userId);
+        if (rows.single.state == StoryOutboxState.failedPermanent) break;
+        final requeued = rows.single.copyWith(clearNextAttemptAt: true);
+        await h.store.put(_userId, requeued);
+        await h.controller.flush();
+      }
+      expect(
+        (await h.store.readAll(_userId)).single.state,
+        StoryOutboxState.failedPermanent,
+        reason: 'setup did not reach failedPermanent',
+      );
+
+      // User taps Retry.
+      await h.controller.retry('story-retry-restarts-backoff');
+
+      // Retry itself may already have failed once more (still retryable
+      // network error) and rescheduled with backoff — that's expected.
+      // What matters is it is NOT failedPermanent after just one more
+      // failure, because attempts restarted from 0.
+      var rows = await h.store.readAll(_userId);
+      expect(rows, hasLength(1));
+      expect(
+        rows.single.state,
+        isNot(StoryOutboxState.failedPermanent),
+        reason: 'retry() did not restart the attempt count — one more '
+            'failure after Retry landed straight back at failedPermanent',
+      );
+      expect(rows.single.attempts, lessThan(5));
+
+      // Force one more explicit failure and confirm it still isn't
+      // permanent — proving there is real headroom, not a fluke of
+      // rounding.
+      final requeued = rows.single.copyWith(clearNextAttemptAt: true);
+      await h.store.put(_userId, requeued);
+      await h.controller.flush();
+
+      rows = await h.store.readAll(_userId);
+      expect(rows, hasLength(1));
+      expect(
+        rows.single.state,
+        isNot(StoryOutboxState.failedPermanent),
+        reason: 'a retryable failure right after Retry must reschedule, '
+            'not exhaust immediately',
+      );
+      expect(rows.single.nextAttemptAt, isNotNull);
+    },
+  );
+
+  test('a manual retry does not reuse stale intents', () async {
+    // Fix round 1, finding 2, option (a): a record can sit in
+    // failedPermanent indefinitely (until the user acts), and the
+    // automatic backoff path alone can span minutes — comfortably enough
+    // to cross the server's 15-minute intent expiry. retry() must not
+    // reuse whatever pair happened to be cached; it must mint a fresh
+    // one, the same as a brand new capture would.
+    final h = harness();
+    final mediaFile = writeTempFile('media.jpg');
+    final thumbFile = writeTempFile('thumb.jpg');
+    final record = buildRecord(
+      clientStoryId: 'story-retry-fresh-intents',
+      mediaFile: mediaFile,
+      thumbFile: thumbFile,
+    );
+
+    // Intents mint fine; the upload itself is what fails permanently —
+    // driving the record to failedPermanent WHILE it holds a cached
+    // pair, not via the finalize-UNAVAILABLE branch (which already
+    // clears intents itself and would not exercise this fix).
+    h.gateway.failUploadWith = const StoryApiError(
+      code: 'FORBIDDEN',
+      message: 'refused',
+      retryable: false,
+    );
+
+    await h.controller.enqueue(record);
+    await h.controller.flush();
+
+    expect(
+      (await h.store.readAll(_userId)).single.state,
+      StoryOutboxState.failedPermanent,
+    );
+    final intentCallsBeforeRetry = h.gateway.intentCallObjectKinds.length;
+    expect(
+      intentCallsBeforeRetry,
+      2,
+      reason: 'one pair (media + thumbnail) should have been minted '
+          'before the upload failed',
+    );
+
+    // Let the retry succeed this time.
+    h.gateway.failUploadWith = null;
+    await h.controller.retry('story-retry-fresh-intents');
+
+    // A fresh pair was minted rather than the stale one being reused —
+    // 4 total intent calls, not 2.
+    expect(
+      h.gateway.intentCallObjectKinds.length,
+      intentCallsBeforeRetry + 2,
+      reason: 'retry() reused the stale cached intent pair instead of '
+          'minting a fresh one',
+    );
+    expect(await h.store.readAll(_userId), isEmpty);
+  });
+
   test('discard deletes the local files', () async {
     // Spec §6.1: local files live in app-private storage until success
     // or explicit discard.
