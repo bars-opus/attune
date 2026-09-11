@@ -23,10 +23,15 @@ class _MemoryStoryOutboxBackend implements StoryOutboxBackend {
   }
 
   @override
-  Future<void> put(String userId, String clientStoryId, String payload) async {
+  Future<void> put(
+    String userId,
+    String clientStoryId,
+    String payload,
+    int createdAtMillis,
+  ) async {
     _rows['$userId:$clientStoryId'] = (
       payload: payload,
-      createdAtMillis: DateTime.now().millisecondsSinceEpoch,
+      createdAtMillis: createdAtMillis,
     );
   }
 

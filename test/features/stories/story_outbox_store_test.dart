@@ -33,6 +33,18 @@
 // alone proves nothing about encryption, since it passes identically on
 // plaintext; reading the file's raw bytes is the only way to prove the
 // marker isn't sitting there in the clear.
+//
+// Fix round 2: the plaintext `created_at` ordering column was stamped
+// with DateTime.now() at write time instead of the record's own
+// createdAt (which travels inside the encrypted payload). Task 6 drains
+// the queue FIFO via `ORDER BY created_at ASC` — a record whose domain
+// createdAt disagreed with its row's created_at would drain out of
+// order, invisibly, since the payload's own value is encrypted and
+// unreadable by the query. A fifth test enqueues two records whose
+// createdAt values are deliberately out of wall-clock/insertion order
+// (the earlier-createdAt record is put() SECOND) and asserts readAll
+// still returns them in createdAt order — which is only possible if the
+// ordering column tracks the record's createdAt rather than write time.
 
 import 'dart:convert';
 import 'dart:io';
@@ -61,6 +73,7 @@ void main() {
     StoryOutboxState state = StoryOutboxState.queued,
     int attempts = 0,
     String? lastErrorCode,
+    DateTime? createdAt,
   }) {
     return StoryOutboxRecord(
       clientStoryId: clientStoryId,
@@ -76,7 +89,7 @@ void main() {
       state: state,
       attempts: attempts,
       lastErrorCode: lastErrorCode,
-      createdAt: DateTime.utc(2026, 9, 11, 12),
+      createdAt: createdAt ?? DateTime.utc(2026, 9, 11, 12),
     );
   }
 
@@ -190,6 +203,49 @@ void main() {
     await store.remove(userId, 'permanently-failed');
     expect(await store.readAll(userId), isEmpty);
   });
+
+  test(
+    'readAll orders by the record\'s createdAt, not write/insertion order',
+    () async {
+      // Under the pre-fix code, the ordering column was stamped with
+      // DateTime.now() at write time — both rows would get near-identical
+      // now() timestamps a few microseconds apart, so asserting order
+      // would be a coin flip. These two createdAt values are 30 days
+      // apart, so the assertion below can only pass deterministically —
+      // by tracking the record's own createdAt — never by luck.
+      const userId = 'user-1';
+      final earlier = DateTime.utc(2026, 1, 1);
+      final later = DateTime.utc(2026, 1, 31);
+
+      final store = StoryOutboxStore.forTesting(
+        createStoryOutboxBackend(file: dbFile),
+      );
+      addTearDown(store.disposeForTesting);
+
+      // Enqueue the LATER-createdAt record FIRST, and the EARLIER one
+      // SECOND — insertion order is the opposite of createdAt order, so
+      // a correct implementation must consult createdAt, not write time.
+      final recordB = buildRecord(clientStoryId: 'story-b-later', createdAt: later);
+      await store.put(userId, recordB);
+
+      final recordA = buildRecord(
+        clientStoryId: 'story-a-earlier',
+        createdAt: earlier,
+      );
+      await store.put(userId, recordA);
+
+      final rows = await store.readAll(userId);
+
+      expect(rows, hasLength(2));
+      expect(
+        rows.map((r) => r.clientStoryId).toList(),
+        ['story-a-earlier', 'story-b-later'],
+        reason:
+            'readAll must order by each record\'s own createdAt '
+            '(earlier first), not by insertion/write order.',
+      );
+    },
+  );
 
   test('the payload is encrypted at rest, not written as plaintext', () async {
     const userId = 'user-1';

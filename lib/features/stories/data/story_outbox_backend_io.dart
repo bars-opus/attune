@@ -77,14 +77,22 @@ class _DriftStoryOutboxBackend implements StoryOutboxBackend {
   }
 
   @override
-  Future<void> put(String userId, String clientStoryId, String payload) =>
-      _database.customStatement(
-        '''INSERT INTO story_outbox (user_id, client_story_id, payload, created_at)
-           VALUES (?, ?, ?, ?)
-           ON CONFLICT(user_id, client_story_id) DO UPDATE SET
-             payload = excluded.payload''',
-        [userId, clientStoryId, payload, DateTime.now().millisecondsSinceEpoch],
-      );
+  Future<void> put(
+    String userId,
+    String clientStoryId,
+    String payload,
+    int createdAtMillis,
+  ) => _database.customStatement(
+    '''INSERT INTO story_outbox (user_id, client_story_id, payload, created_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, client_story_id) DO UPDATE SET
+         payload = excluded.payload''',
+    // created_at is intentionally absent from the ON CONFLICT's SET list:
+    // a retry's put() must not reshuffle FIFO order by bumping the row's
+    // position, so the column stays pinned at whatever it was on first
+    // insert even though createdAtMillis is passed again here.
+    [userId, clientStoryId, payload, createdAtMillis],
+  );
 
   @override
   Future<void> remove(String userId, String clientStoryId) =>

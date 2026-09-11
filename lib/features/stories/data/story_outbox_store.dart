@@ -120,7 +120,18 @@ class StoryOutboxStore {
     await _ensureInitialized();
     final payload = _encrypt(jsonEncode(record.toJson()));
     if (payload == null) return;
-    await _backend.put(userId, record.clientStoryId, payload);
+    await _backend.put(
+      userId,
+      record.clientStoryId,
+      payload,
+      // The record's own createdAt, not wall-clock write time — this is
+      // the plaintext ordering column Task 6's FIFO drain relies on
+      // (readAll's ORDER BY created_at ASC), so it must track the same
+      // "created" concept as the encrypted payload's own createdAt field
+      // rather than drift from it. Matches chat_cache_service.dart:154
+      // (`send.createdAt.millisecondsSinceEpoch`, not `DateTime.now()`).
+      record.createdAt.millisecondsSinceEpoch,
+    );
   }
 
   /// Removes a record entirely — used on success (posted) or an explicit
