@@ -177,6 +177,21 @@ dev_dependencies:
   path_provider_platform_interface: ^2.1.2
   plugin_platform_interface: ^2.1.8
 
+  # streak_camera_contract_test.dart fakes CameraPlatform.instance so the
+  # streak camera's record/stop flow resolves under `flutter test` instead
+  # of throwing MissingPluginException. Already present transitively via
+  # camera; declared directly here only to satisfy
+  # depend_on_referenced_packages.
+  camera_platform_interface: ^2.10.0
+
+  # streak_camera_contract_test.dart also fakes VideoPlayerPlatform.instance
+  # so the streak review's preview (VideoPlayerController.initialize()) fails
+  # in a way its own dispose() can complete from, instead of hanging forever
+  # on a never-completed internal completer. Already present transitively
+  # via video_player; declared directly here only to satisfy
+  # depend_on_referenced_packages.
+  video_player_platform_interface: ^6.2.0
+
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

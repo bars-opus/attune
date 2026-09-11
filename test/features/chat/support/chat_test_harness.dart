@@ -171,6 +171,7 @@ class FakeChatRepository implements ChatRepository {
       'quoted_text': quotedText,
       'is_view_once': isViewOnce,
       'is_system_notice': isSystemNotice,
+      'streak_views_remaining': streakViewsRemaining,
     };
     final message = Message.fromRow(row, currentUserId: currentUserId);
     serverMessages[id] = message;
@@ -349,6 +350,7 @@ class FakeChatRepository implements ChatRepository {
     getConversationsCalls++;
     return conversations;
   }
+
   @override
   Future<Conversation?> getPrimaryConversation() async => null;
   @override

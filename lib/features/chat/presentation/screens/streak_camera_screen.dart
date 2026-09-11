@@ -28,9 +28,19 @@ import 'package:attune/features/settings/data/sound_preference.dart';
 /// step, and folding two send contracts into one widget is how the release
 /// path becomes ambiguous.
 class StreakCameraScreen extends ConsumerStatefulWidget {
-  const StreakCameraScreen({super.key, required this.conversation});
+  const StreakCameraScreen({
+    super.key,
+    required this.conversation,
+    this.videoPreparerFactory,
+  });
 
   final Conversation conversation;
+
+  /// Test seam, mirroring ChatTextField's `recorderFactory`: defaults to
+  /// the real [ChatVideoPreparer] constructor. video_compress has no
+  /// platform channel on a test host, so `prepare()` always rejects there
+  /// — this lets a characterization test observe the success path too.
+  final ChatVideoPreparer Function()? videoPreparerFactory;
 
   @override
   ConsumerState<StreakCameraScreen> createState() => _StreakCameraScreenState();
@@ -388,11 +398,12 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     setState(() => _isSending = true);
     final PreparedChatVideo prepared;
     try {
-      prepared = await const ChatVideoPreparer().prepare(
-        localPath: segment.path,
-        maxDuration: kStreakSegmentDuration,
-        maxBytes: 25 * 1024 * 1024,
-      );
+      prepared = await (widget.videoPreparerFactory ?? ChatVideoPreparer.new)()
+          .prepare(
+            localPath: segment.path,
+            maxDuration: kStreakSegmentDuration,
+            maxBytes: 25 * 1024 * 1024,
+          );
     } on ChatVideoRejected catch (rejected) {
       ChatLog.diagnostic('streak prepare rejected', rejected);
       if (!mounted) return;
