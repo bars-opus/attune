@@ -4,11 +4,15 @@
 -- optional, so this migration follows their wording closely rather
 -- than inventing a shape.
 --
--- Three functions, all worker-only (called by a service_role Edge
--- Function or pg_cron, never a client):
+-- The brief's three named functions, plus fail_story_archival (the
+-- outbox's failure/dead-letter path spec §4.4 asks for but does not
+-- name) and the story_media_processing_outbox table itself. All
+-- worker-only (called by a service_role Edge Function or pg_cron,
+-- never a client):
 --   cleanup_expired_story_media_intents()
 --   claim_story_archival_batch(p_limit int)
 --   complete_story_archival(p_story_id uuid, p_new_key text)
+--   fail_story_archival(p_story_id uuid, p_error_code text)
 --
 -- =======================================================================
 -- PART 1: cleanup_expired_story_media_intents() -- spec §4.2.
@@ -125,87 +129,129 @@ GRANT EXECUTE ON FUNCTION public.cleanup_expired_story_media_intents()
 -- PART 2: leased image archival -- spec §4.4.
 -- =======================================================================
 --
+-- Cleanup of fix round 1's now-superseded lease columns/function/index
+-- on story_items -- safe to run against either a from-round-1 database
+-- (where these exist) or a from-scratch one (where DROP ... IF EXISTS
+-- is a no-op). The outbox's own state/attempts/processing_started_at
+-- IS the lease now; keeping both would mean two places "is this image
+-- claimed" could disagree.
+DROP INDEX IF EXISTS public.idx_story_archival_claim;
+ALTER TABLE public.story_items
+  DROP COLUMN IF EXISTS archival_lease_token,
+  DROP COLUMN IF EXISTS archival_leased_at;
+DROP FUNCTION IF EXISTS public.archival_lease_timeout();
+--
+-- FIX ROUND 1: the first version of this migration substituted two
+-- lease columns on story_items for the story_media_processing_outbox
+-- TABLE spec §4.4 gives verbatim, on the reasoning that no earlier task
+-- created it and the brief's own six contracts are phrased in terms of
+-- stories rather than outbox rows. That reasoning about the brief was
+-- correct -- Task 9's brief never names the table -- but the SPEC is
+-- the binding authority per this task's own instructions, and it is
+-- specific in a way a bare lease-timeout column pair does not satisfy:
+-- retry accounting (attempts), dead-lettering, last_error_code, and an
+-- operational alert at 5 failed attempts are all named in §4.4's prose
+-- and have no equivalent in a plain "leased_at + timeout" pair. §12's
+-- completion criteria ("Image processing and deletion queues expose
+-- backlog age and failure metrics") is what a lease-only design cannot
+-- provide: a lease that only ever times out and retries forever
+-- reports nothing about a job that is failing every time. This section
+-- now creates the table exactly as specced.
+--
 -- "images are downscaled at 24h; video is not, in v1." There is no
 -- transcoding runtime in this project (§4.4's opening paragraph), so
--- Task 10's worker only ever produces a new rendition for images. This
--- migration's claim function reflects that directly: it never leases a
--- video row for re-encoding work that will never happen. Instead, per
--- the brief ("A video row should be marked downscaled_at WITHOUT
--- re-encoding ... your claim function should reflect the images-only
--- reality -- read §4.4 and decide how, documenting your choice"):
+-- the outbox only ever holds IMAGE rows -- "videos get no processing
+-- row" is in the spec's own prose, not an inference. Video rows are
+-- still marked downscaled_at (see claim_story_archival_batch below),
+-- just never through this table.
 --
--- DECISION: claim_story_archival_batch only ever leases and returns
--- IMAGE rows -- it is the sole source of archival work, and there is no
--- video work to hand out. Before leasing anything, it opportunistically
--- stamps downscaled_at directly on every eligible VIDEO row (expired,
--- not deleted, not yet stamped) with a plain UPDATE -- no lease, no
--- rendition, no key change, because there is nothing to swap and
--- nothing that can crash mid-flight: a single UPDATE ... WHERE
--- downscaled_at IS NULL is already atomic and idempotent on its own.
--- This keeps "downscaled" meaning "this worker's job is done with this
--- item" for BOTH media types -- which matters because nothing else in
--- the schema currently reads downscaled_at to mean "and re-encoded",
--- and a video that sat with downscaled_at forever NULL would look
--- exactly like a stuck job to any future monitoring built on this
--- column, when it is actually just... a video, correctly done.
---
--- Lease design, on story_items directly (no separate outbox table --
--- see note below):
---   archival_lease_token uuid   -- this attempt's identity, returned to
---                                   the caller so complete_story_archival
---                                   can be matched to the batch that
---                                   produced it (not strictly required by
---                                   the two-argument complete_story_archival
---                                   signature the brief fixes, but kept so
---                                   Task 10/11 have it available and so a
---                                   lease is inspectable independent of
---                                   its timestamp).
---   archival_leased_at timestamptz -- when this row was last leased.
--- A row is eligible to be (re-)leased when archival_leased_at IS NULL
--- OR archival_leased_at <= now() - archival_lease_timeout(). That
--- second branch is the crash recovery: a worker that leased a row and
--- died before calling complete_story_archival leaves
--- archival_leased_at stuck in the past forever, and the timeout is what
--- makes it reclaimable rather than parking the row (brief contract 4).
---
--- Chosen timeout: 5 minutes, matching this project's other stale-lease
--- precedent (§4.4's own outbox-shape reference: "five-minute stale-lease
--- recovery") rather than inventing a new number.
---
--- DEVIATION FROM THE SPEC'S LITERAL SHAPE, stated here rather than
--- discovered later: §4.4 shows a story_media_processing_outbox TABLE
--- with its own claim/finish/recovery RPCs, seeded by create_story_item
--- at finalize time (available_at = expires_at). That table does not
--- exist in any migration through 20260938110000 -- it was never created
--- by Tasks 1-8, and this task's brief does not ask for it either: the
--- brief's ONLY interfaces are the three functions named above, and its
--- six contracts are all phrased in terms of STORIES ("claims rows",
--- "a story deleted mid-flight", "the OLD key"), never in terms of an
--- outbox row. Retrofitting the outbox table now would mean also
--- retrofitting create_story_item (Task 5, already shipped and tested)
--- to populate it, which is out of this task's scope and would touch a
--- file this task has no mandate to touch. So the lease lives directly
--- on story_items, and eligibility ("available_at = expires_at") is
--- expressed as the equivalent existing predicate expires_at <= now() --
--- a story becomes eligible for archival at the exact instant it leaves
--- the reel, which is what §4.4's available_at = expires_at means
--- anyway. Functionally equivalent; one fewer table, one fewer place the
--- two ideas of "is this story done" (downscaled_at) and "is this story
--- claimed" (archival_leased_at) could drift apart. If a later task
--- needs the outbox table's attempt-count/dead-letter machinery for
--- images specifically, it is additive on top of this lease, not a
--- replacement for it.
-ALTER TABLE public.story_items
-  ADD COLUMN IF NOT EXISTS archival_lease_token uuid,
-  ADD COLUMN IF NOT EXISTS archival_leased_at timestamptz;
+-- WHO INSERTS THE OUTBOX ROW: the spec says "Finalizing an image
+-- inserts a story_media_processing_outbox row" -- that is
+-- create_story_item, Task 5, already committed in 20260938050000.
+-- DECISION: rather than editing that already-shipped, already-tested
+-- function body, this migration adds an AFTER INSERT trigger on
+-- story_items that inserts the outbox row for images only, with
+-- available_at = NEW.expires_at, exactly matching the spec's stated
+-- behaviour ("available_at = expires_at"). Reasons for the trigger
+-- over editing create_story_item directly:
+--   1. It is strictly ADDITIVE -- no existing statement in Task 5's
+--      function changes, so Task 5's own contract test
+--      (story_rpc_contracts.sql) needs no edits and is re-run unchanged
+--      below to prove nothing there moved.
+--   2. It fires for EVERY row-level insert into story_items, not just
+--      ones that go through create_story_item -- the same "trigger,
+--      not RPC-specific" posture 20260938070000 already uses for the
+--      hard-delete cascade (stories_enqueue_media_on_hard_delete). If
+--      a future maintenance path or migration ever inserts a
+--      story_items row outside create_story_item, the outbox is still
+--      seeded correctly rather than silently skipped.
+--   3. It keeps the "who owns outbox seeding" logic in the same
+--      migration as the table and its RPCs, one place to read rather
+--      than split across Task 5's file and this one.
+-- ON CONFLICT DO NOTHING on story_item_id (its PRIMARY KEY) makes this
+-- idempotent against any retry path that might insert the same story
+-- row id twice, though create_story_item's own idempotent-retry branch
+-- (existing = true) returns before a second INSERT would ever run.
+CREATE TABLE IF NOT EXISTS public.story_media_processing_outbox (
+  story_item_id         uuid PRIMARY KEY REFERENCES public.story_items(id)
+                          ON DELETE CASCADE,
+  source_key            text NOT NULL,
+  available_at          timestamptz NOT NULL,
+  state                 text NOT NULL DEFAULT 'pending'
+                          CHECK (state IN (
+                            'pending', 'processing', 'done', 'dead_letter'
+                          )),
+  attempts              int NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  processing_started_at timestamptz,
+  completed_at          timestamptz,
+  last_error_code       text,
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  updated_at            timestamptz NOT NULL DEFAULT now()
+);
 
-COMMENT ON COLUMN public.story_items.archival_leased_at IS
-  'Set by claim_story_archival_batch when a worker takes this image '
-  'for downscaling; cleared by complete_story_archival on success. '
-  'A lease older than archival_lease_timeout() is stale and '
-  'reclaimable -- see claim_story_archival_batch.';
+CREATE INDEX IF NOT EXISTS idx_story_media_jobs_claim
+  ON public.story_media_processing_outbox (available_at, created_at)
+  WHERE state = 'pending';
 
-CREATE OR REPLACE FUNCTION public.archival_lease_timeout()
+-- Server-side only -- "The table and its claim/finish/recovery RPCs
+-- are service-role only" (§4.4). RLS on with zero policies denies every
+-- row to every role that isn't the table owner; the belt-and-suspenders
+-- REVOKE lives in 20260938100000_stories_table_grants.sql (replayed by
+-- scripts/local_pg_grants.sql AFTER the harness's blanket grant, same
+-- as story_items/story_views/story_media_upload_intents already are --
+-- this is exactly the hole that bit Task 2 if it is skipped here).
+ALTER TABLE public.story_media_processing_outbox ENABLE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION public.stories_seed_processing_outbox()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.media_type = 'image' THEN
+    INSERT INTO public.story_media_processing_outbox (
+      story_item_id, source_key, available_at
+    ) VALUES (
+      NEW.id, NEW.media_key, NEW.expires_at
+    )
+    ON CONFLICT (story_item_id) DO NOTHING;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS stories_seed_processing_outbox_after_insert
+  ON public.story_items;
+CREATE TRIGGER stories_seed_processing_outbox_after_insert
+  AFTER INSERT ON public.story_items
+  FOR EACH ROW
+  EXECUTE FUNCTION public.stories_seed_processing_outbox();
+
+-- Five-minute stale-lease recovery, per spec §4.4's own words ("five-
+-- minute stale-lease recovery") -- not the earlier draft's number,
+-- which happened to already be 5 minutes but is now expressed as the
+-- outbox's own claim predicate rather than a column on story_items.
+CREATE OR REPLACE FUNCTION public.story_archival_lease_timeout()
 RETURNS interval
 LANGUAGE sql
 IMMUTABLE
@@ -213,43 +259,67 @@ AS $$
   SELECT interval '5 minutes';
 $$;
 
-REVOKE ALL ON FUNCTION public.archival_lease_timeout()
+REVOKE ALL ON FUNCTION public.story_archival_lease_timeout()
   FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.archival_lease_timeout() TO service_role;
+GRANT EXECUTE ON FUNCTION public.story_archival_lease_timeout() TO service_role;
 
--- Supports the claim query's WHERE clause: eligible IMAGE rows that are
--- expired, not deleted, not yet downscaled, and not under an active
--- (non-stale) lease. Partial on media_type = 'image' since video rows
--- are never claimed through this path at all.
-CREATE INDEX IF NOT EXISTS idx_story_archival_claim
-  ON public.story_items (expires_at)
-  WHERE media_type = 'image'
-    AND deleted_at IS NULL
-    AND downscaled_at IS NULL;
+-- Five failed attempts dead-letter the job (§4.4). Named so the claim,
+-- fail, and test code all read the same number from one place.
+CREATE OR REPLACE FUNCTION public.story_archival_max_attempts()
+RETURNS int
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT 5;
+$$;
+
+REVOKE ALL ON FUNCTION public.story_archival_max_attempts()
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.story_archival_max_attempts() TO service_role;
 
 -- ---------------------------------------------------------------------
 -- claim_story_archival_batch(p_limit int)
 --
--- Leases up to p_limit expired, not-yet-downscaled IMAGE rows and
--- returns enough for the worker to do its job: the story id, the
--- CURRENT media_key (the source to download and transform), and the
--- lease token. FOR UPDATE SKIP LOCKED is what makes two concurrent
--- callers unable to claim the same row (brief contract 3): a row
--- already locked by another in-flight claim (or by
--- complete_story_archival, or by delete_story_item) is simply skipped,
+-- Claims up to p_limit eligible outbox rows: state = 'pending' (fresh)
+-- OR state = 'processing' with a stale processing_started_at (crashed
+-- worker, brief contract 4), AND available_at <= now() (the story has
+-- actually left the reel). FOR UPDATE SKIP LOCKED is what makes two
+-- concurrent callers unable to claim the same row (brief contract 3):
+-- a row already locked by another in-flight claim is simply skipped,
 -- never waited on and never double-returned.
 --
--- Before leasing anything, this ALSO closes out eligible VIDEO rows
--- with a single UPDATE -- see the "images-only reality" note above.
--- That UPDATE is unconditional on being called at all (it runs every
--- time this function runs, which is fine: it is idempotent and touches
--- only rows that still need it, exactly like any other WHERE ... IS
--- NULL maintenance sweep).
+-- Each claimed row: attempts += 1, state = 'processing',
+-- processing_started_at = now(). Returns the story id and the CURRENT
+-- source_key (the outbox's own copy of the media_key at finalize time
+-- -- stable even if a previous failed attempt somehow raced a
+-- media_key change, though nothing in this feature ever changes
+-- media_key before a successful archive swap).
+--
+-- Before claiming anything, this ALSO closes out eligible VIDEO rows
+-- directly on story_items with a single UPDATE -- videos never get an
+-- outbox row at all ("videos get no processing row", §4.4), so there
+-- is nothing to claim for them; marking downscaled_at here is this
+-- function's one allowance for the images-only reality the brief asks
+-- to be documented. That UPDATE is unconditional on being called at
+-- all: idempotent, touches only rows that still need it, exactly like
+-- any other WHERE ... IS NULL maintenance sweep -- no lease needed
+-- because there is no rendition to create and nothing to crash between.
+--
+-- DROP FUNCTION first: fix round 1 changes this function's OUT columns
+-- (dropped archival_lease_token, which no longer exists now that the
+-- lease lives in the outbox table's own state/attempts columns
+-- instead of on story_items) -- Postgres refuses CREATE OR REPLACE
+-- across a RETURNS TABLE column change ("cannot change return type of
+-- existing function ... Row type defined by OUT parameters is
+-- different"), so a from-round-1 database needs the old signature
+-- dropped before this one can be created. A brand-new database has
+-- nothing to drop; IF EXISTS makes this safe either way.
+DROP FUNCTION IF EXISTS public.claim_story_archival_batch(int);
+
 CREATE OR REPLACE FUNCTION public.claim_story_archival_batch(p_limit int)
 RETURNS TABLE (
-  story_id            uuid,
-  media_key           text,
-  archival_lease_token uuid
+  story_id   uuid,
+  media_key  text
 )
 LANGUAGE plpgsql
 VOLATILE
@@ -259,13 +329,9 @@ AS $$
 DECLARE
   v_limit int := LEAST(GREATEST(COALESCE(p_limit, 25), 1), 200);
 BEGIN
-  -- Video: mark done, no rendition, no lease -- there is no re-encode
-  -- runtime (§4.4), so "downscaled" for video means "considered, and
-  -- correctly left alone." Plain UPDATE, not FOR UPDATE SKIP LOCKED:
-  -- there is nothing this could race against except itself, and two
-  -- concurrent runs both issuing this UPDATE just both affect
-  -- (possibly zero, possibly overlapping) rows harmlessly -- it is not
-  -- a conditional swap, so there is no lost-update hazard to guard.
+  -- Video: mark done, no outbox row, no rendition -- there is no
+  -- re-encode runtime (§4.4), so "downscaled" for video means
+  -- "considered, and correctly left alone."
   UPDATE public.story_items
      SET downscaled_at = now()
    WHERE media_type = 'video'
@@ -273,34 +339,117 @@ BEGIN
      AND downscaled_at IS NULL
      AND expires_at <= now();
 
-  -- Image: the real claim. Lease is stale-reclaimable per
-  -- archival_lease_timeout() (brief contract 4).
+  -- Image: the real claim, from the outbox.
   RETURN QUERY
-  UPDATE public.story_items si
-     SET archival_lease_token = gen_random_uuid(),
-         archival_leased_at   = now()
-   WHERE si.id IN (
-           SELECT s.id
-             FROM public.story_items s
-            WHERE s.media_type = 'image'
-              AND s.deleted_at IS NULL
-              AND s.downscaled_at IS NULL
-              AND s.expires_at <= now()
+  UPDATE public.story_media_processing_outbox o
+     SET state                 = 'processing',
+         attempts              = o.attempts + 1,
+         processing_started_at = now(),
+         updated_at            = now()
+   WHERE o.story_item_id IN (
+           SELECT j.story_item_id
+             FROM public.story_media_processing_outbox j
+            WHERE j.available_at <= now()
               AND (
-                    s.archival_leased_at IS NULL
-                    OR s.archival_leased_at <= now() - public.archival_lease_timeout()
+                    j.state = 'pending'
+                    OR (
+                         j.state = 'processing'
+                         AND j.processing_started_at
+                             <= now() - public.story_archival_lease_timeout()
+                       )
                   )
-            ORDER BY s.expires_at
+            ORDER BY j.available_at, j.created_at
             LIMIT v_limit
               FOR UPDATE SKIP LOCKED
          )
-   RETURNING si.id, si.media_key, si.archival_lease_token;
+   RETURNING o.story_item_id, o.source_key;
 END;
 $$;
 
 REVOKE ALL ON FUNCTION public.claim_story_archival_batch(int)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_story_archival_batch(int)
+  TO service_role;
+
+-- ---------------------------------------------------------------------
+-- fail_story_archival(p_story_id uuid, p_error_code text)
+--
+-- The failure path §4.4 asks for but does not name: "five failed
+-- attempts dead-letter the job and raise an operational alert." Called
+-- by Task 10's worker when a claimed attempt fails (download error,
+-- transform error, upload error) instead of complete_story_archival.
+--
+-- Does NOT increment attempts again -- claim already did that at claim
+-- time, so "5 failed attempts" means "the 5th claim of this row was
+-- also followed by a failure report", not a double count. This
+-- function only records last_error_code and, once the row's own
+-- attempts has reached story_archival_max_attempts(), moves it to
+-- dead_letter (state = 'dead_letter') so no future claim ever picks it
+-- up again -- a dead-lettered row simply stops matching claim's WHERE
+-- clause (state IN ('pending', 'processing') only). Below the
+-- threshold, state reverts to 'pending' so the row is immediately
+-- reclaimable rather than waiting out the stale-processing timeout for
+-- no reason -- a reported failure is more informative than a silent
+-- crash, so there is no reason to make it wait as long as one.
+--
+-- "raise an operational alert": this schema has no existing alerting
+-- table/channel for any other maintenance job to hook into (the
+-- deletion queue's own "monitoring alerts when the oldest pending row
+-- is more than 30 minutes old", §4.5, is external monitoring against
+-- media_deletion_queue's own timestamps, not a row this codebase
+-- writes). Consistent with that precedent, the "alert" surface here is
+-- the dead_letter state itself plus last_error_code -- both directly
+-- queryable columns an external monitor (or a future admin RPC) reads,
+-- exactly as media_deletion_queue's queue-age alert reads
+-- requested_at/deleted_at. No new alerting machinery invented for one
+-- function.
+CREATE OR REPLACE FUNCTION public.fail_story_archival(
+  p_story_id uuid,
+  p_error_code text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_attempts int;
+  v_dead_lettered boolean := false;
+BEGIN
+  IF p_story_id IS NULL THEN
+    RETURN jsonb_build_object('error', true, 'code', 'INVALID_INPUT');
+  END IF;
+
+  UPDATE public.story_media_processing_outbox
+     SET last_error_code = p_error_code,
+         state = CASE
+                   WHEN attempts >= public.story_archival_max_attempts()
+                     THEN 'dead_letter'
+                   ELSE 'pending'
+                 END,
+         updated_at = now()
+   WHERE story_item_id = p_story_id
+  RETURNING attempts, (state = 'dead_letter') INTO v_attempts, v_dead_lettered;
+
+  IF v_attempts IS NULL THEN
+    -- No outbox row (deleted mid-flight, cascaded away, or never
+    -- existed) -- §4.4's last paragraph: "a zero-row finish is treated
+    -- as cancellation, not worker failure." Same posture here: nothing
+    -- to fail, nothing to alert on.
+    RETURN jsonb_build_object('error', false, 'found', false);
+  END IF;
+
+  RETURN jsonb_build_object(
+    'error', false, 'found', true,
+    'attempts', v_attempts, 'dead_letter', v_dead_lettered
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.fail_story_archival(uuid, text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fail_story_archival(uuid, text)
   TO service_role;
 
 -- ---------------------------------------------------------------------
@@ -366,6 +515,16 @@ GRANT EXECUTE ON FUNCTION public.claim_story_archival_batch(int)
 -- Same "missing story" / "someone else's business" posture as the rest
 -- of this feature: this is a service_role-only function with no
 -- membership check, because it has no invoking client at all.
+--
+-- FIX ROUND 1: now also marks the outbox row 'done' on a successful
+-- swap. The zero-row-affected (deleted mid-flight / lost the race)
+-- branch is UNCHANGED from the original version -- the coordinator's
+-- own fix instructions call this part "exactly right" and spec §4.4's
+-- last paragraph endorses it ("a zero-row finish is treated as
+-- cancellation, not worker failure; the generated object has already
+-- been re-enqueued by the zero-row story swap"). A cascaded-away
+-- outbox row (ON DELETE CASCADE from story_items) simply has nothing
+-- to mark done, which is fine: nothing will ever claim it again either.
 CREATE OR REPLACE FUNCTION public.complete_story_archival(
   p_story_id uuid,
   p_new_key  text
@@ -402,13 +561,10 @@ BEGIN
   -- The conditional swap. "original key and deleted_at IS NULL still
   -- match" == downscaled_at IS NULL still holds (see the function
   -- comment above for why that is the equivalent guard given this
-  -- function's fixed signature). Clears the lease on success too --
-  -- the story is done, so there is nothing left to reclaim.
+  -- function's fixed signature).
   UPDATE public.story_items
-     SET media_key             = p_new_key,
-         downscaled_at         = now(),
-         archival_lease_token  = NULL,
-         archival_leased_at    = NULL
+     SET media_key     = p_new_key,
+         downscaled_at = now()
    WHERE id = p_story_id
      AND deleted_at IS NULL
      AND downscaled_at IS NULL;
@@ -420,7 +576,8 @@ BEGIN
     -- won this row. Either way the object this call just uploaded
     -- (p_new_key) must not be orphaned -- brief contract 5. No delay:
     -- nothing has ever been able to mint a signed URL to a key that
-    -- was never swapped into a readable row.
+    -- was never swapped into a readable row. KEPT UNCHANGED from the
+    -- original version, per the coordinator's fix instructions.
     PERFORM public.queue_story_media_deletion('story-media', p_new_key);
 
     RETURN jsonb_build_object(
@@ -440,6 +597,15 @@ BEGIN
   IF v_relationship_id IS NOT NULL THEN
     PERFORM public.bump_story_signal(v_relationship_id);
   END IF;
+
+  -- Mark the outbox row done. A cascaded-away row (story hard-deleted
+  -- between the claim and this call) simply updates zero rows here --
+  -- harmless, and nothing will claim a nonexistent row again anyway.
+  UPDATE public.story_media_processing_outbox
+     SET state = 'done',
+         completed_at = now(),
+         updated_at = now()
+   WHERE story_item_id = p_story_id;
 
   RETURN jsonb_build_object(
     'error', false, 'swapped', true, 'story_id', p_story_id

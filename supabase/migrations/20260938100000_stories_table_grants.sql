@@ -29,18 +29,30 @@
 -- same way it already does for games and Word Hunt.
 --
 -- story_items and story_change_signals keep exactly the client SELECT
--- their RLS policies (in 20260938020000) expect to gate; story_views and
--- story_media_upload_intents get NO grant at all -- both have zero
--- policies, by design, so the table privilege is their ONLY gate, same
--- as Word Hunt's three tables.
-REVOKE ALL ON public.story_items                FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON public.story_views                 FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON public.story_change_signals        FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON public.story_media_upload_intents  FROM PUBLIC, anon, authenticated;
+-- their RLS policies (in 20260938020000) expect to gate; story_views,
+-- story_media_upload_intents and story_media_processing_outbox
+-- (Task 9 fix round 1, 20260938090000) get NO grant at all -- all three
+-- have zero policies, by design, so the table privilege is their ONLY
+-- gate, same as Word Hunt's three tables.
+--
+-- story_media_processing_outbox specifically: spec §4.4 says "The
+-- table and its claim/finish/recovery RPCs are service-role only."
+-- Without this REVOKE the harness's blanket grant would hand
+-- authenticated direct read/write on attempts/state/last_error_code --
+-- a client could dead-letter its own story's archival job, or forge
+-- a 'done' state and defeat the swap entirely -- regardless of the
+-- fact that no policy exists, for exactly the reason story_items
+-- itself failed this same way on a from-scratch rebuild (see above).
+REVOKE ALL ON public.story_items                    FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.story_views                     FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.story_change_signals            FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.story_media_upload_intents      FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.story_media_processing_outbox   FROM PUBLIC, anon, authenticated;
 
 GRANT SELECT ON public.story_items          TO authenticated;
 GRANT SELECT ON public.story_change_signals TO authenticated;
--- story_views: no grant. story_media_upload_intents: no grant -- every
--- writer/reader of it is a SECURITY DEFINER function running as owner
--- (create_story_upload_intent, create_story_item) or the storage
--- policies' own EXISTS subquery, never a direct client query.
+-- story_views, story_media_upload_intents, story_media_processing_outbox:
+-- no grant. Every writer/reader of any of them is a SECURITY DEFINER
+-- function running as owner (create_story_upload_intent,
+-- create_story_item, the maintenance RPCs in 20260938090000) or the
+-- storage policies' own EXISTS subquery, never a direct client query.
