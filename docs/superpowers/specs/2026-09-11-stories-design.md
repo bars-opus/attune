@@ -266,6 +266,38 @@ timer, since a photo has no natural duration to drive the progress bar.
 This is the largest single piece of new client work in the feature and
 is called out here so it is planned rather than discovered.
 
+The server side is already done, which narrows it usefully:
+`create_chat_media_upload_intent` takes `p_media_type` and defaults to
+`'image'`. The gap is entirely client-side — capture and rendering.
+
+### 6.1.1 Streaks want photos too, separately
+
+Streaks are also video-only today and are due the same upgrade. That is
+a SEPARATE change to a shipped feature, not part of this one:
+`sendStreakMessage` hardcodes `mediaMimeType: 'video/mp4'` and sends
+`mediaType: 'streak'`, its own media type with its own viewer, budget
+and expiry rules. Photos there means deciding what a photo streak's view
+budget and replay behaviour are — questions stories does not have.
+
+The two are still worth building in an order that pays twice. The photo
+CAPTURE work in the camera — the tap/hold shutter distinction and
+`takePicture()` — is common to both, and belongs to the camera rather
+than to either destination:
+
+1. Add photo capture to the shared camera, behind the existing
+   destination parameter, with the streak path unchanged (still sending
+   video only).
+2. Stories consume it immediately: the stories destination accepts both
+   media types from day one.
+3. Streak photos become a small follow-up — a media type on
+   `sendStreakMessage`, an image branch in the streak viewer, and an
+   answer to the view-budget question.
+
+So the camera work is done once, stories ship complete, and streaks are
+left one well-understood step from photos rather than needing the
+capture layer rebuilt. What this spec does NOT do is change streak
+behaviour; §6.2's rule stands.
+
 ### 6.2 The shared-camera risk
 
 The streak camera is shared, so a careless edit breaks streaks — a
@@ -297,6 +329,7 @@ defaulted into.
 | Storage grows without bound | Downscaling after 24h; accepted cost, stated in §2 |
 | A shared camera edit breaks streaks | Cover existing streak behaviour with tests first (§6.2) |
 | Photo capture is new, not reused | Called out explicitly in §6.1 rather than assumed |
+| Streaks need photos later, and share the camera | Capture is built into the shared camera first, so the streak follow-up is a destination change, not a rebuild (§6.1.1) |
 | Timezone disagreement on which day a story belongs to | `occurred_on` decided once, server-side |
 | An orphaned row if upload fails | Two-step intent-then-insert |
 | A storage object left behind after delete | Deletion queued to the same job, retried |
@@ -316,3 +349,5 @@ None. Every question raised during design was answered:
 - Rings: two, thumbnail-filled, partner's hidden when empty (§5.1).
 - Camera: reuse the streak camera with a destination parameter for
   video; photo capture and image rendering are new work (§6.1).
+- Streak photos: a separate, later change, sequenced so this feature's
+  camera work pays for it (§6.1.1).
