@@ -1143,6 +1143,413 @@ BEGIN
   RAISE NOTICE 'story_rpc_contracts (Task 6): all held';
 END $$;
 
+-- ---------------------------------------------------------------------
+-- Grants: anon must not reach delete_story_item at all.
+-- ---------------------------------------------------------------------
+RESET ROLE;
+DO $$ BEGIN
+  IF has_function_privilege('anon',
+    'public.delete_story_item(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'EXPLOIT: anon can execute delete_story_item';
+  END IF;
+  IF NOT has_function_privilege('authenticated',
+    'public.delete_story_item(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'authenticated cannot execute delete_story_item';
+  END IF;
+  -- queue_story_media_deletion is an internal helper: every caller
+  -- (delete_story_item, the story_items hard-delete trigger, Task 9's
+  -- future worker) is itself a SECURITY DEFINER function. It must never
+  -- be directly callable -- it enqueues whatever (bucket, key) it is
+  -- handed with no ownership check of its own.
+  IF has_function_privilege('authenticated',
+    'public.queue_story_media_deletion(text,text,timestamptz)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'EXPLOIT: authenticated can execute queue_story_media_deletion directly';
+  END IF;
+END $$;
+
+-- =======================================================================
+-- Task 7: delete_story_item, queue not_before, and cascades
+-- (spec §3.3, §4.5).
+--
+-- A hole here is not "a bad row" -- it is a tombstone committing without
+-- its cleanup work (an object leaked in a private bucket forever), a
+-- non-author erasing someone else's retained media, an author LOSING the
+-- right to delete their own story just because the relationship ended,
+-- or a live player's signed archive URL breaking mid-playback because
+-- the delay window was skipped. Every check below is written as one of
+-- those failure modes that must not happen, not a happy path that must
+-- pass.
+-- =======================================================================
+DO $$
+DECLARE
+  v_rel          uuid;
+  v_ended_rel    uuid;
+  v_res          jsonb;
+  v_count        int;
+  v_media_id     uuid;
+  v_thumb_id     uuid;
+  v_media_key    text;
+  v_thumb_key    text;
+  v_archive_key  text;
+  v_story_id     uuid;
+  v_story_id2    uuid;
+  v_row          public.story_items%ROWTYPE;
+  v_queue_row    public.media_deletion_queue%ROWTYPE;
+  v_signal_before bigint;
+  v_signal_after  bigint;
+  v_deleted_at1  timestamptz;
+BEGIN
+  RESET ROLE;
+  UPDATE public.feature_flags SET enabled = true WHERE key = 'stories';
+
+  DELETE FROM public.story_media_upload_intents
+   WHERE requester_id IN ('00000000-0000-0000-0000-00000000c401'::uuid,
+                           '00000000-0000-0000-0000-00000000c402'::uuid,
+                           '00000000-0000-0000-0000-00000000c403'::uuid);
+
+  -- Fresh relationship: c401 author, c402 partner. c403 is the outsider.
+  INSERT INTO public.relationships(user_a, user_b, status)
+  VALUES ('00000000-0000-0000-0000-00000000c401'::uuid,
+          '00000000-0000-0000-0000-00000000c402'::uuid, 'active')
+  RETURNING id INTO v_rel;
+
+  -- Helper macro (inline, repeated): issue media+thumbnail intents for
+  -- c401 in v_rel, stamp storage.objects, finalize, return story id.
+
+  -- =================================================================
+  -- Baseline story #1, used by contracts 1, 2, 4 and 5.
+  -- =================================================================
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c401'::uuid);
+  v_res := public.create_story_upload_intent(v_rel, 'media', 'image', 'image/jpeg');
+  v_media_id := (v_res->>'intent_id')::uuid;
+  v_media_key := v_res->>'storage_key';
+  v_res := public.create_story_upload_intent(v_rel, 'thumbnail', 'image', 'image/jpeg');
+  v_thumb_id := (v_res->>'intent_id')::uuid;
+  v_thumb_key := v_res->>'storage_key';
+  RESET ROLE;
+  INSERT INTO storage.objects (bucket_id, name, metadata) VALUES
+    ('story-media', v_media_key,
+     jsonb_build_object('size', 1000000, 'mimetype', 'image/jpeg')),
+    ('story-media', v_thumb_key,
+     jsonb_build_object('size', 100000, 'mimetype', 'image/jpeg'));
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c401'::uuid);
+  v_res := public.create_story_item(
+    v_rel, gen_random_uuid(), v_media_id, v_thumb_id, 1080, 1920, NULL, 0);
+  IF (v_res->>'error') IS NOT DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'setup: baseline finalize was refused: %', v_res;
+  END IF;
+  v_story_id := (v_res->>'story_id')::uuid;
+  v_archive_key := 'story-archive/' || v_story_id::text || '.jpg';
+
+  RESET ROLE;
+  SELECT version INTO v_signal_before
+    FROM public.story_change_signals WHERE relationship_id = v_rel;
+
+  -- =================================================================
+  -- Contract 1: a non-author (c402, the partner -- a member, but not
+  -- the author) is refused and the row is untouched.
+  -- =================================================================
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c402'::uuid);
+  v_res := public.delete_story_item(v_story_id);
+  IF (v_res->>'error') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'EXPLOIT: a non-author partner was allowed to delete the story: %', v_res;
+  END IF;
+
+  RESET ROLE;
+  SELECT * INTO v_row FROM public.story_items WHERE id = v_story_id;
+  IF v_row.deleted_at IS NOT NULL THEN
+    RAISE EXCEPTION 'EXPLOIT: a refused delete still stamped deleted_at';
+  END IF;
+  SELECT count(*) INTO v_count FROM public.media_deletion_queue
+   WHERE object_name IN (v_media_key, v_thumb_key, v_archive_key);
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'EXPLOIT: a refused delete still enqueued % row(s)', v_count;
+  END IF;
+
+  -- Outsider (c403, not a relationship member at all) is refused the
+  -- same way -- never an existence oracle distinguishing "not a member"
+  -- from "not the author".
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c403'::uuid);
+  v_res := public.delete_story_item(v_story_id);
+  IF (v_res->>'error') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'EXPLOIT: a total outsider was allowed to delete the story: %', v_res;
+  END IF;
+  RESET ROLE;
+  SELECT * INTO v_row FROM public.story_items WHERE id = v_story_id;
+  IF v_row.deleted_at IS NOT NULL THEN
+    RAISE EXCEPTION 'EXPLOIT: an outsider''s refused delete still stamped deleted_at';
+  END IF;
+
+  -- =================================================================
+  -- Contract 2: the author stamps deleted_at AND enqueues THREE keys
+  -- (media, thumbnail, archive) in the same transaction, and bumps the
+  -- change signal.
+  -- =================================================================
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c401'::uuid);
+  v_res := public.delete_story_item(v_story_id);
+  IF (v_res->>'error') IS NOT DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'the author''s delete was refused: %', v_res;
+  END IF;
+  IF (v_res->>'deleted')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'delete_story_item did not report deleted=true: %', v_res;
+  END IF;
+
+  RESET ROLE;
+  SELECT * INTO v_row FROM public.story_items WHERE id = v_story_id;
+  IF v_row.deleted_at IS NULL THEN
+    RAISE EXCEPTION 'EXPLOIT: the author''s delete did not stamp deleted_at';
+  END IF;
+  v_deleted_at1 := v_row.deleted_at;
+
+  SELECT count(*) INTO v_count FROM public.media_deletion_queue
+   WHERE object_name IN (v_media_key, v_thumb_key, v_archive_key)
+     AND bucket_id = 'story-media'
+     AND deleted_at IS NULL;
+  IF v_count <> 3 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: expected exactly 3 enqueued keys (media, thumbnail, archive), got %', v_count;
+  END IF;
+
+  SELECT version INTO v_signal_after
+    FROM public.story_change_signals WHERE relationship_id = v_rel;
+  IF v_signal_after IS DISTINCT FROM v_signal_before + 1 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: delete_story_item did not bump story_change_signals by exactly 1 (before=%, after=%)',
+      v_signal_before, v_signal_after;
+  END IF;
+
+  -- =================================================================
+  -- Contract 5: the ARCHIVE key's queue entry carries
+  -- not_before >= now() + 600s. media_key/thumbnail_key do NOT need
+  -- the delay.
+  -- =================================================================
+  SELECT * INTO v_queue_row FROM public.media_deletion_queue
+   WHERE object_name = v_archive_key AND bucket_id = 'story-media';
+  IF v_queue_row.not_before IS NULL
+     OR v_queue_row.not_before < now() + interval '600 seconds'
+  THEN
+    RAISE EXCEPTION
+      'EXPLOIT: archive key not_before (%) is not at least 600s out from now (%)',
+      v_queue_row.not_before, now();
+  END IF;
+
+  SELECT * INTO v_queue_row FROM public.media_deletion_queue
+   WHERE object_name = v_media_key AND bucket_id = 'story-media';
+  IF v_queue_row.not_before > now() + interval '5 seconds' THEN
+    RAISE EXCEPTION
+      'EXPLOIT: media key not_before (%) was delayed like the archive key -- it should not be',
+      v_queue_row.not_before;
+  END IF;
+  SELECT * INTO v_queue_row FROM public.media_deletion_queue
+   WHERE object_name = v_thumb_key AND bucket_id = 'story-media';
+  IF v_queue_row.not_before > now() + interval '5 seconds' THEN
+    RAISE EXCEPTION
+      'EXPLOIT: thumbnail key not_before (%) was delayed like the archive key -- it should not be',
+      v_queue_row.not_before;
+  END IF;
+
+  -- =================================================================
+  -- Contract 4: deleting twice returns success and RE-ARMS an
+  -- already-completed queue entry (deleted_at set back to NULL) rather
+  -- than silently doing nothing or leaving it stamped complete.
+  --
+  -- Simulate the drain having completed all three keys, then delete
+  -- again.
+  -- =================================================================
+  RESET ROLE;
+  UPDATE public.media_deletion_queue
+     SET deleted_at = now()
+   WHERE object_name IN (v_media_key, v_thumb_key, v_archive_key)
+     AND bucket_id = 'story-media';
+  SELECT count(*) INTO v_count FROM public.media_deletion_queue
+   WHERE object_name IN (v_media_key, v_thumb_key, v_archive_key)
+     AND bucket_id = 'story-media'
+     AND deleted_at IS NOT NULL;
+  IF v_count <> 3 THEN
+    RAISE EXCEPTION 'test setup failed: could not mark all 3 queue rows complete (got %)', v_count;
+  END IF;
+
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c401'::uuid);
+  v_res := public.delete_story_item(v_story_id);
+  IF (v_res->>'error') IS NOT DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'EXPLOIT: deleting an already-deleted story was refused instead of succeeding: %', v_res;
+  END IF;
+  IF (v_res->>'deleted')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'a repeat delete did not report deleted=true: %', v_res;
+  END IF;
+
+  RESET ROLE;
+  -- deleted_at on the STORY row must not have moved (it is the first-
+  -- deletion timestamp, not a "last delete call" timestamp).
+  SELECT * INTO v_row FROM public.story_items WHERE id = v_story_id;
+  IF v_row.deleted_at IS DISTINCT FROM v_deleted_at1 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: a repeat delete moved the story''s deleted_at from % to %',
+      v_deleted_at1, v_row.deleted_at;
+  END IF;
+
+  -- All three queue rows must be RE-ARMED: deleted_at back to NULL, no
+  -- duplicate rows created (still exactly 3, thanks to the queue's
+  -- UNIQUE (bucket_id, object_name)).
+  SELECT count(*) INTO v_count FROM public.media_deletion_queue
+   WHERE object_name IN (v_media_key, v_thumb_key, v_archive_key)
+     AND bucket_id = 'story-media';
+  IF v_count <> 3 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: a repeat delete produced % queue rows for 3 keys -- duplicates instead of re-arming',
+      v_count;
+  END IF;
+  SELECT count(*) INTO v_count FROM public.media_deletion_queue
+   WHERE object_name IN (v_media_key, v_thumb_key, v_archive_key)
+     AND bucket_id = 'story-media'
+     AND deleted_at IS NULL;
+  IF v_count <> 3 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: a repeat delete did not re-arm all 3 already-completed queue rows (only % re-armed)',
+      v_count;
+  END IF;
+
+  -- The re-armed archive key must still carry its >= 600s delay.
+  SELECT * INTO v_queue_row FROM public.media_deletion_queue
+   WHERE object_name = v_archive_key AND bucket_id = 'story-media';
+  IF v_queue_row.not_before < now() + interval '600 seconds' THEN
+    RAISE EXCEPTION
+      'EXPLOIT: re-arming the archive key lost its >= 600s not_before delay (got %)',
+      v_queue_row.not_before;
+  END IF;
+
+  -- =================================================================
+  -- Contract 3: deleting from an ENDED relationship SUCCEEDS. An
+  -- author never loses the right to remove their own retained media
+  -- (§3.3) -- deletion is NOT gated on story_relationship_is_open.
+  -- =================================================================
+  RESET ROLE;
+  INSERT INTO public.relationships(user_a, user_b, status, ended_at)
+  VALUES ('00000000-0000-0000-0000-00000000c401'::uuid,
+          '00000000-0000-0000-0000-00000000c402'::uuid, 'ended', now())
+  RETURNING id INTO v_ended_rel;
+
+  DELETE FROM public.story_media_upload_intents
+   WHERE requester_id = '00000000-0000-0000-0000-00000000c401'::uuid;
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c401'::uuid);
+  v_res := public.create_story_upload_intent(v_ended_rel, 'media', 'image', 'image/jpeg');
+  -- The intent-creation path itself gates on an OPEN relationship
+  -- (§4.2), so it will legitimately refuse here -- that is Task 4's
+  -- contract, not this one's. Insert the story row directly, as the
+  -- definer role, to build a fixture that is already-finalized in an
+  -- ended relationship (exactly what a story that existed BEFORE the
+  -- relationship ended looks like once the relationship later ends).
+  RESET ROLE;
+  INSERT INTO public.story_items (
+    client_story_id, relationship_id, author_id, media_type,
+    media_key, thumbnail_key, media_width, media_height,
+    occurred_on, created_at, expires_at
+  ) VALUES (
+    gen_random_uuid(), v_ended_rel, '00000000-0000-0000-0000-00000000c401'::uuid,
+    'image', 'story-media/ended-rel/media-key', 'story-media/ended-rel/thumb-key',
+    1080, 1920, current_date, now(), now() + interval '24 hours'
+  ) RETURNING id INTO v_story_id2;
+
+  IF NOT public.story_relationship_is_open(v_ended_rel, '00000000-0000-0000-0000-00000000c401'::uuid) THEN
+    NULL; -- Confirms the fixture is genuinely ended/closed, as expected.
+  ELSE
+    RAISE EXCEPTION 'test construction error: v_ended_rel is not actually closed';
+  END IF;
+
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c401'::uuid);
+  v_res := public.delete_story_item(v_story_id2);
+  IF (v_res->>'error') IS NOT DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the author was refused deletion from an ENDED relationship (%): %',
+      v_ended_rel, v_res;
+  END IF;
+
+  RESET ROLE;
+  SELECT * INTO v_row FROM public.story_items WHERE id = v_story_id2;
+  IF v_row.deleted_at IS NULL THEN
+    RAISE EXCEPTION 'EXPLOIT: deletion from an ended relationship did not stamp deleted_at';
+  END IF;
+  SELECT count(*) INTO v_count FROM public.media_deletion_queue
+   WHERE object_name IN ('story-media/ended-rel/media-key', 'story-media/ended-rel/thumb-key',
+                          'story-archive/' || v_story_id2::text || '.jpg');
+  IF v_count <> 3 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: deletion from an ended relationship enqueued % keys, expected 3', v_count;
+  END IF;
+
+  -- =================================================================
+  -- Contract 6: relationship deletion cascades every story AND
+  -- enqueues each one's keys (the BEFORE DELETE trigger on
+  -- story_items, since ON DELETE CASCADE alone never calls
+  -- delete_story_item).
+  -- =================================================================
+  RESET ROLE;
+  INSERT INTO public.relationships(user_a, user_b, status)
+  VALUES ('00000000-0000-0000-0000-00000000c401'::uuid,
+          '00000000-0000-0000-0000-00000000c403'::uuid, 'active')
+  RETURNING id INTO v_ended_rel; -- reused variable, fresh relationship
+
+  INSERT INTO public.story_items (
+    client_story_id, relationship_id, author_id, media_type,
+    media_key, thumbnail_key, media_width, media_height,
+    occurred_on, created_at, expires_at
+  ) VALUES
+    (gen_random_uuid(), v_ended_rel, '00000000-0000-0000-0000-00000000c401'::uuid,
+     'image', 'story-media/cascade/media-1', 'story-media/cascade/thumb-1',
+     1080, 1920, current_date, now(), now() + interval '24 hours'),
+    (gen_random_uuid(), v_ended_rel, '00000000-0000-0000-0000-00000000c403'::uuid,
+     'image', 'story-media/cascade/media-2', 'story-media/cascade/thumb-2',
+     1080, 1920, current_date, now(), now() + interval '24 hours');
+  -- Two rows inserted; ids are not needed by name below, only their
+  -- known media/thumbnail keys and the archive-key pattern.
+
+  SELECT count(*) INTO v_count FROM public.story_items WHERE relationship_id = v_ended_rel;
+  IF v_count <> 2 THEN
+    RAISE EXCEPTION 'test construction error: expected 2 cascade fixture stories, got %', v_count;
+  END IF;
+
+  DELETE FROM public.relationships WHERE id = v_ended_rel;
+
+  SELECT count(*) INTO v_count FROM public.story_items WHERE relationship_id = v_ended_rel;
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION
+      'test construction error: story_items rows survived the relationship DELETE (ON DELETE CASCADE broken?)';
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.media_deletion_queue
+   WHERE bucket_id = 'story-media'
+     AND object_name IN (
+       'story-media/cascade/media-1', 'story-media/cascade/thumb-1',
+       'story-media/cascade/media-2', 'story-media/cascade/thumb-2'
+     )
+     AND deleted_at IS NULL;
+  IF v_count <> 4 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: relationship deletion cascaded stories away without enqueueing their media/thumbnail keys (got % of 4)',
+      v_count;
+  END IF;
+
+  -- Both stories' archive keys too -- need the ids the cascade just
+  -- destroyed; re-derive them from the media_deletion_queue object
+  -- names is not possible (archive key is story-id-derived, not
+  -- media-key-derived), so assert by counting archive-shaped keys
+  -- enqueued for THIS relationship's window instead: any two
+  -- 'story-archive/%.jpg' rows inserted since this block started that
+  -- carry the >= 600s delay.
+  SELECT count(*) INTO v_count FROM public.media_deletion_queue
+   WHERE bucket_id = 'story-media'
+     AND object_name LIKE 'story-archive/%.jpg'
+     AND not_before >= now() + interval '590 seconds'
+     AND requested_at > now() - interval '1 minute';
+  IF v_count < 2 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: relationship deletion cascade did not enqueue an archive key (with the >= 600s delay) for each story (found %, expected >= 2)',
+      v_count;
+  END IF;
+
+  RAISE NOTICE 'story_rpc_contracts (Task 7): all held';
+END $$;
+
 RESET ROLE;
 DROP FUNCTION IF EXISTS public.test_set_story_rpc_auth(uuid);
 ROLLBACK;
