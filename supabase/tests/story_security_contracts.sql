@@ -71,6 +71,54 @@ DO $$ BEGIN
   IF has_table_privilege('anon','public.story_change_signals','SELECT') THEN
     RAISE EXCEPTION 'EXPLOIT: anon can read story_change_signals';
   END IF;
+
+  -- M3 (pre-merge sweep): story_media_upload_intents has ZERO RLS
+  -- policies (20260938030000's own comment: "No policy is created.
+  -- RLS on with no policy denies all rows to every role") -- the table
+  -- privilege is its ONLY gate. A future accidental grant here would
+  -- let a client read or forge upload slots into someone else's
+  -- relationship with no policy layer left to catch it. Same
+  -- has_table_privilege idiom as story_views directly above.
+  IF has_table_privilege('authenticated','public.story_media_upload_intents','SELECT') THEN
+    RAISE EXCEPTION
+      'EXPLOIT: authenticated can SELECT story_media_upload_intents directly';
+  END IF;
+  IF has_table_privilege('authenticated','public.story_media_upload_intents','INSERT') THEN
+    RAISE EXCEPTION
+      'EXPLOIT: authenticated can INSERT story_media_upload_intents directly';
+  END IF;
+  IF has_table_privilege('authenticated','public.story_media_upload_intents','UPDATE') THEN
+    RAISE EXCEPTION
+      'EXPLOIT: authenticated can UPDATE story_media_upload_intents directly';
+  END IF;
+  IF has_table_privilege('authenticated','public.story_media_upload_intents','DELETE') THEN
+    RAISE EXCEPTION
+      'EXPLOIT: authenticated can DELETE story_media_upload_intents directly';
+  END IF;
+  IF has_table_privilege('anon','public.story_media_upload_intents','SELECT') THEN
+    RAISE EXCEPTION
+      'EXPLOIT: anon can SELECT story_media_upload_intents';
+  END IF;
+
+  -- M3 (pre-merge sweep): story_change_signals is granted SELECT only
+  -- (20260938100000: "GRANT SELECT ON public.story_change_signals TO
+  -- authenticated") -- a client must never be able to write version/
+  -- relationship_id directly; every bump goes through bump_story_signal
+  -- (SECURITY DEFINER). An accidental write grant would let either
+  -- member forge a version bump (or roll one back) without any of the
+  -- actual state it's supposed to signal having changed.
+  IF has_table_privilege('authenticated','public.story_change_signals','INSERT') THEN
+    RAISE EXCEPTION
+      'EXPLOIT: authenticated can INSERT story_change_signals directly';
+  END IF;
+  IF has_table_privilege('authenticated','public.story_change_signals','UPDATE') THEN
+    RAISE EXCEPTION
+      'EXPLOIT: authenticated can UPDATE story_change_signals directly';
+  END IF;
+  IF has_table_privilege('authenticated','public.story_change_signals','DELETE') THEN
+    RAISE EXCEPTION
+      'EXPLOIT: authenticated can DELETE story_change_signals directly';
+  END IF;
 END $$;
 
 DO $$

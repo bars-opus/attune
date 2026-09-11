@@ -46,6 +46,23 @@ INSERT INTO public.users(id, phone, display_name) VALUES
   ('00000000-0000-0000-0000-00000000e602'::uuid, '+15551110002', 'MC2')
   ON CONFLICT (id) DO NOTHING;
 
+-- Needed only for the I1 fix's CONTRACT 7 below, which must call
+-- delete_story_item (SECURITY DEFINER, gated on auth.uid() = author)
+-- as an authenticated user rather than the table owner this file
+-- otherwise runs as. Same shape as story_rpc_contracts.sql's
+-- test_set_story_rpc_auth / story_security_contracts.sql's
+-- test_set_stories_auth.
+CREATE OR REPLACE FUNCTION public.test_set_maintenance_auth(p_user_id uuid)
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  PERFORM set_config('request.jwt.claim.sub', p_user_id::text, true);
+  PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', p_user_id, 'role', 'authenticated')::text, true);
+END;
+$$;
+
 -- ---------------------------------------------------------------------
 -- Grants: anon and authenticated must not reach any of the three.
 -- ---------------------------------------------------------------------
@@ -679,6 +696,116 @@ BEGIN
     IF v_count <> 0 THEN
       RAISE EXCEPTION
         'EXPLOIT: a video row has an outbox entry (got %)', v_count;
+    END IF;
+  END;
+
+  -- =================================================================
+  -- CONTRACT 7 (I1 fix, FINAL WHOLE-BRANCH REVIEW): a soft-deleted
+  -- image story's outbox row is terminated in the SAME transaction as
+  -- the tombstone, and can never again be claimed by
+  -- claim_story_archival_batch -- even once available_at is forced
+  -- into the past, which is exactly the state an ordinary early
+  -- delete leaves the row in (available_at = expires_at, still in the
+  -- future at delete time, but eventually passes anyway).
+  --
+  -- Without the fix: claim_story_archival_batch would pick the row
+  -- back up once available_at passed, the worker would fail to
+  -- download a source object the deletion drain already removed, and
+  -- five such cycles would dead-letter the job -- filling spec §4.4's
+  -- named alert surface (dead_letter + last_error_code) with noise
+  -- from an entirely ordinary user action.
+  -- =================================================================
+  DECLARE
+    v_del_media    text := 'story-media/mc/delete-fix-media';
+    v_del_thumb    text := 'story-media/mc/delete-fix-thumb';
+    v_del_story    uuid;
+    v_del_res      jsonb;
+    v_del_state    text;
+    v_del_completed timestamptz;
+    v_claim_count  int;
+  BEGIN
+    RESET ROLE;
+
+    INSERT INTO public.story_items(
+      id, client_story_id, relationship_id, author_id, media_type,
+      media_key, thumbnail_key, media_width, media_height,
+      occurred_on, created_at, expires_at
+    ) VALUES (
+      gen_random_uuid(), gen_random_uuid(), v_rel,
+      '00000000-0000-0000-0000-00000000e601'::uuid, 'image',
+      v_del_media, v_del_thumb, 1080, 1920,
+      now()::date, now(), now() + interval '24 hours'
+    ) RETURNING id INTO v_del_story;
+
+    -- Trigger seeded exactly one pending outbox row.
+    SELECT count(*) INTO v_count FROM public.story_media_processing_outbox
+     WHERE story_item_id = v_del_story AND state = 'pending';
+    IF v_count <> 1 THEN
+      RAISE EXCEPTION
+        'setup: the delete-fix fixture did not seed one pending outbox row (got %)',
+        v_count;
+    END IF;
+
+    -- Delete as the author, through the real RPC (not a direct UPDATE)
+    -- so this exercises exactly the transaction the fix lives in.
+    PERFORM public.test_set_maintenance_auth(
+      '00000000-0000-0000-0000-00000000e601'::uuid);
+    v_del_res := public.delete_story_item(v_del_story);
+    RESET ROLE;
+
+    IF (v_del_res->>'error') IS NOT DISTINCT FROM 'true' THEN
+      RAISE EXCEPTION
+        'setup: the author''s delete_story_item call was refused: %', v_del_res;
+    END IF;
+
+    -- The outbox row must now be terminal: state='done',
+    -- completed_at set, in the SAME transaction as the tombstone
+    -- (there is no intervening COMMIT in this test, so if this reads
+    -- 'done' it committed together with deleted_at by construction).
+    SELECT state, completed_at INTO v_del_state, v_del_completed
+      FROM public.story_media_processing_outbox
+     WHERE story_item_id = v_del_story;
+    IF v_del_state IS DISTINCT FROM 'done' THEN
+      RAISE EXCEPTION
+        'EXPLOIT (I1 regression): delete_story_item did not terminate its '
+        'own outbox row -- state is % (expected done)', v_del_state;
+    END IF;
+    IF v_del_completed IS NULL THEN
+      RAISE EXCEPTION
+        'EXPLOIT (I1 regression): delete_story_item marked the outbox row '
+        'done without stamping completed_at';
+    END IF;
+
+    -- Force available_at into the past -- exactly the state an
+    -- ordinary early delete eventually reaches once the story's
+    -- original 24h archival window elapses -- and confirm
+    -- claim_story_archival_batch does NOT return it.
+    UPDATE public.story_media_processing_outbox
+       SET available_at = now() - interval '1 hour'
+     WHERE story_item_id = v_del_story;
+
+    SELECT count(*) INTO v_claim_count
+      FROM public.claim_story_archival_batch(50) b
+     WHERE b.story_id = v_del_story;
+    IF v_claim_count <> 0 THEN
+      RAISE EXCEPTION
+        'EXPLOIT (I1 regression): claim_story_archival_batch claimed a '
+        'soft-deleted story''s terminated outbox row (got % rows) -- this '
+        'is the dead-letter-storm bug: the worker will try to download a '
+        'source object the deletion drain already removed',
+        v_claim_count;
+    END IF;
+
+    -- And the row is still 'done' after the claim attempt -- not
+    -- flipped to 'processing'.
+    SELECT state INTO v_del_state
+      FROM public.story_media_processing_outbox
+     WHERE story_item_id = v_del_story;
+    IF v_del_state IS DISTINCT FROM 'done' THEN
+      RAISE EXCEPTION
+        'EXPLOIT (I1 regression): claim_story_archival_batch mutated a '
+        'terminated outbox row''s state to % (expected it to stay done)',
+        v_del_state;
     END IF;
   END;
 
