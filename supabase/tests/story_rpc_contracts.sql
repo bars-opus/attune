@@ -830,6 +830,319 @@ BEGIN
   RAISE NOTICE 'story_rpc_contracts (Task 5): all held';
 END $$;
 
+-- ---------------------------------------------------------------------
+-- Grants: anon must not reach mark_story_viewed at all.
+-- ---------------------------------------------------------------------
+RESET ROLE;
+DO $$ BEGIN
+  IF has_function_privilege('anon',
+    'public.mark_story_viewed(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'EXPLOIT: anon can execute mark_story_viewed';
+  END IF;
+  IF NOT has_function_privilege('authenticated',
+    'public.mark_story_viewed(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'authenticated cannot execute mark_story_viewed';
+  END IF;
+END $$;
+
+-- =======================================================================
+-- Task 6: mark_story_viewed contracts (spec §3.4).
+--
+-- A hole here is not "a bad row" -- it is either the private viewed_at
+-- timestamp leaking (story_views stays unreadable regardless -- this
+-- function is the only writer), or the has_been_viewed indicator
+-- becoming meaningless: an author who marks their own story seen, an
+-- outsider recording a view into a couple's private state, or a
+-- calendar-only replay of a months-old story silently flipping a
+-- long-settled boolean. Every check below is written as one of the
+-- four refusal rules from §3.4 that must hold, not a happy path.
+-- =======================================================================
+DO $$
+DECLARE
+  v_rel        uuid;
+  v_res        jsonb;
+  v_media_id   uuid;
+  v_thumb_id   uuid;
+  v_media_key  text;
+  v_thumb_key  text;
+  v_story_id   uuid;
+  v_expired_id uuid;
+  v_row        public.story_items%ROWTYPE;
+  v_count      int;
+  v_viewed_at1 timestamptz;
+  v_viewed_at2 timestamptz;
+  v_signal_before bigint;
+  v_signal_after  bigint;
+BEGIN
+  RESET ROLE;
+  UPDATE public.feature_flags SET enabled = true WHERE key = 'stories';
+
+  -- Fresh relationship: c401 author, c402 partner. c403 is the outsider
+  -- (member of neither).
+  INSERT INTO public.relationships(user_a, user_b, status)
+  VALUES ('00000000-0000-0000-0000-00000000c401'::uuid,
+          '00000000-0000-0000-0000-00000000c402'::uuid, 'active')
+  RETURNING id INTO v_rel;
+
+  DELETE FROM public.story_media_upload_intents
+   WHERE requester_id IN ('00000000-0000-0000-0000-00000000c401'::uuid,
+                           '00000000-0000-0000-0000-00000000c402'::uuid,
+                           '00000000-0000-0000-0000-00000000c403'::uuid);
+
+  -- Baseline story, authored by c401, finalized normally so it carries
+  -- a real expires_at = created_at + 24h.
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c401'::uuid);
+  v_res := public.create_story_upload_intent(v_rel, 'media', 'image', 'image/jpeg');
+  v_media_id := (v_res->>'intent_id')::uuid;
+  v_media_key := v_res->>'storage_key';
+  v_res := public.create_story_upload_intent(v_rel, 'thumbnail', 'image', 'image/jpeg');
+  v_thumb_id := (v_res->>'intent_id')::uuid;
+  v_thumb_key := v_res->>'storage_key';
+  RESET ROLE;
+  INSERT INTO storage.objects (bucket_id, name, metadata) VALUES
+    ('story-media', v_media_key,
+     jsonb_build_object('size', 1000000, 'mimetype', 'image/jpeg')),
+    ('story-media', v_thumb_key,
+     jsonb_build_object('size', 100000, 'mimetype', 'image/jpeg'));
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c401'::uuid);
+  v_res := public.create_story_item(
+    v_rel, gen_random_uuid(), v_media_id, v_thumb_id, 1080, 1920, NULL, 0);
+  IF (v_res->>'error') IS NOT DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'setup: baseline finalize was refused: %', v_res;
+  END IF;
+  v_story_id := (v_res->>'story_id')::uuid;
+
+  RESET ROLE;
+  SELECT version INTO v_signal_before
+    FROM public.story_change_signals WHERE relationship_id = v_rel;
+
+  -- =================================================================
+  -- Contract 1: the AUTHOR marking their own story does NOT set
+  -- has_been_viewed, and writes no story_views row. Without this
+  -- check, an author reviewing their own reel would mark their own
+  -- story seen and their "seen" indicator would become meaningless.
+  -- =================================================================
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c401'::uuid);
+  v_res := public.mark_story_viewed(v_story_id);
+  IF (v_res->>'error') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'EXPLOIT: the author was allowed to mark their own story viewed: %', v_res;
+  END IF;
+
+  RESET ROLE;
+  SELECT * INTO v_row FROM public.story_items WHERE id = v_story_id;
+  IF v_row.has_been_viewed IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'EXPLOIT: the author marking their own story set has_been_viewed';
+  END IF;
+  SELECT count(*) INTO v_count FROM public.story_views WHERE story_item_id = v_story_id;
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'EXPLOIT: the author marking their own story wrote a story_views row';
+  END IF;
+
+  -- =================================================================
+  -- Contract 4: an outsider (c403, not a member of the relationship) is
+  -- refused and writes nothing.
+  -- =================================================================
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c403'::uuid);
+  v_res := public.mark_story_viewed(v_story_id);
+  IF (v_res->>'error') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'EXPLOIT: an outsider was allowed to mark a story viewed: %', v_res;
+  END IF;
+
+  RESET ROLE;
+  SELECT * INTO v_row FROM public.story_items WHERE id = v_story_id;
+  IF v_row.has_been_viewed IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'EXPLOIT: an outsider''s call set has_been_viewed';
+  END IF;
+  SELECT count(*) INTO v_count FROM public.story_views WHERE story_item_id = v_story_id;
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'EXPLOIT: an outsider''s call wrote a story_views row';
+  END IF;
+
+  -- =================================================================
+  -- Contract 2: the PARTNER (c402) marking it sets has_been_viewed =
+  -- true and writes exactly one story_views row. Also asserts the
+  -- signal bumped exactly once for this call (contract 7).
+  -- =================================================================
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c402'::uuid);
+  v_res := public.mark_story_viewed(v_story_id);
+  IF (v_res->>'error') IS NOT DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'the partner''s first view was refused: %', v_res;
+  END IF;
+
+  RESET ROLE;
+  SELECT * INTO v_row FROM public.story_items WHERE id = v_story_id;
+  IF v_row.has_been_viewed IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'EXPLOIT: the partner''s first view did not set has_been_viewed';
+  END IF;
+  SELECT count(*) INTO v_count FROM public.story_views WHERE story_item_id = v_story_id;
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'the partner''s first view should write exactly one story_views row, wrote %', v_count;
+  END IF;
+  SELECT viewed_at INTO v_viewed_at1
+    FROM public.story_views
+   WHERE story_item_id = v_story_id
+     AND viewer_id = '00000000-0000-0000-0000-00000000c402'::uuid;
+  IF v_viewed_at1 IS NULL THEN
+    RAISE EXCEPTION 'EXPLOIT: the partner''s view row has no viewed_at';
+  END IF;
+
+  -- =================================================================
+  -- Contract 7: a successful first view bumps story_change_signals.
+  -- =================================================================
+  SELECT version INTO v_signal_after
+    FROM public.story_change_signals WHERE relationship_id = v_rel;
+  IF v_signal_after IS DISTINCT FROM v_signal_before + 1 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: a successful first view did not bump story_change_signals by exactly 1 (before=%, after=%)',
+      v_signal_before, v_signal_after;
+  END IF;
+
+  -- =================================================================
+  -- Contract 3: a second call by the SAME viewer does not move
+  -- viewed_at (ON CONFLICT DO NOTHING), and does not bump the signal
+  -- again -- there is no new information to refetch for.
+  -- =================================================================
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c402'::uuid);
+  v_res := public.mark_story_viewed(v_story_id);
+  IF (v_res->>'error') IS NOT DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'a repeat view call by the same viewer was refused: %', v_res;
+  END IF;
+
+  RESET ROLE;
+  SELECT count(*) INTO v_count FROM public.story_views WHERE story_item_id = v_story_id;
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'EXPLOIT: a repeat view by the same viewer produced % story_views rows, expected 1', v_count;
+  END IF;
+  SELECT viewed_at INTO v_viewed_at2
+    FROM public.story_views
+   WHERE story_item_id = v_story_id
+     AND viewer_id = '00000000-0000-0000-0000-00000000c402'::uuid;
+  IF v_viewed_at2 IS DISTINCT FROM v_viewed_at1 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: a repeat view by the same viewer moved viewed_at from % to %',
+      v_viewed_at1, v_viewed_at2;
+  END IF;
+  SELECT version INTO v_signal_after
+    FROM public.story_change_signals WHERE relationship_id = v_rel;
+  IF v_signal_after IS DISTINCT FROM v_signal_before + 1 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: a repeat view by the same viewer bumped the signal again (before=%, after=%)',
+      v_signal_before, v_signal_after;
+  END IF;
+
+  -- =================================================================
+  -- Contract 5: a DELETED story is refused, even for the rightful
+  -- partner, and writes nothing.
+  -- =================================================================
+  RESET ROLE;
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c401'::uuid);
+  v_res := public.create_story_upload_intent(v_rel, 'media', 'image', 'image/jpeg');
+  v_media_id := (v_res->>'intent_id')::uuid;
+  v_media_key := v_res->>'storage_key';
+  v_res := public.create_story_upload_intent(v_rel, 'thumbnail', 'image', 'image/jpeg');
+  v_thumb_id := (v_res->>'intent_id')::uuid;
+  v_thumb_key := v_res->>'storage_key';
+  RESET ROLE;
+  INSERT INTO storage.objects (bucket_id, name, metadata) VALUES
+    ('story-media', v_media_key,
+     jsonb_build_object('size', 1000000, 'mimetype', 'image/jpeg')),
+    ('story-media', v_thumb_key,
+     jsonb_build_object('size', 100000, 'mimetype', 'image/jpeg'));
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c401'::uuid);
+  v_res := public.create_story_item(
+    v_rel, gen_random_uuid(), v_media_id, v_thumb_id, 1080, 1920, NULL, 0);
+  IF (v_res->>'error') IS NOT DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'setup: deleted-story fixture finalize was refused: %', v_res;
+  END IF;
+  v_story_id := (v_res->>'story_id')::uuid;
+
+  -- Soft-delete it directly (delete_story_item is a later task; stamp
+  -- deleted_at ourselves as the definer role to build the fixture).
+  RESET ROLE;
+  UPDATE public.story_items SET deleted_at = now() WHERE id = v_story_id;
+
+  SELECT count(*) INTO v_count FROM public.story_views WHERE story_item_id = v_story_id;
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c402'::uuid);
+  v_res := public.mark_story_viewed(v_story_id);
+  IF (v_res->>'error') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'EXPLOIT: a view was recorded on a deleted story: %', v_res;
+  END IF;
+  RESET ROLE;
+  SELECT count(*) - v_count INTO v_count FROM public.story_views WHERE story_item_id = v_story_id;
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'EXPLOIT: marking a deleted story viewed wrote % story_views row(s)', v_count;
+  END IF;
+  SELECT has_been_viewed INTO v_row.has_been_viewed
+    FROM public.story_items WHERE id = v_story_id;
+  IF v_row.has_been_viewed IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'EXPLOIT: marking a deleted story viewed set has_been_viewed';
+  END IF;
+
+  -- =================================================================
+  -- Contract 6: an EXPIRED story is refused. Calendar views must not
+  -- flip a long-settled indicator (§3.4) -- an expired-but-undeleted
+  -- story opened from the calendar must not record a view.
+  -- =================================================================
+  RESET ROLE;
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c401'::uuid);
+  v_res := public.create_story_upload_intent(v_rel, 'media', 'image', 'image/jpeg');
+  v_media_id := (v_res->>'intent_id')::uuid;
+  v_media_key := v_res->>'storage_key';
+  v_res := public.create_story_upload_intent(v_rel, 'thumbnail', 'image', 'image/jpeg');
+  v_thumb_id := (v_res->>'intent_id')::uuid;
+  v_thumb_key := v_res->>'storage_key';
+  RESET ROLE;
+  INSERT INTO storage.objects (bucket_id, name, metadata) VALUES
+    ('story-media', v_media_key,
+     jsonb_build_object('size', 1000000, 'mimetype', 'image/jpeg')),
+    ('story-media', v_thumb_key,
+     jsonb_build_object('size', 100000, 'mimetype', 'image/jpeg'));
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c401'::uuid);
+  v_res := public.create_story_item(
+    v_rel, gen_random_uuid(), v_media_id, v_thumb_id, 1080, 1920, NULL, 0);
+  IF (v_res->>'error') IS NOT DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'setup: expired-story fixture finalize was refused: %', v_res;
+  END IF;
+  v_expired_id := (v_res->>'story_id')::uuid;
+
+  -- Force it into the past directly, as the definer role -- this is
+  -- the calendar scenario: a story whose 24h reel window has passed but
+  -- which is still very much undeleted (it lives on in the calendar).
+  RESET ROLE;
+  UPDATE public.story_items
+     SET created_at = now() - interval '48 hours',
+         expires_at = now() - interval '24 hours'
+   WHERE id = v_expired_id;
+
+  SELECT version INTO v_signal_before
+    FROM public.story_change_signals WHERE relationship_id = v_rel;
+  SELECT count(*) INTO v_count FROM public.story_views WHERE story_item_id = v_expired_id;
+  PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c402'::uuid);
+  v_res := public.mark_story_viewed(v_expired_id);
+  IF (v_res->>'error') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'EXPLOIT: a view was recorded on an expired story opened from the calendar: %', v_res;
+  END IF;
+  RESET ROLE;
+  SELECT count(*) - v_count INTO v_count FROM public.story_views WHERE story_item_id = v_expired_id;
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'EXPLOIT: marking an expired story viewed wrote % story_views row(s)', v_count;
+  END IF;
+  SELECT has_been_viewed INTO v_row.has_been_viewed
+    FROM public.story_items WHERE id = v_expired_id;
+  IF v_row.has_been_viewed IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'EXPLOIT: marking an expired story viewed set has_been_viewed';
+  END IF;
+  SELECT version INTO v_signal_after
+    FROM public.story_change_signals WHERE relationship_id = v_rel;
+  IF v_signal_after IS DISTINCT FROM v_signal_before THEN
+    RAISE EXCEPTION
+      'EXPLOIT: a refused expired-story view still bumped the signal (before=%, after=%)',
+      v_signal_before, v_signal_after;
+  END IF;
+
+  RAISE NOTICE 'story_rpc_contracts (Task 6): all held';
+END $$;
+
 RESET ROLE;
 DROP FUNCTION IF EXISTS public.test_set_story_rpc_auth(uuid);
 ROLLBACK;
