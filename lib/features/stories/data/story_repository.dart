@@ -84,24 +84,42 @@ class StoryFinalizeResult {
 ///
 /// [code] never reaches the UI; only [message] does. [retryable] is what
 /// Task 6's outbox state machine branches on: true for a failure that is
-/// safe to retry unchanged (or after re-requesting an intent), false for
-/// one that will fail the same way again.
+/// safe to retry unchanged, false for one that will fail the same way
+/// again.
 ///
-/// Retryable codes:
-/// - `rate_limited` — `create_story_upload_intent` refuses past 120
-///   calls/hour or 20 live unused intents; the caller backs off and
-///   retries (spec §4.2, explicitly documented as retryable there).
-/// - `intent_expired` — the 15-minute upload intent window (or its
-///   consumed/mismatched state) lapsed before finalize ran; a fresh
-///   intent fixes it, so the outer retry loop can re-run intent+upload.
-/// - `network` — used locally (see [StoryApiError.network]) when the
-///   call never reached the server at all: a `TimeoutException` or any
-///   other transport failure. Nothing about the request was rejected.
+/// The server's five codes (`public.story_intent_error`, see
+/// `supabase/migrations/20260938040000_stories_intent_rpc.sql:32-38`) are
+/// UPPERCASE and deliberately coarse:
 ///
-/// Everything else — validation failures, "not a member", "relationship
-/// not active", a malformed request — is permanent: retrying an
-/// unchanged request produces the same refusal, so Task 6 must not loop
-/// on these without the user changing something first.
+/// - `RATE_LIMITED` — retryable. `create_story_upload_intent` refuses past
+///   120 calls/hour or 20 live unused intents; the caller backs off and
+///   retries (spec §4.2, explicitly documented as retryable there). This
+///   is the only retryable server code.
+/// - `UNAUTHORIZED`, `FORBIDDEN`, `INVALID_INPUT` — permanent. Retrying an
+///   unchanged request produces the same refusal.
+/// - `UNAVAILABLE` — permanent, and deliberately NOT retried even though
+///   an expired upload intent is one of the conditions that produces it.
+///   The server collapses "not a member," "relationship ended," "feature
+///   off," and "expired/consumed/mismatched intent" into this single code
+///   on purpose, so a client probing it can never turn it into an
+///   existence oracle (`20260938050000_stories_finalize_rpc.sql:30,96`).
+///   Because the client cannot tell an expired intent apart from a
+///   permanent membership refusal from the code alone, blanket-retrying
+///   `UNAVAILABLE` would spin forever on the permanent cases.
+///
+///   **This is why an expired intent is not a retry-the-same-call case.**
+///   Spec §6.1: "An expired intent causes a new pair of intents and
+///   re-upload; the server cleanup removes the old unused objects." Task
+///   6's outbox must treat `UNAVAILABLE` as `failed_permanent` for the
+///   purpose of *this* error, but the outbox's own state machine is what
+///   decides — on other grounds (e.g. elapsed time since the intents were
+///   minted, or a story stuck in `uploading_media`/`uploading_thumbnail`/
+///   `finalizing` past the 15-minute intent window) — to mint a fresh pair
+///   of intents and re-upload rather than to retry the identical finalize
+///   call. That recovery lives one layer up from this repository.
+///
+/// A call that never reaches the server at all (timeout, socket failure)
+/// is a separate, always-retryable case — see [StoryApiError.network].
 @immutable
 class StoryApiError implements Exception {
   const StoryApiError({
@@ -110,12 +128,21 @@ class StoryApiError implements Exception {
     required this.retryable,
   });
 
-  /// Codes the client currently recognizes as retryable. Kept in one
-  /// place so `fromJson` and any future caller agree.
-  static const _retryableCodes = {'rate_limited', 'intent_expired'};
+  /// The one server code that is safe to retry unchanged. Kept in one
+  /// place so `fromJson` and the test that derives truth from the
+  /// migrations agree. UPPERCASE: matches `story_intent_error`'s actual
+  /// wire format exactly (verified against
+  /// `supabase/migrations/2026093[89]*.sql`), not the lowercase form an
+  /// earlier draft of this file guessed at.
+  static const _retryableCodes = {'RATE_LIMITED'};
+
+  /// Exposed for the test that proves this set matches the server's real
+  /// vocabulary rather than a remembered/guessed one.
+  @visibleForTesting
+  static const retryableCodesForTest = _retryableCodes;
 
   factory StoryApiError.fromJson(Map<String, dynamic> json) {
-    final code = '${json['code'] ?? 'unknown'}';
+    final code = '${json['code'] ?? 'UNKNOWN'}';
     return StoryApiError(
       code: code,
       // The server writes these for people; the client never composes

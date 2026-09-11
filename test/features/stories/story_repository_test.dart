@@ -12,6 +12,16 @@
 //   - the upload call site: asserted against the source, the same way
 //     snakes_test.dart proves "the client cannot send a die face" by
 //     reading snakes_service.dart's text rather than mocking the RPC.
+//
+// Fix round 1: the first version of this file asserted the taxonomy
+// against codes ('rate_limited', 'not_a_member', ...) nobody checked
+// against the server. The real vocabulary is five UPPERCASE codes from
+// `public.story_intent_error` (supabase/migrations/2026093[89]*.sql) —
+// RATE_LIMITED, UNAUTHORIZED, FORBIDDEN, INVALID_INPUT, UNAVAILABLE. The
+// 'errors' group below now uses those, and 'the retryable set is drawn
+// from codes the server actually emits' derives the vocabulary from the
+// migrations directly so this suite cannot silently drift from the
+// server again.
 
 import 'dart:io';
 
@@ -25,54 +35,63 @@ void main() {
       // carrying the server's message. The code stays internal.
       final error = StoryApiError.fromJson({
         'error': true,
-        'code': 'not_a_member',
-        'message': 'This story could not be posted.',
+        'code': 'FORBIDDEN',
+        'message': "You don't have access to this story.",
       });
 
       expect(error, isA<StoryApiError>());
-      expect(error.message, 'This story could not be posted.');
-      expect(error.code, 'not_a_member');
+      expect(error.message, "You don't have access to this story.");
+      expect(error.code, 'FORBIDDEN');
       // The public surface is the message; toString() is what a caller
       // reaches for by habit, and it must not accidentally print the code
       // or the word "Exception".
-      expect(error.toString(), 'This story could not be posted.');
-      expect(error.toString(), isNot(contains('not_a_member')));
+      expect(error.toString(), "You don't have access to this story.");
+      expect(error.toString(), isNot(contains('FORBIDDEN')));
       expect(error.toString(), isNot(contains('Exception')));
     });
 
     test('a message-less refusal still reads as English', () {
-      final error = StoryApiError.fromJson({'code': 'weird'});
+      final error = StoryApiError.fromJson({'code': 'WEIRD'});
       expect(error.message, isNotEmpty);
-      expect(error.message, isNot(contains('weird')));
+      expect(error.message, isNot(contains('WEIRD')));
     });
 
-    test('a rate_limited refusal is marked retryable', () {
-      // The outbox must retry this rather than failing permanently.
+    test('a RATE_LIMITED refusal is marked retryable', () {
+      // The outbox must retry this rather than failing permanently. This
+      // is the ONE server code the spec calls retryable (§4.2).
       final error = StoryApiError.fromJson({
         'error': true,
-        'code': 'rate_limited',
-        'message': 'Too many uploads right now. Please try again shortly.',
+        'code': 'RATE_LIMITED',
+        'message': 'Slow down a moment before adding more.',
       });
 
       expect(error.retryable, isTrue);
     });
 
-    test('an expired intent is marked retryable', () {
-      // A fresh intent fixes this; Task 6's outbox should re-run
-      // intent+upload rather than give up.
+    test('UNAVAILABLE is NOT retryable, even though an expired intent '
+        'is one of the things that causes it', () {
+      // The server deliberately collapses "not a member," "relationship
+      // ended," "feature off," and "expired/consumed intent" into this
+      // one code so a client can never use it as an existence oracle
+      // (20260938050000_stories_finalize_rpc.sql:30,96). Because the
+      // client cannot tell those apart from the code alone,
+      // blanket-retrying UNAVAILABLE would spin forever on the permanent
+      // cases. Spec §6.1's recovery for a genuinely expired intent is
+      // structural (mint a fresh pair of intents and re-upload), decided
+      // by the outbox one layer up — not a retry of this same call.
       final error = StoryApiError.fromJson({
         'error': true,
-        'code': 'intent_expired',
-        'message': 'That upload took too long. Please try again.',
+        'code': 'UNAVAILABLE',
+        'message': "Stories aren't available right now.",
       });
 
-      expect(error.retryable, isTrue);
+      expect(error.retryable, isFalse);
     });
 
     test('a validation refusal is NOT retryable', () {
       // Retrying an unchanged request against a permanent refusal (bad
-      // membership, malformed input) would just fail again forever.
-      for (final code in ['not_a_member', 'relationship_not_active', 'invalid_mime_type']) {
+      // auth, malformed input) would just fail again forever.
+      for (final code in ['UNAUTHORIZED', 'FORBIDDEN', 'INVALID_INPUT']) {
         final error = StoryApiError.fromJson({
           'error': true,
           'code': code,
@@ -86,6 +105,49 @@ void main() {
       final error = StoryApiError.network();
       expect(error.retryable, isTrue);
       expect(error.code, 'network');
+    });
+
+    test('the retryable set is drawn from codes the server actually emits', () {
+      // Derives truth from the migrations rather than from anyone's
+      // belief about what the server sends — the exact gap that let
+      // 'rate_limited'/'intent_expired' (neither real) ship as the
+      // taxonomy in fix round 0.
+      final codes = <String>{};
+      for (final f in Directory('supabase/migrations').listSync()) {
+        if (f is! File || !f.path.contains('stories')) continue;
+        codes.addAll(
+          RegExp(
+            r"story_intent_error\('([A-Z_]+)'\)",
+          ).allMatches(f.readAsStringSync()).map((m) => m.group(1)!),
+        );
+      }
+
+      // Without this guard, a regex that stopped matching (a migration
+      // rename, a formatting change) would make every assertion below
+      // vacuously pass on an empty set.
+      expect(codes, isNotEmpty, reason: 'the regex stopped matching');
+      expect(
+        codes,
+        containsAll(<String>[
+          'UNAUTHORIZED',
+          'FORBIDDEN',
+          'INVALID_INPUT',
+          'RATE_LIMITED',
+          'UNAVAILABLE',
+        ]),
+        reason: 'the known server vocabulary changed — update this test '
+            'and the taxonomy doc comment together',
+      );
+
+      // Every code the client classifies as retryable must be one the
+      // server actually sends.
+      expect(codes.containsAll(StoryApiError.retryableCodesForTest), isTrue);
+      // And RATE_LIMITED specifically must be retryable — the one code
+      // the spec explicitly requires the outbox to retry.
+      expect(StoryApiError.retryableCodesForTest, contains('RATE_LIMITED'));
+      // Nothing else may be marked retryable: UNAVAILABLE in particular
+      // must stay out, since it silently covers the permanent cases too.
+      expect(StoryApiError.retryableCodesForTest, {'RATE_LIMITED'});
     });
   });
 
