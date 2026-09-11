@@ -39,10 +39,17 @@ serve(async (req) => {
 
     const limit = typeof body.limit === "number" ? body.limit : DEFAULT_LIMIT;
 
+    // not_before defaults to now() for every existing row (chat media,
+    // streaks, etc.), so this filter changes nothing for them. It only
+    // holds back rows a caller deliberately delayed -- e.g. the story
+    // archive swap's old key, queued not_before = now() + the signed-URL
+    // TTL so a player holding a fresh URL doesn't have it pulled out from
+    // under them mid-playback.
     const { data: pending, error: loadError } = await supabase
       .from("media_deletion_queue")
       .select("id, bucket_id, object_name")
       .is("deleted_at", null)
+      .lte("not_before", new Date().toISOString())
       .order("requested_at", { ascending: true })
       .limit(limit);
 
