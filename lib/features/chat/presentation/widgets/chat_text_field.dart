@@ -1297,7 +1297,11 @@ class _ChatTextFieldState extends State<ChatTextField>
             curve: Curves.easeOutCubic,
             alignment: Alignment.centerLeft,
             child:
-                widget.showCaptureVideo && !_hasText
+                // Gone while a game is staged, for the same reason the
+                // attachment sheet is: the thing being sent is already
+                // chosen, and a streak video is not something you send
+                // alongside a game invitation.
+                widget.showCaptureVideo && !_hasText && !widget.gameStaged
                     ? Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

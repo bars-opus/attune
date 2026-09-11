@@ -31,8 +31,10 @@ void main() {
                   showGames: true,
                   showAttachImage: true,
                   showVoiceMessage: true,
+                  showCaptureVideo: true,
                   onOpenGames: () {},
                   onAttachImage: () {},
+                  onCaptureVideo: () {},
                 ),
               ),
             ),
@@ -41,13 +43,23 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('a staged game hides attachments and the mic', (tester) async {
+  testWidgets('a staged game hides every other way to send something', (
+    tester,
+  ) async {
+    // Attachments, the streak camera and the mic all send a DIFFERENT
+    // thing. With a game staged the payload is already chosen, so each
+    // of them would either be ignored or quietly replace the game.
     await pump(tester, gameStaged: true);
 
     expect(
       find.byIcon(Icons.attach_file_rounded),
       findsNothing,
       reason: 'a photo cannot caption a game invitation',
+    );
+    expect(
+      find.byIcon(Icons.photo_camera_outlined),
+      findsNothing,
+      reason: 'a streak video is not sent alongside a game',
     );
     expect(find.byIcon(Icons.mic_none_rounded), findsNothing);
   });
@@ -85,6 +97,7 @@ void main() {
     await pump(tester, gameStaged: false);
 
     expect(find.byIcon(Icons.attach_file_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.photo_camera_outlined), findsOneWidget);
     expect(find.byIcon(Icons.sports_esports_outlined), findsOneWidget);
   });
 
