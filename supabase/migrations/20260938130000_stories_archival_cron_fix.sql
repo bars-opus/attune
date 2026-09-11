@@ -25,8 +25,12 @@ SELECT cron.unschedule('invoke-story-archival')
 
 DROP FUNCTION IF EXISTS public.invoke_story_archival_worker();
 
+-- Same minute the job was originally scheduled at (20260938090000).
+-- Only the INVOCATION changes here; the cadence is deliberately
+-- untouched, and it is offset from the :33 intent cleanup so the two
+-- hourly story jobs do not contend.
 SELECT cron.schedule(
   'invoke-story-archival',
-  '20 * * * *',
+  '38 * * * *',
   $$ SELECT public.invoke_edge_function('process-story-archival'); $$
 );
