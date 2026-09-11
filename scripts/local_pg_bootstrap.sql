@@ -251,6 +251,14 @@ CREATE TABLE IF NOT EXISTS storage.objects (
   bucket_id text REFERENCES storage.buckets(id),
   name text,
   owner uuid,
+  -- Real Supabase Storage populates this with (among other keys) 'size'
+  -- and 'mimetype' on upload. Added for stories' create_story_item
+  -- (20260938050000), which validates both from storage.objects.metadata
+  -- the same way validate_message_media_before_insert
+  -- (20260705200000_chat_media_hardening.sql) already does for chat.
+  -- Nullable and defaulted to '{}' so every existing fixture that
+  -- inserts (bucket_id, name) without metadata keeps working unchanged.
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
