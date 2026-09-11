@@ -222,7 +222,6 @@ void main() {
     Widget host(
       _FakeInviteGateway gateway, {
       required String gameType,
-      VoidCallback? onSend,
       VoidCallback? onCancel,
     }) => ProviderScope(
       overrides: [gameInviteGatewayProvider.overrideWithValue(gateway)],
@@ -235,7 +234,6 @@ void main() {
                 body: GameComposerBar(
                   relationshipId: 'r1',
                   gameType: gameType,
-                  onSend: onSend ?? () {},
                   onCancel: onCancel ?? () {},
                 ),
               ),
@@ -251,7 +249,6 @@ void main() {
 
       expect(find.text('Mirror'), findsOneWidget);
       expect(find.text('Invite them to play'), findsOneWidget);
-      expect(find.byIcon(Icons.send_rounded), findsOneWidget);
     });
 
     testWidgets('every invitable game renders a name, not a fallback', (
@@ -289,33 +286,37 @@ void main() {
       }
     });
 
-    testWidgets('the send button is offered to a screen reader', (
+    testWidgets('removing the game is offered to a screen reader', (
       tester,
     ) async {
+      // Send now lives on the composer below, because a send carries the
+      // game AND any caption. What is left here is taking it back off.
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(host(_FakeInviteGateway(), gameType: 'mirror'));
       await tester.pumpAndSettle();
 
-      expect(find.bySemanticsLabel('Send game invitation'), findsOneWidget);
+      expect(find.bySemanticsLabel('Remove game invitation'), findsOneWidget);
+      expect(
+        find.byIcon(Icons.send_rounded),
+        findsNothing,
+        reason: 'the bar still owns a send button',
+      );
       handle.dispose();
     });
 
-    testWidgets('a send in flight cannot be tapped again', (tester) async {
-      var sends = 0;
-      final gateway = _FakeInviteGateway();
+    testWidgets('removing the game unstages it', (tester) async {
+      var cancels = 0;
       await tester.pumpWidget(
-        host(gateway, gameType: 'mirror', onSend: () => sends++),
+        host(
+          _FakeInviteGateway(),
+          gameType: 'mirror',
+          onCancel: () => cancels++,
+        ),
       );
       await tester.pumpAndSettle();
 
-      final container = ProviderScope.containerOf(
-        tester.element(find.byType(GameComposerBar)),
-      );
-      container.read(gameComposerProvider('r1').notifier).stage('mirror');
-      await tester.pump();
-
-      await tester.tap(find.byIcon(Icons.send_rounded));
-      expect(sends, 1);
+      await tester.tap(find.byIcon(Icons.close_rounded));
+      expect(cancels, 1);
     });
 
     testWidgets('a failure is shown in the player\'s language', (tester) async {

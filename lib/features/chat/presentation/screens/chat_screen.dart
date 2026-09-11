@@ -458,7 +458,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   /// Nothing happens here on failure beyond the message the composer
   /// shows: the game stays staged and the idempotency key is kept, so
   /// the retry is the same request rather than a second invitation.
-  Future<void> _sendStagedGame() async {
+  Future<void> _sendStagedGame({String caption = ''}) async {
+    // The caption goes FIRST, as an ordinary message.
+    //
+    // Two messages rather than one card carrying text: the card's
+    // content field is the game's name, written by a database trigger
+    // and used as the card's fallback label, so a caption stored there
+    // would fight it. As its own message the caption is editable,
+    // replyable and deletable like anything else the player typed.
+    //
+    // Sent before the invite so the conversation reads in the order it
+    // was written: the note, then the game it is about.
+    if (caption.isNotEmpty) {
+      await _sendDraftText(caption);
+      if (!mounted) return;
+    }
+
     final sessionId =
         await ref
             .read(
@@ -956,16 +971,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                               ),
                             ),
                           ),
-                        // A staged game replaces the text field entirely.
-                        // The player picked a game to SEND, so the field
-                        // has nothing to offer until that resolves --
-                        // and leaving both would ask them to choose
-                        // between two things to send.
+                        // A staged game sits ABOVE the composer rather
+                        // than replacing it, so the field stays free to
+                        // carry a note about the game being sent.
                         if (conversation.canSend && stagedGame != null)
                           GameComposerBar(
                             relationshipId: conversation.relationshipId,
                             gameType: stagedGame,
-                            onSend: () => unawaited(_sendStagedGame()),
                             onCancel:
                                 () =>
                                     ref
@@ -975,8 +987,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                           ).notifier,
                                         )
                                         .cancel(),
-                          )
-                        else if (conversation.canSend)
+                          ),
+                        if (conversation.canSend)
                           ChatTextField(
                             controller: _controller,
                             onSend: () {

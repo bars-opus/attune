@@ -25,7 +25,6 @@ class GameComposerBar extends ConsumerWidget {
     super.key,
     required this.relationshipId,
     required this.gameType,
-    required this.onSend,
     required this.onCancel,
   });
 
@@ -34,7 +33,9 @@ class GameComposerBar extends ConsumerWidget {
   final String relationshipId;
 
   final String gameType;
-  final VoidCallback onSend;
+
+  /// Unstages the game. Sending is the composer's job below, because a
+  /// send carries the game AND any caption typed with it.
   final VoidCallback onCancel;
 
   @override
@@ -45,10 +46,7 @@ class GameComposerBar extends ConsumerWidget {
     final title = gameTypeDisplayName(gameType);
 
     return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: Spacing.sm.w,
-        vertical: Spacing.xs.h,
-      ),
+      padding: EdgeInsets.fromLTRB(Spacing.sm.w, Spacing.xs.h, Spacing.sm.w, 0),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -65,41 +63,32 @@ class GameComposerBar extends ConsumerWidget {
                 style: TextStyle(color: colorScheme.error, fontSize: 12),
               ),
             ),
-          // Three separate rounded surfaces, matching the composer's own
-          // shape: the controls are satellites beside the pill, never
-          // inside it. One container around all three made the ✕ and the
-          // send button look like they belonged to the game card rather
-          // than to the composer.
-          Row(
-            children: [
-              ComposerSatellite(
-                icon: Icons.close_rounded,
-                onTap: state.sending ? null : onCancel,
-                tooltip: 'Cancel game invitation',
-              ),
-              SizedBox(width: Spacing.sm.w),
-              Expanded(
-                child: Container(
-                  // Generous, and deliberately more than the text field's
-                  // own padding: a line of text fills its pill, but a
-                  // game card is an object sitting IN one, and a tight
-                  // margin made it read as a card that had burst its
-                  // container rather than one waiting to be sent.
-                  padding: EdgeInsets.symmetric(
-                    horizontal: Spacing.md.w,
-                    vertical: Spacing.md.h,
-                  ),
-                  // The pill the text field uses -- same surface, same
-                  // shadow -- because this REPLACES it. Floating the game
-                  // card on the wallpaper made it look like something
-                  // already sent rather than something about to be.
-                  decoration: BoxDecoration(
-                    color: colorScheme.surface.withValues(alpha: 0.94),
-                    borderRadius: BorderRadius.circular(
-                      BorderRadiusTokens.xl.r,
-                    ),
-                    boxShadow: kComposerShadows,
-                  ),
+          // The staged game sits ABOVE the composer, not inside it.
+          //
+          // Sending a game and writing a note about it are two different
+          // things, and the composer is already the place for the second.
+          // Putting the game in its own pill above leaves the text field
+          // free to be a text field -- so a caption comes for free, on
+          // the send path every other message already uses.
+          Container(
+            // Generous, and deliberately more than the text field's own
+            // padding: a line of text FILLS its pill, but a game card is
+            // an object sitting IN one, and a tight margin made it read
+            // as a card that had burst its container.
+            padding: EdgeInsets.symmetric(
+              horizontal: Spacing.md.w,
+              vertical: Spacing.md.h,
+            ),
+            // The pill the text field uses -- same surface, same shadow
+            // -- so the two read as one composer stacked in two rows.
+            decoration: BoxDecoration(
+              color: colorScheme.surface.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(BorderRadiusTokens.xl.r),
+              boxShadow: kComposerShadows,
+            ),
+            child: Row(
+              children: [
+                Expanded(
                   child: Container(
                     padding: EdgeInsets.symmetric(
                       horizontal: Spacing.sm.w,
@@ -114,8 +103,6 @@ class GameComposerBar extends ConsumerWidget {
                     child: InfoRowWidget(
                       pinAvatar: true,
                       title: title,
-                      // Says what Send will do, in the words the card
-                      // will use once it exists.
                       subtitle: 'Invite them to play',
                       icon: gameGlyphFor(gameType),
                       iconColor: Colors.white,
@@ -139,10 +126,16 @@ class GameComposerBar extends ConsumerWidget {
                     ),
                   ),
                 ),
-              ),
-              SizedBox(width: Spacing.sm.w),
-              _SendButton(sending: state.sending, onSend: onSend),
-            ],
+                SizedBox(width: Spacing.sm.w),
+                // Removing the staged game is the only control here now.
+                // Send lives on the composer below, because what is being
+                // sent is the game AND whatever was typed about it.
+                _RemoveButton(
+                  onCancel: state.sending ? null : onCancel,
+                  colorScheme: colorScheme,
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -150,40 +143,36 @@ class GameComposerBar extends ConsumerWidget {
   }
 }
 
-/// Send, as a satellite like the ✕ beside it.
-///
-/// Filled with the accent rather than the composer surface: of the three
-/// controls it is the only one that commits, and it should be the thing
-/// the eye lands on.
-class _SendButton extends StatelessWidget {
-  const _SendButton({required this.sending, required this.onSend});
+/// Takes the staged game back off the composer.
+class _RemoveButton extends StatelessWidget {
+  const _RemoveButton({required this.onCancel, required this.colorScheme});
 
-  final bool sending;
-  final VoidCallback onSend;
+  final VoidCallback? onCancel;
+  final ColorScheme colorScheme;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return ComposerSatellite(
-      onTap: sending ? null : onSend,
-      tooltip: 'Send game invitation',
-      fillColor: colorScheme.primary,
-      iconColor: colorScheme.onPrimary,
-      child:
-          sending
-              // The send is in flight. A spinner in the button's own
-              // place, rather than over the card, so the thing being sent
-              // stays readable.
-              ? SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: colorScheme.onPrimary,
-                ),
-              )
-              : const Icon(Icons.send_rounded),
+    return Semantics(
+      button: true,
+      enabled: onCancel != null,
+      label: 'Remove game invitation',
+      child: SizedBox(
+        width: 36,
+        height: 36,
+        child: Material(
+          color: colorScheme.onSurface.withValues(alpha: 0.08),
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onCancel,
+            child: Icon(
+              Icons.close_rounded,
+              size: 20,
+              color: colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -61,6 +61,7 @@ class ChatTextField extends StatefulWidget {
     this.recorderFactory,
     this.showCaptureVideo = false,
     this.showGames = false,
+    this.gameStaged = false,
     this.enabled = true,
     this.hintText = 'Message',
     this.focusNode,
@@ -107,6 +108,17 @@ class ChatTextField extends StatefulWidget {
   final VoiceRecorderService Function()? recorderFactory;
   final bool showCaptureVideo;
   final bool showGames;
+
+  /// A game is staged above the composer, waiting to be sent.
+  ///
+  /// Changes what the composer is FOR. It is no longer "write a message
+  /// or attach something" -- the thing being sent is already chosen, and
+  /// the field is now an optional note about it. So the attachment and
+  /// voice entries leave (you cannot caption a game with a photo), the
+  /// games icon stays so the choice can be changed, and Send is always
+  /// available because there is something to send even with no text.
+  final bool gameStaged;
+
   final bool enabled;
   final String hintText;
 
@@ -788,7 +800,8 @@ class _ChatTextFieldState extends State<ChatTextField>
   }
 
   void _handleSend() {
-    if (!(widget.enabled && _hasText)) return;
+    // A staged game is sendable on its own: the caption is optional.
+    if (!(widget.enabled && (_hasText || widget.gameStaged))) return;
     setState(() => _sendPulse++);
     widget.onSend();
   }
@@ -1191,10 +1204,13 @@ class _ChatTextFieldState extends State<ChatTextField>
 
   @override
   Widget build(BuildContext context) {
+    // A staged game is the attachment. Offering the sheet as well would
+    // invite a photo the send path has nowhere to put.
     final showAttachSheet =
-        widget.showAttachImage ||
-        widget.showAttachVideo ||
-        widget.onAttachFile != null;
+        !widget.gameStaged &&
+        (widget.showAttachImage ||
+            widget.showAttachVideo ||
+            widget.onAttachFile != null);
     final colorScheme = Theme.of(context).colorScheme;
 
     // Extracted so the recording composer can place the SAME mic
@@ -1423,7 +1439,11 @@ class _ChatTextFieldState extends State<ChatTextField>
                                       ),
                             ),
                           ),
-                        if (!_hasText && widget.showGames)
+                        // Normally hidden once typing starts, to make
+                        // room. Kept while a game is staged: it is the
+                        // only way back to the picker to change it.
+                        if ((!_hasText || widget.gameStaged) &&
+                            widget.showGames)
                           _ComposerIcon(
                             icon: Icons.sports_esports_outlined,
                             onTap: widget.enabled ? widget.onOpenGames : null,
@@ -1451,19 +1471,27 @@ class _ChatTextFieldState extends State<ChatTextField>
             ),
           ),
           const SizedBox(width: Spacing.sm),
-          if (!_hasText && widget.showVoiceMessage)
+          // A staged game is always sendable, with or without a caption,
+          // so the mic gives up its slot: you cannot narrate a game
+          // invitation with a voice note, and an empty-looking Send with
+          // nothing to press would be a dead end.
+          if (!_hasText && widget.showVoiceMessage && !widget.gameStaged)
             _ComposerSatelliteSurface(enabled: widget.enabled, child: micSlot)
-          else if (_hasText || !widget.showVoiceMessage)
+          else if (_hasText || widget.gameStaged || !widget.showVoiceMessage)
             ComposerSatellite(
               icon: null,
-              onTap: widget.enabled && _hasText ? _handleSend : null,
-              tooltip: 'Send message',
+              onTap:
+                  widget.enabled && (_hasText || widget.gameStaged)
+                      ? _handleSend
+                      : null,
+              tooltip:
+                  widget.gameStaged ? 'Send game invitation' : 'Send message',
               fillColor:
-                  _hasText
+                  _hasText || widget.gameStaged
                       ? widget.sendButtonColor ?? colorScheme.primary
                       : colorScheme.surface.withValues(alpha: 0.94),
               iconColor:
-                  _hasText
+                  _hasText || widget.gameStaged
                       ? widget.onSendButtonColor ?? colorScheme.onPrimary
                       : _composerIconColor(colorScheme),
               child: IconCrossfade(
