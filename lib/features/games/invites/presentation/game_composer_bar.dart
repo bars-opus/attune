@@ -1,4 +1,3 @@
-import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
@@ -41,7 +40,6 @@ class GameComposerBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(gameComposerProvider(relationshipId));
-    final chatColors = Theme.of(context).chatColors;
     final colorScheme = Theme.of(context).colorScheme;
     final title = gameTypeDisplayName(gameType);
 
@@ -89,40 +87,33 @@ class GameComposerBar extends ConsumerWidget {
             child: Row(
               children: [
                 Expanded(
-                  child: Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: Spacing.sm.w,
-                      vertical: Spacing.xs.h,
-                    ),
-                    decoration: BoxDecoration(
-                      color: chatColors.senderBubble,
-                      borderRadius: BorderRadius.circular(
-                        BorderRadiusTokens.lg.r,
-                      ),
-                    ),
-                    child: InfoRowWidget(
-                      pinAvatar: true,
-                      title: title,
-                      subtitle: 'Invite them to play',
-                      icon: gameGlyphFor(gameType),
-                      iconColor: Colors.white,
-                      backgroundColor: GamePalette.of(gameType).end,
-                      avatarRadius: 40.h,
-                      iconSize: 20.h,
-                      circularRadius: 12.r,
-                      showAvatar: true,
-                      showDivider: false,
-                      showTrailingArrow: false,
-                      titleFontSize: 14,
-                      subTitleFontSize: 12,
-                      // The sender bubble is the SAME mint green in both
-                      // themes, so its ink is the same near-black in
-                      // both. A theme-derived onSurface would go white in
-                      // dark mode and vanish.
-                      titleFontColor: chatColors.onSenderBubble,
-                      subTitleFontColor: chatColors.onSenderBubble.withValues(
-                        alpha: 0.65,
-                      ),
+                  // No bubble of its own: the game sits directly on the
+                  // composer surface. The sender-bubble green made this
+                  // look like a message already in the transcript, which
+                  // is the opposite of what a staged item is -- nothing
+                  // has been sent yet.
+                  //
+                  // With no fill the ink comes from the app theme rather
+                  // than the chat palette, so it follows light and dark
+                  // like the text field's own placeholder does.
+                  child: InfoRowWidget(
+                    pinAvatar: true,
+                    title: title,
+                    subtitle: 'Invite them to play',
+                    icon: gameGlyphFor(gameType),
+                    iconColor: Colors.white,
+                    backgroundColor: GamePalette.of(gameType).end,
+                    avatarRadius: 40.h,
+                    iconSize: 20.h,
+                    circularRadius: 12.r,
+                    showAvatar: true,
+                    showDivider: false,
+                    showTrailingArrow: false,
+                    titleFontSize: 14,
+                    subTitleFontSize: 12,
+                    titleFontColor: colorScheme.onSurface,
+                    subTitleFontColor: colorScheme.onSurface.withValues(
+                      alpha: 0.65,
                     ),
                   ),
                 ),
