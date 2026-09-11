@@ -400,22 +400,20 @@ void main() {
     );
     await tester.pump();
 
-    // The screen computes held time from DateTime.now() (real wall-clock),
-    // not from the fake_async clock that tester.pump(duration) advances —
-    // so pumping a fake 800ms leaves the real _segmentElapsed at whatever
-    // real time actually passed (a few ms), which reads as a stray tap and
-    // discards the take (shouldDiscard: held < kStreakMinFirstSegment,
-    // 500ms). runAsync briefly escapes the fake zone to let real time
-    // actually pass, matching how a physical press-and-hold behaves.
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 600)),
-    );
-    // A pump WITH a duration, not a bare pump(): only elapse() fires a
-    // pending Timer.periodic in the fake zone. The ticker's callback then
-    // reads DateTime.now() (real clock, already past the 600ms above) —
-    // the duration passed here is irrelevant to the value it computes,
-    // only to getting the periodic Timer to fire at all.
-    await tester.pump(const Duration(milliseconds: 100));
+    // CaptureCameraScreen's ticker reads clock.now() (package:clock)
+    // rather than DateTime.now() directly (Plan B, Task 2 fix round 1),
+    // so inside this FakeAsync zone it tracks the FAKE clock — a single
+    // pump(duration) both advances "held time" past
+    // kStreakMinFirstSegment (500ms) AND fires the pending Timer.periodic
+    // that reads it, with no real wall-clock wait needed. The previous
+    // version of this helper used tester.runAsync() to let 600ms of REAL
+    // time pass for exactly this computation; that real-clock wait is
+    // what intermittently exceeded the test framework's per-test timeout
+    // under a full, contended `flutter test` run (many isolates
+    // competing for the real event loop) despite finishing in
+    // milliseconds every time this file ran alone — the regression a
+    // full-suite run caught that no single-file run could reproduce.
+    await tester.pump(const Duration(milliseconds: 600));
 
     await gesture.up();
     // _onPressEnd stops the recording (cancelling the 100ms ticker),

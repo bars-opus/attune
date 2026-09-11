@@ -11,6 +11,7 @@ import 'package:attune/features/chat/presentation/widgets/streak_lock_hint.dart'
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/features/stories/domain/captured_media.dart';
 import 'package:camera/camera.dart';
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -100,6 +101,20 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
   bool _isRecording = false;
   Duration _segmentElapsed = Duration.zero;
   Timer? _ticker;
+
+  /// When the current segment started, read from `package:clock`'s
+  /// `clock.now()` rather than `DateTime.now()` directly. In production
+  /// (no active `withClock` zone) the two are identical; a widget test
+  /// running inside `FakeAsync` (as `testWidgets` bodies do) installs its
+  /// own `Clock`, so `clock.now()` tracks the FAKE clock `tester.pump
+  /// (duration)` advances instead of real wall-clock time. That is what
+  /// lets streak_camera_contract_test.dart drive a full press-hold-
+  /// release-review-send take without `tester.runAsync()` for the
+  /// elapsed-time computation: a real-clock wait here needed the real
+  /// event loop to actually run, which starves under a full parallel
+  /// `flutter test` run and intermittently exceeds the framework's
+  /// per-test timeout — the regression a full-suite run caught that no
+  /// single-file run could reproduce.
   DateTime? _segmentStartedAt;
 
   /// True while a captured take is being transcoded/sent. The gesture
@@ -240,7 +255,7 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
       _isLocked = false;
       _lockDrag = 0;
       _segmentElapsed = Duration.zero;
-      _segmentStartedAt = DateTime.now();
+      _segmentStartedAt = clock.now();
     });
     _startTicker();
     _startInFlight = false;
@@ -261,7 +276,7 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
       final started = _segmentStartedAt;
       if (started == null) return;
 
-      final elapsed = DateTime.now().difference(started);
+      final elapsed = clock.now().difference(started);
       setState(() => _segmentElapsed = elapsed);
 
       if (StreakRecordingSession.shouldSplitAt(elapsed)) {
@@ -302,7 +317,7 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
     ref.read(hapticsProvider).selection();
     setState(() {
       _segmentElapsed = Duration.zero;
-      _segmentStartedAt = DateTime.now();
+      _segmentStartedAt = clock.now();
     });
   }
 
