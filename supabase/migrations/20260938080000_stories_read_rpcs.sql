@@ -145,6 +145,17 @@ GRANT EXECUTE ON FUNCTION public.list_story_day_counts(uuid, date, date)
 -- ---------------------------------------------------------------------
 -- get_story_ring_summary: one row per author with an active story.
 --
+-- ABSENCE OF A ROW IS NOT "DO NOT DRAW MY RING". An author with zero
+-- active stories is simply omitted, which is exactly right for the
+-- partner -- §5.1 says an empty partner ring renders nothing at all,
+-- never a placeholder. It is NOT how the caller's own ring works: §5.1
+-- requires "Mine: empty ring, + in the middle" even with zero stories.
+--
+-- So the client draws its own ring unconditionally, from its own
+-- identity, and uses this result only to FILL it. Deriving "should I
+-- draw mine" from row presence would hide the + button for every player
+-- who has not posted yet -- which is every new player.
+--
 -- active_count: how many of that author's items are still in the reel
 -- (expires_at > now()); the ring's segment count, capped client-side at
 -- 12 arcs (§8).
