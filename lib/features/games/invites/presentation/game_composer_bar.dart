@@ -80,9 +80,14 @@ class GameComposerBar extends ConsumerWidget {
               SizedBox(width: Spacing.sm.w),
               Expanded(
                 child: Container(
+                  // Generous, and deliberately more than the text field's
+                  // own padding: a line of text fills its pill, but a
+                  // game card is an object sitting IN one, and a tight
+                  // margin made it read as a card that had burst its
+                  // container rather than one waiting to be sent.
                   padding: EdgeInsets.symmetric(
-                    horizontal: Spacing.xs.w,
-                    vertical: Spacing.xs.h,
+                    horizontal: Spacing.md.w,
+                    vertical: Spacing.md.h,
                   ),
                   // The pill the text field uses -- same surface, same
                   // shadow -- because this REPLACES it. Floating the game
