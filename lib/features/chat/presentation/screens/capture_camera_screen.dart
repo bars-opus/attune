@@ -10,6 +10,7 @@ import 'package:attune/core/widgets/animated_rolling_counter.dart';
 import 'package:attune/features/chat/presentation/widgets/streak_lock_hint.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/features/stories/domain/captured_media.dart';
+import 'package:attune/features/stories/domain/services/capture_image_preparer.dart';
 import 'package:camera/camera.dart';
 import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
@@ -52,13 +53,18 @@ class CaptureCameraScreen extends ConsumerStatefulWidget {
     super.key,
     this.allow = CaptureKinds.videoOnly,
     this.videoPreparerFactory,
+    this.imagePreparerFactory,
     this.onCaptured,
     this.onCancelled,
     this.isReviewing = false,
   });
 
-  /// Task 3 seam (spec §6.3): video-only today, deliberately. Nothing in
-  /// this screen branches on it yet.
+  /// [CaptureKinds.videoOnly] (the streak adapter's value, spec §6.2.1) is
+  /// byte-for-byte the pre-Task-3 gesture: press starts recording
+  /// immediately, release stops it. [CaptureKinds.photoAndVideo] adds the
+  /// tap/hold split (spec §6.2): release before a 300ms hold threshold
+  /// takes a photo via [takePicture]; crossing the threshold starts video
+  /// exactly as [videoOnly] always has.
   final CaptureKinds allow;
 
   /// Test seam, mirroring ChatTextField's `recorderFactory`: defaults to
@@ -66,6 +72,10 @@ class CaptureCameraScreen extends ConsumerStatefulWidget {
   /// platform channel on a test host, so `prepare()` always rejects there
   /// — this lets a characterization test observe the success path too.
   final ChatVideoPreparer Function()? videoPreparerFactory;
+
+  /// Test seam for the photo path, same shape as [videoPreparerFactory]:
+  /// defaults to the real [CaptureImagePreparer] constructor.
+  final CaptureImagePreparer Function()? imagePreparerFactory;
 
   /// When set, a completed capture is reported here (as the RAW file,
   /// not yet transcoded) instead of this screen transcoding and popping
@@ -134,7 +144,26 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
   bool _startInFlight = false;
   bool _releasedDuringStart = false;
 
+  /// True while a photo is being captured/prepared. Same role as
+  /// [_isSending] but kept separate so the record button's busy state
+  /// during a photo take cannot be confused with a video transcode.
+  bool _isCapturingPhoto = false;
+
+  /// Armed on press-down when [CaptureKinds.photoAndVideo]: fires
+  /// [_beginRecording] after the 300ms hold threshold (spec §6.2). A
+  /// release before it fires cancels it and takes a photo instead; a
+  /// release after it fires (i.e. [_isRecording] is already true) stops
+  /// the recording as normal. The two outcomes are mutually exclusive by
+  /// construction — the timer is the single source of truth for which
+  /// gesture this press turned into, so a tap can never also start a
+  /// recording and a hold can never also fire the shutter.
+  Timer? _holdThresholdTimer;
+
   static const Duration _tick = Duration(milliseconds: 100);
+
+  /// Spec §6.2: "release before a 300ms hold threshold takes a photo;
+  /// crossing the threshold starts video".
+  static const Duration _holdThreshold = Duration(milliseconds: 300);
 
   @override
   void initState() {
@@ -209,7 +238,51 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
     await _startPreview();
   }
 
+  /// Press-down. [CaptureKinds.videoOnly] starts recording immediately —
+  /// exactly today's behaviour, untouched. [CaptureKinds.photoAndVideo]
+  /// instead arms [_holdThresholdTimer]; nothing is called on the camera
+  /// yet, so a tap that never crosses the threshold never talks to the
+  /// camera at all until it decides to take a photo.
   Future<void> _onPressStart() async {
+    if (widget.allow == CaptureKinds.videoOnly) {
+      await _beginRecording();
+      return;
+    }
+
+    if (_isRecording || _isCapturingPhoto || _holdThresholdTimer != null) {
+      return;
+    }
+    _holdThresholdTimer = Timer(_holdThreshold, () {
+      _holdThresholdTimer = null;
+      unawaited(_beginRecording());
+    });
+  }
+
+  /// Release. [CaptureKinds.videoOnly] stops recording immediately —
+  /// exactly today's behaviour, untouched. [CaptureKinds.photoAndVideo]
+  /// checks whether [_holdThresholdTimer] already fired: if it did not,
+  /// this was a tap, so the timer is cancelled (guaranteeing it can never
+  /// fire afterwards and start a recording the user already released)
+  /// and a photo is taken instead; if it did, recording is already under
+  /// way and this release stops it exactly as [_endRecording] always has.
+  Future<void> _onPressEnd() async {
+    if (widget.allow == CaptureKinds.videoOnly) {
+      await _endRecording();
+      return;
+    }
+
+    final threshold = _holdThresholdTimer;
+    if (threshold != null) {
+      threshold.cancel();
+      _holdThresholdTimer = null;
+      await _takePicture();
+      return;
+    }
+
+    await _endRecording();
+  }
+
+  Future<void> _beginRecording() async {
     final controller = _controller;
     if (controller == null || _isRecording || _startInFlight) return;
 
@@ -263,9 +336,12 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
     // The finger came up while startVideoRecording() was still awaiting.
     // Without this the release handler already returned (it saw
     // _isRecording == false) and nothing would ever stop the camera.
+    // Calls _endRecording directly (not the _onPressEnd dispatcher):
+    // recording has genuinely started by this point regardless of which
+    // gesture path led here, so this is unconditionally a stop.
     if (_releasedDuringStart) {
       _releasedDuringStart = false;
-      await _onPressEnd();
+      await _endRecording();
     }
   }
 
@@ -321,9 +397,9 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
     });
   }
 
-  Future<void> _onPressEnd() async {
+  Future<void> _endRecording() async {
     // Released before startVideoRecording() finished: remember it, and
-    // _onPressStart finishes as soon as there is a recording to finish.
+    // _beginRecording finishes as soon as there is a recording to finish.
     if (_startInFlight) {
       _releasedDuringStart = true;
       return;
@@ -365,13 +441,65 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
 
   /// Ends a locked take.
   ///
-  /// Separate from _onPressEnd, which returns early while locked -- that
+  /// Separate from _endRecording, which returns early while locked -- that
   /// guard is what lets the finger lift, and routing the stop button
   /// through it made stopping impossible until the 60s cap fired.
   Future<void> _stopLockedRecording() async {
     if (!_isRecording || !_isLocked) return;
     setState(() => _isLocked = false);
-    await _onPressEnd();
+    await _endRecording();
+  }
+
+  /// Takes a photo via [CameraController.takePicture] and reports it as a
+  /// RAW (not yet resized/compressed) [CapturedMedia] — via
+  /// [CaptureCameraScreen.onCaptured] if an embedder is watching,
+  /// otherwise by preparing it immediately and popping this route with
+  /// the result. Mirrors [_reportCaptured]'s video contract exactly, so a
+  /// future story adapter's review step behaves identically for either
+  /// media type.
+  ///
+  /// Only reachable when [widget.allow] is [CaptureKinds.photoAndVideo]
+  /// (see [_onPressEnd]) — the streak adapter passes [CaptureKinds
+  /// .videoOnly] and never calls this.
+  Future<void> _takePicture() async {
+    final controller = _controller;
+    if (controller == null || _isCapturingPhoto || _isRecording) return;
+
+    if (_isSending) {
+      ChatLog.diagnostic('capture tap while sending', 'clearing stale flag');
+      setState(() => _isSending = false);
+    }
+
+    setState(() => _isCapturingPhoto = true);
+    try {
+      final file = await controller.takePicture();
+      if (!mounted) return;
+
+      final size = controller.value.previewSize;
+      final media = CapturedMedia(
+        path: file.path,
+        type: CapturedMediaType.image,
+        width: size?.width.round() ?? 0,
+        height: size?.height.round() ?? 0,
+        // Never set for an image: the server CHECK constraint refuses an
+        // image row that carries a duration (spec §6.2/§4.2).
+        durationMs: null,
+      );
+
+      final onCaptured = widget.onCaptured;
+      if (onCaptured != null) {
+        onCaptured(media);
+        return;
+      }
+      unawaited(_transcodeAndPopGuarded(media));
+    } on CameraException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not take that photo.')),
+      );
+    } finally {
+      if (mounted) setState(() => _isCapturingPhoto = false);
+    }
   }
 
   /// Reports the just-recorded (RAW, not yet transcoded) segment as a
@@ -399,8 +527,8 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
     unawaited(_transcodeAndPopGuarded(media));
   }
 
-  /// The standalone-push contract: transcode right away (there is no
-  /// embedder to defer that decision to) and pop with the result.
+  /// The standalone-push contract: transcode/prepare right away (there is
+  /// no embedder to defer that decision to) and pop with the result.
   Future<void> _transcodeAndPopGuarded(CapturedMedia raw) async {
     try {
       final prepared = await confirmSend(raw);
@@ -411,6 +539,12 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('That streak could not be sent.')),
       );
+    } on CaptureImageRejected catch (rejected) {
+      ChatLog.diagnostic('capture image rejected', rejected);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That photo could not be sent.')),
+      );
     } catch (error, stack) {
       ChatLog.diagnostic('capture failed', '$error\n$stack');
       if (!mounted) return;
@@ -420,8 +554,11 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
     }
   }
 
-  /// Transcodes [raw] through [ChatVideoPreparer], enforcing the 25MB
-  /// ceiling, and returns the prepared [CapturedMedia].
+  /// Prepares [raw] for sending and returns the prepared [CapturedMedia]:
+  /// a video transcodes through [ChatVideoPreparer] (25MB ceiling); a
+  /// photo resizes/compresses through [CaptureImagePreparer] (2560px /
+  /// 5MB, spec §4.2) and always comes back with `durationMs: null` — the
+  /// server CHECK constraint refuses an image row that has one.
   ///
   /// Public so an embedding adapter calls this itself, at the moment ITS
   /// OWN review step accepts the take — not at capture completion. This
@@ -433,10 +570,14 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
   /// screen) still becomes the busy indicator during the embedder's
   /// send, exactly as it did pre-extraction.
   ///
-  /// Throws [ChatVideoRejected] on a rejected transcode; the caller
-  /// decides what to show for that (this screen shows its own message
-  /// only on the standalone-push path, via [_transcodeAndPopGuarded]).
+  /// Throws [ChatVideoRejected] or [CaptureImageRejected] on a rejected
+  /// prepare; the caller decides what to show for that (this screen shows
+  /// its own message only on the standalone-push path, via
+  /// [_transcodeAndPopGuarded]).
   Future<CapturedMedia> confirmSend(CapturedMedia raw) async {
+    if (raw.type == CapturedMediaType.image) {
+      return _prepareImage(raw);
+    }
     if (mounted) setState(() => _isSending = true);
     try {
       final prepared = await (widget.videoPreparerFactory ??
@@ -464,6 +605,27 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
     }
   }
 
+  /// The image half of [confirmSend]. A photo carries no duration
+  /// (spec §6.2/§4.2): the source [CapturedMedia] from [_takePicture]
+  /// already has `durationMs: null`, and nothing here introduces one.
+  Future<CapturedMedia> _prepareImage(CapturedMedia raw) async {
+    if (mounted) setState(() => _isSending = true);
+    try {
+      final prepared = await (widget.imagePreparerFactory ??
+              CaptureImagePreparer.new)()
+          .prepare(raw.path);
+      ChatLog.diagnostic('capture image prepared', '${prepared.byteSize}B');
+      return CapturedMedia(
+        path: prepared.file.path,
+        type: CapturedMediaType.image,
+        width: prepared.width,
+        height: prepared.height,
+      );
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
   void _reportCancelled() {
     final onCancelled = widget.onCancelled;
     if (onCancelled != null) {
@@ -484,6 +646,7 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
     if (!mounted) return;
     setState(() {
       _isSending = false;
+      _isCapturingPhoto = false;
       _isLocked = false;
       _lockDrag = 0;
       _segmentElapsed = Duration.zero;
@@ -533,6 +696,7 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _holdThresholdTimer?.cancel();
     _controller?.dispose();
     unawaited(_recordingHaptics.disable());
     super.dispose();
@@ -692,6 +856,35 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
             ),
           ],
 
+          // Tap-for-photo / hold-for-video hint. Only when the seam is
+          // actually open — the streak adapter passes CaptureKinds
+          // .videoOnly, and this affordance must be entirely absent
+          // there (§6.2.1): a photo option offered on a screen that
+          // cannot send a photo would be a control that lies. Hidden
+          // the moment a gesture is in progress or a take is staged, for
+          // the same "no dead control on screen" reasoning as the
+          // close/flip buttons above.
+          if (widget.allow == CaptureKinds.photoAndVideo &&
+              !reviewing &&
+              !_isSending &&
+              !_isCapturingPhoto &&
+              !_isRecording &&
+              _holdThresholdTimer == null)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: Spacing.xxl * 2 + 96,
+              child: Center(
+                child: Text(
+                  key: const ValueKey('capture-shutter-hint'),
+                  'Tap for photo · Hold for video',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.white70,
+                  ),
+                ),
+              ),
+            ),
+
           // No blocking overlay: the record button itself becomes the
           // loading indicator while sending, and refuses presses, so a
           // second spinner would only compete with it.
@@ -732,7 +925,7 @@ class CaptureCameraScreenState extends ConsumerState<CaptureCameraScreen> {
                         child: StreakRecordButton(
                           progress: progress.clamp(0.0, 1.0),
                           isRecording: _isRecording,
-                          isSending: _isSending,
+                          isSending: _isSending || _isCapturingPhoto,
                           // Nothing else marks the wait: the screen is deliberately
                           // just the (black) preview until the camera is ready.
                           isPreparing:
