@@ -12,6 +12,24 @@
 -- slot into someone else's relationship, or an abuse loop that fills a
 -- private bucket. Every check below is written as an attack or a limit
 -- that must hold, not a happy path that must pass.
+--
+-- House rule, applied throughout this file: every comparison of a
+-- jsonb-extracted value (v_res->>'code', v_res->>'error', and so on)
+-- uses IS DISTINCT FROM / IS NOT DISTINCT FROM, never a bare = or <>.
+-- A bare comparison against NULL evaluates to NULL, not true -- so an
+-- IF built on one silently never fires, and the RAISE EXCEPTION it
+-- guards never runs. That makes the assertion pass while checking
+-- nothing, which is worse than the assertion being absent: absence is
+-- visible in a diff, a silently-vacuous IF is not. This has already
+-- produced two vacuous assertions elsewhere in this codebase using
+-- exactly this idiom. Every check below extracting a jsonb field is
+-- written IS DISTINCT FROM on principle, even where the value happens
+-- to be non-nullable today (story_intent_error always populates
+-- 'code'), because the next task appending to this file should find one
+-- consistent idiom to copy rather than a bare comparison it has to
+-- notice is safe-for-now and might not stay that way. Comparisons of
+-- count(*) results are the one exception: count(*) can never be NULL,
+-- so a bare = or <> there is correct and reads more plainly.
 
 BEGIN;
 
@@ -91,7 +109,7 @@ BEGIN
   IF (v_res->>'error') IS DISTINCT FROM 'true' THEN
     RAISE EXCEPTION 'EXPLOIT: outsider got an intent for a foreign relationship: %', v_res;
   END IF;
-  IF v_res->>'code' <> 'FORBIDDEN' THEN
+  IF v_res->>'code' IS DISTINCT FROM 'FORBIDDEN' THEN
     RAISE EXCEPTION 'wrong code for outsider intent request: %', v_res->>'code';
   END IF;
 
@@ -111,7 +129,7 @@ BEGIN
   IF (v_res->>'error') IS DISTINCT FROM 'true' THEN
     RAISE EXCEPTION 'EXPLOIT: a member got an intent while stories flag is OFF: %', v_res;
   END IF;
-  IF v_res->>'code' <> 'UNAVAILABLE' THEN
+  IF v_res->>'code' IS DISTINCT FROM 'UNAVAILABLE' THEN
     RAISE EXCEPTION 'wrong code for flag-off intent request: %', v_res->>'code';
   END IF;
 
@@ -196,27 +214,27 @@ BEGIN
 
   PERFORM public.test_set_story_rpc_auth('00000000-0000-0000-0000-00000000c401'::uuid);
   v_res := public.create_story_upload_intent(v_rel, 'attachment', 'image', 'image/jpeg');
-  IF (v_res->>'error') IS DISTINCT FROM 'true' OR v_res->>'code' <> 'INVALID_INPUT' THEN
+  IF (v_res->>'error') IS DISTINCT FROM 'true' OR v_res->>'code' IS DISTINCT FROM 'INVALID_INPUT' THEN
     RAISE EXCEPTION 'EXPLOIT: unlisted object_kind accepted: %', v_res;
   END IF;
 
   v_res := public.create_story_upload_intent(v_rel, 'media', 'image', 'image/png');
-  IF (v_res->>'error') IS DISTINCT FROM 'true' OR v_res->>'code' <> 'INVALID_INPUT' THEN
+  IF (v_res->>'error') IS DISTINCT FROM 'true' OR v_res->>'code' IS DISTINCT FROM 'INVALID_INPUT' THEN
     RAISE EXCEPTION 'EXPLOIT: image/png accepted for main media: %', v_res;
   END IF;
 
   v_res := public.create_story_upload_intent(v_rel, 'media', 'video', 'video/quicktime');
-  IF (v_res->>'error') IS DISTINCT FROM 'true' OR v_res->>'code' <> 'INVALID_INPUT' THEN
+  IF (v_res->>'error') IS DISTINCT FROM 'true' OR v_res->>'code' IS DISTINCT FROM 'INVALID_INPUT' THEN
     RAISE EXCEPTION 'EXPLOIT: video/quicktime accepted for main media: %', v_res;
   END IF;
 
   v_res := public.create_story_upload_intent(v_rel, 'thumbnail', 'image', 'video/mp4');
-  IF (v_res->>'error') IS DISTINCT FROM 'true' OR v_res->>'code' <> 'INVALID_INPUT' THEN
+  IF (v_res->>'error') IS DISTINCT FROM 'true' OR v_res->>'code' IS DISTINCT FROM 'INVALID_INPUT' THEN
     RAISE EXCEPTION 'EXPLOIT: video/mp4 accepted for a thumbnail: %', v_res;
   END IF;
 
   v_res := public.create_story_upload_intent(v_rel, 'thumbnail', 'video', 'image/jpeg');
-  IF (v_res->>'error') IS DISTINCT FROM 'true' OR v_res->>'code' <> 'INVALID_INPUT' THEN
+  IF (v_res->>'error') IS DISTINCT FROM 'true' OR v_res->>'code' IS DISTINCT FROM 'INVALID_INPUT' THEN
     RAISE EXCEPTION 'EXPLOIT: media_type=video accepted for a thumbnail: %', v_res;
   END IF;
 
@@ -258,7 +276,7 @@ BEGIN
     RAISE EXCEPTION
       'EXPLOIT: a 21st unconsumed intent was issued past the 20-intent ceiling: %', v_res;
   END IF;
-  IF v_res->>'code' <> 'RATE_LIMITED' THEN
+  IF v_res->>'code' IS DISTINCT FROM 'RATE_LIMITED' THEN
     RAISE EXCEPTION 'wrong code at the 20-intent ceiling: %', v_res->>'code';
   END IF;
 
@@ -317,7 +335,7 @@ BEGIN
     RAISE EXCEPTION
       'EXPLOIT: the 121st call in the hour was accepted past the hourly cap: %', v_res;
   END IF;
-  IF v_res->>'code' <> 'RATE_LIMITED' THEN
+  IF v_res->>'code' IS DISTINCT FROM 'RATE_LIMITED' THEN
     RAISE EXCEPTION 'wrong code at the hourly cap: %', v_res->>'code';
   END IF;
 
@@ -650,7 +668,7 @@ BEGIN
   IF (v_res->>'error') IS DISTINCT FROM 'true' THEN
     RAISE EXCEPTION 'EXPLOIT: finalize succeeded using another user''s intents: %', v_res;
   END IF;
-  IF v_res->>'code' <> 'UNAVAILABLE' THEN
+  IF v_res->>'code' IS DISTINCT FROM 'UNAVAILABLE' THEN
     RAISE EXCEPTION 'wrong code for a foreign intent: %', v_res->>'code';
   END IF;
   RESET ROLE;
@@ -686,7 +704,7 @@ BEGIN
   IF (v_res->>'error') IS DISTINCT FROM 'true' THEN
     RAISE EXCEPTION 'EXPLOIT: finalize succeeded reusing an already-consumed intent: %', v_res;
   END IF;
-  IF v_res->>'code' <> 'UNAVAILABLE' THEN
+  IF v_res->>'code' IS DISTINCT FROM 'UNAVAILABLE' THEN
     RAISE EXCEPTION 'wrong code for a consumed intent: %', v_res->>'code';
   END IF;
   RESET ROLE;
@@ -778,7 +796,7 @@ BEGIN
   IF (v_res->>'error') IS DISTINCT FROM 'true' THEN
     RAISE EXCEPTION 'EXPLOIT: finalize accepted a thumbnail 1 byte over max_bytes: %', v_res;
   END IF;
-  IF v_res->>'code' <> 'UNAVAILABLE' THEN
+  IF v_res->>'code' IS DISTINCT FROM 'UNAVAILABLE' THEN
     RAISE EXCEPTION 'wrong code for an oversized object: %', v_res->>'code';
   END IF;
   RESET ROLE;
