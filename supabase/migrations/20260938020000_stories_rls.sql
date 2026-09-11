@@ -48,8 +48,14 @@ CREATE POLICY story_signals_read_members ON public.story_change_signals
 -- story_views gets NO policy at all: RLS on with no policy denies
 -- everything, which is exactly the contract (§3.4).
 
-REVOKE ALL ON public.story_items          FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON public.story_views          FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON public.story_change_signals FROM PUBLIC, anon, authenticated;
-GRANT SELECT ON public.story_items          TO authenticated;
-GRANT SELECT ON public.story_change_signals TO authenticated;
+-- Table-level REVOKE/GRANT for these three tables (plus
+-- story_media_upload_intents from 20260938030000) lives in
+-- 20260938100000_stories_table_grants.sql, not here. That migration is
+-- also \i-sourced by scripts/local_pg_grants.sql AFTER the local
+-- harness's blanket "GRANT ... ON ALL TABLES ... TO authenticated" runs,
+-- so the same statements serve as both the real privilege and the local
+-- harness's re-assertion of it -- one source of truth, matching the
+-- game/word-hunt table-grants precedent. Keeping it here instead would
+-- let the harness's blanket grant silently re-open these tables on every
+-- rebuild while still passing here, exactly the failure mode those two
+-- precedents exist to prevent.

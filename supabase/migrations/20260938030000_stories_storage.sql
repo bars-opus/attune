@@ -86,7 +86,16 @@ ALTER TABLE public.story_media_upload_intents ENABLE ROW LEVEL SECURITY;
 -- role, matching story_views' contract elsewhere in this feature. The
 -- table is reached only by the storage policies' own EXISTS below and
 -- by Task 4/5/9's SECURITY DEFINER functions, never by a client query.
-REVOKE ALL ON public.story_media_upload_intents FROM PUBLIC, anon, authenticated;
+--
+-- The table-level REVOKE itself lives in
+-- 20260938100000_stories_table_grants.sql, alongside story_items/
+-- story_views/story_change_signals, not here -- that migration is
+-- \i-sourced by scripts/local_pg_grants.sql AFTER the local harness's
+-- blanket grant runs, which is what keeps this REVOKE from being
+-- silently undone on every local rebuild (it is not undone in
+-- production: Supabase grants once at CREATE time and a later REVOKE
+-- stands there). One source of truth, matching the game/word-hunt
+-- table-grants precedent.
 
 -- ---------------------------------------------------------------------
 -- Storage policies.

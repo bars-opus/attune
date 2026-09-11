@@ -39,6 +39,16 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- grant above would open the puzzle and both players' attempts.
 \i supabase/migrations/20260936150000_word_hunt_table_grants.sql
 
+-- Same replay for Stories. story_items and story_change_signals have
+-- RLS policies, but Postgres checks the table privilege first -- the
+-- blanket grant above would still hand authenticated UPDATE/DELETE on
+-- story_items (rewrite expires_at, occurred_on, media_key -- all
+-- server-owned, per spec §3.3) despite the policy only ever having
+-- covered SELECT. story_views and story_media_upload_intents have NO
+-- policy at all by design, so for them the table privilege is the only
+-- gate that exists, exactly like Word Hunt's tables above.
+\i supabase/migrations/20260938100000_stories_table_grants.sql
+
 -- Deliberately NOT granting EXECUTE on all functions.
 --
 -- Supabase's default is EXECUTE for PUBLIC on new functions, and the
