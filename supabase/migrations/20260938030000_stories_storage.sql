@@ -38,23 +38,33 @@ ON CONFLICT (id) DO UPDATE SET public = false;
 -- UPDATE; Task 9's cleanup job re-arms expired, unused keys for
 -- physical deletion and prunes old rows.
 --
--- media_role names which half of the pair this is ('media' vs
+-- Column list is spec §4.2's CREATE TABLE verbatim, plus max_bytes.
+--
+-- object_kind names which half of the pair this is ('media' vs
 -- 'thumbnail'), matching story_items' media_key/thumbnail_key split.
--- max_bytes is stored per-intent rather than derived from media_role at
--- check time, so create_story_item can enforce the §4.2 object-limits
--- table (5MB image / 25MB video / 800KB thumbnail) against whichever
--- ceiling this specific intent was issued under, without the
--- storage-policy layer needing to know those numbers at all.
+-- media_type ('image'/'video') is carried on the intent itself rather
+-- than derived from mime_type, because Task 5's create_story_item
+-- (SECURITY DEFINER) derives the finalized story's media_type from the
+-- intent (spec §3.3) -- parsing a MIME string on that security path
+-- would be unnecessary risk for a value the client already declared
+-- when the intent was created.
+-- max_bytes is stored per-intent rather than derived from object_kind
+-- at check time, so create_story_item can enforce the §4.2
+-- object-limits table (5MB image / 25MB video / 800KB thumbnail)
+-- against whichever ceiling this specific intent was issued under,
+-- without the storage-policy layer needing to know those numbers at
+-- all. The spec doesn't name this column but doesn't forbid it either.
 -- ---------------------------------------------------------------------
 CREATE TABLE public.story_media_upload_intents (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   relationship_id   uuid NOT NULL REFERENCES public.relationships(id)
                       ON DELETE CASCADE,
-  requested_by      uuid NOT NULL REFERENCES auth.users(id)
+  requester_id      uuid NOT NULL REFERENCES auth.users(id)
                       ON DELETE CASCADE,
-  media_role        text NOT NULL CHECK (media_role IN ('media', 'thumbnail')),
-  storage_key       text NOT NULL UNIQUE,
+  object_kind       text NOT NULL CHECK (object_kind IN ('media', 'thumbnail')),
+  media_type        text NOT NULL CHECK (media_type IN ('image', 'video')),
   mime_type         text NOT NULL,
+  storage_key       text NOT NULL UNIQUE,
   max_bytes         bigint NOT NULL CHECK (max_bytes > 0),
   expires_at        timestamptz NOT NULL,
   used_at           timestamptz,
@@ -63,7 +73,7 @@ CREATE TABLE public.story_media_upload_intents (
 );
 
 CREATE INDEX idx_story_media_upload_intents_lookup
-  ON public.story_media_upload_intents (requested_by, relationship_id, expires_at DESC);
+  ON public.story_media_upload_intents (requester_id, relationship_id, expires_at DESC);
 
 -- Supports Task 9's hourly sweep: unused, expired, not yet queued.
 CREATE INDEX idx_story_media_upload_intents_cleanup
@@ -95,7 +105,7 @@ WITH CHECK (
     SELECT 1
     FROM public.story_media_upload_intents intent
     WHERE intent.storage_key = name
-      AND intent.requested_by = auth.uid()
+      AND intent.requester_id = auth.uid()
       AND intent.used_at IS NULL
       AND intent.expires_at > now()
   )
@@ -123,7 +133,7 @@ USING (
       SELECT 1
       FROM public.story_media_upload_intents intent
       WHERE intent.storage_key = name
-        AND intent.requested_by = auth.uid()
+        AND intent.requester_id = auth.uid()
         AND intent.used_at IS NULL
     )
   )
