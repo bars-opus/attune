@@ -65,32 +65,36 @@ class GameComposerBar extends ConsumerWidget {
                 style: TextStyle(color: colorScheme.error, fontSize: 12),
               ),
             ),
-          // The same pill the text field uses -- same surface, same
-          // shadow, same radius -- because this REPLACES it. Floating the
-          // game card on the wallpaper made it look like something that
-          // had already been sent rather than something about to be.
-          Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: Spacing.xs.w,
-              vertical: Spacing.xs.h,
-            ),
-            decoration: BoxDecoration(
-              color: colorScheme.surface.withValues(alpha: 0.94),
-              borderRadius: BorderRadius.circular(BorderRadiusTokens.xl.r),
-              boxShadow: kComposerShadows,
-            ),
-            child: Row(
-              children: [
-                // A filled circle, so the ✕ reads as a control on the
-                // pill rather than a glyph floating on it. onSurface at
-                // low alpha rather than a fixed white: on the dark theme
-                // a white disc would be the brightest thing on screen.
-                _CancelButton(
-                  onCancel: state.sending ? null : onCancel,
-                  colorScheme: colorScheme,
-                ),
-                SizedBox(width: Spacing.xs.w),
-                Expanded(
+          // Three separate rounded surfaces, matching the composer's own
+          // shape: the controls are satellites beside the pill, never
+          // inside it. One container around all three made the ✕ and the
+          // send button look like they belonged to the game card rather
+          // than to the composer.
+          Row(
+            children: [
+              ComposerSatellite(
+                icon: Icons.close_rounded,
+                onTap: state.sending ? null : onCancel,
+                tooltip: 'Cancel game invitation',
+              ),
+              SizedBox(width: Spacing.sm.w),
+              Expanded(
+                child: Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: Spacing.xs.w,
+                    vertical: Spacing.xs.h,
+                  ),
+                  // The pill the text field uses -- same surface, same
+                  // shadow -- because this REPLACES it. Floating the game
+                  // card on the wallpaper made it look like something
+                  // already sent rather than something about to be.
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface.withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(
+                      BorderRadiusTokens.xl.r,
+                    ),
+                    boxShadow: kComposerShadows,
+                  ),
                   child: Container(
                     padding: EdgeInsets.symmetric(
                       horizontal: Spacing.sm.w,
@@ -130,10 +134,10 @@ class GameComposerBar extends ConsumerWidget {
                     ),
                   ),
                 ),
-                SizedBox(width: Spacing.xs.w),
-                _SendButton(sending: state.sending, onSend: onSend),
-              ],
-            ),
+              ),
+              SizedBox(width: Spacing.sm.w),
+              _SendButton(sending: state.sending, onSend: onSend),
+            ],
           ),
         ],
       ),
@@ -141,40 +145,11 @@ class GameComposerBar extends ConsumerWidget {
   }
 }
 
-/// The ✕ that puts the text field back.
-class _CancelButton extends StatelessWidget {
-  const _CancelButton({required this.onCancel, required this.colorScheme});
-
-  final VoidCallback? onCancel;
-  final ColorScheme colorScheme;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      enabled: onCancel != null,
-      label: 'Cancel game invitation',
-      child: SizedBox(
-        width: 36,
-        height: 36,
-        child: Material(
-          color: colorScheme.onSurface.withValues(alpha: 0.08),
-          shape: const CircleBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onCancel,
-            child: Icon(
-              Icons.close_rounded,
-              size: 20,
-              color: colorScheme.onSurface.withValues(alpha: 0.7),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
+/// Send, as a satellite like the ✕ beside it.
+///
+/// Filled with the accent rather than the composer surface: of the three
+/// controls it is the only one that commits, and it should be the thing
+/// the eye lands on.
 class _SendButton extends StatelessWidget {
   const _SendButton({required this.sending, required this.onSend});
 
@@ -185,42 +160,25 @@ class _SendButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Semantics(
-      button: true,
-      enabled: !sending,
-      label: 'Send game invitation',
-      child: SizedBox(
-        width: 44,
-        height: 44,
-        child: Material(
-          color: colorScheme.primary,
-          shape: const CircleBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: sending ? null : onSend,
-            child: Center(
-              child:
-                  sending
-                      // The send is in flight. A spinner in the button's
-                      // own place, rather than over the card, so the
-                      // thing being sent stays readable.
-                      ? SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: colorScheme.onPrimary,
-                        ),
-                      )
-                      : Icon(
-                        Icons.send_rounded,
-                        size: 20,
-                        color: colorScheme.onPrimary,
-                      ),
-            ),
-          ),
-        ),
-      ),
+    return ComposerSatellite(
+      onTap: sending ? null : onSend,
+      tooltip: 'Send game invitation',
+      fillColor: colorScheme.primary,
+      iconColor: colorScheme.onPrimary,
+      child:
+          sending
+              // The send is in flight. A spinner in the button's own
+              // place, rather than over the card, so the thing being sent
+              // stays readable.
+              ? SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: colorScheme.onPrimary,
+                ),
+              )
+              : const Icon(Icons.send_rounded),
     );
   }
 }

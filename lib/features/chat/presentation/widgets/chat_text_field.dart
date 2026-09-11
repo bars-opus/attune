@@ -161,8 +161,15 @@ class ChatTextField extends StatefulWidget {
 /// questions. Icons inside the pill act on the message being written and
 /// sit on the pill's own surface; a satellite opens something else
 /// entirely, and carries its own ground to say so.
-class _ComposerSatellite extends StatelessWidget {
-  const _ComposerSatellite({
+/// A round composer control that sits BESIDE the pill rather than in it.
+///
+/// Public so the staged-game bar can use the real thing: it replaces the
+/// composer, and its cancel and send controls are the same kind of
+/// button as the camera satellite here. A local copy would drift from
+/// this one the first time either was touched.
+class ComposerSatellite extends StatelessWidget {
+  const ComposerSatellite({
+    super.key,
     this.icon,
     required this.onTap,
     this.tooltip,
@@ -178,7 +185,9 @@ class _ComposerSatellite extends StatelessWidget {
   final Color? fillColor;
   final Color? iconColor;
 
-  static const double _size = 48;
+  /// The satellite's diameter. Public so a caller can reserve the same
+  /// space the composer does.
+  static const double size = 48;
 
   @override
   Widget build(BuildContext context) {
@@ -203,8 +212,8 @@ class _ComposerSatellite extends StatelessWidget {
               onTap: onTap,
               customBorder: const CircleBorder(),
               child: SizedBox(
-                width: _size,
-                height: _size,
+                width: size,
+                height: size,
                 child: IconTheme.merge(
                   data: IconThemeData(
                     size: 25,
@@ -248,8 +257,8 @@ class _ComposerSatelliteSurface extends StatelessWidget {
           shape: const CircleBorder(),
           clipBehavior: Clip.antiAlias,
           child: SizedBox(
-            width: _ComposerSatellite._size,
-            height: _ComposerSatellite._size,
+            width: ComposerSatellite.size,
+            height: ComposerSatellite.size,
             child: Center(child: child),
           ),
         ),
@@ -1276,7 +1285,7 @@ class _ChatTextFieldState extends State<ChatTextField>
                     ? Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _ComposerSatellite(
+                        ComposerSatellite(
                           icon: Icons.photo_camera_outlined,
                           onTap: widget.enabled ? widget.onCaptureVideo : null,
                           tooltip: 'Camera',
@@ -1445,7 +1454,7 @@ class _ChatTextFieldState extends State<ChatTextField>
           if (!_hasText && widget.showVoiceMessage)
             _ComposerSatelliteSurface(enabled: widget.enabled, child: micSlot)
           else if (_hasText || !widget.showVoiceMessage)
-            _ComposerSatellite(
+            ComposerSatellite(
               icon: null,
               onTap: widget.enabled && _hasText ? _handleSend : null,
               tooltip: 'Send message',
