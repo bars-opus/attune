@@ -1447,5 +1447,39 @@ void main() {
         }
       },
     );
+
+    test(
+      'list_story_day_counts forwards BOTH ends of the range, not the '
+      'same date twice',
+      () {
+        // The fourth instance of this branch's recurring failure mode: a
+        // fixture uniform in some dimension hides bugs in code that
+        // branches on it. _FakeCalendarGateway.listDayCounts ignores
+        // startOn/endOn entirely, so collapsing p_end_on to echo
+        // p_start_on passes all 120 tests -- a calendar showing only the
+        // first day of each month, with nothing to catch it.
+        final source = File(
+          'lib/features/stories/data/story_read_repository.dart',
+        ).readAsStringSync();
+
+        final start = source.indexOf("'list_story_day_counts'");
+        expect(start, greaterThan(-1));
+        final end = source.indexOf('},', start);
+        final params = source.substring(start, end);
+
+        expect(
+          params.contains("'p_start_on': dateOnly(startOn)"),
+          isTrue,
+          reason: 'the range must start at the caller-supplied startOn',
+        );
+        expect(
+          params.contains("'p_end_on': dateOnly(endOn)"),
+          isTrue,
+          reason:
+              'the range must END at endOn -- echoing startOn collapses the '
+              'month to a single day and empties the calendar',
+        );
+      },
+    );
   });
 }

@@ -388,7 +388,6 @@ void main() {
         'the author-mode reel (active-only) does NOT show this expired '
         'item at all',
         (tester) async {
-          final day = DateTime.utc(2026, 9, 1);
           // listActiveItems returns nothing for this author (the item has
           // expired, exactly like the real RPC).
           final activeGateway = _FakeCalendarGateway(activeItems: const []);

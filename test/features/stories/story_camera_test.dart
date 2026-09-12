@@ -284,30 +284,6 @@ class _FakeCaptureImagePreparer extends CaptureImagePreparer {
   }
 }
 
-/// Rejects its first N calls with [CaptureImageRejected], then delegates
-/// to a real [_FakeCaptureImagePreparer] for every call after that. Lets
-/// a test drive "first capture fails, retry succeeds" through the real
-/// gesture/confirmSend path, proving the screen survives a failure and a
-/// second genuine capture is not silently swallowed (F5/F6 of this
-/// task's review: `_handled` must reset on a failure path, or the retry
-/// itself would be the dropped capture).
-class _FailNTimesCaptureImagePreparer extends CaptureImagePreparer {
-  _FailNTimesCaptureImagePreparer(this._failuresRemaining);
-
-  int _failuresRemaining;
-  int calls = 0;
-  final _delegate = _FakeCaptureImagePreparer(suffix: 'retry');
-
-  @override
-  Future<PreparedCaptureImage> prepare(String localPath) async {
-    calls++;
-    if (_failuresRemaining > 0) {
-      _failuresRemaining--;
-      throw const CaptureImageRejected('media_decode_failed');
-    }
-    return _delegate.prepare(localPath);
-  }
-}
 
 void main() {
   late Directory tempDir;
