@@ -40,7 +40,11 @@ class StreakReviewSheet extends StatelessWidget {
             // Just the length. A streak is always one clip now, so a count
             // said nothing — and the duration is the only thing worth
             // knowing before deciding whether to send.
-            '${seconds}s',
+            //
+            // A photo has no length, so "0s" would be both wrong and the
+            // only thing this sheet says about the take (spec §6.3 step 3
+            // adds photos here). It gets the media kind instead.
+            seconds == 0 ? 'Photo' : '${seconds}s',
             style: textTheme.titleLarge?.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w600,

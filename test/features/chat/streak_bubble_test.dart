@@ -280,6 +280,45 @@ void main() {
     expect(cancelled, isFalse);
   });
 
+  testWidgets('the review sheet labels a photo take "Photo", not "0s"', (
+    tester,
+  ) async {
+    // A photo streak (spec 6.3 step 3) has no segments and so no length.
+    // The duration is the ONLY thing this sheet says about the take, so
+    // "0s" would be both wrong and the whole message.
+    await tester.pumpWidget(
+      _wrap(
+        StreakReviewSheet(
+          segments: const [],
+          onSend: () {},
+          onDiscard: () {},
+        ),
+      ),
+    );
+
+    expect(find.text('Photo'), findsOneWidget);
+    expect(find.text('0s'), findsNothing);
+  });
+
+  testWidgets('a video take still shows its length', (tester) async {
+    // The other half of the branch: varying the media-kind dimension
+    // rather than testing only the new case.
+    await tester.pumpWidget(
+      _wrap(
+        StreakReviewSheet(
+          segments: const [
+            StreakSegment(path: '/tmp/a.mp4', duration: Duration(seconds: 7)),
+          ],
+          onSend: () {},
+          onDiscard: () {},
+        ),
+      ),
+    );
+
+    expect(find.text('7s'), findsOneWidget);
+    expect(find.text('Photo'), findsNothing);
+  });
+
   testWidgets('cancel discards without sending', (tester) async {
     var sent = false;
     var cancelled = false;
