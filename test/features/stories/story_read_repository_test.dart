@@ -23,7 +23,10 @@ import 'dart:io';
 
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
+import 'package:attune/features/stories/data/story_repository.dart'
+    show StoryApiError;
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -67,13 +70,47 @@ StoryItem _item({
 /// in particular, that paging is driven by (created_at, id) cursors, that
 /// signMediaUrl is invoked once per request with no internal caching, and
 /// that the change-signal stream never carries the signal row's payload.
+///
+/// **Fix round 1 (task-2-review.md): completer-based control for
+/// `listActiveItems`.** The review's root-cause finding is that this
+/// fake originally resolved every call SYNCHRONOUSLY (an `async` method
+/// whose body never actually awaits anything suspends for exactly one
+/// microtask), so no test built on it could ever express two calls
+/// genuinely overlapping in flight — which is exactly the shape F1/F2/F3
+/// are about. `listActiveItems` now supports two modes:
+///
+///  - the ORIGINAL script-list mode (`activeItemsScript`), unchanged, for
+///    every existing test that does not care about interleaving; and
+///  - an opt-in manual mode: call [armManualActiveItems] once, and every
+///    subsequent `listActiveItems` call instead returns a `Completer`
+///    left PENDING in [pendingActiveItemsCompleters], in call order. A
+///    test resolves them itself, in whatever order it wants
+///    (`pendingActiveItemsCompleters[0].complete(pageB)` before
+///    `pendingActiveItemsCompleters[1]` even though call 1 was issued
+///    after call 0), which is what makes "a second call resolves before
+///    the first" and "a call is still in flight when a second is issued"
+///    both directly expressible instead of inferred from call counts.
 class _FakeStoryReadGateway implements StoryReadGateway {
   final List<StoryRingSummary> ringSummaryScript = [];
   int ringSummaryCallCount = 0;
 
-  /// Pages served by [listActiveItems], consumed in order per call.
+  /// Pages served by [listActiveItems] in script mode (the default),
+  /// consumed in order per call. Ignored once [armManualActiveItems] has
+  /// been called.
   final List<StoryItemPage> activeItemsScript = [];
   final List<StoryPageCursor?> activeItemsCursorsRequested = [];
+
+  bool _manualActiveItems = false;
+
+  /// One entry per `listActiveItems` call once manual mode is armed, in
+  /// call order. A test completes these directly to control exactly
+  /// when — and in what order — each call resolves.
+  final List<Completer<StoryItemPage>> pendingActiveItemsCompleters = [];
+
+  /// Switches [listActiveItems] from the script list to manual,
+  /// completer-based resolution. Call once per test before issuing any
+  /// call this test needs to control the timing/ordering of.
+  void armManualActiveItems() => _manualActiveItems = true;
 
   final List<StoryItemPage> dayItemsScript = [];
   final List<StoryPageCursor?> dayItemsCursorsRequested = [];
@@ -118,10 +155,15 @@ class _FakeStoryReadGateway implements StoryReadGateway {
     required String authorId,
     StoryPageCursor? after,
     int limit = 50,
-  }) async {
+  }) {
     activeItemsCursorsRequested.add(after);
+    if (_manualActiveItems) {
+      final completer = Completer<StoryItemPage>();
+      pendingActiveItemsCompleters.add(completer);
+      return completer.future;
+    }
     final index = activeItemsCursorsRequested.length - 1;
-    return activeItemsScript[index];
+    return Future.value(activeItemsScript[index]);
   }
 
   @override
@@ -178,6 +220,67 @@ class _FakeStoryReadGateway implements StoryReadGateway {
   }
 }
 
+/// A gateway that throws a [StoryApiError] from every call — used only to
+/// prove a refusal actually PROPAGATES to a caller (fix round 1, finding
+/// 5) rather than being swallowed. Distinct from [_FakeStoryReadGateway],
+/// which always succeeds; mixing "throws" behaviour into that class would
+/// have made every other test that builds one carry unused failure
+/// plumbing.
+class _ThrowingStoryReadGateway implements StoryReadGateway {
+  static const _error = StoryApiError(
+    code: 'UNAVAILABLE',
+    message: "Stories aren't available right now.",
+    retryable: false,
+  );
+
+  @override
+  Future<List<StoryRingSummary>> getRingSummary({
+    required String relationshipId,
+  }) => throw _error;
+
+  @override
+  Future<StoryItemPage> listActiveItems({
+    required String relationshipId,
+    required String authorId,
+    StoryPageCursor? after,
+    int limit = 50,
+  }) => throw _error;
+
+  @override
+  Future<List<StoryDayCount>> listDayCounts({
+    required String relationshipId,
+    required DateTime startOn,
+    required DateTime endOn,
+  }) => throw _error;
+
+  @override
+  Future<StoryItemPage> listDayItems({
+    required String relationshipId,
+    required DateTime occurredOn,
+    StoryPageCursor? after,
+    int limit = 50,
+  }) => throw _error;
+
+  @override
+  Future<void> markViewed({required String storyItemId}) => throw _error;
+
+  @override
+  Future<void> deleteItem({required String storyItemId}) => throw _error;
+
+  @override
+  Future<String?> signMediaUrl(String storageKey) => throw _error;
+
+  @override
+  Stream<void> watchChangeSignal({required String relationshipId}) =>
+      const Stream.empty();
+
+  @override
+  void disposeChannel(String relationshipId) {}
+
+  @override
+  void disposeAllChannels() {}
+}
+
 ProviderContainer _buildContainer(_FakeStoryReadGateway gateway) {
   final container = ProviderContainer(
     overrides: [
@@ -189,6 +292,16 @@ ProviderContainer _buildContainer(_FakeStoryReadGateway gateway) {
 }
 
 void main() {
+  // storyChangeSignalProvider now attaches an AppLifecycleListener (fix
+  // round 1, finding 4 — app-resume refetch) alongside the realtime
+  // stream. AppLifecycleListener reaches into WidgetsBinding.instance at
+  // construction time, which throws "Binding has not yet been
+  // initialized" in a plain, binding-less `test()`. This is the standard
+  // fix (flutter_test's own docs): initialize the test binding once, up
+  // front, which is inert for everything else in this file — nothing
+  // here pumps a widget tree or needs one.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('ring summary map shape', () {
     test(
       'an author with zero active stories is absent from the map, not a '
@@ -322,6 +435,70 @@ void main() {
         expect(reel.value?.length, 2);
       },
     );
+
+    test(
+      'F4: an app-resume lifecycle event refetches the ring summary, '
+      'exactly like a story_change_signals bump would',
+      () async {
+        // Drives a REAL AppLifecycleListener through
+        // TestWidgetsFlutterBinding, rather than asserting on source
+        // text: storyChangeSignalProvider attaches an actual
+        // AppLifecycleListener (see its doc comment, finding 4), and
+        // TestWidgetsFlutterBinding.handleAppLifecycleStateChanged is
+        // the documented way to trigger it in a test without a widget
+        // tree.
+        final gateway = _FakeStoryReadGateway();
+        gateway.ringSummaryScript.add(
+          StoryRingSummary(
+            authorId: 'partner-1',
+            activeCount: 1,
+            unviewedCount: 0,
+            newestThumbnailKey: 'story-media/a-thumb.jpg',
+            newestCreatedAt: DateTime.utc(2026, 9, 11, 9),
+          ),
+        );
+
+        final container = _buildContainer(gateway);
+        addTearDown(container.dispose);
+        final sub = container.listen(
+          storyRingSummaryProvider('rel-1'),
+          (previous, next) {},
+          fireImmediately: true,
+        );
+        addTearDown(sub.close);
+        await pumpEventQueue();
+
+        expect(gateway.ringSummaryCallCount, 1);
+
+        // Simulate backgrounding then resuming. AppLifecycleListener
+        // asserts on the real platform state machine
+        // (resumed -> inactive -> hidden -> paused -> hidden -> inactive
+        // -> resumed) — matching how the OS actually reports lifecycle
+        // changes; skipping a step throws.
+        for (final state in [
+          AppLifecycleState.inactive,
+          AppLifecycleState.hidden,
+          AppLifecycleState.paused,
+          AppLifecycleState.hidden,
+          AppLifecycleState.inactive,
+          AppLifecycleState.resumed,
+        ]) {
+          TestWidgetsFlutterBinding.instance.handleAppLifecycleStateChanged(
+            state,
+          );
+        }
+        await pumpEventQueue();
+
+        expect(
+          gateway.ringSummaryCallCount,
+          2,
+          reason:
+              'app resume must trigger the same refetch pipe a realtime '
+              'signal does — the socket is torn down while backgrounded, '
+              'so nothing else recovers a stale ring on its own',
+        );
+      },
+    );
   });
 
   group('keyset paging', () {
@@ -444,6 +621,399 @@ void main() {
         final cursor = gateway.activeItemsCursorsRequested[1]!;
         expect(cursor.id, first.id);
         expect(cursor.createdAt, first.createdAt);
+      },
+    );
+  });
+
+  group('pager concurrency (fix round 1: F1, F2, F3)', () {
+    // These tests exist because task-2-review.md's root-cause finding was
+    // that _FakeStoryReadGateway used to resolve every call
+    // synchronously, so nothing here could express two calls genuinely
+    // overlapping in flight. armManualActiveItems() + the completer list
+    // fixes that — see that method's doc comment.
+
+    test(
+      'F1: closing the reel while the first page is still in flight does '
+      'not throw or write to state after dispose',
+      () async {
+        final gateway = _FakeStoryReadGateway()..armManualActiveItems();
+        final container = _buildContainer(gateway);
+        // Deliberately NOT torn down via addTearDown before disposing —
+        // this test disposes the container itself mid-flight, which is
+        // the scenario: the notifier's constructor kicks off refresh()
+        // (the first page), and the screen is closed (autoDispose) while
+        // that fetch is still pending.
+        final key = const StoryReelKey(
+          relationshipId: 'rel-1',
+          authorId: 'author-1',
+        );
+        final sub = container.listen(
+          storyReelPagesProvider(key),
+          (previous, next) {},
+          fireImmediately: true,
+        );
+        await pumpEventQueue();
+
+        expect(
+          gateway.pendingActiveItemsCompleters.length,
+          1,
+          reason: 'the constructor must have issued the first-page fetch',
+        );
+
+        // Close the subscription AND dispose the container — this is
+        // what autoDispose does when the last listener goes away.
+        sub.close();
+        container.dispose();
+
+        // Now let the in-flight fetch land. Before the F1 fix this threw
+        // "Bad state: Tried to use StoryReelPagesNotifier after dispose
+        // was called" synchronously out of the StateNotifier's state=
+        // setter. Complete it and pump — a throw here fails the test.
+        gateway.pendingActiveItemsCompleters[0].complete(
+          StoryItemPage(
+            items: [_item(id: 'late-item', createdAt: DateTime.utc(2026, 9, 11, 9))],
+            nextCursor: null,
+          ),
+        );
+        await pumpEventQueue();
+        // Reaching here without throwing IS the assertion — nothing
+        // further to check; a dead notifier has no observable state.
+      },
+    );
+
+    test(
+      'F2 scenario A: a signal arriving while the initial load is still '
+      'in flight is coalesced (F3) into one fresh re-fetch, and that '
+      'fresh result is what the pager ends up showing — the in-flight '
+      "call's own (now-stale) result does not get appended or otherwise "
+      'clobber it',
+      () async {
+        final gateway = _FakeStoryReadGateway()..armManualActiveItems();
+        final container = _buildContainer(gateway);
+        addTearDown(container.dispose);
+        final key = const StoryReelKey(
+          relationshipId: 'rel-1',
+          authorId: 'author-1',
+        );
+        final sub = container.listen(
+          storyReelPagesProvider(key),
+          (previous, next) {},
+          fireImmediately: true,
+        );
+        addTearDown(sub.close);
+        await pumpEventQueue();
+
+        expect(gateway.pendingActiveItemsCompleters.length, 1);
+
+        // The partner posts; the signal fires while call #0 (the initial
+        // load, kicked off by the constructor) is still pending. Because
+        // a refresh is ALREADY running, F3's coalescing takes over: the
+        // signal does not start a second RPC call yet, it only requests
+        // one more once #0 finishes.
+        gateway.emitSignal('rel-1');
+        await pumpEventQueue();
+        expect(
+          gateway.pendingActiveItemsCompleters.length,
+          1,
+          reason:
+              'a signal arriving while a refresh is already in flight '
+              'must be coalesced, not fire an immediate second call',
+        );
+
+        // Call #0 (the STALE pre-signal fetch) resolves now.
+        gateway.pendingActiveItemsCompleters[0].complete(
+          StoryItemPage(
+            items: [_item(id: 'STALE', createdAt: DateTime.utc(2026, 9, 11, 9))],
+            nextCursor: null,
+          ),
+        );
+        await pumpEventQueue();
+
+        // Exactly one more call must now have been issued — the
+        // coalesced refresh the signal asked for — proving the signal
+        // was not simply dropped (F3's "coalesced" must still mean
+        // "eventually runs", not "cancelled").
+        expect(
+          gateway.pendingActiveItemsCompleters.length,
+          2,
+          reason:
+              'the coalesced signal must still produce exactly one more '
+              'fetch once the in-flight one completes',
+        );
+
+        gateway.pendingActiveItemsCompleters[1].complete(
+          StoryItemPage(
+            items: [_item(id: 'FRESH', createdAt: DateTime.utc(2026, 9, 11, 10))],
+            nextCursor: null,
+          ),
+        );
+        await pumpEventQueue();
+
+        final state = container.read(storyReelPagesProvider(key));
+        expect(
+          state.value?.map((i) => i.id).toList(),
+          ['FRESH'],
+          reason:
+              'the final state must reflect the coalesced refresh, not '
+              "the stale pre-signal fetch's own result",
+        );
+      },
+    );
+
+    test(
+      'F2 scenario B: a signal landing mid-loadMore must win, and the '
+      "stale loadMore's result must be dropped rather than appended onto "
+      'data the refresh already replaced',
+      () async {
+        final gateway = _FakeStoryReadGateway();
+        final firstPageItem = _item(
+          id: 'A',
+          createdAt: DateTime.utc(2026, 9, 11, 9),
+        );
+        gateway.activeItemsScript.add(
+          StoryItemPage(items: [firstPageItem], nextCursor: firstPageItem.cursor),
+        );
+
+        final container = _buildContainer(gateway);
+        addTearDown(container.dispose);
+        final key = const StoryReelKey(
+          relationshipId: 'rel-1',
+          authorId: 'author-1',
+        );
+        final sub = container.listen(
+          storyReelPagesProvider(key),
+          (previous, next) {},
+          fireImmediately: true,
+        );
+        addTearDown(sub.close);
+        await pumpEventQueue();
+
+        // First page loaded via the script (synchronous). Now switch to
+        // manual mode so loadMore()'s call, and the signal's refresh()
+        // call, can be interleaved under test control.
+        gateway.armManualActiveItems();
+        final notifier = container.read(storyReelPagesProvider(key).notifier);
+
+        final loadMoreFuture = notifier.loadMore();
+        await pumpEventQueue();
+        expect(
+          gateway.pendingActiveItemsCompleters.length,
+          1,
+          reason: 'loadMore must have issued its own fetch (page 2)',
+        );
+
+        // A signal lands while that loadMore is still in flight.
+        gateway.emitSignal('rel-1');
+        await pumpEventQueue();
+        expect(
+          gateway.pendingActiveItemsCompleters.length,
+          2,
+          reason: 'the signal must start its own refresh() fetch',
+        );
+
+        // The refresh (call #1) resolves FIRST.
+        gateway.pendingActiveItemsCompleters[1].complete(
+          StoryItemPage(
+            items: [_item(id: 'FRESH', createdAt: DateTime.utc(2026, 9, 11, 12))],
+            nextCursor: null,
+          ),
+        );
+        await pumpEventQueue();
+
+        // Then the stale loadMore's page 2 (call #0) resolves.
+        gateway.pendingActiveItemsCompleters[0].complete(
+          StoryItemPage(
+            items: [_item(id: 'OLDPAGE2', createdAt: DateTime.utc(2026, 9, 11, 10))],
+            nextCursor: null,
+          ),
+        );
+        await loadMoreFuture;
+        await pumpEventQueue();
+
+        final state = container.read(storyReelPagesProvider(key));
+        expect(
+          state.value?.map((i) => i.id).toList(),
+          ['FRESH'],
+          reason:
+              'the refresh triggered by the signal must win outright; '
+              "the superseded loadMore's stale page must not be appended "
+              'onto pre-refresh data, and must not be appended onto the '
+              'fresh data either',
+        );
+      },
+    );
+
+    test(
+      'F3: a burst of ten signals produces at most two fetch calls total, '
+      'not one per signal',
+      () async {
+        final gateway = _FakeStoryReadGateway()..armManualActiveItems();
+        final container = _buildContainer(gateway);
+        addTearDown(container.dispose);
+        final key = const StoryReelKey(
+          relationshipId: 'rel-1',
+          authorId: 'author-1',
+        );
+        final sub = container.listen(
+          storyReelPagesProvider(key),
+          (previous, next) {},
+          fireImmediately: true,
+        );
+        addTearDown(sub.close);
+        await pumpEventQueue();
+
+        expect(gateway.pendingActiveItemsCompleters.length, 1);
+
+        // Ten signals in one burst, all while the initial (constructor)
+        // fetch is still unresolved. Every one of them must coalesce —
+        // none may start a new call while #0 is in flight.
+        for (var i = 0; i < 10; i++) {
+          gateway.emitSignal('rel-1');
+        }
+        await pumpEventQueue();
+
+        expect(
+          gateway.pendingActiveItemsCompleters.length,
+          1,
+          reason:
+              'ten signals arriving while a fetch is already in flight '
+              'must coalesce into zero NEW calls yet — never one call '
+              'per signal',
+        );
+
+        // #0 resolves. Exactly ONE more call must now fire — the single
+        // coalesced refresh every one of the ten signals asked for.
+        gateway.pendingActiveItemsCompleters[0].complete(
+          const StoryItemPage(items: [], nextCursor: null),
+        );
+        await pumpEventQueue();
+
+        expect(
+          gateway.pendingActiveItemsCompleters.length,
+          2,
+          reason:
+              'the ten coalesced signals must still produce exactly one '
+              'more fetch once the in-flight call completes — coalesced '
+              'must not mean dropped',
+        );
+
+        // Resolve it so the pager settles cleanly, and confirm nothing
+        // further was queued (proving the burst really did collapse to
+        // one extra call, not eleven).
+        gateway.pendingActiveItemsCompleters[1].complete(
+          const StoryItemPage(items: [], nextCursor: null),
+        );
+        await pumpEventQueue();
+        expect(gateway.pendingActiveItemsCompleters.length, 2);
+      },
+    );
+
+    test(
+      '!hasMore stops loadMore from issuing a second call',
+      () async {
+        final gateway = _FakeStoryReadGateway()..armManualActiveItems();
+        final container = _buildContainer(gateway);
+        addTearDown(container.dispose);
+        final key = const StoryReelKey(
+          relationshipId: 'rel-1',
+          authorId: 'author-1',
+        );
+        final sub = container.listen(
+          storyReelPagesProvider(key),
+          (previous, next) {},
+          fireImmediately: true,
+        );
+        addTearDown(sub.close);
+        await pumpEventQueue();
+
+        // Resolve the first page as a SHORT page (nextCursor: null) —
+        // the server-short-page-means-done contract.
+        gateway.pendingActiveItemsCompleters[0].complete(
+          StoryItemPage(
+            items: [_item(id: 'only', createdAt: DateTime.utc(2026, 9, 11, 9))],
+            nextCursor: null,
+          ),
+        );
+        await pumpEventQueue();
+
+        final notifier = container.read(storyReelPagesProvider(key).notifier);
+        expect(notifier.hasMore, isFalse);
+
+        // Deliberately NOT awaited: if the !_hasMore guard is missing,
+        // loadMore issues a real fetch whose completer nothing here ever
+        // resolves, and awaiting that future would hang for the full
+        // real-clock test timeout — exactly the "no real-clock waits"
+        // failure mode this suite must avoid. Firing-and-forgetting the
+        // call and asserting on the gateway's recorded call count after
+        // a pump is sufficient: a violating implementation is caught by
+        // the call-count assertion below, not by ever letting the call
+        // resolve.
+        unawaited(notifier.loadMore());
+        await pumpEventQueue();
+        expect(
+          gateway.pendingActiveItemsCompleters.length,
+          1,
+          reason: '!hasMore must stop loadMore from issuing a second call',
+        );
+      },
+    );
+
+    test(
+      '_loadingMore prevents a concurrent loadMore call from issuing its '
+      'own RPC while one is already in flight',
+      () async {
+        final gateway = _FakeStoryReadGateway()..armManualActiveItems();
+        final container = _buildContainer(gateway);
+        addTearDown(container.dispose);
+        final key = const StoryReelKey(
+          relationshipId: 'rel-1',
+          authorId: 'author-1',
+        );
+        final sub = container.listen(
+          storyReelPagesProvider(key),
+          (previous, next) {},
+          fireImmediately: true,
+        );
+        addTearDown(sub.close);
+        await pumpEventQueue();
+
+        gateway.pendingActiveItemsCompleters[0].complete(
+          StoryItemPage(
+            items: [_item(id: 'p1', createdAt: DateTime.utc(2026, 9, 11, 9))],
+            nextCursor: StoryPageCursor(
+              createdAt: DateTime.utc(2026, 9, 11, 9),
+              id: 'p1',
+            ),
+          ),
+        );
+        await pumpEventQueue();
+
+        final notifier = container.read(storyReelPagesProvider(key).notifier);
+        unawaited(notifier.loadMore());
+        await pumpEventQueue();
+        expect(gateway.pendingActiveItemsCompleters.length, 2);
+
+        // Call loadMore again while the first is still pending.
+        // Deliberately not awaited, for the same real-clock-hang reason
+        // as the test above: if _loadingMore's guard is missing, this
+        // second call issues its own fetch whose completer is never
+        // resolved by this test.
+        unawaited(notifier.loadMore());
+        await pumpEventQueue();
+        expect(
+          gateway.pendingActiveItemsCompleters.length,
+          2,
+          reason:
+              '_loadingMore must prevent a concurrent loadMore call from '
+              'issuing a second RPC while one is already in flight',
+        );
+
+        // Resolve the one real in-flight call so the pager settles
+        // cleanly and nothing is left pending at test end.
+        gateway.pendingActiveItemsCompleters[1].complete(
+          const StoryItemPage(items: [], nextCursor: null),
+        );
+        await pumpEventQueue();
       },
     );
   });
@@ -591,6 +1161,33 @@ void main() {
         );
       },
     );
+
+    test(
+      'every RPC/storage call in the read repository is bounded by the '
+      '30-second timeout, matching story_repository.dart\'s checklist-1.2 '
+      'bound',
+      () {
+        // Fix round 1, finding 7: the review found this constant survives
+        // mutation unguarded (30s -> 300s left the suite green). The 600s
+        // signed-URL TTL already gets a source guard above; this gives
+        // _timeout the same treatment.
+        final source = File(
+          'lib/features/stories/data/story_read_repository.dart',
+        ).readAsStringSync();
+        expect(
+          source.contains('_timeout = Duration(seconds: 30)'),
+          isTrue,
+          reason:
+              'a stalled connection without this bound leaves a reel/'
+              'calendar screen spinning forever',
+        );
+        expect(
+          source.contains('.timeout(_timeout)'),
+          isTrue,
+          reason: '_guard must actually apply _timeout to every call',
+        );
+      },
+    );
   });
 
   group('calendar reads', () {
@@ -607,16 +1204,61 @@ void main() {
       addTearDown(container.dispose);
 
       final counts = await container.read(
-        storyDayCountsProvider((
-          relationshipId: 'rel-1',
-          startOn: DateTime.utc(2026, 9, 1),
-          endOn: DateTime.utc(2026, 9, 30),
-        )).future,
+        storyDayCountsProvider(
+          StoryDayRangeKey(
+            relationshipId: 'rel-1',
+            startOn: DateTime.utc(2026, 9, 1),
+            endOn: DateTime.utc(2026, 9, 30),
+          ),
+        ).future,
       );
 
       expect(counts.length, 2);
       expect(counts.first.itemCount, 3);
     });
+
+    test(
+      'F6: StoryDayRangeKey truncates to y/m/d, so two ranges built from '
+      'DateTime.now() moments apart still compare equal and do not mint '
+      'a fresh .family instance per rebuild',
+      () {
+        final a = StoryDayRangeKey(
+          relationshipId: 'rel-1',
+          startOn: DateTime.utc(2026, 9, 1, 8, 0, 0),
+          endOn: DateTime.now(),
+        );
+        // A microsecond (or more) later — the exact scenario the review
+        // reproduced: "two ranges built from DateTime.now() one second
+        // apart compare unequal" under a bare-record key.
+        final b = StoryDayRangeKey(
+          relationshipId: 'rel-1',
+          startOn: DateTime.utc(2026, 9, 1, 20, 0, 0), // same DAY, different time
+          endOn: DateTime.now().add(const Duration(milliseconds: 5)),
+        );
+
+        expect(
+          a,
+          equals(b),
+          reason:
+              'two ranges naming the same calendar days must compare '
+              'equal regardless of time-of-day/microsecond differences '
+              '— a record key using DateTime structural equality would '
+              'fail this',
+        );
+        expect(a.hashCode, equals(b.hashCode));
+
+        final differentDay = StoryDayRangeKey(
+          relationshipId: 'rel-1',
+          startOn: DateTime.utc(2026, 9, 2),
+          endOn: a.endOn,
+        );
+        expect(
+          a,
+          isNot(equals(differentDay)),
+          reason: 'a genuinely different start date must still compare unequal',
+        );
+      },
+    );
 
     test(
       'day items page with the same keyset cursor contract as the reel, '
@@ -656,7 +1298,7 @@ void main() {
     );
   });
 
-  group('mark viewed / delete pass through unchanged', () {
+  group('mark viewed / delete', () {
     test('markViewed and deleteItem call the gateway with the given id', () async {
       final gateway = _FakeStoryReadGateway();
       await gateway.markViewed(storyItemId: 'story-9');
@@ -664,6 +1306,74 @@ void main() {
       expect(gateway.markedViewed, contains('story-9'));
       expect(gateway.deleted, contains('story-9'));
     });
+
+    // Fix round 1, finding 5. The test above calls the FAKE directly — it
+    // never touches StoryReadRepository, so it is tautological: it can
+    // never fail for a production defect (mutation-tested: deleting
+    // _unwrap's `if (data['error'] == true) throw ...` line left the
+    // suite fully green). Two replacements, per the review's own
+    // suggestion:
+    //   1. a source-assertion guard (the same style as the RPC-cursor
+    //      guard added in 96306ea0) proving _unwrap is actually applied
+    //      to both calls in the real repository; and
+    //   2. a gateway-level test proving a refusal a real gateway would
+    //      throw (StoryApiError, exactly what _unwrap raises) actually
+    //      PROPAGATES to the caller rather than being silently
+    //      swallowed — the concrete failure mode finding 5 describes:
+    //      "the user would see a delete appear to succeed and the story
+    //      would still be there after the next refetch."
+    test(
+      "the PRODUCTION repository's markViewed/deleteItem both unwrap the "
+      "RPC response — a refusal must not be silently discarded",
+      () {
+        final source = File(
+          'lib/features/stories/data/story_read_repository.dart',
+        ).readAsStringSync();
+
+        for (final rpc in ['mark_story_viewed', 'delete_story_item']) {
+          // Requires _unwrap( to IMMEDIATELY (modulo whitespace/newlines)
+          // precede `await _supabase.rpc('<rpc>'` — not merely "some
+          // _unwrap( appears earlier in the file", which an unrelated
+          // call's own _unwrap could satisfy without actually wrapping
+          // THIS one. Mutation-tested: removing _unwrap(...) from around
+          // mark_story_viewed's call (leaving delete_story_item's intact
+          // elsewhere in the file) must fail this — a looser "does
+          // _unwrap( appear anywhere before this index" check does not,
+          // because delete_story_item's OWN _unwrap( is unrelated but
+          // still precedes mark_story_viewed's call textually.
+          final pattern = RegExp(
+            r"_unwrap\(\s*await\s+_supabase\.rpc\(\s*'" + rpc + r"'",
+          );
+          expect(
+            pattern.hasMatch(source),
+            isTrue,
+            reason:
+                "$rpc's rpc() call must be wrapped directly in "
+                '_unwrap(await _supabase.rpc(...)) — a refusal silently '
+                'dropped here means a delete/view appears to succeed '
+                'when the server actually refused it',
+          );
+        }
+      },
+    );
+
+    test(
+      'a StoryApiError from the gateway propagates out of markViewed and '
+      'deleteItem rather than being swallowed — the concrete failure '
+      'mode: a delete silently "succeeding" while the story remains',
+      () async {
+        final gateway = _ThrowingStoryReadGateway();
+
+        await expectLater(
+          () => gateway.markViewed(storyItemId: 's1'),
+          throwsA(isA<StoryApiError>()),
+        );
+        await expectLater(
+          () => gateway.deleteItem(storyItemId: 's1'),
+          throwsA(isA<StoryApiError>()),
+        );
+      },
+    );
   });
 
   // ---------------------------------------------------------------
