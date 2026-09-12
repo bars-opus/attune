@@ -8,7 +8,9 @@ import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/reflection_journal/presentation/providers/reflection_journal_providers.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
+import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/stories/presentation/screens/story_camera_screen.dart';
+import 'package:attune/features/stories/presentation/screens/story_reel_screen.dart';
 import 'package:attune/features/stories/presentation/widgets/story_rings_row.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,6 +27,7 @@ class ConversationsScreen extends ConsumerWidget {
     final textTheme = Theme.of(context).textTheme;
     final conversationsAsync = ref.watch(conversationsProvider);
     final filtered = ref.watch(filteredConversationsProvider);
+    final myId = ref.watch(currentUserProvider)?.id;
 
     return Scaffold(
       backgroundColor: colorScheme.neutral,
@@ -108,6 +111,30 @@ class ConversationsScreen extends ConsumerWidget {
                           context,
                           filtered.first.relationshipId,
                         ),
+                        // Mine: only meaningful once myId is known —
+                        // StoryRingsRow itself only wires onTap to a
+                        // ring that already has something to open
+                        // (a pending capture or activeCount > 0), so
+                        // there is nothing else gating this callback
+                        // here.
+                        onOpenMine: myId == null
+                            ? null
+                            : () => _openStoryReel(
+                                context,
+                                relationshipId: filtered.first.relationshipId,
+                                authorId: myId,
+                                isOwnReel: true,
+                              ),
+                        // Partner: StoryRingsRow only ever wires this
+                        // when the partner's ring is actually drawn
+                        // (activeCount > 0 for filtered.first.partnerId),
+                        // per this widget's own doc comment.
+                        onOpenPartner: () => _openStoryReel(
+                          context,
+                          relationshipId: filtered.first.relationshipId,
+                          authorId: filtered.first.partnerId,
+                          isOwnReel: false,
+                        ),
                       ),
                     // The current relationship's chat, or the empty-state
                     // prompt to start one — one card, since there's at most one
@@ -189,6 +216,30 @@ class ConversationsScreen extends ConsumerWidget {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => StoryCameraScreen(relationshipId: relationshipId),
+      ),
+    );
+  }
+
+  // Same reasoning as _openStoryCamera immediately above: no named route
+  // exists for the reel either (Task 4 built the screen but Task 4's own
+  // brief scoped routing out to avoid a file collision here, and no
+  // later task picked it up — this task folds that gap in). A plain
+  // MaterialPageRoute push is enough; go_router's context.pop() resolves
+  // it correctly on the way back out, so this is not the Plan B Task 7
+  // hazard a named route would otherwise need to route around.
+  void _openStoryReel(
+    BuildContext context, {
+    required String relationshipId,
+    required String authorId,
+    required bool isOwnReel,
+  }) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StoryReelScreen(
+          relationshipId: relationshipId,
+          authorId: authorId,
+          isOwnReel: isOwnReel,
+        ),
       ),
     );
   }
