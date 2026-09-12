@@ -37,19 +37,53 @@ class CaptureImageRejected implements Exception {
 }
 
 /// Enforces the capture-photo contract (spec §4.2/§6.2) on the client,
-/// before any upload intent is requested: at most 2560px on the long
-/// edge, JPEG, at most 5MB. Orientation is baked in and EXIF/location
-/// metadata is stripped, matching [ChatImagePreparer] and
+/// before any upload intent is requested: by default at most 2560px on
+/// the long edge, JPEG, at most 5MB. Orientation is baked in and
+/// EXIF/location metadata is stripped, matching [ChatImagePreparer] and
 /// [DatingImagePreparer] — kept as its own class (not shared with either)
 /// so the camera's own size/quality policy can diverge from chat's and
 /// dating's independently, the same reasoning that keeps those two apart.
+///
+/// **Parameterised, not forked, for the thumbnail policy (spec §4.3).**
+/// A story thumbnail needs different numbers — 400px long edge, JPEG,
+/// quality 75 — but otherwise wants the exact same MIME-sniffing,
+/// decompression-bomb guard, orientation handling and quality-ladder
+/// fallback this class already has. Forking that into a second ~150-line
+/// class would drift from this one the moment either changed. Instead the
+/// size/quality knobs are constructor parameters defaulting to the
+/// existing MAIN image policy (2560px / 5MB) — [maxBytes] and
+/// [maxDimension] stay as static constants too, unchanged, so Task 3's
+/// tests (which construct this via the bare `CaptureImagePreparer.new`
+/// factory the capture screen's `imagePreparerFactory` seam expects) see
+/// byte-for-byte the same behaviour. `StoryCameraScreen` constructs a
+/// second instance with `CaptureImagePreparer(maxDimension: 400,
+/// maxBytes: ..., qualityLadder: [75])` for its thumbnail.
 class CaptureImagePreparer {
-  const CaptureImagePreparer();
+  const CaptureImagePreparer({
+    int? maxDimension,
+    int? maxBytes,
+    List<int>? qualityLadder,
+    int? fallbackQuality,
+  }) : _maxDimension = maxDimension ?? defaultMaxDimension,
+       _maxBytes = maxBytes ?? defaultMaxBytes,
+       _qualityLadder = qualityLadder ?? const [85, 75, 65, 50, 35],
+       _fallbackQuality = fallbackQuality ?? 70;
 
-  static const int maxBytes = 5 * 1024 * 1024; // 5 MB, spec §4.2
+  /// MAIN image policy (spec §4.2). Left as the class's static defaults —
+  /// and named `defaultMaxBytes`/`defaultMaxDimension` rather than
+  /// `maxBytes`/`maxDimension` — so nothing constructing this with no
+  /// arguments (Task 3's `CaptureImagePreparer.new` factory reference)
+  /// changes behaviour.
+  static const int defaultMaxBytes = 5 * 1024 * 1024; // 5 MB, spec §4.2
+  static const int defaultMaxDimension = 2560; // longest edge, §4.2
+
   static const int maxSourceBytes = 25 * 1024 * 1024; // pre-decode guard
-  static const int maxDimension = 2560; // longest edge after resize, §4.2
   static const int maxDecodePixels = 60 * 1000 * 1000; // decompression-bomb cap
+
+  final int _maxDimension;
+  final int _maxBytes;
+  final List<int> _qualityLadder;
+  final int _fallbackQuality;
 
   static const _approvedInputMimes = {
     'image/jpeg',
@@ -90,11 +124,11 @@ class CaptureImagePreparer {
     final targetDimensions = _longestEdgeTarget(
       decoded.width,
       decoded.height,
-      maxDimension,
+      _maxDimension,
     );
 
     try {
-      for (final quality in const [85, 75, 65, 50, 35]) {
+      for (final quality in _qualityLadder) {
         final out = await FlutterImageCompress.compressAndGetFile(
           localPath,
           targetPath,
@@ -107,7 +141,7 @@ class CaptureImagePreparer {
         if (out == null) continue;
         final outFile = File(out.path);
         final outSize = await outFile.length();
-        if (outSize > 0 && outSize <= maxBytes) {
+        if (outSize > 0 && outSize <= _maxBytes) {
           final outDecoded = img.decodeImage(await outFile.readAsBytes());
           return PreparedCaptureImage(
             file: outFile,
@@ -124,9 +158,9 @@ class CaptureImagePreparer {
     }
 
     // Last resort: hard-resize with the pure-Dart encoder, then re-check.
-    final resized = _resizeLongestEdge(decoded, maxDimension);
-    final jpeg = img.encodeJpg(resized, quality: 70);
-    if (jpeg.lengthInBytes <= maxBytes) {
+    final resized = _resizeLongestEdge(decoded, _maxDimension);
+    final jpeg = img.encodeJpg(resized, quality: _fallbackQuality);
+    if (jpeg.lengthInBytes <= _maxBytes) {
       final outFile = File(targetPath);
       await outFile.writeAsBytes(jpeg, flush: true);
       return PreparedCaptureImage(
