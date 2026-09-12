@@ -33,6 +33,7 @@
 // which would never return for a `..repeat()` animation controller.
 
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
@@ -223,6 +224,8 @@ Future<Widget> _harness({
   List<StoryOutboxRecord> outbox = const [],
   ThemeData? theme,
   bool noThumbnails = false,
+  VoidCallback? onOpenMine,
+  VoidCallback? onCapture,
 }) async {
   final store = StoryOutboxStore.forTesting(stub.createStoryOutboxBackend());
   for (final record in outbox) {
@@ -246,18 +249,40 @@ Future<Widget> _harness({
           relationshipId: _relationshipId,
           partnerId: _partnerId,
           partnerName: 'Alex',
+          onOpenMine: onOpenMine,
+          onCapture: onCapture,
         ),
       ),
     ),
   );
 }
 
-/// Finds the [StoryRing] with the given key, or null if absent from the
-/// tree entirely — distinct from "present but invisible."
+/// Finds the [StoryRing] rendered under the given key, or null if absent
+/// from the tree entirely — distinct from "present but invisible."
+///
+/// The key is attached to whichever widget `StoryRingsRow` places at
+/// that ring's slot — sometimes a bare [StoryRing] (mine-empty, mine-
+/// pending, mine-with-stories-but-summary-still-loading), sometimes the
+/// private `_MineRing`/`_PartnerRing` wrapper that watches
+/// `storyMediaSignedUrlProvider` and builds a [StoryRing] itself
+/// (finding F1 — my ring needed the same signed-URL wiring the partner's
+/// already had, so it moved behind the same kind of wrapper). Looking
+/// for "the StoryRing at or below this keyed element" rather than
+/// "the StoryRing that IS this keyed element" keeps this helper (and
+/// every test using it) agnostic to which of those two shapes is
+/// currently in the tree.
 StoryRing? _ringByKey(WidgetTester tester, String key) {
-  final finder = find.byKey(ValueKey(key));
-  if (finder.evaluate().isEmpty) return null;
-  return tester.widget<StoryRing>(finder);
+  final keyedFinder = find.byKey(ValueKey(key));
+  if (keyedFinder.evaluate().isEmpty) return null;
+  final keyedWidget = tester.widget(keyedFinder);
+  if (keyedWidget is StoryRing) return keyedWidget;
+
+  final ringFinder = find.descendant(
+    of: keyedFinder,
+    matching: find.byType(StoryRing),
+  );
+  if (ringFinder.evaluate().isEmpty) return null;
+  return tester.widget<StoryRing>(ringFinder);
 }
 
 void main() {
@@ -318,6 +343,22 @@ void main() {
         expect(mine, isNotNull);
         expect(mine!.hasStories, isTrue);
         expect(mine.segmentCount, 4);
+
+        // The test name has claimed "shows a + badge" since this test
+        // was written, but nothing below actually asserted it — the
+        // review's mutation 3 (removing the `+` from the my-with-stories
+        // ring entirely) proved this: all behavioural tests kept
+        // passing and only the goldens caught it. This assertion closes
+        // that gap: it fails on its own if the badge is ever removed
+        // again, without depending on a bitmap.
+        expect(
+          find.bySemanticsLabel('Add to your story'),
+          findsOneWidget,
+          reason:
+              'the + badge must still be present (and reachable/labelled '
+              'for a11y) on a my-ring that already has stories, not only '
+              'on the empty one — spec §5.1 state 2',
+        );
       },
     );
   });
@@ -415,6 +456,59 @@ void main() {
             ),
           ),
           findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'MY ring is also backed by CachedNetworkImage once I have stories '
+      'and no pending capture is in flight (review finding F1)',
+      (tester) async {
+        // This is the exact regression the review caught: my ring took
+        // `localThumbnailPath` (pending-only) but never `thumbnailUrl`,
+        // and never watched `storyMediaSignedUrlProvider` — so once a
+        // post finalized and the pending record cleared, my ring stayed
+        // a flat grey disc forever while the partner's ring, right next
+        // to it, showed a real photo. Unlike the golden (which forces
+        // `noThumbnails: true` for reasons unrelated to this bug — see
+        // `_FakeRingGateway.noThumbnails`'s doc comment), this test
+        // leaves thumbnails ON, so it fails on its own if the wiring
+        // regresses, without depending on a bitmap at all.
+        await tester.pumpWidget(
+          await _harness(
+            summary: [
+              _summary(
+                authorId: _myId,
+                activeCount: 3,
+                unviewedCount: 3,
+                thumbnailKey: 'story-media/mine-thumb.jpg',
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final ringFinder = find.byKey(const ValueKey('story-ring-mine'));
+        expect(ringFinder, findsOneWidget);
+        expect(
+          find.descendant(
+            of: ringFinder,
+            matching: find.byWidgetPredicate(
+              (w) => w.runtimeType.toString() == 'CachedNetworkImage',
+            ),
+          ),
+          findsOneWidget,
+          reason:
+              'my own ring must render a thumbnail once I have stories, '
+              'exactly like the partner\'s ring does — spec §5.1 state 2',
+        );
+
+        final mine = _ringByKey(tester, 'story-ring-mine')!;
+        expect(
+          mine.thumbnailUrl,
+          isNotNull,
+          reason: 'StoryRing.thumbnailUrl must actually be populated for '
+              'my own ring, not just localThumbnailPath (pending-only)',
         );
       },
     );
@@ -537,6 +631,119 @@ void main() {
         expect(painter.unviewedCount, 0);
       },
     );
+
+    testWidgets(
+      'faded segments are ACTUALLY PAINTED at a lower alpha than bright '
+      'segments — sampled from real pixels, not just counted (test-'
+      'quality gap flagged by review)',
+      (tester) async {
+        // The two tests above only ever assert `segmentCount`/
+        // `unviewedCount` — integers — never a colour. The review proved
+        // (mutation 4: removing the fade entirely, i.e. always painting
+        // with `brightColor` regardless of viewed/unviewed) that both
+        // tests keep passing with fading completely gone; only the
+        // checked-in golden bitmaps caught it.
+        //
+        // A first attempt at this test read the painter's
+        // `brightColor`/`fadedColor` CONSTRUCTOR fields directly — but
+        // those are still both non-null and different even when the
+        // paint LOOP ignores `fadedColor` entirely (mutation 4 changes
+        // which field gets used per segment, not the fields themselves).
+        // That version of this test did not actually catch mutation 4.
+        // This version renders the real painter to an offscreen image
+        // and samples actual pixels at a bright-segment angle and a
+        // faded-segment angle, which is what mutation 4 actually changes
+        // and therefore what must be asserted on directly.
+        await tester.pumpWidget(
+          await _harness(
+            // This test never looks at the thumbnail image, only the
+            // segmented-ring painter — noThumbnails avoids routing
+            // through CachedNetworkImage/flutter_cache_manager, which
+            // needs path_provider platform channels this test
+            // environment does not provide (same reason the goldens use
+            // it; see _FakeRingGateway.noThumbnails's doc comment).
+            noThumbnails: true,
+            summary: [
+              _summary(authorId: _myId, activeCount: 0, unviewedCount: 0),
+              // 1 of 4 active items unviewed: index 0 (top of the ring,
+              // clockwise from -pi/2) is bright; the rest, including
+              // index 2 (directly opposite, unambiguously past the first
+              // segment+gap), are faded.
+              _summary(authorId: _partnerId, activeCount: 4, unviewedCount: 1),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final painter = _findSegmentedCustomPainter(
+          tester,
+          'story-ring-partner',
+        );
+        expect(painter, isNotNull);
+
+        const size = Size(69, 69);
+        // picture.toImage()/image.toByteData() are genuinely async (a
+        // real engine round-trip, not just a Future.value) — they never
+        // complete inside testWidgets' fake-async zone. tester.runAsync
+        // steps outside that zone for exactly this kind of real I/O.
+        final byteData = await tester.runAsync(() async {
+          final recorder = ui.PictureRecorder();
+          final canvas = Canvas(recorder);
+          painter!.paint(canvas, size);
+          final picture = recorder.endRecording();
+          final image = await picture.toImage(
+            size.width.ceil(),
+            size.height.ceil(),
+          );
+          return image.toByteData(format: ui.ImageByteFormat.rawRgba);
+        });
+        expect(byteData, isNotNull);
+
+        Color pixelAt(int x, int y) {
+          final offset = (y * size.width.ceil() + x) * 4;
+          final bytes = byteData!.buffer.asUint8List();
+          return Color.fromARGB(
+            bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+          );
+        }
+
+        // Bright segment: top-center of the ring (the arc starts at
+        // -pi/2, i.e. straight up), where segment 0 (unviewed, bright)
+        // is drawn.
+        final brightPixel = pixelAt(size.width ~/ 2, 2);
+        // Faded segment: bottom-center of the ring (angle +pi/2 from
+        // center, i.e. straight down), well inside a later, faded
+        // segment given 4 segments with ~0.12 rad gaps.
+        final fadedPixel = pixelAt(size.width ~/ 2, size.height.toInt() - 3);
+
+        expect(
+          brightPixel.a,
+          greaterThan(0),
+          reason: 'sanity check: the bright-segment sample point must '
+              'actually land on painted stroke, not the transparent gap '
+              'between arcs',
+        );
+        expect(
+          fadedPixel.a,
+          greaterThan(0),
+          reason: 'sanity check: the faded-segment sample point must '
+              'actually land on painted stroke',
+        );
+        expect(
+          fadedPixel.a,
+          lessThan(brightPixel.a),
+          reason:
+              'a viewed (faded) segment must be painted with visibly '
+              'lower alpha than an unviewed (bright) one — sampled from '
+              'the actual rendered pixels, so this fails if the paint '
+              'loop stops distinguishing them even though the painter\'s '
+              'brightColor/fadedColor constructor fields are unchanged',
+        );
+      },
+    );
   });
 
   group('pending outbox item shows progress on my ring', () {
@@ -597,6 +804,233 @@ void main() {
         expect(mine.hasStories, isFalse);
       },
     );
+
+    testWidgets(
+      'a failedPermanent outbox record does not hide a real segmented '
+      'ring behind a fake "posting" tile (review finding F2)',
+      (tester) async {
+        // flush() (story_outbox_controller.dart) skips failedPermanent
+        // records but never removes them from the store, so a dead
+        // record can sit in the list forever. The old code treated ANY
+        // record for this relationship as "pending" and the pending
+        // branch outranks hasStories — so 4 real, already-posted stories
+        // plus 1 dead record used to render as a permanently-stuck
+        // "posting" ring, hiding the real segmented arc across restarts.
+        await tester.pumpWidget(
+          await _harness(
+            summary: [
+              _summary(authorId: _myId, activeCount: 4, unviewedCount: 4),
+            ],
+            outbox: [_pendingRecord(state: StoryOutboxState.failedPermanent)],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final mine = _ringByKey(tester, 'story-ring-mine')!;
+        expect(
+          mine.pendingProgress,
+          isNull,
+          reason:
+              'a failedPermanent record must never be treated as the '
+              'pending item — it must not suppress the real ring',
+        );
+        expect(
+          mine.hasStories,
+          isTrue,
+          reason: 'the 4 real stories must still show a segmented ring',
+        );
+        expect(mine.segmentCount, 4);
+      },
+    );
+
+    testWidgets(
+      'two queued captures: the ring reflects the NEWEST, not the first '
+      'one in store order (review finding F5)',
+      (tester) async {
+        // StoryOutboxStore.readAll returns oldest-first
+        // (story_outbox_backend_io.dart: `ORDER BY created_at ASC`). The
+        // old code did `break` on the first match, i.e. the oldest.
+        final older = _pendingRecord(
+          state: StoryOutboxState.uploadingMedia,
+          localThumbnailPath: '/tmp/OLD.jpg',
+        );
+        final newer = StoryOutboxRecord(
+          clientStoryId: 'pending-2',
+          relationshipId: _relationshipId,
+          localMediaPath: '/tmp/does-not-exist-media-2.jpg',
+          localThumbnailPath: '/tmp/NEW.jpg',
+          mediaType: CapturedMediaType.image,
+          mimeType: 'image/jpeg',
+          width: 1080,
+          height: 1920,
+          utcOffsetMinutes: 0,
+          state: StoryOutboxState.uploadingThumbnail,
+          createdAt: DateTime.utc(2026, 9, 12, 9),
+        );
+
+        await tester.pumpWidget(
+          await _harness(summary: const [], outbox: [older, newer]),
+        );
+        for (var i = 0; i < 3; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+
+        final mine = _ringByKey(tester, 'story-ring-mine')!;
+        expect(
+          mine.localThumbnailPath,
+          '/tmp/NEW.jpg',
+          reason:
+              'the ring must show the NEWEST queued capture\'s thumbnail '
+              'and progress, not the oldest',
+        );
+        expect(mine.pendingProgress, closeTo(0.7, 0.0001));
+      },
+    );
+  });
+
+  group('unviewed count is clamped against a stale server aggregate '
+      '(review finding F4)', () {
+    testWidgets(
+      'unviewedCount greater than activeCount does not crash the '
+      'partner ring', (tester) async {
+        // activeCount and unviewedCount are independently-computed
+        // server aggregates (get_story_ring_summary) that can diverge —
+        // a story expiring or being deleted between the two counts being
+        // taken, or view-ledger lag. StoryRing's own constructor assert
+        // is correct as a widget-contract invariant; this proves the
+        // CALLER clamps before it ever reaches that assert, rather than
+        // hard-crashing the widget on a server-side timing issue.
+        await tester.pumpWidget(
+          await _harness(
+            summary: [
+              _summary(authorId: _myId, activeCount: 0, unviewedCount: 0),
+              _summary(authorId: _partnerId, activeCount: 2, unviewedCount: 5),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        final partner = _ringByKey(tester, 'story-ring-partner');
+        expect(partner, isNotNull);
+        expect(partner!.unviewedCount, lessThanOrEqualTo(partner.segmentCount));
+      },
+    );
+  });
+
+  group('the + badge has its own semantics node and a real tap target '
+      '(review finding F3)', () {
+    testWidgets(
+      'my-with-stories ring: the + badge\'s semantics node has its OWN '
+      'bounds, not the full 69dp ring\'s — proof it is a real boundary, '
+      'not just a label',
+      (tester) async {
+        // Both labels being independently findable (via bySemanticsLabel)
+        // is necessary but NOT sufficient — verified directly (via a
+        // dumped semantics tree) that WITHOUT `_PlusBadge`'s own
+        // `Semantics(container: true, ...)`, the + badge's actionable
+        // semantics node still gets its OWN label, but its rect is the
+        // full 69x69 ring, not its own ~48x48 hit box — i.e. a screen
+        // reader is told the + occupies the entire ring's footprint,
+        // which is the actual accessibility defect the review's finding
+        // F3 describes (not a literal label-concatenation in this
+        // Flutter version, but the same underlying "the badge doesn't
+        // have its own boundary" bug, observable via node geometry).
+        final handle = tester.ensureSemantics();
+
+        var openMineCalls = 0;
+        await tester.pumpWidget(
+          await _harness(
+            summary: [
+              _summary(authorId: _myId, activeCount: 2, unviewedCount: 2),
+            ],
+            onOpenMine: () => openMineCalls++,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final ringLabel = find.bySemanticsLabel('Your story, 2 items');
+        final plusLabel = find.bySemanticsLabel('Add to your story');
+        expect(ringLabel, findsOneWidget);
+        expect(plusLabel, findsOneWidget);
+
+        final plusElement = plusLabel.evaluate().single;
+        final plusRenderObject = plusElement.findRenderObject()!;
+        final plusSemantics = plusRenderObject.debugSemantics!;
+        expect(
+          plusSemantics.rect.width,
+          lessThan(60),
+          reason:
+              'the + badge\'s own semantics node must be scoped to its '
+              'own hit area, not inherit the full ~69dp ring\'s bounds — '
+              'that inheritance is what the review\'s finding F3 actually '
+              'reported as a defect',
+        );
+
+        // Routing proof, mirroring the review's probe: tapping the RING
+        // label (not the badge) must fire onOpenMine, never the capture
+        // callback.
+        await tester.tap(ringLabel);
+        await tester.pumpAndSettle();
+        expect(openMineCalls, 1);
+
+        handle.dispose();
+      },
+    );
+
+    testWidgets(
+      'the + badge hit target is at least 44dp on a side on the '
+      'mine-with-stories ring (the corner-badge case; mine-empty uses '
+      'the same _PlusBadge widget with `centered: true`, sharing this '
+      'code path)',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+
+        var captureCalls = 0;
+        await tester.pumpWidget(
+          await _harness(
+            summary: [
+              _summary(authorId: _myId, activeCount: 2, unviewedCount: 2),
+            ],
+            onCapture: () => captureCalls++,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // The + badge's widget tree is Semantics(label: '+') -> a plain
+        // GestureDetector -> the (larger) invisible hit box -> the small
+        // visible circle. GestureDetector is a DESCENDANT of the
+        // Semantics node here, not an ancestor.
+        final plusSemanticsFinder = find.bySemanticsLabel('Add to your story');
+        final gestureFinder = find
+            .descendant(
+              of: plusSemanticsFinder,
+              matching: find.byType(GestureDetector),
+            )
+            .first;
+        final plusGesture = tester.widget<GestureDetector>(gestureFinder);
+        final renderBox = tester.renderObject(gestureFinder) as RenderBox;
+        expect(plusGesture.onTap, isNotNull);
+        expect(captureCalls, 0);
+        plusGesture.onTap!();
+        expect(
+          captureCalls,
+          1,
+          reason: 'the resolved onTap must actually be the capture '
+              'callback',
+        );
+        expect(
+          renderBox.size.width,
+          greaterThanOrEqualTo(44),
+          reason: 'the + badge tap target must be at least 44dp wide — '
+              'the visible circle itself is 20-28dp, well under that, so '
+              'this must come from a larger invisible hit area',
+        );
+        expect(renderBox.size.height, greaterThanOrEqualTo(44));
+
+        handle.dispose();
+      },
+    );
   });
 
   group('reduce motion', () {
@@ -633,6 +1067,28 @@ void main() {
 /// since `StoryRing.segmentCount` intentionally stores the UNCAPPED
 /// value it was given.
 _TestPainterInfo? _findSegmentedPainter(WidgetTester tester, String ringKey) {
+  final painter = _findSegmentedCustomPainter(tester, ringKey);
+  if (painter == null) return null;
+  final dynamic p = painter;
+  return _TestPainterInfo(
+    segmentCount: p.segmentCount as int,
+    unviewedCount: p.unviewedCount as int,
+    solid: p.solid as bool,
+    brightColor: p.brightColor as Color,
+    fadedColor: p.fadedColor as Color,
+  );
+}
+
+/// Returns the actual `_SegmentedRingPainter` instance (not a copied-out
+/// DTO), for tests that need to invoke its `paint()` directly — e.g. to
+/// sample the pixels it actually draws, rather than trusting that the
+/// constructor's `brightColor`/`fadedColor` fields are what ends up on
+/// the canvas for a given segment (they are inputs to the painter, not
+/// proof of what the paint LOOP does with them per-segment).
+CustomPainter? _findSegmentedCustomPainter(
+  WidgetTester tester,
+  String ringKey,
+) {
   final ringFinder = find.byKey(ValueKey(ringKey));
   final customPaints = find.descendant(
     of: ringFinder,
@@ -643,16 +1099,7 @@ _TestPainterInfo? _findSegmentedPainter(WidgetTester tester, String ringKey) {
     final painter = widget.painter;
     if (painter != null &&
         painter.runtimeType.toString() == '_SegmentedRingPainter') {
-      // Reflection-free extraction: read the fields back via toString is
-      // fragile, so instead the painter type exposes them as public
-      // final fields already (segmentCount/unviewedCount/solid) — access
-      // via dynamic since the type is private to story_ring.dart.
-      final dynamic p = painter;
-      return _TestPainterInfo(
-        segmentCount: p.segmentCount as int,
-        unviewedCount: p.unviewedCount as int,
-        solid: p.solid as bool,
-      );
+      return painter;
     }
   }
   return null;
@@ -663,11 +1110,15 @@ class _TestPainterInfo {
     required this.segmentCount,
     required this.unviewedCount,
     required this.solid,
+    required this.brightColor,
+    required this.fadedColor,
   });
 
   final int segmentCount;
   final int unviewedCount;
   final bool solid;
+  final Color brightColor;
+  final Color fadedColor;
 }
 
 /// Rendered and looked at (brief Step 4): a passing widget test proves

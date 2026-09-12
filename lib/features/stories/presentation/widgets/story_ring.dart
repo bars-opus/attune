@@ -256,6 +256,16 @@ class StoryRing extends StatelessWidget {
     if (isMine && !hasStories) return content;
 
     return Semantics(
+      // container + explicitChildNodes stop this label from merging with
+      // the `+` badge's own nested Semantics node below (finding F3): the
+      // badge is a distinct control (opens the camera) from the ring
+      // itself (opens the reel), and without a boundary here Flutter
+      // collapses adjacent Semantics into one node — worse, non-
+      // deterministically, only once `onTap` becomes non-null (i.e. once
+      // Task 4 wires `onOpenMine`), which is exactly the "silent
+      // regression on the next task" the review flagged.
+      container: true,
+      explicitChildNodes: true,
       label: semanticLabel,
       button: onTap != null,
       child: GestureDetector(
@@ -337,29 +347,54 @@ class _PlusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = centered ? 28.0 : 20.0;
+    final visualSize = centered ? 28.0 : 20.0;
+    final visual = Container(
+      width: visualSize,
+      height: visualSize,
+      decoration: BoxDecoration(
+        color: colorScheme.primary,
+        shape: BoxShape.circle,
+        border: centered
+            ? null
+            : Border.all(color: colorScheme.surface, width: 2),
+      ),
+      child: Icon(
+        Icons.add,
+        size: centered ? 18 : 14,
+        color: colorScheme.onPrimary,
+      ),
+    );
+
+    // The visible badge is 20-28dp, well under the 44dp (iOS HIG) / 48dp
+    // (Material) minimum tap target (finding F3). Rather than growing the
+    // circle itself (which would blow past the corner badge's intended
+    // visual scale), the hit area is a separate, larger, transparent box
+    // with the small visual centered inside it — the same pattern
+    // Material's own IconButton uses for a small icon inside a
+    // kMinInteractiveDimension hit box. For the corner badge this box is
+    // bottom-right anchored so the extra hit area does not creep over the
+    // ring's own gesture detector any more than necessary; for the
+    // mine-empty centered case it is simply centered like the visual.
+    const hitSize = kMinInteractiveDimension; // 48dp
+    final hitArea = SizedBox(
+      width: hitSize,
+      height: hitSize,
+      child: centered
+          ? Center(child: visual)
+          : Align(alignment: Alignment.bottomRight, child: visual),
+    );
+
     return Semantics(
+      // Its own boundary (see StoryRing's outer Semantics comment) so
+      // this node never merges with the ring's — it is a distinct
+      // control (camera) from the ring (reel).
+      container: true,
       label: 'Add to your story',
       button: true,
       child: GestureDetector(
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: colorScheme.primary,
-            shape: BoxShape.circle,
-            border: centered
-                ? null
-                : Border.all(color: colorScheme.surface, width: 2),
-          ),
-          child: Icon(
-            Icons.add,
-            size: centered ? 18 : 14,
-            color: colorScheme.onPrimary,
-          ),
-        ),
+        child: hitArea,
       ),
     );
   }
@@ -478,7 +513,8 @@ class _ProgressRingPainter extends CustomPainter {
   bool shouldRepaint(covariant _ProgressRingPainter oldDelegate) =>
       oldDelegate.progress != progress ||
       oldDelegate.rotationTurns != rotationTurns ||
-      oldDelegate.color != color;
+      oldDelegate.color != color ||
+      oldDelegate.strokeWidth != strokeWidth;
 }
 
 /// The empty-ring outline for "mine, empty" (spec §5.1) — a single
@@ -537,17 +573,35 @@ class _SegmentedRingPainter extends CustomPainter {
   // total, well under half the circle).
   static const double _gapRadians = 0.12;
 
+  // A faded (viewed) segment is thinner than a bright (unviewed) one, in
+  // addition to the alpha difference — finding F6: colour alone (two
+  // alphas of the same hue) does not satisfy WCAG 1.4.1 for a low-vision
+  // or low-contrast-sensitivity viewer. The stroke delta is deliberately
+  // small (kept well clear of the gap width) so it reads as "thinner"
+  // rather than changing the ring's apparent diameter.
+  static const double _fadedStrokeDelta = 1.0;
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = (size.width - strokeWidth) / 2;
     final rect = Rect.fromCircle(center: center, radius: radius);
+    final fadedStrokeWidth = math.max(1.0, strokeWidth - _fadedStrokeDelta);
+
+    // Only two distinct paint configurations exist regardless of segment
+    // count (finding F7) — hoisted once per `paint()` call rather than
+    // allocated per segment (up to 12 times).
+    final brightPaint = Paint()
+      ..color = brightColor
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke;
+    final fadedPaint = Paint()
+      ..color = fadedColor
+      ..strokeWidth = fadedStrokeWidth
+      ..style = PaintingStyle.stroke;
 
     if (solid || segmentCount <= 1) {
-      final paint = Paint()
-        ..color = unviewedCount > 0 ? brightColor : fadedColor
-        ..strokeWidth = strokeWidth
-        ..style = PaintingStyle.stroke;
+      final paint = unviewedCount > 0 ? brightPaint : fadedPaint;
       canvas.drawArc(rect, -math.pi / 2, 2 * math.pi - 0.001, false, paint);
       return;
     }
@@ -557,10 +611,7 @@ class _SegmentedRingPainter extends CustomPainter {
     var start = -math.pi / 2;
 
     for (var i = 0; i < segmentCount; i++) {
-      final paint = Paint()
-        ..color = i < unviewedCount ? brightColor : fadedColor
-        ..strokeWidth = strokeWidth
-        ..style = PaintingStyle.stroke;
+      final paint = i < unviewedCount ? brightPaint : fadedPaint;
       canvas.drawArc(rect, start, perSegment, false, paint);
       start += perSegment + _gapRadians;
     }
@@ -572,5 +623,6 @@ class _SegmentedRingPainter extends CustomPainter {
       oldDelegate.unviewedCount != unviewedCount ||
       oldDelegate.solid != solid ||
       oldDelegate.brightColor != brightColor ||
-      oldDelegate.fadedColor != fadedColor;
+      oldDelegate.fadedColor != fadedColor ||
+      oldDelegate.strokeWidth != strokeWidth;
 }
