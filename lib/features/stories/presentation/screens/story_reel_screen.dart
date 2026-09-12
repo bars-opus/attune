@@ -53,12 +53,15 @@ library;
 import 'dart:async';
 
 import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/chat/presentation/state/chat_state.dart'
+    show chatRepositoryProvider;
 import 'package:attune/features/stories/data/story_read_repository.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
 import 'package:attune/features/stories/presentation/widgets/story_progress_bars.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart' show SemanticsService;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
 
 /// A photo holds for exactly this long (spec §5.2). Not derived from
@@ -297,6 +300,18 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   AppLifecycleListener? _lifecycleListener;
   bool _appForeground = true;
 
+  /// Task 6 (spec §5.4): composing a reply to the CURRENT item. Owns its
+  /// own controller/focus node rather than reusing chat's composer —
+  /// this screen sends directly through [chatRepositoryProvider], not
+  /// through chatControllerProvider/the outbox (§6.1's story outbox is
+  /// for POSTING a story, an entirely separate queue; a reply is an
+  /// ordinary `messages` insert per §5.4's own opening rationale, and
+  /// this screen is a lightweight, foreground-only surface with nothing
+  /// like the streak/story capture flow's offline requirements).
+  final TextEditingController _replyController = TextEditingController();
+  final FocusNode _replyFocusNode = FocusNode();
+  bool _sendingReply = false;
+
   @override
   void initState() {
     super.initState();
@@ -306,6 +321,13 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
       onInactive: () => _setForeground(false),
       onHide: () => _setForeground(false),
     );
+    // Composing a reply pauses the reel exactly like a hold — the item
+    // must not advance or expire the progress bar out from under a
+    // partially-typed reply.
+    _replyFocusNode.addListener(() {
+      if (!mounted) return;
+      _setHeldPaused(_replyFocusNode.hasFocus);
+    });
   }
 
   void _setForeground(bool foreground) {
@@ -910,7 +932,64 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
     unawaited(_endedSub?.cancel());
     unawaited(_player?.dispose());
     _lifecycleListener?.dispose();
+    _replyController.dispose();
+    _replyFocusNode.dispose();
     super.dispose();
+  }
+
+  /// Sends a chat message quoting [item] — Task 6, spec §5.4. Composes
+  /// through [chatRepositoryProvider].sendTextMessage directly (not
+  /// chatControllerProvider): this screen has no chat conversation/outbox
+  /// context of its own, and a reply from the reel is a single
+  /// foreground-only send, not something that needs offline queueing —
+  /// if it fails, the text stays in the field and the user can retry
+  /// (mirrors this screen's own _confirmAndDelete's "best-effort, no
+  /// retry loop" posture for its own single RPC call).
+  ///
+  /// Deliberately does NOT send `quotedText` — only `storyItemId`. The
+  /// server trigger (20260939010000_story_replies.sql) overwrites
+  /// quoted_text from the story's own media_type regardless of what a
+  /// client sends, and spec §5.4 is explicit the client must not try to
+  /// set its own; SupabaseChatRepository.sendTextMessage additionally
+  /// omits the key outright when storyItemId is set, but not sending a
+  /// value here keeps the intent visible at the call site too.
+  Future<void> _sendReply(StoryItem item) async {
+    final text = _replyController.text.trim();
+    if (text.isEmpty || _sendingReply) return;
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    setState(() => _sendingReply = true);
+    final generation = _generation;
+    try {
+      await ref
+          .read(chatRepositoryProvider)
+          .sendTextMessage(
+            relationshipId: widget.relationshipId,
+            senderId: user.id,
+            clientMessageId: const Uuid().v4(),
+            content: text,
+            storyItemId: item.id,
+          );
+      // Guard every post-await state write (Task 2's F1/F2 lesson): both
+      // `mounted` (this screen may have been popped while the request
+      // was in flight) and the generation token (the user may have
+      // advanced/retreated to a different item, whose reply this send
+      // must not be mistaken for clearing).
+      if (!mounted || generation != _generation) return;
+      _replyController.clear();
+      _replyFocusNode.unfocus();
+      setState(() => _sendingReply = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reply sent')),
+      );
+    } catch (_) {
+      if (!mounted || generation != _generation) return;
+      setState(() => _sendingReply = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not send your reply.')),
+      );
+    }
   }
 
   double get _progressFraction {
@@ -972,6 +1051,14 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
           final myId = ref.read(currentUserProvider)?.id;
           final canDeleteCurrent =
               occurredOn != null && myId != null && currentItem.authorId == myId;
+          // Replying is only offered on the PARTNER's item — replying to
+          // your own story would quote yourself in your own chat, which
+          // is not a sensible action and nothing in the spec asks for
+          // it. Same per-item (not per-screen) derivation canDeleteCurrent
+          // uses, since day mode can mix both partners' items.
+          final isCurrentMine = occurredOn != null
+              ? myId != null && currentItem.authorId == myId
+              : widget.isOwnReel;
           return _ReelBody(
             items: items,
             index: clampedIndex,
@@ -987,6 +1074,11 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
             onDelete: canDeleteCurrent
                 ? () => unawaited(_confirmAndDelete(currentItem, items))
                 : null,
+            canReply: !isCurrentMine,
+            replyController: _replyController,
+            replyFocusNode: _replyFocusNode,
+            sendingReply: _sendingReply,
+            onSendReply: () => unawaited(_sendReply(currentItem)),
           );
         },
       ),
@@ -1008,6 +1100,11 @@ class _ReelBody extends StatelessWidget {
     required this.onHoldEnd,
     required this.onDismiss,
     this.onDelete,
+    this.canReply = false,
+    this.replyController,
+    this.replyFocusNode,
+    this.sendingReply = false,
+    this.onSendReply,
   });
 
   final List<StoryItem> items;
@@ -1032,6 +1129,15 @@ class _ReelBody extends StatelessWidget {
   /// showing it disabled — the brief requires the UI not offer an
   /// action `delete_story_item` would refuse server-side.
   final VoidCallback? onDelete;
+
+  /// Task 6 (spec §5.4): true only for the PARTNER's current item —
+  /// replying to your own story is not offered. Gates whether the reply
+  /// composer renders at all.
+  final bool canReply;
+  final TextEditingController? replyController;
+  final FocusNode? replyFocusNode;
+  final bool sendingReply;
+  final VoidCallback? onSendReply;
 
   /// True once a press has been held long enough to count as "hold to
   /// pause" rather than a tap. A single [GestureDetector] drives both —
@@ -1131,6 +1237,101 @@ class _ReelBody extends StatelessWidget {
                 ),
               ),
             ),
+          if (canReply)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                child: _ReplyComposer(
+                  controller: replyController!,
+                  focusNode: replyFocusNode!,
+                  sending: sendingReply,
+                  onSend: onSendReply!,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Task 6 (spec §5.4): the reply-composing strip pinned above the bottom
+/// safe area, visible only when [_ReelBody.canReply] is true. A single
+/// text field + send button — no swipe-to-reply, no long-press menu,
+/// nothing chat's own composer has, because this screen sends exactly
+/// one thing (a fresh text reply quoting the current item) and nothing
+/// else.
+class _ReplyComposer extends StatelessWidget {
+  const _ReplyComposer({
+    required this.controller,
+    required this.focusNode,
+    required this.sending,
+    required this.onSend,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool sending;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: TextField(
+                key: const ValueKey('story-reel-reply-field'),
+                controller: controller,
+                focusNode: focusNode,
+                style: const TextStyle(color: Colors.white),
+                cursorColor: Colors.white,
+                maxLines: 4,
+                minLines: 1,
+                textInputAction: TextInputAction.send,
+                onSubmitted: sending ? null : (_) => onSend(),
+                decoration: const InputDecoration(
+                  hintText: 'Reply to story...',
+                  hintStyle: TextStyle(color: Colors.white70),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Semantics(
+            label: 'Send reply',
+            button: true,
+            child: IconButton(
+              key: const ValueKey('story-reel-reply-send'),
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              icon: sending
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.send_rounded, color: Colors.white),
+              onPressed: sending ? null : onSend,
+            ),
+          ),
         ],
       ),
     );

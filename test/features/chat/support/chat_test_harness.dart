@@ -39,6 +39,30 @@ Widget withScreenUtil(Widget child) => ScreenUtilInit(
   child: child,
 );
 
+/// Captures exactly what one [FakeChatRepository.sendTextMessage] call
+/// received, for tests that need to assert on the CALL rather than the
+/// response row (e.g. proving quotedText was never sent for a story
+/// reply — Task 6/spec §5.4).
+class SentTextMessageArgs {
+  const SentTextMessageArgs({
+    required this.relationshipId,
+    required this.senderId,
+    required this.clientMessageId,
+    required this.content,
+    this.replyToMessageId,
+    this.quotedText,
+    this.storyItemId,
+  });
+
+  final String relationshipId;
+  final String senderId;
+  final String clientMessageId;
+  final String content;
+  final String? replyToMessageId;
+  final String? quotedText;
+  final String? storyItemId;
+}
+
 /// A hand-written, fully controllable fake [ChatRepository] for controller and
 /// widget tests. It records calls and lets a test script the outcome of each
 /// send (success, duplicate, or a specific failure) without any network.
@@ -55,6 +79,12 @@ class FakeChatRepository implements ChatRepository {
   final List<String> markReadCalls = [];
   final List<String?> presenceCalls = [];
   int sendCallCount = 0;
+
+  /// The exact arguments the most recent [sendTextMessage] call received —
+  /// lets a test assert on what was actually SENT (e.g. that quotedText
+  /// was withheld for a story reply, Task 6/spec §5.4), not just on what
+  /// the fake echoes back in its response row.
+  SentTextMessageArgs? lastSendArgs;
 
   /// When set, the next send throws this instead of succeeding. Cleared after
   /// one use so a retry can succeed.
@@ -132,8 +162,18 @@ class FakeChatRepository implements ChatRepository {
     bool isViewOnce = false,
     int? streakViewsRemaining,
     bool isSystemNotice = false,
+    String? storyItemId,
   }) async {
     sendCallCount++;
+    lastSendArgs = SentTextMessageArgs(
+      relationshipId: relationshipId,
+      senderId: senderId,
+      clientMessageId: clientMessageId,
+      content: content,
+      replyToMessageId: replyToMessageId,
+      quotedText: quotedText,
+      storyItemId: storyItemId,
+    );
     if (sendDelay > Duration.zero) await Future<void>.delayed(sendDelay);
 
     if (simulateDuplicate) {
@@ -148,6 +188,18 @@ class FakeChatRepository implements ChatRepository {
       nextSendError = null;
       throw error;
     }
+
+    // Mirrors validate_message_story_reply_before_insert
+    // (20260939010000_story_replies.sql): when a story is quoted, the
+    // client's own quotedText is discarded and the server normalizes it
+    // from the story's media type. A test wanting the "story unavailable"
+    // refusal path sets nextSendError instead of relying on this fake to
+    // model the trigger's lookup — that refusal is a real Postgres
+    // decision this in-memory fake cannot reproduce.
+    final effectiveQuotedText =
+        storyItemId == null
+            ? quotedText
+            : (storyReplyMediaType == 'video' ? 'Video story' : 'Photo story');
 
     final id = 'srv-$clientMessageId';
     final row = {
@@ -168,7 +220,8 @@ class FakeChatRepository implements ChatRepository {
       'media_height': mediaHeight,
       'source': 'native',
       'reply_to_message_id': replyToMessageId,
-      'quoted_text': quotedText,
+      'quoted_text': effectiveQuotedText,
+      'story_item_id': storyItemId,
       'is_view_once': isViewOnce,
       'is_system_notice': isSystemNotice,
       'streak_views_remaining': streakViewsRemaining,
@@ -177,6 +230,12 @@ class FakeChatRepository implements ChatRepository {
     serverMessages[id] = message;
     return message;
   }
+
+  /// Set before calling sendTextMessage with a storyItemId to control
+  /// which server-normalized quotedText the fake produces ('image' or
+  /// 'video' — defaults to the photo case). Mirrors the real trigger's
+  /// CASE on story_items.media_type.
+  String storyReplyMediaType = 'image';
 
   @override
   Future<Message?> findMessageByClientId({

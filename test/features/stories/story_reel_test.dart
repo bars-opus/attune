@@ -186,6 +186,11 @@ class _FakeReelGateway implements StoryReadGateway {
   Future<void> deleteItem({required String storyItemId}) async {}
 
   @override
+  Future<StoryReplyTarget?> getReplyTarget({
+    required String storyItemId,
+  }) async => null;
+
+  @override
   Stream<void> watchChangeSignal({required String relationshipId}) =>
       const Stream.empty();
 

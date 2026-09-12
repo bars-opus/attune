@@ -195,6 +195,13 @@ class _FakeStoryReadGateway implements StoryReadGateway {
     deleted.add(storyItemId);
   }
 
+  StoryReplyTarget? replyTarget;
+
+  @override
+  Future<StoryReplyTarget?> getReplyTarget({
+    required String storyItemId,
+  }) async => replyTarget;
+
   @override
   Future<String?> signMediaUrl(String storageKey) async {
     signMediaUrlCallCount++;
@@ -266,6 +273,10 @@ class _ThrowingStoryReadGateway implements StoryReadGateway {
 
   @override
   Future<void> deleteItem({required String storyItemId}) => throw _error;
+
+  @override
+  Future<StoryReplyTarget?> getReplyTarget({required String storyItemId}) =>
+      throw _error;
 
   @override
   Future<String?> signMediaUrl(String storageKey) => throw _error;

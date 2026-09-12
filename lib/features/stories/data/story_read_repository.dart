@@ -195,6 +195,34 @@ class StoryItemPage {
   final StoryPageCursor? nextCursor;
 }
 
+/// The minimum needed to open a story reply's live link from chat (Task
+/// 6, spec §5.4): which day/author to open the reel at, nothing else.
+/// [StoryReadGateway.getReplyTarget] returns null for exactly the cases
+/// `story_items_read_members` (20260938020000) already hides — a
+/// soft-deleted story or one outside the caller's own open relationship
+/// — so a null result IS "Story no longer available," not a separate
+/// error path to interpret.
+@immutable
+class StoryReplyTarget {
+  const StoryReplyTarget({
+    required this.relationshipId,
+    required this.authorId,
+    required this.occurredOn,
+  });
+
+  factory StoryReplyTarget.fromRow(Map<String, dynamic> row) {
+    return StoryReplyTarget(
+      relationshipId: '${row['relationship_id']}',
+      authorId: '${row['author_id']}',
+      occurredOn: DateTime.parse('${row['occurred_on']}'),
+    );
+  }
+
+  final String relationshipId;
+  final String authorId;
+  final DateTime occurredOn;
+}
+
 /// One row of `list_story_day_counts` — spec §5.5, backs the calendar
 /// month view.
 @immutable
@@ -252,6 +280,19 @@ abstract class StoryReadGateway {
 
   /// `delete_story_item`.
   Future<void> deleteItem({required String storyItemId});
+
+  /// Resolves the day/author to open the reel at for a chat message's
+  /// `story_item_id` (Task 6, spec §5.4's tap-through). A direct read of
+  /// `story_items` rather than a new RPC: `story_items_read_members`
+  /// (20260938020000) already filters `deleted_at IS NULL` and same-
+  /// relationship-membership, so RLS alone gives the exact "still
+  /// available to me" answer this needs — no separate authorization
+  /// check to duplicate or drift from the trigger's. Returns null when
+  /// RLS hides the row (soft-deleted, or no longer in an open shared
+  /// relationship): the caller reads that as "Story no longer
+  /// available," never a distinguishable error (same anti-enumeration
+  /// posture as the insert trigger's one generic message).
+  Future<StoryReplyTarget?> getReplyTarget({required String storyItemId});
 
   /// Mints a FRESH 600-second signed URL for [storageKey] — never cached,
   /// never reused across calls. Returns null if signing fails (mirrors
@@ -437,6 +478,19 @@ class StoryReadRepository implements StoryReadGateway {
         params: {'p_story_item_id': storyItemId},
       ),
     );
+  });
+
+  @override
+  Future<StoryReplyTarget?> getReplyTarget({
+    required String storyItemId,
+  }) => _guard(() async {
+    final row = await _supabase
+        .from('story_items')
+        .select('relationship_id,author_id,occurred_on')
+        .eq('id', storyItemId)
+        .maybeSingle();
+    if (row == null) return null;
+    return StoryReplyTarget.fromRow(row);
   });
 
   @override

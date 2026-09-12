@@ -114,6 +114,12 @@ class _FakeCalendarGateway implements StoryReadGateway {
   final List<String> deleteCalls = [];
   bool deleteShouldFail = false;
 
+  /// Not exercised by this file's own assertions (the calendar never
+  /// calls getReplyTarget itself — only chat's message bubble does,
+  /// story_reply_test.dart's own suite); stubbed null so this fake keeps
+  /// compiling as StoryReadGateway grows.
+  StoryReplyTarget? replyTarget;
+
   @override
   Future<StoryItemPage> listDayItems({
     required String relationshipId,
@@ -159,6 +165,11 @@ class _FakeCalendarGateway implements StoryReadGateway {
     deleteCalls.add(storyItemId);
     if (deleteShouldFail) throw StoryApiError.network('boom');
   }
+
+  @override
+  Future<StoryReplyTarget?> getReplyTarget({
+    required String storyItemId,
+  }) async => replyTarget;
 
   @override
   Stream<void> watchChangeSignal({required String relationshipId}) =>
@@ -936,6 +947,10 @@ class _CalendarGatewayWithRingSummary implements StoryReadGateway {
   @override
   Future<void> deleteItem({required String storyItemId}) =>
       _inner.deleteItem(storyItemId: storyItemId);
+
+  @override
+  Future<StoryReplyTarget?> getReplyTarget({required String storyItemId}) =>
+      _inner.getReplyTarget(storyItemId: storyItemId);
 
   @override
   Future<String?> signMediaUrl(String storageKey) =>
