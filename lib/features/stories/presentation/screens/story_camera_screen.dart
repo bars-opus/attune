@@ -35,7 +35,11 @@
 ///     retries belong to the outbox controller (Task 6) — spec §6.1: "a
 ///     capture must not hold the user on a progress screen through a
 ///     25MB upload." This screen never calls [StoryGateway] directly.
-///  4. Pop back to wherever the story camera was opened from.
+///  4. Pop back to wherever the story camera was opened from — but ONLY
+///     on a successful enqueue. A failed prepare (rejected transcode or
+///     thumbnail) shows a snackbar and returns the camera to a live
+///     viewfinder instead, matching the streak adapter's own posture on
+///     a rejected transcode rather than discarding the take.
 library;
 
 import 'dart:async';
@@ -86,6 +90,7 @@ class StoryCameraScreen extends ConsumerStatefulWidget {
     this.imagePreparerFactory,
     this.thumbnailPreparerFactory,
     this.thumbnailGrabber,
+    this.utcOffsetMinutesReader,
   });
 
   /// Which relationship this capture posts to. Stories have no
@@ -120,6 +125,17 @@ class StoryCameraScreen extends ConsumerStatefulWidget {
   /// shipped code: this is new code in this task, so the seam belongs on
   /// it directly.
   final Future<Uint8List?> Function(String videoPath)? thumbnailGrabber;
+
+  /// Test seam for "utcOffsetMinutes comes from the device at capture
+  /// time" (the brief, verbatim). Defaults to the real
+  /// `DateTime.now().timeZoneOffset.inMinutes` read. Without this seam a
+  /// test asserting the record's offset can only recompute the same
+  /// device call production makes — which degenerates to `expect(0, 0)`
+  /// on any UTC host (this one and most CI included) and proves nothing.
+  /// Injecting a fixed value here lets a test assert the record actually
+  /// carries WHATEVER this reader returns, independent of the host's
+  /// real timezone in either direction.
+  final int Function()? utcOffsetMinutesReader;
 
   @override
   ConsumerState<StoryCameraScreen> createState() => _StoryCameraScreenState();
@@ -172,7 +188,8 @@ class _StoryCameraScreenState extends ConsumerState<StoryCameraScreen> {
       final prepared = await _captureKey.currentState!.confirmSend(raw);
       if (!mounted) return;
 
-      final utcOffsetMinutes = DateTime.now().timeZoneOffset.inMinutes;
+      final utcOffsetMinutes =
+          (widget.utcOffsetMinutesReader ?? _defaultUtcOffsetMinutesReader)();
       final thumbnailPath = await _buildThumbnail(prepared);
 
       final record = StoryOutboxRecord(
@@ -195,30 +212,42 @@ class _StoryCameraScreenState extends ConsumerState<StoryCameraScreen> {
       // NOT await it — awaiting would hold the user on this screen for
       // exactly the upload the spec says never to block on.
       unawaited(ref.read(storyOutboxProvider.notifier).enqueue(record));
+      // Pop only on the success path -- a failed prepare leaves the user
+      // on a live viewfinder to retry (see the catch blocks below), the
+      // same posture the shipped streak adapter takes on a rejected
+      // transcode (streak_camera_screen.dart's own _openReview: "Cancel
+      // means not that take, not leave the camera").
+      if (mounted) context.pop();
     } on ChatVideoRejected catch (rejected) {
       ChatLog.diagnostic('story video prepare rejected', rejected);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('That could not be posted.')),
-        );
-      }
+      await _stayOnCameraAfterFailure();
     } on CaptureImageRejected catch (rejected) {
       ChatLog.diagnostic('story image prepare rejected', rejected);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('That could not be posted.')),
-        );
-      }
+      await _stayOnCameraAfterFailure();
     } catch (error, stack) {
       ChatLog.diagnostic('story capture failed', '$error\n$stack');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('That could not be posted.')),
-        );
-      }
-    } finally {
-      if (mounted) context.pop();
+      await _stayOnCameraAfterFailure();
     }
+  }
+
+  /// A failed prepare/thumbnail shows a snackbar and returns the camera
+  /// to a live, ready-to-retry viewfinder rather than discarding the take
+  /// and leaving (spec §6.1's "it never silently disappears" posture,
+  /// matched to the streak adapter's own failure behaviour — see F5/F6 of
+  /// this task's review). `_handled` MUST be reset here: it exists to
+  /// stop a SECOND capture from double-enqueuing while this one is still
+  /// in flight, not to permanently disable the screen after a failure —
+  /// leaving it `true` after this method returns would silently swallow
+  /// every retry the user makes, which is exactly the kind of dropped
+  /// capture this whole feature exists to avoid.
+  Future<void> _stayOnCameraAfterFailure() async {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That could not be posted.')),
+      );
+    }
+    _handled = false;
+    await _captureKey.currentState?.reset();
   }
 
   /// Spec §4.3: "for a video this is a frame grab; for an image a
@@ -273,6 +302,12 @@ class _StoryCameraScreenState extends ConsumerState<StoryCameraScreen> {
       quality: 90,
     );
   }
+
+  /// utcOffsetMinutes comes from the device at capture time (the brief,
+  /// verbatim). This is the real production read; [widget.utcOffsetMinutesReader]
+  /// overrides it for tests.
+  int _defaultUtcOffsetMinutesReader() =>
+      DateTime.now().timeZoneOffset.inMinutes;
 
   String _mimeTypeFor(CapturedMediaType type) => switch (type) {
     CapturedMediaType.image => 'image/jpeg',

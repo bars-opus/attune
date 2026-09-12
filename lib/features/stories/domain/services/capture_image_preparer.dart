@@ -51,13 +51,15 @@ class CaptureImageRejected implements Exception {
 /// fallback this class already has. Forking that into a second ~150-line
 /// class would drift from this one the moment either changed. Instead the
 /// size/quality knobs are constructor parameters defaulting to the
-/// existing MAIN image policy (2560px / 5MB) — [maxBytes] and
-/// [maxDimension] stay as static constants too, unchanged, so Task 3's
-/// tests (which construct this via the bare `CaptureImagePreparer.new`
-/// factory the capture screen's `imagePreparerFactory` seam expects) see
-/// byte-for-byte the same behaviour. `StoryCameraScreen` constructs a
-/// second instance with `CaptureImagePreparer(maxDimension: 400,
-/// maxBytes: ..., qualityLadder: [75])` for its thumbnail.
+/// existing MAIN image policy (2560px / 5MB) — the old `maxBytes`/
+/// `maxDimension` static constants are renamed to [defaultMaxBytes]/
+/// [defaultMaxDimension] and remain the values applied when no argument
+/// is given, so Task 3's tests (which construct this via the bare
+/// `CaptureImagePreparer.new` factory the capture screen's
+/// `imagePreparerFactory` seam expects) see byte-for-byte the same
+/// behaviour. `StoryCameraScreen` constructs a second instance with
+/// `CaptureImagePreparer(maxDimension: 400, maxBytes: ...,
+/// qualityLadder: [75])` for its thumbnail.
 class CaptureImagePreparer {
   const CaptureImagePreparer({
     int? maxDimension,

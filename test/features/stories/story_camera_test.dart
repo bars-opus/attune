@@ -284,6 +284,31 @@ class _FakeCaptureImagePreparer extends CaptureImagePreparer {
   }
 }
 
+/// Rejects its first N calls with [CaptureImageRejected], then delegates
+/// to a real [_FakeCaptureImagePreparer] for every call after that. Lets
+/// a test drive "first capture fails, retry succeeds" through the real
+/// gesture/confirmSend path, proving the screen survives a failure and a
+/// second genuine capture is not silently swallowed (F5/F6 of this
+/// task's review: `_handled` must reset on a failure path, or the retry
+/// itself would be the dropped capture).
+class _FailNTimesCaptureImagePreparer extends CaptureImagePreparer {
+  _FailNTimesCaptureImagePreparer(this._failuresRemaining);
+
+  int _failuresRemaining;
+  int calls = 0;
+  final _delegate = _FakeCaptureImagePreparer(suffix: 'retry');
+
+  @override
+  Future<PreparedCaptureImage> prepare(String localPath) async {
+    calls++;
+    if (_failuresRemaining > 0) {
+      _failuresRemaining--;
+      throw const CaptureImageRejected('media_decode_failed');
+    }
+    return _delegate.prepare(localPath);
+  }
+}
+
 void main() {
   late Directory tempDir;
   late CameraPlatform originalCameraPlatform;
@@ -461,6 +486,28 @@ void main() {
     );
     expect(queued.single.relationshipId, 'rel-1');
     expect(queued.single.mediaType, CapturedMediaType.image);
+
+    // The load-bearing assertion this test's NAME actually claims: the
+    // user is released, not held on a progress screen through the
+    // upload. uploadCalls/finalizeCalls being empty is necessary but not
+    // sufficient on its own -- blockUploads makes those structurally
+    // empty regardless of whether the screen awaited the enqueue, and the
+    // record lands in the store via _store.put before any flush step
+    // runs either way. Only "the screen actually left" proves the
+    // fire-and-forget contract. Generous settle budget (no real-clock
+    // wait beyond the one short runAsync already in tapShutter): the pop
+    // needs more than tapShutter's own trailing pumps to land.
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(
+      find.byType(StoryCameraScreen),
+      findsNothing,
+      reason: 'a capture must not hold the user on a progress screen '
+          'through the upload -- the screen must have popped by now, '
+          'independent of whether the (frozen) outbox has finished '
+          'anything',
+    );
   });
 
   testWidgets('a photo generates a thumbnail before enqueueing', (
@@ -498,6 +545,28 @@ void main() {
     final queued = await h.store.readAll(_userId);
     expect(queued, hasLength(1));
     final record = queued.single;
+
+    // record.width/height come from confirmSend()'s PREPARED output
+    // (the fake's distinctive 32x32), never the raw camera preview size
+    // (720x1280, per _FakeCameraPlatform's onCameraInitialized). Asserting
+    // 32 therefore both pins the plumbing AND proves confirmSend() was
+    // actually called -- a regression that skipped the main-media prepare
+    // step entirely (enqueuing raw camera output, spec §4.2's 2560px/5MB
+    // ceiling silently bypassed) would enqueue 720x1280 instead and fail
+    // here.
+    expect(
+      record.width,
+      32,
+      reason: 'must come from confirmSend()\'s prepared output, not the '
+          'raw camera preview size -- proves the main-media prepare step '
+          '(spec §4.2) actually ran',
+    );
+    expect(record.height, 32);
+    expect(
+      record.mimeType,
+      'image/jpeg',
+      reason: 'the server validates MIME at finalize (spec §4.2)',
+    );
 
     expect(
       record.localThumbnailPath,
@@ -541,6 +610,16 @@ void main() {
     // completion.
     h.gateway.blockUploads = true;
 
+    // A distinctive sentinel, injected through utcOffsetMinutesReader,
+    // rather than recomputing DateTime.now().timeZoneOffset.inMinutes the
+    // same way production does. Recomputing degenerates to expect(0, 0)
+    // on any UTC host (this one and most CI included) -- proven by
+    // mutation testing during this fix round: hardcoding the production
+    // read to 0 still passed the old assertion here. -271 cannot collide
+    // with a real host offset by accident and independently proves the
+    // seam is actually consulted, in either timezone direction.
+    const sentinelOffset = -271;
+
     await pumpToReady(
       tester,
       h.container,
@@ -549,16 +628,14 @@ void main() {
         videoPreparerFactory: () => _FakeChatVideoPreparer(),
         imagePreparerFactory: () => _FakeCaptureImagePreparer(),
         thumbnailPreparerFactory: () => _FakeCaptureImagePreparer(suffix: 'thumb'),
+        utcOffsetMinutesReader: () => sentinelOffset,
       ),
     );
     await tapShutter(tester);
 
     final queued = await h.store.readAll(_userId);
     expect(queued, hasLength(1));
-    expect(
-      queued.single.utcOffsetMinutes,
-      DateTime.now().timeZoneOffset.inMinutes,
-    );
+    expect(queued.single.utcOffsetMinutes, sentinelOffset);
   });
 
   testWidgets('a cancelled capture enqueues nothing', (tester) async {
