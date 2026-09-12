@@ -33,6 +33,7 @@ import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
 import 'package:attune/features/stories/presentation/screens/story_reel_screen.dart';
+import 'package:attune/features/stories/presentation/widgets/story_progress_bars.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -78,9 +79,24 @@ StoryItem _item({
 /// (Task 2, already tested there), so this fake only needs to answer with
 /// one page and record calls this suite asserts against.
 class _FakeReelGateway implements StoryReadGateway {
-  _FakeReelGateway({required List<StoryItem> items}) : _items = items;
+  _FakeReelGateway({required List<StoryItem> items})
+    : _items = items,
+      _pages = null;
+
+  /// Fix round 1, F3: an alternate constructor for a paged script —
+  /// `pages[0]` answers the first `listActiveItems` call (`after ==
+  /// null`), `pages[1]` the second (once the reel calls `loadMore()`),
+  /// and so on. Lets a test prove the reel actually calls `loadMore()`
+  /// at the page boundary rather than treating `items.length` as the
+  /// end of the whole reel.
+  _FakeReelGateway.paged({required List<List<StoryItem>> pages})
+    : _items = pages.isEmpty ? const [] : pages.first,
+      _pages = pages;
 
   final List<StoryItem> _items;
+  final List<List<StoryItem>>? _pages;
+  int _listActiveItemsCallCount = 0;
+  int get listActiveItemsCallCount => _listActiveItemsCallCount;
   final List<String> markViewedCalls = [];
   final Set<String> signUrlFailuresFor = {};
 
@@ -91,16 +107,49 @@ class _FakeReelGateway implements StoryReadGateway {
   String? gatedKey;
   Completer<void>? signUrlGate;
 
+  /// Every [signMediaUrl] call, in order — fix round 1, F5's regression
+  /// guard needs to prove exactly ONE mint per image item, not two.
+  final List<String> _signUrlCalls = [];
+
+  int signUrlCallsFor(String storageKey) =>
+      _signUrlCalls.where((k) => k == storageKey).length;
+
   @override
   Future<StoryItemPage> listActiveItems({
     required String relationshipId,
     required String authorId,
     StoryPageCursor? after,
     int limit = 50,
-  }) async => StoryItemPage(items: List.of(_items), nextCursor: null);
+  }) async {
+    final pages = _pages;
+    if (pages == null) {
+      _listActiveItemsCallCount++;
+      return StoryItemPage(items: List.of(_items), nextCursor: null);
+    }
+    // Keyset-shaped fake: `after == null` is always page 0; any
+    // non-null cursor is "the next page after whatever came before" —
+    // sufficient for this suite, which never asks for a THIRD page.
+    final pageIndex = after == null ? 0 : _listActiveItemsCallCount;
+    _listActiveItemsCallCount++;
+    if (pageIndex >= pages.length) {
+      return const StoryItemPage(items: [], nextCursor: null);
+    }
+    final pageItems = pages[pageIndex];
+    final isLastPage = pageIndex == pages.length - 1;
+    return StoryItemPage(
+      items: pageItems,
+      nextCursor: isLastPage || pageItems.isEmpty
+          ? null
+          : StoryPageCursor(
+              createdAt: pageItems.last.createdAt,
+              id: pageItems.last.id,
+            ),
+    );
+  }
 
   @override
   Future<String?> signMediaUrl(String storageKey) async {
+    _signUrlCalls.add(storageKey);
     if (storageKey == gatedKey) {
       await signUrlGate!.future;
     }
@@ -189,6 +238,25 @@ class _FakeStoryItemPlayer implements StoryItemPlayer {
     _position += by;
   }
 
+  /// Advances position UNCONDITIONALLY, ignoring [_playing] — used only
+  /// to prove the REEL's own ticker is what stops progress while
+  /// backgrounded, not this fake's own early-return in [advance].
+  ///
+  /// Fix round 1, F9: a background test previously used [advance] here,
+  /// which is a no-op whenever `_playing` is false — so "nothing
+  /// advanced" was trivially true because THIS FAKE swallowed the call,
+  /// regardless of anything the reel itself did. `_startTicker`'s tick
+  /// callback (`story_reel_screen.dart`) reads `player.position`
+  /// directly when a player exists, so forcing the position past
+  /// [duration] here and then pumping genuinely exercises the reel's
+  /// OWN `if (!mounted || generation != _generation || _paused) return;`
+  /// guard — if that guard were ever deleted, this test would now
+  /// observe an advance to 'after' that [advance] alone could never
+  /// have revealed.
+  void forceAdvancePastEnd() {
+    _position = duration + const Duration(seconds: 1);
+  }
+
   void complete() {
     _position = duration;
     _playing = false;
@@ -240,6 +308,143 @@ Widget _harness({
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  group(
+    'fix round 1, F2: two callers racing on the same stale generation '
+    'cannot double-advance',
+    () {
+      testWidgets(
+        'two _advance calls that both captured the SAME generation '
+        '(e.g. onEnded and a tap landing in the same frame) advance '
+        'exactly ONE item, never skipping the middle one',
+        (tester) async {
+          final items = [
+            _item(id: 'a', createdAt: DateTime.utc(2026, 9, 1)),
+            _item(id: 'b', createdAt: DateTime.utc(2026, 9, 2)),
+            _item(id: 'c', createdAt: DateTime.utc(2026, 9, 3)),
+          ];
+          final gateway = _FakeReelGateway(items: items);
+
+          await tester.pumpWidget(_harness(gateway: gateway));
+          await tester.pump();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 50));
+          expect(gateway.markViewedCalls, ['a']);
+
+          // Fix round 1, F2's exact race — two callers who both
+          // observed the SAME `_generation` (a video's `onEnded` firing
+          // in the same frame as a tap-right is the realistic trigger)
+          // each calling `_advance` before either's own `_startItem`
+          // has run. The public gesture-testing API cannot force this:
+          // `tester.tap()`/`tapAt()` fully settle each dispatched
+          // gesture — including any interleaved stream microtask —
+          // before returning, so two sequential taps are provably
+          // sequential, never actually concurrent, and never exercise
+          // this guard. `raceAdvanceForTest` (a `@visibleForTesting`
+          // hook on the State, mirroring `StreakViewerScreen
+          // .finishForTest()`'s own precedent for exactly this kind of
+          // problem) captures `_generation` ONCE and fires two
+          // `_advance` calls with it, reproducing the race directly:
+          // without the `fromGeneration == _generation` guard, the
+          // SECOND call would still act on the pre-advance `_index`,
+          // skipping 'b' and marking it viewed despite it never
+          // rendering for a single frame.
+          final state = tester.state(find.byType(StoryReelScreen));
+          await (state as dynamic).raceAdvanceForTest(items);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 50));
+
+          // Exactly ONE advance: on 'b', not skipped to 'c'.
+          expect(gateway.markViewedCalls, ['a', 'b']);
+          expect(gateway.markViewedCalls, isNot(contains('c')));
+        },
+      );
+    },
+  );
+
+  group('fix round 1, F3: paging past the first page', () {
+    testWidgets(
+      'advancing past the last item of a short first page calls '
+      'loadMore() and reaches the next page, rather than closing',
+      (tester) async {
+        final page1 = [
+          _item(id: 'i0', createdAt: DateTime.utc(2026, 9, 1)),
+          _item(id: 'i1', createdAt: DateTime.utc(2026, 9, 2)),
+        ];
+        final page2 = [_item(id: 'i2', createdAt: DateTime.utc(2026, 9, 3))];
+        final gateway = _FakeReelGateway.paged(pages: [page1, page2]);
+
+        await tester.pumpWidget(_harness(gateway: gateway));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(gateway.markViewedCalls, ['i0']);
+        expect(gateway.listActiveItemsCallCount, 1);
+
+        final size = tester.getSize(find.byType(StoryReelScreen));
+        // i0 -> i1 (still within page 1, no loadMore needed yet).
+        await tester.tapAt(Offset(size.width * 0.8, size.height / 2));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(gateway.markViewedCalls, ['i0', 'i1']);
+        expect(gateway.listActiveItemsCallCount, 1);
+
+        // i1 is the last item of the loaded page. Advancing past it
+        // must call loadMore() (a SECOND listActiveItems call) and land
+        // on i2 — not close the reel as if the story were over.
+        await tester.tapAt(Offset(size.width * 0.8, size.height / 2));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        expect(gateway.listActiveItemsCallCount, 2);
+        expect(gateway.markViewedCalls, ['i0', 'i1', 'i2']);
+        expect(find.byType(StoryReelScreen), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'reaching the end of the LAST page (hasMore false) still closes '
+      'the reel normally',
+      (tester) async {
+        final items = [_item(id: 'only', createdAt: DateTime.utc(2026, 9, 1))];
+        final gateway = _FakeReelGateway.paged(pages: [items]);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ProviderScope(
+                      overrides: [
+                        currentUserProvider.overrideWithValue(_signedInUser),
+                        storyReadGatewayProvider.overrideWithValue(gateway),
+                      ],
+                      child: StoryReelScreen(
+                        relationshipId: _relationshipId,
+                        authorId: _partnerId,
+                      ),
+                    ),
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        final size = tester.getSize(find.byType(StoryReelScreen));
+        await tester.tapAt(Offset(size.width * 0.8, size.height / 2));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(StoryReelScreen), findsNothing);
+      },
+    );
+  });
 
   group('the reel opens at the OLDEST active item', () {
     testWidgets(
@@ -619,21 +824,29 @@ void main() {
 
         expect(player.isPlaying, isFalse);
 
-        // Time passes while backgrounded — nothing advances, because
-        // pausing stops the reel's own tick loop from treating elapsed
-        // time as progress, and the (fake) player itself does not
-        // advance position while not playing either.
-        player.advance(const Duration(seconds: 10));
+        // Time passes while backgrounded — nothing advances. Force the
+        // FAKE's position past its own duration regardless of playing
+        // state (fix round 1, F9 — see forceAdvancePastEnd's own doc
+        // comment for why plain `advance()` here would have tested the
+        // fake instead of the reel), then pump: if the reel's own
+        // `_paused` guard in `_startTicker` were ever removed, this
+        // would now observe an advance to 'after' that the old
+        // `advance()`-based version could never have caught.
+        player.forceAdvancePastEnd();
         await tester.pump(const Duration(seconds: 2));
 
         expect(gateway.markViewedCalls, ['v']);
         expect(find.byType(StoryReelScreen), findsOneWidget);
 
-        // Foregrounding again does not itself resume playback (an
-        // explicit tap-to-resume is required, same as releasing a
-        // hold) — still paused, still the same item, nothing skipped.
-        // Real sequence back to resumed passes through hidden/inactive
-        // in reverse.
+        // Fix round 1, F1: foregrounding again RESUMES playback. The
+        // reel must not stay frozen after a routine backgrounding (an
+        // `inactive` blip from Control Centre, an incoming-call
+        // banner) — spec §5.2's table names "Lifecycle pause/RESUME" as
+        // one requirement, and there was previously no gesture anywhere
+        // that could clear a lifecycle pause once set (a plain tap
+        // navigates instead of resuming), which froze the reel until
+        // the user happened to long-press-and-release. Real sequence
+        // back to resumed passes through hidden/inactive in reverse.
         binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
         await tester.pump();
         binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
@@ -641,8 +854,142 @@ void main() {
         binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
         await tester.pump();
 
-        expect(player.isPlaying, isFalse);
+        expect(player.isPlaying, isTrue);
         expect(gateway.markViewedCalls, ['v']);
+      },
+    );
+
+    testWidgets(
+      'holding through a backgrounding keeps the reel paused on resume — '
+      'a lifecycle resume must not override a hold still in progress',
+      (tester) async {
+        final items = [
+          _item(
+            id: 'v',
+            createdAt: DateTime.utc(2026, 9, 1),
+            mediaType: 'video',
+          ),
+        ];
+        final gateway = _FakeReelGateway(items: items);
+        final playerFactory = _FakePlayerFactory();
+
+        await tester.pumpWidget(
+          _harness(
+            gateway: gateway,
+            videoPlayerFactory: playerFactory.factory,
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        final player = playerFactory.players.single;
+
+        // Start a hold, then background WHILE still holding (e.g. a
+        // notification banner drags the finger's context away, or the
+        // hold simply outlasts an app switch).
+        final center = tester.getCenter(find.byType(StoryReelScreen));
+        final gesture = await tester.startGesture(center);
+        for (var i = 0; i < 8; i++) {
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        expect(player.isPlaying, isFalse);
+
+        final binding = TestWidgetsFlutterBinding.instance;
+        binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+        await tester.pump();
+        binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+        await tester.pump();
+        binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        await tester.pump();
+
+        // Foreground again WITHOUT releasing the hold yet.
+        binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+        await tester.pump();
+        binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+        await tester.pump();
+        binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+        await tester.pump();
+
+        // Still paused: the hold is still in effect and must win over
+        // the lifecycle resume (fix round 1, F1's _heldPaused/
+        // _lifecyclePaused split).
+        expect(player.isPlaying, isFalse);
+
+        // Now release the hold: THIS is what resumes it.
+        await gesture.up();
+        await tester.pump();
+        expect(player.isPlaying, isTrue);
+      },
+    );
+  });
+
+  group('fix round 1, F4: progress bars render across the top', () {
+    testWidgets(
+      'the progress bars sit in the top quarter of the screen, not at '
+      'screen centre',
+      (tester) async {
+        final items = [
+          _item(id: 'a', createdAt: DateTime.utc(2026, 9, 1)),
+          _item(id: 'b', createdAt: DateTime.utc(2026, 9, 2)),
+        ];
+        final gateway = _FakeReelGateway(items: items);
+
+        await tester.pumpWidget(_harness(gateway: gateway));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        final screenSize = tester.getSize(find.byType(StoryReelScreen));
+        final barsRect = tester.getRect(find.byType(StoryProgressBars));
+
+        // Fix round 1, F4: a bare SafeArea (non-Positioned) inside a
+        // StackFit.expand Stack used to stretch to the full screen
+        // height, and StoryProgressBars' Row (only 3dp tall) centred
+        // itself inside that stretched box — landing at y ≈ screen
+        // mid-height instead of "across the top" (spec §5.2's first
+        // sentence). Asserting the bars sit in the top quarter is a
+        // geometry check the previous suite had none of; it fails
+        // immediately if the centring regresses.
+        expect(
+          barsRect.top,
+          lessThan(screenSize.height / 4),
+          reason:
+              'progress bars must render near the top of the screen, '
+              'not centred — got top=${barsRect.top} on a '
+              '${screenSize.height}-tall screen',
+        );
+      },
+    );
+  });
+
+  group('fix round 1, F5: one signed URL minted per image item', () {
+    testWidgets(
+      'an image item mints exactly ONE signed URL, not two',
+      (tester) async {
+        final items = [_item(id: 'a', createdAt: DateTime.utc(2026, 9, 1))];
+        final gateway = _FakeReelGateway(items: items);
+
+        await tester.pumpWidget(_harness(gateway: gateway));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        // Fix round 1, F5: _startItemAsync used to mint one URL (only
+        // to check non-null, then discard it for an image), and
+        // _MediaView independently minted a SECOND one via
+        // storyMediaSignedUrlProvider — one wasted create_signed_url
+        // round-trip per image. Now _MediaView renders the URL
+        // _startItemAsync already confirmed, so this must be exactly
+        // one call for the one image item on screen.
+        expect(gateway.signUrlCallsFor('story-media/a.jpg'), 1);
+
+        // The rendered Image widget's URL must be the SAME one that
+        // gated `_rendered`/markViewed — not a second, independently
+        // minted (and possibly disagreeing) URL.
+        final image = tester.widget<Image>(find.byType(Image));
+        final provider = image.image as NetworkImage;
+        expect(provider.url, 'https://signed.example/story-media/a.jpg');
       },
     );
   });
