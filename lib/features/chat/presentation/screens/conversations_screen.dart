@@ -8,6 +8,8 @@ import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/reflection_journal/presentation/providers/reflection_journal_providers.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
+import 'package:attune/features/stories/presentation/screens/story_camera_screen.dart';
+import 'package:attune/features/stories/presentation/widgets/story_rings_row.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -88,6 +90,25 @@ class ConversationsScreen extends ConsumerWidget {
                 ? ListView(
                   padding: const EdgeInsets.all(Spacing.md),
                   children: [
+                    // Two story rings, above the conversation tile (spec
+                    // §5.1). Needs an active relationship to know which
+                    // couple's stories to show, same precondition the
+                    // conversation card below already has — so this
+                    // simply reuses `filtered.first`'s identifiers rather
+                    // than adding a new relationship lookup. Renders
+                    // nothing when there is no active relationship yet,
+                    // matching the "at most one active conversation"
+                    // shape the rest of this screen already assumes.
+                    if (filtered.isNotEmpty)
+                      StoryRingsRow(
+                        relationshipId: filtered.first.relationshipId,
+                        partnerId: filtered.first.partnerId,
+                        partnerName: filtered.first.partnerName,
+                        onCapture: () => _openStoryCamera(
+                          context,
+                          filtered.first.relationshipId,
+                        ),
+                      ),
                     // The current relationship's chat, or the empty-state
                     // prompt to start one — one card, since there's at most one
                     // active conversation to show (see filteredConversationsProvider).
@@ -155,6 +176,21 @@ class ConversationsScreen extends ConsumerWidget {
 
   void _openConversation(BuildContext context, Conversation conversation) {
     context.push(RouteNames.chatScreen, extra: conversation);
+  }
+
+  // No named route exists yet for the story camera — it is a freshly
+  // built screen (Plan B) that this task is the first to link to, and
+  // adding a full go_router route/name is out of this task's scope
+  // (rings only, per the brief). A direct MaterialPageRoute push is
+  // enough to make the `+` affordance functional without touching
+  // app_router.dart, which is exactly the kind of shared/core file this
+  // screen's regression-risk notes warn against changing casually.
+  void _openStoryCamera(BuildContext context, String relationshipId) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StoryCameraScreen(relationshipId: relationshipId),
+      ),
+    );
   }
 
   String _previewText(Conversation conversation) =>
