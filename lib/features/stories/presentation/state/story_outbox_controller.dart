@@ -130,8 +130,33 @@ class StoryOutboxController extends StateNotifier<List<StoryOutboxRecord>> {
   /// Returns the [flush] future so a caller that wants to know when the
   /// attempt has settled (tests, in particular) can await it; production
   /// callers are free to let it run in the background.
+  /// Returns false when the capture could not be queued at all — the
+  /// keystore was unavailable, so [StoryOutboxStore.put] refused to
+  /// persist plaintext. Nothing is queued and nothing will retry, so a
+  /// caller that ignores this leaves the user believing a story was
+  /// posted that does not exist. [StoryCameraScreen] tells them instead.
+  /// Like [enqueue], but the returned future completes as soon as the
+  /// LOCAL queue write has settled rather than once the upload has — the
+  /// flush is started and deliberately not awaited. That lets the camera
+  /// learn whether the capture was queued at all without being pinned
+  /// behind the network (`story_camera_test.dart`'s "does not upload
+  /// inline" guards exactly that regression).
+  ///
+  /// Returns false when the keystore was unavailable, so
+  /// [StoryOutboxStore.put] refused to persist plaintext: nothing is
+  /// queued and nothing will retry. A caller that ignores this leaves the
+  /// user believing a story was posted that does not exist.
+  Future<bool> enqueueLocally(StoryOutboxRecord record) async {
+    final stored = await _store.put(_userId, record);
+    if (!stored) return false;
+    await _refreshState();
+    unawaited(flush());
+    return true;
+  }
+
   Future<void> enqueue(StoryOutboxRecord record) async {
-    await _store.put(_userId, record);
+    final stored = await _store.put(_userId, record);
+    if (!stored) return;
     await _refreshState();
     await flush();
   }

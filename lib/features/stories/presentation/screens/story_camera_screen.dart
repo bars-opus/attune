@@ -207,11 +207,23 @@ class _StoryCameraScreenState extends ConsumerState<StoryCameraScreen> {
       );
 
       // Enqueue and leave: the upload (and its retries) belong entirely
-      // to the outbox controller from here (spec §6.1). `enqueue` returns
-      // the underlying flush's future, but this screen deliberately does
-      // NOT await it — awaiting would hold the user on this screen for
-      // exactly the upload the spec says never to block on.
-      unawaited(ref.read(storyOutboxProvider.notifier).enqueue(record));
+      // to the outbox controller from here (spec §6.1). This screen
+      // deliberately does NOT await the upload — that would hold the user
+      // on this screen for exactly the thing the spec says never to block
+      // on. But it DOES await the queue write itself, which is local and
+      // fast, because `enqueue` returns false when the keystore is
+      // unavailable and the capture was never queued at all. Popping on
+      // that would tell the user their story was posted when nothing
+      // exists and nothing will retry.
+      final queued = await ref
+          .read(storyOutboxProvider.notifier)
+          .enqueueLocally(record);
+      if (!queued) {
+        await _stayOnCameraAfterFailure(
+          message: 'That could not be saved. Try again.',
+        );
+        return;
+      }
       // Pop only on the success path -- a failed prepare leaves the user
       // on a live viewfinder to retry (see the catch blocks below), the
       // same posture the shipped streak adapter takes on a rejected
@@ -240,11 +252,13 @@ class _StoryCameraScreenState extends ConsumerState<StoryCameraScreen> {
   /// leaving it `true` after this method returns would silently swallow
   /// every retry the user makes, which is exactly the kind of dropped
   /// capture this whole feature exists to avoid.
-  Future<void> _stayOnCameraAfterFailure() async {
+  Future<void> _stayOnCameraAfterFailure({
+    String message = 'That could not be posted.',
+  }) async {
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('That could not be posted.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
     _handled = false;
     await _captureKey.currentState?.reset();

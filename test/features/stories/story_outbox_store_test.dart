@@ -315,4 +315,41 @@ void main() {
     expect(rows.single.localMediaPath, marker);
     expect(rows.single.clientStoryId, markedRecord.clientStoryId);
   });
+
+  // The keystore-unavailable path, which reached review twice without a
+  // test and survived both Plan B and Plan C as a parked note.
+  //
+  // Fail-closed is correct: refusing to write plaintext story metadata to
+  // disk matches ChatCacheService. The bug was that put() returned void,
+  // so every caller treated a refused write as a successful one -- the
+  // camera popped and the user believed a story was posted that had never
+  // been queued and would never retry. put() now reports it.
+  test('put() reports false when the cipher is unavailable, and writes '
+      'nothing', () async {
+    const userId = 'user-1';
+    final record = buildRecord();
+
+    // `cipherUnavailable` rather than `cipher: null`: _ensureInitialized
+    // fills a null cipher back in via `??=`, and the secure-storage
+    // plugin succeeds in a test host, so a null argument alone cannot
+    // express a keystore failure. Not being able to express it is
+    // precisely why this path reached review twice untested.
+    final store = StoryOutboxStore.forTesting(
+      createStoryOutboxBackend(file: dbFile),
+      cipherUnavailable: true,
+    );
+
+    expect(
+      await store.put(userId, record),
+      isFalse,
+      reason: 'a refused encryption must be reported, not swallowed',
+    );
+    expect(
+      await store.readAll(userId),
+      isEmpty,
+      reason: 'nothing may be persisted when the cipher is unavailable',
+    );
+
+    await store.disposeForTesting();
+  });
 }

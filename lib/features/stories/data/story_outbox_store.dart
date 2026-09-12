@@ -35,7 +35,9 @@ import 'story_outbox_backend.dart';
 import 'story_outbox_record.dart';
 
 class StoryOutboxStore {
-  StoryOutboxStore() : _backend = createDefaultStoryOutboxBackend();
+  StoryOutboxStore()
+    : _backend = createDefaultStoryOutboxBackend(),
+      _cipherUnavailable = false;
 
   /// Test seam: inject a backend directly (an in-memory stub, or a
   /// `dart:io` backend pointed at a controlled temp file) so durability
@@ -44,13 +46,29 @@ class StoryOutboxStore {
   /// [ChatCacheCipher.forTesting] (a fixed in-memory key) so encryption
   /// round-trips are exercised without the platform keystore, matching
   /// `ChatCacheService.forTesting`.
+  ///
+  /// [cipherUnavailable] reproduces a keystore failure: the store then
+  /// behaves exactly as production does when `ChatCacheCipher.create()`
+  /// throws. A `cipher: null` argument cannot express this on its own,
+  /// because `_ensureInitialized` fills a null cipher back in via `??=`
+  /// and the secure-storage plugin succeeds in a test host. That gap is
+  /// why the fail-closed path reached review twice untested.
   @visibleForTesting
-  StoryOutboxStore.forTesting(StoryOutboxBackend backend, {ChatCacheCipher? cipher})
-    : _backend = backend,
-      _cipher = cipher ?? ChatCacheCipher.forTesting();
+  StoryOutboxStore.forTesting(
+    StoryOutboxBackend backend, {
+    ChatCacheCipher? cipher,
+    bool cipherUnavailable = false,
+  }) : _backend = backend,
+       _cipherUnavailable = cipherUnavailable,
+       _cipher = cipherUnavailable
+           ? null
+           : (cipher ?? ChatCacheCipher.forTesting());
 
   final StoryOutboxBackend _backend;
   bool _initialized = false;
+
+  /// Test-only: forces the keystore-failure path (see [forTesting]).
+  final bool _cipherUnavailable;
 
   /// Reused from chat rather than a new `StoryOutboxCipher`: the 256-bit
   /// data key is already provisioned in the platform keystore (iOS
@@ -70,6 +88,11 @@ class StoryOutboxStore {
   Future<void> _ensureInitialized() async {
     if (_initialized) return;
     await _backend.init();
+    if (_cipherUnavailable) {
+      _cipher = null;
+      _initialized = true;
+      return;
+    }
     // Fail-closed on privacy, same as ChatCacheService.init(): if key
     // setup fails, this store operates without persistence rather than
     // writing plaintext story metadata to disk.
@@ -113,13 +136,17 @@ class StoryOutboxStore {
   /// go through this — [StoryOutboxRecord.clientStoryId] is what makes
   /// the second case an update rather than a duplicate row.
   ///
-  /// If the cipher is unavailable (keystore failure), the write is
-  /// silently dropped rather than persisting plaintext — same
-  /// fail-closed behaviour as `ChatCacheService.writeMessages` et al.
-  Future<void> put(String userId, StoryOutboxRecord record) async {
+  /// If the cipher is unavailable (keystore failure) the write is dropped
+  /// rather than persisting plaintext — the same fail-closed behaviour as
+  /// `ChatCacheService.writeMessages` et al. **Returns false when that
+  /// happens**, because dropping it silently is what made this a
+  /// data-loss bug: the camera popped, the user believed the story was
+  /// posted, and nothing was ever queued. Callers must react to false
+  /// rather than discard it (spec §6.1, "it never silently disappears").
+  Future<bool> put(String userId, StoryOutboxRecord record) async {
     await _ensureInitialized();
     final payload = _encrypt(jsonEncode(record.toJson()));
-    if (payload == null) return;
+    if (payload == null) return false;
     await _backend.put(
       userId,
       record.clientStoryId,
@@ -132,6 +159,7 @@ class StoryOutboxStore {
       // (`send.createdAt.millisecondsSinceEpoch`, not `DateTime.now()`).
       record.createdAt.millisecondsSinceEpoch,
     );
+    return true;
   }
 
   /// Removes a record entirely — used on success (posted) or an explicit

@@ -354,8 +354,11 @@ void main() {
   /// Real ProviderContainer with the store/gateway providers overridden to
   /// test doubles, same pattern as story_outbox_controller_test.dart.
   ({ProviderContainer container, StoryOutboxStore store, _FakeStoryGateway gateway})
-  buildContainer() {
-    final store = StoryOutboxStore.forTesting(stub.createStoryOutboxBackend());
+  buildContainer({bool cipherUnavailable = false}) {
+    final store = StoryOutboxStore.forTesting(
+      stub.createStoryOutboxBackend(),
+      cipherUnavailable: cipherUnavailable,
+    );
     final gateway = _FakeStoryGateway();
     final container = ProviderContainer(
       overrides: [
@@ -665,4 +668,47 @@ void main() {
 
     expect(await h.store.readAll(_userId), isEmpty);
   });
+
+  testWidgets(
+    'a capture that cannot be queued keeps the user on the camera and says '
+    'so, rather than popping as though it posted',
+    (tester) async {
+      // The keystore-unavailable path. Fail-closed is right -- refusing
+      // to write plaintext story metadata matches chat -- but the store
+      // used to return void, so the camera popped and the user believed
+      // a story was posted that was never queued and would never retry.
+      final photoPath = await writeJpegFile(tester, 'photo.jpg');
+      final videoPath = await writeFile(tester, 'clip.mp4');
+      CameraPlatform.instance = _FakeCameraPlatform(
+        videoPath: videoPath,
+        photoPath: photoPath,
+      );
+      final h = buildContainer(cipherUnavailable: true);
+
+      await pumpToReady(
+        tester,
+        h.container,
+        StoryCameraScreen(
+          relationshipId: 'rel-1',
+          videoPreparerFactory: () => _FakeChatVideoPreparer(),
+          imagePreparerFactory: () => _FakeCaptureImagePreparer(),
+          thumbnailPreparerFactory: () =>
+              _FakeCaptureImagePreparer(suffix: 'thumb'),
+        ),
+      );
+      await tapShutter(tester);
+
+      expect(
+        await h.store.readAll(_userId),
+        isEmpty,
+        reason: 'nothing was persisted -- that part is correct',
+      );
+      expect(
+        find.byType(StoryCameraScreen),
+        findsOneWidget,
+        reason: 'the camera must NOT pop: popping tells the user it posted',
+      );
+      expect(find.text('That could not be saved. Try again.'), findsOneWidget);
+    },
+  );
 }
