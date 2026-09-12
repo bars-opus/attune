@@ -849,6 +849,43 @@ void main() {
     );
 
     testWidgets(
+      'a failedPermanent record IS surfaced, with Retry and Discard '
+      '(final branch review, spec 6.1)',
+      (tester) async {
+        // Skipping it for RING purposes (the test above) was necessary but
+        // not sufficient: this widget is the only consumer of
+        // storyOutboxProvider in lib/, so a skipped record had no surface
+        // anywhere and retry()/discard() had no call site at all. The user
+        // would see their PREVIOUS story on the ring with no signal, no
+        // retry, and the local file never reclaimed -- exactly what 6.1's
+        // "it never silently disappears" forbids.
+        await tester.pumpWidget(
+          await _harness(
+            summary: [
+              _summary(authorId: _myId, activeCount: 4, unviewedCount: 4),
+            ],
+            outbox: [_pendingRecord(state: StoryOutboxState.failedPermanent)],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Your story could not be posted.'),
+          findsOneWidget,
+          reason: 'a dead record must be visible somewhere',
+        );
+        expect(find.text('Retry'), findsOneWidget);
+        expect(find.text('Discard'), findsOneWidget);
+
+        // And the ring itself is still the real one -- surfacing the
+        // failure must not re-introduce the F2 regression above.
+        final mine = _ringByKey(tester, 'story-ring-mine')!;
+        expect(mine.pendingProgress, isNull);
+        expect(mine.segmentCount, 4);
+      },
+    );
+
+    testWidgets(
       'two queued captures: the ring reflects the NEWEST, not the first '
       'one in store order (review finding F5)',
       (tester) async {

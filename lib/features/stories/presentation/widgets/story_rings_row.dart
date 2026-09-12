@@ -33,6 +33,8 @@
 /// produced a signed URL yet.
 library;
 
+import 'dart:async';
+
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/stories/data/story_outbox_record.dart';
@@ -109,16 +111,27 @@ class StoryRingsRow extends ConsumerWidget {
     //   outrank a real `hasStories` ring (F2). This does NOT change the
     //   outbox controller's retention semantics — the record still lives
     //   in the store, it is simply never treated as "the" pending item
-    //   for ring purposes. A distinct failure affordance is out of scope
-    //   for this task; excluding it here at minimum stops it from hiding
-    //   real, already-posted stories.
+    //   for ring purposes.
+    //
+    //   Excluding it is necessary but was not sufficient: the final
+    //   branch review found this widget is the ONLY consumer of
+    //   `storyOutboxProvider` in lib/, so a skipped record had no
+    //   surface anywhere and `retry()`/`discard()` had no call site at
+    //   all. That is precisely what spec §6.1 forbids ("it never
+    //   silently disappears") — the user would see their PREVIOUS story
+    //   on the ring, with no signal, no retry, and the local file never
+    //   reclaimed. `_FailedStoryNotice` below is that missing surface.
     // - Among the remaining candidates, the NEWEST by `createdAt` wins,
     //   not the first one in the store's (oldest-first) iteration order
     //   (F5) — the ring shows the most recent thing the user did.
     StoryOutboxRecord? myPending;
+    final myFailed = <StoryOutboxRecord>[];
     for (final record in outbox) {
       if (record.relationshipId != relationshipId) continue;
-      if (record.state == StoryOutboxState.failedPermanent) continue;
+      if (record.state == StoryOutboxState.failedPermanent) {
+        myFailed.add(record);
+        continue;
+      }
       if (myPending == null || record.createdAt.isAfter(myPending.createdAt)) {
         myPending = record;
       }
@@ -181,26 +194,37 @@ class StoryRingsRow extends ConsumerWidget {
         horizontal: Spacing.md,
         vertical: Spacing.sm,
       ),
-      child: SizedBox(
-        height:
-            kStoryRingThumbnailDiameter +
-            2 * (kStoryRingGap + kStoryRingStrokeWidth) +
-            4,
-        child: Row(
-          children: [
-            myRing,
-            // Nothing at all for an empty partner ring — no SizedBox, no
-            // placeholder slot. Rule 2 in this file's header.
-            if (showPartnerRing) ...[
-              const SizedBox(width: Spacing.md),
-              _PartnerRing(
-                summary: partnerSummary,
-                partnerName: partnerName,
-                onTap: onOpenPartner,
-              ),
-            ],
-          ],
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height:
+                kStoryRingThumbnailDiameter +
+                2 * (kStoryRingGap + kStoryRingStrokeWidth) +
+                4,
+            child: Row(
+              children: [
+                myRing,
+                // Nothing at all for an empty partner ring — no SizedBox, no
+                // placeholder slot. Rule 2 in this file's header.
+                if (showPartnerRing) ...[
+                  const SizedBox(width: Spacing.md),
+                  _PartnerRing(
+                    summary: partnerSummary,
+                    partnerName: partnerName,
+                    onTap: onOpenPartner,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          // Sits BELOW the fixed-height ring row rather than inside it:
+          // the row's height is derived from the ring geometry, so a
+          // child of it would be clipped.
+          for (final failed in myFailed)
+            _FailedStoryNotice(key: ValueKey(failed.clientStoryId), record: failed),
+        ],
       ),
     );
   }
@@ -300,6 +324,57 @@ class _MineRing extends ConsumerWidget {
       onTapPlus: onTapPlus,
       semanticLabel:
           'Your story, $segmentCount ${segmentCount == 1 ? 'item' : 'items'}',
+    );
+  }
+}
+
+/// The surface for a story that will never post on its own.
+///
+/// Spec §6.1: a failed upload "never silently disappears" — it is worse
+/// here than in chat, because there is no bubble to hang a retry off. The
+/// outbox has always RETAINED these records and `retry()`/`discard()` have
+/// always existed; until the final branch review nothing in `lib/` called
+/// either, so the record was retained and invisible. This is the call site.
+///
+/// Deliberately a plain row rather than a ring overlay: a dead record must
+/// not outrank a real, already-posted story on the ring (the F2 finding
+/// this file's header records), so it gets its own space beneath.
+class _FailedStoryNotice extends ConsumerWidget {
+  const _FailedStoryNotice({super.key, required this.record});
+
+  final StoryOutboxRecord record;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final notifier = ref.read(storyOutboxProvider.notifier);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: Spacing.sm),
+      child: MergeSemantics(
+        child: Row(
+          children: [
+            Icon(Icons.error_outline_rounded, size: 18, color: colors.error),
+            const SizedBox(width: Spacing.xs),
+            Expanded(
+              child: Text(
+                'Your story could not be posted.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.error),
+              ),
+            ),
+            TextButton(
+              onPressed: () => unawaited(notifier.retry(record.clientStoryId)),
+              child: const Text('Retry'),
+            ),
+            TextButton(
+              onPressed: () => unawaited(notifier.discard(record.clientStoryId)),
+              child: const Text('Discard'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
