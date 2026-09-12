@@ -558,20 +558,32 @@ BEGIN
   -- Each member inserts only their OWN messages: messages' RLS forbids
   -- writing on a partner's behalf, so a single combined INSERT as user A
   -- is rejected by the policy -- correctly.
-  INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content, created_at)
+  -- created_at is NOT in messages' client INSERT allowlist (20260939020000)
+  -- and no client writes it -- the server defaults it. Insert as a client
+  -- legitimately can, then backdate out-of-band below, so this test keeps
+  -- exercising the RLS policy rather than a privilege clients never have.
+  INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content)
   VALUES
-   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1', gen_random_uuid(), 'a today', now()),
-   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1', gen_random_uuid(), 'a yest', now() - interval '1 day');
+   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1', gen_random_uuid(), 'a today'),
+   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1', gen_random_uuid(), 'a yest');
 END $$;
 
 SELECT public.test_set_auth('00000000-0000-0000-0000-0000000000b2');
 DO $$
 BEGIN
-  INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content, created_at)
+  INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content)
   VALUES
-   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b2', gen_random_uuid(), 'b today', now()),
-   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b2', gen_random_uuid(), 'b yest', now() - interval '1 day');
+   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b2', gen_random_uuid(), 'b today'),
+   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b2', gen_random_uuid(), 'b yest');
 END $$;
+
+-- Backdate the two "yest" rows as the table owner: created_at is
+-- server-owned, so a client could never do this, and the streak needs two
+-- distinct days.
+RESET ROLE;
+UPDATE public.messages SET created_at = now() - interval '1 day'
+ WHERE relationship_id = '10000000-0000-0000-0000-000000000001'
+   AND content IN ('a yest','b yest');
 
 SELECT public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
 DO $$

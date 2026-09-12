@@ -124,27 +124,13 @@ FOR EACH ROW EXECUTE FUNCTION public.validate_message_story_reply_before_insert(
 -- grantable (added in 20260827120000); it does not need to be listed
 -- again, and this trigger overwrites it server-side regardless of what a
 -- client sends.
-REVOKE INSERT ON public.messages FROM authenticated;
-GRANT INSERT (
-  relationship_id,
-  sender_id,
-  client_message_id,
-  content,
-  media_url,
-  media_type,
-  reply_to_message_id,
-  quoted_text,
-  story_item_id
-) ON public.messages TO authenticated;
-
--- messages' SELECT privilege is column-level too (20260705190000,
--- extended by 20260828120000 for reply_to_message_id/quoted_text) -- the
--- same additive-allowlist shape, and the same class of bug
--- 20260828120000 fixed (an INSERT grant added without its SELECT
--- counterpart) if skipped here.
-GRANT SELECT (
-  story_item_id
-) ON public.messages TO authenticated;
+-- The messages column-grant block lives in its own migration
+-- (20260939020000_story_reply_grants.sql) so scripts/local_pg_grants.sql
+-- can replay it after its blanket grant, the same way the Stories tables
+-- and Word Hunt do. Keeping it here instead would mean the harness's
+-- blanket "GRANT INSERT ON ALL TABLES" silently re-opened the column
+-- allowlist locally while production kept it narrow -- the exact
+-- divergence that hid the media_*/is_view_once loss found in review.
 
 -- messages is NOT in scripts/local_pg_grants.sql's REVOKE-replay list
 -- (unlike story_items/story_views/etc., which the harness's blanket

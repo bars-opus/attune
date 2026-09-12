@@ -49,6 +49,15 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- gate that exists, exactly like Word Hunt's tables above.
 \i supabase/migrations/20260938100000_stories_table_grants.sql
 
+-- And the messages column allowlist for story replies. messages is a
+-- shared core table: the blanket grant above hands authenticated
+-- table-level INSERT, which silently overrides the column allowlist
+-- 20260939020000 sets. Replaying it keeps local behaviour identical to
+-- production, where the REVOKE stands. Without this replay the harness
+-- cannot catch a column dropped from the allowlist -- which is exactly
+-- how the media_*/is_view_once/streak_views_remaining loss reached review.
+\i supabase/migrations/20260939020000_story_reply_grants.sql
+
 -- Deliberately NOT granting EXECUTE on all functions.
 --
 -- Supabase's default is EXECUTE for PUBLIC on new functions, and the
