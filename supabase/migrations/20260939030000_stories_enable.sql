@@ -1,0 +1,16 @@
+-- Turns the `stories` feature flag on. Deliberately the LAST migration of
+-- Plan C (task-6-brief.md, task preamble's explicit override of the
+-- original 20260939020000 number -- already taken by
+-- 20260939020000_story_reply_grants.sql).
+--
+-- Everything the feature needs is already in place and tested by this
+-- point: schema, RLS, storage policies, intent/finalize/view/delete RPCs,
+-- the read RPCs and their client repository, the rings, the reel, the
+-- calendar, and story replies landing in chat. The client has NO flag
+-- read of its own (deliberate -- a client-side gate is spoofable) so the
+-- only thing standing between "built" and "live" is this row:
+-- create_chat_media_upload_intent (20260938040000, line ~149) fails
+-- closed with UNAVAILABLE while this flag is false, which is what kept
+-- every previous task's work dark end-to-end despite the rings already
+-- rendering and the reel already opening.
+UPDATE public.feature_flags SET enabled = true WHERE key = 'stories';

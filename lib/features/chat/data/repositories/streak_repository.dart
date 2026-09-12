@@ -2,23 +2,38 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// What a streak clip actually is. Explicit rather than inferred from
+/// `durationMs == 0`: a photo stores that honestly (it has no length), so
+/// an inferred discriminator would render a genuinely zero-length or
+/// corrupt VIDEO as a broken image (spec §6.3 step 3).
+enum StreakClipKind { photo, video }
+
 /// One segment of a streak, in playback order.
 class StreakClip {
   const StreakClip({
     required this.index,
     required this.mediaUrl,
     required this.durationMs,
+    required this.mediaKind,
   });
 
   factory StreakClip.fromRow(Map<String, dynamic> row) => StreakClip(
     index: (row['clip_index'] as num).toInt(),
     mediaUrl: row['media_url'] as String,
     durationMs: (row['duration_ms'] as num).toInt(),
+    // Every row written before this column existed reads back 'video'
+    // (the column's own server-side DEFAULT), so a defensive fallback
+    // here is belt-and-braces, not load-bearing.
+    mediaKind:
+        (row['media_kind'] as String?) == 'photo'
+            ? StreakClipKind.photo
+            : StreakClipKind.video,
   );
 
   final int index;
   final String mediaUrl;
   final int durationMs;
+  final StreakClipKind mediaKind;
 }
 
 final streakRepositoryProvider = Provider<StreakRepository>(
@@ -41,6 +56,7 @@ class StreakRepository {
     required String messageId,
     required String mediaUrl,
     required int durationMs,
+    StreakClipKind mediaKind = StreakClipKind.video,
   }) async {
     await _safeClient.from('streak_clips').insert({
       'message_id': messageId,
@@ -49,6 +65,7 @@ class StreakRepository {
       'clip_index': 0,
       'media_url': mediaUrl,
       'duration_ms': durationMs,
+      'media_kind': mediaKind == StreakClipKind.photo ? 'photo' : 'video',
     });
   }
 
@@ -82,7 +99,7 @@ class StreakRepository {
   Future<List<StreakClip>> fetchClips(String messageId) async {
     final rows = await _safeClient
         .from('streak_clips')
-        .select('clip_index, media_url, duration_ms')
+        .select('clip_index, media_url, duration_ms, media_kind')
         .eq('message_id', messageId)
         .order('clip_index');
 

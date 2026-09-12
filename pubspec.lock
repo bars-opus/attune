@@ -287,7 +287,7 @@ packages:
     source: hosted
     version: "0.9.21+2"
   camera_platform_interface:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: camera_platform_interface
       sha256: "98cfc9357e04bad617671b4c1f78a597f25f08003089dd94050709ae54effc63"
@@ -327,7 +327,7 @@ packages:
     source: hosted
     version: "0.4.2"
   clock:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: clock
       sha256: fddb70d9b5277016c77a80201021d40a2247104d9f4aa7bab7157b7e3f05b84b
@@ -2320,7 +2320,7 @@ packages:
     source: hosted
     version: "2.8.4"
   video_player_platform_interface:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: video_player_platform_interface
       sha256: "57c5d73173f76d801129d0531c2774052c5a7c11ccb962f1830630decd9f24ec"

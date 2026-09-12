@@ -38,6 +38,7 @@ abstract class ChatRepository {
     bool isViewOnce = false,
     int? streakViewsRemaining,
     bool isSystemNotice = false,
+    String? storyItemId,
   });
   Future<Message?> findMessageByClientId({
     required String senderId,

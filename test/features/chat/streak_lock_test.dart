@@ -125,9 +125,16 @@ void main() {
     late String src;
 
     setUpAll(() {
+      // Plan B, Task 2 extracted capture (permissions, camera switching,
+      // segment recording, the lock gesture) out of StreakCameraScreen
+      // into CaptureCameraScreen, a destination-neutral module —
+      // streak_camera_contract_test.dart pins the streak BEHAVIOUR this
+      // asserted on unchanged; this file follows the same source moves so
+      // it keeps asserting the same guarantees against where they now
+      // live.
       src =
           File(
-            'lib/features/chat/presentation/screens/streak_camera_screen.dart',
+            'lib/features/chat/presentation/screens/capture_camera_screen.dart',
           ).readAsStringSync();
     });
 
@@ -197,14 +204,18 @@ void main() {
 
     test('resetting clears the busy flags', () {
       // _isSending is set before the transcode and cleared only on error.
-      // The success path pops, so it never mattered there -- but cancel
-      // KEEPS the screen, and a stuck flag left the button permanently
-      // busy: no haptic and no recording on every take after the first.
+      // The success path pops (or, embedded, reports out), so it never
+      // mattered there -- but a cancelled review KEEPS the camera, and a
+      // stuck flag left the button permanently busy: no haptic and no
+      // recording on every take after the first. `reset()` (renamed from
+      // `_resetCapture` and made public in the Task 2 extraction, so an
+      // embedding adapter can call it after its own review is cancelled)
+      // is where that clearing happens now.
       final reset = RegExp(
-        r'Future<void> _resetCapture\(\) async \{[\s\S]{0,600}?\n  \}',
+        r'Future<void> reset\(\) async \{[\s\S]{0,600}?\n  \}',
       ).firstMatch(src)?.group(0);
 
-      expect(reset, isNotNull, reason: '_resetCapture not found');
+      expect(reset, isNotNull, reason: 'reset() not found');
       expect(reset, contains('_isSending = false'));
       expect(reset, contains('_isLocked = false'));
     });

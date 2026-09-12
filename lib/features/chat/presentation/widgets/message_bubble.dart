@@ -8,6 +8,9 @@ import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/core/widgets/focused_action_menu.dart';
 import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
+import 'package:attune/features/stories/data/story_read_repository.dart';
+import 'package:attune/features/stories/presentation/providers/story_providers.dart';
+import 'package:attune/features/stories/presentation/screens/story_reel_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
@@ -21,6 +24,7 @@ import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'dart:async';
 import 'dart:io';
 import 'package:attune/features/chat/presentation/widgets/streak_bubble.dart';
 import 'package:attune/features/chat/presentation/screens/streak_viewer_screen.dart';
@@ -47,6 +51,63 @@ import 'package:attune/features/games/presentation/widgets/game_trail_line.dart'
 String? _playableLocalPath(String? path) {
   if (path == null) return null;
   return File(path).existsSync() ? path : null;
+}
+
+/// Tap-through for a story reply's quote block (Task 6, spec §5.4).
+///
+/// Resolves [storyItemId] through [StoryReadGateway.getReplyTarget],
+/// which is a direct RLS-gated read of `story_items` — the SAME
+/// deleted/cross-relationship filter (`story_items_read_members`,
+/// 20260938020000) that already hides the row this quote's durable
+/// `quoted_text` snapshot survived (spec: "the FK is ON DELETE SET
+/// NULL... quoted_text survives"). A null result is therefore not a
+/// distinguishable error to interpret here — it IS "no longer
+/// available," matching the insert trigger's own one-generic-message
+/// anti-enumeration posture (20260939010000's header) rather than a
+/// second, looser story-availability check invented client-side.
+///
+/// Opens [StoryReelScreen.forDay] rather than the author-scoped
+/// constructor: an expired-but-undeleted story still opens from its
+/// calendar day (spec §5.4, "expiry alone does not break the link"),
+/// and day mode is the ONLY constructor that includes expired items
+/// (`storyDayItemsProvider`'s own contract) — the author-scoped reel
+/// would silently show nothing for exactly the case this exists to
+/// handle.
+///
+/// Reads the provider container directly (`ProviderScope.containerOf`,
+/// the same one-shot-read-from-a-tap-callback pattern already used by
+/// `delete_account_action.dart`/`logout_action.dart`) rather than
+/// converting [MessageBubble] to a ConsumerWidget: this is the single
+/// interactive spot in an otherwise stateless bubble, mirroring how
+/// this same file already scopes a `Consumer` narrowly around
+/// VoiceMessagePlayer rather than widening the whole class.
+Future<void> _openStoryQuote(BuildContext context, String storyItemId) async {
+  final container = ProviderScope.containerOf(context, listen: false);
+  StoryReplyTarget? target;
+  try {
+    target = await container
+        .read(storyReadGatewayProvider)
+        .getReplyTarget(storyItemId: storyItemId);
+  } catch (_) {
+    target = null;
+  }
+  if (!context.mounted) return;
+
+  if (target == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Story no longer available')),
+    );
+    return;
+  }
+
+  await Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => StoryReelScreen.forDay(
+        relationshipId: target!.relationshipId,
+        occurredOn: target.occurredOn,
+      ),
+    ),
+  );
 }
 
 class MessageBubble extends StatelessWidget {
@@ -374,6 +435,12 @@ class MessageBubble extends StatelessWidget {
                           parentDeleted
                               ? 'Original message deleted'
                               : message.quotedText,
+                      // isStoryQuote tells this WHICH quote it renders —
+                      // story replies and message replies share this one
+                      // quotedText/onJumpToParent rendering path, but
+                      // never both at once (Message.storyItemId's doc
+                      // comment: replyToMessageId is null whenever
+                      // storyItemId is set, by construction). See below.
                       // A step below the message content's own size (bodyLarge) — a
                       // little smaller reads as a preview/citation rather than a
                       // second full-size message, while UniversalBubble's own 12px
@@ -394,8 +461,16 @@ class MessageBubble extends StatelessWidget {
                       // parentIsMine is null — the parent message isn't in the loaded
                       // window, so who sent it genuinely isn't known here, same
                       // "don't guess" principle as parentDeleted.
+                      //
+                      // A story quote has no per-message "who sent the parent"
+                      // question the way a message reply does — it labels the
+                      // TYPE of thing quoted ("Photo story"/"Video story" is
+                      // already the quotedText itself), so no author label row
+                      // is added on top of it.
                       quoteAuthorLabel:
-                          message.quotedText == null || parentIsMine == null
+                          message.quotedText == null ||
+                                  message.storyItemId != null ||
+                                  parentIsMine == null
                               ? null
                               : parentIsMine!
                               ? 'You'
@@ -407,7 +482,10 @@ class MessageBubble extends StatelessWidget {
                       // WhatsApp-style colored side border on the quote block. Same
                       // null-means-unknown gate as quoteAuthorLabel.
                       quoteAuthorIsMine:
-                          message.quotedText == null ? null : parentIsMine,
+                          message.quotedText == null ||
+                                  message.storyItemId != null
+                              ? null
+                              : parentIsMine,
                       quoteMineBorderColor:
                           isLightMode
                               ? replyAccent
@@ -417,8 +495,20 @@ class MessageBubble extends StatelessWidget {
                       quoteBarOnLeft: isLightMode,
                       quoteAuthorAlignLeft: isLightMode,
                       showQuoteIcon: !isLightMode,
-                      onJumpToParent:
-                          message.quotedText == null ? null : onJumpToParent,
+                      // A story quote's tap target is resolved live (Task 6,
+                      // spec §5.4: "the quote may render its live thumbnail
+                      // after the normal story authorization check," and a
+                      // deleted story must say "Story no longer available"
+                      // rather than opening an empty reel) — never the
+                      // ordinary message-jump callback, which has no idea
+                      // what a story_item_id even is.
+                      onJumpToParent: message.quotedText == null
+                          ? null
+                          : message.storyItemId != null
+                          ? () => unawaited(
+                              _openStoryQuote(context, message.storyItemId!),
+                            )
+                          : onJumpToParent,
                       isHighlighted: isHighlighted,
                       bubbleKey: ValueKey(message.clientMessageId),
                       onLongPress:

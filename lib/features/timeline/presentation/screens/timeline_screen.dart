@@ -10,6 +10,7 @@ import 'package:attune/features/timeline/presentation/providers/timeline_provide
 import 'package:attune/features/timeline/presentation/widgets/add_moment_or_reminder_sheet.dart';
 import 'package:attune/features/timeline/presentation/widgets/calendar_strip.dart';
 import 'package:attune/features/timeline/presentation/widgets/moments_list.dart';
+import 'package:attune/features/timeline/presentation/widgets/story_day_row.dart';
 import 'package:attune/features/timeline/presentation/widgets/upcoming_reminders_section.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -249,6 +250,23 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                         ),
                   ),
                 ),
+                // Stories: the calendar's third source, merged at read
+                // time and never copied (spec §3.1). Shown for the
+                // selected day only — nothing rendered when no day is
+                // selected or that day has zero stories
+                // (StoryDayCountRow's own "absence means don't draw").
+                if (_selectedDate != null)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: Spacing.md.w,
+                      ),
+                      child: StoryDayCountRow(
+                        relationshipId: relationshipId,
+                        occurredOn: _selectedDate!,
+                      ),
+                    ),
+                  ),
                 // Moments list as SliverList
                 SliverPadding(
                   padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),

@@ -58,6 +58,17 @@ class Message {
   final bool isMine;
   final String? replyToMessageId;
   final String? quotedText;
+
+  /// Non-null only for a story reply (Task 6, spec §5.4) — the live link
+  /// to `story_items.id`. Distinguishes a story quote from an ordinary
+  /// message quote when both share the same [quotedText]/preview
+  /// rendering path in MessageBubble: [replyToMessageId] is null for a
+  /// story reply (there is no parent MESSAGE), so the two are mutually
+  /// exclusive by construction, never by inference. Nullable and not
+  /// reset by a hard story cascade client-side — the server's own
+  /// `ON DELETE SET NULL` is what actually clears this column; a
+  /// hydrated row simply reflects whatever the server currently has.
+  final String? storyItemId;
   final DateTime? deletedAt;
   final DateTime? editedAt;
   final Map<String, Set<String>> reactions;
@@ -114,6 +125,7 @@ class Message {
     this.readAt,
     this.replyToMessageId,
     this.quotedText,
+    this.storyItemId,
     this.deletedAt,
     this.editedAt,
     this.reactions = const {},
@@ -169,6 +181,7 @@ class Message {
       ),
       replyToMessageId: row['reply_to_message_id'] as String?,
       quotedText: row['quoted_text'] as String?,
+      storyItemId: row['story_item_id'] as String?,
       deletedAt: _parseDateTime(row['deleted_at']),
       editedAt: _parseDateTime(row['edited_at']),
     );
@@ -192,6 +205,7 @@ class Message {
     bool isViewOnce = false,
     String? replyToMessageId,
     String? quotedText,
+    String? storyItemId,
     bool isPreparing = false,
     double? compressProgress,
     String? localThumbnailPath,
@@ -217,6 +231,7 @@ class Message {
       isMine: true,
       replyToMessageId: replyToMessageId,
       quotedText: quotedText,
+      storyItemId: storyItemId,
       isPreparing: isPreparing,
       compressProgress: compressProgress,
       localThumbnailPath: localThumbnailPath,
@@ -253,6 +268,7 @@ class Message {
     bool? isMine,
     String? replyToMessageId,
     String? quotedText,
+    String? storyItemId,
     DateTime? deletedAt,
     DateTime? editedAt,
     Map<String, Set<String>>? reactions,
@@ -290,6 +306,7 @@ class Message {
       isMine: isMine ?? this.isMine,
       replyToMessageId: replyToMessageId ?? this.replyToMessageId,
       quotedText: quotedText ?? this.quotedText,
+      storyItemId: storyItemId ?? this.storyItemId,
       deletedAt: deletedAt ?? this.deletedAt,
       editedAt: editedAt ?? this.editedAt,
       reactions: reactions ?? this.reactions,
@@ -328,6 +345,7 @@ class Message {
       'isMine': isMine,
       'replyToMessageId': replyToMessageId,
       'quotedText': quotedText,
+      'storyItemId': storyItemId,
       'reactions': reactions.map((emoji, ids) => MapEntry(emoji, ids.toList())),
     };
   }
@@ -367,6 +385,7 @@ class Message {
       isMine: json['isMine'] as bool,
       replyToMessageId: json['replyToMessageId'] as String?,
       quotedText: json['quotedText'] as String?,
+      storyItemId: json['storyItemId'] as String?,
       reactions:
           (json['reactions'] as Map<String, dynamic>?)?.map(
             (emoji, ids) => MapEntry(

@@ -38,7 +38,8 @@ class SupabaseChatRepository implements ChatRepository {
       'delivered_at,read_at,media_url,media_thumbnail_url,media_type,'
       'media_duration_ms,media_waveform,media_width,media_height,source,'
       'reply_to_message_id,quoted_text,deleted_at,edited_at,'
-      'is_view_once,viewed_at,is_system_notice,streak_views_remaining';
+      'is_view_once,viewed_at,is_system_notice,streak_views_remaining,'
+      'story_item_id';
 
   User get _currentUser {
     final user = _supabase.auth.currentUser;
@@ -272,6 +273,7 @@ class SupabaseChatRepository implements ChatRepository {
     bool isViewOnce = false,
     int? streakViewsRemaining,
     bool isSystemNotice = false,
+    String? storyItemId,
   }) async {
     final user = _currentUser;
     if (senderId != user.id) {
@@ -296,13 +298,23 @@ class SupabaseChatRepository implements ChatRepository {
               'media_width': mediaWidth,
               'media_height': mediaHeight,
               'reply_to_message_id': replyToMessageId,
-              'quoted_text': quotedText,
+              // A story reply's quoted_text is never sent by this client
+              // (spec §5.4): validate_message_story_reply_before_insert
+              // (20260939010000) overwrites it server-side from the
+              // story's media type regardless of what arrives here, so
+              // sending our own value would be a silent no-op at best and
+              // a misleading implication of client control at worst.
+              // Omitting the key entirely when storyItemId is set (rather
+              // than sending null) leaves quotedText for an ordinary
+              // message reply completely unaffected.
+              if (storyItemId == null) 'quoted_text': quotedText,
               'is_view_once': isViewOnce,
               // Omitted for every other type: the column defaults to 1,
               // and writing null would violate its NOT NULL.
               if (streakViewsRemaining != null)
                 'streak_views_remaining': streakViewsRemaining,
               'is_system_notice': isSystemNotice,
+              if (storyItemId != null) 'story_item_id': storyItemId,
             })
             .select(_messageColumns)
             .single();

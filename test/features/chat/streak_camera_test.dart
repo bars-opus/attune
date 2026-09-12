@@ -50,10 +50,12 @@ void main() {
   test('the camera is configured to record audio', () {
     // A streak is someone talking to their partner. A muted format
     // removes most of what makes it worth sending, and the flag is easy
-    // to lose in a later refactor.
+    // to lose in a later refactor. Camera setup moved to
+    // CaptureCameraScreen in the Task 2 extraction (spec §6); the
+    // streak-behaviour contract this asserted on is unaffected.
     final src =
         File(
-          'lib/features/chat/presentation/screens/streak_camera_screen.dart',
+          'lib/features/chat/presentation/screens/capture_camera_screen.dart',
         ).readAsStringSync();
     expect(src, contains('enableAudio: true'));
   });

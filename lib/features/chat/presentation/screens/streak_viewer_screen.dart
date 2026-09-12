@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:attune/features/chat/data/repositories/streak_repository.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
+import 'package:attune/features/stories/presentation/screens/story_reel_screen.dart'
+    show kStoryImageHoldDuration;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
@@ -13,9 +15,19 @@ import 'package:attune/features/chat/presentation/state/chat_state.dart';
 /// once per clip, or a three-clip streak would burn a three-view budget
 /// in a single watch.
 class StreakViewerScreen extends ConsumerStatefulWidget {
-  const StreakViewerScreen({super.key, required this.messageId});
+  const StreakViewerScreen({
+    super.key,
+    required this.messageId,
+    this.imageHoldDuration = kStoryImageHoldDuration,
+  });
 
   final String messageId;
+
+  /// Test seam, mirroring StoryReelScreen's own parameter of the same
+  /// name: defaults to [kStoryImageHoldDuration] — the SAME constant the
+  /// story reel uses, so a photo holds for the same 5 seconds whether it
+  /// arrives as a story or a streak (spec §6.3 step 3's second decision).
+  final Duration imageHoldDuration;
 
   @override
   ConsumerState<StreakViewerScreen> createState() => _StreakViewerScreenState();
@@ -25,6 +37,23 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
   List<StreakClip> _clips = const [];
   int _index = 0;
   VideoPlayerController? _controller;
+
+  /// Drives a photo clip's hold (spec §6.3 step 3): a photo has no
+  /// natural duration to advance on, so a plain Timer stands in for the
+  /// video controller's own end-of-clip listener. Null whenever the
+  /// current clip is a video, or nothing is playing yet.
+  Timer? _imageHoldTimer;
+
+  /// The signed URL for the current PHOTO clip. Separate from the video
+  /// controller entirely — mutually exclusive by construction, since one
+  /// clip is always exactly one media kind.
+  String? _imageUrl;
+
+  /// Bumped on every _playAt call so a late timer/listener callback from
+  /// a clip the viewer has since left (advanced past, or this screen
+  /// disposed) cannot mutate state that no longer belongs to it — this
+  /// task's own "guard every post-await state write" requirement.
+  int _generation = 0;
 
   /// True only when there is genuinely nothing to play — the clips are
   /// spent, expired, or the fetch failed. Deliberately NOT a "finished
@@ -64,6 +93,9 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
 
   Future<void> _playAt(int index) async {
     await _controller?.dispose();
+    _imageHoldTimer?.cancel();
+    _imageHoldTimer = null;
+    final generation = ++_generation;
     if (index >= _clips.length) {
       await _finish();
       return;
@@ -75,7 +107,7 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
     final signed = await ref
         .read(chatRepositoryProvider)
         .createSignedMediaUrl(_clips[index].mediaUrl);
-    if (!mounted) return;
+    if (!mounted || generation != _generation) return;
     if (signed == null) {
       // The clips are gone (spent, or past the 30-minute window). Close
       // rather than sitting on a black screen.
@@ -84,9 +116,26 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
       return;
     }
 
+    // A photo has no natural duration to advance on (same reasoning as
+    // the story reel's own image branch): hold it for imageHoldDuration
+    // on a plain Timer, then spend the view and close exactly as a
+    // finished video does (spec §6.3 step 3's second decision).
+    if (_clips[index].mediaKind == StreakClipKind.photo) {
+      setState(() {
+        _imageUrl = signed;
+        _controller = null;
+        _index = index;
+      });
+      _imageHoldTimer = Timer(widget.imageHoldDuration, () {
+        if (!mounted || generation != _generation) return;
+        unawaited(_playAt(index + 1));
+      });
+      return;
+    }
+
     final controller = VideoPlayerController.networkUrl(Uri.parse(signed));
     await controller.initialize();
-    if (!mounted) {
+    if (!mounted || generation != _generation) {
       await controller.dispose();
       return;
     }
@@ -99,6 +148,7 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
     var advanced = false;
     controller.addListener(() {
       if (advanced) return;
+      if (!mounted || generation != _generation) return;
       final value = controller.value;
       if (value.isInitialized &&
           value.position >= value.duration &&
@@ -110,6 +160,7 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
 
     setState(() {
       _controller = controller;
+      _imageUrl = null;
       _index = index;
     });
     await controller.play();
@@ -167,6 +218,8 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
 
   @override
   void dispose() {
+    _generation++;
+    _imageHoldTimer?.cancel();
     _controller?.dispose();
     super.dispose();
   }
@@ -174,6 +227,7 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
+    final imageUrl = _imageUrl;
 
     // canPop:false so the OS back gesture and the system back button route
     // through _finish rather than popping directly, which skipped the RPC
@@ -196,15 +250,31 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Two states while opening, matching the ephemeral video
-              // viewer: a ready controller plays, anything else spins. The
-              // unavailable message is reserved for the case where there is
-              // actually nothing to play, so it can never appear mid-open.
+              // Three states while opening, matching the ephemeral video
+              // viewer's original two plus the photo branch: a ready
+              // video controller plays, a resolved photo URL renders as
+              // an image, and anything else spins. The unavailable
+              // message is reserved for the case where there is actually
+              // nothing to play, so it can never appear mid-open.
               if (controller != null && controller.value.isInitialized)
                 Center(
                   child: AspectRatio(
                     aspectRatio: controller.value.aspectRatio,
                     child: VideoPlayer(controller),
+                  ),
+                )
+              else if (imageUrl != null)
+                Center(
+                  child: Image.network(
+                    imageUrl,
+                    key: const ValueKey('streak-photo-view'),
+                    fit: BoxFit.contain,
+                    // A failed image load must not surface as an
+                    // app-visible error banner (mirrors the story reel's
+                    // own precacheImage onError) — the hold timer still
+                    // fires and advances/finishes on schedule regardless
+                    // of whether the bytes ever painted.
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                   ),
                 )
               else if (_unavailable)
