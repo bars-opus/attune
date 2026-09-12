@@ -197,7 +197,14 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
 /// streakRepositoryProvider), so without this override every send in this
 /// suite fails inside that call and never reaches sendCallCount.
 class _FakeStreakRepository implements StreakRepository {
-  final List<({String messageId, String mediaUrl, int durationMs})>
+  final List<
+    ({
+      String messageId,
+      String mediaUrl,
+      int durationMs,
+      StreakClipKind mediaKind,
+    })
+  >
   attachClipCalls = [];
 
   @override
@@ -205,11 +212,13 @@ class _FakeStreakRepository implements StreakRepository {
     required String messageId,
     required String mediaUrl,
     required int durationMs,
+    StreakClipKind mediaKind = StreakClipKind.video,
   }) async {
     attachClipCalls.add((
       messageId: messageId,
       mediaUrl: mediaUrl,
       durationMs: durationMs,
+      mediaKind: mediaKind,
     ));
   }
 
@@ -413,7 +422,17 @@ void main() {
     // competing for the real event loop) despite finishing in
     // milliseconds every time this file ran alone — the regression a
     // full-suite run caught that no single-file run could reproduce.
-    await tester.pump(const Duration(milliseconds: 600));
+    //
+    // 900ms, not 600ms (spec §6.3 step 3 / photoAndVideo follow-up): the
+    // streak adapter now passes CaptureKinds.photoAndVideo, so a hold no
+    // longer starts recording on press-down — it arms a 300ms threshold
+    // timer first (spec §6.2), and only THEN begins the segment clock.
+    // The RECORDED duration is therefore (total hold - 300ms), so 600ms
+    // total now yields only ~300ms of actual footage — under
+    // kStreakMinFirstSegment — and StreakRecordingSession.shouldDiscard
+    // silently cancels the take instead of reaching the review sheet.
+    // 900ms clears the 300ms threshold AND leaves >500ms of recording.
+    await tester.pump(const Duration(milliseconds: 900));
 
     await gesture.up();
     // _onPressEnd stops the recording (cancelling the 100ms ticker),

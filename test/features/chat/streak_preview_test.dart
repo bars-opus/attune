@@ -39,8 +39,13 @@ void main() {
       // The player must actually be OPENED from the review flow. Checking
       // only that the class is referenced passes on a build that defines
       // the whole preview and never calls it.
+      //
+      // _startPreview now takes the whole CapturedMedia (`_startPreview(media)`),
+      // not just its path (`_startPreview(media.path)`) — spec §6.3 step 3
+      // widened it to also branch on media.type for a photo take, which a
+      // photo-only build needs to know without a second parameter.
       final opensBeforeSheet = RegExp(
-        r'_startPreview\(media\.path\)[\s\S]{0,400}?showModalBottomSheet',
+        r'_startPreview\(media\)[\s\S]{0,400}?showModalBottomSheet',
       ).hasMatch(adapterSrc);
       expect(
         opensBeforeSheet,

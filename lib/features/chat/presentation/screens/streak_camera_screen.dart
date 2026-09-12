@@ -13,6 +13,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
 import 'package:attune/features/stories/domain/captured_media.dart';
+import 'package:attune/features/stories/domain/services/capture_image_preparer.dart'
+    show CaptureImagePreparer, CaptureImageRejected;
 import 'package:video_player/video_player.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
@@ -37,6 +39,7 @@ class StreakCameraScreen extends ConsumerStatefulWidget {
     super.key,
     required this.conversation,
     this.videoPreparerFactory,
+    this.imagePreparerFactory,
   });
 
   final Conversation conversation;
@@ -49,6 +52,14 @@ class StreakCameraScreen extends ConsumerStatefulWidget {
   /// is the half that actually calls it.
   final ChatVideoPreparer Function()? videoPreparerFactory;
 
+  /// Test seam for the photo half (spec §6.3 step 3), mirroring
+  /// [videoPreparerFactory] exactly: defaults to the real
+  /// [CaptureImagePreparer] constructor. flutter_image_compress has no
+  /// platform channel on a test host either, so a photo streak's own
+  /// success path needs the same kind of seam the video path already had
+  /// — see [StoryCameraScreen]'s identical parameter.
+  final CaptureImagePreparer Function()? imagePreparerFactory;
+
   @override
   ConsumerState<StreakCameraScreen> createState() => _StreakCameraScreenState();
 }
@@ -59,8 +70,15 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
 
   /// Plays back what was just captured while the send sheet is open.
   /// Reviewing over a LIVE viewfinder would show the user the room they
-  /// are standing in rather than the take they are deciding on.
+  /// are standing in rather than the take they are deciding on. Null for
+  /// a photo take — see [_previewImagePath] instead.
   VideoPlayerController? _previewController;
+
+  /// The captured photo's path, shown as a static image behind the review
+  /// sheet exactly where [_previewController] shows a looping video for a
+  /// video take. Mutually exclusive with [_previewController] — a take is
+  /// always exactly one media kind.
+  String? _previewImagePath;
 
   /// Mirrors the pre-extraction screen's `preview != null` gate on the
   /// embedded [CaptureCameraScreen]'s own close/flip/record controls.
@@ -121,7 +139,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     ChatLog.diagnostic('streak review', 'path=${media.path}');
     if (!mounted) return;
 
-    await _startPreview(media.path);
+    await _startPreview(media);
     if (!mounted) return;
 
     final send = await showModalBottomSheet<bool>(
@@ -133,6 +151,10 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
       backgroundColor: Colors.transparent,
       builder:
           (sheetContext) => StreakReviewSheet(
+            // A photo has no duration to show: Duration.zero renders as
+            // "0s" in the sheet's own label, which is the correct answer
+            // for "how long is this" — there is no length — rather than a
+            // faked one.
             segments: [
               StreakSegment(
                 path: media.path,
@@ -168,8 +190,9 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     // _attemptSend uploads whatever path it is given verbatim, so
     // handing it raw camera output would push a file several times
     // larger than the ceiling allows. Delegated to the embedded
-    // CaptureCameraScreen, which owns ChatVideoPreparer and also drives
-    // the record button's busy state while this runs.
+    // CaptureCameraScreen, which owns ChatVideoPreparer/CaptureImagePreparer
+    // (confirmSend itself branches on raw.type) and also drives the record
+    // button's busy state while this runs.
     final CapturedMedia prepared;
     try {
       prepared = await _captureKey.currentState!.confirmSend(raw);
@@ -180,8 +203,17 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
         const SnackBar(content: Text('That streak could not be sent.')),
       );
       return;
+    } on CaptureImageRejected catch (rejected) {
+      ChatLog.diagnostic('streak photo prepare rejected', rejected);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That streak could not be sent.')),
+      );
+      return;
     }
     if (!mounted) return;
+
+    final isPhoto = prepared.type == CapturedMediaType.image;
 
     // Hand the clip to the outbox and leave. The upload, its retries and
     // its failure handling all belong to _attemptSend, and the optimistic
@@ -193,8 +225,15 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
           .read(chatControllerProvider(widget.conversation).notifier)
           .sendStreakMessage(
             localPath: prepared.path,
-            durationMs: prepared.durationMs ?? 0,
+            // A photo carries no duration (spec §6.2/§4.2's own CHECK
+            // constraint on messages already refuses one); stored as 0
+            // rather than null so downstream int-typed reads (the
+            // optimistic bubble, the outbox cache) need no new nullable
+            // branch of their own for a case that already means
+            // "no length" everywhere else in this pipeline.
+            durationMs: isPhoto ? 0 : (prepared.durationMs ?? 0),
             viewsRemaining: streakViewBudget(allowReplays: allowReplays),
+            mimeType: isPhoto ? 'image/jpeg' : 'video/mp4',
           ),
     );
     _playSound(AppSound.streakSend);
@@ -205,10 +244,19 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     if (mounted) context.pop();
   }
 
-  /// Opens the captured clip for review.
-  Future<void> _startPreview(String path) async {
+  /// Opens the captured take for review: a looping video player for a
+  /// video take, a static image for a photo take (mutually exclusive —
+  /// see [_previewImagePath]'s doc comment).
+  Future<void> _startPreview(CapturedMedia media) async {
     await _disposePreview();
-    final controller = VideoPlayerController.file(File(path));
+
+    if (media.type == CapturedMediaType.image) {
+      if (!mounted) return;
+      setState(() => _previewImagePath = media.path);
+      return;
+    }
+
+    final controller = VideoPlayerController.file(File(media.path));
     try {
       await controller.initialize();
     } catch (error) {
@@ -232,6 +280,7 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
   Future<void> _disposePreview() async {
     final controller = _previewController;
     _previewController = null;
+    _previewImagePath = null;
     await controller?.dispose();
   }
 
@@ -244,14 +293,20 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
   @override
   Widget build(BuildContext context) {
     final preview = _previewController;
+    final imagePreview = _previewImagePath;
 
     return Stack(
       fit: StackFit.expand,
       children: [
         CaptureCameraScreen(
           key: _captureKey,
-          allow: CaptureKinds.videoOnly,
+          // photoAndVideo (spec §6.3 step 3): a release before the hold
+          // threshold now takes a photo, exactly as the story adapter's
+          // camera already does — the tap/hold split itself lives in
+          // CaptureCameraScreen and needed no change here.
+          allow: CaptureKinds.photoAndVideo,
           videoPreparerFactory: widget.videoPreparerFactory,
+          imagePreparerFactory: widget.imagePreparerFactory,
           onCaptured: _onCaptured,
           onCancelled: _onCaptureCancelled,
           isReviewing: _isReviewing,
@@ -277,6 +332,13 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
                   ),
                 ),
               ),
+            ),
+          )
+        else if (imagePreview != null)
+          Positioned.fill(
+            key: const ValueKey('streak-capture-image-preview'),
+            child: ClipRect(
+              child: Image.file(File(imagePreview), fit: BoxFit.cover),
             ),
           ),
       ],

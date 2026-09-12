@@ -923,6 +923,13 @@ class ChatController extends StateNotifier<ChatState> {
     required String localPath,
     required int durationMs,
     required int viewsRemaining,
+    // Defaults to the video mime every existing caller already sends,
+    // so an unmigrated/older call site (or an already-queued outbox
+    // entry rehydrated by an app update, which calls _attemptSend
+    // directly rather than re-running this constructor — see that
+    // method's own read of pending.mediaMimeType) behaves exactly as it
+    // did before photo streaks existed.
+    String mimeType = 'video/mp4',
   }) async {
     if (!state.conversation.canSend) return;
     final user = ref.read(currentUserProvider);
@@ -946,7 +953,7 @@ class ChatController extends StateNotifier<ChatState> {
       senderId: user.id,
       text: '',
       localMediaPath: localPath,
-      mediaMimeType: 'video/mp4',
+      mediaMimeType: mimeType,
       mediaType: 'streak',
       mediaDurationMs: durationMs,
       streakViewsRemaining: viewsRemaining,
@@ -1771,12 +1778,20 @@ class ChatController extends StateNotifier<ChatState> {
       // the storage key already resolved for the upload. Additive: every
       // other media type skips this entirely.
       if (pending.mediaType == 'streak' && mediaKey != null) {
+        // Derived from the mime type actually uploaded, not stored as a
+        // separate PendingSend field: an outbox entry queued before this
+        // build (mediaMimeType already 'video/mp4', the only value that
+        // ever existed) resolves to StreakClipKind.video here with no
+        // migration of the cached JSON needed at all.
+        final isPhoto = pending.mediaMimeType?.startsWith('image/') ?? false;
         await ref
             .read(streakRepositoryProvider)
             .attachClip(
               messageId: canonical.id,
               mediaUrl: mediaKey,
               durationMs: pending.mediaDurationMs ?? 0,
+              mediaKind:
+                  isPhoto ? StreakClipKind.photo : StreakClipKind.video,
             );
       }
 
