@@ -665,4 +665,66 @@ void main() {
       expect(gateway.deleted, contains('story-9'));
     });
   });
+
+  // ---------------------------------------------------------------
+  // StoryReadRepository's own RPC payloads.
+  //
+  // Every behavioural test above runs against _FakeStoryReadGateway, so
+  // it verifies the PROVIDER layer: that the notifier hands the previous
+  // page's last item down as the cursor. Nothing below that seam is
+  // exercised -- StoryReadRepository builds the actual rpc() params map,
+  // and the fake replaces the whole class. Nulling
+  // 'p_after_created_at'/'p_after_id' there (so every page re-returns
+  // page one) passed all ten tests when mutation-tested.
+  //
+  // Faking SupabaseClient's generic rpc builder is not worth the weight
+  // here, so this guards the payload the same way the signed-URL rules
+  // above are guarded: by asserting on the source.
+  group('repository RPC payloads', () {
+    test(
+      'both paginated RPCs forward the keyset cursor, never a literal '
+      'null or an offset',
+      () {
+        final source = File(
+          'lib/features/stories/data/story_read_repository.dart',
+        ).readAsStringSync();
+
+        for (final rpc in ['list_active_story_items', 'list_story_day_items']) {
+          final start = source.indexOf("'$rpc'");
+          expect(start, greaterThan(-1), reason: '$rpc call not found');
+          final end = source.indexOf('},', start);
+          final params = source.substring(start, end);
+
+          expect(
+            params.contains("'p_after_created_at': after?.createdAt"),
+            isTrue,
+            reason:
+                "$rpc must forward the cursor's created_at -- a literal "
+                'null makes every page re-return page one',
+          );
+          expect(
+            params.contains("'p_after_id': after?.id"),
+            isTrue,
+            reason: "$rpc must forward the cursor's id",
+          );
+          expect(
+            RegExp(r"'p_(after_created_at|after_id)':\s*null").hasMatch(params),
+            isFalse,
+            reason: '$rpc must not hardcode a null cursor',
+          );
+          // Param KEYS only -- the surrounding comments legitimately use
+          // the word "offset" to explain why there isn't one.
+          final paramKeys = RegExp(r"'(p_\w+)':")
+              .allMatches(params)
+              .map((m) => m.group(1))
+              .toList();
+          expect(
+            paramKeys.any((k) => k!.contains('offset')),
+            isFalse,
+            reason: '\$rpc must page by keyset, never by offset',
+          );
+        }
+      },
+    );
+  });
 }
