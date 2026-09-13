@@ -3,6 +3,65 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('dismissing the menu does not restore composer focus', (
+    tester,
+  ) async {
+    final composerFocus = FocusNode();
+    bool? focusedImmediatelyAfterOpening;
+    addTearDown(composerFocus.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              TextField(focusNode: composerFocus),
+              Builder(
+                builder:
+                    (context) => GestureDetector(
+                      onLongPress: () {
+                        showFocusedActionMenu(
+                          context: context,
+                          anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                          anchorSnapshot: const Text('bubble snapshot'),
+                          actions: [
+                            ListTile(
+                              title: const Text('Action A'),
+                              onTap: () {},
+                            ),
+                          ],
+                          quickReactions: const [],
+                          onReact: (_) {},
+                          onOpenFullPicker: () {},
+                        );
+                        focusedImmediatelyAfterOpening = composerFocus.hasFocus;
+                      },
+                      child: const SizedBox(
+                        width: 200,
+                        height: 60,
+                        child: Text('message bubble'),
+                      ),
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    expect(composerFocus.hasFocus, isTrue);
+
+    await tester.longPress(find.text('message bubble'));
+    await tester.pumpAndSettle();
+    expect(focusedImmediatelyAfterOpening, isFalse);
+    await tester.tapAt(const Offset(390, 700));
+    await tester.pumpAndSettle();
+
+    expect(composerFocus.hasFocus, isFalse);
+  });
+
   testWidgets(
     'opens the overlay showing the anchor snapshot and the given actions',
     (tester) async {
@@ -188,6 +247,125 @@ void main() {
     // own top, not below its bottom.
     expect(actionATop, lessThan(anchorTop));
   });
+
+  testWidgets(
+    'bubble, reaction row, and actions keep the same gap above and below',
+    (tester) async {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      Future<List<Rect>> openAt(double anchorTop) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder:
+                    (context) => ElevatedButton(
+                      onPressed:
+                          () => showFocusedActionMenu(
+                            context: context,
+                            anchorRect: Rect.fromLTWH(20, anchorTop, 200, 60),
+                            anchorSnapshot: const ColoredBox(
+                              key: ValueKey('focused-anchor'),
+                              color: Colors.blue,
+                            ),
+                            actions: [
+                              ListTile(
+                                title: const Text('Action A'),
+                                onTap: () {},
+                              ),
+                            ],
+                            quickReactions: const [
+                              ReactionQuickOption(emoji: '❤️'),
+                            ],
+                            onReact: (_) {},
+                            onOpenFullPicker: () {},
+                          ),
+                      child: const Text('trigger'),
+                    ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('trigger'));
+        await tester.pumpAndSettle();
+        return [
+          tester.getRect(find.byKey(const ValueKey('focused-anchor'))),
+          tester.getRect(find.byKey(const ValueKey('focused-reaction-row'))),
+          tester.getRect(find.byKey(const ValueKey('focused-action-menu'))),
+        ];
+      }
+
+      final below = await openAt(100);
+      expect(below[1].top - below[0].bottom, closeTo(8, 0.01));
+      expect(below[2].top - below[1].bottom, closeTo(8, 0.01));
+
+      await tester.tapAt(const Offset(390, 10));
+      await tester.pumpAndSettle();
+
+      final above = await openAt(650);
+      expect(above[2].top - above[1].bottom, closeTo(8, 0.01));
+      expect(above[0].top - above[2].bottom, closeTo(8, 0.01));
+    },
+  );
+
+  testWidgets(
+    'right alignment pins differently sized surfaces to the anchor trailing edge',
+    (tester) async {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      const anchorRect = Rect.fromLTWH(150, 100, 200, 60);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder:
+                  (context) => ElevatedButton(
+                    onPressed:
+                        () => showFocusedActionMenu(
+                          context: context,
+                          anchorRect: anchorRect,
+                          anchorSnapshot: const ColoredBox(color: Colors.blue),
+                          actions: [
+                            ListTile(
+                              title: const Text('Action A'),
+                              onTap: () {},
+                            ),
+                          ],
+                          quickReactions: const [
+                            ReactionQuickOption(emoji: '❤️'),
+                          ],
+                          onReact: (_) {},
+                          onOpenFullPicker: () {},
+                          horizontalAlignment:
+                              FocusedActionMenuHorizontalAlignment.right,
+                        ),
+                    child: const Text('trigger'),
+                  ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('trigger'));
+      await tester.pumpAndSettle();
+
+      final reactionRect = tester.getRect(
+        find.byKey(const ValueKey('focused-reaction-row')),
+      );
+      final actionsRect = tester.getRect(
+        find.byKey(const ValueKey('focused-action-menu')),
+      );
+      expect(reactionRect.width, isNot(actionsRect.width));
+      expect(reactionRect.right, closeTo(anchorRect.right, 0.01));
+      expect(actionsRect.right, closeTo(anchorRect.right, 0.01));
+    },
+  );
 
   testWidgets(
     'the bubble scale animates mid-transition, not just at rest and settled',
@@ -390,8 +568,8 @@ void main() {
     'the menu stays within the screen width when the bubble sits near the right edge',
     (tester) async {
       // Regression guard: Positioned(left: anchorRect.left, ...) with no
-      // clamping, combined with the menu's fixed 208px width, rendered up to
-      // 94px (39%) off the right edge of a realistic 390-wide phone for a
+      // clamping, combined with the menu's fixed 184px width, rendered up to
+      // 38px off the right edge of a realistic 390-wide phone for a
       // short own-message bubble — the single most common message shape.
       // This anchorRect approximates that case: a short bubble's rect sitting
       // near the right edge of a 390-wide screen.
@@ -432,7 +610,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final menuRenderBox = tester.renderObject<RenderBox>(
-        find.byWidgetPredicate((w) => w is SizedBox && w.width == 208),
+        find.byWidgetPredicate((w) => w is SizedBox && w.width == 184),
       );
       final menuRect =
           menuRenderBox.localToGlobal(Offset.zero) & menuRenderBox.size;
@@ -440,9 +618,9 @@ void main() {
       expect(menuRect.left, greaterThanOrEqualTo(0));
       expect(menuRect.right, lessThanOrEqualTo(390));
       // Sanity: prove the fixture actually reproduces the pre-fix overflow
-      // shape (anchorRect.left + 208 > 390) rather than accidentally fitting
+      // shape (anchorRect.left + 184 > 390) rather than accidentally fitting
       // on its own — if this fails, the fixture no longer exercises the bug.
-      expect(244.0 + 208.0, greaterThan(390.0));
+      expect(244.0 + 184.0, greaterThan(390.0));
     },
   );
 
@@ -492,6 +670,55 @@ void main() {
       expect(find.text('Action A'), findsNothing);
     },
   );
+
+  testWidgets('quick reaction exposes its measured launch rectangle', (
+    tester,
+  ) async {
+    Rect? launchRect;
+    final events = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder:
+                (context) => ElevatedButton(
+                  onPressed:
+                      () => showFocusedActionMenu(
+                        context: context,
+                        anchorRect: const Rect.fromLTWH(20, 100, 200, 60),
+                        anchorSnapshot: const Text('bubble snapshot'),
+                        actions: [
+                          ListTile(title: const Text('Action A'), onTap: () {}),
+                        ],
+                        quickReactions: const [
+                          ReactionQuickOption(emoji: '❤️'),
+                        ],
+                        onReactionFlight: (emoji, rect) {
+                          events.add('flight:$emoji');
+                          launchRect = rect;
+                        },
+                        onReact: (emoji) => events.add('react:$emoji'),
+                        onOpenFullPicker: () {},
+                      ),
+                  child: const Text('trigger'),
+                ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('trigger'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('❤️'));
+    await tester.pump();
+
+    expect(events.first, 'flight:❤️');
+    expect(launchRect, isNotNull);
+    expect(launchRect!.size, const Size(44, 44));
+
+    await tester.pumpAndSettle();
+    expect(events, <String>['flight:❤️', 'react:❤️']);
+  });
 
   testWidgets(
     'each quick-reaction tap target meets the 44x44 accessibility minimum',

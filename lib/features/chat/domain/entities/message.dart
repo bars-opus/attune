@@ -22,6 +22,13 @@ class Message {
   /// to pass it would be ceremony that buys nothing.
   final DateTime sortAt;
 
+  /// Session-only ordering used to keep an optimistic bubble in the slot the
+  /// user saw when they sent it. The authoritative [sortAt] remains untouched
+  /// for pagination/cursors and is restored on the next cold open. Ordinary
+  /// realtime hydration carries this value forward; game cards intentionally
+  /// do not, because changing server sort_at is how an active game resurfaces.
+  final DateTime presentationSortAt;
+
   /// Set on a game card; the session whose live status the bubble renders.
   final String? gameSessionId;
 
@@ -76,8 +83,8 @@ class Message {
   /// True while a video message's optimistic bubble is showing but the
   /// client-side ChatVideoPreparer compression that must finish before
   /// upload is still running. Client-only, like localMediaPath/
-  /// signedMediaUrl — never sent to or read from the server (excluded from
-  /// toJson/fromJson) and never true for a hydrated/canonical row.
+  /// signedMediaUrl — never sent to or read from the server and never true
+  /// for a hydrated/canonical row.
   /// Lets VideoMessagePlayer render a compressing-progress state instead of
   /// trying to build a player around a video that isn't ready yet.
   final bool isPreparing;
@@ -91,8 +98,10 @@ class Message {
   /// On-device path to a video's poster frame, set on the optimistic row so
   /// a just-sent video shows its real thumbnail immediately instead of a
   /// blank tile while the upload and server round-trip complete. Client-only
-  /// like [localMediaPath] — excluded from toJson/fromJson and never present
-  /// on a hydrated canonical row, which uses [signedThumbnailUrl] instead.
+  /// like [localMediaPath] — never present on a server-hydrated row. Stable
+  /// promoted cache paths are included in the encrypted local message cache
+  /// so a reopened chat can paint immediately; view-once and streak paths are
+  /// deliberately excluded.
   final String? localThumbnailPath;
 
   const Message({
@@ -107,6 +116,7 @@ class Message {
     this.mediaKey,
     this.mediaType,
     DateTime? sortAt,
+    DateTime? presentationSortAt,
     this.gameSessionId,
     this.mediaThumbnailKey,
     this.signedMediaUrl,
@@ -132,7 +142,8 @@ class Message {
     this.isPreparing = false,
     this.compressProgress,
     this.localThumbnailPath,
-  }) : sortAt = sortAt ?? createdAt;
+  }) : sortAt = sortAt ?? createdAt,
+       presentationSortAt = presentationSortAt ?? sortAt ?? createdAt;
 
   factory Message.fromRow(
     Map<String, dynamic> row, {
@@ -203,6 +214,7 @@ class Message {
     int? mediaWidth,
     int? mediaHeight,
     bool isViewOnce = false,
+    int? streakViewsRemaining,
     String? replyToMessageId,
     String? quotedText,
     String? storyItemId,
@@ -226,6 +238,7 @@ class Message {
       mediaWidth: mediaWidth,
       mediaHeight: mediaHeight,
       isViewOnce: isViewOnce,
+      streakViewsRemaining: streakViewsRemaining,
       source: 'native',
       status: MessageStatus.sending,
       isMine: true,
@@ -246,6 +259,7 @@ class Message {
     String? content,
     DateTime? createdAt,
     DateTime? sortAt,
+    DateTime? presentationSortAt,
     String? gameSessionId,
     String? mediaKey,
     String? mediaType,
@@ -284,6 +298,7 @@ class Message {
       content: content ?? this.content,
       createdAt: createdAt ?? this.createdAt,
       sortAt: sortAt ?? this.sortAt,
+      presentationSortAt: presentationSortAt ?? this.presentationSortAt,
       gameSessionId: gameSessionId ?? this.gameSessionId,
       mediaKey: mediaKey ?? this.mediaKey,
       mediaType: mediaType ?? this.mediaType,
@@ -329,6 +344,9 @@ class Message {
       'mediaKey': mediaKey,
       'mediaType': mediaType,
       'mediaThumbnailKey': mediaThumbnailKey,
+      'localMediaPath': !isViewOnce && !isStreak ? localMediaPath : null,
+      'localThumbnailPath':
+          !isViewOnce && !isStreak ? localThumbnailPath : null,
       'mediaDurationMs': mediaDurationMs,
       'waveform': waveform,
       'mediaWidth': mediaWidth,
@@ -366,6 +384,7 @@ class Message {
       mediaKey: json['mediaKey'] as String?,
       mediaType: json['mediaType'] as String?,
       mediaThumbnailKey: json['mediaThumbnailKey'] as String?,
+      localMediaPath: json['localMediaPath'] as String?,
       mediaDurationMs: (json['mediaDurationMs'] as num?)?.toInt(),
       waveform:
           (json['waveform'] as List<dynamic>?)
@@ -373,6 +392,7 @@ class Message {
               .toList(),
       mediaWidth: (json['mediaWidth'] as num?)?.toInt(),
       mediaHeight: (json['mediaHeight'] as num?)?.toInt(),
+      localThumbnailPath: json['localThumbnailPath'] as String?,
       isViewOnce: (json['isViewOnce'] as bool?) ?? false,
       viewedAt: _parseDateTime(json['viewedAt']),
       isSystemNotice: (json['isSystemNotice'] as bool?) ?? false,

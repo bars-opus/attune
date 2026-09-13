@@ -6,14 +6,21 @@ const _kMessageSoundsKey = 'chat_message_sounds_enabled';
 
 /// Persists the "Message sounds" toggle. Default on (Spec §3.6).
 class SoundPreferenceNotifier extends StateNotifier<bool> {
-  SoundPreferenceNotifier(this._prefs)
-    : super(_prefs.getBool(_kMessageSoundsKey) ?? true);
+  SoundPreferenceNotifier(SharedPreferences prefs)
+    : _prefs = prefs,
+      super(prefs.getBool(_kMessageSoundsKey) ?? true);
 
-  final SharedPreferences _prefs;
+  /// Test seam for chat widgets that only consume the current value and do
+  /// not need a platform-backed SharedPreferences instance.
+  SoundPreferenceNotifier.forTesting({bool enabled = true})
+    : _prefs = null,
+      super(enabled);
+
+  final SharedPreferences? _prefs;
 
   Future<void> setEnabled(bool value) async {
     state = value;
-    await _prefs.setBool(_kMessageSoundsKey, value);
+    await _prefs?.setBool(_kMessageSoundsKey, value);
   }
 
   Future<void> toggle() => setEnabled(!state);
@@ -21,5 +28,5 @@ class SoundPreferenceNotifier extends StateNotifier<bool> {
 
 final messageSoundsEnabledProvider =
     StateNotifierProvider<SoundPreferenceNotifier, bool>((ref) {
-  return SoundPreferenceNotifier(ref.watch(sharedPreferencesProvider));
-});
+      return SoundPreferenceNotifier(ref.watch(sharedPreferencesProvider));
+    });

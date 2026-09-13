@@ -118,6 +118,15 @@ class ChatPosterPrewarmer {
   Future<String?> cacheLocalPoster({
     required String key,
     required String localPath,
+  }) => cacheLocalFile(key: key, localPath: localPath, rememberAsPoster: true);
+
+  /// Promotes any just-sent media file into the stable cache entry keyed by
+  /// its server storage key. The caller keeps the staging file when this
+  /// fails, so acknowledgement can never turn visible local media blank.
+  Future<String?> cacheLocalFile({
+    required String key,
+    required String localPath,
+    bool rememberAsPoster = false,
   }) async {
     try {
       final source = io.File(localPath);
@@ -129,10 +138,10 @@ class ChatPosterPrewarmer {
         key: key,
         fileExtension: extension.isEmpty ? 'jpg' : extension,
       );
-      _rememberReadyPath(key, cached.path);
+      if (rememberAsPoster) _rememberReadyPath(key, cached.path);
       return cached.path;
     } catch (error) {
-      ChatLog.e('local poster cache seed failed (non-fatal)', error);
+      ChatLog.e('local media cache seed failed (non-fatal)', error);
       return null;
     }
   }

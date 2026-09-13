@@ -345,11 +345,11 @@ void main() {
     final harness = tester.state<_TimestampRevealHarnessState>(
       find.byType(_TimestampRevealHarness),
     );
-    // 120px of drag, clamped to UniversalBubble._timestampRevealLimit (112).
+    // 120px of drag, clamped to UniversalBubble._timestampRevealLimit (70).
     // This previously asserted the raw 120: the drag genuinely exceeds the
     // limit, and the old value only went unnoticed because the missing
     // ScreenUtil init aborted the build before the clamp ever ran.
-    expect(harness.revealOffset, 112);
+    expect(harness.revealOffset, 70);
 
     final timestamp = find.textContaining('3:04');
     expect(timestamp, findsOneWidget);
@@ -382,7 +382,7 @@ void main() {
     final harness = tester.state<_TimestampRevealHarnessState>(
       find.byType(_TimestampRevealHarness),
     );
-    expect(harness.revealOffset, 112);
+    expect(harness.revealOffset, 70);
 
     final bubbleRect = tester.getRect(find.byKey(const ValueKey('c1')));
     final timestampRect = tester.getRect(find.textContaining('3:04'));
@@ -406,8 +406,8 @@ void main() {
 
     final outgoingAfter = tester.getRect(find.byKey(const ValueKey('c1')));
     final partnerAfter = tester.getRect(find.byKey(const ValueKey('c2')));
-    expect(outgoingAfter.left - outgoingBefore.left, -80);
-    expect(partnerAfter.left - partnerBefore.left, -80);
+    expect(outgoingAfter.left - outgoingBefore.left, -70);
+    expect(partnerAfter.left - partnerBefore.left, -70);
 
     await gesture.up();
   });
@@ -563,6 +563,103 @@ void main() {
     final olderRect = _messageBubbleFillRect(tester, olderKey);
     final newerRect = _messageBubbleFillRect(tester, newerKey);
     expect(newerRect.top - olderRect.bottom, 3);
+  });
+
+  testWidgets('reaction adornments do not add extra grouped-message spacing', (
+    tester,
+  ) async {
+    const olderKey = ValueKey('older-message');
+    const reactedKey = ValueKey('reacted-message');
+
+    await _pump(
+      tester,
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          KeyedSubtree(
+            key: olderKey,
+            child: MessageBubble(
+              message: _mine(
+                status: MessageStatus.sent,
+                content: 'older in the run',
+              ),
+              showStatus: false,
+              isGroupedWithPrevious: true,
+            ),
+          ),
+          KeyedSubtree(
+            key: reactedKey,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: MessageBubble(
+                message: _mine(
+                  status: MessageStatus.sent,
+                  content: 'reacted in the run',
+                ).copyWith(
+                  reactions: {
+                    '😂': {'partner'},
+                  },
+                ),
+                showStatus: false,
+                isGrouped: true,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final olderRect = _messageBubbleFillRect(tester, olderKey);
+    final reactedRect = _messageBubbleFillRect(tester, reactedKey);
+    expect(reactedRect.top - olderRect.bottom, 3);
+    expect(find.text('😂'), findsOneWidget);
+  });
+
+  testWidgets('star adornment does not add extra grouped-message spacing', (
+    tester,
+  ) async {
+    const olderKey = ValueKey('older-message');
+    const starredKey = ValueKey('starred-message');
+
+    await _pump(
+      tester,
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          KeyedSubtree(
+            key: olderKey,
+            child: MessageBubble(
+              message: _mine(
+                status: MessageStatus.sent,
+                content: 'older in the run',
+              ),
+              showStatus: false,
+              isGroupedWithPrevious: true,
+            ),
+          ),
+          KeyedSubtree(
+            key: starredKey,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: MessageBubble(
+                message: _mine(
+                  status: MessageStatus.sent,
+                  content: 'starred in the run',
+                ),
+                showStatus: false,
+                isGrouped: true,
+                isStarred: true,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final olderRect = _messageBubbleFillRect(tester, olderKey);
+    final starredRect = _messageBubbleFillRect(tester, starredKey);
+    expect(starredRect.top - olderRect.bottom, 3);
+    expect(find.byIcon(Icons.star_rounded), findsOneWidget);
   });
 
   testWidgets('status icon is wrapped in an IconCrossfade for morphing', (

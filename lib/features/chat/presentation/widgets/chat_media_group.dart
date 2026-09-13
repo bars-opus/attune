@@ -7,6 +7,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+String? _existingLocalPath(String? path) {
+  if (path == null) return null;
+  return File(path).existsSync() ? path : null;
+}
+
 /// Builds album-style runs without changing the one-media-per-message model.
 /// Messages are newest-first, matching ChatState and the reversed chat list.
 class ChatMediaRunLayout {
@@ -379,8 +384,9 @@ class _MediaPoster extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final localPath =
-        message.hasVideo ? message.localThumbnailPath : message.localMediaPath;
+    final localPath = _existingLocalPath(
+      message.hasVideo ? message.localThumbnailPath : message.localMediaPath,
+    );
     final signedUrl =
         message.hasVideo ? message.signedThumbnailUrl : message.signedMediaUrl;
     final mediaKey =

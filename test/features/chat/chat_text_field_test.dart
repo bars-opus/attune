@@ -112,6 +112,8 @@ class _FakeRecordPlatform extends RecordPlatform
 Future<void> _pump(
   WidgetTester tester, {
   required TextEditingController controller,
+  FocusNode? focusNode,
+  bool dismissOnBackgroundTap = false,
   VoidCallback? onSend,
   VoidCallback? onOpenTranslator,
   VoidCallback? onAttachImage,
@@ -127,27 +129,39 @@ Future<void> _pump(
   bool showGames = false,
   bool enabled = true,
 }) {
+  final composer = ChatTextField(
+    controller: controller,
+    focusNode: focusNode,
+    onSend: onSend ?? () {},
+    onOpenTranslator: onOpenTranslator,
+    onAttachImage: onAttachImage,
+    onAttachVideo: onAttachVideo,
+    onAttachFile: onAttachFile,
+    onCaptureVideo: onCaptureVideo,
+    onOpenGames: onOpenGames,
+    showTranslator: showTranslator,
+    showAttachImage: showAttachImage,
+    showAttachVideo: showAttachVideo,
+    showVoiceMessage: showVoiceMessage,
+    showCaptureVideo: showCaptureVideo,
+    showGames: showGames,
+    enabled: enabled,
+  );
   return tester.pumpWidget(
     withScreenUtil(
       MaterialApp(
         home: Scaffold(
-          body: ChatTextField(
-            controller: controller,
-            onSend: onSend ?? () {},
-            onOpenTranslator: onOpenTranslator,
-            onAttachImage: onAttachImage,
-            onAttachVideo: onAttachVideo,
-            onAttachFile: onAttachFile,
-            onCaptureVideo: onCaptureVideo,
-            onOpenGames: onOpenGames,
-            showTranslator: showTranslator,
-            showAttachImage: showAttachImage,
-            showAttachVideo: showAttachVideo,
-            showVoiceMessage: showVoiceMessage,
-            showCaptureVideo: showCaptureVideo,
-            showGames: showGames,
-            enabled: enabled,
-          ),
+          body:
+              dismissOnBackgroundTap
+                  ? Builder(
+                    builder:
+                        (context) => GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTap: () => FocusScope.of(context).unfocus(),
+                          child: composer,
+                        ),
+                  )
+                  : composer,
         ),
       ),
     ),
@@ -206,6 +220,36 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.send_rounded));
     expect(sent, 1);
+  });
+
+  testWidgets('sending keeps an already-focused composer focused', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await _pump(
+      tester,
+      controller: controller,
+      focusNode: focusNode,
+      dismissOnBackgroundTap: true,
+      onSend: () {
+        controller.clear();
+        focusNode.unfocus();
+      },
+    );
+
+    await tester.tap(find.byType(TextField));
+    await tester.enterText(find.byType(TextField), 'hello');
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    await tester.tap(find.byIcon(Icons.send_rounded));
+    await tester.pump();
+
+    expect(focusNode.hasFocus, isTrue);
   });
 
   testWidgets('translator entry only appears with non-empty text (Spec 10)', (

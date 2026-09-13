@@ -7,6 +7,7 @@ Message _msg({
   required String id,
   required DateTime createdAt,
   DateTime? sortAt,
+  String? mediaType,
 }) => Message(
   id: id,
   clientMessageId: id,
@@ -15,6 +16,7 @@ Message _msg({
   content: id,
   createdAt: createdAt,
   sortAt: sortAt,
+  mediaType: mediaType,
   isMine: true,
   status: MessageStatus.sent,
 );
@@ -30,13 +32,13 @@ void main() {
     final recent = DateTime(2026, 9, 2, 15);
 
     final messages = [
-      _msg(id: 'card', createdAt: old, sortAt: recent),
+      _msg(id: 'card', createdAt: old, sortAt: recent, mediaType: 'game'),
       _msg(id: 'later-message', createdAt: DateTime(2026, 9, 1, 12)),
     ];
 
     // Newest-first, as the chat holds them.
     messages.sort((a, b) {
-      final byTime = b.sortAt.compareTo(a.sortAt);
+      final byTime = b.presentationSortAt.compareTo(a.presentationSortAt);
       return byTime != 0 ? byTime : b.id.compareTo(a.id);
     });
 
@@ -47,7 +49,7 @@ void main() {
     );
   });
 
-  test('the chat sorts by sortAt, not createdAt', () {
+  test('the chat sorts by presentationSortAt, not createdAt', () {
     // Pinned on the source: every ordinary message has sortAt ==
     // createdAt, so a comparator using the wrong field passes every test
     // that does not involve a resurfaced row.
@@ -62,10 +64,24 @@ void main() {
     );
 
     expect(
-      comparator.contains('b.sortAt.compareTo(a.sortAt)'),
+      comparator.contains(
+        'b.presentationSortAt.compareTo(a.presentationSortAt)',
+      ),
       isTrue,
-      reason: 'sorting by createdAt undoes every resurface',
+      reason:
+          'presentationSortAt defaults to authoritative sortAt, while also '
+          'preventing acknowledged optimistic rows from jumping mid-session',
     );
     expect(comparator.contains('b.createdAt.compareTo'), isFalse);
+
+    final merge = source.substring(
+      source.indexOf('List<Message> _mergeMessages'),
+      source.indexOf('List<Message> _mergeMessages') + 2600,
+    );
+    expect(
+      merge.contains('!message.isGame'),
+      isTrue,
+      reason: 'game cards must continue following server sort_at resurfacing',
+    );
   });
 }

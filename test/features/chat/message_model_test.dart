@@ -114,6 +114,55 @@ void main() {
   });
 
   group('video message fields', () {
+    test('normal media cache paths survive encrypted-cache serialization', () {
+      final original = Message(
+        id: 'm-cache',
+        clientMessageId: 'c-cache',
+        relationshipId: 'r1',
+        senderId: 's1',
+        content: '',
+        createdAt: DateTime(2026, 8, 15),
+        status: MessageStatus.sent,
+        isMine: true,
+        mediaType: 'video',
+        mediaKey: 'chat-media/video.mp4',
+        mediaThumbnailKey: 'chat-media/poster.jpg',
+        localMediaPath: '/cache/video.mp4',
+        localThumbnailPath: '/cache/poster.jpg',
+      );
+
+      final restored = Message.fromJson(original.toJson());
+      expect(restored.localMediaPath, '/cache/video.mp4');
+      expect(restored.localThumbnailPath, '/cache/poster.jpg');
+    });
+
+    test('ephemeral and streak cache paths are never serialized', () {
+      Message privateMessage(String type, {bool viewOnce = false}) => Message(
+        id: 'm-$type',
+        clientMessageId: 'c-$type',
+        relationshipId: 'r1',
+        senderId: 's1',
+        content: '',
+        createdAt: DateTime(2026, 8, 15),
+        status: MessageStatus.sent,
+        isMine: true,
+        mediaType: type,
+        mediaKey: 'chat-media/private',
+        localMediaPath: '/cache/private',
+        localThumbnailPath: '/cache/private-poster',
+        isViewOnce: viewOnce,
+      );
+
+      final viewOnce = Message.fromJson(
+        privateMessage('video', viewOnce: true).toJson(),
+      );
+      final streak = Message.fromJson(privateMessage('streak').toJson());
+      expect(viewOnce.localMediaPath, isNull);
+      expect(viewOnce.localThumbnailPath, isNull);
+      expect(streak.localMediaPath, isNull);
+      expect(streak.localThumbnailPath, isNull);
+    });
+
     test(
       'hasVideo is true only when mediaType is video and media is available',
       () {

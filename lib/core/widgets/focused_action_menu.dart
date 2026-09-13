@@ -10,6 +10,8 @@ class ReactionQuickOption {
   final String emoji;
 }
 
+enum FocusedActionMenuHorizontalAlignment { left, right }
+
 /// iMessage-style long-press action menu: the anchor (a duplicate of the
 /// long-pressed bubble, painted at its real screen position) scales up
 /// slightly as the backdrop blurs and dims behind it, and the given
@@ -25,8 +27,19 @@ Future<void> showFocusedActionMenu({
   required List<Widget> actions,
   required List<ReactionQuickOption> quickReactions,
   required void Function(String emoji) onReact,
+  void Function(String emoji, Rect sourceRect)? onReactionFlight,
   required VoidCallback onOpenFullPicker,
+  FocusedActionMenuHorizontalAlignment horizontalAlignment =
+      FocusedActionMenuHorizontalAlignment.left,
 }) {
+  // A dialog route temporarily owns primary focus. If the composer remains
+  // the previous route's focused child, Flutter restores it when this route
+  // pops and the software keyboard reopens after an outside-tap dismissal.
+  // Clear that history before pushing the focus menu: inspecting a message is
+  // not an intent to compose.
+  FocusManager.instance.primaryFocus?.unfocus();
+  FocusManager.instance.applyFocusChangesIfNeeded();
+
   // Fires synchronously, before the route even opens — matches "the
   // instant the menu opens," not deferred to an animation-complete
   // callback.
@@ -53,7 +66,9 @@ Future<void> showFocusedActionMenu({
         actions: actions,
         quickReactions: quickReactions,
         onReact: onReact,
+        onReactionFlight: onReactionFlight,
         onOpenFullPicker: onOpenFullPicker,
+        horizontalAlignment: horizontalAlignment,
         animation: animation,
       );
     },
@@ -67,7 +82,9 @@ class _FocusedActionMenuOverlay extends StatefulWidget {
     required this.actions,
     required this.quickReactions,
     required this.onReact,
+    this.onReactionFlight,
     required this.onOpenFullPicker,
+    required this.horizontalAlignment,
     required this.animation,
   });
 
@@ -76,7 +93,9 @@ class _FocusedActionMenuOverlay extends StatefulWidget {
   final List<Widget> actions;
   final List<ReactionQuickOption> quickReactions;
   final void Function(String emoji) onReact;
+  final void Function(String emoji, Rect sourceRect)? onReactionFlight;
   final VoidCallback onOpenFullPicker;
+  final FocusedActionMenuHorizontalAlignment horizontalAlignment;
   final Animation<double> animation;
 
   @override
@@ -85,6 +104,16 @@ class _FocusedActionMenuOverlay extends StatefulWidget {
 }
 
 class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
+  final Map<int, GlobalKey> _quickReactionKeys = <int, GlobalKey>{};
+
+  Rect? _quickReactionRect(int index) {
+    final box =
+        _quickReactionKeys[index]?.currentContext?.findRenderObject()
+            as RenderBox?;
+    if (box == null || !box.attached || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
   // Set once dismissal starts (scrim tap, back gesture, or an action/
   // reaction firing — anything that pops this route) so every
   // AnimatedScaleFade below flips to reverse and plays the SAME stagger
@@ -150,7 +179,9 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
   // the safe area edge on an unusually tall action list, which is far
   // better than rendering fully off-screen.
   static const double _estimatedItemHeight = 56;
-  static const double _gap = 4;
+  static const double _surfaceGap = 8;
+  static const double _focusedBubbleLift = 5;
+  static const double _focusedBubbleScaleDelta = 0.035;
 
   // The quick-reaction row's own height, budgeted into the flip-above/below
   // decision below: the row is docked ABOVE the action list, so it adds real
@@ -193,17 +224,25 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
+    final safeAreaTop = MediaQuery.of(context).padding.top;
     final safeAreaBottom = MediaQuery.of(context).padding.bottom;
     final estimatedMenuHeight =
         widget.actions.length * _estimatedItemHeight +
         _reactionRowHeight +
-        _gap;
+        _surfaceGap;
 
-    final fitsBelow =
-        widget.anchorRect.bottom + _gap + estimatedMenuHeight <=
-        screenSize.height - safeAreaBottom;
+    final availableBelow =
+        screenSize.height - safeAreaBottom - widget.anchorRect.bottom;
+    final availableAbove = widget.anchorRect.top - safeAreaTop;
+    final fitsBelow = availableBelow >= estimatedMenuHeight + _surfaceGap;
+    final fitsAbove = availableAbove >= estimatedMenuHeight + _surfaceGap;
+    // If the complete stack fits on neither side, choose the side with more
+    // room. Always flipping upward made a bubble near the top place the
+    // reaction row entirely outside the viewport on compact screens.
+    final placeBelow =
+        fitsBelow || (!fitsAbove && availableBelow >= availableAbove);
 
-    final menuWidth = 208.0;
+    final menuWidth = 184.0;
     // The reaction row is a SEPARATE card from the action list and is
     // sized by its own content, so with a realistic tapback set (6 emoji plus
     // the "+") it measures wider than menuWidth. Clamping only against
@@ -221,11 +260,19 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                 ? _estimatedReactionRowWidth
                 : maxCardWidth)
             : menuWidth;
-    final maxLeft = (screenSize.width - widestCardWidth - 8.0).clamp(
+    final maxHorizontalInset = (screenSize.width - widestCardWidth - 8.0).clamp(
       8.0,
       double.infinity,
     );
-    final clampedLeft = widget.anchorRect.left.clamp(8.0, maxLeft);
+    final clampedLeft = widget.anchorRect.left.clamp(8.0, maxHorizontalInset);
+    final clampedRight = (screenSize.width - widget.anchorRect.right).clamp(
+      8.0,
+      maxHorizontalInset,
+    );
+    final alignRight =
+        widget.horizontalAlignment ==
+        FocusedActionMenuHorizontalAlignment.right;
+    final surfaceBeginOffset = Offset(alignRight ? -34 : 34, 26);
 
     // Every staged AnimatedScaleFade below reads this so a single flag
     // flip (via PopScope's onPopInvokedWithResult, see _handlePop) sends
@@ -266,12 +313,17 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                         onTap: () {
                           HapticFeedback.selectionClick();
                           final emoji = widget.quickReactions[i].emoji;
+                          final sourceRect = _quickReactionRect(i);
+                          if (sourceRect != null) {
+                            widget.onReactionFlight?.call(emoji, sourceRect);
+                          }
                           Navigator.of(context).maybePop().then((_) {
                             widget.onReact(emoji);
                           });
                         },
                         borderRadius: BorderRadius.circular(22),
                         child: SizedBox(
+                          key: _quickReactionKeys.putIfAbsent(i, GlobalKey.new),
                           width: 44,
                           height: 44,
                           child: Center(
@@ -343,6 +395,19 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
             final focusProgress = Curves.easeOutCubic.transform(
               widget.animation.value,
             );
+            final focusedBubbleScale =
+                1.0 + _focusedBubbleScaleDelta * focusProgress;
+            final focusedBubbleOffsetY = -_focusedBubbleLift * focusProgress;
+            final focusedBubbleVerticalGrowth =
+                widget.anchorRect.height * (focusedBubbleScale - 1) / 2;
+            final focusedBubbleTop =
+                widget.anchorRect.top +
+                focusedBubbleOffsetY -
+                focusedBubbleVerticalGrowth;
+            final focusedBubbleBottom =
+                widget.anchorRect.bottom +
+                focusedBubbleOffsetY +
+                focusedBubbleVerticalGrowth;
             return Stack(
               children: [
                 ClipRect(
@@ -359,7 +424,7 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                   rect: widget.anchorRect,
                   child: IgnorePointer(
                     child: Transform.translate(
-                      offset: Offset(0, -5 * focusProgress),
+                      offset: Offset(0, focusedBubbleOffsetY),
                       // The snapshot is a bare widget subtree lifted out of
                       // the page below and re-rendered under this dialog
                       // route, where there is no enclosing Material. Text
@@ -372,7 +437,7 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                       // inheritance so the snapshot re-derives exactly the
                       // layout the real bubble already has.
                       child: Transform.scale(
-                        scale: 1.0 + 0.035 * focusProgress,
+                        scale: focusedBubbleScale,
                         child: Material(
                           type: MaterialType.transparency,
                           child: widget.anchorSnapshot,
@@ -382,12 +447,17 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                   ),
                 ),
                 Positioned(
-                  left: clampedLeft,
-                  top: fitsBelow ? widget.anchorRect.bottom + _gap : null,
+                  left: alignRight ? null : clampedLeft,
+                  right: alignRight ? clampedRight : null,
+                  // Position against the focused bubble's painted bounds,
+                  // not its original anchor rectangle. The bubble is lifted
+                  // and scaled during focus; ignoring that transform makes
+                  // the lower gap grow and consumes the upper gap.
+                  top: placeBelow ? focusedBubbleBottom + _surfaceGap : null,
                   bottom:
-                      fitsBelow
+                      placeBelow
                           ? null
-                          : screenSize.height - widget.anchorRect.top + _gap,
+                          : screenSize.height - focusedBubbleTop + _surfaceGap,
                   child: GestureDetector(
                     // Swallow taps on the menu itself so they don't fall
                     // through to the scrim's dismiss-on-tap-outside handler —
@@ -396,7 +466,10 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                     onTap: () {},
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment:
+                          alignRight
+                              ? CrossAxisAlignment.end
+                              : CrossAxisAlignment.start,
                       children: [
                         // The reaction row animates in on its own stagger
                         // index (_reactionRowStaggerIndex), starting after
@@ -408,14 +481,17 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                           key: const ValueKey('focused-reaction-row'),
                           duration: surfaceMotionDuration,
                           beginScale: 0.78,
-                          beginOffset: const Offset(34, 26),
-                          alignment: Alignment.centerLeft,
+                          beginOffset: surfaceBeginOffset,
+                          alignment:
+                              alignRight
+                                  ? Alignment.centerRight
+                                  : Alignment.centerLeft,
                           staggerIndex: _reactionRowStaggerIndex,
                           staggerDelay: _staggerDelay,
                           reverse: reversing,
                           child: reactionRow,
                         ),
-                        const SizedBox(height: _gap),
+                        const SizedBox(height: _surfaceGap),
                         // The action-menu surface starts first. Its rows and
                         // the reaction surface then overlap in a compact
                         // cascade. On dismiss, index 0 makes it exit last.
@@ -423,8 +499,11 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                           key: const ValueKey('focused-action-menu'),
                           duration: surfaceMotionDuration,
                           beginScale: 0.78,
-                          beginOffset: const Offset(34, 26),
-                          alignment: Alignment.topLeft,
+                          beginOffset: surfaceBeginOffset,
+                          alignment:
+                              alignRight
+                                  ? Alignment.topRight
+                                  : Alignment.topLeft,
                           staggerIndex: _menuStaggerIndex,
                           staggerDelay: _staggerDelay,
                           reverse: reversing,

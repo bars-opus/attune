@@ -1,8 +1,10 @@
 import 'package:attune/core/ui/motion/shimmer.dart';
+import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/chat_test_harness.dart';
 
@@ -10,37 +12,16 @@ void main() {
   testWidgets('a message that starts a new day is wrapped in a Shimmer', (
     tester,
   ) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
     final repo = FakeChatRepository(currentUserId: 'user-a');
     final convo = activeConversation('rel-1');
     repo.conversationOverride = convo;
-    final now = DateTime.now();
-    // A message "today" and one from "yesterday" → today's is first-of-day.
-    // The "today" message is stamped ahead of `now` so it is unambiguously
-    // after ChatScreen's firstBuildCutoff (captured moments later, when the
-    // widget is constructed during pumpWidget below) and therefore counts
-    // as new — same calendar day, so the first-of-day comparison is
-    // unaffected.
-    //
-    // The margin is minutes, not seconds: under a loaded parallel suite run
-    // more than a couple of seconds of WALL CLOCK can pass between seeding
-    // here and the widget being built, letting the cutoff overtake the
-    // timestamp. The message then reads as history, no Shimmer renders, and
-    // the test fails for load rather than for behaviour.
-    repo.seedIncoming(
-      id: 'today',
-      relationshipId: 'rel-1',
-      senderId: 'partner',
-      content: 'today msg',
-      createdAt: now.add(const Duration(minutes: 5)),
+    final container = buildChatContainer(
+      repository: repo,
+      userId: 'user-a',
+      extraOverrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
     );
-    repo.seedIncoming(
-      id: 'yesterday',
-      relationshipId: 'rel-1',
-      senderId: 'partner',
-      content: 'yesterday msg',
-      createdAt: now.subtract(const Duration(days: 1)),
-    );
-    final container = buildChatContainer(repository: repo, userId: 'user-a');
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -51,6 +32,26 @@ void main() {
       ),
     );
     await tester.pump(const Duration(milliseconds: 60));
+
+    // Establish an empty initial snapshot, then deliver two realtime rows.
+    // Both timestamps are deliberately behind the device clock: arrival
+    // animation is keyed by stable identity, never by createdAt.
+    final now = DateTime.now();
+    repo.seedIncoming(
+      id: 'today',
+      relationshipId: 'rel-1',
+      senderId: 'partner',
+      content: 'today msg',
+      createdAt: now.subtract(const Duration(minutes: 5)),
+    );
+    repo.seedIncoming(
+      id: 'yesterday',
+      relationshipId: 'rel-1',
+      senderId: 'partner',
+      content: 'yesterday msg',
+      createdAt: now.subtract(const Duration(days: 1)),
+    );
+    repo.emitRealtime();
     await tester.pump(const Duration(milliseconds: 400));
 
     // At least one Shimmer present (the first-of-day bubble).

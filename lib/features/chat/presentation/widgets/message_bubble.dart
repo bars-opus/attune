@@ -4,7 +4,6 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/utils/animations/animated_scale_fade.dart';
-import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/core/widgets/focused_action_menu.dart';
 import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
@@ -94,18 +93,19 @@ Future<void> _openStoryQuote(BuildContext context, String storyItemId) async {
   if (!context.mounted) return;
 
   if (target == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Story no longer available')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Story no longer available')));
     return;
   }
 
   await Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => StoryReelScreen.forDay(
-        relationshipId: target!.relationshipId,
-        occurredOn: target.occurredOn,
-      ),
+      builder:
+          (_) => StoryReelScreen.forDay(
+            relationshipId: target!.relationshipId,
+            occurredOn: target.occurredOn,
+          ),
     ),
   );
 }
@@ -140,6 +140,7 @@ class MessageBubble extends StatelessWidget {
     this.onDelete,
     this.onShowEditHistory,
     this.onReact,
+    this.onReactionFlight,
     this.onRemoveReaction,
     this.onImageTap,
     this.onVideoTap,
@@ -147,6 +148,7 @@ class MessageBubble extends StatelessWidget {
     this.isGrouped = false,
     this.isGroupedWithPrevious = false,
     this.mediaGroup = const [],
+    this.bubbleFillKey,
   });
 
   final Message message;
@@ -255,6 +257,11 @@ class MessageBubble extends StatelessWidget {
   /// convention (`onReply`/`onLongPress`).
   final void Function(String emoji)? onReact;
 
+  /// Starts the visual trip from a quick-reaction cell to this bubble. The
+  /// actual mutation remains [onReact], so animation never becomes part of
+  /// the data contract and a failed network request can still be reported.
+  final void Function(String emoji, Rect sourceRect)? onReactionFlight;
+
   /// Called when the current user taps their own visible reaction pill.
   /// Partner-only reaction pills stay display-only.
   final VoidCallback? onRemoveReaction;
@@ -280,6 +287,9 @@ class MessageBubble extends StatelessWidget {
   /// list can apply it. Without this the bubble keeps the count it was
   /// built with and reopens past its budget.
   final void Function(String messageId, int viewsRemaining)? onStreakViewSpent;
+
+  /// Exposes the exact painted surface to ChatScreen's payload-flight target.
+  final GlobalKey? bubbleFillKey;
 
   @override
   Widget build(BuildContext context) {
@@ -344,10 +354,12 @@ class MessageBubble extends StatelessWidget {
       currentUserId,
       onRemoveReaction: onRemoveReaction,
     );
-    final starAdornment =
-        isStarred ? _StarAdornment(colorScheme: colorScheme) : null;
+    final starAdornment = isStarred ? const _StarAdornment() : null;
 
-    const timestampRevealColumnWidth = 84.0;
+    // Match UniversalBubble's reveal limit. Keeping a wider hidden column here
+    // reintroduces the visual gap even though the bubble itself now stops at
+    // 70 logical pixels.
+    const timestampRevealColumnWidth = 70.0;
     final timestampRevealBottomInset = hasVisibleFooter ? 24.0 : 0.0;
     final timestampRevealProgress = ((timestampRevealOffset - 12) / 60).clamp(
       0.0,
@@ -361,10 +373,7 @@ class MessageBubble extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: Padding(
-        padding: EdgeInsets.only(
-          top: reactionAdornments == null ? 0 : 16,
-          bottom: starAdornment == null ? 0 : 16,
-        ),
+        padding: const EdgeInsets.only(top: 0, bottom: 0),
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -373,7 +382,7 @@ class MessageBubble extends StatelessWidget {
             // rather than painted on an opaque panel above the conversation.
             if (showTimestamp && timestampRevealOffset > 0)
               Positioned(
-                right: 8,
+                right: 0,
                 top: 0,
                 bottom: timestampRevealBottomInset,
                 width: timestampRevealColumnWidth,
@@ -502,15 +511,17 @@ class MessageBubble extends StatelessWidget {
                       // rather than opening an empty reel) — never the
                       // ordinary message-jump callback, which has no idea
                       // what a story_item_id even is.
-                      onJumpToParent: message.quotedText == null
-                          ? null
-                          : message.storyItemId != null
-                          ? () => unawaited(
-                              _openStoryQuote(context, message.storyItemId!),
-                            )
-                          : onJumpToParent,
+                      onJumpToParent:
+                          message.quotedText == null
+                              ? null
+                              : message.storyItemId != null
+                              ? () => unawaited(
+                                _openStoryQuote(context, message.storyItemId!),
+                              )
+                              : onJumpToParent,
                       isHighlighted: isHighlighted,
                       bubbleKey: ValueKey(message.clientMessageId),
+                      bubbleFillKey: bubbleFillKey,
                       onLongPress:
                           canOpenActions
                               ? (
@@ -529,6 +540,7 @@ class MessageBubble extends StatelessWidget {
                                   ReactionQuickOption(emoji: '😢'),
                                 ],
                                 onReact: (emoji) => onReact?.call(emoji),
+                                onReactionFlight: onReactionFlight,
                                 // Resolve the Navigator NOW, while this bubble's element
                                 // is definitely still mounted (we are inside its
                                 // long-press handler). Looking it up later, after the
@@ -538,6 +550,12 @@ class MessageBubble extends StatelessWidget {
                                   context,
                                   onReact,
                                 ),
+                                horizontalAlignment:
+                                    isMine
+                                        ? FocusedActionMenuHorizontalAlignment
+                                            .right
+                                        : FocusedActionMenuHorizontalAlignment
+                                            .left,
                                 actions: buildMessageActionItems(
                                   context: context,
                                   message: message,
@@ -550,6 +568,7 @@ class MessageBubble extends StatelessWidget {
                                   onUnstar: onUnstar ?? () {},
                                   onPin: onPin ?? () {},
                                   onUnpin: onUnpin ?? () {},
+                                  onInfo: () {},
                                   onEdit: onEdit ?? () {},
                                   onDelete: onDelete ?? () {},
                                 ),
@@ -603,21 +622,20 @@ class MessageBubble extends StatelessWidget {
                     ),
                     if (reactionAdornments != null)
                       Positioned(
-                        top: -12,
-                        // Let the reaction's two small tail dots clear the
-                        // message fill entirely. The main reaction still
-                        // overlaps the corner, while the tail sits beyond
-                        // the bubble's start/end edge like an iMessage
-                        // tapback thought bubble.
-                        left: isMine ? -14 : null,
-                        right: isMine ? null : -14,
+                        top: 0,
+                        // Keep the reaction inside the row's paint bounds so
+                        // virtualized list rows do not clip it, while still
+                        // overlapping the bubble instead of reserving extra
+                        // inter-message spacing.
+                        left: isMine ? -22 : null,
+                        right: isMine ? null : -22,
                         child: reactionAdornments,
                       ),
                     if (starAdornment != null)
                       Positioned(
-                        bottom: -12,
-                        left: isMine ? -14 : null,
-                        right: isMine ? null : -14,
+                        bottom: 4,
+                        left: isMine ? 0 : null,
+                        right: isMine ? null : 0,
                         child: starAdornment,
                       ),
                   ],
@@ -798,54 +816,40 @@ class _ReactionAdornment extends StatelessWidget {
               top: 0,
               left: tailOnRight ? 0 : null,
               right: tailOnRight ? null : 0,
-              child: Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: chatColors.background,
-                  borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x18000000),
-                      blurRadius: 4,
-                      offset: Offset(0, 1),
-                    ),
-                  ],
-                ),
-                child: Material(
-                  key: ValueKey(
-                    'reaction-${isMine ? 'mine' : 'partner'}-$emoji',
-                  ),
-                  color: fill,
-                  borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: onTap,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 36),
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: count > 1 ? 7 : 6,
-                          vertical: 5,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(emoji, style: const TextStyle(fontSize: 20)),
-                            if (count > 1) ...[
-                              const SizedBox(width: 3),
-                              Text(
-                                '$count',
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.labelSmall?.copyWith(
-                                  color: foreground,
-                                  fontWeight: FontWeight.w800,
-                                ),
+              child: Material(
+                key: ValueKey('reaction-${isMine ? 'mine' : 'partner'}-$emoji'),
+                color: fill,
+                borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
+                elevation: 1,
+                shadowColor: Colors.black.withValues(alpha: 0.18),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: onTap,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 36),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: count > 1 ? 7 : 6,
+                        vertical: 5,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(emoji, style: const TextStyle(fontSize: 20)),
+                          if (count > 1) ...[
+                            const SizedBox(width: 3),
+                            Text(
+                              '$count',
+                              style: Theme.of(
+                                context,
+                              ).textTheme.labelSmall?.copyWith(
+                                color: foreground,
+                                fontWeight: FontWeight.w800,
                               ),
-                            ],
+                            ),
                           ],
-                        ),
+                        ],
                       ),
                     ),
                   ),
@@ -895,28 +899,14 @@ class _ReactionTailDot extends StatelessWidget {
 }
 
 class _StarAdornment extends StatelessWidget {
-  const _StarAdornment({required this.colorScheme});
-
-  final ColorScheme colorScheme;
+  const _StarAdornment();
 
   @override
   Widget build(BuildContext context) {
-    return CardInkWell(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-      margin: EdgeInsets.zero,
-      borderRadius: BorderRadius.circular(BorderRadiusTokens.full),
-      elevation: ElevationTokens.none,
-      enableFeedback: false,
-      color: colorScheme.surface,
-      child: Semantics(
-        label: 'Starred',
-        excludeSemantics: true,
-        child: const Icon(
-          Icons.star_rounded,
-          size: 15,
-          color: Color(0xFFFFB020),
-        ),
-      ),
+    return Semantics(
+      label: 'Starred',
+      excludeSemantics: true,
+      child: const Icon(Icons.star_rounded, size: 16, color: Color(0xFFFFB020)),
     );
   }
 }
@@ -1056,9 +1046,24 @@ class _BubbleBody extends StatelessWidget {
     }
 
     if (message.isDeleted) {
-      return Text(
-        'This message was deleted',
-        style: TextStyle(color: color, fontStyle: FontStyle.italic),
+      final deletedColor = color.withValues(alpha: 0.7);
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.block_outlined, size: 18, color: deletedColor),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              'This message was deleted',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: deletedColor,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        ],
       );
     }
 
@@ -1074,6 +1079,7 @@ class _BubbleBody extends StatelessWidget {
 
     final children = <Widget>[];
     if (message.hasImage) {
+      final localImagePath = _playableLocalPath(message.localMediaPath);
       final thumbnail = ClipRRect(
         borderRadius: BorderRadius.circular(12),
         // Keyed on clientMessageId — ImageViewerScreen's own _ZoomableImage
@@ -1085,9 +1091,9 @@ class _BubbleBody extends StatelessWidget {
         child: Hero(
           tag: message.clientMessageId,
           child:
-              message.localMediaPath != null
+              localImagePath != null
                   ? Image(
-                    image: FileImage(File(message.localMediaPath!)),
+                    image: FileImage(File(localImagePath)),
                     width: 220,
                     height: 220,
                     fit: BoxFit.cover,
@@ -1375,7 +1381,8 @@ class _BubbleBody extends StatelessWidget {
       // gets via ResolvedMediaUrl, and it's what actually makes posters
       // appear on open rather than filling in later.
       final directPosterUrl =
-          message.localThumbnailPath ?? message.signedThumbnailUrl;
+          _playableLocalPath(message.localThumbnailPath) ??
+          message.signedThumbnailUrl;
       final posterCacheKey = message.mediaThumbnailKey;
 
       Widget buildTile(String? posterUrl) => VideoMessageThumbnail(

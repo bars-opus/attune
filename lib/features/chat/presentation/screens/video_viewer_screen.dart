@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/widgets/resolved_media_url.dart';
@@ -120,13 +122,17 @@ class _FullScreenVideo extends ConsumerWidget {
               .createSignedMediaUrl(mediaKey, forceRefresh: true);
     }
 
+    final localPath = message.localMediaPath;
+    final playableLocalPath =
+        localPath != null && File(localPath).existsSync() ? localPath : null;
+
     return Center(
       child:
-          message.localMediaPath != null
+          playableLocalPath != null
               ? VideoMessagePlayer(
                 key: ValueKey(message.clientMessageId),
                 messageId: message.clientMessageId,
-                videoUrl: message.localMediaPath!,
+                videoUrl: playableLocalPath,
                 thumbnailUrl: message.signedThumbnailUrl,
                 durationMs: message.mediaDurationMs ?? 0,
                 width: message.mediaWidth ?? 16,

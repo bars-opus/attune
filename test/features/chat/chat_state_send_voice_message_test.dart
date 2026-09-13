@@ -138,10 +138,8 @@ void main() {
         waveform: const [1, 5, 10, 3],
       );
 
-      // Give the optimistic write a moment to land before the fake server
-      // resolves.
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-
+      // Local publication is synchronous. Disk persistence and upload start
+      // only after callers have had a chance to paint this row.
       final messages = b.state.messages;
       expect(messages, hasLength(1));
       final message = messages.single;
@@ -154,5 +152,35 @@ void main() {
       await future;
       await Future<void>.delayed(const Duration(milliseconds: 250));
     });
+
+    test(
+      'retry after message insert failure reuses the completed upload',
+      () async {
+        final repo = FakeChatRepository(currentUserId: userId)
+          ..nextSendError = Exception('connection dropped after upload');
+        final b = await boot(repo);
+        final path = await writeVoiceFile('retry.m4a');
+
+        await b.controller.sendVoiceMessage(
+          localPath: path,
+          durationMs: 4200,
+          waveform: const [1, 5, 10, 3],
+        );
+
+        expect(repo.mediaCallCount, 2, reason: 'one intent and one upload');
+        final queued = b.state.messages.single;
+        expect(queued.status, MessageStatus.queued);
+
+        await b.controller.retryMessage(queued);
+
+        expect(repo.sendCallCount, 2);
+        expect(
+          repo.mediaCallCount,
+          2,
+          reason: 'the retry must reuse the persisted storage key',
+        );
+        expect(b.state.messages.single.status, MessageStatus.sent);
+      },
+    );
   });
 }

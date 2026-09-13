@@ -9,6 +9,69 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/chat_test_harness.dart';
 
 void main() {
+  testWidgets('keyboard stays connected through optimistic send and ack', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final repo = FakeChatRepository(currentUserId: 'user-a')
+      ..sendDelay = const Duration(milliseconds: 120);
+    final convo = activeConversation('rel-1');
+    repo.conversationOverride = convo;
+    final container = buildChatContainer(
+      repository: repo,
+      userId: 'user-a',
+      extraOverrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: withScreenUtil(
+          MaterialApp(home: ChatScreen(conversation: convo)),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 30));
+
+    final field = find.byType(TextField);
+    await tester.showKeyboard(field);
+    await tester.enterText(field, 'first message');
+    await tester.pump();
+    expect(tester.testTextInput.isVisible, isTrue);
+
+    final sendGesture = await tester.startGesture(
+      tester.getCenter(find.byIcon(Icons.send_rounded)),
+    );
+    await tester.pump();
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
+      isTrue,
+      reason: 'pressing the send control must remain inside the composer',
+    );
+    await sendGesture.up();
+    await tester.pump(const Duration(milliseconds: 30));
+    expect(repo.sendCallCount, 1);
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
+      isTrue,
+    );
+    expect(tester.testTextInput.isVisible, isTrue);
+
+    await tester.enterText(field, 'second message');
+    await tester.pump();
+    expect(find.text('second message'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(tester.testTextInput.isVisible, isTrue);
+    expect(find.text('second message'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(milliseconds: 10));
+    container.dispose();
+  });
+
   testWidgets('sending a message fires exactly one light haptic', (
     tester,
   ) async {

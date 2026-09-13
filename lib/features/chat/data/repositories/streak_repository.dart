@@ -58,15 +58,21 @@ class StreakRepository {
     required int durationMs,
     StreakClipKind mediaKind = StreakClipKind.video,
   }) async {
-    await _safeClient.from('streak_clips').insert({
-      'message_id': messageId,
-      // Single-clip streaks, so the index is always zero. Kept explicit
-      // rather than defaulted: playback orders by it.
-      'clip_index': 0,
-      'media_url': mediaUrl,
-      'duration_ms': durationMs,
-      'media_kind': mediaKind == StreakClipKind.photo ? 'photo' : 'video',
-    });
+    await _safeClient
+        .from('streak_clips')
+        .upsert(
+          {
+            'message_id': messageId,
+            // Single-clip streaks, so the index is always zero. Kept explicit
+            // rather than defaulted: playback orders by it.
+            'clip_index': 0,
+            'media_url': mediaUrl,
+            'duration_ms': durationMs,
+            'media_kind': mediaKind == StreakClipKind.photo ? 'photo' : 'video',
+          },
+          onConflict: 'message_id,clip_index',
+          ignoreDuplicates: true,
+        );
   }
 
   /// Spends one view, returning what remains.

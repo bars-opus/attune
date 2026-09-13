@@ -117,7 +117,6 @@ class ConversationsNotifier extends AsyncNotifier<List<Conversation>> {
     return true;
   }
 
-  @override
   /// Reports delivery for conversations the device now holds.
   ///
   /// The notification worker used to stamp delivered_at when it QUEUED a
@@ -140,6 +139,7 @@ class ConversationsNotifier extends AsyncNotifier<List<Conversation>> {
     }
   }
 
+  @override
   Future<List<Conversation>> build() async {
     ref.watch(conversationsRefreshProvider);
     final repository = ref.watch(chatRepositoryProvider);
@@ -336,6 +336,7 @@ class ChatController extends StateNotifier<ChatState> {
   bool _isFlushing = false;
   bool _flushRequestedWhileBusy = false;
   final Set<String> _inFlightClientIds = {};
+  final Set<String> _preparingClientIds = {};
 
   String get relationshipId => state.conversation.relationshipId;
 
@@ -346,30 +347,30 @@ class ChatController extends StateNotifier<ChatState> {
     final cached = await ref
         .read(chatCacheServiceProvider)
         .readMessages(user.id, relationshipId);
+    if (!mounted) return;
     final restoredPending = await _restorePendingMessages(user.id);
+    if (!mounted) return;
     final restoredMessages = _mergeInitialMessages(cached, restoredPending);
     final hasWarmCache = restoredMessages.isNotEmpty;
     if (hasWarmCache && mounted) {
-      // Cache-manager metadata is asynchronous. Discover local poster paths
-      // before these rows become paintable so video tiles can start with a
-      // FileImage instead of necessarily showing one placeholder frame.
-      await ref
-          .read(chatPosterPrewarmerProvider)
-          .discoverCached(restoredMessages);
-      if (!mounted) return;
-      state = state.copyWith(messages: restoredMessages);
-      // Start fetching posters the moment history is on screen, rather than
-      // when each tile mounts a frame or two later. The cached rows carry
-      // mediaThumbnailKey, which is all the prewarmer needs, so this is the
-      // earliest possible point — and it is the one that matters on restart.
-      unawaited(_prewarmPosters(restoredMessages));
+      // Publish the local snapshot before optional poster work. Persisted
+      // dimensions reserve each tile's geometry, so hydration cannot shift
+      // the message list after first paint.
+      state = state.copyWith(isLoading: false, messages: restoredMessages);
+      unawaited(_discoverAndPrewarmPosters(restoredMessages));
     }
 
-    await _refreshConversation();
+    // Subscribe before fetching to close the query-to-subscribe race. Header
+    // metadata and messages are independent reads, so a slow avatar/name
+    // refresh must not hold a cold message list blank.
+    _subscribeToRealtime();
+    final conversationRefresh = _refreshConversation();
     // With a warm cache the user already sees their history, so refresh
     // silently — no loading spinner and no "Syncing" banner flash. Only a
     // cold open (empty cache) shows the initial loading state.
     await loadMessages(silent: hasWarmCache);
+    await conversationRefresh;
+    if (!mounted) return;
     // Seed the baseline after the first load so initial history (warm cache
     // or cold fetch) never triggers the receive haptic; only messages that
     // arrive after this point can be "new" (Task 10).
@@ -386,9 +387,11 @@ class ChatController extends StateNotifier<ChatState> {
             ?.id;
     _hasSeededPartnerBaseline = true;
     await _refreshPinnedMessages();
+    if (!mounted) return;
     await _refreshStarredMessageIds();
-    _subscribeToRealtime();
+    if (!mounted) return;
     await _markPartnerMessagesDelivered();
+    if (!mounted) return;
     // Read is only recorded once the screen reports the conversation is
     // visible and foregrounded (Spec 6.4); do not mark read here.
     unawaited(flushOutbox());
@@ -406,6 +409,17 @@ class ChatController extends StateNotifier<ChatState> {
       await ref.read(chatPosterPrewarmerProvider).prewarm(messages);
     } catch (error) {
       ChatLog.e('poster prewarm pass failed (non-fatal)', error);
+    }
+  }
+
+  Future<void> _discoverAndPrewarmPosters(List<Message> messages) async {
+    try {
+      await ref.read(chatPosterPrewarmerProvider).discoverCached(messages);
+      if (!mounted) return;
+      await _prewarmPosters(messages);
+    } catch (_) {
+      // Optional acceleration only. Rows are already paintable from their
+      // persisted content and geometry.
     }
   }
 
@@ -530,14 +544,6 @@ class ChatController extends StateNotifier<ChatState> {
       );
 
       if (!mounted) return;
-      // A freshly-fetched row must not become paintable until any poster
-      // already stored on this device has been registered for synchronous
-      // first-frame lookup. This is local cache metadata only: no signing or
-      // network download is awaited here. Without it, the newest video paints
-      // one placeholder frame after reopening even though its poster bytes
-      // are already on disk.
-      await ref.read(chatPosterPrewarmerProvider).discoverCached(messages);
-      if (!mounted) return;
       state = state.copyWith(
         isLoading: false,
         messages: _mergeMessages(messages),
@@ -550,7 +556,7 @@ class ChatController extends StateNotifier<ChatState> {
             .read(chatCacheServiceProvider)
             .writeMessages(user.id, relationshipId, state.messages),
       );
-      unawaited(_prewarmPosters(state.messages));
+      unawaited(_discoverAndPrewarmPosters(state.messages));
       _maybeReceiveHaptic();
     } catch (error) {
       final mapped = ChatError.from(error);
@@ -670,6 +676,7 @@ class ChatController extends StateNotifier<ChatState> {
     String content, {
     String? replyToMessageId,
     String? quotedText,
+    ValueChanged<Message>? onOptimisticMessage,
   }) async {
     if (!Message.isValidContent(content) || !state.conversation.canSend) return;
 
@@ -689,8 +696,6 @@ class ChatController extends StateNotifier<ChatState> {
       quotedText: quotedText,
     );
 
-    await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
-
     final optimistic = Message.optimistic(
       id: optimisticId,
       clientMessageId: clientMessageId,
@@ -707,7 +712,11 @@ class ChatController extends StateNotifier<ChatState> {
       error: null,
       messages: [optimistic, ...state.messages],
     );
+    onOptimisticMessage?.call(optimistic);
 
+    // _attemptSend persists the outbox row before touching the network. The
+    // optimistic row is intentionally published first so a local SQLite write
+    // can never delay the tap-to-bubble response.
     await _attemptSend(pending);
   }
 
@@ -721,14 +730,14 @@ class ChatController extends StateNotifier<ChatState> {
   Future<void> sendImageMessage({
     required String localPath,
     String caption = '',
+    ValueChanged<Message>? onOptimisticMessage,
   }) async {
     if (!state.conversation.canSend) return;
     if (!Message.isValidContent(caption, hasMedia: true)) return;
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
-    final file = File(localPath);
-    if (!await file.exists()) {
+    if (!_localFileExists(localPath)) {
       if (mounted) {
         state = state.copyWith(error: 'That image is no longer available.');
       }
@@ -738,6 +747,17 @@ class ChatController extends StateNotifier<ChatState> {
     final clientMessageId = const Uuid().v4();
     final optimisticId = '_local_$clientMessageId';
     final now = DateTime.now();
+
+    final pending = PendingSend(
+      clientMessageId: clientMessageId,
+      relationshipId: relationshipId,
+      senderId: user.id,
+      text: caption,
+      localMediaPath: localPath,
+      mediaType: 'image',
+      requiresPreparation: true,
+      createdAt: now,
+    );
 
     final optimistic = Message.optimistic(
       id: optimisticId,
@@ -754,37 +774,13 @@ class ChatController extends StateNotifier<ChatState> {
       error: null,
       messages: [optimistic, ...state.messages],
     );
+    onOptimisticMessage?.call(optimistic);
 
-    final PreparedChatImage prepared;
-    try {
-      prepared = await const ChatImagePreparer().prepare(localPath);
-    } on ChatImageRejected catch (rejected) {
-      if (!mounted) return;
-      state = state.copyWith(
-        isSending: false,
-        messages:
-            state.messages
-                .where((entry) => entry.clientMessageId != clientMessageId)
-                .toList(),
-        error: _imageRejectionMessage(rejected.code),
-      );
-      return;
-    }
-    if (!mounted) return;
-
-    final pending = PendingSend(
-      clientMessageId: clientMessageId,
-      relationshipId: relationshipId,
-      senderId: user.id,
-      text: caption,
-      localMediaPath: prepared.file.path,
-      mediaMimeType: prepared.mimeType,
-      mediaType: 'image',
-      createdAt: now,
-    );
+    // Persist the raw-source preparation job before doing any decode/encode
+    // work. If the app is killed mid-compression, the same visible bubble and
+    // source can be restored and prepared again on the next outbox flush.
     await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
-
-    await _attemptSend(pending);
+    await _prepareAndAttemptSend(pending);
   }
 
   String _imageRejectionMessage(String code) {
@@ -810,13 +806,13 @@ class ChatController extends StateNotifier<ChatState> {
     required String localPath,
     required int durationMs,
     required List<int> waveform,
+    ValueChanged<Message>? onOptimisticMessage,
   }) async {
     if (!state.conversation.canSend) return;
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
-    final file = File(localPath);
-    if (!await file.exists()) {
+    if (!_localFileExists(localPath)) {
       if (mounted) {
         state = state.copyWith(
           error: 'That voice message is no longer available.',
@@ -856,8 +852,6 @@ class ChatController extends StateNotifier<ChatState> {
       waveform: waveform,
       createdAt: now,
     );
-    await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
-
     final optimistic = Message.optimistic(
       id: optimisticId,
       clientMessageId: clientMessageId,
@@ -875,6 +869,7 @@ class ChatController extends StateNotifier<ChatState> {
       error: null,
       messages: [optimistic, ...state.messages],
     );
+    onOptimisticMessage?.call(optimistic);
 
     await _attemptSend(pending);
   }
@@ -930,13 +925,13 @@ class ChatController extends StateNotifier<ChatState> {
     // method's own read of pending.mediaMimeType) behaves exactly as it
     // did before photo streaks existed.
     String mimeType = 'video/mp4',
+    ValueChanged<Message>? onOptimisticMessage,
   }) async {
     if (!state.conversation.canSend) return;
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
-    final file = File(localPath);
-    if (!await file.exists()) {
+    if (!_localFileExists(localPath)) {
       if (mounted) {
         state = state.copyWith(error: 'That streak is no longer available.');
       }
@@ -959,8 +954,6 @@ class ChatController extends StateNotifier<ChatState> {
       streakViewsRemaining: viewsRemaining,
       createdAt: now,
     );
-    await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
-
     final optimistic = Message.optimistic(
       id: optimisticId,
       clientMessageId: clientMessageId,
@@ -971,12 +964,14 @@ class ChatController extends StateNotifier<ChatState> {
       mediaType: 'streak',
       localMediaPath: localPath,
       mediaDurationMs: durationMs,
+      streakViewsRemaining: viewsRemaining,
     );
     state = state.copyWith(
       isSending: true,
       error: null,
       messages: [optimistic, ...state.messages],
     );
+    onOptimisticMessage?.call(optimistic);
 
     await _attemptSend(pending);
   }
@@ -1008,20 +1003,19 @@ class ChatController extends StateNotifier<ChatState> {
     required String thumbnailLocalPath,
     required int width,
     required int height,
+    ValueChanged<Message>? onOptimisticMessage,
   }) async {
     if (!state.conversation.canSend) return;
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
-    final file = File(localPath);
-    if (!await file.exists()) {
+    if (!_localFileExists(localPath)) {
       if (mounted) {
         state = state.copyWith(error: 'That video is no longer available.');
       }
       return;
     }
-    final thumbnailFile = File(thumbnailLocalPath);
-    if (!await thumbnailFile.exists()) {
+    if (!_localFileExists(thumbnailLocalPath)) {
       if (mounted) {
         state = state.copyWith(error: 'That video is no longer available.');
       }
@@ -1060,8 +1054,6 @@ class ChatController extends StateNotifier<ChatState> {
       mediaHeight: height,
       createdAt: now,
     );
-    await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
-
     final optimistic = Message.optimistic(
       id: optimisticId,
       clientMessageId: clientMessageId,
@@ -1084,6 +1076,7 @@ class ChatController extends StateNotifier<ChatState> {
       error: null,
       messages: [optimistic, ...state.messages],
     );
+    onOptimisticMessage?.call(optimistic);
 
     await _attemptSend(pending);
   }
@@ -1108,13 +1101,13 @@ class ChatController extends StateNotifier<ChatState> {
     required String localPath,
     required Duration trimStart,
     required Duration trimEnd,
+    ValueChanged<Message>? onOptimisticMessage,
   }) async {
     if (!state.conversation.canSend) return;
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
-    final file = File(localPath);
-    if (!await file.exists()) {
+    if (!_localFileExists(localPath)) {
       if (mounted) {
         state = state.copyWith(error: 'That video is no longer available.');
       }
@@ -1125,6 +1118,20 @@ class ChatController extends StateNotifier<ChatState> {
     final optimisticId = '_local_$clientMessageId';
     final now = DateTime.now();
     final trimWindowMs = (trimEnd - trimStart).inMilliseconds;
+
+    final pending = PendingSend(
+      clientMessageId: clientMessageId,
+      relationshipId: relationshipId,
+      senderId: user.id,
+      text: '',
+      localMediaPath: localPath,
+      mediaType: 'video',
+      mediaDurationMs: trimWindowMs,
+      requiresPreparation: true,
+      trimStartMs: trimStart.inMilliseconds,
+      trimEndMs: trimEnd.inMilliseconds,
+      createdAt: now,
+    );
 
     final optimistic = Message.optimistic(
       id: optimisticId,
@@ -1153,92 +1160,10 @@ class ChatController extends StateNotifier<ChatState> {
       error: null,
       messages: [optimistic, ...state.messages],
     );
+    onOptimisticMessage?.call(optimistic);
 
-    // Updates the still-optimistic bubble in place by clientMessageId —
-    // NOT _replaceOptimistic, which is specifically for the one-time
-    // optimistic-to-canonical swap after a successful send. This can fire
-    // many times (once per progress tick) before that swap ever happens.
-    void updateOptimistic(Message Function(Message current) update) {
-      if (!mounted) return;
-      final messages = state.messages;
-      final index = messages.indexWhere(
-        (m) => m.id == optimisticId && m.clientMessageId == clientMessageId,
-      );
-      if (index == -1) return;
-      final next = List<Message>.from(messages);
-      next[index] = update(next[index]);
-      state = state.copyWith(messages: next);
-    }
-
-    final PreparedChatVideo prepared;
-    try {
-      prepared = await const ChatVideoPreparer().prepare(
-        localPath: localPath,
-        trimStart: trimStart,
-        trimEnd: trimEnd,
-        onProgress: (value) {
-          // video_compress reports 0-100 on its native progress channel;
-          // normalize to LinearProgressIndicator's 0-1 contract, mirroring
-          // VideoPrepareProgressDialog's own identical calculation.
-          updateOptimistic(
-            (m) => m.copyWith(compressProgress: (value / 100).clamp(0.0, 1.0)),
-          );
-        },
-        // Fires as soon as the poster frame is extracted — before the
-        // transcode, which is the slow part. Painting it on the optimistic
-        // row here is what lets the bubble show the real frame immediately
-        // with progress drawn over it (WhatsApp's behavior) instead of a
-        // blank placeholder for the whole compression.
-        onPosterReady: (posterPath) {
-          updateOptimistic((m) => m.copyWith(localThumbnailPath: posterPath));
-        },
-      );
-    } on ChatVideoRejected catch (rejected) {
-      if (!mounted) return;
-      state = state.copyWith(
-        isSending: false,
-        messages:
-            state.messages
-                .where((entry) => entry.clientMessageId != clientMessageId)
-                .toList(),
-        error: _videoRejectionMessage(rejected.code),
-      );
-      return;
-    }
-    if (!mounted) return;
-
-    final pending = PendingSend(
-      clientMessageId: clientMessageId,
-      relationshipId: relationshipId,
-      senderId: user.id,
-      text: '',
-      localMediaPath: prepared.file.path,
-      mediaMimeType: prepared.mimeType,
-      mediaType: 'video',
-      mediaDurationMs: prepared.durationMs,
-      localThumbnailPath: prepared.thumbnailFile.path,
-      thumbnailMimeType: prepared.thumbnailMimeType,
-      mediaWidth: prepared.width,
-      mediaHeight: prepared.height,
-      createdAt: now,
-    );
     await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
-
-    updateOptimistic(
-      (m) => m.copyWith(
-        localMediaPath: prepared.file.path,
-        // The on-device poster, so the bubble shows a real thumbnail the
-        // instant compression finishes rather than a blank tile until the
-        // upload + server round-trip produce a signed thumbnail URL.
-        localThumbnailPath: prepared.thumbnailFile.path,
-        mediaDurationMs: prepared.durationMs,
-        mediaWidth: prepared.width,
-        mediaHeight: prepared.height,
-        isPreparing: false,
-      ),
-    );
-
-    await _attemptSend(pending);
+    await _prepareAndAttemptSend(pending);
   }
 
   String _videoRejectionMessage(String code) {
@@ -1262,6 +1187,176 @@ class ChatController extends StateNotifier<ChatState> {
     }
   }
 
+  /// Completes a persisted raw-media job, updates the same optimistic bubble
+  /// in place, then hands the prepared payload to the ordinary durable send
+  /// pipeline. This is deliberately shared by first send, manual retry, and
+  /// process-restart outbox recovery so those paths cannot drift apart.
+  Future<void> _prepareAndAttemptSend(PendingSend pending) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+    if (!_preparingClientIds.add(pending.clientMessageId)) return;
+
+    var preparing = pending.copyWith(
+      state: PendingSendState.sending,
+      nextAttemptAt: null,
+      lastErrorCategory: null,
+    );
+    String? generatedPosterPath = pending.localThumbnailPath;
+
+    try {
+      await ref.read(chatCacheServiceProvider).putOutbox(user.id, preparing);
+
+      late final PendingSend prepared;
+      if (preparing.mediaType == 'image') {
+        final image = await const ChatImagePreparer().prepare(
+          preparing.localMediaPath!,
+        );
+        prepared = preparing.copyWith(
+          localMediaPath: image.file.path,
+          mediaMimeType: image.mimeType,
+          requiresPreparation: false,
+          state: PendingSendState.queued,
+        );
+        _updateOptimisticMessage(
+          preparing.clientMessageId,
+          (message) => message.copyWith(localMediaPath: image.file.path),
+        );
+      } else if (preparing.mediaType == 'video') {
+        final video = await const ChatVideoPreparer().prepare(
+          localPath: preparing.localMediaPath!,
+          trimStart:
+              preparing.trimStartMs == null
+                  ? null
+                  : Duration(milliseconds: preparing.trimStartMs!),
+          trimEnd:
+              preparing.trimEndMs == null
+                  ? null
+                  : Duration(milliseconds: preparing.trimEndMs!),
+          onProgress: (value) {
+            _updateOptimisticMessage(
+              preparing.clientMessageId,
+              (message) => message.copyWith(
+                isPreparing: true,
+                compressProgress: (value / 100).clamp(0.0, 1.0),
+              ),
+            );
+          },
+          onPosterReady: (posterPath) {
+            generatedPosterPath = posterPath;
+            _updateOptimisticMessage(
+              preparing.clientMessageId,
+              (message) => message.copyWith(localThumbnailPath: posterPath),
+            );
+          },
+        );
+        prepared = preparing.copyWith(
+          localMediaPath: video.file.path,
+          mediaMimeType: video.mimeType,
+          mediaDurationMs: video.durationMs,
+          localThumbnailPath: video.thumbnailFile.path,
+          thumbnailMimeType: video.thumbnailMimeType,
+          mediaWidth: video.width,
+          mediaHeight: video.height,
+          requiresPreparation: false,
+          state: PendingSendState.queued,
+        );
+        _updateOptimisticMessage(
+          preparing.clientMessageId,
+          (message) => message.copyWith(
+            localMediaPath: video.file.path,
+            localThumbnailPath: video.thumbnailFile.path,
+            mediaDurationMs: video.durationMs,
+            mediaWidth: video.width,
+            mediaHeight: video.height,
+            isPreparing: false,
+          ),
+        );
+      } else {
+        // Old/corrupt cache rows cannot be prepared safely. Keep the bubble
+        // visible and removable instead of attempting a payload-less insert.
+        await _handlePreparationFailure(
+          user.id,
+          preparing,
+          'media_type_unsupported',
+          'That media could not be prepared. Try choosing it again.',
+        );
+        return;
+      }
+
+      // Commit the prepared paths before upload. A crash after this point
+      // resumes upload directly instead of recompressing the original file.
+      await ref.read(chatCacheServiceProvider).putOutbox(user.id, prepared);
+      await _attemptSend(prepared);
+    } on ChatImageRejected catch (rejected) {
+      await _handlePreparationFailure(
+        user.id,
+        preparing,
+        rejected.code,
+        _imageRejectionMessage(rejected.code),
+      );
+    } on ChatVideoRejected catch (rejected) {
+      preparing = preparing.copyWith(localThumbnailPath: generatedPosterPath);
+      await _handlePreparationFailure(
+        user.id,
+        preparing,
+        rejected.code,
+        _videoRejectionMessage(rejected.code),
+      );
+    } catch (error) {
+      // Unexpected/native preparation failures use the same bounded retry
+      // policy as uploads. The outbox row still contains the raw source and
+      // trim window, so an automatic retry is safe and complete.
+      await _handleSendFailure(user.id, preparing, ChatError.from(error));
+    } finally {
+      _preparingClientIds.remove(pending.clientMessageId);
+    }
+  }
+
+  Future<void> _handlePreparationFailure(
+    String userId,
+    PendingSend pending,
+    String code,
+    String userMessage,
+  ) async {
+    final failed = pending.copyWith(
+      state: PendingSendState.failedPermanent,
+      lastErrorCategory: code,
+      nextAttemptAt: null,
+    );
+    await ref.read(chatCacheServiceProvider).putOutbox(userId, failed);
+    if (!mounted) return;
+    state = state.copyWith(
+      isSending: false,
+      error: userMessage,
+      messages:
+          state.messages
+              .map(
+                (message) =>
+                    message.clientMessageId == pending.clientMessageId
+                        ? message.copyWith(
+                          status: MessageStatus.failed,
+                          isPreparing: false,
+                        )
+                        : message,
+              )
+              .toList(),
+    );
+  }
+
+  void _updateOptimisticMessage(
+    String clientMessageId,
+    Message Function(Message current) update,
+  ) {
+    if (!mounted) return;
+    final index = state.messages.indexWhere(
+      (message) => message.clientMessageId == clientMessageId,
+    );
+    if (index == -1) return;
+    final messages = List<Message>.from(state.messages);
+    messages[index] = update(messages[index]);
+    state = state.copyWith(messages: messages);
+  }
+
   /// Sends an ephemeral (view-once) video message, mirroring
   /// sendVideoMessage's exact shape with one addition: the constructed
   /// PendingSend/Message carries isViewOnce: true. Deliberately a separate
@@ -1280,20 +1375,19 @@ class ChatController extends StateNotifier<ChatState> {
     required String thumbnailLocalPath,
     required int width,
     required int height,
+    ValueChanged<Message>? onOptimisticMessage,
   }) async {
     if (!state.conversation.canSend) return;
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
-    final file = File(localPath);
-    if (!await file.exists()) {
+    if (!_localFileExists(localPath)) {
       if (mounted) {
         state = state.copyWith(error: 'That video is no longer available.');
       }
       return;
     }
-    final thumbnailFile = File(thumbnailLocalPath);
-    if (!await thumbnailFile.exists()) {
+    if (!_localFileExists(thumbnailLocalPath)) {
       if (mounted) {
         state = state.copyWith(error: 'That video is no longer available.');
       }
@@ -1336,8 +1430,6 @@ class ChatController extends StateNotifier<ChatState> {
       isViewOnce: true,
       createdAt: now,
     );
-    await ref.read(chatCacheServiceProvider).putOutbox(user.id, pending);
-
     final optimistic = Message.optimistic(
       id: optimisticId,
       clientMessageId: clientMessageId,
@@ -1357,8 +1449,17 @@ class ChatController extends StateNotifier<ChatState> {
       error: null,
       messages: [optimistic, ...state.messages],
     );
+    onOptimisticMessage?.call(optimistic);
 
     await _attemptSend(pending);
+  }
+
+  bool _localFileExists(String path) {
+    try {
+      return File(path).existsSync();
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> retryMessage(Message message) async {
@@ -1389,9 +1490,24 @@ class ChatController extends StateNotifier<ChatState> {
               .toList(),
     );
 
-    await _attemptSend(
-      pending.copyWith(state: PendingSendState.queued, nextAttemptAt: null),
+    final queued = pending.copyWith(
+      state: PendingSendState.queued,
+      nextAttemptAt: null,
+      lastErrorCategory: null,
     );
+    if (queued.requiresPreparation) {
+      _updateOptimisticMessage(
+        queued.clientMessageId,
+        (entry) => entry.copyWith(
+          status: MessageStatus.sending,
+          isPreparing: queued.mediaType == 'video',
+          compressProgress: queued.mediaType == 'video' ? 0 : null,
+        ),
+      );
+      await _prepareAndAttemptSend(queued);
+    } else {
+      await _attemptSend(queued);
+    }
   }
 
   Future<void> removeFailedMessage(Message message) async {
@@ -1415,7 +1531,11 @@ class ChatController extends StateNotifier<ChatState> {
     await ref
         .read(chatCacheServiceProvider)
         .removeOutbox(user.id, relationshipId, message.clientMessageId);
-    await _deleteStagedMedia(message.localMediaPath);
+    // A preparation-stage path is the user's raw picker source, not a staging
+    // artifact owned by chat. Never delete it when dismissing a failed row.
+    if (pending?.requiresPreparation != true) {
+      await _deleteStagedMedia(message.localMediaPath);
+    }
     await _deleteStagedMedia(pending?.localThumbnailPath);
 
     if (!mounted) return;
@@ -1520,12 +1640,21 @@ class ChatController extends StateNotifier<ChatState> {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
-    await _repository.addReaction(
-      relationshipId: message.relationshipId,
-      messageId: message.id,
-      emoji: emoji,
-    );
-    if (!mounted) return;
+    String? previousEmoji;
+    Message? currentMessage;
+    for (final entry in state.messages) {
+      if (entry.id == message.id) {
+        currentMessage = entry;
+        break;
+      }
+    }
+    for (final entry
+        in (currentMessage?.reactions ?? message.reactions).entries) {
+      if (entry.value.contains(user.id)) {
+        previousEmoji = entry.key;
+        break;
+      }
+    }
     state = state.copyWith(
       messages:
           state.messages
@@ -1543,6 +1672,38 @@ class ChatController extends StateNotifier<ChatState> {
               )
               .toList(),
     );
+
+    try {
+      await _repository.addReaction(
+        relationshipId: message.relationshipId,
+        messageId: message.id,
+        emoji: emoji,
+      );
+    } catch (_) {
+      if (mounted) {
+        state = state.copyWith(
+          messages:
+              state.messages.map((entry) {
+                if (entry.id != message.id) return entry;
+                final withoutFailedReaction = _withoutReaction(
+                  entry.reactions,
+                  user.id,
+                );
+                return entry.copyWith(
+                  reactions:
+                      previousEmoji == null
+                          ? withoutFailedReaction
+                          : _withReaction(
+                            withoutFailedReaction,
+                            user.id,
+                            previousEmoji,
+                          ),
+                );
+              }).toList(),
+        );
+      }
+      rethrow;
+    }
   }
 
   Future<void> removeReactionFrom(Message message) async {
@@ -1652,14 +1813,19 @@ class ChatController extends StateNotifier<ChatState> {
           continue;
         }
         // A concurrent single-message send may already be flushing this item.
-        if (_inFlightClientIds.contains(item.clientMessageId)) {
+        if (_inFlightClientIds.contains(item.clientMessageId) ||
+            _preparingClientIds.contains(item.clientMessageId)) {
           continue;
         }
         final nextAttemptAt = item.nextAttemptAt;
         if (nextAttemptAt != null && nextAttemptAt.isAfter(DateTime.now())) {
           continue;
         }
-        await _attemptSend(item);
+        if (item.requiresPreparation) {
+          await _prepareAndAttemptSend(item);
+        } else {
+          await _attemptSend(item);
+        }
       }
     } finally {
       _isFlushing = false;
@@ -1681,6 +1847,7 @@ class ChatController extends StateNotifier<ChatState> {
     // hard backstop; this avoids the wasted attempt entirely.
     if (!_inFlightClientIds.add(pending.clientMessageId)) return;
 
+    var durablePending = pending;
     try {
       await ref
           .read(chatCacheServiceProvider)
@@ -1690,8 +1857,8 @@ class ChatController extends StateNotifier<ChatState> {
           );
 
       final repository = ref.read(chatRepositoryProvider);
-      String? mediaKey;
-      String? mediaThumbnailKey;
+      String? mediaKey = durablePending.uploadedMediaKey;
+      String? mediaThumbnailKey = durablePending.uploadedThumbnailKey;
       // Every type that carries a file. A type missing here uploads
       // nothing, leaves mediaKey null, and its insert then fails
       // messages_payload_present with no content either — which is
@@ -1703,7 +1870,7 @@ class ChatController extends StateNotifier<ChatState> {
               pending.mediaType == 'streak') &&
           pending.localMediaPath != null &&
           pending.mediaMimeType != null;
-      if (isMediaSend) {
+      if (isMediaSend && mediaKey == null) {
         final intent = await repository.createMediaUploadIntent(
           relationshipId: pending.relationshipId,
           mimeType: pending.mediaMimeType!,
@@ -1715,45 +1882,59 @@ class ChatController extends StateNotifier<ChatState> {
           mimeType: pending.mediaMimeType!,
         );
         mediaKey = intent.storageKey;
+        durablePending = durablePending.copyWith(uploadedMediaKey: mediaKey);
+        // The expensive upload is now durable independently of the message
+        // insert. If that later write or the process fails, recovery reuses
+        // this key instead of creating an orphan and uploading again.
+        await ref
+            .read(chatCacheServiceProvider)
+            .putOutbox(user.id, durablePending);
+      }
 
-        // Video-only: a second intent/upload for the thumbnail, through the
-        // ordinary image path (media_type: 'image'). Non-fatal on its own
-        // failure — a successfully-uploaded 25MB video must not be lost
-        // over a missing 40KB poster (see design spec's error table). A
-        // failure here is caught locally so it doesn't abort the whole
-        // send via the outer try/catch.
-        if (pending.mediaType == 'video' &&
-            pending.localThumbnailPath != null &&
-            pending.thumbnailMimeType != null) {
-          try {
-            final thumbIntent = await repository.createMediaUploadIntent(
-              relationshipId: pending.relationshipId,
-              mimeType: pending.thumbnailMimeType!,
-              mediaType: 'image',
-            );
-            await repository.uploadChatMedia(
-              intent: thumbIntent,
-              localPath: pending.localThumbnailPath!,
-              mimeType: pending.thumbnailMimeType!,
-            );
-            mediaThumbnailKey = thumbIntent.storageKey;
-            ChatLog.d(
-              '[CHAT] video poster uploaded '
-              'key=${ChatLog.shortId(thumbIntent.storageKey)}',
-            );
-          } catch (error) {
-            // Non-fatal for the SEND, but fatal for the POSTER: with no
-            // thumbnail key the row has nothing for the bubble to resolve,
-            // so the video renders as a blank tile forever, on every device
-            // and across every reinstall.
-            //
-            // Deliberately uses ChatLog.diagnostic rather than ChatLog.e:
-            // this failure is a server-side rejection (feature flag, MIME
-            // allowlist, RLS) whose *reason* is the entire diagnostic value,
-            // and e() shapes it away to a length. Shipping it shaped is what
-            // made this bug survive three rounds of client-side fixes.
-            ChatLog.diagnostic('video thumbnail upload failed', error);
-          }
+      // Video-only: a second intent/upload for the thumbnail, through the
+      // ordinary image path (media_type: 'image'). Non-fatal on its own
+      // failure — a successfully-uploaded 25MB video must not be lost
+      // over a missing 40KB poster (see design spec's error table). A
+      // failure here is caught locally so it doesn't abort the whole
+      // send via the outer try/catch.
+      if (pending.mediaType == 'video' &&
+          pending.localThumbnailPath != null &&
+          pending.thumbnailMimeType != null &&
+          mediaThumbnailKey == null) {
+        try {
+          final thumbIntent = await repository.createMediaUploadIntent(
+            relationshipId: pending.relationshipId,
+            mimeType: pending.thumbnailMimeType!,
+            mediaType: 'image',
+          );
+          await repository.uploadChatMedia(
+            intent: thumbIntent,
+            localPath: pending.localThumbnailPath!,
+            mimeType: pending.thumbnailMimeType!,
+          );
+          mediaThumbnailKey = thumbIntent.storageKey;
+          durablePending = durablePending.copyWith(
+            uploadedThumbnailKey: mediaThumbnailKey,
+          );
+          await ref
+              .read(chatCacheServiceProvider)
+              .putOutbox(user.id, durablePending);
+          ChatLog.d(
+            '[CHAT] video poster uploaded '
+            'key=${ChatLog.shortId(thumbIntent.storageKey)}',
+          );
+        } catch (error) {
+          // Non-fatal for the SEND, but fatal for the POSTER: with no
+          // thumbnail key the row has nothing for the bubble to resolve,
+          // so the video renders as a blank tile forever, on every device
+          // and across every reinstall.
+          //
+          // Deliberately uses ChatLog.diagnostic rather than ChatLog.e:
+          // this failure is a server-side rejection (feature flag, MIME
+          // allowlist, RLS) whose *reason* is the entire diagnostic value,
+          // and e() shapes it away to a length. Shipping it shaped is what
+          // made this bug survive three rounds of client-side fixes.
+          ChatLog.diagnostic('video thumbnail upload failed', error);
         }
       }
       final canonical = await repository.sendTextMessage(
@@ -1777,23 +1958,7 @@ class ChatController extends StateNotifier<ChatState> {
       // A streak's clip row hangs off the message that just landed, using
       // the storage key already resolved for the upload. Additive: every
       // other media type skips this entirely.
-      if (pending.mediaType == 'streak' && mediaKey != null) {
-        // Derived from the mime type actually uploaded, not stored as a
-        // separate PendingSend field: an outbox entry queued before this
-        // build (mediaMimeType already 'video/mp4', the only value that
-        // ever existed) resolves to StreakClipKind.video here with no
-        // migration of the cached JSON needed at all.
-        final isPhoto = pending.mediaMimeType?.startsWith('image/') ?? false;
-        await ref
-            .read(streakRepositoryProvider)
-            .attachClip(
-              messageId: canonical.id,
-              mediaUrl: mediaKey,
-              durationMs: pending.mediaDurationMs ?? 0,
-              mediaKind:
-                  isPhoto ? StreakClipKind.photo : StreakClipKind.video,
-            );
-      }
+      await _attachStreakClipIfNeeded(durablePending, canonical, mediaKey);
 
       await ref
           .read(chatCacheServiceProvider)
@@ -1802,38 +1967,14 @@ class ChatController extends StateNotifier<ChatState> {
             pending.relationshipId,
             pending.clientMessageId,
           );
-      await _deleteStagedMedia(pending.localMediaPath);
-      // Only reclaim the staged poster once the server actually has a copy.
-      // If the thumbnail upload failed above, this file is the ONLY poster
-      // that exists anywhere — deleting it here is what turned a recoverable
-      // upload failure into a permanently blank tile.
-      final posterLandedOnServer = canonical.mediaThumbnailKey != null;
-      final cachedLocalPosterPath = await _promotePosterToCache(
-        pending,
-        canonical,
-      );
-      if (posterLandedOnServer &&
-          (cachedLocalPosterPath != null || pending.isViewOnce)) {
-        await _deleteStagedMedia(pending.localThumbnailPath);
-      }
 
       if (!mounted) return;
-      // Carry the local poster onto the canonical message when the server
-      // has none, so the bubble still renders this device's own frame
-      // instead of a grey box. Client-only field, so it never round-trips
-      // to the DB — the other participant correctly sees no poster, which
-      // is the honest reflection of what was actually uploaded.
-      final resolved =
-          pending.isViewOnce
-              ? canonical
-              : canonical.copyWith(
-                // A successful cache seed provides a durable local file. If
-                // either upload or seeding failed, keep staging as this
-                // device's fallback instead of deleting its only immediate
-                // frame.
-                localThumbnailPath:
-                    cachedLocalPosterPath ?? pending.localThumbnailPath,
-              );
+      // Acknowledge immediately while the canonical row still points at the
+      // exact local bytes the optimistic row was painting. Cache promotion
+      // and staging cleanup happen after this state transition, so neither
+      // disk I/O nor a missing signed URL can produce a blank acknowledgement
+      // frame or keep the busy overlay spinning after the server replied.
+      final resolved = _canonicalWithLocalHandoff(durablePending, canonical);
       state = state.copyWith(
         isSending: false,
         error: null,
@@ -1844,10 +1985,19 @@ class ChatController extends StateNotifier<ChatState> {
       // in memory alone: popping the screen dropped it, the warm-cache
       // restore on return did not have it, and it reappeared seconds later
       // when the server fetch landed.
+      final canonicalCacheWrite = ref
+          .read(chatCacheServiceProvider)
+          .writeMessages(user.id, pending.relationshipId, state.messages);
+      // Enqueue the canonical snapshot first, then promote local bytes. The
+      // settlement pass persists its stable cache paths before deleting the
+      // staging files, so a process restart cannot restore a dead path.
       unawaited(
-        ref
-            .read(chatCacheServiceProvider)
-            .writeMessages(user.id, pending.relationshipId, state.messages),
+        _settleAcknowledgedMedia(
+          user.id,
+          durablePending,
+          canonical,
+          after: canonicalCacheWrite,
+        ),
       );
       ChatLog.d(
         '[CHAT] send ok rel=${ChatLog.shortId(relationshipId)} '
@@ -1865,6 +2015,22 @@ class ChatController extends StateNotifier<ChatState> {
               clientMessageId: pending.clientMessageId,
             );
         if (canonical != null) {
+          try {
+            await _attachStreakClipIfNeeded(
+              durablePending,
+              canonical,
+              durablePending.uploadedMediaKey,
+            );
+          } catch (attachError) {
+            // The message exists but its streak clip still does not. Keep the
+            // outbox entry so the next retry can finish that second write.
+            await _handleSendFailure(
+              user.id,
+              durablePending,
+              ChatError.from(attachError),
+            );
+            return;
+          }
           await ref
               .read(chatCacheServiceProvider)
               .removeOutbox(
@@ -1872,42 +2038,58 @@ class ChatController extends StateNotifier<ChatState> {
                 pending.relationshipId,
                 pending.clientMessageId,
               );
-          await _deleteStagedMedia(pending.localMediaPath);
-          final cachedLocalPosterPath = await _promotePosterToCache(
-            pending,
+          if (!mounted) return;
+          final resolved = _canonicalWithLocalHandoff(
+            durablePending,
             canonical,
           );
-          if (cachedLocalPosterPath != null || pending.isViewOnce) {
-            await _deleteStagedMedia(pending.localThumbnailPath);
-          }
-          if (!mounted) return;
-          final resolved =
-              pending.isViewOnce
-                  ? canonical
-                  : canonical.copyWith(
-                    localThumbnailPath:
-                        cachedLocalPosterPath ?? pending.localThumbnailPath,
-                  );
           state = state.copyWith(
             isSending: false,
             messages: _replaceOptimistic(resolved),
           );
           // Same reason as the success path above: without this, a message
           // recovered from a duplicate insert is in memory only.
+          final canonicalCacheWrite = ref
+              .read(chatCacheServiceProvider)
+              .writeMessages(user.id, pending.relationshipId, state.messages);
           unawaited(
-            ref
-                .read(chatCacheServiceProvider)
-                .writeMessages(user.id, pending.relationshipId, state.messages),
+            _settleAcknowledgedMedia(
+              user.id,
+              durablePending,
+              canonical,
+              after: canonicalCacheWrite,
+            ),
           );
           return;
         }
       }
-      await _handleSendFailure(user.id, pending, ChatError.from(error));
+      await _handleSendFailure(user.id, durablePending, ChatError.from(error));
     } catch (error) {
-      await _handleSendFailure(user.id, pending, ChatError.from(error));
+      await _handleSendFailure(user.id, durablePending, ChatError.from(error));
     } finally {
       _inFlightClientIds.remove(pending.clientMessageId);
     }
+  }
+
+  Future<void> _attachStreakClipIfNeeded(
+    PendingSend pending,
+    Message canonical,
+    String? mediaKey,
+  ) async {
+    if (pending.mediaType != 'streak' || mediaKey == null) return;
+    // This runs on both the normal insert and 23505 reconciliation path. A
+    // message insert and clip insert are separate server writes; repeating
+    // the same idempotent attachment is how recovery completes a crash or
+    // network failure between them.
+    final isPhoto = pending.mediaMimeType?.startsWith('image/') ?? false;
+    await ref
+        .read(streakRepositoryProvider)
+        .attachClip(
+          messageId: canonical.id,
+          mediaUrl: mediaKey,
+          durationMs: pending.mediaDurationMs ?? 0,
+          mediaKind: isPhoto ? StreakClipKind.photo : StreakClipKind.video,
+        );
   }
 
   Future<String?> _promotePosterToCache(
@@ -1926,6 +2108,85 @@ class ChatController extends StateNotifier<ChatState> {
         .read(chatPosterPrewarmerProvider)
         .cacheLocalPoster(key: key, localPath: localPath);
   }
+
+  Message _canonicalWithLocalHandoff(PendingSend pending, Message canonical) {
+    if (_isPrivateEphemeralSend(pending)) return canonical;
+    return canonical.copyWith(
+      localMediaPath: pending.localMediaPath,
+      localThumbnailPath: pending.localThumbnailPath,
+    );
+  }
+
+  /// Moves staging files into stable, storage-keyed cache entries after the
+  /// canonical bubble has already been published. Staging is deleted only
+  /// after a durable local replacement exists; on failure it remains the
+  /// current screen's fallback. View-once media and streaks are deliberate
+  /// exceptions: privacy requires prompt deletion and no durable promotion.
+  Future<void> _settleAcknowledgedMedia(
+    String userId,
+    PendingSend pending,
+    Message canonical, {
+    required Future<void> after,
+  }) async {
+    try {
+      await after;
+    } catch (error) {
+      // Local cache is an accelerator, never a prerequisite for a successful
+      // server send. Retain staging if its canonical snapshot could not be
+      // persisted; a later server refresh still recovers the message.
+      ChatLog.e('canonical message cache write failed (non-fatal)', error);
+      return;
+    }
+    if (_isPrivateEphemeralSend(pending)) {
+      await _deleteStagedMedia(pending.localMediaPath);
+      await _deleteStagedMedia(pending.localThumbnailPath);
+      return;
+    }
+
+    String? cachedMediaPath;
+    final mediaKey = canonical.mediaKey;
+    final localMediaPath = pending.localMediaPath;
+    if (mediaKey != null && localMediaPath != null) {
+      cachedMediaPath = await ref
+          .read(chatPosterPrewarmerProvider)
+          .cacheLocalFile(key: mediaKey, localPath: localMediaPath);
+    }
+
+    final cachedPosterPath = await _promotePosterToCache(pending, canonical);
+    if (!mounted || (cachedMediaPath == null && cachedPosterPath == null)) {
+      return;
+    }
+    final index = state.messages.indexWhere(
+      (message) => message.id == canonical.id,
+    );
+    if (index == -1) return;
+    final messages = List<Message>.from(state.messages);
+    messages[index] = messages[index].copyWith(
+      localMediaPath: cachedMediaPath,
+      localThumbnailPath: cachedPosterPath,
+    );
+    state = state.copyWith(messages: messages);
+    // This write is the ownership handoff: only once the encrypted message
+    // cache points at the promoted files is it safe to remove the staging
+    // copies. Await it to prevent a kill/reopen window with a dead local path.
+    try {
+      await ref
+          .read(chatCacheServiceProvider)
+          .writeMessages(userId, pending.relationshipId, messages);
+    } catch (error) {
+      ChatLog.e('settled media cache write failed (non-fatal)', error);
+      return;
+    }
+    if (cachedMediaPath != null) {
+      await _deleteStagedMedia(localMediaPath);
+    }
+    if (canonical.mediaThumbnailKey != null && cachedPosterPath != null) {
+      await _deleteStagedMedia(pending.localThumbnailPath);
+    }
+  }
+
+  bool _isPrivateEphemeralSend(PendingSend pending) =>
+      pending.isViewOnce || pending.mediaType == 'streak';
 
   Future<void> _handleSendFailure(
     String userId,
@@ -2075,7 +2336,7 @@ class ChatController extends StateNotifier<ChatState> {
   /// For every ordinary message sortAt equals createdAt, so nothing else
   /// moves.
   static int _bySortThenId(Message a, Message b) {
-    final byTime = b.sortAt.compareTo(a.sortAt);
+    final byTime = b.presentationSortAt.compareTo(a.presentationSortAt);
     if (byTime != 0) return byTime;
     return b.id.compareTo(a.id);
   }
@@ -2121,11 +2382,21 @@ class ChatController extends StateNotifier<ChatState> {
     final staleLocalPathsByClientId = <String, String>{};
 
     final byId = <String, Message>{};
+    final byClientMessageId = <String, Message>{};
     for (final message in state.messages) {
       byId[message.id] = message;
+      byClientMessageId[message.clientMessageId] = message;
     }
     for (final message in incoming) {
       final existing = byId[message.id];
+      final existingByClient = byClientMessageId[message.clientMessageId];
+      final presentationSource = existing ?? existingByClient;
+      final hydrated =
+          !message.isGame && presentationSource != null
+              ? message.copyWith(
+                presentationSortAt: presentationSource.presentationSortAt,
+              )
+              : message;
       final justExpired =
           message.isEphemeralVideoExpired &&
           existing?.isEphemeralVideoExpired != true;
@@ -2139,7 +2410,7 @@ class ChatController extends StateNotifier<ChatState> {
         if (staleLocalPath != null) {
           unawaited(_deleteStagedMedia(staleLocalPath));
         }
-        byId[message.id] = message;
+        byId[message.id] = hydrated;
         // Also cover the still-optimistic-row race described above: the
         // pre-swap `_local_...` row for this same clientMessageId (if any)
         // is untouched by the byId-keyed logic above (different id), so
@@ -2156,9 +2427,9 @@ class ChatController extends StateNotifier<ChatState> {
         continue;
       }
       byId[message.id] =
-          existing?.localMediaPath != null && message.localMediaPath == null
-              ? message.copyWith(localMediaPath: existing!.localMediaPath)
-              : message;
+          existing?.localMediaPath != null && hydrated.localMediaPath == null
+              ? hydrated.copyWith(localMediaPath: existing!.localMediaPath)
+              : hydrated;
     }
 
     final merged = byId.values.toList()..sort(_bySortThenId);
@@ -2221,7 +2492,9 @@ class ChatController extends StateNotifier<ChatState> {
             message.clientMessageId == canonical.clientMessageId &&
             message.id.startsWith('_local_'),
       );
-      messages[idx] = canonical;
+      messages[idx] = canonical.copyWith(
+        presentationSortAt: messages[idx].presentationSortAt,
+      );
       return messages;
     }
 
@@ -2271,8 +2544,23 @@ class ChatController extends StateNotifier<ChatState> {
         createdAt: pending.createdAt,
         mediaType: pending.mediaType,
         localMediaPath: pending.localMediaPath,
+        mediaDurationMs: pending.mediaDurationMs,
+        waveform: pending.waveform,
+        mediaWidth: pending.mediaWidth,
+        mediaHeight: pending.mediaHeight,
+        isViewOnce: pending.isViewOnce,
+        streakViewsRemaining: pending.streakViewsRemaining,
         replyToMessageId: pending.replyToMessageId,
         quotedText: pending.quotedText,
+        isPreparing:
+            pending.requiresPreparation &&
+            pending.mediaType == 'video' &&
+            pending.state != PendingSendState.failedPermanent,
+        compressProgress:
+            pending.requiresPreparation && pending.mediaType == 'video'
+                ? 0
+                : null,
+        localThumbnailPath: pending.localThumbnailPath,
       ).copyWith(
         status: switch (pending.state) {
           PendingSendState.failedPermanent => MessageStatus.failed,
@@ -2293,7 +2581,9 @@ class ChatController extends StateNotifier<ChatState> {
         .read(chatCacheServiceProvider)
         .purgeRelationship(user.id, relationshipId);
     for (final item in pending) {
-      await _deleteStagedMedia(item.localMediaPath);
+      if (!item.requiresPreparation) {
+        await _deleteStagedMedia(item.localMediaPath);
+      }
       await _deleteStagedMedia(item.localThumbnailPath);
     }
   }
@@ -2324,7 +2614,9 @@ class ChatController extends StateNotifier<ChatState> {
         .read(chatCacheServiceProvider)
         .purgeRelationship(previousUserId, relationshipId);
     for (final item in pending) {
-      await _deleteStagedMedia(item.localMediaPath);
+      if (!item.requiresPreparation) {
+        await _deleteStagedMedia(item.localMediaPath);
+      }
       await _deleteStagedMedia(item.localThumbnailPath);
     }
     if (mounted) {

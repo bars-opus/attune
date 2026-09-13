@@ -136,6 +136,9 @@ class _ZoomableImageState extends State<_ZoomableImage>
   @override
   Widget build(BuildContext context) {
     final message = widget.message;
+    final localPath = message.localMediaPath;
+    final playableLocalPath =
+        localPath != null && File(localPath).existsSync() ? localPath : null;
     return GestureDetector(
       onDoubleTapDown: _handleDoubleTapDown,
       onDoubleTap: _handleDoubleTap,
@@ -155,9 +158,9 @@ class _ZoomableImageState extends State<_ZoomableImage>
           child: Hero(
             tag: message.clientMessageId,
             child:
-                message.localMediaPath != null
+                playableLocalPath != null
                     ? Image.file(
-                      File(message.localMediaPath!),
+                      File(playableLocalPath),
                       fit: BoxFit.contain,
                       errorBuilder:
                           (context, error, stackTrace) => const _ViewerError(),

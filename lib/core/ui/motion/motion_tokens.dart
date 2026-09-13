@@ -12,6 +12,12 @@ const Curve kSettleCurve = Curves.easeOutBack;
 const Duration kMakeRoomDuration = Duration(milliseconds: 320);
 const Curve kMakeRoomCurve = Curves.easeOutCubic;
 
+/// A payload travelling from its source control to the surface that receives
+/// it (for example composer -> message bubble or reaction menu -> bubble).
+/// Long enough for the eye to follow the path, but still below the point at
+/// which sending starts to feel delayed.
+const Duration kPayloadFlightDuration = Duration(milliseconds: 440);
+
 /// Ambient/celebration primitives (Master Spec §17.4: animation durations live
 /// in tokens, never as raw literals at call sites).
 const Duration kGlowBreathPeriod = Duration(milliseconds: 1600);

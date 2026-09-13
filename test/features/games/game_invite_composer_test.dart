@@ -223,6 +223,7 @@ void main() {
       _FakeInviteGateway gateway, {
       required String gameType,
       VoidCallback? onCancel,
+      Key? payloadKey,
     }) => ProviderScope(
       overrides: [gameInviteGatewayProvider.overrideWithValue(gateway)],
       child: ScreenUtilInit(
@@ -235,6 +236,7 @@ void main() {
                   relationshipId: 'r1',
                   gameType: gameType,
                   onCancel: onCancel ?? () {},
+                  payloadKey: payloadKey,
                 ),
               ),
             ),
@@ -249,6 +251,27 @@ void main() {
 
       expect(find.text('Mirror'), findsOneWidget);
       expect(find.text('Invite them to play'), findsOneWidget);
+    });
+
+    testWidgets('exposes the staged card as a measurable flight source', (
+      tester,
+    ) async {
+      final payloadKey = GlobalKey();
+      await tester.pumpWidget(
+        host(_FakeInviteGateway(), gameType: 'mirror', payloadKey: payloadKey),
+      );
+      await tester.pumpAndSettle();
+
+      final rect = tester.getRect(find.byKey(payloadKey));
+      expect(rect.width, greaterThan(240));
+      expect(rect.height, greaterThan(0));
+      expect(
+        find.descendant(
+          of: find.byKey(payloadKey),
+          matching: find.text('Mirror'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('every invitable game renders a name, not a fallback', (

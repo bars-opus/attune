@@ -8,10 +8,15 @@ import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
 import 'package:attune/features/chat/data/repositories/chat_repository.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
+import 'package:attune/features/chat/domain/services/chat_poster_prewarmer.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/settings/data/chat_feel_preference.dart';
+import 'package:attune/features/settings/data/sound_preference.dart';
+import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
 import 'package:flutter/widgets.dart';
+import 'package:file/file.dart' as file_system;
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -38,6 +43,34 @@ Widget withScreenUtil(Widget child) => ScreenUtilInit(
   builder: (_, __) => child,
   child: child,
 );
+
+/// Keeps controller tests off DefaultCacheManager's platform channels.
+/// Tests that exercise cache promotion/prewarming override the provider with
+/// their own functional cache manager; every other controller test only needs
+/// the optional accelerator to fail quietly and deterministically.
+class _NoPlatformChatCacheManager implements BaseCacheManager {
+  @override
+  Future<FileInfo?> getFileFromCache(
+    String key, {
+    bool ignoreMemCache = false,
+  }) async => null;
+
+  @override
+  Future<file_system.File> putFileStream(
+    String url,
+    Stream<List<int>> source, {
+    String? key,
+    String? eTag,
+    Duration maxAge = const Duration(days: 30),
+    String fileExtension = 'file',
+  }) => Future<file_system.File>.error(
+    UnsupportedError('No platform cache in controller tests'),
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} is not used');
+}
 
 /// Captures exactly what one [FakeChatRepository.sendTextMessage] call
 /// received, for tests that need to assert on the CALL rather than the
@@ -93,6 +126,12 @@ class FakeChatRepository implements ChatRepository {
   /// Optional artificial latency on send so tests can observe the optimistic
   /// (sending) window before the server acknowledges.
   Duration sendDelay = Duration.zero;
+  Duration sendCreatedAtOffset = Duration.zero;
+
+  /// Optional gates for proving cache-first publication independently of a
+  /// still-pending network refresh.
+  Completer<void>? getMessagesGate;
+  Completer<void>? getConversationGate;
 
   /// When true, a send raises a 23505 duplicate and the canonical row is
   /// already present under [duplicateClientMessageId].
@@ -208,7 +247,8 @@ class FakeChatRepository implements ChatRepository {
       'sender_id': senderId,
       'client_message_id': clientMessageId,
       'content': content,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
+      'created_at':
+          DateTime.now().add(sendCreatedAtOffset).toUtc().toIso8601String(),
       'delivered_at': null,
       'read_at': null,
       'media_url': mediaKey,
@@ -274,6 +314,8 @@ class FakeChatRepository implements ChatRepository {
     ChatMessageCursor? before,
     int limit = 50,
   }) async {
+    final gate = getMessagesGate;
+    if (gate != null) await gate.future;
     final all =
         serverMessages.values
             .where((m) => m.relationshipId == relationshipId)
@@ -378,6 +420,8 @@ class FakeChatRepository implements ChatRepository {
     // state.conversation stays identical() to the widget's original
     // conversation (chatControllerProvider is a .family keyed by object
     // identity, since Conversation has no == override).
+    final gate = getConversationGate;
+    if (gate != null) await gate.future;
     final base = conversationOverride ?? activeConversation(relationshipId);
     return base.copyWith();
   }
@@ -399,12 +443,12 @@ class FakeChatRepository implements ChatRepository {
   }
 
   // --- Unused-by-M1 surface: minimal implementations. ---
-  @override
   /// What the conversation list fetches. Mutable so a test can change it
   /// between refreshes and assert the list actually re-read it.
   List<Conversation> conversations = const [];
   int getConversationsCalls = 0;
 
+  @override
   Future<List<Conversation>> getConversations() async {
     getConversationsCalls++;
     return conversations;
@@ -425,6 +469,7 @@ class FakeChatRepository implements ChatRepository {
   /// succeed) every other test using this harness is unaffected.
   final Map<int, Object> mediaCallFailures = {};
   int _mediaCallCount = 0;
+  int get mediaCallCount => _mediaCallCount;
 
   @override
   Future<ChatMediaUploadIntent> createMediaUploadIntent({
@@ -740,13 +785,21 @@ User testUser(String id) => User(
 ProviderContainer buildChatContainer({
   required FakeChatRepository repository,
   required String userId,
+  ChatCacheService? cache,
   List<Override> extraOverrides = const [],
 }) {
-  final cache = ChatCacheService.forTesting(backend: stub.createBackend());
+  final effectiveCache =
+      cache ?? ChatCacheService.forTesting(backend: stub.createBackend());
   final container = ProviderContainer(
     overrides: [
       chatRepositoryProvider.overrideWithValue(repository),
-      chatCacheServiceProvider.overrideWithValue(cache),
+      chatCacheServiceProvider.overrideWithValue(effectiveCache),
+      chatPosterPrewarmerProvider.overrideWith(
+        (ref) => ChatPosterPrewarmer(
+          repository: repository,
+          cacheManager: _NoPlatformChatCacheManager(),
+        ),
+      ),
       currentUserProvider.overrideWithValue(testUser(userId)),
       // _MessageList reads chatExpressivenessProvider to modulate the
       // first-of-day shimmer and reconnect cascade. Override it with a fake
@@ -755,6 +808,13 @@ ProviderContainer buildChatContainer({
       chatExpressivenessProvider.overrideWith(
         (ref) => ChatFeelPreferenceNotifier.forTesting(),
       ),
+      messageSoundsEnabledProvider.overrideWith(
+        (ref) => SoundPreferenceNotifier.forTesting(),
+      ),
+      // Controller-only tests have no ServicesBinding. Keep incidental chat
+      // sounds deterministic and off platform channels; sound contract tests
+      // provide their own recording fake after this default override.
+      soundServiceProvider.overrideWithValue(FakeSoundService()),
       ...extraOverrides,
     ],
   );

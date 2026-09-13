@@ -1,5 +1,9 @@
+import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/utils/date_formatter.dart';
+import 'package:attune/core/widgets/app_divider.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 /// Builds the six-action list (Reply/Copy/Star/Pin/Edit/Delete) for a
 /// message's long-press menu — Edit/Delete are omitted (not
@@ -33,6 +37,7 @@ List<Widget> buildMessageActionItems({
   required VoidCallback onUnstar,
   required VoidCallback onPin,
   required VoidCallback onUnpin,
+  required VoidCallback onInfo,
   required VoidCallback onEdit,
   required VoidCallback onDelete,
 }) {
@@ -46,14 +51,34 @@ List<Widget> buildMessageActionItems({
   /// context — then runs the action.
   Widget item({
     required Widget leading,
-    required Widget title,
+    required String title,
     required VoidCallback onSelected,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    // The focused action menu design intentionally uses the app's legacy
+    // onBackground + withOpacity token pairing here.
+    // ignore: deprecated_member_use
+    final titleColor = colorScheme.onBackground.withOpacity(
+      OpacityTokens.medium,
+    );
+
     return Builder(
       builder:
           (tileContext) => ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            minLeadingWidth: 24,
+            horizontalTitleGap: 10,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
             leading: leading,
-            title: title,
+            title: Text(
+              title,
+              style: textTheme.bodyMedium?.copyWith(
+                color: titleColor,
+                fontSize: 14.sp,
+              ),
+            ),
             onTap: () {
               Navigator.of(tileContext).pop();
               onSelected();
@@ -62,36 +87,75 @@ List<Widget> buildMessageActionItems({
     );
   }
 
+  final createdAt = message.createdAt;
+  final now = DateTime.now();
+  final isToday =
+      createdAt.year == now.year &&
+      createdAt.month == now.month &&
+      createdAt.day == now.day;
+  final timestampStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+    color: Theme.of(context).colorScheme.onSurfaceVariant,
+    height: 1.15,
+  );
+  final timestampHeader = Padding(
+    padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child:
+          isToday
+              ? Text(
+                'Today At ${MyDateFormat.toTime(createdAt)}',
+                style: timestampStyle,
+              )
+              : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(MyDateFormat.toDate(createdAt), style: timestampStyle),
+                  const SizedBox(height: 2),
+                  Text(MyDateFormat.toTime(createdAt), style: timestampStyle),
+                ],
+              ),
+    ),
+  );
+
   return [
+    timestampHeader,
+    AppDivider(),
     item(
-      leading: const Icon(Icons.reply),
-      title: const Text('Reply'),
+      leading: const Icon(Icons.reply_outlined),
+      title: 'Reply',
       onSelected: onReply,
     ),
     item(
-      leading: const Icon(Icons.copy),
-      title: const Text('Copy'),
+      leading: const Icon(Icons.copy_outlined),
+      title: 'Copy',
       onSelected: onCopy,
     ),
     item(
-      leading: Icon(isStarred ? Icons.star : Icons.star_border),
-      title: Text(isStarred ? 'Unstar' : 'Star'),
+      leading: const Icon(Icons.star_border),
+      title: isStarred ? 'Unstar' : 'Star',
       onSelected: isStarred ? onUnstar : onStar,
     ),
     item(
-      leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
-      title: Text(isPinned ? 'Unpin' : 'Pin'),
+      leading: const Icon(Icons.push_pin_outlined),
+      title: isPinned ? 'Unpin' : 'Pin',
       onSelected: isPinned ? onUnpin : onPin,
+    ),
+    item(
+      leading: const Icon(Icons.info_outline),
+      title: 'Info',
+      onSelected: onInfo,
     ),
     if (canEditOrDelete) ...[
       item(
-        leading: const Icon(Icons.edit),
-        title: const Text('Edit'),
+        leading: const Icon(Icons.edit_outlined),
+        title: 'Edit',
         onSelected: onEdit,
       ),
       item(
-        leading: Icon(Icons.delete, color: errorColor),
-        title: Text('Delete', style: TextStyle(color: errorColor)),
+        leading: Icon(Icons.delete_outline, color: errorColor),
+        title: 'Delete',
         onSelected: onDelete,
       ),
     ],

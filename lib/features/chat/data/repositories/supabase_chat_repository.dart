@@ -205,7 +205,7 @@ class SupabaseChatRepository implements ChatRepository {
                 .order('id', ascending: false)
                 .limit(limit);
 
-    return _hydrateMessages(rows, user.id);
+    return _hydrateMessages(rows, user.id, resolveMediaUrls: false);
   }
 
   @override
@@ -252,7 +252,7 @@ class SupabaseChatRepository implements ChatRepository {
       );
     }
 
-    return _hydrateMessages(collected, user.id);
+    return _hydrateMessages(collected, user.id, resolveMediaUrls: false);
   }
 
   @override
@@ -516,102 +516,100 @@ class SupabaseChatRepository implements ChatRepository {
       () => StreamController<TypingEvent>.broadcast(),
     );
 
-    final channel =
-        _supabase
-            .channel('chat:$relationshipId')
-            .onPostgresChanges(
-              event: PostgresChangeEvent.all,
-              schema: 'public',
-              table: 'messages',
-              filter: PostgresChangeFilter(
-                type: PostgresChangeFilterType.eq,
-                column: 'relationship_id',
-                value: relationshipId,
-              ),
-              callback: (_) => events.add(null),
-            )
-            .onPostgresChanges(
-              event: PostgresChangeEvent.update,
-              schema: 'public',
-              table: 'relationships',
-              filter: PostgresChangeFilter(
-                type: PostgresChangeFilterType.eq,
-                column: 'id',
-                value: relationshipId,
-              ),
-              callback: (_) => events.add(null),
-            )
-            .onPostgresChanges(
-              event: PostgresChangeEvent.all,
-              schema: 'public',
-              table: 'message_pins',
-              filter: PostgresChangeFilter(
-                type: PostgresChangeFilterType.eq,
-                column: 'relationship_id',
-                value: relationshipId,
-              ),
-              callback: (_) => events.add(null),
-            )
-            .onPostgresChanges(
-              event: PostgresChangeEvent.all,
-              schema: 'public',
-              table: 'message_reactions',
-              filter: PostgresChangeFilter(
-                type: PostgresChangeFilterType.eq,
-                column: 'relationship_id',
-                value: relationshipId,
-              ),
-              callback: (_) => events.add(null),
-            )
-            .onBroadcast(
-              event: 'typing',
-              callback: (payload) {
-                // Supabase broadcast nests the sent data under a `payload` key on
-                // the receiving side; be robust to both the nested and flat shape.
-                final data =
-                    (payload['payload'] is Map)
-                        ? Map<String, dynamic>.from(payload['payload'] as Map)
-                        : payload;
-                final senderId = data['senderId'];
-                final isTyping = data['typing'];
-                if (senderId is String && isTyping is bool) {
-                  typing.add(TypingEvent(senderId, isTyping));
-                }
-              },
-            )
-            .subscribe((status, error) {
-              // A websocket dies when the network drops, and nothing here
-              // used to notice: .subscribe() was called with no status
-              // callback at all. After the connection returned the channel
-              // stayed dead, so no message, receipt, pin or reaction ever
-              // arrived again until the screen was rebuilt -- which is why
-              // "turn data off, turn it back on" lost messages entirely.
-              //
-              // On any non-subscribed terminal status, emit one event: the
-              // listener's handler refetches, which closes the gap for
-              // everything missed while the socket was down. Supabase's
-              // client reconnects the socket itself; what it cannot do is
-              // tell the app it missed events in the meantime.
-              switch (status) {
-                case RealtimeSubscribeStatus.subscribed:
-                  // Includes the FIRST subscribe, so the initial refetch is
-                  // harmless, and every resubscribe after a reconnect.
-                  if (!events.isClosed) events.add(null);
-                case RealtimeSubscribeStatus.channelError:
-                case RealtimeSubscribeStatus.timedOut:
-                case RealtimeSubscribeStatus.closed:
-                  ChatLog.d(
-                    '[CHAT] realtime channel ${status.name} '
-                    'rel=${ChatLog.shortId(relationshipId)} '
-                    '${error ?? ''}',
-                  );
-              }
-            });
+    final channel = _supabase
+        .channel('chat:$relationshipId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'messages',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'relationship_id',
+            value: relationshipId,
+          ),
+          callback: (_) => events.add(null),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'relationships',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: relationshipId,
+          ),
+          callback: (_) => events.add(null),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'message_pins',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'relationship_id',
+            value: relationshipId,
+          ),
+          callback: (_) => events.add(null),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'message_reactions',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'relationship_id',
+            value: relationshipId,
+          ),
+          callback: (_) => events.add(null),
+        )
+        .onBroadcast(
+          event: 'typing',
+          callback: (payload) {
+            // Supabase broadcast nests the sent data under a `payload` key on
+            // the receiving side; be robust to both the nested and flat shape.
+            final data =
+                (payload['payload'] is Map)
+                    ? Map<String, dynamic>.from(payload['payload'] as Map)
+                    : payload;
+            final senderId = data['senderId'];
+            final isTyping = data['typing'];
+            if (senderId is String && isTyping is bool) {
+              typing.add(TypingEvent(senderId, isTyping));
+            }
+          },
+        )
+        .subscribe((status, error) {
+          // A websocket dies when the network drops, and nothing here
+          // used to notice: .subscribe() was called with no status
+          // callback at all. After the connection returned the channel
+          // stayed dead, so no message, receipt, pin or reaction ever
+          // arrived again until the screen was rebuilt -- which is why
+          // "turn data off, turn it back on" lost messages entirely.
+          //
+          // On any non-subscribed terminal status, emit one event: the
+          // listener's handler refetches, which closes the gap for
+          // everything missed while the socket was down. Supabase's
+          // client reconnects the socket itself; what it cannot do is
+          // tell the app it missed events in the meantime.
+          switch (status) {
+            case RealtimeSubscribeStatus.subscribed:
+              // Includes the FIRST subscribe, so the initial refetch is
+              // harmless, and every resubscribe after a reconnect.
+              if (!events.isClosed) events.add(null);
+            case RealtimeSubscribeStatus.channelError:
+            case RealtimeSubscribeStatus.timedOut:
+            case RealtimeSubscribeStatus.closed:
+              ChatLog.d(
+                '[CHAT] realtime channel ${status.name} '
+                'rel=${ChatLog.shortId(relationshipId)} '
+                '${error ?? ''}',
+              );
+          }
+        });
 
     _channels[relationshipId] = channel;
     return channel;
   }
-
 
   @override
   Stream<void> watchInboxEvents(List<String> relationshipIds) {
@@ -894,8 +892,9 @@ class SupabaseChatRepository implements ChatRepository {
   /// collapses repeat objects across a page.
   Future<List<Message>> _hydrateMessages(
     List<Map<String, dynamic>> rows,
-    String currentUserId,
-  ) async {
+    String currentUserId, {
+    bool resolveMediaUrls = true,
+  }) async {
     final messageIds = rows.map((row) => row['id'] as String).toList();
     final reactionsByMessageId = await _fetchReactionsFor(messageIds);
 
@@ -906,6 +905,10 @@ class SupabaseChatRepository implements ChatRepository {
         if (reactions != null) {
           base = base.copyWith(reactions: reactions);
         }
+        // Chat bubbles resolve storage keys lazily and reserve media geometry
+        // from the row. Holding a whole page behind signed-URL round trips
+        // makes unrelated text messages wait for media they do not need.
+        if (!resolveMediaUrls) return base;
         if (base.mediaKey == null ||
             (base.mediaType != 'image' &&
                 base.mediaType != 'audio' &&

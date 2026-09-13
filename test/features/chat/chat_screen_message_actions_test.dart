@@ -304,7 +304,7 @@ void main() {
       await tester.tap(find.text('👍'));
       await tester.pump(const Duration(milliseconds: 400));
 
-      expect(find.text('👍'), findsOneWidget);
+      expect(find.byKey(const ValueKey('reaction-mine-👍')), findsOneWidget);
       await tearDownChat(tester, container);
     },
   );
@@ -350,9 +350,10 @@ void main() {
     final mineAfter = tester.getRect(mine);
     final partnerAfter = tester.getRect(partner);
     // The first 24 logical pixels are Flutter's horizontal touch slop. Once
-    // the recognizer wins the arena, the full second segment must arrive.
-    expect(mineAfter.left - mineBefore.left, closeTo(-76, 0.01));
-    expect(partnerAfter.left - partnerBefore.left, closeTo(-76, 0.01));
+    // the recognizer wins the arena, the second segment reaches the 70px
+    // timestamp reveal cap requested by the chat design.
+    expect(mineAfter.left - mineBefore.left, closeTo(-70, 0.01));
+    expect(partnerAfter.left - partnerBefore.left, closeTo(-70, 0.01));
 
     await gesture.up();
     await tester.pump();

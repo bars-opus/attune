@@ -55,4 +55,22 @@ void main() {
       isTrue,
     );
   });
+
+  test('successful games use the measured payload-flight path', () {
+    expect(
+      chatScreen.contains('payloadKey: _gameComposerPayloadKey'),
+      isTrue,
+      reason: 'the staged card is not measurable as a flight source',
+    );
+    expect(
+      chatScreen.contains('_flyingGameSessionIds.add(sessionId)'),
+      isTrue,
+      reason: 'the server-created destination is visible behind its flight',
+    );
+    expect(
+      chatScreen.contains('_OutgoingGameFlight('),
+      isTrue,
+      reason: 'successful game sends do not launch a visual payload',
+    );
+  });
 }

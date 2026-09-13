@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/motion_tokens.dart';
 import 'package:attune/core/ui/motion/make_room.dart';
+import 'package:attune/core/ui/motion/payload_flight.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_date_chip.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
@@ -22,6 +24,8 @@ import 'package:attune/features/chat/presentation/widgets/attune_chat_wallpaper.
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_media_group.dart';
+import 'package:attune/features/chat/presentation/widgets/message_arrival_tracker.dart';
+import 'package:attune/features/chat/presentation/widgets/reply_composer_preview.dart';
 import 'package:attune/features/conflict_translator/data/models/translator_request.dart';
 import 'package:attune/features/conflict_translator/presentation/providers/translator_providers.dart'
     as translator_providers;
@@ -29,7 +33,11 @@ import 'package:attune/features/conflict_translator/presentation/screens/transla
 import 'package:attune/features/games/paint_ball/models/paint_ball_models.dart';
 import 'package:attune/features/games/invites/presentation/game_composer_bar.dart';
 import 'package:attune/features/games/invites/state/game_invite_provider.dart';
+import 'package:attune/features/games/presentation/providers/games_hub_providers.dart'
+    show gameTypeDisplayName;
 import 'package:attune/features/games/presentation/widgets/chat_games_sheet.dart';
+import 'package:attune/features/games/presentation/widgets/game_icon.dart';
+import 'package:attune/features/games/presentation/widgets/game_palette.dart';
 import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/core/services/media/image_picker_service.dart';
@@ -68,13 +76,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     with WidgetsBindingObserver {
   final _controller = TextEditingController();
   final _composerFocusNode = FocusNode();
+  final _composerTextKey = GlobalKey();
+  final _gameComposerPayloadKey = GlobalKey();
   final _scrollController = ScrollController();
   final _imagePicker = ImagePickerService();
-  final DateTime _messageListCutoff = DateTime.now();
   // Once-per-message animation ledger: ListView.builder recycles item State
-  // when a bubble scrolls out of cacheExtent, so a time-based `isNew` alone
-  // would replay SettleIn/Shimmer every time a new message scrolls back into
-  // view. IDs recorded here animate exactly once per screen lifetime.
+  // when a bubble scrolls out of cacheExtent. IDs recorded here animate
+  // exactly once per screen lifetime.
   final Set<String> _animatedMessageIds = <String>{};
   bool _headerExpanded = false;
   bool _headerOverlayMounted = false;
@@ -92,6 +100,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   /// members may share the representative row's key. Used by _jumpToMessage
   /// to scroll a currently-built message into view.
   final Map<String, GlobalKey> _messageKeys = {};
+
+  /// Exact painted bubble surfaces, keyed by stable client id. These are
+  /// animation targets; _messageKeys above intentionally remain row keys for
+  /// scroll-to-message behavior.
+  final Map<String, GlobalKey> _bubbleFillKeys = {};
+  final Set<String> _flyingMessageIds = <String>{};
+  final Set<String> _flyingGameSessionIds = <String>{};
 
   /// The message currently flashed as a jump target, and a timer to clear
   /// the flash — mirrors DebateRoomScreen._highlightedPostId/_highlightTimer.
@@ -344,17 +359,146 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
-    await ref
+    // Sending finishes this draft immediately from the composer's point of
+    // view. Keeping it in the controller until the network request completed
+    // forced the whole field to be disabled (and therefore unfocused), and it
+    // also made any text typed for the next message vulnerable to the late
+    // clear below. Snapshot reply metadata before clearing it for the next
+    // message.
+    final replyToMessageId = _replyToMessageId;
+    final quotedText = _replyToQuotedText;
+    final sourceRect = _composerPayloadRect(trimmed);
+    String? optimisticClientId;
+    var flightCompleted = false;
+    final flight =
+        sourceRect == null
+            ? null
+            : showPayloadFlight(
+              context: context,
+              sourceRect: sourceRect,
+              fallbackDestination: _fallbackMessageDestination(sourceRect),
+              resolveDestination: () {
+                final clientId = optimisticClientId;
+                return clientId == null
+                    ? null
+                    : _rectForKey(_bubbleFillKeys[clientId]);
+              },
+              builder:
+                  (context, progress) =>
+                      _OutgoingTextFlight(text: trimmed, progress: progress),
+            );
+    _controller.clear();
+    _clearReplyTarget();
+
+    final send = ref
         .read(chatControllerProvider(widget.conversation).notifier)
         .sendMessage(
-          text,
-          replyToMessageId: _replyToMessageId,
-          quotedText: _replyToQuotedText,
+          trimmed,
+          replyToMessageId: replyToMessageId,
+          quotedText: quotedText,
+          onOptimisticMessage: (message) {
+            optimisticClientId = message.clientMessageId;
+            if (flight != null && !flightCompleted && mounted) {
+              setState(() => _flyingMessageIds.add(message.clientMessageId));
+            }
+            _scrollToLatest();
+          },
         );
-    _controller.clear();
-    await _clearDraft();
-    _clearReplyTarget();
-    _scrollToLatest();
+
+    if (flight != null) {
+      await flight;
+      flightCompleted = true;
+      final clientId = optimisticClientId;
+      if (mounted && clientId != null) {
+        setState(() => _flyingMessageIds.remove(clientId));
+      }
+    }
+    await send;
+  }
+
+  Rect? _rectForKey(GlobalKey? key) {
+    final box = key?.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
+  Rect? _composerPayloadRect(String text) {
+    final fieldRect = _rectForKey(_composerTextKey);
+    if (fieldRect == null) return null;
+    final style = Theme.of(
+      context,
+    ).textTheme.bodyLarge?.copyWith(fontSize: 18, height: 1.25);
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: Directionality.of(context),
+      maxLines: 5,
+    )..layout(maxWidth: math.max(1, fieldRect.width - 24));
+    final width = math.min(fieldRect.width, painter.width + 24);
+    final height = math.min(fieldRect.height, painter.height + 18);
+    return Rect.fromLTWH(
+      fieldRect.left + 12,
+      fieldRect.center.dy - height / 2,
+      width,
+      height,
+    );
+  }
+
+  Rect _fallbackMessageDestination(Rect sourceRect) {
+    final screen = MediaQuery.sizeOf(context);
+    final width = math.min(320.0, sourceRect.width);
+    return Rect.fromLTWH(
+      screen.width - width - 24,
+      sourceRect.top - sourceRect.height - 12,
+      width,
+      sourceRect.height,
+    );
+  }
+
+  void _startReactionFlight(Message message, String emoji, Rect sourceRect) {
+    Rect? destination() {
+      final bubbleRect = _rectForKey(_bubbleFillKeys[message.clientMessageId]);
+      if (bubbleRect == null) return null;
+      final center = Offset(
+        message.isMine ? bubbleRect.left : bubbleRect.right,
+        bubbleRect.top + 18,
+      );
+      return Rect.fromCenter(center: center, width: 38, height: 38);
+    }
+
+    final target = destination();
+    unawaited(
+      showPayloadFlight(
+        context: context,
+        sourceRect: sourceRect,
+        fallbackDestination:
+            target ??
+            Rect.fromCenter(
+              center: Offset(
+                message.isMine ? sourceRect.left : sourceRect.right,
+                sourceRect.bottom + 56,
+              ),
+              width: 38,
+              height: 38,
+            ),
+        resolveDestination: destination,
+        builder:
+            (context, progress) => Center(
+              child: Text(
+                emoji,
+                style: TextStyle(
+                  fontSize: 22 + (2 * math.sin(math.pi * progress)),
+                  shadows: const [
+                    Shadow(
+                      color: Color(0x26000000),
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+      ),
+    );
   }
 
   Future<void> _attachImage() async {
@@ -388,8 +532,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     // an image feel like nothing happened for a moment after tapping send.
     await ref
         .read(chatControllerProvider(widget.conversation).notifier)
-        .sendImageMessage(localPath: picked.path, caption: caption);
-    _scrollToLatest();
+        .sendImageMessage(
+          localPath: picked.path,
+          caption: caption,
+          onOptimisticMessage: (_) => _scrollToLatest(),
+        );
   }
 
   Future<void> _attachVideo() async {
@@ -444,8 +591,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           localPath: picked.path,
           trimStart: window.start,
           trimEnd: window.end,
+          onOptimisticMessage: (_) => _scrollToLatest(),
         );
-    _scrollToLatest();
   }
 
   Future<void> _attachEphemeralCamera() async {
@@ -454,6 +601,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     // review step. EphemeralCameraScreen stays registered for now rather
     // than being deleted mid-testing.
     await context.pushNamed('streakCamera', extra: widget.conversation);
+    if (mounted) _scrollToLatest();
   }
 
   // Placeholder — file attach is not built yet. Wired now so the composer's
@@ -470,6 +618,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   /// shows: the game stays staged and the idempotency key is kept, so
   /// the retry is the same request rather than a second invitation.
   Future<void> _sendStagedGame({String caption = ''}) async {
+    final gameType =
+        ref
+            .read(gameComposerProvider(widget.conversation.relationshipId))
+            .gameType;
+    if (gameType == null) return;
+
     // The caption goes FIRST, as an ordinary message.
     //
     // Two messages rather than one card carrying text: the card's
@@ -485,6 +639,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       if (!mounted) return;
     }
 
+    final sourceRect = _rectForKey(_gameComposerPayloadKey);
+
     final sessionId =
         await ref
             .read(
@@ -497,6 +653,35 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     // confirmation -- pushing into the game would take the player away
     // from the conversation they chose to send it in.
     ref.read(hapticsProvider).selection();
+    _scrollToLatest();
+
+    if (sourceRect == null) return;
+    setState(() => _flyingGameSessionIds.add(sessionId));
+    await showPayloadFlight(
+      context: context,
+      sourceRect: sourceRect,
+      fallbackDestination: _fallbackMessageDestination(sourceRect),
+      // The card is created by the invite RPC's database trigger and reaches
+      // this list through realtime, not ChatController's local optimistic
+      // insertion. Give that measured destination a little longer to arrive.
+      destinationWaitFrames: 30,
+      resolveDestination: () {
+        final messages =
+            ref.read(chatControllerProvider(widget.conversation)).messages;
+        for (final message in messages) {
+          if (message.gameSessionId == sessionId) {
+            return _rectForKey(_bubbleFillKeys[message.clientMessageId]);
+          }
+        }
+        return null;
+      },
+      builder:
+          (context, progress) =>
+              _OutgoingGameFlight(gameType: gameType, progress: progress),
+    );
+    if (mounted) {
+      setState(() => _flyingGameSessionIds.remove(sessionId));
+    }
   }
 
   void _openGames() {
@@ -586,8 +771,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           localPath: recording.localPath,
           durationMs: recording.durationMs,
           waveform: recording.waveform,
+          onOptimisticMessage: (_) => _scrollToLatest(),
         );
-    _scrollToLatest();
   }
 
   Future<void> _openTranslator() async {
@@ -848,13 +1033,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                         conversation: widget.conversation,
                         state: state,
                         scrollController: _scrollController,
-                        firstBuildCutoff: _messageListCutoff,
                         animatedMessageIds: _animatedMessageIds,
                         messageKeys: _messageKeys,
+                        bubbleFillKeys: _bubbleFillKeys,
+                        flyingMessageIds: _flyingMessageIds,
+                        flyingGameSessionIds: _flyingGameSessionIds,
                         highlightedMessageId: _highlightedMessageId,
                         composerFocused: _composerFocusNode.hasFocus,
                         onReply: _setReplyTarget,
                         onJumpToParent: _jumpToMessage,
+                        onReactionFlight: _startReactionFlight,
                       ),
                     ),
                     // No trailing gap: it exposed a band of the scaffold's
@@ -928,59 +1116,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                           },
                         ),
                         if (conversation.canSend && _replyToMessageId != null)
-                          AnimatedScaleFade(
-                            duration: const Duration(milliseconds: 600),
-                            curve: Curves.easeOutBack,
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                              child: CardInkWell(
-                                padding: const EdgeInsets.only(left: 12),
-                                margin: EdgeInsets.zero,
-                                child: Padding(
-                                  padding: const EdgeInsets.only(left: 12),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: RichText(
-                                          text: TextSpan(
-                                            children: [
-                                              TextSpan(
-                                                text: 'Replying to',
-                                                style: Theme.of(
-                                                  context,
-                                                ).textTheme.bodySmall?.copyWith(
-                                                  color:
-                                                      Theme.of(
-                                                        context,
-                                                      ).colorScheme.primary,
-                                                ),
-                                              ),
-                                              TextSpan(
-                                                text:
-                                                    '\n${_replyToQuotedText ?? ''}',
-                                                style: Theme.of(
-                                                  context,
-                                                ).textTheme.bodySmall?.copyWith(
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .onSurface
-                                                      .withValues(alpha: 0.8),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          textAlign: TextAlign.start,
-                                        ),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.close, size: 16),
-                                        onPressed: _clearReplyTarget,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
+                          ReplyComposerPreview(
+                            key: ValueKey(_replyToMessageId),
+                            quotedText: _replyToQuotedText ?? '',
+                            onClose: _clearReplyTarget,
                           ),
                         // A staged game sits ABOVE the composer rather
                         // than replacing it, so the field stays free to
@@ -989,6 +1128,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                           GameComposerBar(
                             relationshipId: conversation.relationshipId,
                             gameType: stagedGame,
+                            payloadKey: _gameComposerPayloadKey,
                             onCancel:
                                 () =>
                                     ref
@@ -1002,6 +1142,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                         if (conversation.canSend)
                           ChatTextField(
                             controller: _controller,
+                            composerTextKey: _composerTextKey,
                             onSend: () {
                               unawaited(_send());
                             },
@@ -1063,7 +1204,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                       );
                                     }
                                     : null,
-                            enabled: !state.isSending,
+                            // An optimistic send is delivery work, not a reason
+                            // to disable composing. Disabling TextField drops
+                            // focus and closes the keyboard; the sent draft is
+                            // already cleared synchronously in _sendDraftText.
+                            enabled: true,
                           )
                         else
                           Padding(
@@ -1790,18 +1935,174 @@ class _DrawerCard extends StatelessWidget {
   }
 }
 
+class _OutgoingTextFlight extends StatelessWidget {
+  const _OutgoingTextFlight({required this.text, required this.progress});
+
+  final String text;
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final chatColors = theme.chatColors;
+    final surfaceProgress = Curves.easeOutCubic.transform(
+      (progress / 0.42).clamp(0.0, 1.0),
+    );
+    final fill = Color.lerp(
+      theme.colorScheme.surface.withValues(alpha: 0),
+      chatColors.senderBubble,
+      surfaceProgress,
+    );
+    final foreground = Color.lerp(
+      theme.colorScheme.onSurface,
+      chatColors.onSenderBubble,
+      surfaceProgress,
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1 * surfaceProgress),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              text,
+              maxLines: 5,
+              overflow: TextOverflow.fade,
+              softWrap: true,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: foreground,
+                fontSize: 18 - (2 * surfaceProgress),
+                fontWeight: FontWeight.w400,
+                height: 1.2,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OutgoingGameFlight extends StatelessWidget {
+  const _OutgoingGameFlight({required this.gameType, required this.progress});
+
+  final String gameType;
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final chatColors = theme.chatColors;
+    final morph = Curves.easeOutCubic.transform(
+      (progress / 0.55).clamp(0.0, 1.0),
+    );
+    final foreground =
+        Color.lerp(
+          theme.colorScheme.onSurface,
+          chatColors.onSenderBubble,
+          morph,
+        )!;
+    final surface =
+        Color.lerp(
+          theme.colorScheme.surface.withValues(alpha: 0.94),
+          chatColors.senderBubble,
+          morph,
+        )!;
+    final palette = GamePalette.of(gameType);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(20 + (4 * morph)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 7,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: palette.end,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                gameGlyphFor(gameType),
+                color: Colors.white,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    gameTypeDisplayName(gameType),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: foreground,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Invite them to play',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: foreground.withValues(alpha: 0.65),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _MessageList extends ConsumerStatefulWidget {
   const _MessageList({
     required this.conversation,
     required this.state,
     required this.scrollController,
-    required this.firstBuildCutoff,
     required this.animatedMessageIds,
     required this.messageKeys,
+    required this.bubbleFillKeys,
+    required this.flyingMessageIds,
+    required this.flyingGameSessionIds,
     required this.highlightedMessageId,
     required this.composerFocused,
     required this.onReply,
     required this.onJumpToParent,
+    required this.onReactionFlight,
   });
 
   /// The screen's own widget.conversation — NOT state.conversation.
@@ -1818,15 +2119,25 @@ class _MessageList extends ConsumerStatefulWidget {
   final Conversation conversation;
   final ChatState state;
   final ScrollController scrollController;
-  final DateTime firstBuildCutoff;
 
   /// Owned by the screen State (survives list-item recycling); see its
-  /// declaration for why a time-based cutoff alone is not enough.
+  /// declaration for why a play-once ledger is required.
   final Set<String> animatedMessageIds;
 
   /// Owned by the screen State — see `_ChatScreenState._messageKeys` for why
   /// keys are registered fresh on every build rather than only-if-absent.
   final Map<String, GlobalKey> messageKeys;
+
+  /// Exact fill targets for payload flights, keyed by stable client id.
+  final Map<String, GlobalKey> bubbleFillKeys;
+
+  /// Optimistic bubbles stay laid out but invisible while their visual
+  /// payload is travelling toward them, enabling a seamless overlay handoff.
+  final Set<String> flyingMessageIds;
+
+  /// Server-created game messages are hidden by session id during their
+  /// composer-to-bubble flight because they have no client optimistic id.
+  final Set<String> flyingGameSessionIds;
 
   /// The message currently flashed as a jump target, or null.
   final String? highlightedMessageId;
@@ -1844,6 +2155,9 @@ class _MessageList extends ConsumerStatefulWidget {
   final Future<void> Function(String messageId, List<Message> currentMessages)
   onJumpToParent;
 
+  final void Function(Message message, String emoji, Rect sourceRect)
+  onReactionFlight;
+
   @override
   ConsumerState<_MessageList> createState() => _MessageListState();
 }
@@ -1856,6 +2170,8 @@ class _MessageListState extends ConsumerState<_MessageList>
 
   final ValueNotifier<double> _timestampRevealOffset = ValueNotifier(0);
   final Map<String, GlobalKey> _rowKeys = {};
+  final MessageArrivalTracker _arrivalTracker = MessageArrivalTracker();
+  final Set<String> _pendingArrivalIds = <String>{};
   late final AnimationController _timestampReturnController;
   Animation<double>? _timestampReturnAnimation;
 
@@ -1898,6 +2214,23 @@ class _MessageListState extends ConsumerState<_MessageList>
     _timestampReturnController = AnimationController(
       vsync: this,
       duration: _timestampReturnDuration,
+    );
+    _syncArrivals(widget.state);
+  }
+
+  @override
+  void didUpdateWidget(covariant _MessageList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncArrivals(widget.state);
+  }
+
+  void _syncArrivals(ChatState state) {
+    _pendingArrivalIds.addAll(
+      _arrivalTracker.sync(
+        state.messages.map((message) => message.clientMessageId),
+        initialLoading: state.isLoading,
+        loadingMore: state.isLoadingMore,
+      ),
     );
   }
 
@@ -1978,9 +2311,9 @@ class _MessageListState extends ConsumerState<_MessageList>
     final conversation = widget.conversation;
     final state = widget.state;
     final scrollController = widget.scrollController;
-    final firstBuildCutoff = widget.firstBuildCutoff;
     final animatedMessageIds = widget.animatedMessageIds;
     final messageKeys = widget.messageKeys;
+    final bubbleFillKeys = widget.bubbleFillKeys;
     final highlightedMessageId = widget.highlightedMessageId;
     final composerFocused = widget.composerFocused;
     final onReply = widget.onReply;
@@ -2029,7 +2362,12 @@ class _MessageListState extends ConsumerState<_MessageList>
     // "messages currently on screen" estimate in _jumpToMessage, which
     // divides the viewport by messageKeys.length.
     final currentIds = state.messages.map((m) => m.id).toSet();
+    final currentClientIds =
+        state.messages.map((m) => m.clientMessageId).toSet();
     messageKeys.removeWhere((id, _) => !currentIds.contains(id));
+    bubbleFillKeys.removeWhere(
+      (clientId, _) => !currentClientIds.contains(clientId),
+    );
     _rowKeys.removeWhere((id, _) => !currentIds.contains(id));
     final mediaRuns = ChatMediaRunLayout.fromMessages(state.messages);
     final pinnedLabel = _pinnedDateLabel;
@@ -2105,6 +2443,10 @@ class _MessageListState extends ConsumerState<_MessageList>
                   }
 
                   final message = state.messages[index];
+                  final bubbleFillKey = bubbleFillKeys.putIfAbsent(
+                    message.clientMessageId,
+                    GlobalKey.new,
+                  );
                   final mediaGroup = mediaRuns.runs[index] ?? const <Message>[];
                   // Keep the rendered row stable while timestamp drag updates
                   // rebuild the visible list. Replacing this key on every pointer
@@ -2121,8 +2463,7 @@ class _MessageListState extends ConsumerState<_MessageList>
                   // A bubble is "first of its day" if its local date differs from the
                   // next-older message's local date (list is newest-first). Only
                   // genuinely-new first-of-day messages shimmer — cached history on
-                  // open does not, since `isNew` reuses the same play-once cutoff as
-                  // SettleIn below. Content-blind: only dates are compared.
+                  // open does not. Content-blind: only dates are compared.
                   final older =
                       index + 1 < state.messages.length
                           ? state.messages[index + 1]
@@ -2150,12 +2491,11 @@ class _MessageListState extends ConsumerState<_MessageList>
                       newer != null &&
                       newer.isMine == message.isMine &&
                       !isLastOfDay;
-                  final isNew = message.createdAt.isAfter(firstBuildCutoff);
-                  // Play-once ledger: animate only the first time this message is ever
-                  // built on this screen. Without it, list recycling replays entry
-                  // animations whenever a new message scrolls back into view.
+                  // Arrival detection is identity-based, not timestamp-based: delayed
+                  // delivery and server/device clock skew must not suppress the
+                  // receiver animation. Pagination is filtered by the tracker.
                   final shouldAnimate =
-                      isNew &&
+                      _pendingArrivalIds.remove(message.clientMessageId) &&
                       !animatedMessageIds.contains(message.clientMessageId);
                   if (shouldAnimate) {
                     animatedMessageIds.add(message.clientMessageId);
@@ -2182,6 +2522,7 @@ class _MessageListState extends ConsumerState<_MessageList>
                     builder:
                         (context, timestampRevealOffset, _) => MessageBubble(
                           message: message,
+                          bubbleFillKey: bubbleFillKey,
                           mediaGroup: mediaGroup,
                           conversation: conversation,
                           showStatus: index == 0 && message.isMine,
@@ -2438,6 +2779,12 @@ class _MessageListState extends ConsumerState<_MessageList>
                               }
                             }
                           },
+                          onReactionFlight:
+                              (emoji, sourceRect) => widget.onReactionFlight(
+                                message,
+                                emoji,
+                                sourceRect,
+                              ),
                           onRemoveReaction: () async {
                             try {
                               await ref
@@ -2475,6 +2822,15 @@ class _MessageListState extends ConsumerState<_MessageList>
                                   _showEditHistorySheet(context, ref, target),
                         ),
                   );
+                  if (widget.flyingMessageIds.contains(
+                        message.clientMessageId,
+                      ) ||
+                      (message.gameSessionId != null &&
+                          widget.flyingGameSessionIds.contains(
+                            message.gameSessionId,
+                          ))) {
+                    bubble = Opacity(opacity: 0, child: bubble);
+                  }
                   if (isFirstOfDay && shouldAnimate) {
                     bubble = Shimmer(
                       period:
@@ -2490,7 +2846,7 @@ class _MessageListState extends ConsumerState<_MessageList>
                   // simultaneously: offset each new bubble's settle duration by its
                   // position within the newest-first list. The index is clamped so a
                   // large batch never produces an absurdly long settle. Cached
-                  // history (`isNew == false`) always uses the base duration.
+                  // history always uses the base duration.
                   final stepMs =
                       expressive
                           ? kCascadeStepExpressiveMs

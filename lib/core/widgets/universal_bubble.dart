@@ -64,6 +64,7 @@ class UniversalBubble extends StatefulWidget {
     this.highlightColor,
     this.maxWidth = 320,
     this.bubbleKey,
+    this.bubbleFillKey,
     this.groupTag,
     this.onLongPress,
     this.quoteBackgroundColor,
@@ -171,6 +172,12 @@ class UniversalBubble extends StatefulWidget {
   /// rebuilt/reordered list (e.g. `ValueKey(id)`). Null is fine for a
   /// single bubble with no list identity to preserve.
   final Key? bubbleKey;
+
+  /// Optional externally-owned key on the painted bubble surface. This is
+  /// separate from [bubbleKey], which keys the full row and its gesture
+  /// state: callers use this one when an animation must land on the exact
+  /// fill rather than the row's surrounding layout space.
+  final GlobalKey? bubbleFillKey;
 
   /// Groups bubbles so only one in the group has its [endActions] pane open
   /// at a time — opening one closes any sibling sharing this tag.
@@ -330,7 +337,7 @@ class _UniversalBubbleState extends State<UniversalBubble>
     with SingleTickerProviderStateMixin {
   static const double _fireThreshold = 60;
   static const double _maxDrag = 75;
-  static const double _timestampRevealLimit = 112;
+  static const double _timestampRevealLimit = 70;
   static const double _timestampRevealDragGain = 1;
   static const Duration _springBackDuration = Duration(milliseconds: 200);
 
@@ -508,7 +515,9 @@ class _UniversalBubbleState extends State<UniversalBubble>
     final onLongPress = widget.onLongPress;
     if (onLongPress == null) return;
     final renderBox =
-        _bubbleFillKey.currentContext?.findRenderObject() as RenderBox?;
+        (widget.bubbleFillKey ?? _bubbleFillKey).currentContext
+                ?.findRenderObject()
+            as RenderBox?;
     if (renderBox == null || !renderBox.attached) return;
     final rect = renderBox.localToGlobal(Offset.zero) & renderBox.size;
     // Reconstructs the SAME visual bubble fill — same decoration, same
@@ -1110,7 +1119,9 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                             : _handleLongPress,
                                     behavior: HitTestBehavior.opaque,
                                     child: DecoratedBox(
-                                      key: _bubbleFillKey,
+                                      key:
+                                          widget.bubbleFillKey ??
+                                          _bubbleFillKey,
                                       decoration: BoxDecoration(
                                         color: widget.bubbleColor,
                                         gradient: widget.bubbleGradient,

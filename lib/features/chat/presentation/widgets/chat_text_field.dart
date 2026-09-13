@@ -65,6 +65,7 @@ class ChatTextField extends StatefulWidget {
     this.enabled = true,
     this.hintText = 'Message',
     this.focusNode,
+    this.composerTextKey,
     this.sendButtonColor,
     this.onSendButtonColor,
     this.haptics = const SystemHaptics(),
@@ -156,6 +157,10 @@ class ChatTextField extends StatefulWidget {
   /// focus the field (tapping "Reply" on a comment) without owning its
   /// own separately-created, never-attached FocusNode.
   final FocusNode? focusNode;
+
+  /// Optional key on the editable text region. ChatScreen uses its measured
+  /// screen rectangle as the launch point for the outgoing payload flight.
+  final Key? composerTextKey;
 
   @override
   State<ChatTextField> createState() => _ChatTextFieldState();
@@ -802,8 +807,27 @@ class _ChatTextFieldState extends State<ChatTextField>
   void _handleSend() {
     // A staged game is sendable on its own: the caption is optional.
     if (!(widget.enabled && (_hasText || widget.gameStaged))) return;
+    final focusNode = widget.focusNode;
+    final retainComposerFocus = focusNode?.hasFocus ?? false;
     setState(() => _sendPulse++);
     widget.onSend();
+
+    // Sending is a continuation of composing, so a send-triggered rebuild or
+    // platform keyboard action must not strand focus on the root scope. Do
+    // this on the next frame (after the controller clear/rebuild), but never
+    // steal focus if the send navigated away or the composer was already
+    // unfocused. There is no async completion hook here, so a user dismissing
+    // the keyboard after this frame remains in control.
+    if (retainComposerFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            widget.focusNode != focusNode ||
+            ModalRoute.of(context)?.isCurrent != true) {
+          return;
+        }
+        focusNode?.requestFocus();
+      });
+    }
   }
 
   void _handleAttachTap(BuildContext context) {
@@ -1377,6 +1401,7 @@ class _ChatTextFieldState extends State<ChatTextField>
                       children: [
                         Expanded(
                           child: TextField(
+                            key: widget.composerTextKey,
                             controller: widget.controller,
                             focusNode: widget.focusNode,
                             enabled: widget.enabled,
@@ -1519,7 +1544,14 @@ class _ChatTextFieldState extends State<ChatTextField>
     // The mic keeps its own pointers — it owns the live gesture.
     return SafeArea(
       top: false,
-      child: IgnorePointer(ignoring: _isRecording, child: composer),
+      // The send button and the other composer satellites live beside the
+      // TextField, so without a shared tap region Flutter treats pressing one
+      // as an outside tap and drops the field's focus before its callback
+      // runs. Keep the whole composer in the field's tap region: explicit
+      // taps elsewhere on ChatScreen can still dismiss the keyboard.
+      child: TextFieldTapRegion(
+        child: IgnorePointer(ignoring: _isRecording, child: composer),
+      ),
     );
   }
 }

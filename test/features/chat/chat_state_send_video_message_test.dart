@@ -97,6 +97,45 @@ class _BlockingPosterCacheManager implements BaseCacheManager {
       throw UnimplementedError('${invocation.memberName} is not used');
 }
 
+class _BlockingPromotionCacheManager implements BaseCacheManager {
+  _BlockingPromotionCacheManager(this.directory);
+
+  final Directory directory;
+  final started = Completer<void>();
+  final release = Completer<void>();
+  int _writes = 0;
+
+  @override
+  Future<FileInfo?> getFileFromCache(
+    String key, {
+    bool ignoreMemCache = false,
+  }) async => null;
+
+  @override
+  Future<file_system.File> putFileStream(
+    String url,
+    Stream<List<int>> source, {
+    String? key,
+    String? eTag,
+    Duration maxAge = const Duration(days: 30),
+    String fileExtension = 'file',
+  }) async {
+    if (!started.isCompleted) started.complete();
+    await release.future;
+    final target = const LocalFileSystem().file(
+      p.join(directory.path, 'promoted_${_writes++}.$fileExtension'),
+    );
+    final sink = target.openWrite();
+    await sink.addStream(source);
+    await sink.close();
+    return target;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} is not used');
+}
+
 void main() {
   const userId = 'user-a';
   const relId = 'rel-1';
@@ -154,61 +193,63 @@ void main() {
     return path;
   }
 
-  test('cold history does not publish a recent video before its cached poster '
-      'is ready for first paint', () async {
-    const posterKey = 'chat-media/rel-1/recent-poster.jpg';
-    final posterPath = await writeFile('recent_cached_poster.jpg');
-    final posterCache = _BlockingPosterCacheManager(posterPath);
-    final repo = FakeChatRepository(currentUserId: userId);
-    final conversation = activeConversation(relId);
-    repo.conversationOverride = conversation;
-    repo.serverMessages['recent-video'] = Message(
-      id: 'recent-video',
-      clientMessageId: 'cid-recent-video',
-      relationshipId: relId,
-      senderId: userId,
-      content: '',
-      createdAt: DateTime.now(),
-      mediaKey: 'chat-media/rel-1/recent.mp4',
-      mediaType: 'video',
-      mediaThumbnailKey: posterKey,
-      mediaDurationMs: 4200,
-      mediaWidth: 1280,
-      mediaHeight: 720,
-      status: MessageStatus.sent,
-      isMine: true,
-    );
-    final container = buildChatContainer(
-      repository: repo,
-      userId: userId,
-      extraOverrides: [
-        chatPosterPrewarmerProvider.overrideWithValue(
-          ChatPosterPrewarmer(repository: repo, cacheManager: posterCache),
-        ),
-      ],
-    );
-    addTearDown(container.dispose);
-    addTearDown(() {
-      if (!posterCache.releaseLookup.isCompleted) {
-        posterCache.releaseLookup.complete();
-      }
-    });
+  test(
+    'cold history publishes before optional poster discovery completes',
+    () async {
+      const posterKey = 'chat-media/rel-1/recent-poster.jpg';
+      final posterPath = await writeFile('recent_cached_poster.jpg');
+      final posterCache = _BlockingPosterCacheManager(posterPath);
+      final repo = FakeChatRepository(currentUserId: userId);
+      final conversation = activeConversation(relId);
+      repo.conversationOverride = conversation;
+      repo.serverMessages['recent-video'] = Message(
+        id: 'recent-video',
+        clientMessageId: 'cid-recent-video',
+        relationshipId: relId,
+        senderId: userId,
+        content: '',
+        createdAt: DateTime.now(),
+        mediaKey: 'chat-media/rel-1/recent.mp4',
+        mediaType: 'video',
+        mediaThumbnailKey: posterKey,
+        mediaDurationMs: 4200,
+        mediaWidth: 1280,
+        mediaHeight: 720,
+        status: MessageStatus.sent,
+        isMine: true,
+      );
+      final container = buildChatContainer(
+        repository: repo,
+        userId: userId,
+        extraOverrides: [
+          chatPosterPrewarmerProvider.overrideWithValue(
+            ChatPosterPrewarmer(repository: repo, cacheManager: posterCache),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      addTearDown(() {
+        if (!posterCache.releaseLookup.isCompleted) {
+          posterCache.releaseLookup.complete();
+        }
+      });
 
-    container.read(chatControllerProvider(conversation).notifier);
-    await posterCache.lookupStarted.future;
+      container.read(chatControllerProvider(conversation).notifier);
+      await posterCache.lookupStarted.future;
 
-    final whileDiscovering = container.read(
-      chatControllerProvider(conversation),
-    );
-    expect(whileDiscovering.messages, isEmpty);
+      final whileDiscovering = container.read(
+        chatControllerProvider(conversation),
+      );
+      expect(whileDiscovering.messages.single.id, 'recent-video');
 
-    posterCache.releaseLookup.complete();
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      posterCache.releaseLookup.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    final loaded = container.read(chatControllerProvider(conversation));
-    expect(loaded.messages.single.id, 'recent-video');
-    expect(ChatPosterPrewarmer.readyPosterPathFor(posterKey), posterPath);
-  });
+      final loaded = container.read(chatControllerProvider(conversation));
+      expect(loaded.messages.single.id, 'recent-video');
+      expect(ChatPosterPrewarmer.readyPosterPathFor(posterKey), posterPath);
+    },
+  );
 
   group('sendVideoMessage', () {
     test(
@@ -312,10 +353,8 @@ void main() {
         height: 720,
       );
 
-      // Give the optimistic write a moment to land before the fake server
-      // resolves.
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-
+      // Local publication is synchronous. Disk persistence and upload start
+      // only after callers have had a chance to paint this row.
       final messages = b.state.messages;
       expect(messages, hasLength(1));
       final message = messages.single;
@@ -419,6 +458,50 @@ void main() {
           ChatPosterPrewarmer.readyPosterPathFor(message.mediaThumbnailKey),
           cachedPosterPath,
         );
+      },
+    );
+
+    test(
+      'ack publishes canonical media before background cache promotion',
+      () async {
+        final repo = FakeChatRepository(currentUserId: userId);
+        final promotionCache = _BlockingPromotionCacheManager(tempDir);
+        addTearDown(() {
+          if (!promotionCache.release.isCompleted) {
+            promotionCache.release.complete();
+          }
+        });
+        final b = await boot(repo, posterCache: promotionCache);
+        final videoPath = await writeFile('handoff.mp4');
+        final thumbPath = await writeFile('handoff_poster.jpg');
+
+        await b.controller.sendVideoMessage(
+          localPath: videoPath,
+          durationMs: 4200,
+          thumbnailLocalPath: thumbPath,
+          width: 1280,
+          height: 720,
+        );
+        await promotionCache.started.future;
+
+        final acknowledged = b.state.messages.single;
+        expect(acknowledged.status, MessageStatus.sent);
+        expect(acknowledged.id, isNot(startsWith('_local_')));
+        expect(acknowledged.localMediaPath, videoPath);
+        expect(acknowledged.localThumbnailPath, thumbPath);
+        expect(File(videoPath).existsSync(), isTrue);
+        expect(File(thumbPath).existsSync(), isTrue);
+
+        promotionCache.release.complete();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        final settled = b.state.messages.single;
+        expect(settled.localMediaPath, isNot(videoPath));
+        expect(settled.localThumbnailPath, isNot(thumbPath));
+        expect(File(videoPath).existsSync(), isFalse);
+        expect(File(thumbPath).existsSync(), isFalse);
+        expect(File(settled.localMediaPath!).existsSync(), isTrue);
+        expect(File(settled.localThumbnailPath!).existsSync(), isTrue);
       },
     );
 

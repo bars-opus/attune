@@ -25,6 +25,7 @@ class GameComposerBar extends ConsumerWidget {
     required this.relationshipId,
     required this.gameType,
     required this.onCancel,
+    this.payloadKey,
   });
 
   /// Whose conversation. The composer is per-relationship, so a game
@@ -36,6 +37,10 @@ class GameComposerBar extends ConsumerWidget {
   /// Unstages the game. Sending is the composer's job below, because a
   /// send carries the game AND any caption typed with it.
   final VoidCallback onCancel;
+
+  /// Optional key on the staged card itself. ChatScreen measures it as the
+  /// launch rectangle when this invitation is successfully sent.
+  final Key? payloadKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -69,6 +74,7 @@ class GameComposerBar extends ConsumerWidget {
           // free to be a text field -- so a caption comes for free, on
           // the send path every other message already uses.
           Container(
+            key: payloadKey,
             // Generous, and deliberately more than the text field's own
             // padding: a line of text FILLS its pill, but a game card is
             // an object sitting IN one, and a tight margin made it read

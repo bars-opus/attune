@@ -64,4 +64,14 @@ void main() {
     );
     expect(helper, contains('existsSync()'));
   });
+
+  test('the full-screen video viewer also rejects a stale cache path', () {
+    final viewer =
+        File(
+          'lib/features/chat/presentation/screens/video_viewer_screen.dart',
+        ).readAsStringSync();
+
+    expect(viewer, contains('File(localPath).existsSync()'));
+    expect(viewer, contains('playableLocalPath'));
+  });
 }

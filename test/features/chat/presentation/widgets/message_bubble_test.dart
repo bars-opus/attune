@@ -45,8 +45,10 @@ void main() {
 
   tearDownAll(() => fixtureDir.deleteSync(recursive: true));
 
-  testWidgets('renders tombstone text when message is deleted', (tester) async {
-    final deleted = Message.fromRow({
+  testWidgets('renders deleted-message tombstone with block icon', (
+    tester,
+  ) async {
+    final mineDeleted = Message.fromRow({
       'id': 'm1',
       'client_message_id': 'c1',
       'relationship_id': 'r1',
@@ -55,14 +57,41 @@ void main() {
       'created_at': DateTime.now().toIso8601String(),
       'deleted_at': DateTime.now().toIso8601String(),
     }, currentUserId: 'u1');
+    final partnerDeleted = Message.fromRow({
+      'id': 'm2',
+      'client_message_id': 'c2',
+      'relationship_id': 'r1',
+      'sender_id': 'u2',
+      'content': null,
+      'created_at': DateTime.now().toIso8601String(),
+      'deleted_at': DateTime.now().toIso8601String(),
+    }, currentUserId: 'u1');
 
     await tester.pumpWidget(
       withScreenUtil(
-        MaterialApp(home: Scaffold(body: MessageBubble(message: deleted))),
+        MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                MessageBubble(message: mineDeleted),
+                MessageBubble(message: partnerDeleted),
+              ],
+            ),
+          ),
+        ),
       ),
     );
 
-    expect(find.text('This message was deleted'), findsOneWidget);
+    expect(find.byIcon(Icons.block_outlined), findsNWidgets(2));
+    expect(find.text('This message was deleted'), findsNWidgets(2));
+    final tombstoneText = tester.widget<Text>(
+      find.text('This message was deleted').first,
+    );
+    final tombstoneIcon = tester.widget<Icon>(
+      find.byIcon(Icons.block_outlined).first,
+    );
+    expect(tombstoneText.style?.color?.a, closeTo(0.7, 0.01));
+    expect(tombstoneIcon.color?.a, closeTo(0.7, 0.01));
   });
 
   testWidgets('chat replies use the compact leading-bar treatment', (
@@ -289,6 +318,41 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Delete'), findsOneWidget);
+  });
+
+  testWidgets('sent-message focus surfaces align to the bubble trailing edge', (
+    tester,
+  ) async {
+    final message = Message.optimistic(
+      id: 'sent-focus-alignment',
+      clientMessageId: 'sent-focus-alignment-client',
+      relationshipId: 'r1',
+      senderId: 'u1',
+      content: 'sent from me',
+      createdAt: DateTime.now(),
+    );
+
+    await tester.pumpWidget(
+      withScreenUtil(
+        MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(message: message, currentUserId: 'u1'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.longPress(find.textContaining('sent from me'));
+    await tester.pumpAndSettle();
+
+    final reactionRect = tester.getRect(
+      find.byKey(const ValueKey('focused-reaction-row')),
+    );
+    final actionsRect = tester.getRect(
+      find.byKey(const ValueKey('focused-action-menu')),
+    );
+
+    expect(reactionRect.right, closeTo(actionsRect.right, 0.01));
   });
 
   testWidgets(
@@ -609,18 +673,35 @@ void main() {
       find.byKey(const ValueKey('reaction-partner-👍')),
     );
     expect(mySurface.color, ChatColorScheme.light.senderBubble);
+    expect(mySurface.elevation, 1);
+    expect(mySurface.shadowColor, Colors.black.withValues(alpha: 0.18));
     expect(partnerSurface.color, ChatColorScheme.light.receiverBubble);
 
     final positioned = tester.widgetList<Positioned>(find.byType(Positioned));
     expect(
-      positioned.any((widget) => widget.top == -12 && widget.left == -14),
+      positioned.any((widget) => widget.top == 0 && widget.left == -22),
       isTrue,
-      reason: 'reactions stay attached to the top edge',
+      reason: 'reactions stay attached without painting outside the row',
     );
     expect(
-      positioned.any((widget) => widget.bottom == -12 && widget.left == -14),
+      positioned.any((widget) => widget.bottom == 4 && widget.left == 0),
       isTrue,
-      reason: 'the star remains independently attached to the bottom edge',
+      reason: 'the star sits on the bubble curve without adding row spacing',
+    );
+
+    final reactionDecorations =
+        tester
+            .widgetList<Container>(
+              find.ancestor(
+                of: find.byKey(const ValueKey('reaction-mine-❤️')),
+                matching: find.byType(Container),
+              ),
+            )
+            .map((container) => container.decoration)
+            .whereType<BoxDecoration>();
+    expect(
+      reactionDecorations.any((decoration) => decoration.boxShadow != null),
+      isFalse,
     );
 
     final animation = tester.widget<AnimatedScaleFade>(

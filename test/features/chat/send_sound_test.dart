@@ -70,6 +70,9 @@ void main() {
       extraOverrides: [
         soundServiceProvider.overrideWithValue(fakeSound),
         sharedPreferencesProvider.overrideWithValue(prefs),
+        messageSoundsEnabledProvider.overrideWith(
+          (ref) => SoundPreferenceNotifier.forTesting(enabled: false),
+        ),
       ],
     );
 

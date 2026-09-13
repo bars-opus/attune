@@ -6,6 +6,7 @@ class Conversation {
   final String id;
   final String relationshipId;
   final String partnerId;
+
   /// The COUPLE's name for this chat: the shared chat_name if they set
   /// one, otherwise the partner's display name.
   ///
@@ -113,6 +114,19 @@ class Conversation {
   bool get canSend => availability == ConversationAvailability.active;
 
   bool get isArchived => availability == ConversationAvailability.archived;
+
+  /// A relationship has exactly one chat. Riverpod family providers use
+  /// equality for their cache key, so identity-based equality created a fresh
+  /// ChatController whenever a refreshed Conversation instance reached the
+  /// same route. Keying equality to the durable relationship id preserves the
+  /// already-painted message list, realtime subscription, and outbox state.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Conversation && relationshipId == other.relationshipId;
+
+  @override
+  int get hashCode => relationshipId.hashCode;
 
   String? get readOnlyReason {
     if (availability == ConversationAvailability.archived) {

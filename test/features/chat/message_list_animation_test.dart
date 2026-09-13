@@ -1,9 +1,11 @@
 import 'package:attune/core/ui/motion/make_room.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
+import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/chat_test_harness.dart';
 
@@ -58,6 +60,8 @@ void main() {
   });
 
   testWidgets('each message bubble is wrapped in a SettleIn', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
     final repo = FakeChatRepository(currentUserId: 'user-a');
     repo.seedIncoming(
       id: 'm1',
@@ -66,7 +70,11 @@ void main() {
       content: 'hello',
       createdAt: DateTime.now(),
     );
-    final container = buildChatContainer(repository: repo, userId: 'user-a');
+    final container = buildChatContainer(
+      repository: repo,
+      userId: 'user-a',
+      extraOverrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    );
     final convo = activeConversation('rel-1');
     repo.conversationOverride = convo;
 
