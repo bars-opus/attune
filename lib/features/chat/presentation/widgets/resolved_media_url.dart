@@ -48,9 +48,16 @@ class ResolvedMediaUrl extends ConsumerWidget {
 
     final resolved = ref.watch(signedMediaUrlProvider(key));
     return resolved.when(
-      data: (url) => url == null ? error : builder(context, url),
+      data: (url) {
+        final usableUrl = url ?? signedMediaUrl;
+        return usableUrl == null ? error : builder(context, usableUrl);
+      },
       loading: () => loading,
-      error: (_, _) => error,
+      error:
+          (_, _) =>
+              signedMediaUrl == null
+                  ? error
+                  : builder(context, signedMediaUrl!),
     );
   }
 }

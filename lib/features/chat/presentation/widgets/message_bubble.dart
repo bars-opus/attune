@@ -1208,7 +1208,10 @@ class _BubbleBody extends StatelessWidget {
                   // The stored URL stays as the fallback for a row that
                   // somehow carries one without a key.
                   if (mediaKey != null) {
-                    return ref.read(signedMediaUrlProvider(mediaKey).future);
+                    final resolved = await ref.read(
+                      signedMediaUrlProvider(mediaKey).future,
+                    );
+                    return resolved ?? signedUrl;
                   }
                   return signedUrl;
                 },

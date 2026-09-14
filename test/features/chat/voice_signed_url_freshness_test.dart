@@ -83,4 +83,47 @@ void main() {
           'not win over the media key',
     );
   });
+
+  testWidgets('ResolvedMediaUrl falls back when re-signing returns null', (
+    tester,
+  ) async {
+    final repo = FakeChatRepository(currentUserId: 'u1');
+    String? built;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [chatRepositoryProvider.overrideWithValue(repo)],
+        child: MaterialApp(
+          home: ResolvedMediaUrl(
+            signedMediaUrl: 'https://already-signed.test/media.jpg',
+            mediaKey: 'chat-media/fresh.jpg',
+            builder: (context, url) {
+              built = url;
+              return const SizedBox();
+            },
+            loading: const SizedBox(),
+            error: const Text('error'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(built, 'https://already-signed.test/media.jpg');
+    expect(find.text('error'), findsNothing);
+  });
+
+  test('voice playback falls back when re-signing returns null', () {
+    final bubble =
+        File(
+          'lib/features/chat/presentation/widgets/message_bubble.dart',
+        ).readAsStringSync();
+
+    final resolver = bubble.substring(
+      bubble.indexOf('resolveAudioUrl: () async {'),
+      bubble.indexOf('},', bubble.indexOf('resolveAudioUrl: () async {')),
+    );
+
+    expect(resolver, contains('return resolved ?? signedUrl;'));
+  });
 }

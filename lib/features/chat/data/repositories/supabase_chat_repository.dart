@@ -395,46 +395,87 @@ class SupabaseChatRepository implements ChatRepository {
     String mediaKey, {
     bool forceRefresh = false,
   }) async {
-    final cached = _signedUrlCache[mediaKey];
-    if (!forceRefresh &&
-        cached != null &&
-        cached.expiresAt.isAfter(DateTime.now())) {
-      return cached.url;
-    }
-    try {
-      final url = await _supabase.storage
-          .from('message-media')
-          .createSignedUrl(mediaKey, _signedUrlTtl.inSeconds);
-      _signedUrlCache[mediaKey] = (
-        url: url,
-        expiresAt: DateTime.now().add(_signedUrlTtl - _signedUrlSafetyMargin),
-      );
-      return url;
-    } catch (_) {
-      return null;
-    }
+    return _createSignedStorageUrl(
+      bucket: 'message-media',
+      storageKey: mediaKey,
+      forceRefresh: forceRefresh,
+    );
   }
 
-  /// Same cache/TTL as [createSignedMediaUrl] — storage keys are already
-  /// globally unique (`relationship-avatars/{relationshipId}/...` vs
-  /// `chat-media/...`), so sharing one cache map risks no collision.
+  /// Same cache/TTL as [createSignedMediaUrl]. Cache entries include the
+  /// bucket name so avatar and message objects never collide.
   Future<String?> _createRelationshipAvatarSignedUrl(String storageKey) async {
-    final cached = _signedUrlCache[storageKey];
-    if (cached != null && cached.expiresAt.isAfter(DateTime.now())) {
-      return cached.url;
+    return _createSignedStorageUrl(
+      bucket: 'relationship-avatars',
+      storageKey: storageKey,
+    );
+  }
+
+  Future<String?> _createSignedStorageUrl({
+    required String bucket,
+    required String storageKey,
+    bool forceRefresh = false,
+  }) async {
+    for (final candidate in _storageKeyCandidates(storageKey, bucket)) {
+      final cacheKey = '$bucket::$candidate';
+      final cached = _signedUrlCache[cacheKey];
+      if (!forceRefresh &&
+          cached != null &&
+          cached.expiresAt.isAfter(DateTime.now())) {
+        return cached.url;
+      }
+      try {
+        final url = await _supabase.storage
+            .from(bucket)
+            .createSignedUrl(candidate, _signedUrlTtl.inSeconds);
+        _signedUrlCache[cacheKey] = (
+          url: url,
+          expiresAt: DateTime.now().add(_signedUrlTtl - _signedUrlSafetyMargin),
+        );
+        return url;
+      } catch (_) {
+        // Try the next normalized candidate. Older cached rows and a few
+        // storage pipelines have used both bucket-prefixed and unprefixed
+        // object names; the private bucket/RLS contract is unchanged.
+      }
     }
-    try {
-      final url = await _supabase.storage
-          .from('relationship-avatars')
-          .createSignedUrl(storageKey, _signedUrlTtl.inSeconds);
-      _signedUrlCache[storageKey] = (
-        url: url,
-        expiresAt: DateTime.now().add(_signedUrlTtl - _signedUrlSafetyMargin),
-      );
-      return url;
-    } catch (_) {
-      return null;
+    return storageKey.startsWith('http') ? storageKey : null;
+  }
+
+  List<String> _storageKeyCandidates(String storageKey, String bucket) {
+    final keys = <String>[];
+
+    void add(String? value) {
+      if (value == null || value.isEmpty) return;
+      final normalized = Uri.decodeComponent(value).split('?').first;
+      if (normalized.isEmpty || keys.contains(normalized)) return;
+      keys.add(normalized);
     }
+
+    add(_storageKeyFromUrl(storageKey, bucket));
+    add(storageKey);
+    if (storageKey.startsWith('$bucket/')) {
+      add(storageKey.substring(bucket.length + 1));
+    } else {
+      add('$bucket/$storageKey');
+    }
+    return keys;
+  }
+
+  String? _storageKeyFromUrl(String value, String bucket) {
+    final uri = Uri.tryParse(value);
+    if (uri == null || !uri.hasScheme) return null;
+    final marker = '/storage/v1/object/';
+    final path = uri.path;
+    final markerIndex = path.indexOf(marker);
+    if (markerIndex == -1) return null;
+    final objectPath = path.substring(markerIndex + marker.length);
+    for (final prefix in ['sign/$bucket/', 'public/$bucket/']) {
+      if (objectPath.startsWith(prefix)) {
+        return objectPath.substring(prefix.length);
+      }
+    }
+    return null;
   }
 
   @override

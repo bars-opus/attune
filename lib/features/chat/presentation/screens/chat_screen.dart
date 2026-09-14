@@ -1003,8 +1003,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             ),
             body: Stack(
               children: [
-                const Positioned.fill(
-                  child: AttuneChatWallpaper(child: SizedBox.expand()),
+                Positioned.fill(
+                  child: AttuneChatWallpaper(
+                    scrollController: _scrollController,
+                    child: const SizedBox.expand(),
+                  ),
                 ),
                 // Message list fills the whole body; the composer floats on top
                 // (see the Positioned block below) rather than being stacked in
