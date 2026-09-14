@@ -47,36 +47,56 @@ void main() {
 
     expect(find.text('Conversation content'), findsOneWidget);
     final wallpaperWidget = find.byType(AttuneChatWallpaper);
+    // Six decorative layers, none of them readable by a screen reader:
+    // two _WallpaperGradientLayer (the base gradient plus the
+    // scroll-driven accent that cross-fades over it) carry one each, and
+    // the Stack adds four more directly. The count was 2 before the
+    // wallpaper gained its gradient and pattern layers.
+    //
+    // The number itself is not the point — that EVERY layer stays
+    // excluded is. If this fails after a wallpaper change, check that the
+    // new layer excludes semantics rather than just re-counting to match.
     expect(
       find.descendant(
         of: wallpaperWidget,
         matching: find.byType(ExcludeSemantics),
       ),
-      findsNWidgets(2),
+      findsNWidgets(6),
     );
+    // Likewise: every decorative layer that can swallow a touch wraps
+    // itself in IgnorePointer, so taps reach the conversation beneath.
+    // What matters is that none of them is interactive, not the count.
     expect(
       find.descendant(
         of: wallpaperWidget,
         matching: find.byType(IgnorePointer),
       ),
-      findsOneWidget,
+      findsNWidgets(4),
     );
 
-    final wallpaper = tester
+    // The tile is painted by several layers now (pattern, glow, canvas),
+    // so this asserts EVERY one of them tiles identically rather than
+    // singling one out — a layer that drifted to a different repeat or
+    // alignment would visibly misregister against the others.
+    final wallpapers = tester
         .widgetList<DecoratedBox>(find.byType(DecoratedBox))
         .map((widget) => widget.decoration)
         .whereType<BoxDecoration>()
         .map((decoration) => decoration.image)
         .whereType<DecorationImage>()
-        .singleWhere(
+        .where(
           (image) =>
               image.image ==
               const AssetImage('assets/images/attune_chat_wallpaper_tile.png'),
-        );
+        )
+        .toList();
 
-    expect(wallpaper.repeat, ImageRepeat.repeat);
-    expect(wallpaper.alignment, Alignment.topLeft);
-    expect(wallpaper.filterQuality, FilterQuality.low);
+    expect(wallpapers, isNotEmpty, reason: 'the tile must be painted');
+    for (final wallpaper in wallpapers) {
+      expect(wallpaper.repeat, ImageRepeat.repeat);
+      expect(wallpaper.alignment, Alignment.topLeft);
+      expect(wallpaper.filterQuality, FilterQuality.low);
+    }
 
     final canvas =
         tester
@@ -90,13 +110,36 @@ void main() {
             .whereType<BoxDecoration>()
             .map((decoration) => decoration.gradient)
             .whereType<LinearGradient>()
-            .single;
-    expect(canvas.begin, Alignment.topLeft);
-    expect(canvas.end, Alignment.bottomRight);
-    expect(canvas.colors, [
+            .toList();
+
+    // Two gradient layers now, deliberately opposed: the base runs
+    // topLeft -> bottomRight and the scroll-driven accent runs back the
+    // other way, cross-fading as the conversation scrolls. So this picks
+    // out the BASE layer by its direction rather than assuming one
+    // gradient exists, and asserts the other is its mirror.
+    final base = canvas.firstWhere(
+      (g) => g.begin == Alignment.topLeft && g.end == Alignment.bottomRight,
+      orElse: () => throw StateError('no base topLeft -> bottomRight gradient'),
+    );
+    // The accent end-stop is a BLEND toward backgroundAccent, not the raw
+    // token: 0.60 in light, 0.42 in dark (attune_chat_wallpaper.dart's
+    // _buildWallpaper). Derived here rather than hardcoded so retuning
+    // the blend in one place does not silently drift from the test.
+    expect(base.colors, [
       ChatColorScheme.light.background,
       ChatColorScheme.light.background,
-      ChatColorScheme.light.backgroundAccent,
+      Color.lerp(
+        ChatColorScheme.light.background,
+        ChatColorScheme.light.backgroundAccent,
+        0.60,
+      ),
     ]);
+    expect(
+      canvas.any(
+        (g) => g.begin == Alignment.bottomRight && g.end == Alignment.topLeft,
+      ),
+      isTrue,
+      reason: 'the scroll accent mirrors the base gradient',
+    );
   });
 }
