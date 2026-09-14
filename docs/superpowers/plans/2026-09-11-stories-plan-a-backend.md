@@ -18,7 +18,7 @@ refetch signal, not a second source of truth.
 **Tech Stack:** Postgres 15 (Supabase), pg_cron, Deno edge functions,
 `psql` contract tests under `supabase/tests/`.
 
-**Spec:** `docs/superpowers/specs/2026-09-11-stories-design.md`
+**Spec:** `lib/architecture/STORIES.md` (moved from `docs/superpowers/specs/2026-09-11-stories-design.md` and updated to reflect what shipped, after the fact this plan is now history for)
 
 **Scope:** Spec steps 1, 2 and the image-archival half of 11. Plan B
 (camera + posting) and Plan C (surfaces) follow separately.

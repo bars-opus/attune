@@ -15,7 +15,7 @@ four RPCs; Realtime is a refetch signal, never a second source of truth.
 
 **Tech Stack:** Flutter, Riverpod, `video_player`, Supabase Realtime.
 
-**Spec:** `docs/superpowers/specs/2026-09-11-stories-design.md`
+**Spec:** `lib/architecture/STORIES.md` (moved from `docs/superpowers/specs/2026-09-11-stories-design.md` and updated to reflect what shipped, after the fact this plan is now history for)
 **Depends on:** Plan A (RPCs) and Plan B (capture, outbox).
 
 ## Global Constraints

@@ -18,7 +18,7 @@ only.
 **Tech Stack:** Flutter, Riverpod, `camera`, Drift/SQLite (the chat
 outbox's persistence), Supabase RPCs from Plan A.
 
-**Spec:** `docs/superpowers/specs/2026-09-11-stories-design.md`
+**Spec:** `lib/architecture/STORIES.md` (moved from `docs/superpowers/specs/2026-09-11-stories-design.md` and updated to reflect what shipped, after the fact this plan is now history for)
 **Depends on:** Plan A (merged or on this branch). Its RPCs are live.
 
 ## Global Constraints

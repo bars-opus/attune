@@ -1,7 +1,7 @@
 // Tests for Task 6 (task-6-brief.md; spec §5.4): replies from the reel
 // landing in chat.
 //
-// Binding authority is docs/superpowers/specs/2026-09-11-stories-design.md
+// Binding authority is lib/architecture/STORIES.md
 // §5.4. Three of its rules shape this suite:
 //
 //   1. A reply is an ordinary `messages` INSERT with `story_item_id` set

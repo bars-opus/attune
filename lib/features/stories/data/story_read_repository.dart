@@ -3,7 +3,7 @@
 /// one story's media, and the refetch-signal stream from
 /// `story_change_signals`.
 ///
-/// Binding authority is `docs/superpowers/specs/2026-09-11-stories-design.md`
+/// Binding authority is `lib/architecture/STORIES.md`
 /// §5.5. Three of its rules shape every line of this file:
 ///
 /// 1. **Keyset paging, never offset.** Both paginated RPCs
