@@ -17,6 +17,7 @@ import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_media_group.dart';
 import 'package:attune/features/chat/presentation/widgets/resolved_media_url.dart';
+import 'package:attune/features/chat/presentation/screens/message_info_screen.dart';
 import 'package:attune/features/chat/presentation/widgets/video_message_thumbnail.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_message_player.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
@@ -568,7 +569,7 @@ class MessageBubble extends StatelessWidget {
                                   onUnstar: onUnstar ?? () {},
                                   onPin: onPin ?? () {},
                                   onUnpin: onUnpin ?? () {},
-                                  onInfo: () {},
+                                  onInfo: _buildInfoOpener(context, message),
                                   onEdit: onEdit ?? () {},
                                   onDelete: onDelete ?? () {},
                                 ),
@@ -928,6 +929,23 @@ VoidCallback _buildFullPickerOpener(
 ) {
   final navigator = Navigator.of(context, rootNavigator: true);
   return () => _openFullEmojiPicker(navigator, onReact);
+}
+
+/// Same reasoning as [_buildFullPickerOpener]: resolved at long-press
+/// time, not inside the closure the menu invokes after it has already
+/// popped, so a recycled list element cannot silently swallow the tap.
+VoidCallback _buildInfoOpener(BuildContext context, Message message) {
+  final navigator = Navigator.of(context, rootNavigator: true);
+  return () => _openMessageInfo(navigator, message);
+}
+
+void _openMessageInfo(NavigatorState navigator, Message message) {
+  if (!navigator.mounted) return;
+  navigator.push(
+    MaterialPageRoute<void>(
+      builder: (_) => MessageInfoScreen(message: message),
+    ),
+  );
 }
 
 /// Takes the [NavigatorState] captured at long-press time rather than

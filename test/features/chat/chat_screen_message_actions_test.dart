@@ -197,6 +197,35 @@ void main() {
     await tearDownChat(tester, container);
   });
 
+  testWidgets(
+    'Info opens MessageInfoScreen for the long-pressed message — the '
+    'exact recycled-element hazard _buildFullPickerOpener documents for '
+    'the emoji picker applies here too, so this proves the callback '
+    'still resolves after the menu route has popped',
+    (tester) async {
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      repo.seedIncoming(
+        id: 'm1',
+        relationshipId: 'rel-1',
+        senderId: 'user-a',
+        content: 'inspect me',
+        createdAt: DateTime.now(),
+      );
+      final container = await pumpChat(tester, repo);
+
+      await tester.longPress(find.text('inspect me'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.text('Info'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Message info'), findsOneWidget);
+      expect(find.text('Sent'), findsOneWidget);
+
+      await tearDownChat(tester, container);
+    },
+  );
+
   testWidgets('Edit saves the new content through the controller', (
     tester,
   ) async {
