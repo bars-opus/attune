@@ -61,6 +61,20 @@ void main() {
     return (container.decoration as BoxDecoration?)?.color;
   }
 
+  /// The card's decoration after [cardColour] has pumped it — same widget
+  /// [cardColour] reads its colour from, so call that first.
+  BoxDecoration? pumpedDecoration(WidgetTester tester) {
+    final container = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byType(GameMessageBubble),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    return container.decoration as BoxDecoration?;
+  }
+
   group('a game card is a chat bubble', () {
     testWidgets('a game you sent is the sender colour, not a neutral', (
       tester,
@@ -109,5 +123,40 @@ void main() {
         lessThan(0.2),
       );
     });
+  });
+
+  group('a game card is decorated like a text bubble', () {
+    // The card used to draw Border.all at Flutter's default 1.0 width
+    // while text bubbles pass showCardBorder: false and draw none at all
+    // (UniversalBubble). In dark mode the outline colour sits far enough
+    // from the bubble fill that the seam was visible, so a game card did
+    // not match the messages around it.
+    for (final dark in [false, true]) {
+      for (final viewerIsSender in [false, true]) {
+        final mode = dark ? 'dark' : 'light';
+        final side = viewerIsSender ? 'sender' : 'receiver';
+        testWidgets('no border on the $side card in $mode mode', (
+          tester,
+        ) async {
+          await cardColour(
+            tester,
+            viewerIsSender: viewerIsSender,
+            dark: dark,
+          );
+          final decoration = pumpedDecoration(tester);
+          expect(
+            decoration?.border,
+            isNull,
+            reason:
+                'text bubbles draw no border; a game card must not either',
+          );
+          expect(
+            decoration?.boxShadow,
+            isNotNull,
+            reason: 'it keeps the same faint lift a text bubble gets',
+          );
+        });
+      }
+    }
   });
 }

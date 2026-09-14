@@ -113,7 +113,6 @@ class GameMessageBubble extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colorScheme = Theme.of(context).colorScheme;
     final chatColors = Theme.of(context).chatColors;
     final session = ref.watch(gameCardProvider(sessionId));
 
@@ -180,9 +179,31 @@ class GameMessageBubble extends ConsumerWidget {
           decoration: BoxDecoration(
             color: surface,
             borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
-            border: Border.all(
-              color: colorScheme.outline.withValues(alpha: 0.10),
-            ),
+            // No border, and the same faint lift a text bubble gets
+            // (UniversalBubble's showShadow values). This used to draw
+            // Border.all at Flutter's default 1.0 width, while text
+            // bubbles pass showCardBorder: false and draw none at all --
+            // so a game card carried a visible outline no other bubble
+            // had, which read as a seam in dark mode where the outline
+            // colour sits far from the bubble fill.
+            boxShadow: const [
+              BoxShadow(
+                offset: Offset(0, 1),
+                blurRadius: 1,
+                spreadRadius: -1,
+                color: Color(0x0F000000),
+              ),
+              BoxShadow(
+                offset: Offset(0, 1),
+                blurRadius: 1,
+                color: Color(0x0A000000),
+              ),
+              BoxShadow(
+                offset: Offset(0, 1),
+                blurRadius: 2,
+                color: Color(0x08000000),
+              ),
+            ],
           ),
           // The same row the games hub uses, rather than a bespoke column.
           //
