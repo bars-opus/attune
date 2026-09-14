@@ -11,7 +11,11 @@ import 'package:attune/features/chat/domain/entities/conversation.dart';
 String conversationPreviewText(Conversation conversation) {
   final message = conversation.lastMessage;
   if (message == null) return 'No messages yet';
-  if (message.isDeleted) return 'This message was deleted';
+  if (message.isDeleted) {
+    return message.isMine
+        ? 'You deleted this message'
+        : 'This message was deleted';
+  }
 
   final caption = message.content.trim();
 

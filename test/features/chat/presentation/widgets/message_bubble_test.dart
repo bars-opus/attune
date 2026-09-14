@@ -83,9 +83,12 @@ void main() {
     );
 
     expect(find.byIcon(Icons.block_outlined), findsNWidgets(2));
-    expect(find.text('This message was deleted'), findsNWidgets(2));
+    // The fixture renders one of each, so the tombstone names who deleted
+    // it: your own deletion is attributed, the partner's stays impersonal.
+    expect(find.text('You deleted this message'), findsOneWidget);
+    expect(find.text('This message was deleted'), findsOneWidget);
     final tombstoneText = tester.widget<Text>(
-      find.text('This message was deleted').first,
+      find.text('You deleted this message'),
     );
     final tombstoneIcon = tester.widget<Icon>(
       find.byIcon(Icons.block_outlined).first,
@@ -508,7 +511,7 @@ void main() {
         ),
       );
 
-      await tester.longPress(find.text('This message was deleted'));
+      await tester.longPress(find.text('You deleted this message'));
       await tester.pumpAndSettle();
 
       expect(find.text('Delete'), findsNothing);

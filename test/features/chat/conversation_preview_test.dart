@@ -69,9 +69,20 @@ void main() {
 
   test('deleted and empty states', () {
     expect(conversationPreviewText(_withLast(null)), 'No messages yet');
+    // The fixture is isMine: true, so the preview says who deleted it.
     expect(
       conversationPreviewText(
         _withLast(_message(deletedAt: DateTime.utc(2026, 1, 2))),
+      ),
+      'You deleted this message',
+    );
+    // The partner's deletion stays impersonal — the copy branches on
+    // isMine, and only the mine case was covered before.
+    expect(
+      conversationPreviewText(
+        _withLast(
+          _message(deletedAt: DateTime.utc(2026, 1, 2)).copyWith(isMine: false),
+        ),
       ),
       'This message was deleted',
     );

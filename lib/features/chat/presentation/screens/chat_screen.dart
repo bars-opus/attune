@@ -1535,83 +1535,84 @@ class _ConversationHeaderCard extends ConsumerWidget {
             ? 'Syncing'
             : 'Synced ${_relativeSyncLabel(lastSyncedAt!)}';
 
-    return Hero(
-      tag: conversation.name,
-      child: Row(
-        children: [
-          // Breathes a few times when the partner is here, then settles
-          // to a static glow — a moment, not a session-long loop.
-          GlowPulse(
-            // Follows the partner, not the viewer's connectivity, so the
-            // avatar stops glowing permanently for everyone.
-            active: partnerActive,
-            child: ProfileAvatar(
-              avatarUrl: conversation.avatarUrl ?? '',
-              currentUserId: '',
-              size: 40.h,
-              enableHero: false,
-            ),
+    // No Hero: this header and the conversation row shared a
+    // `tag: conversation.name`, flying a full-width preview row into a
+    // 40pt avatar and title. Different shapes, so the flight distorted
+    // both rather than reading as one element moving.
+    return Row(
+      children: [
+        // Breathes a few times when the partner is here, then settles
+        // to a static glow — a moment, not a session-long loop.
+        GlowPulse(
+          // Follows the partner, not the viewer's connectivity, so the
+          // avatar stops glowing permanently for everyone.
+          active: partnerActive,
+          child: ProfileAvatar(
+            avatarUrl: conversation.avatarUrl ?? '',
+            currentUserId: '',
+            size: 40.h,
+            enableHero: false,
           ),
-          Gap(Spacing.sm.w),
-          Expanded(
-            child: RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: conversation.name,
-                    style: textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.onSurface.withValues(alpha: 0.8),
-                    ),
+        ),
+        Gap(Spacing.sm.w),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: conversation.name,
+                  style: textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface.withValues(alpha: 0.8),
                   ),
+                ),
 
-                  // "Online" here used to be driven by isOnline -- the
-                  // VIEWER's own connectivity -- so it read Online
-                  // whenever you had a connection, whatever your partner
-                  // was doing. It was decoration, not data.
-                  //
-                  // Now it reports whether the partner is in THIS
-                  // conversation. Deliberately not a general online
-                  // status: in a couples app that answers "they are on
-                  // their phone and not replying to me", which starts
-                  // arguments the app should not help start. Scoped here
-                  // it says something kinder and true -- they are with
-                  // you now -- and it is the only thing chat_presence
-                  // actually measures.
-                  partnerActive
-                      ? TextSpan(
-                        text: '\nActive in this chat',
-                        style: textTheme.bodySmall?.copyWith(
-                          color: colorScheme.primary,
-                        ),
-                      )
-                      : TextSpan(
-                        text: "\n$subtitle",
-                        style: textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurface.withValues(alpha: 0.4),
-                        ),
+                // "Online" here used to be driven by isOnline -- the
+                // VIEWER's own connectivity -- so it read Online
+                // whenever you had a connection, whatever your partner
+                // was doing. It was decoration, not data.
+                //
+                // Now it reports whether the partner is in THIS
+                // conversation. Deliberately not a general online
+                // status: in a couples app that answers "they are on
+                // their phone and not replying to me", which starts
+                // arguments the app should not help start. Scoped here
+                // it says something kinder and true -- they are with
+                // you now -- and it is the only thing chat_presence
+                // actually measures.
+                partnerActive
+                    ? TextSpan(
+                      text: '\nActive in this chat',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.primary,
                       ),
-                ],
-              ),
+                    )
+                    : TextSpan(
+                      text: "\n$subtitle",
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.4),
+                      ),
+                    ),
+              ],
             ),
           ),
-          if (expandedEnabled)
-            AppIconButton(
-              icon:
-                  isExpanded
-                      ? Icons.expand_less_rounded
-                      : Icons.expand_more_rounded,
-              onPressed: onToggleExpanded,
-              tooltip: isExpanded ? 'Hide chat details' : 'Show chat details',
-            ),
-
+        ),
+        if (expandedEnabled)
           AppIconButton(
-            icon: Icons.more_vert,
+            icon:
+                isExpanded
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded,
             onPressed: onToggleExpanded,
             tooltip: isExpanded ? 'Hide chat details' : 'Show chat details',
           ),
-        ],
-      ),
+
+        AppIconButton(
+          icon: Icons.more_vert,
+          onPressed: onToggleExpanded,
+          tooltip: isExpanded ? 'Hide chat details' : 'Show chat details',
+        ),
+      ],
     );
   }
 }
@@ -3183,7 +3184,9 @@ class _PinnedMessagesBanner extends StatelessWidget {
                             constraints: const BoxConstraints(maxWidth: 200),
                             child: Text(
                               message.isDeleted
-                                  ? 'This message was deleted'
+                                  ? (message.isMine
+                                      ? 'You deleted this message'
+                                      : 'This message was deleted')
                                   : message.content,
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context).textTheme.bodyMedium,

@@ -1054,7 +1054,9 @@ class _BubbleBody extends StatelessWidget {
           const SizedBox(width: 6),
           Flexible(
             child: Text(
-              'This message was deleted',
+              message.isMine
+                  ? 'You deleted this message'
+                  : 'This message was deleted',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(

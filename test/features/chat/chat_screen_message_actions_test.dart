@@ -191,7 +191,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(repo.deleteMessageCalls, contains('m1'));
-    expect(find.text('This message was deleted'), findsOneWidget);
+    // You deleted your own message, so the tombstone says so.
+    expect(find.text('You deleted this message'), findsOneWidget);
 
     await tearDownChat(tester, container);
   });

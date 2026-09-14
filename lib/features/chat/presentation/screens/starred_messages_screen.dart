@@ -55,7 +55,9 @@ class StarredMessagesScreen extends ConsumerWidget {
               return InfoRowWidget(
                 title:
                     message.isDeleted
-                        ? 'This message was deleted'
+                        ? (message.isMine
+                            ? 'You deleted this message'
+                            : 'This message was deleted')
                         : message.content,
                 subtitle: DateFormat.yMMMd().add_jm().format(message.createdAt),
                 icon: Icons.star_border,
