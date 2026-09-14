@@ -107,34 +107,37 @@ class ConversationsScreen extends ConsumerWidget {
                         relationshipId: filtered.first.relationshipId,
                         partnerId: filtered.first.partnerId,
                         partnerName: filtered.first.partnerName,
-                        onCapture: () => _openStoryCamera(
-                          context,
-                          filtered.first.relationshipId,
-                        ),
+                        onCapture:
+                            () => _openStoryCamera(
+                              context,
+                              filtered.first.relationshipId,
+                            ),
                         // Mine: only meaningful once myId is known —
                         // StoryRingsRow itself only wires onTap to a
                         // ring that already has something to open
                         // (a pending capture or activeCount > 0), so
                         // there is nothing else gating this callback
                         // here.
-                        onOpenMine: myId == null
-                            ? null
-                            : () => _openStoryReel(
-                                context,
-                                relationshipId: filtered.first.relationshipId,
-                                authorId: myId,
-                                isOwnReel: true,
-                              ),
+                        onOpenMine:
+                            myId == null
+                                ? null
+                                : () => _openStoryReel(
+                                  context,
+                                  relationshipId: filtered.first.relationshipId,
+                                  authorId: myId,
+                                  isOwnReel: true,
+                                ),
                         // Partner: StoryRingsRow only ever wires this
                         // when the partner's ring is actually drawn
                         // (activeCount > 0 for filtered.first.partnerId),
                         // per this widget's own doc comment.
-                        onOpenPartner: () => _openStoryReel(
-                          context,
-                          relationshipId: filtered.first.relationshipId,
-                          authorId: filtered.first.partnerId,
-                          isOwnReel: false,
-                        ),
+                        onOpenPartner:
+                            () => _openStoryReel(
+                              context,
+                              relationshipId: filtered.first.relationshipId,
+                              authorId: filtered.first.partnerId,
+                              isOwnReel: false,
+                            ),
                       ),
                     // The current relationship's chat, or the empty-state
                     // prompt to start one — one card, since there's at most one
@@ -235,11 +238,12 @@ class ConversationsScreen extends ConsumerWidget {
   }) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => StoryReelScreen(
-          relationshipId: relationshipId,
-          authorId: authorId,
-          isOwnReel: isOwnReel,
-        ),
+        builder:
+            (_) => StoryReelScreen(
+              relationshipId: relationshipId,
+              authorId: authorId,
+              isOwnReel: isOwnReel,
+            ),
       ),
     );
   }
@@ -263,78 +267,81 @@ class _ConversationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    return Hero(
-      tag: conversation.name,
-      child: InfoRowWidget(
-        title: conversation.name,
-        subtitle: previewText,
-        imageUrl: conversation.avatarUrl,
-        icon: conversation.avatarUrl == null ? Icons.person_outline : null,
-        subTitleMaxLines: 2,
-        showDivider: false,
-        iconColor: colorScheme.background,
-        backgroundColor: colorScheme.primary,
-        showAvatar: true,
-        disableTrailing: false,
-        showTrailingArrow: false,
-        trailing: Row(
-          children: [
-            if (conversation.unreadCount > 0) ...[
-              Container(
-                padding: EdgeInsetsDirectional.symmetric(
-                  horizontal: Spacing.sm,
-                  vertical: Spacing.xs,
-                ),
-                decoration: BoxDecoration(
-                  color: colorScheme.primary,
-                  borderRadius: BorderRadiusTokens.floatingNavAll,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    conversation.unreadCount > 99
-                        // Rolling digits don't make sense once the badge is
-                        // showing a capped, non-exact "99+" rather than the
-                        // real count.
-                        ? Text(
-                          '99+',
-                          style: textTheme.labelLarge?.copyWith(
-                            // fontSize: 12,
-                            color: colorScheme.onPrimary,
-                          ),
-                        )
-                        : AnimatedRollingCounter(
-                          count: conversation.unreadCount,
-                          style: textTheme.labelLarge?.copyWith(
-                            // fontSize: 12,
-                            color: colorScheme.onPrimary,
-                          ),
+    // No Hero: the conversation row and the chat header shared a
+    // `tag: conversation.name`, so opening a chat flew the row up into the
+    // header. The two are different shapes (a full-width row with preview
+    // text and an unread badge, versus a 40pt avatar beside a title), so
+    // the flight distorted both mid-transition rather than reading as one
+    // element moving. The page transition alone is cleaner.
+    return InfoRowWidget(
+      title: conversation.name,
+      subtitle: previewText,
+      imageUrl: conversation.avatarUrl,
+      icon: conversation.avatarUrl == null ? Icons.person_outline : null,
+      subTitleMaxLines: 2,
+      showDivider: false,
+      iconColor: colorScheme.background,
+      backgroundColor: colorScheme.primary,
+      showAvatar: true,
+      disableTrailing: false,
+      showTrailingArrow: false,
+      trailing: Row(
+        children: [
+          if (conversation.unreadCount > 0) ...[
+            Container(
+              padding: EdgeInsetsDirectional.symmetric(
+                horizontal: Spacing.sm,
+                vertical: Spacing.xs,
+              ),
+              decoration: BoxDecoration(
+                color: colorScheme.primary,
+                borderRadius: BorderRadiusTokens.floatingNavAll,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  conversation.unreadCount > 99
+                      // Rolling digits don't make sense once the badge is
+                      // showing a capped, non-exact "99+" rather than the
+                      // real count.
+                      ? Text(
+                        '99+',
+                        style: textTheme.labelLarge?.copyWith(
+                          // fontSize: 12,
+                          color: colorScheme.onPrimary,
                         ),
-                  ],
-                ),
+                      )
+                      : AnimatedRollingCounter(
+                        count: conversation.unreadCount,
+                        style: textTheme.labelLarge?.copyWith(
+                          // fontSize: 12,
+                          color: colorScheme.onPrimary,
+                        ),
+                      ),
+                ],
               ),
-            ],
-            // Plain status icon instead of a labelled pill — canSend (active
-            // relationship) reads as an open heart; anything else (read-only,
-            // archived) reads as locked/archived, mirroring the icon language
-            // _LockedConversationPreview already uses for the same states.
-            if (!conversation.canSend)
-              Icon(
-                conversation.isArchived
-                    ? Icons.archive_outlined
-                    : conversation.canSend
-                    ? Icons.favorite
-                    : Icons.lock_outline,
-                size: 18,
-                color:
-                    conversation.canSend
-                        ? colorScheme.error
-                        : colorScheme.onSurfaceVariant,
-              ),
+            ),
           ],
-        ),
-        onTap: onTap,
+          // Plain status icon instead of a labelled pill — canSend (active
+          // relationship) reads as an open heart; anything else (read-only,
+          // archived) reads as locked/archived, mirroring the icon language
+          // _LockedConversationPreview already uses for the same states.
+          if (!conversation.canSend)
+            Icon(
+              conversation.isArchived
+                  ? Icons.archive_outlined
+                  : conversation.canSend
+                  ? Icons.favorite
+                  : Icons.lock_outline,
+              size: 18,
+              color:
+                  conversation.canSend
+                      ? colorScheme.error
+                      : colorScheme.onSurfaceVariant,
+            ),
+        ],
       ),
+      onTap: onTap,
     );
   }
 }
