@@ -1196,3 +1196,19 @@ not only against the task-level test suites that produced them:
   symbols at several call sites despite being destination-neutral —
   harmless today, but worth a follow-up rename or a short doc of its own
   before a third destination is added and the naming actively misleads.
+- **`story_change_signals` was never added to the `supabase_realtime`
+  publication.** Found while writing the Planning feature's own spec
+  (`PLANNING.md` §3.4), not during this feature's own build: the one
+  migration that populates that publication
+  (`20260931210000_realtime_publication.sql`) does not list
+  `story_change_signals` among its tables, and no later migration adds
+  it either. `postgres_changes` only delivers events for tables that are
+  actually in the publication, so the Realtime-refetch half of §5.5's
+  design — the client subscribing to this table and refetching on a
+  signal — has likely never fired live in production. The other
+  refetch triggers this same section specifies (pull-to-refresh, app
+  resume, and the emit-on-resubscribe behavior) are unaffected and are
+  probably carrying the feature's actual live-update behavior today.
+  Worth a small follow-up migration adding the table to the
+  publication, verified the same way `PLANNING.md`'s own contract test
+  checks for it.
