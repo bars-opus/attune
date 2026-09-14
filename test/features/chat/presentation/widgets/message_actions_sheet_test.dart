@@ -1,4 +1,5 @@
 import 'package:attune/core/utils/screen_util_config.dart';
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.dart';
 import 'package:flutter/material.dart';
@@ -108,7 +109,13 @@ void main() {
     );
 
     expect(find.textContaining('Today At'), findsNothing);
-    expect(find.textContaining('${createdAt.year}'), findsOneWidget);
+    // Shortened per MyDateFormat.toWeekdayMonth (e.g. "Sun, November") --
+    // no day number, no year -- because the full yMMMMEEEEd format ran
+    // too long on this line next to a time stamp.
+    expect(
+      find.text(MyDateFormat.toWeekdayMonth(createdAt)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('omits Edit and Delete when the 5-minute window has passed', (

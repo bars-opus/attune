@@ -11,6 +11,14 @@ class MyDateFormat {
     return '$date';
   }
 
+  /// Abbreviated weekday, full month name, no day number or year — e.g.
+  /// "Sun, November". For a UI spot (the focused message menu) where
+  /// [toDate]'s full "Sunday, November 8, 2026" ran too long next to a
+  /// time stamp on the same line.
+  static String toWeekdayMonth(DateTime dateTime) {
+    return DateFormat('EEE, MMMM').format(dateTime);
+  }
+
   static String toTime(DateTime dateTime) {
     final time = DateFormat('hh:mm a').format(dateTime);
     return '$time';

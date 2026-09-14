@@ -111,7 +111,10 @@ List<Widget> buildMessageActionItems({
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(MyDateFormat.toDate(createdAt), style: timestampStyle),
+                  Text(
+                    MyDateFormat.toWeekdayMonth(createdAt),
+                    style: timestampStyle,
+                  ),
                   const SizedBox(height: 2),
                   Text(MyDateFormat.toTime(createdAt), style: timestampStyle),
                 ],
