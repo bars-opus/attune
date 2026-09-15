@@ -43,6 +43,8 @@ Assist mode, a places-search API), and are rate-limited accordingly.
 | Bounded input, always | Assist mode sees the tapped message plus a bounded surrounding window (§3); Understand mode sees the tapped message plus same-day history only — never the full thread, never other days |
 | No streaming, no follow-up turns in v1 | One tap, one answer. No "ask a follow-up" chat-with-the-AI thread — that is a materially bigger feature (its own UI, its own context management) not scoped here |
 | Attributed to the tapping partner, styled as AI | No new "system" sender concept — the message row's `sender_id` is the person who tapped, `is_system_notice = true` styles it distinctly, matching how Planning's own Goal-completion celebration message already works |
+| Access requires an active, unarchived relationship | Both edge functions require `status = 'active' AND chat_archived_at IS NULL` for the caller's relationship — the same predicate Stories and Planning use, stated explicitly here rather than left implicit the way the Conflict Translator's own spec leaves it |
+| An Assist-mode message is a real message, not exempt from anything a real message goes through | It flows through the ordinary send path, the safety-detection pipeline, and the existing 5-minute edit/delete window like any message the tapper sent — it is opted out of exactly one thing, downstream AI pattern analysis (§6), and nothing else |
 
 ## 3. Assist mode
 
@@ -204,7 +206,34 @@ persisted or logged with content.
 response is never inserted as a `messages` row, is never associated with
 the conversation's permanent history in any form, and is discarded from
 the client the moment the sheet is dismissed. It exists only in the
-requesting partner's own screen, for as long as they are looking at it.
+requesting partner's own screen, for as long as they are looking at it —
+this means in-memory state, never written to disk, never cached by the
+repository layer the way a normal read result would be.
+
+Whatever Riverpod provider holds the in-flight/completed response must
+be `.autoDispose` (this codebase's established convention — see
+Stories' and Planning's own reel/pager providers — for "this state must
+not outlive the screen that owns it"), scoped no wider than the sheet's
+own widget subtree, and never promoted to a `keepAlive` or
+relationship-scoped provider the way Planning's list providers
+deliberately are. A backgrounded app that later resumes to a
+`.autoDispose` provider whose widget was already disposed gets a fresh,
+empty state — not a stale private result reappearing.
+
+**What this does not defend against, stated plainly rather than left
+implicit: a screenshot of the sheet itself.** This app has one existing
+screenshot-detection mechanism (`20260816140000_chat_screenshot_notice.sql`),
+and it is scoped narrowly to ephemeral video playback — it has no general
+capability to detect a screenshot of an arbitrary screen, and building
+one is not this feature's scope. A partner who reads their private
+Understand-mode result and screenshots it has a record their partner
+will never see through the app, the same residual risk every "private to
+one device" feature in this codebase already accepts (a screenshot of
+the Conflict Translator's own private rewrite sheet is equally
+undetected today). Naming this here is deliberate: an implementer should
+not assume screenshot protection exists just because the content is
+sensitive, and should not scope-creep this feature into building
+general screenshot detection to compensate.
 
 ### 4.2 Response shape and what it may say
 
@@ -294,6 +323,52 @@ today — try again tomorrow"), not an error state to hide.
   server-side** the same way Understand mode does — the client cannot be
   trusted to only ever send its own relationship's id, matching every
   other RPC/edge-function boundary in this codebase.
+- **Both functions require the caller's relationship to be `status =
+  'active' AND chat_archived_at IS NULL`**, checked server-side on every
+  call, not only at the point the focused menu happens to render the
+  action. A relationship that ends mid-request must fail the call, not
+  succeed on a stale client-side check.
+- **An Assist-mode message insert does NOT bypass the safety-detection
+  pipeline.** `SAFETY_SYSTEM_SPEC.md` §2.1 creates a durable safety job
+  for "authenticated sender submits message," transactionally, with no
+  carve-out by message source — an Assist-mode insert has a real
+  `sender_id` and goes through the exact same insert path any other
+  message does, so it is evaluated the same way. This is deliberate, not
+  an oversight to patch: there is no principled reason an AI-authored
+  reply should be exempt from the same deterministic safety scan a
+  human-authored one gets, and building a bypass would be strictly worse
+  than doing nothing here.
+- **It IS exempt from one specific downstream step: Layer 1/2 AI pattern
+  analysis** (`message_analysis_skipped = true`), the same flag
+  Planning's celebration message already sets. This matters here more
+  than it did for Planning: if Verdict or Pulse's pattern analysis
+  ingested an Assist-mode message as if a partner wrote it from scratch,
+  it would misread the couple's own communication patterns — a
+  restaurant suggestion is not a data point about how this couple
+  communicates. `message_analysis_skipped` is what keeps this feature's
+  output from contaminating the very system the app's core insight
+  engine is built on. The safety detector operates independently of this
+  flag (`SAFETY_SYSTEM_SPEC.md` §2.3, "safety processing does not call
+  or wait for Claude" and is never gated on the analysis-skip flag), so
+  turning off pattern analysis does not turn off safety scanning.
+- **Both edge functions enforce a strict JSON response contract** (§3.2,
+  §4.2) as the primary mitigation against prompt injection via the
+  free-text instruction field or a message crafted to manipulate the
+  model — the same mitigation `ATTUNE_MASTER_SPEC.md` names for its own
+  chat-analysis pipeline ("Output is valid analysis JSON, not injected
+  instructions"). A response that does not parse as the declared shape
+  is treated as `INTERNAL_ERROR`, never partially trusted or passed
+  through to the chat message unvalidated.
+- **Editing an Assist-mode message after it posts is a real, accepted
+  edge case, not a gap to close.** `canEditOrDelete` (unmodified) already
+  makes this the tapper's own message for 5 minutes, same as anything
+  they typed — so they can edit the AI's generated text into something
+  else entirely, and the edited version carries no marker that it
+  diverged from what was actually generated. This is accepted rather
+  than special-cased: building a "locked, AI-authored, uneditable"
+  message type would be new message-model surface for one feature, and
+  the existing edit affordance already assumes whoever edits a message
+  is accountable for what it now says — true here too.
 
 ## 7. What this does not do, and why
 
@@ -336,6 +411,9 @@ attempt to answer everything.
 | A misrouted mode (Understand request answered as Assist, or vice versa) produces a harmful mismatch | Mode is an explicit tapper choice, never an automatic classification (§4.1) |
 | Cost/abuse from repeated taps | A single 20-calls/24h limit across both modes, server-enforced (§5) |
 | An "Attune" message is mistaken for something either partner actually said | Distinct visual treatment beyond the existing system-notice style — an explicit "Attune" label/icon, not reused from Planning's celebration message styling (§3.2) |
+| An Assist-mode message silently contaminates Verdict/Pulse's read of the couple's own communication patterns | `message_analysis_skipped = true` opts it out of Layer 1/2 AI pattern analysis specifically — it is not exempt from anything else, including safety scanning (§6) |
+| The free-text instruction field is used to manipulate the model (prompt injection) into an off-scope or unsafe response | Both edge functions enforce a strict JSON response contract; a non-conforming response is `INTERNAL_ERROR`, never passed through (§6) |
+| A partner keeps using this feature after the relationship ends or the chat is archived | Both edge functions require `status = 'active' AND chat_archived_at IS NULL`, checked server-side on every call (§2) |
 
 ## 9. Testing
 
@@ -349,6 +427,9 @@ attempt to answer everything.
 | Bounds | `surrounding` (Assist) rejects more than 6 entries; `same_day_history` (Understand) rejects messages outside the calendar day and enforces the 200-message ceiling |
 | Rate limiting | The 20/24h limit is shared across both modes and enforced server-side; a client that races two calls cannot exceed it |
 | Prompt acceptance criteria | A held-out set of test messages for Understand mode is graded against "never asserts cause as fact" and "never a single prescribed response" — this is a content-quality gate, not just a schema-shape test, and needs human review before ship, not just automated assertions |
+| Safety and analysis interaction | An Assist-mode message inserted through the real send path creates a safety job exactly as any other message would (verified against a live safety-detector fixture, not assumed from the insert path's shape); the same message is excluded from Layer 1/2 analysis session consumption |
+| Post-end/archive access | A call to either edge function against a relationship that is `status != 'active'` or `chat_archived_at IS NOT NULL` fails, verified directly against both functions, not only against the client's own gating |
+| Malformed model output | A response that does not conform to the declared JSON contract is treated as `INTERNAL_ERROR` client-side, never partially rendered or passed through as message content |
 
 ## 10. Implementation order
 
