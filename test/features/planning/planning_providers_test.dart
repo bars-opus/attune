@@ -51,7 +51,99 @@ List<Map<String, dynamic>> _rowsFor(List<PlanningTaskModel> tasks) => [
     },
 ];
 
+/// A minimal `PlanningKeysetPager` subclass used ONLY by the white-box
+/// test below, to drive `fetchFirstPage()` directly against a queue of
+/// completers without going through `PlanningRepository` at all — this
+/// test isn't about any repository call shape, only about
+/// `PlanningKeysetPager.refresh()`'s own internal epoch bookkeeping.
+class _TestPager extends PlanningKeysetPager<PlanningTaskModel> {
+  final List<Future<List<PlanningTaskModel>> Function()> firstPageFetches;
+  int _callIndex = 0;
+  _TestPager(this.firstPageFetches);
+
+  @override
+  Future<List<PlanningTaskModel>> fetchFirstPage() {
+    final next = firstPageFetches[_callIndex.clamp(
+      0,
+      firstPageFetches.length - 1,
+    )];
+    _callIndex++;
+    return next();
+  }
+
+  @override
+  Future<List<PlanningTaskModel>> fetchNextPage(
+    List<PlanningTaskModel> current,
+  ) => throw UnimplementedError('not exercised by this test');
+}
+
 void main() {
+  test(
+    "refresh()'s own epoch != _epoch check discards a fetch whose epoch "
+    'was invalidated while it was in flight — the branch an independent '
+    "reviewer found had zero test coverage, distinct from loadMore()'s "
+    'already-covered guard above.\n'
+    'refresh()-vs-refresh() cannot exercise this branch through the '
+    'public API: the synchronous `_refreshing` check (before '
+    "refresh()'s first await) plus the strictly-serial do-while loop "
+    'mean no sequence of ordinary refresh() calls can ever have two '
+    "fetches in flight at once — coalescing always fully serializes "
+    'them first (verified empirically with 2 and 3 stacked calls in '
+    'every completion order before writing this test). So this test '
+    'uses PlanningKeysetPager.debugBumpEpochForTest() — a '
+    '@visibleForTesting escape hatch that advances the epoch exactly '
+    'as a future concurrency bug could, without going through '
+    'refresh() — to simulate the one effect that would ever make this '
+    "guard's own branch matter, and prove the branch still discards "
+    'correctly.',
+    () async {
+      final initialFetch = Completer<List<PlanningTaskModel>>();
+      final staleFetch = Completer<List<PlanningTaskModel>>();
+
+      final pager = _TestPager([
+        () => initialFetch.future,
+        () => staleFetch.future,
+      ]);
+      addTearDown(pager.dispose);
+
+      // Let the constructor's own unawaited initial refresh() settle
+      // first, so the epoch bump below belongs to the SECOND fetch
+      // this test drives explicitly.
+      initialFetch.complete([_task('initial')]);
+      await Future<void>.delayed(Duration.zero);
+
+      // Start a refresh(); its do-while loop bumps _epoch and is now
+      // suspended awaiting staleFetch. Simulate a concurrency bug that
+      // lets _epoch advance again WHILE this fetch is still pending —
+      // something no real call sequence can do today (see this test's
+      // description), but exactly what refresh()'s own guard exists to
+      // protect against if the loop's serialization invariant is ever
+      // broken.
+      final refreshFuture = pager.refresh();
+      await Future<void>.delayed(Duration.zero);
+      pager.debugBumpEpochForTest();
+
+      staleFetch.complete([_task('stale-should-be-discarded')]);
+      await refreshFuture;
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        pager.state.value?.map((t) => t.id),
+        isNot(contains('stale-should-be-discarded')),
+        reason:
+            "refresh()'s own epoch check must discard a fetch whose "
+            "epoch no longer matches _epoch, exactly like loadMore()'s "
+            'already-tested guard does',
+      );
+      // The discarded fetch leaves the pager on whatever it last set
+      // synchronously before awaiting (AsyncValue.loading) rather than
+      // reverting to the pre-refresh "initial" state or advancing to
+      // the stale result — either of those would also mean the guard
+      // let stale data through in some form.
+      expect(pager.state, isA<AsyncLoading<List<PlanningTaskModel>>>());
+    },
+  );
+
   test(
     'a late fetch from a superseded loadMore does not overwrite a newer '
     'refresh — the epoch guard Stories shipped without, twice '
@@ -77,7 +169,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      // Reading .notifier triggers _PlanningKeysetPager's constructor,
+      // Reading .notifier triggers PlanningKeysetPager's constructor,
       // which kicks off its own initial refresh() (unawaited) — that
       // consumes the FIRST fake response. Resolve it out of the way
       // before driving the loadMore()/refresh() race this test

@@ -29,7 +29,7 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show immutable;
+import 'package:flutter/foundation.dart' show immutable, visibleForTesting;
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -131,10 +131,19 @@ final planningChangeSignalProvider = StreamProvider.autoDispose
 
 // --- The keyset pager base, copied in shape from Stories (see this
 // file's header) ---
-
-abstract class _PlanningKeysetPager<T>
+//
+// Not file-private (no leading underscore), unlike Stories' own
+// `_KeysetPager` — this is a package-internal implementation detail
+// (never in this file's "Produces" list, never exported for a screen
+// to touch directly), but it is given a plain name specifically so
+// `planning_providers_test.dart` can reach it for one white-box
+// regression test of `refresh()`'s own `epoch != _epoch` checks (see
+// [debugBumpEpochForTest]'s doc comment for why that test needs to
+// reach in this deep). Every other consumer still only ever sees this
+// through a subclass, the same as if it were file-private.
+abstract class PlanningKeysetPager<T>
     extends StateNotifier<AsyncValue<List<T>>> {
-  _PlanningKeysetPager() : super(const AsyncValue.loading()) {
+  PlanningKeysetPager() : super(const AsyncValue.loading()) {
     unawaited(refresh());
   }
 
@@ -148,6 +157,37 @@ abstract class _PlanningKeysetPager<T>
   Future<List<T>> fetchNextPage(List<T> current);
 
   bool get hasMore => _hasMore;
+
+  /// Test-only escape hatch: advances [_epoch] exactly as a concurrent
+  /// [refresh] call would, WITHOUT going through [refresh] itself.
+  ///
+  /// No real caller can do this — every production path that bumps
+  /// [_epoch] does so only from inside [refresh]'s own do-while loop,
+  /// which is gated by the synchronous `_refreshing` check running
+  /// before [refresh]'s first `await`. That gate, combined with the
+  /// loop's strictly serial iteration, means no sequence of ordinary
+  /// [refresh] calls — however many are stacked, in whatever
+  /// completion order — can ever have two fetches genuinely in flight
+  /// at once; coalescing (`_refreshAgainRequested`) always fully
+  /// serializes them first. So [refresh]'s own two
+  /// `epoch != _epoch` checks (as opposed to [loadMore]'s, which
+  /// covers a real, reachable race against a concurrent [refresh] —
+  /// see the black-box tests in `planning_providers_test.dart`) are
+  /// unreachable through the public API in this design, exactly like
+  /// the identical structure in `story_providers.dart`'s own
+  /// `_KeysetPager`, which has no test of this exact branch either.
+  ///
+  /// The checks are still correct, load-bearing documentation of the
+  /// loop's serialization invariant, and correct defensive code
+  /// against a FUTURE change that breaks it (e.g., splitting the
+  /// `_refreshing` check across an `await`, or "optimizing" the
+  /// do-while into genuinely concurrent fetches) — so rather than
+  /// leave that branch permanently uncovered, this lets a test
+  /// simulate exactly the effect such a future bug would have on
+  /// [_epoch], in isolation from whether today's call graph can
+  /// trigger it.
+  @visibleForTesting
+  void debugBumpEpochForTest() => _epoch++;
 
   Future<void> refresh() async {
     if (_refreshing) {
@@ -197,7 +237,7 @@ abstract class _PlanningKeysetPager<T>
 
 // --- Goals ---
 
-class PlanningGoalsNotifier extends _PlanningKeysetPager<PlanningGoalModel> {
+class PlanningGoalsNotifier extends PlanningKeysetPager<PlanningGoalModel> {
   PlanningGoalsNotifier(this._repository, this._relationshipId);
   final PlanningRepository _repository;
   final String _relationshipId;
@@ -245,7 +285,7 @@ final planningGoalTasksProvider = FutureProvider.autoDispose
 
 // --- Tasks ---
 
-class PlanningTasksNotifier extends _PlanningKeysetPager<PlanningTaskModel> {
+class PlanningTasksNotifier extends PlanningKeysetPager<PlanningTaskModel> {
   PlanningTasksNotifier(this._repository, this._relationshipId);
   final PlanningRepository _repository;
   final String _relationshipId;
@@ -300,7 +340,7 @@ class PlanningEventsKey {
   int get hashCode => Object.hash(relationshipId, upcoming);
 }
 
-class PlanningEventsNotifier extends _PlanningKeysetPager<PlanningEventModel> {
+class PlanningEventsNotifier extends PlanningKeysetPager<PlanningEventModel> {
   PlanningEventsNotifier(this._repository, this._key);
   final PlanningRepository _repository;
   final PlanningEventsKey _key;
@@ -346,7 +386,7 @@ final planningEventsProvider = StateNotifierProvider.autoDispose
 
 // --- Notes ---
 
-class PlanningNotesNotifier extends _PlanningKeysetPager<PlanningNoteModel> {
+class PlanningNotesNotifier extends PlanningKeysetPager<PlanningNoteModel> {
   PlanningNotesNotifier(this._repository, this._relationshipId);
   final PlanningRepository _repository;
   final String _relationshipId;
