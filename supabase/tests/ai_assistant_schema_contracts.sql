@@ -154,11 +154,19 @@ BEGIN
     v_link_msg_id uuid := gen_random_uuid();
     v_planning_item_id uuid;
   BEGIN
-    -- Needs a real planning_items row for the composite FK; skip if
-    -- Planning isn't present in this build (defensive -- Planning is a
-    -- hard dependency of this table, confirmed present by Plan A's own
-    -- migrations already having run in this worktree).
-    SELECT id INTO v_planning_item_id FROM public.planning_items LIMIT 1;
+    -- Needs a real planning_items row for the composite FK, and it MUST
+    -- belong to v_rel specifically -- the composite FK is
+    -- (planning_item_id, relationship_id), so picking up an unrelated
+    -- row from a different relationship (e.g. one created by another
+    -- SQL test file that ran earlier against the same shared database,
+    -- such as Task 7's ai_assist_planning_conversion_contracts.sql)
+    -- fails this INSERT with a foreign-key violation rather than the
+    -- RLS check this contract is actually testing. Confirmed by an
+    -- actual cross-file collision the first time Task 7's conversion
+    -- test populated planning_items before this file ran in the same
+    -- alphabetical suite pass.
+    SELECT id INTO v_planning_item_id FROM public.planning_items
+    WHERE relationship_id = v_rel LIMIT 1;
     IF v_planning_item_id IS NULL THEN
       -- create_planning_task is SECURITY DEFINER and requires
       -- auth.uid() to resolve to an active member of the relationship

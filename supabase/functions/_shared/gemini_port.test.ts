@@ -23,6 +23,7 @@ const FUNCTIONS = [
   "generate-healing-post-mortem",
   "generate-thirty-six-reflection",
   "ai-assist",
+  "ai-understand",
 ];
 
 async function source(fn: string): Promise<string> {
