@@ -13,7 +13,12 @@
 // matcher DSL would be more code than the cases themselves, and a failure
 // would report "fixture gt_001 mismatched" instead of naming the field.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { validateLayerOne } from "./index.ts";
+import { loadMessages, markMessageDone, validateLayerOne } from "./index.ts";
+import {
+  getSharedPgClient,
+  makeServiceRoleClient,
+  serviceRoleQuery,
+} from "../_shared/test_support/pg_rls_client.ts";
 
 // ---------------------------------------------------------------------------
 // Golden transcripts
@@ -173,4 +178,126 @@ Deno.test("unexpected extra keys are not passed through", () => {
   // Especially this: echoing raw content back into a column would breach
   // §10's "verdicts never contain raw messages" for downstream readers.
   assertEquals("raw_message_text" in result, false);
+});
+
+// ---------------------------------------------------------------------------
+// Task 5: message_analysis_skipped exclusion at this file's two real query
+// sites (candidate selection in loadMessages, and the mark-done exclusion
+// in markMessageDone). Runs against a real Postgres connection (the same
+// attune_test database supabase/tests/*.sql uses -- built by
+// `scripts/local_pg_setup.sh --no-tests`), through a service-role-shaped
+// test double (see _shared/test_support/pg_rls_client.ts's
+// makeServiceRoleClient), because analyse-message/index.ts calls
+// serviceRoleClient() in production, not a per-user RLS client.
+//
+// Requires: scripts/local_pg_setup.sh --no-tests
+// Run: deno test --allow-net --allow-env --allow-read --allow-sys
+//        supabase/functions/analyse-message/index.test.ts
+
+const REL_T5 = "a5100000-0000-0000-0000-000000000001";
+const USER_T5_A = "a5100000-0000-0000-0000-00000000000a";
+const USER_T5_B = "a5100000-0000-0000-0000-00000000000b";
+const MSG_DONE = "a5100000-0000-0000-0000-000000000101";
+const MSG_PENDING = "a5100000-0000-0000-0000-000000000102";
+const MSG_SKIPPED = "a5100000-0000-0000-0000-000000000103";
+
+async function resetTask5Fixtures(): Promise<void> {
+  await serviceRoleQuery(
+    `DELETE FROM public.messages WHERE relationship_id = $1`,
+    [REL_T5],
+  );
+  await serviceRoleQuery(
+    `DELETE FROM public.relationships WHERE id = $1`,
+    [REL_T5],
+  );
+  await serviceRoleQuery(
+    `DELETE FROM public.users WHERE id IN ($1, $2)`,
+    [USER_T5_A, USER_T5_B],
+  );
+  await serviceRoleQuery(
+    `DELETE FROM auth.users WHERE id IN ($1, $2)`,
+    [USER_T5_A, USER_T5_B],
+  );
+  await serviceRoleQuery(
+    `INSERT INTO auth.users (id, email) VALUES ($1, $2), ($3, $4)`,
+    [USER_T5_A, "am_t5_a@t.test", USER_T5_B, "am_t5_b@t.test"],
+  );
+  await serviceRoleQuery(
+    `INSERT INTO public.users (id, phone, display_name) VALUES
+      ($1, '+15551115001', 'T5A'), ($2, '+15551115002', 'T5B')`,
+    [USER_T5_A, USER_T5_B],
+  );
+  await serviceRoleQuery(
+    `INSERT INTO public.relationships (id, user_a, user_b, status) VALUES ($1, $2, $3, 'active')`,
+    [REL_T5, USER_T5_A, USER_T5_B],
+  );
+  await serviceRoleQuery(
+    `INSERT INTO public.messages
+      (id, relationship_id, sender_id, client_message_id, content, source,
+       message_analysis_done, message_analysis_skipped, safety_processed_at)
+     VALUES
+      ($1, $4, $5, gen_random_uuid(), 'already analysed', 'native', true, false, now()),
+      ($2, $4, $5, gen_random_uuid(), 'pending analysis', 'native', false, false, now()),
+      ($3, $4, $5, gen_random_uuid(), 'deliberately skipped', 'native', false, true, now())`,
+    [MSG_DONE, MSG_PENDING, MSG_SKIPPED, REL_T5, USER_T5_A],
+  );
+}
+
+Deno.test({
+  name: "loadMessages candidate-selection query never returns a message_analysis_skipped = true row",
+  fn: async () => {
+    await resetTask5Fixtures();
+    const client = await makeServiceRoleClient();
+    const rows = await loadMessages(client as never, { messageId: null, limit: 20 });
+    const ids = rows.map((r: Record<string, unknown>) => r.id);
+    assertEquals(ids.includes(MSG_SKIPPED), false);
+    assertEquals(ids.includes(MSG_PENDING), true);
+    assertEquals(ids.includes(MSG_DONE), false);
+  },
+});
+
+Deno.test({
+  name: "loadMessages requested by exact message_id still excludes a skipped message",
+  fn: async () => {
+    await resetTask5Fixtures();
+    const client = await makeServiceRoleClient();
+    const rows = await loadMessages(client as never, { messageId: MSG_SKIPPED, limit: 20 });
+    assertEquals(rows.length, 0);
+  },
+});
+
+Deno.test({
+  name: "markMessageDone's own exclusion guard never flips a skipped message's message_analysis_done",
+  fn: async () => {
+    await resetTask5Fixtures();
+    const client = await makeServiceRoleClient();
+    await markMessageDone(client as never, MSG_SKIPPED, { tone_score: 0.5 });
+    const rows = await serviceRoleQuery(
+      `SELECT message_analysis_done FROM public.messages WHERE id = $1`,
+      [MSG_SKIPPED],
+    );
+    assertEquals(rows[0].message_analysis_done, false);
+  },
+});
+
+Deno.test({
+  name: "markMessageDone still marks a genuinely pending (not skipped) message done",
+  fn: async () => {
+    await resetTask5Fixtures();
+    const client = await makeServiceRoleClient();
+    await markMessageDone(client as never, MSG_PENDING, { tone_score: 0.1 });
+    const rows = await serviceRoleQuery(
+      `SELECT message_analysis_done FROM public.messages WHERE id = $1`,
+      [MSG_PENDING],
+    );
+    assertEquals(rows[0].message_analysis_done, true);
+  },
+});
+
+Deno.test({
+  name: "teardown: close shared pg connection (analyse-message)",
+  fn: async () => {
+    const client = await getSharedPgClient();
+    await client.end();
+  },
 });

@@ -61,7 +61,12 @@ serve(async (req) => {
   }
 });
 
-async function loadMessages(
+// Exported for Task 5's query-shape tests (index.test.ts): the
+// candidate-selection query is what proves message_analysis_skipped is a
+// real exclusion here, so it must be callable from a test with a real
+// (test-double) Postgres-backed client rather than only reachable via
+// the HTTP handler.
+export async function loadMessages(
   supabase: ReturnType<typeof serviceRoleClient>,
   options: { messageId: string | null; limit: number },
 ) {
@@ -77,6 +82,7 @@ async function loadMessages(
       safety_processed_at
     `)
     .eq("message_analysis_done", false)
+    .eq("message_analysis_skipped", false)
     .not("safety_processed_at", "is", null)
     .order("created_at", { ascending: true })
     .limit(Math.min(Math.max(options.limit, 1), 100));
@@ -307,7 +313,10 @@ export function validateLayerOne(
   return result;
 }
 
-async function markMessageDone(
+// Exported for Task 5's query-shape tests (index.test.ts) -- see
+// loadMessages's export comment above; this is the second of the two
+// real message_analysis_skipped exclusion sites in this file.
+export async function markMessageDone(
   supabase: ReturnType<typeof serviceRoleClient>,
   messageId: string,
   fields: Record<string, unknown>,
@@ -325,7 +334,8 @@ async function markMessageDone(
     .from("messages")
     .update(payload)
     .eq("id", messageId)
-    .eq("message_analysis_done", false);
+    .eq("message_analysis_done", false)
+    .eq("message_analysis_skipped", false);
   if (error) throw error;
 }
 

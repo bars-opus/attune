@@ -24,6 +24,12 @@
 // Only implements the fluent subset ai_context_loader.ts actually calls:
 // .from().select().eq().maybeSingle() and
 // .from().select().eq().lt/gt/gte/lt().order().order().limit().
+//
+// Task 5 extends this with .not()/.is() (analyse-message's and
+// analyse-session's candidate queries use both) and a service-role
+// constructor (makeServiceRoleClient) -- those two edge functions call
+// serviceRoleClient() in production, not a per-user RLS client, so their
+// test double must run as service_role (BYPASSRLS), not `authenticated`.
 
 import { Client } from "https://deno.land/x/postgres@v0.19.3/mod.ts";
 
@@ -33,7 +39,7 @@ export interface PgRow {
 
 interface Filter {
   col: string;
-  op: "eq" | "lt" | "gt" | "gte" | "lte";
+  op: "eq" | "lt" | "gt" | "gte" | "lte" | "not_is_null" | "is_null" | "not_eq";
   value: unknown;
 }
 
@@ -73,6 +79,23 @@ class QueryBuilder {
     this.filters.push({ col, op: "lte", value });
     return this;
   }
+  // Mirrors supabase-js's .not(col, "is", null) shape -- the only .not()
+  // usage in analyse-message/index.ts and analyse-session/index.ts.
+  not(col: string, op: string, value: unknown): this {
+    if (op === "is" && value === null) {
+      this.filters.push({ col, op: "not_is_null", value: null });
+      return this;
+    }
+    throw new Error(`pg_rls_client test double: unsupported .not(${op}) shape`);
+  }
+  // Mirrors supabase-js's .is(col, null) shape.
+  is(col: string, value: unknown): this {
+    if (value === null) {
+      this.filters.push({ col, op: "is_null", value: null });
+      return this;
+    }
+    throw new Error(`pg_rls_client test double: .is() only supports null`);
+  }
   order(col: string, opts?: { ascending?: boolean }): this {
     this.orders.push({ col, ascending: opts?.ascending ?? true });
     return this;
@@ -90,8 +113,14 @@ class QueryBuilder {
       gt: ">",
       gte: ">=",
       lte: "<=",
+      not_eq: "!=",
+      is_null: "IS NULL",
+      not_is_null: "IS NOT NULL",
     };
     const whereParts = this.filters.map((f) => {
+      if (f.op === "is_null" || f.op === "not_is_null") {
+        return `${quoteIdent(f.col)} ${opSql[f.op]}`;
+      }
       params.push(f.value);
       return `${quoteIdent(f.col)} ${opSql[f.op]} $${params.length}`;
     });
@@ -102,7 +131,9 @@ class QueryBuilder {
       }`
       : "";
     const limitSql = this.limitCount != null ? `LIMIT ${this.limitCount}` : "";
-    const sql = `SELECT ${this.columns} FROM ${quoteIdent(this.table)} ${where} ${orderSql} ${limitSql}`;
+    const sql = `SELECT ${translateSelectColumns(this.columns)} FROM ${
+      quoteIdent(this.table)
+    } ${where} ${orderSql} ${limitSql}`;
     return { sql, params };
   }
 
@@ -124,6 +155,80 @@ class QueryBuilder {
     const { data } = await this.exec();
     return { data: data && data.length > 0 ? data[0] : null, error: null };
   }
+}
+
+// Supports markMessageDone's shape:
+// .from("messages").update(payload).eq(...).eq(...) -- awaited directly
+// (no .select()), matching supabase-js's default { error } result.
+class UpdateBuilder {
+  private filters: Filter[] = [];
+
+  constructor(
+    private readonly conn: RlsConnection,
+    private readonly table: string,
+    private readonly payload: Record<string, unknown>,
+  ) {}
+
+  eq(col: string, value: unknown): this {
+    this.filters.push({ col, op: "eq", value });
+    return this;
+  }
+
+  then<T>(
+    onFulfilled: (value: { data: null; error: null }) => T,
+  ): Promise<T> {
+    return this.exec().then(onFulfilled);
+  }
+
+  private async exec(): Promise<{ data: null; error: null }> {
+    const params: unknown[] = [];
+    const setCols = Object.entries(this.payload);
+    const setSql = setCols
+      .map(([col, value]) => {
+        // nvc_violations is jsonb; the raw pg driver needs an explicit
+        // cast for an array/object value passed as a JSON-text param
+        // (mirrors what PostgREST does for a jsonb column write).
+        const isJsonValue = Array.isArray(value) ||
+          (typeof value === "object" && value !== null);
+        params.push(isJsonValue ? JSON.stringify(value) : value);
+        return isJsonValue
+          ? `${quoteIdent(col)} = $${params.length}::jsonb`
+          : `${quoteIdent(col)} = $${params.length}`;
+      })
+      .join(", ");
+    const whereParts = this.filters.map((f) => {
+      params.push(f.value);
+      return `${quoteIdent(f.col)} = $${params.length}`;
+    });
+    const where = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : "";
+    const sql = `UPDATE ${quoteIdent(this.table)} SET ${setSql} ${where}`;
+    await this.conn.query(sql, params);
+    return { data: null, error: null };
+  }
+}
+
+// Rewrites PostgREST embed syntax in a .select() column string into a
+// scalar-subselect JSON object, so the raw SQL adapter can execute it.
+// Only handles the one embed shape actually used in this repo's
+// analyse-*/index.ts files: `alias:table!fkey_name(cols)` where fkey_name
+// is `<table>_<local_fk_column>_fkey` (Postgres's default constraint
+// naming). This is a test double, not a PostgREST reimplementation --
+// widen it only if a real query site starts using a different embed
+// shape.
+function translateSelectColumns(columns: string): string {
+  const embedPattern = /(\w+):(\w+)!(\w+)_fkey\(([^)]*)\)/g;
+  return columns.replace(embedPattern, (_match, alias, refTable, fkeyBody, innerCols) => {
+    // fkeyBody is "<table>_<local_fk_column>", e.g.
+    // "messages_sender_id" -> local column "sender_id".
+    const localCol = fkeyBody.replace(/^\w+?_/, "");
+    const cols = innerCols.split(",").map((c: string) => c.trim()).filter(Boolean);
+    const jsonPairs = cols
+      .map((c: string) => `'${c}', ${quoteIdent(refTable)}.${quoteIdent(c)}`)
+      .join(", ");
+    return `(SELECT jsonb_build_object(${jsonPairs}) FROM ${quoteIdent(refTable)} WHERE ${
+      quoteIdent(refTable)
+    }.id = ${quoteIdent(localCol)}) AS ${quoteIdent(alias)}`;
+  });
 }
 
 function quoteIdent(ident: string): string {
@@ -209,6 +314,8 @@ export class PgRlsClient {
   from(table: string): any {
     return {
       select: (columns: string) => new QueryBuilder(this.conn, table, columns),
+      update: (payload: Record<string, unknown>) =>
+        new UpdateBuilder(this.conn, table, payload),
     };
   }
 }
@@ -279,4 +386,16 @@ export async function makeRlsClientForUser(userId: string): Promise<PgRlsClient>
 export async function makeBypassRlsClientForUser(userId: string): Promise<PgRlsClient> {
   const pg = await getSharedPgClient();
   return new PgRlsClient(pg, userId, true);
+}
+
+// Task 5: analyse-message/index.ts and analyse-session/index.ts call
+// serviceRoleClient() in production (a real service_role-keyed
+// supabase-js client, which bypasses RLS entirely) -- not a per-user RLS
+// client. This constructs the same PgRlsClient adapter running as
+// `service_role` with no user id attached, matching that production
+// identity for query-shape tests (candidate selection, mark-done
+// exclusion) that don't need RLS to be exercised at all.
+export async function makeServiceRoleClient(): Promise<PgRlsClient> {
+  const pg = await getSharedPgClient();
+  return new PgRlsClient(pg, null, true);
 }
