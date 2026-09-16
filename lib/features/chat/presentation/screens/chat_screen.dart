@@ -7,6 +7,7 @@ import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/motion_tokens.dart';
 import 'package:attune/core/ui/motion/make_room.dart';
 import 'package:attune/core/ui/motion/payload_flight.dart';
+import 'package:attune/core/ui/motion/reaction_landing_effect.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_date_chip.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
@@ -33,6 +34,8 @@ import 'package:attune/features/conflict_translator/presentation/screens/transla
 import 'package:attune/features/games/paint_ball/models/paint_ball_models.dart';
 import 'package:attune/features/games/invites/presentation/game_composer_bar.dart';
 import 'package:attune/features/games/invites/state/game_invite_provider.dart';
+import 'package:attune/features/games/presentation/providers/game_card_provider.dart';
+import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart'
     show gameTypeDisplayName;
 import 'package:attune/features/games/presentation/widgets/chat_games_sheet.dart';
@@ -77,6 +80,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   final _controller = TextEditingController();
   final _composerFocusNode = FocusNode();
   final _composerTextKey = GlobalKey();
+  final _replyPreviewSurfaceKey = GlobalKey();
   final _gameComposerPayloadKey = GlobalKey();
   final _scrollController = ScrollController();
   final _imagePicker = ImagePickerService();
@@ -95,6 +99,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   /// renders when this is non-null.
   String? _replyToMessageId;
   String? _replyToQuotedText;
+  String? _replyMessageClientId;
+  bool _replyMessageIsMine = true;
+  String _replyingToLabel = 'you';
+  ReplyPreviewKind _replyPreviewKind = ReplyPreviewKind.text;
+  String? _replyPreviewGameType;
+  Rect? _replyOriginRect;
+  bool _replyPreviewHidden = false;
+  bool _replyFlightInProgress = false;
+  int _replyFlightEpoch = 0;
 
   /// Maps every loaded message id to its currently rendered row. Media-group
   /// members may share the representative row's key. Used by _jumpToMessage
@@ -105,6 +118,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   /// animation targets; _messageKeys above intentionally remain row keys for
   /// scroll-to-message behavior.
   final Map<String, GlobalKey> _bubbleFillKeys = {};
+  final Map<String, int> _reactionImpactTokens = {};
   final Set<String> _flyingMessageIds = <String>{};
   final Set<String> _flyingGameSessionIds = <String>{};
 
@@ -251,21 +265,225 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     await _sendDraftText(text);
   }
 
-  void _setReplyTarget(String messageId, String contentPreview) {
-    setState(() {
-      _replyToMessageId = messageId;
-      _replyToQuotedText =
-          contentPreview.length > 60
-              ? '${contentPreview.substring(0, 60)}...'
-              : contentPreview;
-    });
-    _composerFocusNode.requestFocus();
+  void _setReplyTarget(Message message) {
+    if (_replyFlightInProgress) return;
+    unawaited(_flyReplyToComposer(message));
   }
 
   void _clearReplyTarget() {
+    _replyFlightEpoch++;
     setState(() {
+      final clientId = _replyMessageClientId;
+      if (clientId != null) _flyingMessageIds.remove(clientId);
       _replyToMessageId = null;
       _replyToQuotedText = null;
+      _replyMessageClientId = null;
+      _replyMessageIsMine = true;
+      _replyingToLabel = 'you';
+      _replyPreviewKind = ReplyPreviewKind.text;
+      _replyPreviewGameType = null;
+      _replyOriginRect = null;
+      _replyPreviewHidden = false;
+      _replyFlightInProgress = false;
+    });
+  }
+
+  ReplyPreviewKind _replyKindFor(Message message) {
+    if (message.isGame) return ReplyPreviewKind.game;
+    if (message.isStreak) {
+      return _replyStreakIsOpened(message)
+          ? ReplyPreviewKind.streakOpened
+          : ReplyPreviewKind.streak;
+    }
+    if (message.hasImage || message.mediaType == 'image') {
+      return ReplyPreviewKind.image;
+    }
+    if (message.hasVideo || message.mediaType == 'video') {
+      return ReplyPreviewKind.video;
+    }
+    if (message.hasAudio || message.mediaType == 'audio') {
+      return ReplyPreviewKind.audio;
+    }
+    return ReplyPreviewKind.text;
+  }
+
+  bool _replyStreakIsOpened(Message message) {
+    if (!message.isStreak) return false;
+    if (message.isMine) return message.viewedAt != null;
+    return (message.streakViewsRemaining ?? 0) <= 0;
+  }
+
+  String? _replyGameTypeFor(Message message) {
+    final sessionId = message.gameSessionId;
+    if (sessionId == null) return null;
+    return ref.read(gameCardProvider(sessionId)).valueOrNull?.gameType;
+  }
+
+  String _replyingToLabelFor(Message message) {
+    if (message.isMine) return 'you';
+
+    final fetchedName = ref.read(gamePartnerNameProvider).valueOrNull;
+    final resolvedName = _actualPartnerName(fetchedName);
+    if (resolvedName != null) return resolvedName;
+
+    return _actualPartnerName(widget.conversation.partnerName) ?? 'Partner';
+  }
+
+  String? _actualPartnerName(String? value) {
+    final name = value?.trim();
+    if (name == null || name.isEmpty) return null;
+    final normalized = name.toLowerCase();
+    if (normalized == 'your partner' || normalized == 'partner') return null;
+    return name;
+  }
+
+  String _replyPreviewText(Message message) {
+    final content = message.content.trim();
+    final kind = _replyKindFor(message);
+    final fallback = switch (kind) {
+      ReplyPreviewKind.game => content.isEmpty ? 'Game' : content,
+      ReplyPreviewKind.image => 'Photo',
+      ReplyPreviewKind.video =>
+        message.isViewOnce ? 'View-once video' : 'Video',
+      ReplyPreviewKind.audio => 'Voice message',
+      ReplyPreviewKind.streak => 'Streak',
+      ReplyPreviewKind.streakOpened => 'Opened',
+      ReplyPreviewKind.text => '',
+    };
+    final text = content.isEmpty ? fallback : content;
+    return text.length > 60 ? '${text.substring(0, 60)}...' : text;
+  }
+
+  Rect? _bubbleRectForClientId(String? clientId) {
+    return clientId == null ? null : _rectForKey(_bubbleFillKeys[clientId]);
+  }
+
+  Rect _fallbackReplyPreviewDestination(Rect sourceRect) {
+    final composerRect = _rectForKey(_composerTextKey);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    return Rect.fromLTWH(
+      16,
+      (composerRect?.top ?? sourceRect.bottom) - 62,
+      math.max(1, screenWidth - 32),
+      58,
+    );
+  }
+
+  Future<void> _flyReplyToComposer(Message message) async {
+    final sourceRect = _bubbleRectForClientId(message.clientMessageId);
+    final shouldAnimate = sourceRect != null && !reduceMotionOf(context);
+    final epoch = ++_replyFlightEpoch;
+    final quotedText = _replyPreviewText(message);
+    final replyKind = _replyKindFor(message);
+    final replyGameType = _replyGameTypeFor(message);
+    final replyingToLabel = _replyingToLabelFor(message);
+
+    setState(() {
+      final previousClientId = _replyMessageClientId;
+      if (previousClientId != null) {
+        _flyingMessageIds.remove(previousClientId);
+      }
+      _replyToMessageId = message.id;
+      _replyToQuotedText = quotedText;
+      _replyMessageClientId = message.clientMessageId;
+      _replyMessageIsMine = message.isMine;
+      _replyingToLabel = replyingToLabel;
+      _replyPreviewKind = replyKind;
+      _replyPreviewGameType = replyGameType;
+      _replyOriginRect = sourceRect;
+      _replyPreviewHidden = shouldAnimate;
+      _replyFlightInProgress = shouldAnimate;
+      if (shouldAnimate) _flyingMessageIds.add(message.clientMessageId);
+    });
+
+    // If the keyboard is already showing, retaining focus is a no-op. If it
+    // is closed, this starts its entrance while the tracked flight follows
+    // the reply preview to its final position above the composer.
+    if (!_composerFocusNode.hasFocus) _composerFocusNode.requestFocus();
+    if (!shouldAnimate || !mounted) return;
+
+    await showPayloadFlight(
+      context: context,
+      sourceRect: sourceRect,
+      fallbackDestination: _fallbackReplyPreviewDestination(sourceRect),
+      resolveDestination: () => _rectForKey(_replyPreviewSurfaceKey),
+      trackDestination: true,
+      builder:
+          (context, progress) => _ReplyPayloadFlight(
+            quotedText: quotedText,
+            isMine: message.isMine,
+            replyingToLabel: replyingToLabel,
+            kind: replyKind,
+            gameType: replyGameType,
+            morphProgress: progress,
+          ),
+    );
+
+    if (!mounted || epoch != _replyFlightEpoch) return;
+    setState(() {
+      _flyingMessageIds.remove(message.clientMessageId);
+      _replyPreviewHidden = false;
+      _replyFlightInProgress = false;
+    });
+  }
+
+  Future<void> _cancelReplyTarget() async {
+    if (_replyFlightInProgress || _replyToMessageId == null) return;
+
+    final previewRect = _rectForKey(_replyPreviewSurfaceKey);
+    final clientId = _replyMessageClientId;
+    final destination = _bubbleRectForClientId(clientId) ?? _replyOriginRect;
+    final quotedText = _replyToQuotedText ?? '';
+    final isMine = _replyMessageIsMine;
+    final replyingToLabel = _replyingToLabel;
+    final replyKind = _replyPreviewKind;
+    final replyGameType = _replyPreviewGameType;
+    final shouldAnimate =
+        previewRect != null && destination != null && !reduceMotionOf(context);
+    if (!shouldAnimate) {
+      _clearReplyTarget();
+      return;
+    }
+
+    final epoch = ++_replyFlightEpoch;
+    setState(() {
+      _replyPreviewHidden = true;
+      _replyFlightInProgress = true;
+      if (clientId != null) _flyingMessageIds.add(clientId);
+    });
+
+    await showPayloadFlight(
+      context: context,
+      sourceRect: previewRect,
+      fallbackDestination: destination,
+      // The remembered origin is already a valid landing point. Do not park
+      // the preview for ten frames if keyboard resizing recycled the bubble.
+      destinationWaitFrames: 1,
+      resolveDestination: () => _bubbleRectForClientId(clientId),
+      builder:
+          (context, progress) => _ReplyPayloadFlight(
+            quotedText: quotedText,
+            isMine: isMine,
+            replyingToLabel: replyingToLabel,
+            kind: replyKind,
+            gameType: replyGameType,
+            morphProgress: 1 - progress,
+          ),
+    );
+
+    if (!mounted || epoch != _replyFlightEpoch) return;
+    setState(() {
+      if (clientId != null) _flyingMessageIds.remove(clientId);
+      _replyToMessageId = null;
+      _replyToQuotedText = null;
+      _replyMessageClientId = null;
+      _replyMessageIsMine = true;
+      _replyingToLabel = 'you';
+      _replyPreviewKind = ReplyPreviewKind.text;
+      _replyPreviewGameType = null;
+      _replyOriginRect = null;
+      _replyPreviewHidden = false;
+      _replyFlightInProgress = false;
     });
   }
 
@@ -455,6 +673,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   void _startReactionFlight(Message message, String emoji, Rect sourceRect) {
+    unawaited(_runReactionFlight(message, emoji, sourceRect));
+  }
+
+  Future<void> _runReactionFlight(
+    Message message,
+    String emoji,
+    Rect sourceRect,
+  ) async {
     Rect? destination() {
       final bubbleRect = _rectForKey(_bubbleFillKeys[message.clientMessageId]);
       if (bubbleRect == null) return null;
@@ -466,25 +692,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
 
     final target = destination();
-    unawaited(
-      showPayloadFlight(
-        context: context,
-        sourceRect: sourceRect,
-        fallbackDestination:
-            target ??
-            Rect.fromCenter(
-              center: Offset(
-                message.isMine ? sourceRect.left : sourceRect.right,
-                sourceRect.bottom + 56,
-              ),
-              width: 38,
-              height: 38,
-            ),
-        resolveDestination: destination,
-        builder:
-            (context, progress) => Center(
+    final fallback =
+        target ??
+        Rect.fromCenter(
+          center: Offset(
+            message.isMine ? sourceRect.left : sourceRect.right,
+            sourceRect.bottom + 56,
+          ),
+          width: 38,
+          height: 38,
+        );
+    await showPayloadFlight(
+      context: context,
+      sourceRect: sourceRect,
+      fallbackDestination: fallback,
+      resolveDestination: destination,
+      builder:
+          (context, progress) => Material(
+            type: MaterialType.transparency,
+            child: Center(
               child: Text(
                 emoji,
+                key: const ValueKey('reaction-flight-emoji'),
                 style: TextStyle(
                   fontSize: 22 + (2 * math.sin(math.pi * progress)),
                   shadows: const [
@@ -497,7 +726,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                 ),
               ),
             ),
-      ),
+          ),
+    );
+
+    if (!mounted) return;
+    final landingCenter = destination()?.center ?? fallback.center;
+    setState(() {
+      _reactionImpactTokens.update(
+        message.clientMessageId,
+        (revision) => revision + 1,
+        ifAbsent: () => 1,
+      );
+    });
+    await showReactionLandingEffect(
+      context: context,
+      center: landingCenter,
+      emoji: emoji,
     );
   }
 
@@ -921,6 +1165,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final notifier = ref.read(
       chatControllerProvider(widget.conversation).notifier,
     );
+    ref.watch(gamePartnerNameProvider);
     final conversation = state.conversation;
     final imageSharingEnabled = ref.watch(chatImageSharingEnabledProvider);
     final videoSharingEnabled = ref.watch(chatVideoSharingEnabledProvider);
@@ -1039,6 +1284,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                         animatedMessageIds: _animatedMessageIds,
                         messageKeys: _messageKeys,
                         bubbleFillKeys: _bubbleFillKeys,
+                        reactionImpactTokens: _reactionImpactTokens,
                         flyingMessageIds: _flyingMessageIds,
                         flyingGameSessionIds: _flyingGameSessionIds,
                         highlightedMessageId: _highlightedMessageId,
@@ -1075,39 +1321,65 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                       ),
                                     )
                                     .partnerTyping;
-                            return AnimatedSize(
-                              duration: const Duration(milliseconds: 220),
-                              curve: Curves.easeOutCubic,
-                              alignment: Alignment.bottomLeft,
+                            return SizedBox(
+                              width: double.infinity,
                               child: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 180),
-                                switchInCurve: Curves.easeOutCubic,
-                                switchOutCurve: Curves.easeInCubic,
-                                transitionBuilder:
-                                    (child, animation) => FadeTransition(
-                                      opacity: animation,
-                                      child: SlideTransition(
-                                        position: Tween<Offset>(
-                                          begin: const Offset(0, 0.18),
-                                          end: Offset.zero,
-                                        ).animate(animation),
+                                duration: const Duration(milliseconds: 260),
+                                reverseDuration: const Duration(
+                                  milliseconds: 180,
+                                ),
+                                switchInCurve: Curves.linear,
+                                switchOutCurve: Curves.linear,
+                                layoutBuilder: (currentChild, previousChildren) {
+                                  return Stack(
+                                    alignment: Alignment.bottomLeft,
+                                    children: [
+                                      ...previousChildren,
+                                      if (currentChild != null) currentChild,
+                                    ],
+                                  );
+                                },
+                                transitionBuilder: (child, animation) {
+                                  final fade = CurvedAnimation(
+                                    parent: animation,
+                                    curve: Curves.easeOut,
+                                    reverseCurve: Curves.easeIn,
+                                  );
+                                  final scale = CurvedAnimation(
+                                    parent: animation,
+                                    curve: Curves.easeOutBack,
+                                    reverseCurve: Curves.easeInCubic,
+                                  );
+                                  if (child.key ==
+                                      const ValueKey(
+                                        'typing_indicator_hidden',
+                                      )) {
+                                    return child;
+                                  }
+                                  return Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      16,
+                                      30,
+                                      16,
+                                      8,
+                                    ),
+                                    child: FadeTransition(
+                                      opacity: fade,
+                                      child: ScaleTransition(
+                                        alignment: Alignment.center,
+                                        scale: Tween<double>(
+                                          begin: 0.86,
+                                          end: 1,
+                                        ).animate(scale),
                                         child: child,
                                       ),
                                     ),
+                                  );
+                                },
                                 child:
                                     typing
-                                        ? const Padding(
+                                        ? const _TypingIndicatorBubble(
                                           key: ValueKey('typing_indicator'),
-                                          padding: EdgeInsets.fromLTRB(
-                                            16,
-                                            4,
-                                            16,
-                                            6,
-                                          ),
-                                          child: Align(
-                                            alignment: Alignment.centerLeft,
-                                            child: _TypingIndicatorBubble(),
-                                          ),
                                         )
                                         : const SizedBox.shrink(
                                           key: ValueKey(
@@ -1119,10 +1391,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                           },
                         ),
                         if (conversation.canSend && _replyToMessageId != null)
-                          ReplyComposerPreview(
-                            key: ValueKey(_replyToMessageId),
-                            quotedText: _replyToQuotedText ?? '',
-                            onClose: _clearReplyTarget,
+                          IgnorePointer(
+                            ignoring: _replyPreviewHidden,
+                            child: Opacity(
+                              opacity: _replyPreviewHidden ? 0 : 1,
+                              child: ReplyComposerPreview(
+                                surfaceKey: _replyPreviewSurfaceKey,
+                                quotedText: _replyToQuotedText ?? '',
+                                isMine: _replyMessageIsMine,
+                                replyingToLabel: _replyingToLabel,
+                                kind: _replyPreviewKind,
+                                gameType: _replyPreviewGameType,
+                                onClose: () => unawaited(_cancelReplyTarget()),
+                              ),
+                            ),
                           ),
                         // A staged game sits ABOVE the composer rather
                         // than replacing it, so the field stays free to
@@ -1939,6 +2221,230 @@ class _DrawerCard extends StatelessWidget {
   }
 }
 
+class _ReplyPayloadFlight extends StatelessWidget {
+  const _ReplyPayloadFlight({
+    required this.quotedText,
+    required this.isMine,
+    required this.replyingToLabel,
+    required this.kind,
+    this.gameType,
+    required this.morphProgress,
+  });
+
+  final String quotedText;
+  final bool isMine;
+  final String replyingToLabel;
+  final ReplyPreviewKind kind;
+  final String? gameType;
+  final double morphProgress;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final chatColors = theme.chatColors;
+    final morph = Curves.easeInOutCubic.transform(
+      morphProgress.clamp(0.0, 1.0),
+    );
+    final bubbleColor =
+        isMine ? chatColors.senderBubble : chatColors.receiverBubble;
+    final onBubbleColor =
+        isMine ? chatColors.onSenderBubble : chatColors.onReceiverBubble;
+    final targetSurface =
+        isMine ? chatColors.senderBubble : theme.colorScheme.surface;
+    final targetForeground =
+        isMine ? chatColors.onSenderBubble : theme.colorScheme.onSurface;
+    final targetAccent =
+        isMine ? chatColors.senderMetadata : theme.colorScheme.primary;
+    final surface = Color.lerp(bubbleColor, targetSurface, morph)!;
+    final foreground = Color.lerp(onBubbleColor, targetForeground, morph)!;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22 - (10 * morph)),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(22 - (10 * morph)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08 + (0.03 * morph)),
+              blurRadius: 6 + (2 * morph),
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding:
+              EdgeInsets.lerp(
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                morph,
+              )!,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Opacity(
+                opacity: (1 - (morph * 1.8)).clamp(0.0, 1.0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    quotedText,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: foreground,
+                    ),
+                  ),
+                ),
+              ),
+              Opacity(
+                opacity: ((morph - 0.2) / 0.8).clamp(0.0, 1.0),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 3,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: targetAccent,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    if (kind != ReplyPreviewKind.text) ...[
+                      _ReplyFlightTypeIcon(kind: kind, gameType: gameType),
+                      const SizedBox(width: 10),
+                    ],
+                    Expanded(
+                      child: RichText(
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        text: TextSpan(
+                          children: [
+                            TextSpan(
+                              text: 'Replying to $replyingToLabel',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: targetAccent,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            TextSpan(
+                              text: '\n$quotedText',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: foreground.withValues(alpha: 0.8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 36),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReplyFlightTypeIcon extends StatelessWidget {
+  const _ReplyFlightTypeIcon({required this.kind, this.gameType});
+
+  final ReplyPreviewKind kind;
+  final String? gameType;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final chatColors = Theme.of(context).chatColors;
+    // Requested for this media chip: inverse of the surrounding background.
+    // ignore: deprecated_member_use
+    final adaptiveBackground = colors.onBackground;
+    // ignore: deprecated_member_use
+    final adaptiveForeground = colors.background;
+    final resolvedGameType = gameType;
+    final icon =
+        kind == ReplyPreviewKind.game && resolvedGameType != null
+            ? gameGlyphFor(resolvedGameType)
+            : _fallbackIconFor(kind);
+    final background =
+        kind == ReplyPreviewKind.game && resolvedGameType != null
+            ? GamePalette.of(resolvedGameType).end
+            : adaptiveBackground;
+    final foreground =
+        kind == ReplyPreviewKind.game && resolvedGameType != null
+            ? Colors.white
+            : adaptiveForeground;
+
+    if (kind == ReplyPreviewKind.streakOpened) {
+      return SizedBox(
+        width: 34,
+        height: 34,
+        child: Icon(
+          Icons.check_box_outline_blank_rounded,
+          size: 20,
+          color: colors.onSurfaceVariant,
+        ),
+      );
+    }
+
+    if (kind == ReplyPreviewKind.audio) {
+      return Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: chatColors.voiceAccent,
+          shape: BoxShape.circle,
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x18000000),
+              blurRadius: 4,
+              offset: Offset(0, 1),
+            ),
+          ],
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          Icons.play_arrow_rounded,
+          size: 24,
+          color: adaptiveForeground,
+        ),
+      );
+    }
+
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(11),
+      ),
+      alignment: Alignment.center,
+      child: Icon(icon, size: 18, color: foreground),
+    );
+  }
+
+  IconData _fallbackIconFor(ReplyPreviewKind kind) {
+    switch (kind) {
+      case ReplyPreviewKind.game:
+        return Icons.sports_esports_outlined;
+      case ReplyPreviewKind.image:
+        return Icons.image_outlined;
+      case ReplyPreviewKind.video:
+        return Icons.videocam_outlined;
+      case ReplyPreviewKind.audio:
+        return Icons.play_arrow_rounded;
+      case ReplyPreviewKind.streak:
+        return Icons.play_arrow_rounded;
+      case ReplyPreviewKind.streakOpened:
+        return Icons.check_box_outline_blank_rounded;
+      case ReplyPreviewKind.text:
+        return Icons.chat_bubble_outline_rounded;
+    }
+  }
+}
+
 class _OutgoingTextFlight extends StatelessWidget {
   const _OutgoingTextFlight({required this.text, required this.progress});
 
@@ -2100,6 +2606,7 @@ class _MessageList extends ConsumerStatefulWidget {
     required this.animatedMessageIds,
     required this.messageKeys,
     required this.bubbleFillKeys,
+    required this.reactionImpactTokens,
     required this.flyingMessageIds,
     required this.flyingGameSessionIds,
     required this.highlightedMessageId,
@@ -2135,6 +2642,9 @@ class _MessageList extends ConsumerStatefulWidget {
   /// Exact fill targets for payload flights, keyed by stable client id.
   final Map<String, GlobalKey> bubbleFillKeys;
 
+  /// Per-message revisions fired exactly when a reaction flight lands.
+  final Map<String, int> reactionImpactTokens;
+
   /// Optimistic bubbles stay laid out but invisible while their visual
   /// payload is travelling toward them, enabling a seamless overlay handoff.
   final Set<String> flyingMessageIds;
@@ -2151,8 +2661,8 @@ class _MessageList extends ConsumerStatefulWidget {
   /// tightening the list's bottom reserve above the floating composer.
   final bool composerFocused;
 
-  /// Sets the screen's reply target to (messageId, contentPreview).
-  final void Function(String messageId, String contentPreview) onReply;
+  /// Flies this message into the screen's reply-composer preview.
+  final void Function(Message message) onReply;
 
   /// Jumps to and highlights a reply's parent message, given the current
   /// message list for the index-based fallback estimate.
@@ -2527,6 +3037,10 @@ class _MessageListState extends ConsumerState<_MessageList>
                         (context, timestampRevealOffset, _) => MessageBubble(
                           message: message,
                           bubbleFillKey: bubbleFillKey,
+                          reactionImpactToken:
+                              widget.reactionImpactTokens[message
+                                  .clientMessageId] ??
+                              0,
                           mediaGroup: mediaGroup,
                           conversation: conversation,
                           showStatus: index == 0 && message.isMine,
@@ -2653,7 +3167,7 @@ class _MessageListState extends ConsumerState<_MessageList>
                           onReply:
                               state.conversation.canSend &&
                                       !message.id.startsWith('_local_')
-                                  ? () => onReply(message.id, message.content)
+                                  ? () => onReply(message)
                                   : null,
                           onJumpToParent:
                               message.replyToMessageId == null
@@ -3213,7 +3727,7 @@ class _PinnedMessagesBanner extends StatelessWidget {
 }
 
 class _TypingIndicatorBubble extends StatelessWidget {
-  const _TypingIndicatorBubble();
+  const _TypingIndicatorBubble({super.key});
 
   @override
   Widget build(BuildContext context) {

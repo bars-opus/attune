@@ -5,6 +5,7 @@ import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/utils/animations/animated_scale_fade.dart';
 import 'package:attune/core/widgets/focused_action_menu.dart';
+import 'package:attune/core/widgets/search_text_field.dart';
 import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
@@ -150,6 +151,7 @@ class MessageBubble extends StatelessWidget {
     this.isGroupedWithPrevious = false,
     this.mediaGroup = const [],
     this.bubbleFillKey,
+    this.reactionImpactToken = 0,
   });
 
   final Message message;
@@ -291,6 +293,9 @@ class MessageBubble extends StatelessWidget {
 
   /// Exposes the exact painted surface to ChatScreen's payload-flight target.
   final GlobalKey? bubbleFillKey;
+
+  /// Visual-only revision incremented when a reaction flight lands.
+  final int reactionImpactToken;
 
   @override
   Widget build(BuildContext context) {
@@ -523,6 +528,7 @@ class MessageBubble extends StatelessWidget {
                       isHighlighted: isHighlighted,
                       bubbleKey: ValueKey(message.clientMessageId),
                       bubbleFillKey: bubbleFillKey,
+                      reactionImpactToken: reactionImpactToken,
                       onLongPress:
                           canOpenActions
                               ? (
@@ -550,6 +556,7 @@ class MessageBubble extends StatelessWidget {
                                 onOpenFullPicker: _buildFullPickerOpener(
                                   context,
                                   onReact,
+                                  onReactionFlight,
                                 ),
                                 horizontalAlignment:
                                     isMine
@@ -926,9 +933,10 @@ class _StarAdornment extends StatelessWidget {
 VoidCallback _buildFullPickerOpener(
   BuildContext context,
   void Function(String emoji)? onReact,
+  void Function(String emoji, Rect sourceRect)? onReactionFlight,
 ) {
   final navigator = Navigator.of(context, rootNavigator: true);
-  return () => _openFullEmojiPicker(navigator, onReact);
+  return () => _openFullEmojiPicker(navigator, onReact, onReactionFlight);
 }
 
 /// Same reasoning as [_buildFullPickerOpener]: resolved at long-press
@@ -966,48 +974,306 @@ void _openMessageInfo(NavigatorState navigator, Message message) {
 void _openFullEmojiPicker(
   NavigatorState navigator,
   void Function(String emoji)? onReact,
+  void Function(String emoji, Rect sourceRect)? onReactionFlight,
 ) {
   if (!navigator.mounted) return;
   showModalBottomSheet<void>(
     context: navigator.context,
     isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.34),
     builder:
-        (sheetContext) => SizedBox(
-          height: 320,
-          child: EmojiPicker(
-            config: const Config(
-              // checkPlatformCompatibility (default true) makes
-              // emoji_picker_flutter invoke a 'getSupportedEmojis'
-              // platform-channel call on Android to filter unsupported glyphs
-              // — its own internal implementation force-unwraps that call's
-              // result with `!` with no null check
-              // (emoji_picker_internal_utils.dart), which throws "Null check
-              // operator used on a null value" when no native handler answers
-              // the channel (reproduced on-device: tapping "+" crashed every
-              // time on Android). We don't need platform-level filtering
-              // here — false skips the channel call entirely, matching the
-              // package's own documented escape hatch for exactly this
-              // situation (its emojiTextStyle doc comment recommends the same
-              // flag for a related concern).
-              checkPlatformCompatibility: false,
-              categoryViewConfig: CategoryViewConfig(
-                // The package's own default (Category.RECENT) opens the sheet
-                // on the "recently used" tab, which is EMPTY on first use
-                // (SharedPreferences has no 'recent' key yet) — the sheet
-                // opens with no crash but looks completely empty, since
-                // nothing has ever been picked before. SMILEYS is always
-                // populated and matches iMessage/WhatsApp's own default
-                // landing category.
-                initCategory: Category.SMILEYS,
-              ),
-            ),
-            onEmojiSelected: (category, emoji) {
-              onReact?.call(emoji.emoji);
-              Navigator.of(sheetContext).pop();
-            },
-          ),
+        (sheetContext) => _ReactionPickerSheet(
+          onSelected: (emoji, sourceRect) {
+            // Start before dismissing so the emoji visibly lifts out of the
+            // picker instead of appearing only after the sheet has vanished.
+            onReactionFlight?.call(emoji, sourceRect);
+            onReact?.call(emoji);
+            Navigator.of(sheetContext).pop();
+          },
         ),
   );
+}
+
+class _ReactionPickerSheet extends StatefulWidget {
+  const _ReactionPickerSheet({required this.onSelected});
+
+  final void Function(String emoji, Rect sourceRect) onSelected;
+
+  @override
+  State<_ReactionPickerSheet> createState() => _ReactionPickerSheetState();
+}
+
+class _ReactionPickerSheetState extends State<_ReactionPickerSheet> {
+  Offset? _lastPointerPosition;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final media = MediaQuery.of(context);
+    final desiredHeight = media.size.height * 0.58;
+    final availableHeight =
+        media.size.height - media.viewInsets.bottom - media.padding.top - 16;
+    final cappedHeight = desiredHeight > 500 ? 500.0 : desiredHeight;
+    final sheetHeight =
+        cappedHeight > availableHeight ? availableHeight : cappedHeight;
+
+    final config = Config(
+      height: null,
+      // checkPlatformCompatibility (default true) makes the package invoke
+      // an Android platform channel whose result it force-unwraps. It crashes
+      // when no native handler responds, so reactions deliberately skip that
+      // optional glyph filter.
+      checkPlatformCompatibility: false,
+      locale: Localizations.localeOf(context),
+      emojiViewConfig: EmojiViewConfig(
+        columns: 8,
+        emojiSizeMax: 28,
+        backgroundColor: colors.surface,
+        verticalSpacing: 4,
+        horizontalSpacing: 2,
+        gridPadding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+        buttonMode: ButtonMode.MATERIAL,
+      ),
+      categoryViewConfig: CategoryViewConfig(
+        // RECENT is empty on first use. SMILEYS guarantees useful content.
+        initCategory: Category.SMILEYS,
+        tabBarHeight: 48,
+        backgroundColor: colors.surfaceContainerHighest.withValues(alpha: 0.5),
+        indicatorColor: colors.primary,
+        iconColor: colors.onSurfaceVariant.withValues(alpha: 0.72),
+        iconColorSelected: colors.primary,
+        dividerColor: Colors.transparent,
+      ),
+      bottomActionBarConfig: BottomActionBarConfig(enabled: false),
+      searchViewConfig: SearchViewConfig(
+        backgroundColor: colors.surface,
+        buttonIconColor: colors.primary,
+        inputTextStyle: theme.textTheme.bodyMedium?.copyWith(
+          color: colors.onSurface,
+        ),
+        hintText: 'Search reactions',
+        hintTextStyle: theme.textTheme.bodyMedium?.copyWith(
+          color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+        ),
+        customSearchView:
+            (config, state, showEmojiView) =>
+                _ReactionSearchView(config, state, showEmojiView),
+      ),
+    );
+
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+      child: SizedBox(
+        height: sheetHeight,
+        child: Material(
+          color: colors.surface,
+          elevation: 12,
+          shadowColor: Colors.black.withValues(alpha: 0.22),
+          clipBehavior: Clip.antiAlias,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 38,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colors.onSurface.withValues(alpha: 0.22),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Expanded(
+                child: Listener(
+                  behavior: HitTestBehavior.translucent,
+                  onPointerDown:
+                      (event) => _lastPointerPosition = event.position,
+                  child: EmojiPicker(
+                    config: config,
+                    customWidget:
+                        (config, state, showSearchBar) => Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 12, 8, 12),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: _ReactionSearchOpener(
+                                      onTap: showSearchBar,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Close',
+                                    onPressed:
+                                        () => Navigator.of(context).pop(),
+                                    icon: const Icon(Icons.close_rounded),
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: DefaultEmojiPickerView(
+                                config,
+                                state,
+                                showSearchBar,
+                              ),
+                            ),
+                          ],
+                        ),
+                    onEmojiSelected: (category, emoji) {
+                      final origin =
+                          _lastPointerPosition ??
+                          Offset(media.size.width / 2, media.size.height * 0.7);
+                      widget.onSelected(
+                        emoji.emoji,
+                        Rect.fromCenter(center: origin, width: 44, height: 44),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReactionSearchOpener extends StatelessWidget {
+  const _ReactionSearchOpener({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return Semantics(
+      button: true,
+      label: 'Search reactions',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: AbsorbPointer(
+          child: SearchFormField(
+            hintText: 'Search reactions',
+            showClearButton: false,
+            backgroundColor: colors.surfaceContainerHighest.withValues(
+              alpha: 0.72,
+            ),
+            iconColor: colors.onBackground,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReactionSearchView extends SearchView {
+  const _ReactionSearchView(super.config, super.state, super.showEmojiView);
+
+  @override
+  State<_ReactionSearchView> createState() => _ReactionSearchViewState();
+}
+
+class _ReactionSearchViewState extends SearchViewState<_ReactionSearchView> {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final emojiSize = widget.config.emojiViewConfig.getEmojiSize(
+          constraints.maxWidth,
+        );
+        final emojiBoxSize = widget.config.emojiViewConfig.getEmojiBoxSize(
+          constraints.maxWidth,
+        );
+
+        return ColoredBox(
+          color: colors.surface,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 12, 20, 12),
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'Back',
+                      onPressed: widget.showEmojiView,
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      color: colors.onSurfaceVariant,
+                    ),
+                    Expanded(
+                      child: SearchFormField(
+                        autofocus: true,
+                        focusNode: focusNode,
+                        hintText: 'Search reactions',
+                        backgroundColor: colors.surfaceContainerHighest
+                            .withValues(alpha: 0.72),
+                        iconColor: colors.primary,
+                        onChanged: onTextInputChanged,
+                        onClearPressed: () => onTextInputChanged(''),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(
+                height: 1,
+                color: colors.outlineVariant.withValues(alpha: 0.5),
+              ),
+              Expanded(
+                child:
+                    results.isEmpty
+                        ? Center(
+                          child: Text(
+                            'No reactions found',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        )
+                        : GridView.builder(
+                          key: const Key('reactionSearchResultsGrid'),
+                          padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount:
+                                    widget.config.emojiViewConfig.columns,
+                                mainAxisSpacing:
+                                    widget
+                                        .config
+                                        .emojiViewConfig
+                                        .verticalSpacing,
+                                crossAxisSpacing:
+                                    widget
+                                        .config
+                                        .emojiViewConfig
+                                        .horizontalSpacing,
+                              ),
+                          itemCount: results.length,
+                          itemBuilder:
+                              (context, index) => buildEmoji(
+                                results[index],
+                                emojiSize,
+                                emojiBoxSize,
+                              ),
+                        ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _BubbleBody extends StatelessWidget {

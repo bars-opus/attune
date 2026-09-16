@@ -18,6 +18,10 @@ const Curve kMakeRoomCurve = Curves.easeOutCubic;
 /// which sending starts to feel delayed.
 const Duration kPayloadFlightDuration = Duration(milliseconds: 440);
 
+/// The brief impact after a reaction payload reaches its bubble: one compact
+/// expand-compress-settle beat with a fading ripple, not a second full motion.
+const Duration kReactionLandingDuration = Duration(milliseconds: 360);
+
 /// Ambient/celebration primitives (Master Spec §17.4: animation durations live
 /// in tokens, never as raw literals at call sites).
 const Duration kGlowBreathPeriod = Duration(milliseconds: 1600);

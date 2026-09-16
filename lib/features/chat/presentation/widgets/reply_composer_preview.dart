@@ -1,205 +1,204 @@
-import 'package:attune/core/ui/motion/motion_tokens.dart';
-import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:attune/core/widgets/card_inkwell.dart';
+import 'package:attune/features/games/presentation/widgets/game_icon.dart';
+import 'package:attune/features/games/presentation/widgets/game_palette.dart';
 import 'package:flutter/material.dart';
 
-/// Opens a selected reply target upward from the composer's edge.
+enum ReplyPreviewKind { text, game, image, video, audio, streak, streakOpened }
+
+/// The settled destination for a message-to-composer reply flight.
 ///
-/// The surface arrives first, followed by its accent rail and copy, so the
-/// motion explains that the message has been attached to the next send rather
-/// than making the whole preview shake into place.
-class ReplyComposerPreview extends StatefulWidget {
+/// Motion is deliberately owned by `ChatScreen`: it knows both measured
+/// endpoints and whether the keyboard is already visible. Keeping this widget
+/// static prevents a second entrance/reverse animation from fighting the
+/// payload flight.
+class ReplyComposerPreview extends StatelessWidget {
   const ReplyComposerPreview({
     super.key,
+    this.surfaceKey,
     required this.quotedText,
     required this.onClose,
+    this.isMine = false,
+    this.replyingToLabel = 'you',
+    this.kind = ReplyPreviewKind.text,
+    this.gameType,
   });
 
+  /// Measures the painted card rather than this widget's outer padding.
+  final Key? surfaceKey;
   final String quotedText;
   final VoidCallback onClose;
-
-  @override
-  State<ReplyComposerPreview> createState() => _ReplyComposerPreviewState();
-}
-
-class _ReplyComposerPreviewState extends State<ReplyComposerPreview>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: kMakeRoomDuration,
-  );
-
-  late final Animation<double> _room = CurvedAnimation(
-    parent: _controller,
-    curve: const Interval(0, 0.82, curve: kMakeRoomCurve),
-  );
-
-  late final Animation<double> _opacity = CurvedAnimation(
-    parent: _controller,
-    curve: const Interval(0, 0.38, curve: Curves.easeOut),
-  );
-
-  late final Animation<double> _settle = Tween<double>(
-    begin: 0.97,
-    end: 1,
-  ).animate(
-    CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.08, 1, curve: kSettleCurve),
-    ),
-  );
-
-  late final Animation<Offset> _contentOffset = Tween<Offset>(
-    begin: const Offset(0, 0.18),
-    end: Offset.zero,
-  ).animate(
-    CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.18, 0.86, curve: Curves.easeOutCubic),
-    ),
-  );
-
-  late final Animation<double> _contentOpacity = CurvedAnimation(
-    parent: _controller,
-    curve: const Interval(0.18, 0.72, curve: Curves.easeOut),
-  );
-
-  late final Animation<double> _rail = CurvedAnimation(
-    parent: _controller,
-    curve: const Interval(0.06, 0.62, curve: Curves.easeOutCubic),
-  );
-
-  bool _started = false;
-  bool _closing = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_started) return;
-    _started = true;
-    if (reduceMotionOf(context)) {
-      _controller.value = 1;
-    } else {
-      _controller.forward();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _close() async {
-    if (_closing) return;
-    _closing = true;
-
-    if (reduceMotionOf(context)) {
-      widget.onClose();
-      return;
-    }
-
-    await _controller.reverse();
-    if (mounted) widget.onClose();
-  }
+  final bool isMine;
+  final String replyingToLabel;
+  final ReplyPreviewKind kind;
+  final String? gameType;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final chatColors = theme.chatColors;
+    final surfaceColor =
+        isMine ? chatColors.senderBubble : theme.colorScheme.surface;
+    final foregroundColor =
+        isMine ? chatColors.onSenderBubble : theme.colorScheme.onSurface;
+    final accentColor =
+        isMine ? chatColors.senderMetadata : theme.colorScheme.primary;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-      child: ClipRect(
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder:
-              (context, child) => Align(
-                alignment: Alignment.bottomCenter,
-                heightFactor: _room.value.clamp(0.0, 1.0),
-                child: FadeTransition(
-                  opacity: _opacity,
-                  child: ScaleTransition(
-                    key: const ValueKey('reply-preview-surface-motion'),
-                    alignment: Alignment.bottomCenter,
-                    scale: _settle,
-                    child: child,
-                  ),
-                ),
+      child: CardInkWell(
+        key: surfaceKey,
+        color: surfaceColor,
+        borderColor:
+            isMine ? chatColors.senderMetadata.withValues(alpha: 0.18) : null,
+        padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+        margin: EdgeInsets.zero,
+        enableFeedback: false,
+        child: Row(
+          children: [
+            Container(
+              width: 3,
+              height: 38,
+              decoration: BoxDecoration(
+                color: accentColor,
+                borderRadius: BorderRadius.circular(2),
               ),
-          child: CardInkWell(
-            padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-            margin: EdgeInsets.zero,
-            enableFeedback: false,
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 3,
-                  height: 38,
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: AnimatedBuilder(
-                      animation: _rail,
-                      builder:
-                          (context, child) => FractionallySizedBox(
-                            key: const ValueKey('reply-preview-accent-rail'),
-                            heightFactor: _rail.value.clamp(0.0, 1.0),
-                            child: child,
-                          ),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FadeTransition(
-                    key: const ValueKey('reply-preview-content-opacity'),
-                    opacity: _contentOpacity,
-                    child: SlideTransition(
-                      position: _contentOffset,
-                      child: RichText(
-                        text: TextSpan(
-                          children: [
-                            TextSpan(
-                              text: 'Replying to',
-                              style: Theme.of(
-                                context,
-                              ).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            TextSpan(
-                              text: '\n${widget.quotedText}',
-                              style: Theme.of(
-                                context,
-                              ).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withValues(alpha: 0.8),
-                              ),
-                            ),
-                          ],
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.start,
-                      ),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Cancel reply',
-                  icon: const Icon(Icons.close, size: 16),
-                  onPressed: _close,
-                ),
-              ],
             ),
-          ),
+            const SizedBox(width: 12),
+            if (kind != ReplyPreviewKind.text) ...[
+              _ReplyPreviewTypeIcon(kind: kind, gameType: gameType),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: 'Replying to $replyingToLabel',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: accentColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    TextSpan(
+                      text: '\n$quotedText',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: foregroundColor.withValues(alpha: 0.82),
+                      ),
+                    ),
+                  ],
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.start,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Cancel reply',
+              icon: const Icon(Icons.close, size: 16),
+              color: foregroundColor.withValues(alpha: 0.66),
+              onPressed: onClose,
+            ),
+          ],
         ),
       ),
     );
+  }
+}
+
+class _ReplyPreviewTypeIcon extends StatelessWidget {
+  const _ReplyPreviewTypeIcon({required this.kind, this.gameType});
+
+  final ReplyPreviewKind kind;
+  final String? gameType;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final chatColors = Theme.of(context).chatColors;
+    // Requested for this media chip: inverse of the surrounding background.
+    // ignore: deprecated_member_use
+    final adaptiveBackground = colors.onBackground;
+    // ignore: deprecated_member_use
+    final adaptiveForeground = colors.background;
+    final resolvedGameType = gameType;
+    final icon =
+        kind == ReplyPreviewKind.game && resolvedGameType != null
+            ? gameGlyphFor(resolvedGameType)
+            : _fallbackIconFor(kind);
+    final background =
+        kind == ReplyPreviewKind.game && resolvedGameType != null
+            ? GamePalette.of(resolvedGameType).end
+            : adaptiveBackground;
+    final foreground =
+        kind == ReplyPreviewKind.game && resolvedGameType != null
+            ? Colors.white
+            : adaptiveForeground;
+
+    if (kind == ReplyPreviewKind.streakOpened) {
+      return SizedBox(
+        width: 34,
+        height: 34,
+        child: Icon(
+          Icons.check_box_outline_blank_rounded,
+          size: 20,
+          color: colors.onSurfaceVariant,
+        ),
+      );
+    }
+
+    if (kind == ReplyPreviewKind.audio) {
+      return Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: chatColors.voiceAccent,
+          shape: BoxShape.circle,
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x18000000),
+              blurRadius: 4,
+              offset: Offset(0, 1),
+            ),
+          ],
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          Icons.play_arrow_rounded,
+          size: 24,
+          color: adaptiveForeground,
+        ),
+      );
+    }
+
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(11),
+      ),
+      alignment: Alignment.center,
+      child: Icon(icon, size: 18, color: foreground),
+    );
+  }
+
+  IconData _fallbackIconFor(ReplyPreviewKind kind) {
+    switch (kind) {
+      case ReplyPreviewKind.game:
+        return Icons.sports_esports_outlined;
+      case ReplyPreviewKind.image:
+        return Icons.image_outlined;
+      case ReplyPreviewKind.video:
+        return Icons.videocam_outlined;
+      case ReplyPreviewKind.audio:
+        return Icons.play_arrow_rounded;
+      case ReplyPreviewKind.streak:
+        return Icons.play_arrow_rounded;
+      case ReplyPreviewKind.streakOpened:
+        return Icons.check_box_outline_blank_rounded;
+      case ReplyPreviewKind.text:
+        return Icons.chat_bubble_outline_rounded;
+    }
   }
 }

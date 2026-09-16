@@ -1,3 +1,4 @@
+import 'package:attune/core/ui/motion/reaction_landing_effect.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 
@@ -95,6 +96,7 @@ class UniversalBubble extends StatefulWidget {
     this.footerSpacing = 4,
     this.showFooter = true,
     this.footerInsideBubble = false,
+    this.reactionImpactToken = 0,
   });
 
   /// True puts the bubble on the right, false on the left.
@@ -178,6 +180,10 @@ class UniversalBubble extends StatefulWidget {
   /// state: callers use this one when an animation must land on the exact
   /// fill rather than the row's surrounding layout space.
   final GlobalKey? bubbleFillKey;
+
+  /// Incremented when a reaction payload lands. Only the painted bubble
+  /// surface responds; the footer and surrounding row retain their layout.
+  final int reactionImpactToken;
 
   /// Groups bubbles so only one in the group has its [endActions] pane open
   /// at a time — opening one closes any sibling sharing this tag.
@@ -1097,214 +1103,224 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                 constraints: BoxConstraints(
                                   maxWidth: widget.maxWidth,
                                 ),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 400),
-                                  curve: Curves.easeOut,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color:
-                                          widget.isHighlighted
-                                              ? (widget.highlightColor ??
-                                                  widget.bubbleColor)
-                                              : Colors.transparent,
-                                      width: widget.isHighlighted ? 2 : 0,
-                                    ),
-                                  ),
-                                  padding: EdgeInsets.all(highlightInset),
-                                  child: GestureDetector(
-                                    onLongPress:
-                                        widget.onLongPress == null
-                                            ? null
-                                            : _handleLongPress,
-                                    behavior: HitTestBehavior.opaque,
-                                    child: DecoratedBox(
-                                      key:
-                                          widget.bubbleFillKey ??
-                                          _bubbleFillKey,
-                                      decoration: BoxDecoration(
-                                        color: widget.bubbleColor,
-                                        gradient: widget.bubbleGradient,
-                                        borderRadius: _bubbleBorderRadius,
-                                        border:
-                                            widget.showCardBorder
-                                                ? Border.all(
-                                                  // Same values CardInkWell
-                                                  // itself uses.
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .outline
-                                                      .withValues(alpha: 0.1),
-                                                  width: 0.3,
-                                                )
-                                                : null,
-                                        // A restrained 1dp-style lift for
-                                        // chat bubbles. Kept faint so grouped
-                                        // message runs still feel connected.
-                                        boxShadow:
-                                            widget.showShadow
-                                                ? const [
-                                                  BoxShadow(
-                                                    offset: Offset(0, 1),
-                                                    blurRadius: 1,
-                                                    spreadRadius: -1,
-                                                    color: Color(0x0F000000),
-                                                  ),
-                                                  BoxShadow(
-                                                    offset: Offset(0, 1),
-                                                    blurRadius: 1,
-                                                    color: Color(0x0A000000),
-                                                  ),
-                                                  BoxShadow(
-                                                    offset: Offset(0, 1),
-                                                    blurRadius: 2,
-                                                    color: Color(0x08000000),
-                                                  ),
-                                                ]
-                                                : null,
+                                child: ReactionImpactScale(
+                                  trigger: widget.reactionImpactToken,
+                                  // A reaction lands on the outward edge:
+                                  // left for mine, right for theirs.
+                                  alignment:
+                                      widget.isMine
+                                          ? Alignment.centerLeft
+                                          : Alignment.centerRight,
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 400),
+                                    curve: Curves.easeOut,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color:
+                                            widget.isHighlighted
+                                                ? (widget.highlightColor ??
+                                                    widget.bubbleColor)
+                                                : Colors.transparent,
+                                        width: widget.isHighlighted ? 2 : 0,
                                       ),
-                                      child: Padding(
-                                        padding: widget.contentPadding,
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            if (widget.quotedText != null) ...[
-                                              _quoteWithSideBar(
-                                                context,
-                                                GestureDetector(
-                                                  onTap: widget.onJumpToParent,
-                                                  behavior:
-                                                      HitTestBehavior.opaque,
-                                                  child: Container(
-                                                    padding:
-                                                        const EdgeInsets.all(6),
-                                                    decoration: BoxDecoration(
-                                                      color:
-                                                          widget
-                                                              .quoteBackgroundColor ??
-                                                          widget.onBubbleColor
-                                                              .withValues(
-                                                                alpha: 0.15,
-                                                              ),
-                                                      borderRadius:
-                                                          _quoteBlockRadius(),
+                                    ),
+                                    padding: EdgeInsets.all(highlightInset),
+                                    child: GestureDetector(
+                                      onLongPress:
+                                          widget.onLongPress == null
+                                              ? null
+                                              : _handleLongPress,
+                                      behavior: HitTestBehavior.opaque,
+                                      child: DecoratedBox(
+                                        key:
+                                            widget.bubbleFillKey ??
+                                            _bubbleFillKey,
+                                        decoration: BoxDecoration(
+                                          color: widget.bubbleColor,
+                                          gradient: widget.bubbleGradient,
+                                          borderRadius: _bubbleBorderRadius,
+                                          border:
+                                              widget.showCardBorder
+                                                  ? Border.all(
+                                                    // Same values CardInkWell
+                                                    // itself uses.
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .outline
+                                                        .withValues(alpha: 0.1),
+                                                    width: 0.3,
+                                                  )
+                                                  : null,
+                                          // A restrained 1dp-style lift for
+                                          // chat bubbles. Kept faint so grouped
+                                          // message runs still feel connected.
+                                          boxShadow:
+                                              widget.showShadow
+                                                  ? const [
+                                                    BoxShadow(
+                                                      offset: Offset(0, 1),
+                                                      blurRadius: 1,
+                                                      spreadRadius: -1,
+                                                      color: Color(0x0F000000),
                                                     ),
-                                                    child: Row(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .start,
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                        if (widget
-                                                                .showQuoteIcon &&
-                                                            widget.isMine) ...[
-                                                          _quoteIcon(),
-                                                          const SizedBox(
-                                                            width: 4,
+                                                    BoxShadow(
+                                                      offset: Offset(0, 1),
+                                                      blurRadius: 1,
+                                                      color: Color(0x0A000000),
+                                                    ),
+                                                    BoxShadow(
+                                                      offset: Offset(0, 1),
+                                                      blurRadius: 2,
+                                                      color: Color(0x08000000),
+                                                    ),
+                                                  ]
+                                                  : null,
+                                        ),
+                                        child: Padding(
+                                          padding: widget.contentPadding,
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (widget.quotedText !=
+                                                  null) ...[
+                                                _quoteWithSideBar(
+                                                  context,
+                                                  GestureDetector(
+                                                    onTap:
+                                                        widget.onJumpToParent,
+                                                    behavior:
+                                                        HitTestBehavior.opaque,
+                                                    child: Container(
+                                                      padding:
+                                                          const EdgeInsets.all(
+                                                            6,
                                                           ),
-                                                        ],
-                                                        Flexible(
-                                                          child: Column(
-                                                            crossAxisAlignment:
-                                                                CrossAxisAlignment
-                                                                    .start,
-                                                            mainAxisSize:
-                                                                MainAxisSize
-                                                                    .min,
-                                                            children: [
-                                                              if (widget
-                                                                      .quoteAuthorLabel !=
-                                                                  null)
-                                                                Align(
-                                                                  alignment:
-                                                                      widget.quoteAuthorAlignLeft
-                                                                          ? Alignment
-                                                                              .centerLeft
-                                                                          : widget
-                                                                              .isMine
-                                                                          ? Alignment
-                                                                              .centerRight
-                                                                          : Alignment
-                                                                              .centerLeft,
-                                                                  child: Text(
-                                                                    widget
-                                                                        .quoteAuthorLabel!,
-                                                                    style: (widget.quoteTextStyle ??
-                                                                            TextStyle(
-                                                                              color:
-                                                                                  widget.quoteForegroundColor ??
-                                                                                  widget.onBubbleColor,
-                                                                              fontSize:
-                                                                                  12,
-                                                                            ))
-                                                                        .copyWith(
-                                                                          color:
-                                                                              widget.quoteAuthorIsMine ==
-                                                                                      null
-                                                                                  ? null
-                                                                                  : _quoteSideBarColor(
-                                                                                    context,
-                                                                                    widget.quoteAuthorIsMine!,
-                                                                                  ),
-                                                                          fontWeight:
-                                                                              FontWeight.w600,
-                                                                        ),
-                                                                  ),
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            widget
+                                                                .quoteBackgroundColor ??
+                                                            widget.onBubbleColor
+                                                                .withValues(
+                                                                  alpha: 0.15,
                                                                 ),
-                                                              Text(
-                                                                widget
-                                                                    .quotedText!,
-                                                                maxLines: 2,
-                                                                overflow:
-                                                                    TextOverflow
-                                                                        .ellipsis,
-                                                                style:
-                                                                    widget
-                                                                        .quoteTextStyle ??
-                                                                    TextStyle(
-                                                                      color:
-                                                                          widget
-                                                                              .quoteForegroundColor ??
-                                                                          widget
-                                                                              .onBubbleColor,
-                                                                      fontSize:
-                                                                          12,
+                                                        borderRadius:
+                                                            _quoteBlockRadius(),
+                                                      ),
+                                                      child: Row(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          if (widget
+                                                                  .showQuoteIcon &&
+                                                              widget
+                                                                  .isMine) ...[
+                                                            _quoteIcon(),
+                                                            const SizedBox(
+                                                              width: 4,
+                                                            ),
+                                                          ],
+                                                          Flexible(
+                                                            child: Column(
+                                                              crossAxisAlignment:
+                                                                  CrossAxisAlignment
+                                                                      .start,
+                                                              mainAxisSize:
+                                                                  MainAxisSize
+                                                                      .min,
+                                                              children: [
+                                                                if (widget
+                                                                        .quoteAuthorLabel !=
+                                                                    null)
+                                                                  Align(
+                                                                    alignment:
+                                                                        widget.quoteAuthorAlignLeft
+                                                                            ? Alignment.centerLeft
+                                                                            : widget.isMine
+                                                                            ? Alignment.centerRight
+                                                                            : Alignment.centerLeft,
+                                                                    child: Text(
+                                                                      widget
+                                                                          .quoteAuthorLabel!,
+                                                                      style: (widget.quoteTextStyle ??
+                                                                              TextStyle(
+                                                                                color:
+                                                                                    widget.quoteForegroundColor ??
+                                                                                    widget.onBubbleColor,
+                                                                                fontSize:
+                                                                                    12,
+                                                                              ))
+                                                                          .copyWith(
+                                                                            color:
+                                                                                widget.quoteAuthorIsMine ==
+                                                                                        null
+                                                                                    ? null
+                                                                                    : _quoteSideBarColor(
+                                                                                      context,
+                                                                                      widget.quoteAuthorIsMine!,
+                                                                                    ),
+                                                                            fontWeight:
+                                                                                FontWeight.w600,
+                                                                          ),
                                                                     ),
-                                                              ),
-                                                            ],
+                                                                  ),
+                                                                Text(
+                                                                  widget
+                                                                      .quotedText!,
+                                                                  maxLines: 2,
+                                                                  overflow:
+                                                                      TextOverflow
+                                                                          .ellipsis,
+                                                                  style:
+                                                                      widget
+                                                                          .quoteTextStyle ??
+                                                                      TextStyle(
+                                                                        color:
+                                                                            widget.quoteForegroundColor ??
+                                                                            widget.onBubbleColor,
+                                                                        fontSize:
+                                                                            12,
+                                                                      ),
+                                                                ),
+                                                              ],
+                                                            ),
                                                           ),
-                                                        ),
-                                                        if (widget
-                                                                .showQuoteIcon &&
-                                                            !widget.isMine) ...[
-                                                          const SizedBox(
-                                                            width: 4,
-                                                          ),
-                                                          _quoteIcon(),
+                                                          if (widget
+                                                                  .showQuoteIcon &&
+                                                              !widget
+                                                                  .isMine) ...[
+                                                            const SizedBox(
+                                                              width: 4,
+                                                            ),
+                                                            _quoteIcon(),
+                                                          ],
                                                         ],
-                                                      ],
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
-                                              ),
-                                              const SizedBox(height: 4),
+                                                const SizedBox(height: 4),
+                                              ],
+                                              widget.content,
+                                              if (widget.showFooter &&
+                                                  widget
+                                                      .footerInsideBubble) ...[
+                                                SizedBox(
+                                                  height: widget.footerSpacing,
+                                                ),
+                                                Align(
+                                                  alignment:
+                                                      Alignment.centerRight,
+                                                  child: widget.footer,
+                                                ),
+                                              ],
                                             ],
-                                            widget.content,
-                                            if (widget.showFooter &&
-                                                widget.footerInsideBubble) ...[
-                                              SizedBox(
-                                                height: widget.footerSpacing,
-                                              ),
-                                              Align(
-                                                alignment:
-                                                    Alignment.centerRight,
-                                                child: widget.footer,
-                                              ),
-                                            ],
-                                          ],
+                                          ),
                                         ),
                                       ),
                                     ),

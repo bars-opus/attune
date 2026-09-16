@@ -39,6 +39,7 @@ Future<void> showFocusedActionMenu({
   // not an intent to compose.
   FocusManager.instance.primaryFocus?.unfocus();
   FocusManager.instance.applyFocusChangesIfNeeded();
+  final originatingRoute = ModalRoute.of(context);
 
   // Fires synchronously, before the route even opens — matches "the
   // instant the menu opens," not deferred to an animation-complete
@@ -68,6 +69,7 @@ Future<void> showFocusedActionMenu({
         onReact: onReact,
         onReactionFlight: onReactionFlight,
         onOpenFullPicker: onOpenFullPicker,
+        originatingRoute: originatingRoute,
         horizontalAlignment: horizontalAlignment,
         animation: animation,
       );
@@ -84,6 +86,7 @@ class _FocusedActionMenuOverlay extends StatefulWidget {
     required this.onReact,
     this.onReactionFlight,
     required this.onOpenFullPicker,
+    required this.originatingRoute,
     required this.horizontalAlignment,
     required this.animation,
   });
@@ -95,6 +98,7 @@ class _FocusedActionMenuOverlay extends StatefulWidget {
   final void Function(String emoji) onReact;
   final void Function(String emoji, Rect sourceRect)? onReactionFlight;
   final VoidCallback onOpenFullPicker;
+  final ModalRoute<dynamic>? originatingRoute;
   final FocusedActionMenuHorizontalAlignment horizontalAlignment;
   final Animation<double> animation;
 
@@ -130,6 +134,7 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
   // widget at all, so intercepting every dismiss path uniformly means
   // intercepting the pop itself, not the many call sites that trigger it.
   bool _dismissing = false;
+  bool _dismissedOutside = false;
   Timer? _dismissTimer;
   Completer<bool>? _dismissCompleter;
 
@@ -360,10 +365,20 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
                         });
                       },
                       borderRadius: BorderRadius.circular(22),
-                      child: const SizedBox(
+                      child: SizedBox(
                         width: 44,
                         height: 44,
-                        child: Center(child: Icon(Icons.add, size: 22)),
+                        child: Center(
+                          child: Semantics(
+                            label: 'More reactions',
+                            button: true,
+                            child: Icon(
+                              Icons.add,
+                              size: 20,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -384,10 +399,25 @@ class _FocusedActionMenuOverlayState extends State<_FocusedActionMenuOverlay> {
           if (route != null && route.isActive) {
             route.navigator?.removeRoute(route);
           }
+          if (_dismissedOutside) {
+            // The route removal can restore a composer request that arrived
+            // after the opening clear. Wait until that focus handoff settles.
+            final originatingRoute = widget.originatingRoute;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (originatingRoute?.isCurrent == false) return;
+              FocusManager.instance.primaryFocus?.unfocus();
+              FocusManager.instance.applyFocusChangesIfNeeded();
+            });
+          }
         });
       },
       child: GestureDetector(
-        onTap: () => Navigator.of(context).maybePop(),
+        onTap: () {
+          _dismissedOutside = true;
+          FocusManager.instance.primaryFocus?.unfocus();
+          FocusManager.instance.applyFocusChangesIfNeeded();
+          Navigator.of(context).maybePop();
+        },
         behavior: HitTestBehavior.opaque,
         child: AnimatedBuilder(
           animation: widget.animation,

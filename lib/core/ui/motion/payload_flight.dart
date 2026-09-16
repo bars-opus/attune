@@ -15,6 +15,10 @@ typedef PayloadFlightBuilder =
 /// function is first called. The payload waits at its source for a handful of
 /// frames while that destination lays out, then follows a small upward arc and
 /// morphs into the measured target rectangle.
+///
+/// When [trackDestination] is true, the destination is remeasured on every
+/// animation tick. This is intended for targets that move with the keyboard;
+/// ordinary message/reaction targets retain the cheaper locked destination.
 Future<void> showPayloadFlight({
   required BuildContext context,
   required Rect sourceRect,
@@ -23,6 +27,7 @@ Future<void> showPayloadFlight({
   required PayloadFlightBuilder builder,
   Duration duration = kPayloadFlightDuration,
   int destinationWaitFrames = 10,
+  bool trackDestination = false,
 }) {
   assert(destinationWaitFrames > 0);
   if (reduceMotionOf(context)) return Future<void>.value();
@@ -39,6 +44,7 @@ Future<void> showPayloadFlight({
           resolveDestination: resolveDestination,
           duration: duration,
           destinationWaitFrames: destinationWaitFrames,
+          trackDestination: trackDestination,
           builder: builder,
           onCompleted: () {
             entry.remove();
@@ -57,6 +63,7 @@ class _PayloadFlight extends StatefulWidget {
     required this.resolveDestination,
     required this.duration,
     required this.destinationWaitFrames,
+    required this.trackDestination,
     required this.builder,
     required this.onCompleted,
   });
@@ -66,6 +73,7 @@ class _PayloadFlight extends StatefulWidget {
   final Rect? Function() resolveDestination;
   final Duration duration;
   final int destinationWaitFrames;
+  final bool trackDestination;
   final PayloadFlightBuilder builder;
   final VoidCallback onCompleted;
 
@@ -137,6 +145,12 @@ class _PayloadFlightState extends State<_PayloadFlight>
         child: AnimatedBuilder(
           animation: _controller,
           builder: (context, _) {
+            if (widget.trackDestination && _started) {
+              final latestDestination = widget.resolveDestination();
+              if (latestDestination != null && !latestDestination.isEmpty) {
+                _destination = latestDestination;
+              }
+            }
             final raw = _started ? _controller.value : 0.0;
             final progress = Curves.easeInOutCubicEmphasized.transform(raw);
             final destination = _destination ?? widget.sourceRect;

@@ -97,4 +97,56 @@ void main() {
 
     expect(builtPayload, isFalse);
   });
+
+  testWidgets('tracks a destination that moves with the keyboard', (
+    tester,
+  ) async {
+    var destination = const Rect.fromLTWH(250, 300, 100, 50);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder:
+                (context) => TextButton(
+                  onPressed: () {
+                    showPayloadFlight(
+                      context: context,
+                      sourceRect: const Rect.fromLTWH(20, 600, 120, 44),
+                      fallbackDestination: destination,
+                      resolveDestination: () => destination,
+                      trackDestination: true,
+                      builder:
+                          (context, progress) => const ColoredBox(
+                            key: ValueKey('tracked-payload'),
+                            color: Colors.green,
+                          ),
+                    );
+                  },
+                  child: const Text('reply'),
+                ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('reply'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
+    final beforeMove = tester.getRect(
+      find.byKey(const ValueKey('tracked-payload')),
+    );
+
+    destination = const Rect.fromLTWH(60, 80, 260, 58);
+    await tester.pump(const Duration(milliseconds: 80));
+    final afterMove = tester.getRect(
+      find.byKey(const ValueKey('tracked-payload')),
+    );
+
+    expect(afterMove.top, lessThan(beforeMove.top));
+    expect(afterMove.width, greaterThan(beforeMove.width));
+
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tracked-payload')), findsNothing);
+  });
 }

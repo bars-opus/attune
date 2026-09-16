@@ -1,5 +1,6 @@
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
+import 'package:attune/features/chat/presentation/widgets/reply_composer_preview.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -93,6 +94,120 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tearDownChat(tester, container);
   });
+
+  testWidgets('outside dismissal never refocuses the chat composer', (
+    tester,
+  ) async {
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    repo.seedIncoming(
+      id: 'm-focus-dismiss',
+      relationshipId: 'rel-1',
+      senderId: 'partner',
+      content: 'hold to inspect',
+      createdAt: DateTime.now(),
+    );
+    final container = await pumpChat(tester, repo);
+    final composer = find.byType(EditableText);
+    final composerCenter = tester.getCenter(composer);
+
+    for (final entranceDelay in [
+      Duration.zero,
+      const Duration(milliseconds: 80),
+      const Duration(milliseconds: 400),
+    ]) {
+      await tester.tap(composer);
+      await tester.pump();
+      expect(tester.widget<EditableText>(composer).focusNode.hasFocus, isTrue);
+
+      await tester.longPress(find.text('hold to inspect'));
+      await tester.pump(entranceDelay);
+      expect(find.text('Copy'), findsOneWidget);
+      expect(tester.widget<EditableText>(composer).focusNode.hasFocus, isFalse);
+
+      if (entranceDelay == const Duration(milliseconds: 80)) {
+        // Model a delayed focus request from an earlier composer action that
+        // arrives after the menu has already taken focus.
+        tester.widget<EditableText>(composer).focusNode.requestFocus();
+        await tester.pump();
+      }
+
+      // This is directly over the field beneath the menu's scrim. It must
+      // dismiss the menu without allowing the field to acquire focus.
+      await tester.tapAt(composerCenter);
+      if (entranceDelay == const Duration(milliseconds: 400)) {
+        // Another focus request can also arrive during the reverse menu
+        // animation, after the outside tap but before route removal.
+        tester.widget<EditableText>(composer).focusNode.requestFocus();
+      }
+      await tester.pump(const Duration(milliseconds: 750));
+      expect(find.text('Copy'), findsNothing);
+      expect(tester.widget<EditableText>(composer).focusNode.hasFocus, isFalse);
+    }
+
+    await tearDownChat(tester, container);
+  });
+
+  testWidgets('Reply action still focuses the composer', (tester) async {
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    repo.seedIncoming(
+      id: 'm-reply-focus',
+      relationshipId: 'rel-1',
+      senderId: 'partner',
+      content: 'reply to this',
+      createdAt: DateTime.now(),
+    );
+    final container = await pumpChat(tester, repo);
+
+    await tester.longPress(find.text('reply to this'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('Reply'));
+    await tester.pump(const Duration(milliseconds: 750));
+
+    final editable = tester.widget<EditableText>(find.byType(EditableText));
+    expect(editable.focusNode.hasFocus, isTrue);
+    expect(find.byType(ReplyComposerPreview), findsOneWidget);
+
+    await tearDownChat(tester, container);
+  });
+
+  testWidgets(
+    'swipe-to-reply focuses composer and cancel waits for return flight',
+    (tester) async {
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      repo.seedIncoming(
+        id: 'm1',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'fly this reply',
+        createdAt: DateTime.now(),
+      );
+      final container = await pumpChat(tester, repo);
+
+      await tester.drag(find.text('fly this reply'), const Offset(120, 0));
+      await tester.pump();
+
+      final editable = tester.widget<EditableText>(find.byType(EditableText));
+      expect(editable.focusNode.hasFocus, isTrue);
+      expect(find.byType(ReplyComposerPreview), findsOneWidget);
+
+      await tester.pumpAndSettle();
+      final cancelButton = tester.widget<IconButton>(
+        find.descendant(
+          of: find.byType(ReplyComposerPreview),
+          matching: find.byType(IconButton),
+        ),
+      );
+      cancelButton.onPressed!();
+      await tester.pump();
+      expect(find.byType(ReplyComposerPreview), findsOneWidget);
+
+      await tester.pumpAndSettle();
+      expect(find.byType(ReplyComposerPreview), findsNothing);
+      expect(find.text('fly this reply'), findsOneWidget);
+
+      await tearDownChat(tester, container);
+    },
+  );
 
   testWidgets('Star from the sheet reaches the repository', (tester) async {
     final repo = FakeChatRepository(currentUserId: 'user-a');
@@ -197,34 +312,31 @@ void main() {
     await tearDownChat(tester, container);
   });
 
-  testWidgets(
-    'Info opens MessageInfoScreen for the long-pressed message — the '
-    'exact recycled-element hazard _buildFullPickerOpener documents for '
-    'the emoji picker applies here too, so this proves the callback '
-    'still resolves after the menu route has popped',
-    (tester) async {
-      final repo = FakeChatRepository(currentUserId: 'user-a');
-      repo.seedIncoming(
-        id: 'm1',
-        relationshipId: 'rel-1',
-        senderId: 'user-a',
-        content: 'inspect me',
-        createdAt: DateTime.now(),
-      );
-      final container = await pumpChat(tester, repo);
+  testWidgets('Info opens MessageInfoScreen for the long-pressed message — the '
+      'exact recycled-element hazard _buildFullPickerOpener documents for '
+      'the emoji picker applies here too, so this proves the callback '
+      'still resolves after the menu route has popped', (tester) async {
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    repo.seedIncoming(
+      id: 'm1',
+      relationshipId: 'rel-1',
+      senderId: 'user-a',
+      content: 'inspect me',
+      createdAt: DateTime.now(),
+    );
+    final container = await pumpChat(tester, repo);
 
-      await tester.longPress(find.text('inspect me'));
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.tap(find.text('Info'));
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pumpAndSettle();
+    await tester.longPress(find.text('inspect me'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('Info'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
 
-      expect(find.text('Message info'), findsOneWidget);
-      expect(find.text('Sent'), findsOneWidget);
+    expect(find.text('Message info'), findsOneWidget);
+    expect(find.text('Sent'), findsOneWidget);
 
-      await tearDownChat(tester, container);
-    },
-  );
+    await tearDownChat(tester, container);
+  });
 
   testWidgets('Edit saves the new content through the controller', (
     tester,
@@ -309,9 +421,36 @@ void main() {
       await tester.longPress(find.text('hello there'));
       await tester.pump(const Duration(milliseconds: 400));
       await tester.tap(find.text('❤️'));
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 120));
+      final flightEmoji = find.byKey(const ValueKey('reaction-flight-emoji'));
+      expect(flightEmoji, findsOneWidget);
+      expect(
+        DefaultTextStyle.of(flightEmoji.evaluate().single).style.decoration,
+        TextDecoration.none,
+      );
+      await tester.pump(const Duration(milliseconds: 280));
 
       expect(repo.reactionsByMessage['m1']?['user-a'], '❤️');
+      var sawLandingSplash = false;
+      for (var frame = 0; frame < 60; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        if (find
+            .byKey(const ValueKey('reaction-landing-splash'))
+            .evaluate()
+            .isNotEmpty) {
+          sawLandingSplash = true;
+          break;
+        }
+      }
+      expect(sawLandingSplash, isTrue);
+      // The frame that inserts the splash also starts the bubble controller
+      // at exactly 1x; advance into the shared impact beat before sampling.
+      await tester.pump(const Duration(milliseconds: 64));
+      final bubbleImpact = tester.widget<ScaleTransition>(
+        find.byKey(const ValueKey('reaction-bubble-impact')),
+      );
+      expect(bubbleImpact.scale.value, greaterThan(1));
+      await tester.pumpAndSettle();
       await tearDownChat(tester, container);
     },
   );

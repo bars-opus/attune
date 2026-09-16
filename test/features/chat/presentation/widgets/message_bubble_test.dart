@@ -392,6 +392,9 @@ void main() {
         content: 'hi',
         createdAt: DateTime.now(),
       );
+      String? reactedWith;
+      String? flownEmoji;
+      Rect? flightSource;
 
       await tester.pumpWidget(
         MaterialApp(
@@ -399,7 +402,11 @@ void main() {
             body: MessageBubble(
               message: message,
               currentUserId: 'u1',
-              onReact: (_) {},
+              onReact: (emoji) => reactedWith = emoji,
+              onReactionFlight: (emoji, sourceRect) {
+                flownEmoji = emoji;
+                flightSource = sourceRect;
+              },
             ),
           ),
         ),
@@ -416,6 +423,16 @@ void main() {
       // The real content check: at least one emoji is actually rendered,
       // proving the sheet did not land on the empty first-use Recent tab.
       expect(find.byType(EmojiCell), findsWidgets);
+
+      final pickerRect = tester.getRect(find.byType(EmojiPicker));
+      await tester.tap(find.byType(EmojiCell).first);
+      await tester.pumpAndSettle();
+
+      expect(reactedWith, isNotNull);
+      expect(flownEmoji, reactedWith);
+      expect(flightSource, isNotNull);
+      expect(pickerRect.contains(flightSource!.center), isTrue);
+      expect(find.byType(EmojiPicker), findsNothing);
     },
   );
 

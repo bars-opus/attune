@@ -27,10 +27,43 @@ void main() {
     expect(find.byType(BreathingDots), findsNothing);
 
     repo.emitPartnerTyping('partner', true);
+    await tester.pump();
+    final initialPosition = tester.getCenter(find.byType(BreathingDots));
     await tester.pump(const Duration(milliseconds: 60));
+    final midPosition = tester.getCenter(find.byType(BreathingDots));
     await tester.pump(const Duration(milliseconds: 60));
+    final laterPosition = tester.getCenter(find.byType(BreathingDots));
+
+    expect(midPosition.dx, closeTo(initialPosition.dx, 0.5));
+    expect(laterPosition.dx, closeTo(initialPosition.dx, 0.5));
+    expect(midPosition.dy, closeTo(initialPosition.dy, 0.5));
+    expect(laterPosition.dy, closeTo(initialPosition.dy, 0.5));
 
     expect(find.byType(BreathingDots), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('typing_indicator')),
+        matching: find.byType(ScaleTransition),
+      ),
+      findsOneWidget,
+    );
+    final padding = tester.widget<Padding>(
+      find.ancestor(
+        of: find.byKey(const ValueKey('typing_indicator')),
+        matching: find.byType(Padding),
+      ).first,
+    );
+    expect(padding.padding, const EdgeInsets.fromLTRB(16, 30, 16, 8));
+
+    repo.emitPartnerTyping('partner', false);
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(find.byType(BreathingDots), findsOneWidget);
+    final disappearingPosition = tester.getCenter(find.byType(BreathingDots));
+    expect(disappearingPosition.dx, closeTo(initialPosition.dx, 0.5));
+    expect(disappearingPosition.dy, closeTo(initialPosition.dy, 0.5));
+
+    await tester.pump(const Duration(milliseconds: 260));
+    expect(find.byType(BreathingDots), findsNothing);
 
     // Let the view-active mark-as-read debounce (500ms) and the typing
     // controller's own timers settle, then unmount the widget tree before
