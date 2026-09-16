@@ -3,6 +3,7 @@ import 'package:attune/core/notifications/services/onesignal_service.dart';
 import 'package:attune/core/providers/locale_provider.dart';
 import 'package:attune/core/providers/routing_providers.dart';
 import 'package:attune/core/providers/theme_provider.dart';
+import 'package:attune/core/services/app_privacy_cover.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
@@ -54,9 +55,11 @@ class _AppState extends ConsumerState<App> {
           supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (context, child) {
-            return MediaQuery.withClampedTextScaling(
-              maxScaleFactor: 1.0,
-              child: child ?? const SizedBox.shrink(),
+            return AppPrivacyCover(
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.0,
+                child: child ?? const SizedBox.shrink(),
+              ),
             );
           },
         );
