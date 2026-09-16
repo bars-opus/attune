@@ -61,6 +61,7 @@ import 'package:attune/features/reminders/presentation/screens/family_members_sc
 import 'package:attune/features/timeline/presentation/screens/log_moment_details_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/log_moment_type_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
+import 'package:attune/features/planning/presentation/screens/planning_home_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_entry_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_completion_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_history_screen.dart';
@@ -236,6 +237,7 @@ class RouteNames {
   static const String journalEntryDetail = '/journalEntryDetail';
   static const String pulse = '/pulse';
   static const String timeline = '/timeline';
+  static const String planning = '/planning';
   static const String opinionLoader = '/opinionLoader';
   static const String addEditReminder = '/couples-calendar/add';
   static const String familyMembers = '/couples-calendar/family';
@@ -624,6 +626,19 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.timeline,
         name: 'timeline',
         builder: (context, state) => const TimelineScreen(showAppBar: true),
+      ),
+      GoRoute(
+        path: RouteNames.planning,
+        name: 'planning',
+        builder: (context, state) {
+          final relationshipId = state.extra as String?;
+          if (relationshipId == null) {
+            return const Scaffold(
+              body: Center(child: Text('Planning unavailable.')),
+            );
+          }
+          return PlanningHomeScreen(relationshipId: relationshipId);
+        },
       ),
       GoRoute(
         path: RouteNames.opinionLoader,
