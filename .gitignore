@@ -67,6 +67,9 @@ coverage/
 # Superpowers isolated worktrees (scratch; never committed)
 .worktrees/
 
+# Superpowers subagent-driven-development workspaces (scratch; never committed)
+.superpowers/
+
 # Flutter golden-comparison output. Written next to the test on every
 # mismatch; pure diagnostics, never source. Three agents generated these
 # during Plan C and none was committed only by luck.
