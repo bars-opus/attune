@@ -58,6 +58,14 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- how the media_*/is_view_once/streak_views_remaining loss reached review.
 \i supabase/migrations/20260939020000_story_reply_grants.sql
 
+-- Same replay for Planning: the blanket GRANT above would otherwise
+-- silently hand authenticated direct write access to all five Planning
+-- tables, even though Task 1's grants say SELECT-only -- masking
+-- exactly the kind of security bug this replay pattern exists to catch
+-- (see this file's own top-of-file comment and STORIES.md's account of
+-- the same trap).
+\i supabase/migrations/20260941030000_planning_table_grants.sql
+
 -- Deliberately NOT granting EXECUTE on all functions.
 --
 -- Supabase's default is EXECUTE for PUBLIC on new functions, and the
