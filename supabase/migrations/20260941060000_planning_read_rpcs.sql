@@ -68,6 +68,17 @@ STABLE
 SECURITY INVOKER
 SET search_path = public
 AS $$
+  -- Cursor predicate: the sort below is MIXED-direction --
+  -- (completed_at IS NOT NULL) ASC, due_date ASC, updated_at DESC, id
+  -- DESC -- so a single ascending tuple comparison across all four keys
+  -- (as a naive `(k1,k2,k3,k4) > (v1,v2,v3,v4)` would do) is wrong: it is
+  -- only sound when every key in the tuple sorts the same direction.
+  -- Instead this is an explicit per-key OR-chain, the standard
+  -- keyset-pagination pattern for a mixed-direction sort: advance past a
+  -- row only if it differs on some earlier key in that key's own
+  -- direction, or matches every earlier key exactly and differs on the
+  -- next key in ITS direction. This is sound for a tie on any of the
+  -- leading 1, 2, or 3 keys, not only the reported all-tied-but-id case.
   SELECT * FROM public.planning_items
   WHERE relationship_id = p_relationship_id
     AND item_kind = 'task'
@@ -76,13 +87,36 @@ AS $$
     AND (
       p_after_updated_at IS NULL
       OR (
-        (completed_at IS NOT NULL),
-        COALESCE(due_date, 'infinity'::date),
-        updated_at, id
-      ) > (
-        (SELECT completed_at IS NOT NULL FROM public.planning_items WHERE id = p_after_id),
-        (SELECT COALESCE(due_date, 'infinity'::date) FROM public.planning_items WHERE id = p_after_id),
-        p_after_updated_at, p_after_id
+        (completed_at IS NOT NULL) > (
+          SELECT completed_at IS NOT NULL FROM public.planning_items WHERE id = p_after_id
+        )
+      )
+      OR (
+        (completed_at IS NOT NULL) = (
+          SELECT completed_at IS NOT NULL FROM public.planning_items WHERE id = p_after_id
+        )
+        AND COALESCE(due_date, 'infinity'::date) > (
+          SELECT COALESCE(due_date, 'infinity'::date) FROM public.planning_items WHERE id = p_after_id
+        )
+      )
+      OR (
+        (completed_at IS NOT NULL) = (
+          SELECT completed_at IS NOT NULL FROM public.planning_items WHERE id = p_after_id
+        )
+        AND COALESCE(due_date, 'infinity'::date) = (
+          SELECT COALESCE(due_date, 'infinity'::date) FROM public.planning_items WHERE id = p_after_id
+        )
+        AND updated_at < p_after_updated_at
+      )
+      OR (
+        (completed_at IS NOT NULL) = (
+          SELECT completed_at IS NOT NULL FROM public.planning_items WHERE id = p_after_id
+        )
+        AND COALESCE(due_date, 'infinity'::date) = (
+          SELECT COALESCE(due_date, 'infinity'::date) FROM public.planning_items WHERE id = p_after_id
+        )
+        AND updated_at = p_after_updated_at
+        AND id < p_after_id
       )
     )
   ORDER BY (completed_at IS NOT NULL) ASC, COALESCE(due_date, 'infinity'::date) ASC,

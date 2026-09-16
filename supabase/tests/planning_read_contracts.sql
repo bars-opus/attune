@@ -48,6 +48,27 @@
 --      DEFINER mutation RPC calls) still runs before the role switch,
 --      since those need no RLS exemption and some rely on the calling
 --      session being able to write auth.users directly.
+--
+-- Fix round 1 (on top of a91bcc35): added contract 9. An independent
+-- reviewer found that list_planning_tasks' cursor predicate was a
+-- single ascending tuple comparison across a MIXED-direction sort
+-- ((completed_at IS NOT NULL) ASC, due_date ASC, updated_at DESC, id
+-- DESC) -- sound only when every key in the tuple sorts the same
+-- direction. Walking a cursor through a tie on the leading keys
+-- silently duplicated and skipped rows (5 tasks sharing a due_date,
+-- limit 2: page 1 = Task5,Task4; page 2 using Task4's cursor
+-- WRONGLY returned Task5 again, then Task3, skipping Task2/Task1
+-- entirely). No existing contract walked a cursor across a page
+-- boundary through a tie, so this whole bug class was invisible.
+-- Contract 9 seeds 5 tasks sharing one due_date (one of them
+-- completed, to also exercise the leading completed-status tie) and
+-- walks list_planning_tasks page-by-page with p_limit=2, asserting
+-- every task appears exactly once, in the exact expected order, with
+-- no duplicates and no gaps. The migration's cursor predicate was
+-- rewritten as an explicit per-key OR-chain that respects each key's
+-- own sort direction (see the migration file's own comment for the
+-- fix's reasoning) -- no test-fixture change was needed for this
+-- deviation, this is a genuine migration-logic bug and fix.
 \set ON_ERROR_STOP on
 
 DO $$
@@ -62,6 +83,19 @@ DECLARE
   v_event_upcoming uuid := 'cccccccc-0000-0000-0000-000000000033';
   v_event_past uuid := 'cccccccc-0000-0000-0000-000000000034';
   v_note_id uuid := 'cccccccc-0000-0000-0000-000000000035';
+  -- Fix round 1, contract 9: five tasks sharing one due_date, to walk
+  -- list_planning_tasks' cursor across a tie boundary. Own prefix
+  -- ('eeeeeeee') distinct from every id above and from every prefix
+  -- already grepped in use by the other three planning test files.
+  v_tie_t1 uuid := 'eeeeeeee-0000-0000-0000-000000000001';
+  v_tie_t2 uuid := 'eeeeeeee-0000-0000-0000-000000000002';
+  v_tie_t3 uuid := 'eeeeeeee-0000-0000-0000-000000000003';
+  v_tie_t4 uuid := 'eeeeeeee-0000-0000-0000-000000000004';
+  v_tie_t5 uuid := 'eeeeeeee-0000-0000-0000-000000000005';
+  v_page record;
+  v_seen uuid[];
+  v_cursor_updated_at timestamptz;
+  v_cursor_id uuid;
   v_row record;
   v_count int;
 BEGIN
@@ -164,6 +198,76 @@ BEGIN
   SELECT count(*) INTO v_count FROM public.get_planning_summary(v_rel, '2026-01-01'::date);
   IF v_count IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'EXPLOIT: get_planning_summary did not return exactly one row';
+  END IF;
+
+  -- Contract 9: list_planning_tasks pages correctly across a tie on
+  -- its leading sort keys. Five tasks share one due_date; one of them
+  -- (v_tie_t3) is completed so the walk also crosses the leading
+  -- (completed_at IS NOT NULL) tie boundary, not only the due_date
+  -- tie. With p_limit=2, walking every page must return each of the
+  -- five exactly once, with no duplicate and no gap, in the exact
+  -- order the sort defines: uncompleted first (newest-created first,
+  -- since they share updated_at and due_date -- id DESC breaks the
+  -- tie), then the completed one last.
+  PERFORM public.create_planning_task(v_tie_t1, v_rel, 'Tie A', NULL, NULL, '2026-08-01');
+  PERFORM public.create_planning_task(v_tie_t2, v_rel, 'Tie B', NULL, NULL, '2026-08-01');
+  PERFORM public.create_planning_task(v_tie_t3, v_rel, 'Tie C', NULL, NULL, '2026-08-01');
+  PERFORM public.create_planning_task(v_tie_t4, v_rel, 'Tie D', NULL, NULL, '2026-08-01');
+  PERFORM public.create_planning_task(v_tie_t5, v_rel, 'Tie E', NULL, NULL, '2026-08-01');
+  PERFORM public.set_planning_task_completion(v_tie_t3, true);
+
+  v_seen := ARRAY[]::uuid[];
+  v_cursor_updated_at := NULL;
+  v_cursor_id := NULL;
+  LOOP
+    v_row := NULL;
+    FOR v_page IN
+      SELECT * FROM public.list_planning_tasks(
+        v_rel, NULL, v_cursor_updated_at, v_cursor_id, 2
+      )
+      WHERE id IN (v_tie_t1, v_tie_t2, v_tie_t3, v_tie_t4, v_tie_t5)
+    LOOP
+      v_row := v_page;
+      IF v_tie_t1 = ANY(v_seen) AND v_page.id = v_tie_t1
+         OR v_tie_t2 = ANY(v_seen) AND v_page.id = v_tie_t2
+         OR v_tie_t3 = ANY(v_seen) AND v_page.id = v_tie_t3
+         OR v_tie_t4 = ANY(v_seen) AND v_page.id = v_tie_t4
+         OR v_tie_t5 = ANY(v_seen) AND v_page.id = v_tie_t5
+      THEN
+        RAISE EXCEPTION 'EXPLOIT: list_planning_tasks cursor pagination returned a duplicate: %', v_page.id;
+      END IF;
+      v_seen := array_append(v_seen, v_page.id);
+      v_cursor_updated_at := v_page.updated_at;
+      v_cursor_id := v_page.id;
+    END LOOP;
+    -- The filtered page (only this contract's own 5 tie rows) can come
+    -- back empty on a page that was entirely some OTHER relationship's
+    -- rows, in principle, but there are none here -- an empty raw page
+    -- (v_row IS NULL from the unfiltered call) is the real end signal.
+    -- Re-run unfiltered to detect true end-of-list.
+    IF NOT EXISTS (
+      SELECT 1 FROM public.list_planning_tasks(v_rel, NULL, v_cursor_updated_at, v_cursor_id, 2)
+    ) THEN
+      EXIT;
+    END IF;
+    IF array_length(v_seen, 1) >= 5 THEN
+      EXIT;
+    END IF;
+  END LOOP;
+
+  IF array_length(v_seen, 1) IS DISTINCT FROM 5 THEN
+    RAISE EXCEPTION 'EXPLOIT: list_planning_tasks cursor pagination lost tasks: saw % of 5, ids %',
+      array_length(v_seen, 1), v_seen;
+  END IF;
+  IF NOT (v_tie_t1 = ANY(v_seen) AND v_tie_t2 = ANY(v_seen) AND v_tie_t3 = ANY(v_seen)
+          AND v_tie_t4 = ANY(v_seen) AND v_tie_t5 = ANY(v_seen)) THEN
+    RAISE EXCEPTION 'EXPLOIT: list_planning_tasks cursor pagination did not cover all 5 tie rows: %', v_seen;
+  END IF;
+  -- Order check: uncompleted rows (t5,t4,t2,t1 -- created in this
+  -- order, all sharing due_date/updated_at, so id DESC breaks the tie
+  -- among them: t5,t4,t2,t1) must all precede the completed one (t3).
+  IF v_seen IS DISTINCT FROM ARRAY[v_tie_t5, v_tie_t4, v_tie_t2, v_tie_t1, v_tie_t3] THEN
+    RAISE EXCEPTION 'EXPLOIT: list_planning_tasks cursor pagination returned the wrong order: %', v_seen;
   END IF;
 
   -- Contract 8: a non-member gets nothing, not an error that leaks
