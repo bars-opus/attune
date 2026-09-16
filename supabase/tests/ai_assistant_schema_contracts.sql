@@ -31,7 +31,8 @@ BEGIN
   -- assistant_payload, and an ordinary insert is unaffected.
   INSERT INTO public.messages (id, relationship_id, sender_id,
     client_message_id, content, source)
-  VALUES (v_msg_id, v_rel, v_user_a, gen_random_uuid(), 'hello', 'native');
+  VALUES (v_msg_id, v_rel, v_user_a, gen_random_uuid(),
+    'hello (ai_assistant_schema_contracts fixture ' || v_msg_id || ')', 'native');
   IF NOT EXISTS (
     SELECT 1 FROM public.messages
     WHERE id = v_msg_id AND message_origin = 'user' AND assistant_payload IS NULL
