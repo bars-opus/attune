@@ -11,6 +11,7 @@ class CalendarStrip extends StatelessWidget {
   final DateTime focusedMonth;
   final Map<DateTime, List<TimelineEventModel>> eventsByDate;
   final Map<DateTime, List<dynamic>> remindersByDate;
+  final Map<DateTime, List<dynamic>> planningEntriesByDate;
   final Function(DateTime) onDaySelected;
   final Function(DateTime) onMonthChanged;
   final DateTime? selectedDate;
@@ -20,6 +21,7 @@ class CalendarStrip extends StatelessWidget {
     required this.focusedMonth,
     required this.eventsByDate,
     this.remindersByDate = const {},
+    this.planningEntriesByDate = const {},
     required this.onDaySelected,
     required this.onMonthChanged,
     this.selectedDate,
@@ -113,7 +115,10 @@ class CalendarStrip extends StatelessWidget {
               final isSelected = selectedDate != null && _isSameDay(date, selectedDate!);
               final eventsOnDate = eventsByDate[date] ?? [];
               final remindersOnDate = remindersByDate[date] ?? [];
-              final hasEvents = eventsOnDate.isNotEmpty || remindersOnDate.isNotEmpty;
+              final planningOnDate = planningEntriesByDate[date] ?? [];
+              final hasEvents = eventsOnDate.isNotEmpty ||
+                  remindersOnDate.isNotEmpty ||
+                  planningOnDate.isNotEmpty;
 
               // Get unique event types for dots
               final eventTypes = eventsOnDate.map((e) => e.eventType).toSet().toList();
@@ -124,7 +129,13 @@ class CalendarStrip extends StatelessWidget {
               // (colorScheme.secondary) regardless of reminder type, since
               // "this date has something upcoming" is the only signal the
               // strip needs to carry, not which reminder type it is.
-              final hasReminderDot = remindersOnDate.isNotEmpty;
+              // Planning's Task due dates / Event dates are the exact same
+              // "something is coming up, not a logged moment" shape, so
+              // they share this same hollow-ring visual language rather
+              // than introducing a third dot style (spec §7 does not ask
+              // for one).
+              final hasReminderDot =
+                  remindersOnDate.isNotEmpty || planningOnDate.isNotEmpty;
               
               return GestureDetector(
                 onTap: () => onDaySelected(date),

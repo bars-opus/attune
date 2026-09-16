@@ -1,6 +1,9 @@
 // lib/features/timeline/presentation/screens/timeline_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/planning/data/models/planning_calendar_entry_model.dart';
+import 'package:attune/features/planning/presentation/providers/planning_providers.dart'
+    as planning_providers;
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart'
     as reminders_providers;
@@ -10,6 +13,7 @@ import 'package:attune/features/timeline/presentation/providers/timeline_provide
 import 'package:attune/features/timeline/presentation/widgets/add_moment_or_reminder_sheet.dart';
 import 'package:attune/features/timeline/presentation/widgets/calendar_strip.dart';
 import 'package:attune/features/timeline/presentation/widgets/moments_list.dart';
+import 'package:attune/features/timeline/presentation/widgets/planning_day_section.dart';
 import 'package:attune/features/timeline/presentation/widgets/story_day_row.dart';
 import 'package:attune/features/timeline/presentation/widgets/upcoming_reminders_section.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -67,6 +71,20 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
     return grouped;
   }
 
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  Map<DateTime, List<PlanningCalendarEntryModel>> _planningEntriesByDate(
+    List<PlanningCalendarEntryModel> entries,
+  ) {
+    final Map<DateTime, List<PlanningCalendarEntryModel>> grouped = {};
+    for (final entry in entries) {
+      final date = DateTime(entry.date.year, entry.date.month, entry.date.day);
+      grouped.putIfAbsent(date, () => []).add(entry);
+    }
+    return grouped;
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin requirement
@@ -74,6 +92,23 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
     final currentUserId = ref.watch(currentUserIdProvider);
     final relationshipIdAsync = ref.watch(currentRelationshipIdProvider);
     final remindersAsync = ref.watch(reminders_providers.remindersListProvider);
+    // Range is exactly the focused month's first-to-last day — the ONLY
+    // dates CalendarStrip's grid actually renders day numbers for; its
+    // leading/trailing offset cells for adjacent months are
+    // SizedBox.shrink() and never show a dot, so fetching entries for
+    // those dates would fetch data that's never displayed. This also
+    // keeps every range comfortably under the 42-day cap (Plan A).
+    final planningEntriesAsync = relationshipIdAsync.valueOrNull == null
+        ? const AsyncValue<List<PlanningCalendarEntryModel>>.data([])
+        : ref.watch(
+            planning_providers.planningCalendarEntriesProvider(
+              planning_providers.PlanningCalendarRangeKey(
+                relationshipId: relationshipIdAsync.valueOrNull!,
+                startDate: DateTime(_focusedMonth.year, _focusedMonth.month, 1),
+                endDate: DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0),
+              ),
+            ),
+          );
 
     return relationshipIdAsync.when(
       data: (relationshipId) {
@@ -207,6 +242,9 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                           remindersByDate: _remindersByDate(
                             remindersAsync.valueOrNull ?? const [],
                           ),
+                          planningEntriesByDate: _planningEntriesByDate(
+                            planningEntriesAsync.valueOrNull ?? const [],
+                          ),
                           selectedDate: _selectedDate,
                           onDaySelected: (date) {
                             _scrollToDate(date);
@@ -227,6 +265,9 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                             focusedMonth: _focusedMonth,
                             remindersByDate: _remindersByDate(
                               remindersAsync.valueOrNull ?? const [],
+                            ),
+                            planningEntriesByDate: _planningEntriesByDate(
+                              planningEntriesAsync.valueOrNull ?? const [],
                             ),
                             selectedDate: _selectedDate,
                             onDaySelected: (date) {
@@ -264,6 +305,25 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                       child: StoryDayCountRow(
                         relationshipId: relationshipId,
                         occurredOn: _selectedDate!,
+                      ),
+                    ),
+                  ),
+                // Planning: its own source, sitting BESIDE the moments/
+                // reminders/stories rendering for the selected day, never
+                // merged into TimelineEventModel-shaped logic (spec §7).
+                if (_selectedDate != null)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: Spacing.md.w,
+                      ),
+                      child: PlanningDaySection(
+                        entries: planningEntriesAsync.valueOrNull
+                                ?.where(
+                                  (e) => _isSameDay(e.date, _selectedDate!),
+                                )
+                                .toList() ??
+                            const [],
                       ),
                     ),
                   ),
