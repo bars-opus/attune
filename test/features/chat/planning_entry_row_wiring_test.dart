@@ -18,10 +18,24 @@ void main() {
   final appRouter = File('lib/app/routing/app_router.dart').readAsStringSync();
 
   test('the conversations screen renders the planning summary row', () {
+    // `_PlanningSummaryRow()` also appears once in the class's own
+    // constructor declaration (`const _PlanningSummaryRow();`), which
+    // is present whether or not the widget is ever placed in the
+    // render tree. Requiring at least 2 occurrences means at least one
+    // of them has to be a usage site (in the Column's children, or
+    // anywhere else the widget is actually instantiated) rather than
+    // just the declaration — this is what makes the assertion fail if
+    // only the widget-tree usage line is removed, per the plan's
+    // no-vacuous-test constraint.
+    final occurrences = RegExp(
+      r'_PlanningSummaryRow\(\)',
+    ).allMatches(conversationsScreen).length;
     expect(
-      conversationsScreen.contains('_PlanningSummaryRow()'),
-      isTrue,
-      reason: 'without this the entry point into Planning is unreachable from chat',
+      occurrences,
+      greaterThanOrEqualTo(2),
+      reason:
+          'without a usage site (not just the class declaration), the '
+          'entry point into Planning is unreachable from chat',
     );
   });
 
