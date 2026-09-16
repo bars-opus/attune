@@ -66,6 +66,14 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- the same trap).
 \i supabase/migrations/20260941030000_planning_table_grants.sql
 
+-- Same replay for the AI Assistant tables: the blanket GRANT above would
+-- otherwise silently hand authenticated direct write access to
+-- ai_assist_drafts/ai_assistant_usage/ai_processing_consent_events (which
+-- must have NO authenticated grant at all) and direct write access to
+-- ai_assist_planning_links (SELECT-only for authenticated) -- masking
+-- exactly the kind of security bug this replay pattern exists to catch.
+\i supabase/migrations/20260950030000_ai_assistant_table_grants.sql
+
 -- Deliberately NOT granting EXECUTE on all functions.
 --
 -- Supabase's default is EXECUTE for PUBLIC on new functions, and the
