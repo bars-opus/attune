@@ -4,12 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../data/repositories/planning_error.dart';
 import '../../data/models/planning_note_model.dart';
 import '../providers/planning_providers.dart';
 
 /// Save is explicit (spec §6.3) — no autosave-on-every-keystroke. On a
-/// failed save, the draft text stays exactly as typed and Save remains
-/// available to retry; nothing here clears the TextField on failure.
+/// failed save, the draft text stays exactly as typed so the user never
+/// loses what they wrote. Whether Save itself stays available to retry
+/// depends on WHICH `PlanningError` came back: a transient/network
+/// failure keeps Save enabled (spec allows automatic retry-by-tapping
+/// there), but `PlanningUnauthorizedError` fails closed per its own doc
+/// comment ("must fail closed... never retry automatically") — Save is
+/// disabled and the message makes clear retrying will not help,
+/// matching the typed-error dispatch `planning_home_screen.dart`
+/// (Task 3) already established for this feature rather than a bare
+/// `catch (_)` with one generic message for every failure.
 class PlanningNoteEditorScreen extends ConsumerStatefulWidget {
   const PlanningNoteEditorScreen({
     super.key,
@@ -28,6 +37,10 @@ class _PlanningNoteEditorScreenState extends ConsumerState<PlanningNoteEditorScr
   late final _bodyController = TextEditingController(text: widget.existingNote?.body ?? '');
   bool _isSaving = false;
   String? _errorMessage;
+  // Set only for PlanningUnauthorizedError: Save must not offer retry
+  // for a failure the repository has already told us is not transient
+  // (the relationship ended / access was revoked while editing).
+  bool _saveDisabledFailedClosed = false;
 
   @override
   void dispose() {
@@ -51,14 +64,38 @@ class _PlanningNoteEditorScreenState extends ConsumerState<PlanningNoteEditorScr
         body: _bodyController.text,
       );
       if (mounted) Navigator.of(context).pop();
-    } catch (_) {
-      // Draft text is untouched — the controllers still hold exactly
-      // what the user typed, ready to retry.
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-          _errorMessage = 'Could not save. Try again.';
-        });
+    } on PlanningError catch (error) {
+      // Draft text is untouched either way — the controllers still
+      // hold exactly what the user typed. What differs by error type
+      // is whether Save stays available to retry.
+      if (!mounted) return;
+      switch (error) {
+        case PlanningUnauthorizedError():
+          // Fail closed: this is not transient, so no retry
+          // affordance. The draft stays visible (the user may still
+          // want to copy it out) but Save is disabled — tapping it
+          // again cannot succeed and must not be offered as if it
+          // could.
+          setState(() {
+            _isSaving = false;
+            _saveDisabledFailedClosed = true;
+            _errorMessage = 'Planning is no longer available for this relationship.';
+          });
+        case PlanningNetworkError():
+          setState(() {
+            _isSaving = false;
+            _errorMessage = 'Could not save. Try again.';
+          });
+        case PlanningNotFoundError():
+          setState(() {
+            _isSaving = false;
+            _errorMessage = 'This note no longer exists.';
+          });
+        case PlanningValidationError(message: final message):
+          setState(() {
+            _isSaving = false;
+            _errorMessage = message;
+          });
       }
     }
   }
@@ -70,7 +107,7 @@ class _PlanningNoteEditorScreenState extends ConsumerState<PlanningNoteEditorScr
         title: Text(widget.existingNote == null ? 'New note' : 'Edit note'),
         actions: [
           TextButton(
-            onPressed: _isSaving ? null : _save,
+            onPressed: (_isSaving || _saveDisabledFailedClosed) ? null : _save,
             child: const Text('Save'),
           ),
         ],

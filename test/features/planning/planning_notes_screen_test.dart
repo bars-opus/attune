@@ -4,6 +4,7 @@ import 'package:attune/features/planning/presentation/screens/planning_notes_scr
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class _FakeGateway implements PlanningRpcGateway {
   final Map<String, dynamic Function(Map<String, dynamic>?)> handlers;
@@ -86,4 +87,52 @@ void main() {
     expect(find.text('Packing list'), findsOneWidget);
     expect(find.textContaining('Could not save'), findsOneWidget);
   });
+
+  testWidgets(
+    'an unauthorized save failure fails closed: no retry is offered',
+    (tester) async {
+      var attempts = 0;
+      final gateway = _FakeGateway({
+        'list_planning_notes': (_) async => <dynamic>[],
+        'upsert_planning_note': (params) {
+          attempts++;
+          // 42501 is Postgres' "insufficient_privilege" SQLSTATE, which
+          // PlanningRepository._mapError maps to PlanningUnauthorizedError
+          // — the relationship-ended/not-a-member case. Per that error's
+          // own doc comment, the UI "must fail closed... never retry
+          // automatically".
+          throw PostgrestException(message: 'permission denied', code: '42501');
+        },
+      });
+      await tester.pumpWidget(_wrap(
+        const PlanningNotesScreen(relationshipId: 'r1'),
+        PlanningRepository(gateway),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, 'Packing list');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(attempts, 1);
+      // The draft text is preserved either way...
+      expect(find.text('Packing list'), findsOneWidget);
+      // ...but unlike the transient/network case, this is NOT phrased
+      // as retryable, and the Save action itself must be disabled so
+      // tapping it again cannot even fire a second doomed attempt.
+      expect(find.textContaining('Could not save'), findsNothing);
+      expect(find.textContaining('no longer available'), findsOneWidget);
+
+      final saveButton = tester.widget<TextButton>(find.widgetWithText(TextButton, 'Save'));
+      expect(saveButton.onPressed, isNull);
+
+      // Confirm it's truly inert: tapping again must not re-invoke the
+      // RPC (still exactly one attempt).
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(attempts, 1);
+    },
+  );
 }
