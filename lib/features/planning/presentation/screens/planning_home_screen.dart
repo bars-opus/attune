@@ -15,13 +15,12 @@ import '../widgets/planning_task_row.dart';
 import 'create_planning_goal_screen.dart';
 import 'create_planning_task_screen.dart';
 import 'create_planning_event_screen.dart';
+import 'planning_notes_screen.dart';
 
 /// Three sections, not tabs (spec §6.2): Goals, Tasks, Events, each
-/// with its own "+". Notes is deliberately NOT a fourth section here —
-/// there is no `PlanningNotesScreen` yet (a later task on top of this
-/// plan owns it); this screen has nothing to route to for Notes today,
-/// so no Notes row is added rather than linking to a screen that does
-/// not exist.
+/// with its own "+", plus a Notes row that opens the dedicated
+/// `PlanningNotesScreen` (added once that screen existed — see this
+/// plan's Task 4).
 class PlanningHomeScreen extends ConsumerWidget {
   const PlanningHomeScreen({super.key, required this.relationshipId});
   final String relationshipId;
@@ -76,6 +75,18 @@ class PlanningHomeScreen extends ConsumerWidget {
               )),
             ),
             _EventsSection(relationshipId: relationshipId),
+            Gap(Spacing.md),
+            const AppDivider(),
+            Gap(Spacing.md),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.sticky_note_2_outlined),
+              title: const Text('Notes'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => PlanningNotesScreen(relationshipId: relationshipId),
+              )),
+            ),
           ],
         ),
       ),
