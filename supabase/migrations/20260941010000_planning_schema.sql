@@ -109,6 +109,26 @@ CREATE INDEX idx_planning_items_calendar
 -- another row's parent_goal_id (spec §3.1 "nesting is exactly one
 -- level"). A CHECK constraint cannot see another row, so this is a
 -- trigger.
+--
+-- Also enforces item_kind immutability (folded into this same trigger
+-- rather than a second one, since both are "reject this UPDATE outright"
+-- checks on planning_items and the trigger already fires on every
+-- INSERT/UPDATE this table cares about protecting).
+--
+-- Two directions of the depth cap, both required -- a fix landed after
+-- initial review found the first version only checked one of them:
+--   1. Forward: NEW.parent_goal_id must not itself be a parented row
+--      (checked by v_parent_of_parent below -- this was already here).
+--   2. Reverse: NEW.id must not currently be SOMEONE ELSE's parent when
+--      it is about to acquire a parent_goal_id of its own. Without this
+--      check, re-parenting a Goal that already has a child (UPDATE ...
+--      SET item_kind = 'task', parent_goal_id = <other top-level goal>
+--      WHERE id = <goal-with-a-child>) slipped through: the forward
+--      check only looks at the NEW parent's shape, never at whether the
+--      row being updated is itself already relied upon as a parent by
+--      some third row. That produced a live 3-level chain
+--      (child -> this row -> its new parent), directly violating "nest
+--      exactly one level, structurally."
 CREATE OR REPLACE FUNCTION public.planning_item_reject_deep_nesting()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -118,8 +138,30 @@ AS $$
 DECLARE
   v_parent_of_parent uuid;
 BEGIN
+  -- item_kind is stored and immutable (see planning_items.item_kind's
+  -- own comment) -- a Goal's product identity must never flip to a
+  -- Task or back via UPDATE, only via delete-and-recreate. Checked here
+  -- rather than a CHECK constraint because a CHECK cannot see OLD.
+  IF TG_OP = 'UPDATE' AND OLD.item_kind IS DISTINCT FROM NEW.item_kind THEN
+    RAISE EXCEPTION 'planning_items.item_kind is immutable once set';
+  END IF;
+
   IF NEW.parent_goal_id IS NULL THEN
     RETURN NEW;
+  END IF;
+
+  -- Reverse check: this row cannot become a child if some other row
+  -- already depends on it being a parent. IS DISTINCT FROM/EXISTS here
+  -- deliberately does not special-case an UPDATE where NEW.id = the
+  -- referencing row's own id -- a row can never be its own
+  -- parent_goal_id in the first place (parent_goal_id, relationship_id)
+  -- FK requires a distinct existing row, so no self-reference is
+  -- reachable to worry about excluding.
+  IF EXISTS (
+    SELECT 1 FROM public.planning_items
+    WHERE parent_goal_id = NEW.id
+  ) THEN
+    RAISE EXCEPTION 'Planning items may only nest one level deep';
   END IF;
 
   SELECT parent_goal_id INTO v_parent_of_parent
@@ -139,7 +181,7 @@ END;
 $$;
 
 CREATE TRIGGER planning_items_reject_deep_nesting
-BEFORE INSERT OR UPDATE OF parent_goal_id ON public.planning_items
+BEFORE INSERT OR UPDATE OF parent_goal_id, item_kind ON public.planning_items
 FOR EACH ROW EXECUTE FUNCTION public.planning_item_reject_deep_nesting();
 
 -- updated_at is stamped by the database, never the client, and uses

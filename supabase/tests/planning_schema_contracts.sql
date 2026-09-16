@@ -13,6 +13,10 @@ DECLARE
   v_goal_id uuid := '33333333-0000-0000-0000-000000000001';
   v_task_id uuid := '33333333-0000-0000-0000-000000000002';
   v_other_goal_id uuid := '44444444-0000-0000-0000-000000000001';
+  v_g1b uuid := '55555555-0000-0000-0000-000000000001';
+  v_t1b uuid := '55555555-0000-0000-0000-000000000002';
+  v_g2b uuid := '55555555-0000-0000-0000-000000000003';
+  v_immutable_id uuid := '66666666-0000-0000-0000-000000000001';
 BEGIN
   -- Fixtures: two relationships, four users, one active each.
   -- relationships.user_a/user_b FK to public.users (not auth.users
@@ -76,6 +80,50 @@ BEGIN
       (id, relationship_id, created_by, item_kind, parent_goal_id, title)
     VALUES (gen_random_uuid(), v_rel_a, v_user_a, 'task', v_other_goal_id, 'cross-couple');
     RAISE EXCEPTION 'EXPLOIT: a cross-relationship parent link was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE 'EXPLOIT:%' THEN RAISE; END IF;
+  END;
+
+  -- Contract 11: re-parenting a Goal that already has a child onto
+  -- another top-level Goal is rejected. This is the exact reproduction
+  -- of a real bug found in review: G1b (goal) has child T1b; G2b is a
+  -- separate top-level goal. UPDATE-ing G1b to become a task parented
+  -- under G2b must fail, not silently create the 3-level chain
+  -- T1b -> G1b -> G2b. (The trigger's item_kind-immutability check also
+  -- fires on this exact statement since it changes item_kind too; the
+  -- isolated depth-only case is covered by not changing item_kind at
+  -- all -- see the mutation-testing notes in the task report for why
+  -- both checks are independently real.)
+  INSERT INTO public.planning_items
+    (id, relationship_id, created_by, item_kind, title)
+  VALUES (v_g1b, v_rel_a, v_user_a, 'goal', 'G1b');
+  INSERT INTO public.planning_items
+    (id, relationship_id, created_by, item_kind, parent_goal_id, title)
+  VALUES (v_t1b, v_rel_a, v_user_a, 'task', v_g1b, 'T1b');
+  INSERT INTO public.planning_items
+    (id, relationship_id, created_by, item_kind, title)
+  VALUES (v_g2b, v_rel_a, v_user_a, 'goal', 'G2b');
+
+  BEGIN
+    UPDATE public.planning_items
+    SET item_kind = 'task', parent_goal_id = v_g2b
+    WHERE id = v_g1b;
+    RAISE EXCEPTION 'EXPLOIT: a goal-with-a-child was re-parented onto another goal (3-level chain created)';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE 'EXPLOIT:%' THEN RAISE; END IF;
+  END;
+
+  -- Contract 12: item_kind cannot be changed by UPDATE once set, even
+  -- when parent_goal_id is left untouched (isolates immutability from
+  -- the depth-cap check above).
+  INSERT INTO public.planning_items
+    (id, relationship_id, created_by, item_kind, title)
+  VALUES (v_immutable_id, v_rel_a, v_user_a, 'goal', 'Immutable kind goal');
+
+  BEGIN
+    UPDATE public.planning_items SET item_kind = 'task'
+    WHERE id = v_immutable_id;
+    RAISE EXCEPTION 'EXPLOIT: item_kind was changed by UPDATE';
   EXCEPTION WHEN OTHERS THEN
     IF SQLERRM LIKE 'EXPLOIT:%' THEN RAISE; END IF;
   END;
