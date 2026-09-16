@@ -299,6 +299,63 @@ class RlsConnection {
   }
 }
 
+// Task 6: ai-assist/index.ts calls reserve_ai_assistant_quota,
+// get_ai_processing_consent_status, insert_ai_assist_draft, and
+// share_ai_assist_draft entirely via supabase-js's .rpc(name, params)
+// shape -- none of them are .from() table reads. This mirrors
+// supabase-js's own { data, error } contract: SELECT * FROM
+// fn(named args) works for both scalar-returning and
+// RETURNS TABLE/RETURNS SETOF functions, and PostgREST always returns
+// RPC results as an array of rows (even a single-row RETURNS TABLE
+// call) -- so this returns the row array raw, exactly like
+// supabase-js's default (non-.single()) shape, letting call sites that
+// expect exactly one row read result.data?.[0].
+class RpcCaller {
+  constructor(
+    private readonly conn: RlsConnection,
+    private readonly fnName: string,
+    private readonly args: Record<string, unknown>,
+  ) {}
+
+  then<T>(
+    onFulfilled: (value: { data: PgRow[] | null; error: { message: string } | null }) => T,
+  ): Promise<T> {
+    return this.exec().then(onFulfilled);
+  }
+
+  private async exec(): Promise<
+    { data: PgRow[] | null; error: { message: string } | null }
+  > {
+    const argNames = Object.keys(this.args);
+    const params: unknown[] = [];
+    // insert_ai_assist_draft's p_assistant_payload is jsonb; the raw pg
+    // driver needs an explicit cast for an object/array param, same as
+    // UpdateBuilder above -- otherwise it is sent as a Postgres row/array
+    // literal instead of JSON text and the function call fails to bind.
+    const callArgs = argNames
+      .map((name, i) => {
+        const value = this.args[name];
+        const isJsonValue = Array.isArray(value) ||
+          (typeof value === "object" && value !== null);
+        params.push(isJsonValue ? JSON.stringify(value) : value);
+        return isJsonValue
+          ? `${quoteIdent(name)} := $${i + 1}::jsonb`
+          : `${quoteIdent(name)} := $${i + 1}`;
+      })
+      .join(", ");
+    const sql = `SELECT * FROM ${quoteIdent(this.fnName)}(${callArgs})`;
+    try {
+      const rows = await this.conn.query(sql, params);
+      return { data: rows, error: null };
+    } catch (err) {
+      return {
+        data: null,
+        error: { message: err instanceof Error ? err.message : String(err) },
+      };
+    }
+  }
+}
+
 // A SupabaseClient-shaped object backed by real Postgres + real RLS,
 // scoped to one user id -- the same shape ai_context_loader.ts consumes
 // (only `.from(table).select(cols)` is called, which then chains into
@@ -317,6 +374,10 @@ export class PgRlsClient {
       update: (payload: Record<string, unknown>) =>
         new UpdateBuilder(this.conn, table, payload),
     };
+  }
+
+  rpc(fnName: string, args: Record<string, unknown> = {}): RpcCaller {
+    return new RpcCaller(this.conn, fnName, args);
   }
 }
 
