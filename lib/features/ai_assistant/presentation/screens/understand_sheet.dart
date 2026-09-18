@@ -197,8 +197,10 @@ class _ResultBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // MUTATION TEST: gate on low confidence only
-        if (result.confidence == UnderstandConfidence.low)
+        // Spec §6.1: shown before the result, for EVERY confidence
+        // value — not gated on `result.confidence ==
+        // UnderstandConfidence.low`. (This exact unconditional placement
+        // is the guarantee this task's brief asks to be mutation-tested.)
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
