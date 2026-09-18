@@ -5,6 +5,7 @@ import 'package:attune/core/widgets/buttons/app_icon_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../data/repositories/planning_error.dart';
 import '../../data/models/planning_goal_model.dart';
@@ -190,6 +191,14 @@ class _ExpandableGoalState extends ConsumerState<_ExpandableGoal> {
                           onToggleComplete: (isComplete) => _toggleTask(task, isComplete),
                           onTap: () => _confirmDelete(task),
                         ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _addTask,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Add task'),
+                        ),
+                      ),
                     ],
                   ),
                 );
@@ -204,6 +213,53 @@ class _ExpandableGoalState extends ConsumerState<_ExpandableGoal> {
     final repository = ref.read(planningRepositoryProvider);
     try {
       await repository.setTaskCompletion(taskId: task.id, isComplete: isComplete);
+      ref.invalidate(planningGoalTasksProvider(widget.goal.id));
+      ref.read(planningGoalsProvider(widget.relationshipId).notifier).refresh();
+    } on PlanningError catch (error) {
+      if (!mounted) return;
+      _showError(error);
+    }
+  }
+
+  Future<void> _addTask() async {
+    final controller = TextEditingController();
+    final title = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Add task'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Task'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    // Deferred to the next frame rather than disposed synchronously
+    // here: `showDialog`'s Future resolves the instant `Navigator.pop`
+    // runs, but the dialog's own exit (fade-out) transition still
+    // paints this TextField for a frame or more afterward — disposing
+    // the controller immediately raced that transition and threw
+    // "A TextEditingController was used after being disposed."
+    WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
+    if (title == null || title.isEmpty || !mounted) return;
+
+    final repository = ref.read(planningRepositoryProvider);
+    try {
+      await repository.addGoalTask(
+        taskId: const Uuid().v4(),
+        goalId: widget.goal.id,
+        title: title,
+      );
       ref.invalidate(planningGoalTasksProvider(widget.goal.id));
       ref.read(planningGoalsProvider(widget.relationshipId).notifier).refresh();
     } on PlanningError catch (error) {

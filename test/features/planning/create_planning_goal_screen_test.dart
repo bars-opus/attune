@@ -61,7 +61,7 @@ void main() {
     expect(attempts, 1);
     expect(find.text('Plan the wedding'), findsOneWidget);
     expect(find.text('Book a venue'), findsOneWidget);
-    expect(find.textContaining('Could not create the goal'), findsOneWidget);
+    expect(find.textContaining('Could not save the goal'), findsOneWidget);
 
     final saveButton = tester.widget<ElevatedButton>(
       find.widgetWithText(ElevatedButton, 'Save'),
@@ -104,7 +104,7 @@ void main() {
       // ...but unlike the transient/network case, this is NOT phrased
       // as retryable, and Save itself must be disabled so tapping it
       // again cannot even fire a second doomed attempt.
-      expect(find.textContaining('Could not create the goal'), findsNothing);
+      expect(find.textContaining('Could not save the goal'), findsNothing);
       expect(find.textContaining('no longer available'), findsOneWidget);
 
       final saveButton = tester.widget<ElevatedButton>(
@@ -118,6 +118,246 @@ void main() {
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(attempts, 1);
+    },
+  );
+
+  testWidgets(
+    'tapping "Add another task" reveals a new task field, and Save '
+    'creates the goal via create_planning_goal then adds every extra '
+    'task via add_planning_goal_task',
+    (tester) async {
+      final createParamsSeen = <Map<String, dynamic>?>[];
+      final addTaskParamsSeen = <Map<String, dynamic>?>[];
+      final gateway = _FakeGateway({
+        'create_planning_goal': (params) {
+          createParamsSeen.add(params);
+          return {
+            'id': params!['p_goal_id'],
+            'title': params['p_goal_title'],
+            'note': null,
+            'completed_at': null,
+            'updated_at': DateTime.now().toIso8601String(),
+          };
+        },
+        'add_planning_goal_task': (params) {
+          addTaskParamsSeen.add(params);
+          return {
+            'id': params!['p_task_id'],
+            'relationship_id': 'r1',
+            'item_kind': 'task',
+            'parent_goal_id': params['p_goal_id'],
+            'title': params['p_title'],
+            'note': params['p_note'],
+            'assigned_to': null,
+            'due_date': params['p_due_date'],
+            'completed_at': null,
+            'deleted_at': null,
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          };
+        },
+      });
+
+      await tester.pumpWidget(_wrap(
+        const CreatePlanningGoalScreen(relationshipId: 'r1'),
+        PlanningRepository(gateway),
+      ));
+      await tester.pumpAndSettle();
+
+      // Only the goal title + first task fields exist before tapping
+      // "Add another task".
+      expect(find.byType(TextField), findsNWidgets(2));
+
+      await tester.tap(find.text('Add another task'));
+      await tester.pump();
+      await tester.tap(find.text('Add another task'));
+      await tester.pump();
+      expect(find.byType(TextField), findsNWidgets(4));
+
+      await tester.enterText(find.byType(TextField).at(0), 'Plan the wedding');
+      await tester.enterText(find.byType(TextField).at(1), 'Book a venue');
+      await tester.enterText(find.byType(TextField).at(2), 'Hire a caterer');
+      await tester.enterText(find.byType(TextField).at(3), 'Send invitations');
+      await tester.pump();
+
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(createParamsSeen, hasLength(1));
+      expect(createParamsSeen.single!['p_first_task_title'], 'Book a venue');
+
+      // Both extra tasks were added, via the SAME RPC and goal id an
+      // already-created goal's own "Add task" affordance uses — not a
+      // separate/duplicated code path.
+      expect(addTaskParamsSeen, hasLength(2));
+      expect(
+        addTaskParamsSeen.map((p) => p!['p_title']),
+        ['Hire a caterer', 'Send invitations'],
+      );
+      final goalId = createParamsSeen.single!['p_goal_id'];
+      for (final params in addTaskParamsSeen) {
+        expect(params!['p_goal_id'], goalId);
+      }
+    },
+  );
+
+  testWidgets(
+    'removing an extra task field before Save never sends that task',
+    (tester) async {
+      final addTaskParamsSeen = <Map<String, dynamic>?>[];
+      final gateway = _FakeGateway({
+        'create_planning_goal': (params) => {
+              'id': params!['p_goal_id'],
+              'title': params['p_goal_title'],
+              'note': null,
+              'completed_at': null,
+              'updated_at': DateTime.now().toIso8601String(),
+            },
+        'add_planning_goal_task': (params) {
+          addTaskParamsSeen.add(params);
+          return {
+            'id': params!['p_task_id'],
+            'relationship_id': 'r1',
+            'item_kind': 'task',
+            'parent_goal_id': params['p_goal_id'],
+            'title': params['p_title'],
+            'note': null,
+            'assigned_to': null,
+            'due_date': null,
+            'completed_at': null,
+            'deleted_at': null,
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          };
+        },
+      });
+
+      await tester.pumpWidget(_wrap(
+        const CreatePlanningGoalScreen(relationshipId: 'r1'),
+        PlanningRepository(gateway),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Add another task'));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField).at(0), 'Plan the wedding');
+      await tester.enterText(find.byType(TextField).at(1), 'Book a venue');
+      await tester.enterText(find.byType(TextField).at(2), 'A task to remove');
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pump();
+      expect(find.byType(TextField), findsNWidgets(2));
+
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(addTaskParamsSeen, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'a blank extra task field is silently dropped, not sent or blocking '
+    'Save',
+    (tester) async {
+      final addTaskParamsSeen = <Map<String, dynamic>?>[];
+      final gateway = _FakeGateway({
+        'create_planning_goal': (params) => {
+              'id': params!['p_goal_id'],
+              'title': params['p_goal_title'],
+              'note': null,
+              'completed_at': null,
+              'updated_at': DateTime.now().toIso8601String(),
+            },
+        'add_planning_goal_task': (params) {
+          addTaskParamsSeen.add(params);
+          return {
+            'id': params!['p_task_id'],
+            'relationship_id': 'r1',
+            'item_kind': 'task',
+            'parent_goal_id': params['p_goal_id'],
+            'title': params['p_title'],
+            'note': null,
+            'assigned_to': null,
+            'due_date': null,
+            'completed_at': null,
+            'deleted_at': null,
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          };
+        },
+      });
+
+      await tester.pumpWidget(_wrap(
+        const CreatePlanningGoalScreen(relationshipId: 'r1'),
+        PlanningRepository(gateway),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Add another task'));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField).at(0), 'Plan the wedding');
+      await tester.enterText(find.byType(TextField).at(1), 'Book a venue');
+      // Leave the second task field blank.
+      await tester.pump();
+
+      final saveButton = tester.widget<ElevatedButton>(
+        find.widgetWithText(ElevatedButton, 'Save'),
+      );
+      expect(saveButton.onPressed, isNotNull);
+
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(addTaskParamsSeen, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'if an extra task fails to save, the goal (already created) and '
+    'any tasks added before the failure are kept, and the Goals list '
+    'is refreshed rather than left stale',
+    (tester) async {
+      var refreshed = false;
+      final gateway = _FakeGateway({
+        'create_planning_goal': (params) => {
+              'id': params!['p_goal_id'],
+              'title': params['p_goal_title'],
+              'note': null,
+              'completed_at': null,
+              'updated_at': DateTime.now().toIso8601String(),
+            },
+        'add_planning_goal_task': (params) {
+          throw StateError('network down');
+        },
+        'list_planning_goals': (params) {
+          refreshed = true;
+          return <dynamic>[];
+        },
+      });
+
+      await tester.pumpWidget(_wrap(
+        const CreatePlanningGoalScreen(relationshipId: 'r1'),
+        PlanningRepository(gateway),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Add another task'));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField).at(0), 'Plan the wedding');
+      await tester.enterText(find.byType(TextField).at(1), 'Book a venue');
+      await tester.enterText(find.byType(TextField).at(2), 'Hire a caterer');
+      await tester.pump();
+
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      // The screen stays open (a save-in-progress failure, not a
+      // silent success) and the Goals list was refreshed so it picks
+      // up the goal that DID get created server-side.
+      expect(find.byType(CreatePlanningGoalScreen), findsOneWidget);
+      expect(refreshed, isTrue);
+      expect(find.textContaining('Could not save the goal'), findsOneWidget);
     },
   );
 }

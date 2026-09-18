@@ -431,4 +431,175 @@ void main() {
       },
     );
   });
+
+  group('adding a task to an existing goal', () {
+    Map<String, dynamic> goalRow({
+      String id = 'g1',
+      String title = 'Plan the wedding',
+      int childCount = 1,
+      int completedChildCount = 0,
+    }) => {
+      'id': id,
+      'title': title,
+      'note': null,
+      'completed_at': null,
+      'updated_at': '2026-09-14T09:00:00Z',
+      'child_count': childCount,
+      'completed_child_count': completedChildCount,
+    };
+
+    Map<String, dynamic> taskRow({
+      required String id,
+      required String goalId,
+      required String title,
+    }) => {
+      'id': id, 'relationship_id': 'r1', 'created_by': 'u1',
+      'item_kind': 'task', 'parent_goal_id': goalId, 'title': title,
+      'note': null, 'assigned_to': null, 'due_date': null,
+      'completed_at': null, 'celebrated_at': null,
+      'created_at': '2026-09-14T09:00:00Z', 'updated_at': '2026-09-14T09:00:00Z',
+      'deleted_at': null,
+    };
+
+    testWidgets(
+      'the "Add task" affordance calls add_planning_goal_task with the '
+      "expanded goal's own id and the typed title, then refreshes the "
+      "goal's task list and the Goals section",
+      (tester) async {
+        var goalTasks = [taskRow(id: 't1', goalId: 'g1', title: 'Book a venue')];
+        var listGoalTasksCalls = 0;
+        var listGoalsCalls = 0;
+        final addTaskParamsSeen = <Map<String, dynamic>?>[];
+
+        final repository = PlanningRepository(_FakeGateway({
+          'list_planning_goals': (_) async {
+            listGoalsCalls++;
+            return [goalRow(childCount: goalTasks.length)];
+          },
+          'list_planning_tasks': (_) async => <dynamic>[],
+          'list_planning_events': (_) async => <dynamic>[],
+          'list_planning_goal_tasks': (_) async {
+            listGoalTasksCalls++;
+            return goalTasks;
+          },
+          'add_planning_goal_task': (params) async {
+            addTaskParamsSeen.add(params);
+            final newTask = taskRow(
+              id: params!['p_task_id'] as String,
+              goalId: params['p_goal_id'] as String,
+              title: params['p_title'] as String,
+            );
+            goalTasks = [...goalTasks, newTask];
+            return newTask;
+          },
+        }));
+
+        await tester.pumpWidget(_wrap(
+          const PlanningHomeScreen(relationshipId: 'r1'), repository,
+        ));
+        await tester.pumpAndSettle();
+
+        // Expand the goal to reveal its task list and the "Add task"
+        // affordance.
+        await tester.tap(find.text('Plan the wedding'));
+        await tester.pumpAndSettle();
+        expect(find.text('Book a venue'), findsOneWidget);
+        expect(find.text('Add task'), findsOneWidget);
+
+        final listGoalTasksCallsBeforeAdd = listGoalTasksCalls;
+        final listGoalsCallsBeforeAdd = listGoalsCalls;
+
+        await tester.tap(find.text('Add task'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'Hire a caterer');
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        expect(addTaskParamsSeen, hasLength(1));
+        expect(addTaskParamsSeen.single!['p_goal_id'], 'g1');
+        expect(addTaskParamsSeen.single!['p_title'], 'Hire a caterer');
+
+        // The goal's own task list and the Goals section (whose row
+        // shows "N of M done") were both refreshed, not left showing
+        // pre-mutation data.
+        expect(listGoalTasksCalls, greaterThan(listGoalTasksCallsBeforeAdd));
+        expect(listGoalsCalls, greaterThan(listGoalsCallsBeforeAdd));
+        expect(find.text('Hire a caterer'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'cancelling the "Add task" dialog calls add_planning_goal_task '
+      'zero times',
+      (tester) async {
+        var addTaskCalls = 0;
+        final repository = PlanningRepository(_FakeGateway({
+          'list_planning_goals': (_) async => [goalRow()],
+          'list_planning_tasks': (_) async => <dynamic>[],
+          'list_planning_events': (_) async => <dynamic>[],
+          'list_planning_goal_tasks': (_) async =>
+              [taskRow(id: 't1', goalId: 'g1', title: 'Book a venue')],
+          'add_planning_goal_task': (params) async {
+            addTaskCalls++;
+            return taskRow(id: 'new', goalId: 'g1', title: 'x');
+          },
+        }));
+
+        await tester.pumpWidget(_wrap(
+          const PlanningHomeScreen(relationshipId: 'r1'), repository,
+        ));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Plan the wedding'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Add task'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+
+        expect(addTaskCalls, 0);
+      },
+    );
+
+    testWidgets(
+      'a validation error from add_planning_goal_task (e.g. the '
+      '100-task cap) shows the RPC\'s own message rather than a '
+      'generic error',
+      (tester) async {
+        final repository = PlanningRepository(_FakeGateway({
+          'list_planning_goals': (_) async => [goalRow()],
+          'list_planning_tasks': (_) async => <dynamic>[],
+          'list_planning_events': (_) async => <dynamic>[],
+          'list_planning_goal_tasks': (_) async =>
+              [taskRow(id: 't1', goalId: 'g1', title: 'Book a venue')],
+          'add_planning_goal_task': (params) async {
+            throw PostgrestException(
+              message: 'A Goal may have at most 100 tasks',
+              code: 'P0001',
+            );
+          },
+        }));
+
+        await tester.pumpWidget(_wrap(
+          const PlanningHomeScreen(relationshipId: 'r1'), repository,
+        ));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Plan the wedding'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Add task'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'One task too many');
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('A Goal may have at most 100 tasks'),
+          findsOneWidget,
+        );
+      },
+    );
+  });
 }

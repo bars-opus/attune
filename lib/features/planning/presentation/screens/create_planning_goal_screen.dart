@@ -7,10 +7,22 @@ import 'package:uuid/uuid.dart';
 import '../../data/repositories/planning_error.dart';
 import '../providers/planning_providers.dart';
 
-/// Save is disabled until BOTH the goal title and the first task title
-/// are non-blank (spec §6.2) — create_planning_goal (Plan A) requires
-/// both in the same call; there is no code path that creates a
-/// zero-child goal.
+/// Save is disabled until the goal title AND the first task title are
+/// both non-blank (spec §6.2) — `create_planning_goal` (Plan A)
+/// requires both in the same call; there is no code path that creates
+/// a zero-child goal. Any additional task fields beyond the first are
+/// optional: a blank extra field is simply dropped rather than
+/// blocking Save, since only the first task is load-bearing for the
+/// goal's own creation invariant.
+///
+/// Additional tasks (beyond the required first one) are added one at
+/// a time via `add_planning_goal_task` (Plan A) — the same RPC
+/// `planning_home_screen.dart`'s `_ExpandableGoalState` already uses
+/// to add a task to an EXISTING goal — after the goal and its first
+/// task are created. If the goal itself is created but an extra task
+/// fails partway through, the goal is left as a real, valid goal with
+/// however many tasks succeeded; the error names which task failed
+/// rather than silently discarding the rest.
 ///
 /// On a failed save, the draft stays exactly as typed. Whether Save
 /// itself stays available to retry depends on WHICH `PlanningError`
@@ -30,8 +42,14 @@ class CreatePlanningGoalScreen extends ConsumerStatefulWidget {
 }
 
 class _CreatePlanningGoalScreenState extends ConsumerState<CreatePlanningGoalScreen> {
+  // add_planning_goal_task's own cap (Plan A) is 100 children per
+  // goal, but create_planning_goal itself only ever inserts the
+  // first — 20 typed here up-front is a generous ceiling for a single
+  // creation screen, not the backend's own limit.
+  static const _maxTasksAtCreation = 20;
+
   final _goalTitleController = TextEditingController();
-  final _firstTaskTitleController = TextEditingController();
+  final _taskControllers = <TextEditingController>[TextEditingController()];
   bool _isSaving = false;
   // Set only for PlanningUnauthorizedError: Save must not offer retry
   // for a failure the repository has already told us is not transient.
@@ -41,15 +59,29 @@ class _CreatePlanningGoalScreenState extends ConsumerState<CreatePlanningGoalScr
   @override
   void dispose() {
     _goalTitleController.dispose();
-    _firstTaskTitleController.dispose();
+    for (final controller in _taskControllers) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
   bool get _canSave =>
       _goalTitleController.text.trim().isNotEmpty &&
-      _firstTaskTitleController.text.trim().isNotEmpty &&
+      _taskControllers.first.text.trim().isNotEmpty &&
       !_isSaving &&
       !_saveDisabledFailedClosed;
+
+  void _addTaskField() {
+    setState(() {
+      _taskControllers.add(TextEditingController());
+    });
+  }
+
+  void _removeTaskField(int index) {
+    setState(() {
+      _taskControllers.removeAt(index).dispose();
+    });
+  }
 
   Future<void> _save() async {
     setState(() {
@@ -58,18 +90,39 @@ class _CreatePlanningGoalScreenState extends ConsumerState<CreatePlanningGoalScr
     });
     final repository = ref.read(planningRepositoryProvider);
     const uuid = Uuid();
+    final goalId = uuid.v4();
+    // Extra task titles beyond the first, blank ones dropped — the
+    // first field is validated non-blank by _canSave already.
+    final extraTaskTitles = _taskControllers
+        .skip(1)
+        .map((c) => c.text.trim())
+        .where((title) => title.isNotEmpty)
+        .toList();
+
     try {
       await repository.createGoal(
-        goalId: uuid.v4(),
+        goalId: goalId,
         firstTaskId: uuid.v4(),
         relationshipId: widget.relationshipId,
         goalTitle: _goalTitleController.text.trim(),
-        firstTaskTitle: _firstTaskTitleController.text.trim(),
+        firstTaskTitle: _taskControllers.first.text.trim(),
       );
+      for (final title in extraTaskTitles) {
+        await repository.addGoalTask(
+          taskId: uuid.v4(),
+          goalId: goalId,
+          title: title,
+        );
+      }
       ref.read(planningGoalsProvider(widget.relationshipId).notifier).refresh();
       if (mounted) Navigator.of(context).pop();
     } on PlanningError catch (error) {
       if (!mounted) return;
+      // The goal (and any tasks added before this failure) already
+      // exist server-side by this point — refresh so the Goals list
+      // reflects that rather than leaving it stale behind an error
+      // that implies nothing was saved.
+      ref.read(planningGoalsProvider(widget.relationshipId).notifier).refresh();
       switch (error) {
         case PlanningUnauthorizedError():
           // Fail closed: not transient, so no retry affordance.
@@ -81,7 +134,7 @@ class _CreatePlanningGoalScreenState extends ConsumerState<CreatePlanningGoalScr
         case PlanningNetworkError():
           setState(() {
             _isSaving = false;
-            _errorMessage = 'Could not create the goal. Try again.';
+            _errorMessage = 'Could not save the goal. Try again.';
           });
         case PlanningNotFoundError():
           setState(() {
@@ -113,10 +166,38 @@ class _CreatePlanningGoalScreenState extends ConsumerState<CreatePlanningGoalScr
               autofocus: true,
             ),
             SizedBox(height: Spacing.md),
-            TextField(
-              controller: _firstTaskTitleController,
-              decoration: const InputDecoration(labelText: 'First task'),
-              onChanged: (_) => setState(() {}),
+            for (var i = 0; i < _taskControllers.length; i++)
+              Padding(
+                padding: EdgeInsets.only(bottom: Spacing.sm),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _taskControllers[i],
+                        decoration: InputDecoration(
+                          labelText: i == 0 ? 'First task' : 'Task ${i + 1}',
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                    if (i > 0)
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        tooltip: 'Remove task',
+                        onPressed: () => _removeTaskField(i),
+                      ),
+                  ],
+                ),
+              ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _taskControllers.length >= _maxTasksAtCreation
+                    ? null
+                    : _addTaskField,
+                icon: const Icon(Icons.add),
+                label: const Text('Add another task'),
+              ),
             ),
             SizedBox(height: Spacing.lg),
             ElevatedButton(
