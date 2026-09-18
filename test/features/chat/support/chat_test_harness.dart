@@ -163,6 +163,8 @@ class FakeChatRepository implements ChatRepository {
     DateTime? readAt,
     String? mediaType,
     int? streakViewsRemaining,
+    DateTime? deletedAt,
+    String messageOrigin = 'user',
   }) {
     final row = {
       'id': id,
@@ -177,6 +179,8 @@ class FakeChatRepository implements ChatRepository {
       'media_type': mediaType,
       'streak_views_remaining': streakViewsRemaining,
       'source': 'native',
+      'deleted_at': deletedAt?.toUtc().toIso8601String(),
+      'message_origin': messageOrigin,
     };
     final message = Message.fromRow(row, currentUserId: currentUserId);
     serverMessages[id] = message;

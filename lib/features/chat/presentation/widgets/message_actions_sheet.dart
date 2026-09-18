@@ -6,10 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 /// Builds the six-action list (Reply/Copy/Star/Pin/Edit/Delete) for a
-/// message's long-press menu — Edit/Delete are omitted (not
-/// shown-disabled) once [Message.canEditOrDelete] is false, matching the
-/// design spec's "no dead menu item that invites a confused tap"
-/// decision. Pure UI, no repository/Riverpod dependency, no
+/// message's long-press menu — Edit and Delete are each omitted (not
+/// shown-disabled) independently once [Message.canEdit]/[Message.canDelete]
+/// is false, matching the design spec's "no dead menu item that invites a
+/// confused tap" decision. The two are computed separately (not from one
+/// shared boolean) because an Attune Assist message can disagree between
+/// them — deletable under the ordinary five-minute-sender rule but never
+/// editable in place (spec §5.3). Pure UI, no repository/Riverpod
+/// dependency, no
 /// presentation container of its own — the caller (MessageBubble, via
 /// showFocusedActionMenu) owns how/where this list is displayed and all
 /// mutation logic/error handling behind each callback.
@@ -38,13 +42,23 @@ List<Widget> buildMessageActionItems({
   required VoidCallback onPin,
   required VoidCallback onUnpin,
   required VoidCallback onInfo,
+  required VoidCallback onAskAttune,
   required VoidCallback onEdit,
   required VoidCallback onDelete,
 }) {
-  final canEditOrDelete = message.canEditOrDelete(
+  final windowNow = DateTime.now();
+  final canEdit = message.canEdit(
     currentUserId: currentUserId,
-    now: DateTime.now(),
+    now: windowNow,
   );
+  final canDelete = message.canDelete(
+    currentUserId: currentUserId,
+    now: windowNow,
+  );
+  // AI Assistant spec §3's entry-eligibility gate, computed once here —
+  // the same "compute once, pass down" shape canEdit/canDelete already
+  // use — rather than an ad hoc check inline in the tile list below.
+  final canAskAttune = message.isEligibleForAskAttune;
   final errorColor = Theme.of(context).colorScheme.error;
 
   /// Pops the menu using [tileContext] — the tile's own, always-live
@@ -150,17 +164,23 @@ List<Widget> buildMessageActionItems({
       title: 'Info',
       onSelected: onInfo,
     ),
-    if (canEditOrDelete) ...[
+    if (canAskAttune)
+      item(
+        leading: const Icon(Icons.auto_awesome_outlined),
+        title: 'Ask Attune',
+        onSelected: onAskAttune,
+      ),
+    if (canEdit)
       item(
         leading: const Icon(Icons.edit_outlined),
         title: 'Edit',
         onSelected: onEdit,
       ),
+    if (canDelete)
       item(
         leading: Icon(Icons.delete_outline, color: errorColor),
         title: 'Delete',
         onSelected: onDelete,
       ),
-    ],
   ];
 }

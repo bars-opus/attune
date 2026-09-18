@@ -68,7 +68,10 @@ serve(async (req) => {
   }
 });
 
-async function loadCandidateRelationshipIds(
+// Exported for Task 5's query-shape tests (index.test.ts): this is the
+// first of the two real message_analysis_skipped exclusion sites in
+// this file (Layer 2/session-transcript candidate selection).
+export async function loadCandidateRelationshipIds(
   supabase: ReturnType<typeof serviceRoleClient>,
   relationshipId: string | null,
   limit: number,
@@ -77,6 +80,7 @@ async function loadCandidateRelationshipIds(
     .from("messages")
     .select("relationship_id")
     .eq("message_analysis_done", true)
+    .eq("message_analysis_skipped", false)
     .is("included_in_session_id", null)
     .lt("created_at", new Date(Date.now() - SESSION_GAP_MS).toISOString())
     .order("created_at", { ascending: true })
@@ -92,15 +96,16 @@ async function loadCandidateRelationshipIds(
   return [...new Set((data ?? []).map((row: { relationship_id: string }) => row.relationship_id))];
 }
 
-async function processRelationship(
+// Exported for Task 5's query-shape tests (index.test.ts): this is the
+// second of the two real message_analysis_skipped exclusion sites in
+// this file (the session-transcript row selection extracted from
+// processRelationship, unchanged in behaviour -- only pulled into its
+// own function so a test can call it directly without exercising the
+// rest of processRelationship's segment-splitting/model-call pipeline).
+export async function loadDoneMessagesForSession(
   supabase: ReturnType<typeof serviceRoleClient>,
   relationshipId: string,
 ) {
-  const relationship = await loadRelationship(supabase, relationshipId);
-  if (!relationship || relationship.chat_archived_at) {
-    return [];
-  }
-
   const { data: rows, error } = await supabase
     .from("messages")
     .select(`
@@ -118,11 +123,25 @@ async function processRelationship(
     `)
     .eq("relationship_id", relationshipId)
     .eq("message_analysis_done", true)
+    .eq("message_analysis_skipped", false)
     .is("included_in_session_id", null)
     .order("created_at", { ascending: true })
     .order("id", { ascending: true });
 
   if (error) throw error;
+  return rows;
+}
+
+async function processRelationship(
+  supabase: ReturnType<typeof serviceRoleClient>,
+  relationshipId: string,
+) {
+  const relationship = await loadRelationship(supabase, relationshipId);
+  if (!relationship || relationship.chat_archived_at) {
+    return [];
+  }
+
+  const rows = await loadDoneMessagesForSession(supabase, relationshipId);
 
   const messages = (rows ?? []).map((row: Record<string, unknown>) => ({
     ...row,

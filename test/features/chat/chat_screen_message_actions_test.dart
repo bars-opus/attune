@@ -1,3 +1,6 @@
+import 'package:attune/features/ai_assistant/data/repositories/ai_assistant_repository.dart';
+import 'package:attune/features/ai_assistant/presentation/providers/ai_assistant_providers.dart';
+import 'package:attune/features/ai_assistant/presentation/screens/ask_attune_mode_sheet.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
 import 'package:attune/features/chat/presentation/widgets/reply_composer_preview.dart';
@@ -16,6 +19,7 @@ void main() {
     WidgetTester tester,
     FakeChatRepository repo, {
     Conversation? conversation,
+    List<Override> extraOverrides = const [],
   }) async {
     // The actions sheet lists up to six tiles; the default 800x600 surface
     // pushes Edit/Delete below the fold and off the hit-test area.
@@ -23,7 +27,11 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    final container = buildChatContainer(repository: repo, userId: 'user-a');
+    final container = buildChatContainer(
+      repository: repo,
+      userId: 'user-a',
+      extraOverrides: extraOverrides,
+    );
     final convo = conversation ?? activeConversation('rel-1');
     repo.conversationOverride = convo;
 
@@ -337,6 +345,130 @@ void main() {
 
     await tearDownChat(tester, container);
   });
+
+  testWidgets(
+    'Ask Attune appears for an eligible message and opens the mode sheet '
+    'for that exact message',
+    (tester) async {
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      final seeded = repo.seedIncoming(
+        id: 'm-eligible',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'want to grab dinner this weekend?',
+        createdAt: DateTime.now(),
+      );
+      final container = await pumpChat(
+        tester,
+        repo,
+        extraOverrides: [
+          // The mode sheet reads the relationship id and consent status
+          // via these providers; point them at fixed values instead of
+          // hitting Supabase — this test only asserts on the pushed
+          // sheet's identity, not its consent-gated body.
+          currentRelationshipIdProvider.overrideWith((ref) async => 'rel-1'),
+          aiConsentStatusProvider('rel-1').overrideWith(
+            (ref) async => const AiConsentStatus(
+              callerGranted: true,
+              bothGranted: true,
+              policyVersion: 'v1',
+            ),
+          ),
+        ],
+      );
+
+      await tester.longPress(
+        find.text('want to grab dinner this weekend?'),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('Ask Attune'), findsOneWidget);
+
+      await tester.tap(find.text('Ask Attune'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final sheet = tester.widget<AskAttuneModeSheet>(
+        find.byType(AskAttuneModeSheet),
+      );
+      expect(sheet.message.id, seeded.id);
+
+      await tearDownChat(tester, container);
+    },
+  );
+
+  testWidgets(
+    'Ask Attune is absent for a deleted message',
+    (tester) async {
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      repo.seedIncoming(
+        id: 'm-deleted',
+        relationshipId: 'rel-1',
+        senderId: 'user-a',
+        content: 'oops sent this',
+        createdAt: DateTime.now(),
+        deletedAt: DateTime.now(),
+      );
+      final container = await pumpChat(tester, repo);
+
+      await tester.longPress(find.text('You deleted this message'));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // A deleted message's tombstone offers no action surface at all
+      // (canOpenActions requires !message.isDeleted), so no menu opens.
+      expect(find.text('Ask Attune'), findsNothing);
+
+      await tearDownChat(tester, container);
+    },
+  );
+
+  testWidgets(
+    'Ask Attune is absent for an over-4000-character message',
+    (tester) async {
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      final longContent = 'a' * 4001;
+      repo.seedIncoming(
+        id: 'm-toolong',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: longContent,
+        createdAt: DateTime.now(),
+      );
+      final container = await pumpChat(tester, repo);
+
+      await tester.longPress(find.textContaining('aaaa'));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('Ask Attune'), findsNothing);
+
+      await tearDownChat(tester, container);
+    },
+  );
+
+  testWidgets(
+    'Ask Attune is absent for an Attune Assist output message',
+    (tester) async {
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      repo.seedIncoming(
+        id: 'm-assist-output',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'Here is an idea: a picnic in the park.',
+        createdAt: DateTime.now(),
+        messageOrigin: 'attune_assist',
+      );
+      final container = await pumpChat(tester, repo);
+
+      await tester.longPress(
+        find.text('Here is an idea: a picnic in the park.'),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('Ask Attune'), findsNothing);
+
+      await tearDownChat(tester, container);
+    },
+  );
 
   testWidgets('Edit saves the new content through the controller', (
     tester,

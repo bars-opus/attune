@@ -186,6 +186,14 @@ dev_dependencies:
   path_provider_platform_interface: ^2.1.2
   plugin_platform_interface: ^2.1.8
 
+  # raw_location_service_test.dart fakes GeolocatorPlatform.instance so
+  # RawLocationService's Geolocator calls resolve under `flutter test`
+  # instead of throwing MissingPluginException. Already present
+  # transitively via geolocator; declared directly here for the same
+  # depend_on_referenced_packages reason as the platform-interface
+  # packages above.
+  geolocator_platform_interface: ^4.2.6
+
   # streak_camera_contract_test.dart fakes CameraPlatform.instance so the
   # streak camera's record/stop flow resolves under `flutter test` instead
   # of throwing MissingPluginException. Already present transitively via
