@@ -38,6 +38,7 @@ List<Widget> buildMessageActionItems({
   required VoidCallback onPin,
   required VoidCallback onUnpin,
   required VoidCallback onInfo,
+  required VoidCallback onAskAttune,
   required VoidCallback onEdit,
   required VoidCallback onDelete,
 }) {
@@ -45,6 +46,10 @@ List<Widget> buildMessageActionItems({
     currentUserId: currentUserId,
     now: DateTime.now(),
   );
+  // AI Assistant spec §3's entry-eligibility gate, computed once here —
+  // the same "compute once, pass down" shape canEditOrDelete already
+  // uses — rather than an ad hoc check inline in the tile list below.
+  final canAskAttune = message.isEligibleForAskAttune;
   final errorColor = Theme.of(context).colorScheme.error;
 
   /// Pops the menu using [tileContext] — the tile's own, always-live
@@ -150,6 +155,12 @@ List<Widget> buildMessageActionItems({
       title: 'Info',
       onSelected: onInfo,
     ),
+    if (canAskAttune)
+      item(
+        leading: const Icon(Icons.auto_awesome_outlined),
+        title: 'Ask Attune',
+        onSelected: onAskAttune,
+      ),
     if (canEditOrDelete) ...[
       item(
         leading: const Icon(Icons.edit_outlined),

@@ -59,6 +59,15 @@ class Message {
   final DateTime? viewedAt;
   final bool isSystemNotice;
   final String source;
+
+  /// Server-owned AI Assistant provenance (AI Assistant spec §7.2):
+  /// `'user'` for every ordinary message, `'attune_assist'` only for a
+  /// durable Assist share. Never client-settable — this is a read of
+  /// whatever the server already wrote, the same trust boundary
+  /// `isSystemNotice`/`source` already model for this entity. Defaults
+  /// to `'user'` so every pre-existing row/call site (which predates
+  /// this column) is unaffected.
+  final String messageOrigin;
   final DateTime? deliveredAt;
   final DateTime? readAt;
   final MessageStatus status;
@@ -131,6 +140,7 @@ class Message {
     this.viewedAt,
     this.isSystemNotice = false,
     this.source = 'native',
+    this.messageOrigin = 'user',
     this.deliveredAt,
     this.readAt,
     this.replyToMessageId,
@@ -181,6 +191,7 @@ class Message {
       viewedAt: _parseDateTime(row['viewed_at']),
       isSystemNotice: (row['is_system_notice'] as bool?) ?? false,
       source: (row['source'] as String?) ?? 'native',
+      messageOrigin: (row['message_origin'] as String?) ?? 'user',
       deliveredAt: deliveredAt,
       readAt: readAt,
       isMine: senderId == currentUserId,
@@ -240,6 +251,7 @@ class Message {
       isViewOnce: isViewOnce,
       streakViewsRemaining: streakViewsRemaining,
       source: 'native',
+      messageOrigin: 'user',
       status: MessageStatus.sending,
       isMine: true,
       replyToMessageId: replyToMessageId,
@@ -276,6 +288,7 @@ class Message {
     int? streakViewsRemaining,
     bool? isSystemNotice,
     String? source,
+    String? messageOrigin,
     DateTime? deliveredAt,
     DateTime? readAt,
     MessageStatus? status,
@@ -315,6 +328,7 @@ class Message {
       streakViewsRemaining: streakViewsRemaining ?? this.streakViewsRemaining,
       isSystemNotice: isSystemNotice ?? this.isSystemNotice,
       source: source ?? this.source,
+      messageOrigin: messageOrigin ?? this.messageOrigin,
       deliveredAt: deliveredAt ?? this.deliveredAt,
       readAt: readAt ?? this.readAt,
       status: status ?? this.status,
@@ -355,6 +369,7 @@ class Message {
       'viewedAt': viewedAt?.toIso8601String(),
       'isSystemNotice': isSystemNotice,
       'source': source,
+      'messageOrigin': messageOrigin,
       'deliveredAt': deliveredAt?.toIso8601String(),
       'readAt': readAt?.toIso8601String(),
       'deletedAt': deletedAt?.toIso8601String(),
@@ -397,6 +412,7 @@ class Message {
       viewedAt: _parseDateTime(json['viewedAt']),
       isSystemNotice: (json['isSystemNotice'] as bool?) ?? false,
       source: (json['source'] as String?) ?? 'native',
+      messageOrigin: (json['messageOrigin'] as String?) ?? 'user',
       deliveredAt: _parseDateTime(json['deliveredAt']),
       readAt: _parseDateTime(json['readAt']),
       deletedAt: _parseDateTime(json['deletedAt']),
@@ -448,6 +464,33 @@ class Message {
   bool get isImported => source.startsWith('import:');
 
   bool get isDeleted => deletedAt != null;
+
+  /// True for a durable Assist share — server-owned provenance, never
+  /// inferred from content (AI Assistant spec §7.2/§0's own P0 finding
+  /// about exactly that mistake). "Ask Attune" must never be offered on
+  /// a message that is itself already an Assist output.
+  bool get isAttuneAssistOutput => messageOrigin == 'attune_assist';
+
+  /// AI Assistant spec §3's client-side "Ask Attune" eligibility gate:
+  /// non-deleted, non-blank, at most 4,000 characters, and an ordinary
+  /// user-authored row — never a game/place/media-only card, a system
+  /// notice, or an Assist output. Deliberately mirrors
+  /// [canEditOrDelete]'s shape (a pure, computed-once predicate on the
+  /// message alone) rather than folding into it: the two gates protect
+  /// different actions and diverge on sender (Edit/Delete requires
+  /// [currentUserId] to match; Ask Attune does not).
+  ///
+  /// This is a UX gate only — both edge functions independently
+  /// enforce the same rules server-side.
+  bool get isEligibleForAskAttune {
+    if (isDeleted) return false;
+    if (isSystemNotice) return false;
+    if (isAttuneAssistOutput) return false;
+    if (mediaType != null) return false;
+    final trimmed = content.trim();
+    if (trimmed.isEmpty) return false;
+    return content.length <= 4000;
+  }
 
   /// True only for the sender's own message, not yet deleted, sent within
   /// the last 5 minutes. [now] is injectable for testing; callers pass

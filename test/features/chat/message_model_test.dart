@@ -387,4 +387,85 @@ void main() {
       expect(copied.viewedAt, isNull);
     });
   });
+
+  group('isEligibleForAskAttune (AI Assistant spec §3)', () {
+    Message ordinaryMessage({
+      String content = 'a perfectly ordinary message',
+      DateTime? deletedAt,
+      bool isSystemNotice = false,
+      String? mediaType,
+      String messageOrigin = 'user',
+    }) {
+      return Message(
+        id: 'm1',
+        clientMessageId: 'c1',
+        relationshipId: 'r1',
+        senderId: 'partner',
+        content: content,
+        createdAt: DateTime(2026, 9, 18),
+        status: MessageStatus.sent,
+        isMine: false,
+        deletedAt: deletedAt,
+        isSystemNotice: isSystemNotice,
+        mediaType: mediaType,
+        messageOrigin: messageOrigin,
+      );
+    }
+
+    test('true for an ordinary, non-deleted, in-range text message', () {
+      expect(ordinaryMessage().isEligibleForAskAttune, isTrue);
+    });
+
+    test('false when the message is deleted', () {
+      expect(
+        ordinaryMessage(deletedAt: DateTime(2026, 9, 18)).isEligibleForAskAttune,
+        isFalse,
+      );
+    });
+
+    test('false when content is blank/whitespace-only', () {
+      expect(ordinaryMessage(content: '   ').isEligibleForAskAttune, isFalse);
+    });
+
+    test('false when content exceeds 4,000 characters', () {
+      expect(
+        ordinaryMessage(content: 'a' * 4001).isEligibleForAskAttune,
+        isFalse,
+      );
+    });
+
+    test('true at exactly the 4,000 character boundary', () {
+      expect(
+        ordinaryMessage(content: 'a' * 4000).isEligibleForAskAttune,
+        isTrue,
+      );
+    });
+
+    test('false for a media-only card (game/place/image/etc)', () {
+      expect(
+        ordinaryMessage(mediaType: 'image').isEligibleForAskAttune,
+        isFalse,
+      );
+    });
+
+    test('false for a system notice', () {
+      expect(
+        ordinaryMessage(isSystemNotice: true).isEligibleForAskAttune,
+        isFalse,
+      );
+    });
+
+    test('false for an existing Attune Assist output message', () {
+      expect(
+        ordinaryMessage(messageOrigin: 'attune_assist').isEligibleForAskAttune,
+        isFalse,
+      );
+      expect(
+        ordinaryMessage(
+          messageOrigin: 'attune_assist',
+        ).isAttuneAssistOutput,
+        isTrue,
+      );
+    });
+  });
 }

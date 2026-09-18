@@ -19,6 +19,7 @@ import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.
 import 'package:attune/features/chat/presentation/widgets/chat_media_group.dart';
 import 'package:attune/features/chat/presentation/widgets/resolved_media_url.dart';
 import 'package:attune/features/chat/presentation/screens/message_info_screen.dart';
+import 'package:attune/features/ai_assistant/presentation/screens/ask_attune_mode_sheet.dart';
 import 'package:attune/features/chat/presentation/widgets/video_message_thumbnail.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_message_player.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
@@ -577,6 +578,10 @@ class MessageBubble extends StatelessWidget {
                                   onPin: onPin ?? () {},
                                   onUnpin: onUnpin ?? () {},
                                   onInfo: _buildInfoOpener(context, message),
+                                  onAskAttune: _buildAskAttuneOpener(
+                                    context,
+                                    message,
+                                  ),
                                   onEdit: onEdit ?? () {},
                                   onDelete: onDelete ?? () {},
                                 ),
@@ -952,6 +957,24 @@ void _openMessageInfo(NavigatorState navigator, Message message) {
   navigator.push(
     MaterialPageRoute<void>(
       builder: (_) => MessageInfoScreen(message: message),
+    ),
+  );
+}
+
+/// Same reasoning as [_buildInfoOpener]/[_buildFullPickerOpener]: the
+/// [NavigatorState] is resolved at long-press time, not inside the
+/// closure the menu invokes after its own route has already popped and
+/// this bubble's list element may have been recycled.
+VoidCallback _buildAskAttuneOpener(BuildContext context, Message message) {
+  final navigator = Navigator.of(context, rootNavigator: true);
+  return () => _openAskAttuneModeSheet(navigator, message);
+}
+
+void _openAskAttuneModeSheet(NavigatorState navigator, Message message) {
+  if (!navigator.mounted) return;
+  navigator.push(
+    MaterialPageRoute<void>(
+      builder: (_) => AskAttuneModeSheet(message: message),
     ),
   );
 }
