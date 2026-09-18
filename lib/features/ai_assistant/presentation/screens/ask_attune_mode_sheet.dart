@@ -23,6 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../auth/providers/auth_provider.dart';
 import '../../../chat/domain/entities/message.dart';
 import '../providers/ai_assistant_providers.dart';
+import 'ai_consent_screen.dart';
 import 'assist_sheet.dart';
 import 'understand_sheet.dart';
 
@@ -158,72 +159,46 @@ class _ConsentGatedModeChoice extends ConsumerWidget {
 
 /// Spec §10.1's first-use disclosure: shown before the caller has
 /// granted consent for this relationship. Neither mode is offered here
-/// at all — granting is the only action available — so there is no
-/// path from this state into either edge function.
-class _ConsentDisclosure extends ConsumerStatefulWidget {
+/// at all until consent is granted — this widget's only job is to route
+/// to the real, standalone [AiConsentScreen] (Task 8), which owns the
+/// actual disclosure copy and the `recordConsent` grant/withdraw calls,
+/// so there is exactly one place in the codebase that calls
+/// `record_ai_processing_consent`. Re-invalidating on return covers a
+/// Decline (nothing changed, harmless re-fetch) and a Grant (surfaces
+/// the new state immediately) alike.
+class _ConsentDisclosure extends ConsumerWidget {
   const _ConsentDisclosure({required this.relationshipId});
 
   final String relationshipId;
 
   @override
-  ConsumerState<_ConsentDisclosure> createState() =>
-      _ConsentDisclosureState();
-}
-
-class _ConsentDisclosureState extends ConsumerState<_ConsentDisclosure> {
-  bool _submitting = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.privacy_tip_outlined, color: colorScheme.primary, size: 40),
-          const SizedBox(height: 16),
-          Text(
-            'Before you use Ask Attune',
-            style: textTheme.titleLarge,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'This feature sends chat text to a third-party AI provider to '
-            'generate ideas or a private read on a message. It is never '
-            'used to train the provider\'s models. Both partners must '
-            'agree before either can use it.',
-            style: textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed:
-                _submitting
-                    ? null
-                    : () async {
-                      setState(() => _submitting = true);
-                      // Task 5/6 own the actual grant RPC call; this
-                      // sheet's job is only to show the gate and stop
-                      // here until it resolves. Re-reading the provider
-                      // is what will surface a grant made elsewhere.
-                      ref.invalidate(
-                        aiConsentStatusProvider(widget.relationshipId),
-                      );
-                      if (mounted) setState(() => _submitting = false);
-                    },
-            child:
-                _submitting
-                    ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                    : const Text('I understand'),
-          ),
-        ],
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Both partners must agree before either can use Ask Attune.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              key: const ValueKey('ask-attune-review-consent-button'),
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => AiConsentScreen(relationshipId: relationshipId),
+                  ),
+                );
+                ref.invalidate(aiConsentStatusProvider(relationshipId));
+              },
+              child: const Text('Review & continue'),
+            ),
+          ],
+        ),
       ),
     );
   }

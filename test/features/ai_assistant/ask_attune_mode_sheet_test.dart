@@ -170,7 +170,12 @@ void main() {
               ),
         );
 
-        expect(find.text('Before you use Ask Attune'), findsOneWidget);
+        expect(
+          find.text(
+            'Both partners must agree before either can use Ask Attune.',
+          ),
+          findsOneWidget,
+        );
         expect(find.text('Get ideas'), findsNothing);
         expect(find.text('Possible ways to read this'), findsNothing);
       },
