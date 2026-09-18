@@ -72,6 +72,11 @@ class _FakeAiAssistantGateway implements AiAssistantGateway {
     }
     return nextRpcResult;
   }
+
+  @override
+  Future<Map<String, dynamic>?> selectPlanningLink(String messageId) async {
+    return null;
+  }
 }
 
 /// A fake RawLocationService is not possible via subclassing (the real

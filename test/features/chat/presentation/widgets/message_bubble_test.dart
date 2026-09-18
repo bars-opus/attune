@@ -3,6 +3,8 @@ import 'package:attune/app/routing/app_router.dart';
 import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:attune/core/utils/animations/animated_scale_fade.dart';
 import 'package:attune/core/widgets/universal_bubble.dart';
+import 'package:attune/features/ai_assistant/data/repositories/ai_assistant_repository.dart';
+import 'package:attune/features/ai_assistant/presentation/providers/ai_assistant_providers.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/providers/voice_playback_provider.dart';
@@ -21,6 +23,20 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/chat_test_harness.dart';
+
+class _NoOpGateway implements AiAssistantGateway {
+  @override
+  Future<dynamic> invokeFunction(
+    String functionName, {
+    Map<String, dynamic>? body,
+  }) async => throw UnsupportedError('not exercised in this test');
+  @override
+  Future<dynamic> rpc(String function, {Map<String, dynamic>? params}) async =>
+      throw UnsupportedError('not exercised in this test');
+  @override
+  Future<Map<String, dynamic>?> selectPlanningLink(String messageId) async =>
+      null;
+}
 
 void main() {
   // MessageBubble now prefers localMediaPath only when the file is still
@@ -1319,4 +1335,71 @@ void main() {
       );
     },
   );
+
+  group('Attune Assist branch (AI Assistant spec §5.3)', () {
+    testWidgets(
+      'a message with message_origin attune_assist renders '
+      'AttuneAssistBubble, not the ordinary text bubble',
+      (tester) async {
+        final message = Message.fromRow({
+          'id': 'assist-branch-1',
+          'client_message_id': 'c-assist-branch-1',
+          'relationship_id': 'r1',
+          'sender_id': 'u1',
+          'content': 'Here are a few ideas for tonight.',
+          'created_at': DateTime.now().toIso8601String(),
+          'message_origin': 'attune_assist',
+          'assistant_payload': {
+            'schema_version': 1,
+            'suggested_planning_item': null,
+            'sources': <dynamic>[],
+          },
+        }, currentUserId: 'u1');
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              aiAssistantRepositoryProvider.overrideWithValue(
+                AiAssistantRepository(_NoOpGateway()),
+              ),
+            ],
+            child: withScreenUtil(
+              MaterialApp(
+                home: Scaffold(body: MessageBubble(message: message)),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('Attune suggestion'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'an ordinary message with the same content never renders '
+      'AttuneAssistBubble',
+      (tester) async {
+        final message = Message.fromRow({
+          'id': 'ordinary-branch-1',
+          'client_message_id': 'c-ordinary-branch-1',
+          'relationship_id': 'r1',
+          'sender_id': 'u1',
+          'content': 'Here are a few ideas for tonight.',
+          'created_at': DateTime.now().toIso8601String(),
+        }, currentUserId: 'u1');
+
+        await tester.pumpWidget(
+          withScreenUtil(
+            MaterialApp(
+              home: Scaffold(body: MessageBubble(message: message)),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('Attune suggestion'), findsNothing);
+      },
+    );
+  });
 }

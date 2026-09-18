@@ -40,6 +40,11 @@ class _FakeAiAssistantGateway implements AiAssistantGateway {
     }
     return nextRpcResult;
   }
+
+  @override
+  Future<Map<String, dynamic>?> selectPlanningLink(String messageId) async {
+    return null;
+  }
 }
 
 Map<String, dynamic> _ideasResponse({String draftId = 'draft-1'}) => {

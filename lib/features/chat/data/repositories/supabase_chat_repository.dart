@@ -39,7 +39,7 @@ class SupabaseChatRepository implements ChatRepository {
       'media_duration_ms,media_waveform,media_width,media_height,source,'
       'reply_to_message_id,quoted_text,deleted_at,edited_at,'
       'is_view_once,viewed_at,is_system_notice,streak_views_remaining,'
-      'story_item_id';
+      'story_item_id,message_origin,assistant_payload';
 
   User get _currentUser {
     final user = _supabase.auth.currentUser;

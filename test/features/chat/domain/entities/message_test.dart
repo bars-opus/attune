@@ -57,7 +57,11 @@ void main() {
       expect(message.isDeleted, isFalse);
     });
 
-    test('canEditOrDelete is true for own message within 5 minutes', () {
+    // --- Regression-safety net: canEdit/canDelete must match the OLD
+    // combined canEditOrDelete's result exactly for every existing case,
+    // for an ordinary (non-Assist) message. ---
+
+    test('canEdit and canDelete are both true for own message within 5 minutes', () {
       final message = Message.optimistic(
         id: 'm4',
         clientMessageId: 'c4',
@@ -66,13 +70,12 @@ void main() {
         content: 'hi',
         createdAt: DateTime.now().subtract(const Duration(minutes: 2)),
       );
-      expect(
-        message.canEditOrDelete(currentUserId: 'u1', now: DateTime.now()),
-        isTrue,
-      );
+      final now = DateTime.now();
+      expect(message.canEdit(currentUserId: 'u1', now: now), isTrue);
+      expect(message.canDelete(currentUserId: 'u1', now: now), isTrue);
     });
 
-    test('canEditOrDelete is false past the 5-minute window', () {
+    test('canEdit and canDelete are both false past the 5-minute window', () {
       final message = Message.optimistic(
         id: 'm5',
         clientMessageId: 'c5',
@@ -81,13 +84,12 @@ void main() {
         content: 'hi',
         createdAt: DateTime.now().subtract(const Duration(minutes: 6)),
       );
-      expect(
-        message.canEditOrDelete(currentUserId: 'u1', now: DateTime.now()),
-        isFalse,
-      );
+      final now = DateTime.now();
+      expect(message.canEdit(currentUserId: 'u1', now: now), isFalse);
+      expect(message.canDelete(currentUserId: 'u1', now: now), isFalse);
     });
 
-    test('canEditOrDelete is false for a message from the other sender', () {
+    test('canEdit and canDelete are both false for a message from the other sender', () {
       final message = Message.optimistic(
         id: 'm6',
         clientMessageId: 'c6',
@@ -96,13 +98,12 @@ void main() {
         content: 'hi',
         createdAt: DateTime.now(),
       );
-      expect(
-        message.canEditOrDelete(currentUserId: 'u1', now: DateTime.now()),
-        isFalse,
-      );
+      final now = DateTime.now();
+      expect(message.canEdit(currentUserId: 'u1', now: now), isFalse);
+      expect(message.canDelete(currentUserId: 'u1', now: now), isFalse);
     });
 
-    test('canEditOrDelete is false for an already-deleted message', () {
+    test('canEdit and canDelete are both false for an already-deleted message', () {
       final row = {
         'id': 'm7',
         'client_message_id': 'c7',
@@ -113,10 +114,58 @@ void main() {
         'deleted_at': DateTime.now().toIso8601String(),
       };
       final message = Message.fromRow(row, currentUserId: 'u1');
-      expect(
-        message.canEditOrDelete(currentUserId: 'u1', now: DateTime.now()),
-        isFalse,
-      );
+      final now = DateTime.now();
+      expect(message.canEdit(currentUserId: 'u1', now: now), isFalse);
+      expect(message.canDelete(currentUserId: 'u1', now: now), isFalse);
+    });
+  });
+
+  group('Message.canEdit/canDelete — Attune Assist split (spec §5.3)', () {
+    Message assistMessage({required DateTime createdAt, String senderId = 'u1'}) {
+      final row = {
+        'id': 'a1',
+        'client_message_id': 'ca1',
+        'relationship_id': 'r1',
+        'sender_id': senderId,
+        'content': 'Here are a few ideas...',
+        'created_at': createdAt.toIso8601String(),
+        'message_origin': 'attune_assist',
+        'assistant_payload': {
+          'schema_version': 1,
+          'suggested_planning_item': null,
+          'sources': <dynamic>[],
+        },
+      };
+      return Message.fromRow(row, currentUserId: senderId);
+    }
+
+    test(
+      'an Assist message within the 5-minute window: canDelete true, canEdit false',
+      () {
+        final message = assistMessage(
+          createdAt: DateTime.now().subtract(const Duration(minutes: 2)),
+        );
+        final now = DateTime.now();
+        expect(message.canEdit(currentUserId: 'u1', now: now), isFalse);
+        expect(message.canDelete(currentUserId: 'u1', now: now), isTrue);
+      },
+    );
+
+    test(
+      'an Assist message outside the 5-minute window: both canEdit and canDelete false',
+      () {
+        final message = assistMessage(
+          createdAt: DateTime.now().subtract(const Duration(minutes: 10)),
+        );
+        final now = DateTime.now();
+        expect(message.canEdit(currentUserId: 'u1', now: now), isFalse);
+        expect(message.canDelete(currentUserId: 'u1', now: now), isFalse);
+      },
+    );
+
+    test('isAttuneAssistOutput is true for an Assist message', () {
+      final message = assistMessage(createdAt: DateTime.now());
+      expect(message.isAttuneAssistOutput, isTrue);
     });
   });
 }

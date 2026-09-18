@@ -226,3 +226,23 @@ final understandResultProvider =
       UnderstandResultNotifier,
       UnderstandResultModel?
     >(UnderstandResultNotifier.new);
+
+// --- Add to Planning link state ---
+
+/// Whether [messageId]'s shared Assist proposal has already been
+/// converted to a Planning entity (spec §5.4) — `AttuneAssistBubble`
+/// watches this to show "Add to Planning" vs. "Added to Planning".
+/// `.autoDispose.family`, keyed by message id, matching Planning's own
+/// established Realtime-refresh provider shape
+/// (`lib/features/planning/presentation/providers/planning_providers.dart`)
+/// rather than polling: a fresh watch re-fetches, and nothing here is
+/// long-lived across bubbles for different messages. Callers that just
+/// performed a successful `addToPlanning` call should
+/// `ref.invalidate(planningLinkProvider(messageId))` rather than wait
+/// for this provider's own next natural rebuild, so the bubble updates
+/// immediately instead of on next scroll/rebuild.
+final planningLinkProvider = FutureProvider.autoDispose
+    .family<AddToPlanningResult?, String>((ref, messageId) {
+      final repository = ref.watch(aiAssistantRepositoryProvider);
+      return repository.getPlanningLink(messageId);
+    });

@@ -29,6 +29,11 @@ class _FakeAiAssistantGateway implements AiAssistantGateway {
   String? lastCalledFunction;
   Map<String, dynamic>? lastCalledParams;
 
+  // selectPlanningLink
+  Object? nextSelectPlanningLinkError;
+  Map<String, dynamic>? nextSelectPlanningLinkResult;
+  String? lastSelectedPlanningLinkMessageId;
+
   @override
   Future<dynamic> invokeFunction(
     String functionName, {
@@ -54,6 +59,17 @@ class _FakeAiAssistantGateway implements AiAssistantGateway {
       throw error;
     }
     return nextRpcResult;
+  }
+
+  @override
+  Future<Map<String, dynamic>?> selectPlanningLink(String messageId) async {
+    lastSelectedPlanningLinkMessageId = messageId;
+    if (nextSelectPlanningLinkError != null) {
+      final error = nextSelectPlanningLinkError!;
+      nextSelectPlanningLinkError = null;
+      throw error;
+    }
+    return nextSelectPlanningLinkResult;
   }
 }
 
@@ -375,5 +391,62 @@ void main() {
       expect(gateway.lastCalledParams!['p_edited_title'], isNull);
       expect(gateway.lastCalledParams!['p_edited_date'], isNull);
     });
+  });
+
+  group('getPlanningLink', () {
+    test('returns null when no link row exists for the message', () async {
+      final gateway = _FakeAiAssistantGateway()
+        ..nextSelectPlanningLinkResult = null;
+      final repo = AiAssistantRepository(gateway);
+
+      final result = await repo.getPlanningLink('msg-3');
+
+      expect(result, isNull);
+      expect(gateway.lastSelectedPlanningLinkMessageId, 'msg-3');
+    });
+
+    test('returns the planning_item_id when a task link exists', () async {
+      final gateway = _FakeAiAssistantGateway()
+        ..nextSelectPlanningLinkResult = {
+          'planning_item_id': 'item-9',
+          'planning_event_id': null,
+        };
+      final repo = AiAssistantRepository(gateway);
+
+      final result = await repo.getPlanningLink('msg-4');
+
+      expect(result, isNotNull);
+      expect(result!.planningItemId, 'item-9');
+      expect(result.planningEventId, isNull);
+    });
+
+    test('returns the planning_event_id when an event link exists', () async {
+      final gateway = _FakeAiAssistantGateway()
+        ..nextSelectPlanningLinkResult = {
+          'planning_item_id': null,
+          'planning_event_id': 'event-5',
+        };
+      final repo = AiAssistantRepository(gateway);
+
+      final result = await repo.getPlanningLink('msg-5');
+
+      expect(result, isNotNull);
+      expect(result!.planningEventId, 'event-5');
+      expect(result.planningItemId, isNull);
+    });
+
+    test(
+      'a transport failure resolves to null (fail closed to "show Add to '
+      'Planning") rather than throwing',
+      () async {
+        final gateway = _FakeAiAssistantGateway()
+          ..nextSelectPlanningLinkError = Exception('network blip');
+        final repo = AiAssistantRepository(gateway);
+
+        final result = await repo.getPlanningLink('msg-6');
+
+        expect(result, isNull);
+      },
+    );
   });
 }

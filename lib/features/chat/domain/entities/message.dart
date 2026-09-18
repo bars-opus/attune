@@ -1,5 +1,14 @@
 enum MessageStatus { queued, sending, sent, delivered, read, failed }
 
+/// Sentinel distinguishing "argument omitted" from "argument explicitly
+/// passed as null" for [Message.copyWith]'s `assistantPayload` parameter
+/// — every other nullable field on this entity only ever transitions
+/// non-null -> non-null or is never cleared via copyWith, but a delete of
+/// an Assist message must be able to clear this field back to null (spec
+/// §5.3's tombstone), which the usual `newValue ?? this.value` pattern
+/// cannot express.
+const Object _unset = Object();
+
 class Message {
   static const int maxContentRunes = 10000;
   final String id;
@@ -68,6 +77,21 @@ class Message {
   /// to `'user'` so every pre-existing row/call site (which predates
   /// this column) is unaffected.
   final String messageOrigin;
+
+  /// Server-owned, versioned payload for a durable Assist share (AI
+  /// Assistant spec §5.3/§7.2): `{ schema_version, suggested_planning_item,
+  /// sources }`. Null for every ordinary message — the
+  /// `messages_assistant_payload_shape` CHECK constraint (spec §7.2's
+  /// migration) guarantees the server never sets this unless
+  /// [messageOrigin] is `'attune_assist'`, and never leaves it null when it
+  /// is. Kept as the raw decoded JSON map rather than a typed model here:
+  /// this entity is the shared, feature-agnostic Message read by every
+  /// chat surface, while the typed decode of its two branches
+  /// (task/event proposal vs. Nearby sources) belongs to the
+  /// `ai_assistant` feature that actually renders it
+  /// (`AttuneAssistBubble`), matching how `AssistDraftModel` already
+  /// keeps that typed shape out of this entity.
+  final Map<String, dynamic>? assistantPayload;
   final DateTime? deliveredAt;
   final DateTime? readAt;
   final MessageStatus status;
@@ -141,6 +165,7 @@ class Message {
     this.isSystemNotice = false,
     this.source = 'native',
     this.messageOrigin = 'user',
+    this.assistantPayload,
     this.deliveredAt,
     this.readAt,
     this.replyToMessageId,
@@ -192,6 +217,10 @@ class Message {
       isSystemNotice: (row['is_system_notice'] as bool?) ?? false,
       source: (row['source'] as String?) ?? 'native',
       messageOrigin: (row['message_origin'] as String?) ?? 'user',
+      assistantPayload:
+          row['assistant_payload'] == null
+              ? null
+              : Map<String, dynamic>.from(row['assistant_payload'] as Map),
       deliveredAt: deliveredAt,
       readAt: readAt,
       isMine: senderId == currentUserId,
@@ -289,6 +318,7 @@ class Message {
     bool? isSystemNotice,
     String? source,
     String? messageOrigin,
+    Object? assistantPayload = _unset,
     DateTime? deliveredAt,
     DateTime? readAt,
     MessageStatus? status,
@@ -329,6 +359,10 @@ class Message {
       isSystemNotice: isSystemNotice ?? this.isSystemNotice,
       source: source ?? this.source,
       messageOrigin: messageOrigin ?? this.messageOrigin,
+      assistantPayload:
+          identical(assistantPayload, _unset)
+              ? this.assistantPayload
+              : assistantPayload as Map<String, dynamic>?,
       deliveredAt: deliveredAt ?? this.deliveredAt,
       readAt: readAt ?? this.readAt,
       status: status ?? this.status,
@@ -370,6 +404,7 @@ class Message {
       'isSystemNotice': isSystemNotice,
       'source': source,
       'messageOrigin': messageOrigin,
+      'assistantPayload': assistantPayload,
       'deliveredAt': deliveredAt?.toIso8601String(),
       'readAt': readAt?.toIso8601String(),
       'deletedAt': deletedAt?.toIso8601String(),
@@ -413,6 +448,10 @@ class Message {
       isSystemNotice: (json['isSystemNotice'] as bool?) ?? false,
       source: (json['source'] as String?) ?? 'native',
       messageOrigin: (json['messageOrigin'] as String?) ?? 'user',
+      assistantPayload:
+          json['assistantPayload'] == null
+              ? null
+              : Map<String, dynamic>.from(json['assistantPayload'] as Map),
       deliveredAt: _parseDateTime(json['deliveredAt']),
       readAt: _parseDateTime(json['readAt']),
       deletedAt: _parseDateTime(json['deletedAt']),
@@ -475,7 +514,7 @@ class Message {
   /// non-deleted, non-blank, at most 4,000 characters, and an ordinary
   /// user-authored row — never a game/place/media-only card, a system
   /// notice, or an Assist output. Deliberately mirrors
-  /// [canEditOrDelete]'s shape (a pure, computed-once predicate on the
+  /// [canEdit]/[canDelete]'s shape (a pure, computed-once predicate on the
   /// message alone) rather than folding into it: the two gates protect
   /// different actions and diverge on sender (Edit/Delete requires
   /// [currentUserId] to match; Ask Attune does not).
@@ -493,9 +532,35 @@ class Message {
   }
 
   /// True only for the sender's own message, not yet deleted, sent within
-  /// the last 5 minutes. [now] is injectable for testing; callers pass
-  /// DateTime.now() in production.
-  bool canEditOrDelete({required String currentUserId, required DateTime now}) {
+  /// the last 5 minutes, AND not an Attune Assist share. [now] is
+  /// injectable for testing; callers pass DateTime.now() in production.
+  ///
+  /// The Assist exclusion is spec §5.3's "may be deleted under the
+  /// existing five-minute sender rule but may not be edited in place" —
+  /// an Assist message is immutable-in-place regardless of sender/time
+  /// window, matching `edit_message`'s own server-side
+  /// `assist_message_immutable` rejection (checked ahead of every other
+  /// predicate there too), so this can never drift from what the RPC
+  /// actually allows. [canDelete] deliberately has NO such exclusion —
+  /// only [canEdit] does.
+  bool canEdit({required String currentUserId, required DateTime now}) {
+    if (isAttuneAssistOutput) return false;
+    return _withinEditDeleteWindow(currentUserId: currentUserId, now: now);
+  }
+
+  /// True only for the sender's own message, not yet deleted, sent within
+  /// the last 5 minutes — unchanged for an Assist message (spec §5.3:
+  /// deletable under the ordinary rule even though not editable).
+  /// [now] is injectable for testing; callers pass DateTime.now() in
+  /// production.
+  bool canDelete({required String currentUserId, required DateTime now}) {
+    return _withinEditDeleteWindow(currentUserId: currentUserId, now: now);
+  }
+
+  bool _withinEditDeleteWindow({
+    required String currentUserId,
+    required DateTime now,
+  }) {
     if (senderId != currentUserId) return false;
     if (isDeleted) return false;
     return now.difference(createdAt) < const Duration(minutes: 5);

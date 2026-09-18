@@ -60,6 +60,14 @@ class AddToPlanningResult {
 abstract class AiAssistantGateway {
   Future<dynamic> invokeFunction(String functionName, {Map<String, dynamic>? body});
   Future<dynamic> rpc(String function, {Map<String, dynamic>? params});
+
+  /// A plain, RLS-scoped SELECT against `ai_assist_planning_links` for
+  /// one message id — this table is SELECT-only for `authenticated`
+  /// (Plan A Task 1's grants), so a direct read here needs no RPC
+  /// wrapper the way every write in this feature does. Returns the raw
+  /// row map, or `null` if no link exists (an ordinary
+  /// `.maybeSingle()`-shaped absence, not an error).
+  Future<Map<String, dynamic>?> selectPlanningLink(String messageId);
 }
 
 class SupabaseAiAssistantGateway implements AiAssistantGateway {
@@ -78,6 +86,16 @@ class SupabaseAiAssistantGateway implements AiAssistantGateway {
   @override
   Future<dynamic> rpc(String function, {Map<String, dynamic>? params}) {
     return _supabase.rpc(function, params: params);
+  }
+
+  @override
+  Future<Map<String, dynamic>?> selectPlanningLink(String messageId) async {
+    final row = await _supabase
+        .from('ai_assist_planning_links')
+        .select('planning_item_id,planning_event_id')
+        .eq('message_id', messageId)
+        .maybeSingle();
+    return row;
   }
 }
 
@@ -247,6 +265,30 @@ class AiAssistantRepository {
         );
       },
     );
+  }
+
+  /// Whether [messageId]'s shared Assist proposal has already been
+  /// converted to a Planning entity — the "Add to Planning" affordance
+  /// (spec §5.4) must show "Added to Planning" instead once this is
+  /// non-null, so two partners racing the same tap don't create a
+  /// second entity nor see a stale "Add to Planning" after the first
+  /// partner already confirmed it. Returns `null` on a transport
+  /// failure rather than throwing — a UI that can't confirm the link
+  /// state should fail closed to "show Add to Planning" (a subsequent
+  /// idempotent `addToPlanning` call is always safe, per
+  /// `create_planning_from_assist_message`'s own re-check), not crash
+  /// the bubble.
+  Future<AddToPlanningResult?> getPlanningLink(String messageId) async {
+    try {
+      final row = await _gateway.selectPlanningLink(messageId);
+      if (row == null) return null;
+      return AddToPlanningResult(
+        planningItemId: row['planning_item_id'] as String?,
+        planningEventId: row['planning_event_id'] as String?,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------------

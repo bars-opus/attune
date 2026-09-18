@@ -57,6 +57,13 @@ class _FakeAiAssistantGateway implements AiAssistantGateway {
   Future<dynamic> rpc(String function, {Map<String, dynamic>? params}) async {
     throw UnsupportedError('UnderstandSheet must never call an RPC');
   }
+
+  @override
+  Future<Map<String, dynamic>?> selectPlanningLink(String messageId) async {
+    throw UnsupportedError(
+      'UnderstandSheet must never check a Planning link',
+    );
+  }
 }
 
 Map<String, dynamic> _okResponse({
