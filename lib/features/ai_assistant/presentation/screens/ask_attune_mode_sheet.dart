@@ -24,6 +24,7 @@ import '../../../auth/providers/auth_provider.dart';
 import '../../../chat/domain/entities/message.dart';
 import '../providers/ai_assistant_providers.dart';
 import 'assist_sheet.dart';
+import 'understand_sheet.dart';
 
 class AskAttuneModeSheet extends ConsumerWidget {
   const AskAttuneModeSheet({super.key, required this.message});
@@ -292,7 +293,13 @@ class _ModeChoiceList extends StatelessWidget {
               subtitle:
                   "Private to you. Attune cannot know what your partner meant.",
               enabled: !waitingForPartner,
-              onTap: waitingForPartner ? null : () {},
+              onTap: waitingForPartner
+                  ? null
+                  : () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => UnderstandSheet(message: message),
+                        ),
+                      ),
             ),
         ],
       ),
