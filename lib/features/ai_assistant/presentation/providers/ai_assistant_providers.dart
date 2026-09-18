@@ -28,6 +28,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../data/models/assist_draft_model.dart';
 import '../../data/models/understand_result_model.dart';
 import '../../data/repositories/ai_assistant_repository.dart';
+import '../../data/services/raw_location_service.dart';
 
 final _supabaseClientProvider = Provider<SupabaseClient>((ref) {
   return Supabase.instance.client;
@@ -36,6 +37,16 @@ final _supabaseClientProvider = Provider<SupabaseClient>((ref) {
 final aiAssistantRepositoryProvider = Provider<AiAssistantRepository>((ref) {
   final supabase = ref.read(_supabaseClientProvider);
   return AiAssistantRepository(SupabaseAiAssistantGateway(supabase));
+});
+
+/// The Nearby-only raw position reader (Task 5). A plain `Provider`,
+/// not autoDispose — `RawLocationService` is stateless, so there is
+/// nothing sheet-scoped to leak between opens (unlike
+/// `assistDraftProvider`, which holds the actual result). Overridden in
+/// tests with a fake to avoid touching a real platform Geolocator
+/// channel from a widget test.
+final rawLocationServiceProvider = Provider<RawLocationService>((ref) {
+  return const RawLocationService();
 });
 
 /// Feature-local copy of the active relationship id, following the

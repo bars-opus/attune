@@ -23,6 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../auth/providers/auth_provider.dart';
 import '../../../chat/domain/entities/message.dart';
 import '../providers/ai_assistant_providers.dart';
+import 'assist_sheet.dart';
 
 class AskAttuneModeSheet extends ConsumerWidget {
   const AskAttuneModeSheet({super.key, required this.message});
@@ -278,7 +279,9 @@ class _ModeChoiceList extends StatelessWidget {
             title: 'Get ideas',
             subtitle: 'Create suggestions you can preview and choose to share.',
             enabled: !waitingForPartner,
-            onTap: waitingForPartner ? null : () {},
+            onTap: waitingForPartner
+                ? null
+                : () => _chooseAssistKindThenOpen(context, message),
           ),
           const SizedBox(height: 12),
           if (understandAvailable)
@@ -295,6 +298,69 @@ class _ModeChoiceList extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Assist supports two bounded jobs (spec §5.1: Ideas and Nearby), but
+/// this screen offers only one "Get ideas" tile, matching the spec's
+/// own two-tile layout (Assist vs Understand) exactly — there is no
+/// third top-level tile for Nearby. So tapping "Get ideas" asks which
+/// of the two Assist jobs the user wants via a lightweight modal picker
+/// BEFORE pushing `AssistSheet`, which itself takes a required `kind`
+/// (Task 5's own interface) rather than choosing internally.
+Future<void> _chooseAssistKindThenOpen(
+  BuildContext context,
+  Message message,
+) async {
+  final kind = await showModalBottomSheet<AssistKind>(
+    context: context,
+    builder: (sheetContext) {
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              key: const ValueKey('assist-kind-ideas'),
+              leading: const Icon(Icons.lightbulb_outline),
+              title: const Text('Ideas'),
+              subtitle: const Text('Brainstorm date themes, activities, gifts.'),
+              onTap: () => Navigator.of(sheetContext).pop(AssistKind.ideas),
+            ),
+            ListTile(
+              key: const ValueKey('assist-kind-nearby'),
+              leading: const Icon(Icons.place_outlined),
+              title: const Text('Nearby'),
+              subtitle: const Text('Find real places around a location you choose.'),
+              onTap: () => Navigator.of(sheetContext).pop(AssistKind.nearby),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+  if (kind == null || !context.mounted) return;
+
+  final navigator = Navigator.of(context);
+  // `AssistSheet`'s own two completion callbacks both close it; on
+  // "Edit as my message" the edited text is popped as this route's
+  // result (`AskAttuneModeSheet`'s own push is currently `void` at its
+  // call site in message_bubble.dart, so nothing yet reads this value
+  // further up — dropping the text into the live chat composer is a
+  // deliberate deferral, see this task's report's deviations section:
+  // it requires threading a new callback through
+  // message_bubble.dart/message_actions_sheet.dart/chat_screen.dart,
+  // none of which are in this task's file list, and chat_screen.dart
+  // is exactly the kind of shared/composer-state file a surgical task
+  // should not touch without a dedicated review of its own).
+  navigator.push<String>(
+    MaterialPageRoute(
+      builder: (_) => AssistSheet(
+        message: message,
+        kind: kind,
+        onShared: () => navigator.pop(),
+        onEditAsMine: (text) => navigator.pop(text),
+      ),
+    ),
+  );
 }
 
 class _ModeTile extends StatelessWidget {
