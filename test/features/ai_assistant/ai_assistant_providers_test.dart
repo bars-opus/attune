@@ -291,6 +291,60 @@ void main() {
     );
 
     test(
+      'WITHIN A SINGLE CONTAINER, once the Understand sheet stops '
+      'listening (simulating dismiss) and a new sheet opens later in '
+      'the same app session (simulating a fresh watch), .autoDispose '
+      "tears the old notifier down and the new watch gets a fresh "
+      "instance — never the old sheet's private result. Same "
+      "reasoning as assistDraftProvider's own same-container test: a "
+      'cross-container test alone would pass even if `.autoDispose` '
+      'were entirely broken, and Understand is the MORE '
+      'privacy-sensitive of the two notifiers (spec §6.3), so this '
+      'exact guarantee — not just the weaker cross-container one — '
+      'must be exercised for it too.',
+      () async {
+        final gateway = _FakeAiAssistantGateway()
+          ..nextInvokeResult = _understandOkResponse();
+        final container = _makeContainer(gateway);
+        addTearDown(container.dispose);
+
+        // Sheet 1 opens: something watches the provider (a real
+        // sheet's ref.watch), then requests an Understand result.
+        final sub1 = container.listen(understandResultProvider, (_, __) {});
+        await container
+            .read(understandResultProvider.notifier)
+            .requestUnderstand(
+              requestId: 'req-1',
+              messageId: 'msg-1',
+              utcOffsetMinutes: 0,
+            );
+        expect(container.read(understandResultProvider).value, isNotNull);
+
+        // Sheet 1 dismisses: its watch is cancelled. With .autoDispose
+        // and no other listener, Riverpod schedules disposal.
+        sub1.close();
+        // autoDispose teardown happens on a microtask/timer tick — this
+        // notifier's build() does more work (an extra ref.listen plus
+        // constructing an AppLifecycleListener) than
+        // AssistDraftNotifier's, so give it a full event-queue pump
+        // rather than a single Duration.zero tick.
+        await pumpEventQueue();
+
+        // Sheet 2 opens later in the SAME app session: a fresh watch
+        // on the SAME container/provider.
+        final value = await container.read(understandResultProvider.future);
+        expect(
+          value,
+          isNull,
+          reason:
+              "sheet 2's fresh watch must get a brand-new notifier "
+              "instance whose build() reruns to idle — never sheet "
+              "1's disposed-but-cached private result",
+        );
+      },
+    );
+
+    test(
       'reading the disposed provider instance itself does not silently '
       'return stale data — the container refuses further reads',
       () async {
