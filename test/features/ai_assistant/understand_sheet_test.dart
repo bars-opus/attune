@@ -154,8 +154,10 @@ void main() {
         // not an affordance) by requiring a non-letter on both sides.
         final forbiddenPatterns = <String, RegExp>{
           'Clipboard': RegExp(r'\bClipboard\b'),
-          'Share/share (as an action, e.g. Share.share/onShare/ShareButton)':
-              RegExp(r'\bshare[A-Z_]|\bonShare\b|Share\.\w|ShareButton\b'),
+          'Share/share (as an action, e.g. Share.share/onShare/ShareButton/Icons.share)':
+              RegExp(
+                r'\bshare[A-Z_]|\bonShare\b|Share\.\w|ShareButton\b|Icons\.share\b',
+              ),
           'Add to Planning / Planning (feature reference)': RegExp(
             r'[Pp]lanning',
           ),
