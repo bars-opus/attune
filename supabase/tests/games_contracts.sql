@@ -449,6 +449,21 @@ BEGIN
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
 
+  -- paint_ball_create_session refuses with FORBIDDEN, whose only two
+  -- sources are the membership guard and the idempotency-key branch.
+  -- Report which one, with the values it actually sees, instead of
+  -- guessing from the error code alone.
+  RAISE NOTICE 'paint ball preflight: auth.uid()=% expected=% member=% key_rows=%',
+    auth.uid(), a,
+    EXISTS (
+      SELECT 1 FROM public.relationships
+      WHERE id = '10000000-0000-0000-0000-0000000000a1'
+        AND status = 'active'
+        AND chat_archived_at IS NULL
+        AND (user_a = auth.uid() OR user_b = auth.uid())
+    ),
+    (SELECT count(*) FROM public.session_idempotency_keys WHERE key = 'pb-key-1');
+
   v_result := public.paint_ball_create_session(
     '10000000-0000-0000-0000-0000000000a1', 'playful', 'pb-key-1', true);
   v_session := (v_result->>'session_id')::uuid;
