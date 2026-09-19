@@ -1157,20 +1157,41 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                           // legible over the denser wallpaper
                                           // without separating grouped runs
                                           // into individual floating cards.
+                                          //
+                                          // Kept deliberately shallow (small
+                                          // offset/blur) rather than just
+                                          // lighter in opacity: grouped
+                                          // bubbles sit with zero vertical
+                                          // gap between them
+                                          // (verticalPadding: 0 in
+                                          // message_bubble.dart), and each
+                                          // bubble paints on top of the one
+                                          // above it in the Column — a
+                                          // shadow that reached past the
+                                          // touching edge was being drawn,
+                                          // then immediately covered by the
+                                          // next bubble, so it was only ever
+                                          // visible on a bubble with real
+                                          // spacing after it (the last in a
+                                          // group, or a standalone message).
+                                          // Same reduced values for sender
+                                          // and receiver — this is the one
+                                          // shared definition both already
+                                          // use.
                                           boxShadow:
                                               widget.showShadow
                                                   ? const [
                                                     BoxShadow(
-                                                      offset: Offset(0, 1),
-                                                      blurRadius: 2,
+                                                      offset: Offset(0, 0.5),
+                                                      blurRadius: 1.5,
                                                       spreadRadius: -0.5,
-                                                      color: Color(0x26000000),
+                                                      color: Color(0x1F000000),
                                                     ),
                                                     BoxShadow(
-                                                      offset: Offset(0, 3),
-                                                      blurRadius: 6,
+                                                      offset: Offset(0, 1.5),
+                                                      blurRadius: 4,
                                                       spreadRadius: -2,
-                                                      color: Color(0x1A000000),
+                                                      color: Color(0x14000000),
                                                     ),
                                                   ]
                                                   : null,
