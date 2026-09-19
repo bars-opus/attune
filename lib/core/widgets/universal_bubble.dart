@@ -1152,27 +1152,25 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                                     width: 0.3,
                                                   )
                                                   : null,
-                                          // A restrained 1dp-style lift for
-                                          // chat bubbles. Kept faint so grouped
-                                          // message runs still feel connected.
+                                          // A defined contact shadow plus a
+                                          // softer falloff keeps chat bubbles
+                                          // legible over the denser wallpaper
+                                          // without separating grouped runs
+                                          // into individual floating cards.
                                           boxShadow:
                                               widget.showShadow
                                                   ? const [
                                                     BoxShadow(
                                                       offset: Offset(0, 1),
-                                                      blurRadius: 1,
-                                                      spreadRadius: -1,
-                                                      color: Color(0x0F000000),
-                                                    ),
-                                                    BoxShadow(
-                                                      offset: Offset(0, 1),
-                                                      blurRadius: 1,
-                                                      color: Color(0x0A000000),
-                                                    ),
-                                                    BoxShadow(
-                                                      offset: Offset(0, 1),
                                                       blurRadius: 2,
-                                                      color: Color(0x08000000),
+                                                      spreadRadius: -0.5,
+                                                      color: Color(0x26000000),
+                                                    ),
+                                                    BoxShadow(
+                                                      offset: Offset(0, 3),
+                                                      blurRadius: 6,
+                                                      spreadRadius: -2,
+                                                      color: Color(0x1A000000),
                                                     ),
                                                   ]
                                                   : null,

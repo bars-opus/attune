@@ -34,7 +34,7 @@ class ChatColorScheme extends ThemeExtension<ChatColorScheme> {
     background: Color(0xFFF7F4EF),
     backgroundAccent: Color(0xFFA9D8BE),
     pattern: Color(0xFFEAE0D2),
-    patternOpacity: 0.85,
+    patternOpacity: 1.0,
     senderBubble: Color(0xFFDCFFC2),
     onSenderBubble: Color(0xFF14200F),
     receiverBubble: Color(0xFFFFFEFC),
