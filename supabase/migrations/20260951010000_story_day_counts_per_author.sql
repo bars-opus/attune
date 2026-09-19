@@ -7,12 +7,17 @@
 -- posted must show one thumbnail per author, and a thumbnail needs both
 -- the author id and that author's newest thumbnail_key for the day.
 --
--- Superseded here via CREATE OR REPLACE rather than editing the original
--- migration (this repo's convention: migration history is append-only).
--- The signature is unchanged — (uuid, date, date) — so the existing
--- REVOKE/GRANT from 20260938080000 still applies to this body and no
--- re-grant is needed; it is repeated at the bottom anyway so this file
--- is self-contained if replayed against a fresh database.
+-- Superseded here rather than by editing the original migration (this
+-- repo's convention: migration history is append-only).
+--
+-- DROP before CREATE, not CREATE OR REPLACE: Postgres refuses to
+-- replace a function whose RETURNS TABLE shape changes
+-- ("cannot change return type of existing function", SQLSTATE 42P13),
+-- and this migration's whole purpose is changing that shape. The
+-- argument signature is unchanged — (uuid, date, date) — so the DROP
+-- targets it exactly. Dropping also discards the original's
+-- REVOKE/GRANT, which is why they are re-applied at the bottom; they
+-- are not optional boilerplate here.
 --
 -- Shape change: one row per (occurred_on, author_id) instead of one row
 -- per occurred_on. `item_count` is now that AUTHOR's count for the day,
@@ -33,7 +38,9 @@
 -- an unbounded group-by over all history is the exact failure mode
 -- stories spec §5.5 calls out.
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.list_story_day_counts(
+DROP FUNCTION IF EXISTS public.list_story_day_counts(uuid, date, date);
+
+CREATE FUNCTION public.list_story_day_counts(
   p_relationship_id uuid,
   p_start_on        date,
   p_end_on          date
