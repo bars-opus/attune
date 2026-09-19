@@ -20,42 +20,82 @@ import 'package:flutter_test/flutter_test.dart';
 /// same shape of gap: TimelineScreen needs Supabase, a relationship and
 /// several live providers to build, which is why nothing in `test/`
 /// mounts it to hang this on.
+/// **Reachability moved, not removed.** The story day row used to sit
+/// inline under the calendar (`StoryDayCountRow`). Tapping a date now
+/// opens `CalendarDaySheet` instead, which renders that day's stories as
+/// a tappable thumbnail row, and the calendar's own date cells draw a
+/// story avatar per author via `CalendarDayIndicators`. The property
+/// these tests guard is unchanged — a past day's stories must still be
+/// reachable from the calendar — so they assert on the new wiring rather
+/// than the retired widget name.
 void main() {
   final timelineScreen = File(
     'lib/features/timeline/presentation/screens/timeline_screen.dart',
   ).readAsStringSync();
+  final calendarStrip = File(
+    'lib/features/timeline/presentation/widgets/calendar_strip.dart',
+  ).readAsStringSync();
+  final daySheet = File(
+    'lib/features/timeline/presentation/widgets/calendar_day_sheet.dart',
+  ).readAsStringSync();
 
-  test('the timeline screen renders the story day row', () {
+  test('tapping a calendar date opens the day sheet', () {
     expect(
-      timelineScreen.contains('StoryDayCountRow('),
+      timelineScreen.contains('_openDaySheet(') &&
+          timelineScreen.contains('showCalendarDaySheet('),
       isTrue,
       reason:
           'stories leave the reel after 24h but stay in the calendar '
-          'forever (spec §1/§3.1) — without this the permanence half of '
-          'the feature is invisible in the app',
+          'forever (spec §1/§3.1) — the day sheet is now the way into a '
+          'past day, so without this the permanence half of the feature '
+          'is unreachable in the app',
     );
   });
 
-  test('it passes the selected day, so the row is day-scoped', () {
+  test('the day sheet renders that day\'s stories', () {
     expect(
-      timelineScreen.contains('occurredOn: _selectedDate!'),
+      daySheet.contains('storyDayItemsProvider('),
       isTrue,
       reason:
-          'the row is composed at read time for the SELECTED day; a '
-          'hardcoded or missing date would show the wrong day\'s stories',
+          "the sheet must compose the day's stories at read time; without "
+          'this it would show only events and the stories would be '
+          'invisible again',
+    );
+  });
+
+  test('the sheet is opened for the tapped day, so it is day-scoped', () {
+    expect(
+      RegExp(
+        r'showCalendarDaySheet\([\s\S]{0,300}?date: date,',
+      ).hasMatch(timelineScreen),
+      isTrue,
+      reason:
+          'the sheet is composed for the TAPPED day; a hardcoded or '
+          "missing date would show the wrong day's stories",
     );
   });
 
   test('it passes the relationship, so it cannot read another couple', () {
     expect(
       RegExp(
-        r'StoryDayCountRow\(\s*relationshipId: relationshipId,',
+        r'showCalendarDaySheet\([\s\S]{0,300}?relationshipId: relationshipId,',
       ).hasMatch(timelineScreen),
       isTrue,
       reason:
-          'the row must be scoped to this couple; the RPC and RLS are the '
-          'real authority, but passing the wrong id here would read as an '
-          'empty calendar rather than an error',
+          'the sheet must be scoped to this couple; the RPC and RLS are '
+          'the real authority, but passing the wrong id here would read '
+          'as an empty calendar rather than an error',
+    );
+  });
+
+  test('calendar date cells draw per-author story avatars', () {
+    expect(
+      calendarStrip.contains('CalendarDayIndicators(') &&
+          calendarStrip.contains('relationshipId: relationshipId'),
+      isTrue,
+      reason:
+          'a date with stories must be visibly distinguishable in the '
+          'grid itself, not only after tapping it',
     );
   });
 }

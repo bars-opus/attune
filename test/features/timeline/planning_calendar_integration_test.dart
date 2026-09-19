@@ -46,13 +46,21 @@ void main() {
       matching: find.byWidgetPredicate((widget) {
         if (widget is! Container) return false;
         final decoration = widget.decoration;
-        // Distinguish the small 4x4 dot Container from the cell's own
+        // Distinguish the small indicator circle from the cell's own
         // larger circular background/today-ring Container, which is
-        // always present regardless of dots and also has
-        // shape: BoxShape.circle.
+        // always present regardless of indicators and also has
+        // shape: BoxShape.circle. Matched by "small and circular"
+        // rather than one exact pixel width: the indicators are now
+        // sized from kCalendarEventAvatarDiameter (and the upcoming
+        // ring from a fraction of it), so pinning an exact value here
+        // re-breaks this test on every visual tweak without telling us
+        // anything about the property under test.
+        final width = widget.constraints?.maxWidth;
         return decoration is BoxDecoration &&
             decoration.shape == BoxShape.circle &&
-            widget.constraints?.maxWidth == 4;
+            width != null &&
+            width > 0 &&
+            width <= 20;
       }),
     );
     return dotContainers.evaluate().isNotEmpty;

@@ -14,7 +14,7 @@ import 'package:attune/features/timeline/presentation/widgets/add_moment_or_remi
 import 'package:attune/features/timeline/presentation/widgets/calendar_strip.dart';
 import 'package:attune/features/timeline/presentation/widgets/moments_list.dart';
 import 'package:attune/features/timeline/presentation/widgets/planning_day_section.dart';
-import 'package:attune/features/timeline/presentation/widgets/story_day_row.dart';
+import 'package:attune/features/timeline/presentation/widgets/calendar_day_sheet.dart';
 import 'package:attune/features/timeline/presentation/widgets/upcoming_reminders_section.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -53,6 +53,25 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
       _selectedDate = date;
     });
     // In a full implementation, you would scroll the list to the event
+  }
+
+  /// Tapping a date opens that day in a sheet: its stories as a
+  /// tappable row, plus the moments and scheduled items on it.
+  void _openDaySheet({
+    required DateTime date,
+    required List<TimelineEventModel> events,
+    required List<dynamic> reminders,
+    required List<dynamic> planningEntries,
+    required String? relationshipId,
+  }) {
+    showCalendarDaySheet(
+      context: context,
+      relationshipId: relationshipId,
+      date: date,
+      events: events,
+      reminders: reminders,
+      planningEntries: planningEntries,
+    );
   }
 
   Map<DateTime, List<ReminderModel>> _remindersByDate(
@@ -238,6 +257,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                         padding: const EdgeInsets.only(top: Spacing.lg),
                         child: CalendarStrip(
                           focusedMonth: _focusedMonth,
+                          relationshipId: relationshipId,
                           eventsByDate: eventsByDate,
                           remindersByDate: _remindersByDate(
                             remindersAsync.valueOrNull ?? const [],
@@ -248,6 +268,20 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                           selectedDate: _selectedDate,
                           onDaySelected: (date) {
                             _scrollToDate(date);
+                            _openDaySheet(
+                              date: date,
+                              events: eventsByDate[date] ?? const [],
+                              reminders: _remindersByDate(
+                                    remindersAsync.valueOrNull ?? const [],
+                                  )[date] ??
+                                  const [],
+                              planningEntries: _planningEntriesByDate(
+                                    planningEntriesAsync.valueOrNull ??
+                                        const [],
+                                  )[date] ??
+                                  const [],
+                              relationshipId: relationshipId,
+                            );
                           },
                           onMonthChanged: (month) {
                             setState(() {
@@ -263,6 +297,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                           padding: const EdgeInsets.only(top: Spacing.lg),
                           child: CalendarStrip(
                             focusedMonth: _focusedMonth,
+                            relationshipId: relationshipId,
                             remindersByDate: _remindersByDate(
                               remindersAsync.valueOrNull ?? const [],
                             ),
@@ -291,26 +326,12 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                         ),
                   ),
                 ),
-                // Stories: the calendar's third source, merged at read
-                // time and never copied (spec §3.1). Shown for the
-                // selected day only — nothing rendered when no day is
-                // selected or that day has zero stories
-                // (StoryDayCountRow's own "absence means don't draw").
-                if (_selectedDate != null)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: Spacing.md.w,
-                      ),
-                      child: StoryDayCountRow(
-                        relationshipId: relationshipId,
-                        occurredOn: _selectedDate!,
-                      ),
-                    ),
-                  ),
-                // Planning: its own source, sitting BESIDE the moments/
-                // reminders/stories rendering for the selected day, never
-                // merged into TimelineEventModel-shaped logic (spec §7).
+                // A selected day's stories and past moments now live in
+                // the day sheet that tapping a date opens
+                // (calendar_day_sheet.dart) — the inline sections below
+                // the calendar carry UPCOMING items only, so the screen
+                // answers "what is coming" without having to scroll past
+                // a day that already happened.
                 if (_selectedDate != null)
                   SliverToBoxAdapter(
                     child: Padding(
@@ -320,7 +341,15 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                       child: PlanningDaySection(
                         entries: planningEntriesAsync.valueOrNull
                                 ?.where(
-                                  (e) => _isSameDay(e.date, _selectedDate!),
+                                  (e) =>
+                                      _isSameDay(e.date, _selectedDate!) &&
+                                      !e.date.isBefore(
+                                        DateTime(
+                                          DateTime.now().year,
+                                          DateTime.now().month,
+                                          DateTime.now().day,
+                                        ),
+                                      ),
                                 )
                                 .toList() ??
                             const [],

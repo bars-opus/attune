@@ -226,18 +226,66 @@ class StoryReplyTarget {
 /// One row of `list_story_day_counts` — spec §5.5, backs the calendar
 /// month view.
 @immutable
+/// One (day, author) pair from `list_story_day_counts` — since
+/// 20260951010000 that RPC returns one row PER AUTHOR per day, not one
+/// row per day, so the calendar can draw a thumbnail avatar per author
+/// on a date (one for each partner who posted that day).
+///
+/// A day with items from both partners therefore yields TWO rows sharing
+/// the same [occurredOn] and the same [dayItemCount], each with its own
+/// [authorId], [itemCount] and [newestThumbnailKey]. Callers that only
+/// need "how many stories on this date" read [dayItemCount] from any one
+/// of the day's rows rather than summing [itemCount] themselves.
 class StoryDayCount {
-  const StoryDayCount({required this.occurredOn, required this.itemCount});
+  const StoryDayCount({
+    required this.occurredOn,
+    required this.itemCount,
+    this.authorId,
+    int? dayItemCount,
+    this.newestThumbnailKey,
+    this.newestCreatedAt,
+  }) : dayItemCount = dayItemCount ?? itemCount;
 
   factory StoryDayCount.fromRow(Map<String, dynamic> row) {
+    final thumbnailKey = row['newest_thumbnail_key'];
+    final newestCreatedAt = row['newest_created_at'];
+    // day_item_count is absent if this ever runs against a database
+    // still on the pre-20260951010000 function; fall back to this row's
+    // own count rather than throwing, so a version-skewed client
+    // degrades to "the date has stories" instead of a hard failure.
+    final dayCount = row['day_item_count'] as num?;
+    final itemCount = (row['item_count'] as num).toInt();
     return StoryDayCount(
       occurredOn: DateTime.parse('${row['occurred_on']}'),
-      itemCount: (row['item_count'] as num).toInt(),
+      authorId: row['author_id'] == null ? null : '${row['author_id']}',
+      itemCount: itemCount,
+      dayItemCount: dayCount?.toInt() ?? itemCount,
+      newestThumbnailKey: thumbnailKey == null ? null : '$thumbnailKey',
+      newestCreatedAt: newestCreatedAt == null
+          ? null
+          : DateTime.parse('$newestCreatedAt'),
     );
   }
 
   final DateTime occurredOn;
+
+  /// The author these counts belong to. Null only against a database
+  /// still serving the pre-per-author function.
+  final String? authorId;
+
+  /// This AUTHOR's story count for [occurredOn] — not the whole day's.
   final int itemCount;
+
+  /// Every author's stories for [occurredOn] combined. Identical across
+  /// all rows sharing this date.
+  final int dayItemCount;
+
+  /// This author's newest item for the day — the thumbnail the calendar
+  /// avatar renders, matching the story ring's own "newest fills the
+  /// circle" rule.
+  final String? newestThumbnailKey;
+
+  final DateTime? newestCreatedAt;
 }
 
 /// Every server call the READ side of stories makes.

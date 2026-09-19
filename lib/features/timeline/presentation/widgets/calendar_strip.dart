@@ -2,6 +2,7 @@
 
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
+import 'package:attune/features/timeline/presentation/widgets/calendar_day_indicators.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -16,6 +17,11 @@ class CalendarStrip extends StatelessWidget {
   final Function(DateTime) onMonthChanged;
   final DateTime? selectedDate;
 
+  /// Needed to read this month's per-author story counts for the date
+  /// cells. Null simply renders no story avatars — the calendar still
+  /// works for events and scheduled items.
+  final String? relationshipId;
+
   const CalendarStrip({
     super.key,
     required this.focusedMonth,
@@ -25,6 +31,7 @@ class CalendarStrip extends StatelessWidget {
     required this.onDaySelected,
     required this.onMonthChanged,
     this.selectedDate,
+    this.relationshipId,
   });
 
   @override
@@ -116,27 +123,18 @@ class CalendarStrip extends StatelessWidget {
               final eventsOnDate = eventsByDate[date] ?? [];
               final remindersOnDate = remindersByDate[date] ?? [];
               final planningOnDate = planningEntriesByDate[date] ?? [];
-              final hasEvents = eventsOnDate.isNotEmpty ||
-                  remindersOnDate.isNotEmpty ||
-                  planningOnDate.isNotEmpty;
 
-              // Get unique event types for dots
-              final eventTypes = eventsOnDate.map((e) => e.eventType).toSet().toList();
-              final dotColors = eventTypes.map((type) => _getEventTypeColor(type, colorScheme)).toList();
-              // Upcoming-reminder dots use a hollow/outlined ring rather
-              // than a filled dot, so they read as "not yet happened"
-              // next to the filled moment-type dots — one shared color
-              // (colorScheme.secondary) regardless of reminder type, since
-              // "this date has something upcoming" is the only signal the
-              // strip needs to carry, not which reminder type it is.
-              // Planning's Task due dates / Event dates are the exact same
-              // "something is coming up, not a logged moment" shape, so
-              // they share this same hollow-ring visual language rather
-              // than introducing a third dot style (spec §7 does not ask
-              // for one).
-              final hasReminderDot =
+              // Distinct event types on this date, drawn as filled,
+              // color-keyed circular avatars carrying the type's own
+              // glyph (see calendar_day_indicators.dart). Reminders and
+              // Planning entries share a single hollow ring instead —
+              // "this date has something upcoming" is the only signal
+              // the strip needs for them, not which kind.
+              final eventTypes =
+                  eventsOnDate.map((e) => e.eventType).toSet().toList();
+              final hasUpcoming =
                   remindersOnDate.isNotEmpty || planningOnDate.isNotEmpty;
-              
+
               return GestureDetector(
                 onTap: () => onDaySelected(date),
                 child: Container(
@@ -168,45 +166,25 @@ class CalendarStrip extends StatelessWidget {
                                   : colorScheme.onSurface,
                         ),
                       ),
-                      if (hasEvents)
-                        Padding(
-                          padding: EdgeInsets.only(top: 2),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              ...dotColors.take(3).map((color) {
-                                return Container(
-                                  margin: const EdgeInsets.symmetric(horizontal: 1),
-                                  width: 4,
-                                  height: 4,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: color,
-                                  ),
-                                );
-                              }),
-                              if (hasReminderDot)
-                                Container(
-                                  margin: const EdgeInsets.symmetric(horizontal: 1),
-                                  width: 4,
-                                  height: 4,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: colorScheme.secondary,
-                                      width: 1,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
+                      CalendarDayIndicators(
+                        relationshipId: relationshipId,
+                        date: date,
+                        eventTypes: eventTypes,
+                        hasUpcoming: hasUpcoming,
+                      ),
                     ],
                   ),
                 ),
               );
             },
           ),
+        ),
+        // A key to what is actually on screen this month, not a static
+        // list of every type the app supports.
+        CalendarLegend(
+          eventTypes: _visibleEventTypes(),
+          hasStories: relationshipId != null,
+          hasUpcoming: _hasAnyUpcoming(),
         ),
       ],
     );
@@ -222,14 +200,26 @@ class CalendarStrip extends StatelessWidget {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
-  Color _getEventTypeColor(String eventType, ColorScheme colorScheme) {
-    switch (eventType) {
-      case 'milestone': return colorScheme.primary;
-      case 'conflict': return Colors.red;
-      case 'highlight': return Colors.amber;
-      case 'first': return Colors.purple;
-      case 'anniversary': return Colors.pink;
-      default: return colorScheme.primary;
+  /// Distinct event types present anywhere in the focused month.
+  List<String> _visibleEventTypes() {
+    final types = <String>{};
+    for (final entry in eventsByDate.entries) {
+      if (entry.key.year == focusedMonth.year &&
+          entry.key.month == focusedMonth.month) {
+        types.addAll(entry.value.map((e) => e.eventType));
+      }
     }
+    return types.toList()..sort();
+  }
+
+  bool _hasAnyUpcoming() {
+    bool inMonth(DateTime d) =>
+        d.year == focusedMonth.year && d.month == focusedMonth.month;
+    return remindersByDate.entries.any(
+          (e) => inMonth(e.key) && e.value.isNotEmpty,
+        ) ||
+        planningEntriesByDate.entries.any(
+          (e) => inMonth(e.key) && e.value.isNotEmpty,
+        );
   }
 }

@@ -154,20 +154,25 @@ class StoryDayCountRow extends ConsumerWidget {
     final counts = countsAsync.valueOrNull;
     if (counts == null) return const SizedBox.shrink();
 
+    // Since 20260951010000 `list_story_day_counts` returns one row PER
+    // AUTHOR per day, so a day both partners posted on yields two rows.
+    // `dayItemCount` is the whole day's total and is identical across
+    // them — read it from the first match rather than summing
+    // `itemCount` (which is now per-author) over the rows.
     final match = counts.where((c) {
       final d = c.occurredOn;
       return d.year == occurredOn.year &&
           d.month == occurredOn.month &&
           d.day == occurredOn.day;
     }).toList();
-    if (match.isEmpty || match.first.itemCount <= 0) {
+    if (match.isEmpty || match.first.dayItemCount <= 0) {
       return const SizedBox.shrink();
     }
 
     return StoryDayRow(
       relationshipId: relationshipId,
       occurredOn: occurredOn,
-      itemCount: match.first.itemCount,
+      itemCount: match.first.dayItemCount,
     );
   }
 }
