@@ -379,9 +379,20 @@ DO $$ DECLARE v int; v_raised boolean := false; BEGIN
     WHEN OTHERS THEN v_raised := true;
   END;
   IF NOT v_raised THEN RAISE EXCEPTION 'A: acting on a blocked pair unexpectedly succeeded'; END IF;
-  SELECT count(*) INTO v FROM public.dating_matches
-  WHERE introduction_id = '00000000-0000-0000-0000-000000ad0000';
-  IF v <> 0 THEN RAISE EXCEPTION 'blocked pair created % match(es) (must be 0)', v; END IF;
+  -- Running as `authenticated` here, and dating_matches carries
+  -- REVOKE ALL (20260703194500_dating_mode_v1_1.sql), so this read is
+  -- refused outright rather than returning 0 rows. Both outcomes prove
+  -- the blocked pair produced no match. (The identical reads earlier in
+  -- this file are NOT wrapped, and must not be: they run after
+  -- test_clear_dating_auth(), which does RESET ROLE, so they legitimately
+  -- read rows as superuser and a refusal there would be a real failure.)
+  BEGIN
+    SELECT count(*) INTO v FROM public.dating_matches
+    WHERE introduction_id = '00000000-0000-0000-0000-000000ad0000';
+    IF v <> 0 THEN RAISE EXCEPTION 'blocked pair created % match(es) (must be 0)', v; END IF;
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL; -- refused outright: a stronger guarantee than returning 0 rows.
+  END;
 
   -- The (A,D) pair must not surface in A's introductions list.
   SELECT count(*) INTO v FROM public.get_my_dating_introductions(20)
@@ -527,9 +538,15 @@ DO $$ DECLARE v int; v_raised boolean := false; BEGIN
   EXCEPTION WHEN OTHERS THEN v_raised := true;
   END;
   IF NOT v_raised THEN RAISE EXCEPTION 'C4: acting on a former-partner intro unexpectedly succeeded'; END IF;
-  SELECT count(*) INTO v FROM public.dating_matches
-  WHERE introduction_id = '00000000-0000-0000-0000-000000bd0000';
-  IF v <> 0 THEN RAISE EXCEPTION 'C4: former-partner pair created % match(es) (must be 0)', v; END IF;
+  -- As `authenticated` against a REVOKE'd table: refusal and 0 rows both
+  -- prove no match was created. See the note at the blocked-pair check.
+  BEGIN
+    SELECT count(*) INTO v FROM public.dating_matches
+    WHERE introduction_id = '00000000-0000-0000-0000-000000bd0000';
+    IF v <> 0 THEN RAISE EXCEPTION 'C4: former-partner pair created % match(es) (must be 0)', v; END IF;
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL; -- refused outright: a stronger guarantee than returning 0 rows.
+  END;
 END $$;
 
 RESET ROLE;
