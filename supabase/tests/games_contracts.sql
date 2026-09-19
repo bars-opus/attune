@@ -448,21 +448,17 @@ BEGIN
 
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
 
-  -- paint_ball_create_session refuses with FORBIDDEN, whose only two
-  -- sources are the membership guard and the idempotency-key branch.
-  -- Report which one, with the values it actually sees, instead of
-  -- guessing from the error code alone.
-  RAISE NOTICE 'paint ball preflight: auth.uid()=% expected=% member=% key_rows=%',
-    auth.uid(), a,
-    EXISTS (
-      SELECT 1 FROM public.relationships
-      WHERE id = '10000000-0000-0000-0000-0000000000a1'
-        AND status = 'active'
-        AND chat_archived_at IS NULL
-        AND (user_a = auth.uid() OR user_b = auth.uid())
-    ),
-    (SELECT count(*) FROM public.session_idempotency_keys WHERE key = 'pb-key-1');
+  -- Cheap guard against the bug above silently returning: if identity
+  -- did not actually change, every assertion below would be testing the
+  -- wrong user, and FORBIDDEN is an ambiguous way to find that out.
+  IF auth.uid() <> a THEN
+    RAISE EXCEPTION
+      'test setup: auth.uid() is % but this block acts as %', auth.uid(), a;
+  END IF;
 
   v_result := public.paint_ball_create_session(
     '10000000-0000-0000-0000-0000000000a1', 'playful', 'pb-key-1', true);
@@ -482,6 +478,9 @@ BEGIN
   -- The partner accepts; the INITIATOR fires first.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', b::text, true);
   PERFORM public.paint_ball_accept_session(v_session);
 
   IF (SELECT current_turn_user_id FROM public.game_sessions WHERE id = v_session)
@@ -506,6 +505,9 @@ BEGIN
   -- Round 1. A hides 0 shoots 1; B hides 1 shoots 2. A hits, B misses.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
   v_result := public.paint_ball_take_turn(v_session, 1, 0::smallint, 1::smallint);
   IF v_result->>'round_state' IS DISTINCT FROM 'awaiting_partner' THEN
     RAISE EXCEPTION
@@ -527,6 +529,9 @@ BEGIN
 
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', b::text, true);
   v_result := public.paint_ball_take_turn(v_session, 1, 1::smallint, 2::smallint);
   IF v_result->>'round_state' IS DISTINCT FROM 'resolved' THEN
     RAISE EXCEPTION
@@ -553,9 +558,15 @@ BEGIN
   -- the turn, watches the replay, and moves again before it passes.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', b::text, true);
   PERFORM public.paint_ball_take_turn(v_session, 2, 1::smallint, 2::smallint);
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
   v_result := public.paint_ball_take_turn(v_session, 2, 0::smallint, 1::smallint);
   IF (v_result->>'lives_b')::int <> 1 THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the second hit did not reach 1 life';
@@ -567,9 +578,15 @@ BEGIN
   -- Round 3: the knockout blow. A closed round 2, so A opens this one.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
   PERFORM public.paint_ball_take_turn(v_session, 3, 0::smallint, 1::smallint);
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', b::text, true);
   v_result := public.paint_ball_take_turn(v_session, 3, 1::smallint, 2::smallint);
 
   IF (v_result->>'lives_b')::int <> 0 THEN
@@ -622,6 +639,9 @@ BEGIN
   -- explicitly rather than relying on whoever moved last.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
   v_result := public.paint_ball_resolve_penalty(v_session, 'completed');
   IF NOT COALESCE((v_result->>'error')::boolean, false) THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the winner resolved the penalty';
@@ -630,6 +650,9 @@ BEGIN
   -- The loser resolves, and the game completes.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', b::text, true);
   PERFORM public.paint_ball_resolve_penalty(v_session, 'completed');
 
   IF (SELECT status FROM public.game_sessions WHERE id = v_session)
@@ -641,6 +664,7 @@ BEGIN
   PERFORM public.paint_ball_resolve_penalty(v_session, 'completed');
 
   PERFORM set_config('request.jwt.claims', '', true);
+  PERFORM set_config('request.jwt.claim.sub', '', true);
 END $$;
 
 -- Lives can never go below zero, even if a hit is forced past a knockout.
@@ -652,22 +676,34 @@ DECLARE
 BEGIN
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
   v_session := (public.paint_ball_create_session(
     '10000000-0000-0000-0000-0000000000a1', 'playful', 'pb-key-floor', true)
     ->>'session_id')::uuid;
 
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', b::text, true);
   PERFORM public.paint_ball_accept_session(v_session);
 
   -- B must have hidden somewhere before a shot can hit them, so play the
   -- opening round out first: A opens, then B hides at 1.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
   PERFORM public.paint_ball_take_turn(v_session, 1, 0::smallint, 0::smallint);
 
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', b::text, true);
   PERFORM public.paint_ball_take_turn(v_session, 2, 1::smallint, 2::smallint);
 
   UPDATE public.game_session_rounds
@@ -679,6 +715,9 @@ BEGIN
 
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  -- auth.uid() reads request.jwt.claim.sub FIRST, so a stale value
+  -- left by test_set_games_auth() would shadow the line above.
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
   PERFORM public.paint_ball_take_turn(v_session, 3, 0::smallint, 1::smallint);
 
   IF (SELECT lives_b FROM public.game_sessions WHERE id = v_session) < 0 THEN
@@ -686,6 +725,7 @@ BEGIN
   END IF;
 
   PERFORM set_config('request.jwt.claims', '', true);
+  PERFORM set_config('request.jwt.claim.sub', '', true);
 END $$;
 
 -- Every game table the client touches must carry an explicit grant.
