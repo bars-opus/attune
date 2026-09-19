@@ -453,6 +453,17 @@ BEGIN
     '10000000-0000-0000-0000-0000000000a1', 'playful', 'pb-key-1', true);
   v_session := (v_result->>'session_id')::uuid;
 
+  -- Fail HERE, naming the refusal, rather than letting a NULL v_session
+  -- flow on and surface three calls later as a generic "Game session not
+  -- found" — which is exactly how this block used to report itself, with
+  -- the actual cause (whatever paint_ball_create_session refused with)
+  -- nowhere in the output.
+  IF v_session IS NULL THEN
+    RAISE EXCEPTION
+      'CONTRACT VIOLATED: paint_ball_create_session returned no session_id: %',
+      v_result;
+  END IF;
+
   -- The partner accepts; the INITIATOR fires first.
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', b, 'role', 'authenticated')::text, true);
