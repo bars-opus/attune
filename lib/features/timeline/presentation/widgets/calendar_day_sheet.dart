@@ -13,14 +13,15 @@
 /// removing it from the calendar (stories spec §1, §3.2).
 library;
 
+import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/planning/data/models/planning_calendar_entry_model.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
 import 'package:attune/features/stories/presentation/screens/story_reel_screen.dart';
+import 'package:attune/features/stories/presentation/widgets/story_ring.dart';
 import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:attune/features/timeline/presentation/widgets/calendar_day_indicators.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -123,9 +124,21 @@ class CalendarDaySheet extends ConsumerWidget {
   }
 }
 
-/// The day's stories as a horizontal row of tappable thumbnails.
-/// Renders nothing at all when the day has none — the same
-/// "absence means don't draw" posture `StoryDayCountRow` uses.
+/// The day's stories as ONE RING PER AUTHOR, matching how stories are
+/// presented on the conversations screen (`StoryRingsRow`) — a day both
+/// partners posted on shows two rings side by side, each segmented by
+/// that author's own item count for the day.
+///
+/// Deliberately NOT built on `storyRingSummaryProvider`, which
+/// `StoryRingsRow` uses: that provider is relationship-wide and
+/// ACTIVE-only, whereas this sheet is scoped to one date and must
+/// include expired items (stories spec §1/§3.2 — expiry removes a story
+/// from the reel, never from the calendar). The rings here are composed
+/// from `storyDayItemsProvider`, grouped by author, so an expired story
+/// still fills its author's ring years later.
+///
+/// Renders nothing at all when the day has none — the same "absence
+/// means don't draw" posture `StoryDayCountRow` uses.
 class _StoriesSection extends ConsumerWidget {
   const _StoriesSection({required this.relationshipId, required this.date});
 
@@ -147,6 +160,7 @@ class _StoriesSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final textTheme = Theme.of(context).textTheme;
+    final myId = ref.watch(currentUserProvider)?.id;
     final itemsAsync = ref.watch(
       storyDayItemsProvider(
         StoryDayKey(relationshipId: relationshipId, occurredOn: date),
@@ -154,6 +168,22 @@ class _StoriesSection extends ConsumerWidget {
     );
     final items = itemsAsync.valueOrNull;
     if (items == null || items.isEmpty) return const SizedBox.shrink();
+
+    // Group by author, preserving the provider's oldest-first order so
+    // "newest" below is genuinely the last item, not an arbitrary one.
+    final byAuthor = <String, List<StoryItem>>{};
+    for (final item in items) {
+      byAuthor.putIfAbsent(item.authorId, () => []).add(item);
+    }
+
+    // My own ring first when I posted that day, mirroring
+    // StoryRingsRow's mine-then-partner order.
+    final authorIds = byAuthor.keys.toList()
+      ..sort((x, y) {
+        if (x == myId) return -1;
+        if (y == myId) return 1;
+        return x.compareTo(y);
+      });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -164,21 +194,29 @@ class _StoriesSection extends ConsumerWidget {
         ),
         const SizedBox(height: 8),
         SizedBox(
-          height: 96,
+          height:
+              kStoryRingThumbnailDiameter +
+              2 * (kStoryRingGap + kStoryRingStrokeWidth) +
+              4,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: items.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (_, index) => _StoryThumbnail(
-              item: items[index],
-              // Every thumbnail opens the day reel, which plays the
-              // whole day from the start — the reel has no
-              // open-at-this-item mode yet, and inventing one here
-              // would mean threading an initial index through
-              // StoryReelScreen.forDay's own pager. Honest v1 limit,
-              // not a silent no-op.
-              onTap: () => _openReel(context),
-            ),
+            itemCount: authorIds.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 16),
+            itemBuilder: (_, index) {
+              final authorId = authorIds[index];
+              return _AuthorDayRing(
+                key: ValueKey('day-story-ring-$authorId'),
+                items: byAuthor[authorId]!,
+                isMine: authorId == myId,
+                // Both rings open the same day reel:
+                // StoryReelScreen.forDay plays the whole day and has no
+                // per-author mode (its own `authorId` field is unused in
+                // day mode). Filtering to one author would mean a new
+                // constructor and pager, so this stays honest rather
+                // than pretending the rings route differently.
+                onTap: () => _openReel(context),
+              );
+            },
           ),
         ),
         const SizedBox(height: 20),
@@ -187,64 +225,54 @@ class _StoriesSection extends ConsumerWidget {
   }
 }
 
-class _StoryThumbnail extends ConsumerWidget {
-  const _StoryThumbnail({required this.item, required this.onTap});
+/// One author's ring for one calendar day, drawn with the same
+/// [StoryRing] the conversations screen uses.
+class _AuthorDayRing extends ConsumerWidget {
+  const _AuthorDayRing({
+    super.key,
+    required this.items,
+    required this.isMine,
+    required this.onTap,
+  });
 
-  final StoryItem item;
+  /// This author's items for the day, oldest first.
+  final List<StoryItem> items;
+  final bool isMine;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final url = ref
-        .watch(storyMediaSignedUrlProvider(item.thumbnailKey))
+    final newest = items.last;
+    final thumbnailUrl = ref
+        .watch(storyMediaSignedUrlProvider(newest.thumbnailKey))
         .valueOrNull;
 
-    return Semantics(
-      button: true,
-      label: 'Story from this day',
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 72,
-          height: 96,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            color: colorScheme.surfaceContainerHighest,
-            border: Border.all(
-              color: item.hasBeenViewed
-                  ? colorScheme.outlineVariant
-                  : colorScheme.primary,
-              width: 2,
-            ),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (url != null && url.isNotEmpty)
-                CachedNetworkImage(
-                  imageUrl: url,
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) =>
-                      ColoredBox(color: colorScheme.surfaceContainerHighest),
-                  errorWidget: (_, __, ___) =>
-                      ColoredBox(color: colorScheme.surfaceContainerHighest),
-                ),
-              if (item.mediaType == 'video')
-                const Positioned(
-                  right: 4,
-                  bottom: 4,
-                  child: Icon(
-                    Icons.play_circle_fill,
-                    size: 18,
-                    color: Colors.white,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
+    // `hasBeenViewed` on MY OWN story means "my partner saw it", not
+    // "I saw it" (StoryItem's own doc comment), so it says nothing
+    // about whether I have seen mine — every segment of my own ring
+    // renders bright, exactly as StoryRingsRow does for the same
+    // reason. For the partner's ring it means what it says.
+    final unviewedCount = isMine
+        ? items.length
+        : items.where((i) => !i.hasBeenViewed).length;
+
+    return StoryRing(
+      isMine: isMine,
+      hasStories: true,
+      segmentCount: items.length,
+      unviewedCount: unviewedCount,
+      thumbnailUrl: thumbnailUrl,
+      onTap: onTap,
+      // No `+` affordance in the calendar: this sheet looks at a past
+      // day, and a capture would post to TODAY, not to the day being
+      // viewed. StoryRing only draws the badge when isMine, and
+      // leaving onTapPlus null makes it inert rather than silently
+      // posting to the wrong date.
+      semanticLabel: isMine
+          ? 'Your stories from this day, ${items.length} '
+                '${items.length == 1 ? 'item' : 'items'}'
+          : 'Your partner\'s stories from this day, ${items.length} '
+                '${items.length == 1 ? 'item' : 'items'}',
     );
   }
 }

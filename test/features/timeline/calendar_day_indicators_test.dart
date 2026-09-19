@@ -13,20 +13,32 @@
 // breakdown, so the calendar could only ever say "this date has
 // stories". A test that only checked "an avatar appears" would pass
 // just as well against the old single-row shape and prove nothing.
+import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
+import 'package:attune/features/stories/presentation/widgets/story_ring.dart';
 import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:attune/features/timeline/presentation/widgets/calendar_day_indicators.dart';
 import 'package:attune/features/timeline/presentation/widgets/calendar_day_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 const _myId = 'me-1';
 const _partnerId = 'partner-1';
 const _relationshipId = 'rel-1';
 
 final _day = DateTime(2026, 6, 15);
+
+/// Signed in as _myId, so the sheet can tell my ring from my partner's.
+final _signedInUser = User(
+  id: _myId,
+  appMetadata: const {},
+  userMetadata: const {},
+  aud: 'authenticated',
+  createdAt: '2026-06-01T00:00:00Z',
+);
 
 StoryDayCount _count({
   required String authorId,
@@ -140,7 +152,10 @@ class _FakeGateway implements StoryReadGateway {
 
 Widget _wrap(Widget child, _FakeGateway gateway) {
   return ProviderScope(
-    overrides: [storyReadGatewayProvider.overrideWithValue(gateway)],
+    overrides: [
+      storyReadGatewayProvider.overrideWithValue(gateway),
+      currentUserProvider.overrideWithValue(_signedInUser),
+    ],
     child: MaterialApp(home: Scaffold(body: child)),
   );
 }
@@ -347,12 +362,17 @@ void main() {
 
   group('CalendarDaySheet', () {
     testWidgets(
-      "shows the day's stories as thumbnails, INCLUDING expired ones",
+      'a day BOTH partners posted on shows TWO rings, one per author — '
+      'not one tile per story',
       (tester) async {
         final gateway = _FakeGateway(
           dayItems: [
+            // Three items, two authors: the ring count must follow the
+            // AUTHOR count (2), never the item count (3). A per-story
+            // row would render three here.
             _item(id: 's1', authorId: _partnerId),
             _item(id: 's2', authorId: _myId),
+            _item(id: 's3', authorId: _myId),
           ],
         );
 
@@ -370,14 +390,115 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Both items are already past their expiresAt — the sheet must
-        // still show them, since expiry hides a story from the REEL,
-        // not from the calendar.
-        expect(find.text('2 stories'), findsOneWidget);
+        // Every item is already past its expiresAt — the rings must
+        // still show, since expiry hides a story from the REEL, not
+        // from the calendar.
+        expect(find.text('3 stories'), findsOneWidget);
+        expect(find.byType(StoryRing), findsNWidgets(2));
         expect(
-          find.bySemanticsLabel('Story from this day'),
-          findsNWidgets(2),
+          find.byKey(const ValueKey('day-story-ring-$_myId')),
+          findsOneWidget,
         );
+        expect(
+          find.byKey(const ValueKey('day-story-ring-$_partnerId')),
+          findsOneWidget,
+        );
+
+        // My ring carries BOTH my items as segments, the partner's
+        // carries their one — proof the grouping is per author, not a
+        // ring-per-item in disguise.
+        // The ValueKey is on the _AuthorDayRing wrapper; the StoryRing
+        // it builds is the descendant actually under test.
+        StoryRing ringFor(String authorId) => tester.widget<StoryRing>(
+          find.descendant(
+            of: find.byKey(ValueKey('day-story-ring-$authorId')),
+            matching: find.byType(StoryRing),
+          ),
+        );
+        final mine = ringFor(_myId);
+        final theirs = ringFor(_partnerId);
+        expect(mine.segmentCount, 2);
+        expect(mine.isMine, isTrue);
+        expect(theirs.segmentCount, 1);
+        expect(theirs.isMine, isFalse);
+      },
+    );
+
+    testWidgets(
+      'a day only one partner posted on shows exactly ONE ring',
+      (tester) async {
+        final gateway = _FakeGateway(
+          dayItems: [
+            _item(id: 's1', authorId: _partnerId),
+            _item(id: 's2', authorId: _partnerId),
+          ],
+        );
+
+        await tester.pumpWidget(
+          _wrap(
+            CalendarDaySheet(
+              relationshipId: _relationshipId,
+              date: _day,
+              events: const [],
+              reminders: const [],
+              planningEntries: const [],
+            ),
+            gateway,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(StoryRing), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('day-story-ring-$_myId')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      "my own ring renders every segment bright: hasBeenViewed on my own "
+      'story means my PARTNER saw it, not that I did',
+      (tester) async {
+        final gateway = _FakeGateway(
+          dayItems: [
+            _item(id: 's1', authorId: _myId, hasBeenViewed: true),
+            _item(id: 's2', authorId: _myId, hasBeenViewed: true),
+            // The partner's, genuinely seen by me.
+            _item(id: 's3', authorId: _partnerId, hasBeenViewed: true),
+          ],
+        );
+
+        await tester.pumpWidget(
+          _wrap(
+            CalendarDaySheet(
+              relationshipId: _relationshipId,
+              date: _day,
+              events: const [],
+              reminders: const [],
+              planningEntries: const [],
+            ),
+            gateway,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // The ValueKey is on the _AuthorDayRing wrapper; the StoryRing
+        // it builds is the descendant actually under test.
+        StoryRing ringFor(String authorId) => tester.widget<StoryRing>(
+          find.descendant(
+            of: find.byKey(ValueKey('day-story-ring-$authorId')),
+            matching: find.byType(StoryRing),
+          ),
+        );
+        final mine = ringFor(_myId);
+        final theirs = ringFor(_partnerId);
+        // Reading hasBeenViewed literally for my own ring would fade
+        // every segment of it forever, since the author never marks
+        // their own story viewed.
+        expect(mine.unviewedCount, 2);
+        // The partner's IS viewed, so it correctly reads as seen.
+        expect(theirs.unviewedCount, 0);
       },
     );
 
