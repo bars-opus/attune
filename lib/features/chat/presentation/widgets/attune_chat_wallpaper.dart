@@ -10,7 +10,8 @@ class AttuneChatWallpaper extends StatelessWidget {
     this.scrollController,
   });
 
-  static const _assetPath = 'assets/images/attune_chat_wallpaper_tile.png';
+  static const _assetPath =
+      'assets/images/attune_chat_wallpaper_tile_refined.png';
 
   final Widget child;
   final ScrollController? scrollController;
@@ -18,7 +19,8 @@ class AttuneChatWallpaper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = scrollController;
-    if (controller == null) return _buildWallpaper(context, 0);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (controller == null || !isDark) return _buildWallpaper(context, 0);
 
     return AnimatedBuilder(
       animation: controller,
@@ -34,194 +36,129 @@ class AttuneChatWallpaper extends StatelessWidget {
     final topLeftAccentOpacity = scrollProgress;
     final bottomRightAccentOpacity = 1 - scrollProgress;
     final backgroundAccent =
-        isDark
-            ? Color.lerp(
-              chatColors.background,
-              chatColors.backgroundAccent,
-              0.42,
-            )!
-            : Color.lerp(
-              chatColors.background,
-              chatColors.backgroundAccent,
-              0.60,
-            )!;
+        Color.lerp(chatColors.background, chatColors.backgroundAccent, 0.42)!;
     final patternAccent =
         Color.lerp(chatColors.pattern, chatColors.backgroundAccent, 0.42)!;
     final patternGlow =
         Color.lerp(chatColors.pattern, chatColors.backgroundAccent, 0.72)!;
-    final patternGlowOpacity =
-        isDark
-            ? chatColors.patternOpacity * 1.55
-            : chatColors.patternOpacity * 0.36;
-    final patternGlowBlur = isDark ? 7.0 : 5.0;
+    final patternGlowOpacity = chatColors.patternOpacity * 1.55;
+    const patternGlowBlur = 7.0;
 
     return Stack(
       fit: StackFit.expand,
       children: [
-        _WallpaperGradientLayer(
-          background: chatColors.background,
-          accent: backgroundAccent,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          opacity: 1,
-        ),
-        _WallpaperGradientLayer(
-          background: chatColors.background,
-          accent: backgroundAccent,
-          begin: Alignment.bottomRight,
-          end: Alignment.topLeft,
-          opacity: topLeftAccentOpacity,
-        ),
-        ExcludeSemantics(
-          child: IgnorePointer(
-            child: RepaintBoundary(
-              child: ShaderMask(
-                blendMode: BlendMode.dstIn,
-                shaderCallback:
-                    (bounds) => const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.white, Colors.white, Colors.transparent],
-                      stops: [0, 0.82, 1],
-                    ).createShader(bounds),
-                child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(
-                    sigmaX: patternGlowBlur,
-                    sigmaY: patternGlowBlur,
-                  ),
-                  child: ShaderMask(
-                    blendMode: BlendMode.srcIn,
-                    shaderCallback:
-                        (bounds) => LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Colors.transparent,
-                            patternGlow.withValues(
-                              alpha: 0.02 * bottomRightAccentOpacity,
-                            ),
-                            patternGlow.withValues(
-                              alpha:
-                                  patternGlowOpacity * bottomRightAccentOpacity,
-                            ),
-                          ],
-                          stops: const [0, 0.46, 1],
-                        ).createShader(bounds),
-                    child: DecoratedBox(
-                      decoration: const BoxDecoration(
-                        image: DecorationImage(
-                          image: AssetImage(_assetPath),
-                          repeat: ImageRepeat.repeat,
-                          alignment: Alignment.topLeft,
-                          filterQuality: FilterQuality.low,
-                        ),
-                      ),
-                      child: const SizedBox.expand(),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+        if (isDark) ...[
+          _WallpaperGradientLayer(
+            background: chatColors.background,
+            accent: backgroundAccent,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            opacity: 1,
           ),
-        ),
-        ExcludeSemantics(
-          child: IgnorePointer(
-            child: RepaintBoundary(
-              child: ShaderMask(
-                blendMode: BlendMode.dstIn,
-                shaderCallback:
-                    (bounds) => const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.white, Colors.white, Colors.transparent],
-                      stops: [0, 0.82, 1],
-                    ).createShader(bounds),
-                child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(
-                    sigmaX: patternGlowBlur,
-                    sigmaY: patternGlowBlur,
-                  ),
-                  child: ShaderMask(
-                    blendMode: BlendMode.srcIn,
-                    shaderCallback:
-                        (bounds) => LinearGradient(
-                          begin: Alignment.bottomRight,
-                          end: Alignment.topLeft,
-                          colors: [
-                            Colors.transparent,
-                            patternGlow.withValues(
-                              alpha: 0.02 * topLeftAccentOpacity,
-                            ),
-                            patternGlow.withValues(
-                              alpha: patternGlowOpacity * topLeftAccentOpacity,
-                            ),
-                          ],
-                          stops: const [0, 0.46, 1],
-                        ).createShader(bounds),
-                    child: DecoratedBox(
-                      decoration: const BoxDecoration(
-                        image: DecorationImage(
-                          image: AssetImage(_assetPath),
-                          repeat: ImageRepeat.repeat,
-                          alignment: Alignment.topLeft,
-                          filterQuality: FilterQuality.low,
-                        ),
-                      ),
-                      child: const SizedBox.expand(),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          _WallpaperGradientLayer(
+            background: chatColors.background,
+            accent: backgroundAccent,
+            begin: Alignment.bottomRight,
+            end: Alignment.topLeft,
+            opacity: topLeftAccentOpacity,
           ),
-        ),
-        ExcludeSemantics(
-          child: IgnorePointer(
-            child: RepaintBoundary(
-              child: ShaderMask(
-                blendMode: BlendMode.dstIn,
-                shaderCallback:
-                    (bounds) => const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.white, Colors.white, Colors.transparent],
-                      stops: [0, 0.78, 1],
-                    ).createShader(bounds),
+        ] else
+          ExcludeSemantics(child: ColoredBox(color: chatColors.background)),
+        if (isDark)
+          ExcludeSemantics(
+            child: IgnorePointer(
+              child: RepaintBoundary(
                 child: ShaderMask(
-                  blendMode: BlendMode.srcIn,
+                  blendMode: BlendMode.dstIn,
                   shaderCallback:
-                      (bounds) => LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                      (bounds) => const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
                         colors: [
-                          chatColors.pattern.withValues(
-                            alpha: chatColors.patternOpacity,
-                          ),
-                          chatColors.pattern.withValues(
-                            alpha: chatColors.patternOpacity,
-                          ),
-                          patternAccent.withValues(
-                            alpha: chatColors.patternOpacity,
-                          ),
+                          Colors.white,
+                          Colors.white,
+                          Colors.transparent,
                         ],
-                        stops: const [0, 0.44, 1],
+                        stops: [0, 0.82, 1],
                       ).createShader(bounds),
-                  child: DecoratedBox(
-                    decoration: const BoxDecoration(
-                      image: DecorationImage(
-                        image: AssetImage(_assetPath),
-                        repeat: ImageRepeat.repeat,
-                        alignment: Alignment.topLeft,
-                        filterQuality: FilterQuality.low,
-                      ),
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(
+                      sigmaX: patternGlowBlur,
+                      sigmaY: patternGlowBlur,
                     ),
-                    child: const SizedBox.expand(),
+                    child: ShaderMask(
+                      blendMode: BlendMode.srcIn,
+                      shaderCallback:
+                          (bounds) => LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Colors.transparent,
+                              patternGlow.withValues(
+                                alpha: 0.02 * bottomRightAccentOpacity,
+                              ),
+                              patternGlow.withValues(
+                                alpha:
+                                    patternGlowOpacity *
+                                    bottomRightAccentOpacity,
+                              ),
+                            ],
+                            stops: const [0, 0.46, 1],
+                          ).createShader(bounds),
+                      child: const _WallpaperTile(),
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
+        if (isDark)
+          ExcludeSemantics(
+            child: IgnorePointer(
+              child: RepaintBoundary(
+                child: ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback:
+                      (bounds) => const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white,
+                          Colors.white,
+                          Colors.transparent,
+                        ],
+                        stops: [0, 0.82, 1],
+                      ).createShader(bounds),
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(
+                      sigmaX: patternGlowBlur,
+                      sigmaY: patternGlowBlur,
+                    ),
+                    child: ShaderMask(
+                      blendMode: BlendMode.srcIn,
+                      shaderCallback:
+                          (bounds) => LinearGradient(
+                            begin: Alignment.bottomRight,
+                            end: Alignment.topLeft,
+                            colors: [
+                              Colors.transparent,
+                              patternGlow.withValues(
+                                alpha: 0.02 * topLeftAccentOpacity,
+                              ),
+                              patternGlow.withValues(
+                                alpha:
+                                    patternGlowOpacity * topLeftAccentOpacity,
+                              ),
+                            ],
+                            stops: const [0, 0.46, 1],
+                          ).createShader(bounds),
+                      child: const _WallpaperTile(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ExcludeSemantics(
           child: IgnorePointer(
             child: RepaintBoundary(
@@ -234,44 +171,87 @@ class AttuneChatWallpaper extends StatelessWidget {
                       colors: [Colors.white, Colors.white, Colors.transparent],
                       stops: [0, 0.78, 1],
                     ).createShader(bounds),
-                child: Opacity(
-                  opacity: topLeftAccentOpacity,
-                  child: ShaderMask(
-                    blendMode: BlendMode.srcIn,
-                    shaderCallback:
-                        (bounds) => LinearGradient(
-                          begin: Alignment.bottomRight,
-                          end: Alignment.topLeft,
-                          colors: [
+                child:
+                    isDark
+                        ? ShaderMask(
+                          blendMode: BlendMode.srcIn,
+                          shaderCallback:
+                              (bounds) => LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  chatColors.pattern.withValues(
+                                    alpha: chatColors.patternOpacity,
+                                  ),
+                                  chatColors.pattern.withValues(
+                                    alpha: chatColors.patternOpacity,
+                                  ),
+                                  patternAccent.withValues(
+                                    alpha: chatColors.patternOpacity,
+                                  ),
+                                ],
+                                stops: const [0, 0.44, 1],
+                              ).createShader(bounds),
+                          child: const _WallpaperTile(),
+                        )
+                        : ColorFiltered(
+                          colorFilter: ColorFilter.mode(
                             chatColors.pattern.withValues(
                               alpha: chatColors.patternOpacity,
                             ),
-                            chatColors.pattern.withValues(
-                              alpha: chatColors.patternOpacity,
-                            ),
-                            patternAccent.withValues(
-                              alpha: chatColors.patternOpacity,
-                            ),
-                          ],
-                          stops: const [0, 0.44, 1],
-                        ).createShader(bounds),
-                    child: DecoratedBox(
-                      decoration: const BoxDecoration(
-                        image: DecorationImage(
-                          image: AssetImage(_assetPath),
-                          repeat: ImageRepeat.repeat,
-                          alignment: Alignment.topLeft,
-                          filterQuality: FilterQuality.low,
+                            BlendMode.srcIn,
+                          ),
+                          child: const _WallpaperTile(),
                         ),
-                      ),
-                      child: const SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+        if (isDark)
+          ExcludeSemantics(
+            child: IgnorePointer(
+              child: RepaintBoundary(
+                child: ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback:
+                      (bounds) => const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white,
+                          Colors.white,
+                          Colors.transparent,
+                        ],
+                        stops: [0, 0.78, 1],
+                      ).createShader(bounds),
+                  child: Opacity(
+                    opacity: topLeftAccentOpacity,
+                    child: ShaderMask(
+                      blendMode: BlendMode.srcIn,
+                      shaderCallback:
+                          (bounds) => LinearGradient(
+                            begin: Alignment.bottomRight,
+                            end: Alignment.topLeft,
+                            colors: [
+                              chatColors.pattern.withValues(
+                                alpha: chatColors.patternOpacity,
+                              ),
+                              chatColors.pattern.withValues(
+                                alpha: chatColors.patternOpacity,
+                              ),
+                              patternAccent.withValues(
+                                alpha: chatColors.patternOpacity,
+                              ),
+                            ],
+                            stops: const [0, 0.44, 1],
+                          ).createShader(bounds),
+                      child: const _WallpaperTile(),
                     ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
         child,
       ],
     );
@@ -320,6 +300,26 @@ class _WallpaperGradientLayer extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _WallpaperTile extends StatelessWidget {
+  const _WallpaperTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage(AttuneChatWallpaper._assetPath),
+          repeat: ImageRepeat.noRepeat,
+          alignment: Alignment.topCenter,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.high,
+        ),
+      ),
+      child: SizedBox.expand(),
     );
   }
 }

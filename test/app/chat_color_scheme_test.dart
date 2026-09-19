@@ -24,9 +24,11 @@ void main() {
     }
   });
 
-  test('light chat palette carries the cool-mint conversation treatment', () {
-    expect(ChatColorScheme.light.background, const Color(0xFFE5E9E5));
+  test('light chat palette carries the warm ivory conversation treatment', () {
+    expect(ChatColorScheme.light.background, const Color(0xFFF7F4EF));
     expect(ChatColorScheme.light.backgroundAccent, const Color(0xFFA9D8BE));
+    expect(ChatColorScheme.light.pattern, const Color(0xFFEAE0D2));
+    expect(ChatColorScheme.light.patternOpacity, 0.85);
     expect(ChatColorScheme.light.senderBubble, const Color(0xFFDCFFC2));
     expect(ChatColorScheme.light.receiverBubble, const Color(0xFFFFFEFC));
     expect(ChatColorScheme.light.voiceAccent, const Color(0xFF2296F3));

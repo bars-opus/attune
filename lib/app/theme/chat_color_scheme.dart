@@ -28,13 +28,13 @@ class ChatColorScheme extends ThemeExtension<ChatColorScheme> {
     required this.relationshipAccent,
   });
 
-  /// Attune Paper: a cool, airy conversation canvas with a restrained mint
-  /// lift toward the lower edge and high-clarity message surfaces.
+  /// Attune Paper: a warm ivory conversation canvas with a clearly legible,
+  /// quiet beige pattern and high-clarity message surfaces.
   static const light = ChatColorScheme(
-    background: Color(0xFFE5E9E5),
+    background: Color(0xFFF7F4EF),
     backgroundAccent: Color(0xFFA9D8BE),
-    pattern: Color(0xFFC5D3C4),
-    patternOpacity: 0.70,
+    pattern: Color(0xFFEAE0D2),
+    patternOpacity: 0.85,
     senderBubble: Color(0xFFDCFFC2),
     onSenderBubble: Color(0xFF14200F),
     receiverBubble: Color(0xFFFFFEFC),
