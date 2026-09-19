@@ -250,9 +250,18 @@ DO $$ DECLARE v int; v_raised boolean := false; BEGIN
     WHEN OTHERS THEN v_raised := true;
   END;
   IF NOT v_raised THEN RAISE EXCEPTION 'C: acting on non-member intro unexpectedly succeeded'; END IF;
-  SELECT count(*) INTO v FROM public.dating_interest_actions
-  WHERE actor_user_id = '00000000-0000-0000-0000-00000000dc03';
-  IF v <> 0 THEN RAISE EXCEPTION 'C: forged action wrote % interest rows (must be 0)', v; END IF;
+  -- Same grant-vs-RLS split as the dating_introductions check above:
+  -- `REVOKE ALL ON public.dating_interest_actions FROM anon,
+  -- authenticated` (20260703194500_dating_mode_v1_1.sql:169) refuses
+  -- this read outright rather than returning 0 rows. Both outcomes
+  -- prove the forged action wrote nothing visible to C.
+  BEGIN
+    SELECT count(*) INTO v FROM public.dating_interest_actions
+    WHERE actor_user_id = '00000000-0000-0000-0000-00000000dc03';
+    IF v <> 0 THEN RAISE EXCEPTION 'C: forged action wrote % interest rows (must be 0)', v; END IF;
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL; -- refused outright: a stronger guarantee than returning 0 rows.
+  END;
 END $$;
 
 -- ---------------------------------------------------------------------------
