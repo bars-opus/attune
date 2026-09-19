@@ -211,9 +211,22 @@ SELECT public.test_set_dating_auth('00000000-0000-0000-0000-00000000dc03');
 DO $$ DECLARE v int; BEGIN
   SELECT count(*) INTO v FROM public.dating_profiles;
   IF v <> 1 THEN RAISE EXCEPTION 'C: profile RLS expected 1 own row, got %', v; END IF;
-  -- C is an outsider to the A/B and A/D intros: base-table RLS must hide them.
-  SELECT count(*) INTO v FROM public.dating_introductions;
-  IF v <> 0 THEN RAISE EXCEPTION 'C: read % introduction rows (must be 0)', v; END IF;
+  -- C is an outsider to the A/B and A/D intros and must not see them.
+  --
+  -- Two distinct mechanisms enforce that, and BOTH satisfy the
+  -- contract: RLS filtering the rows away (count 0), or the table's own
+  -- `REVOKE ALL ON public.dating_introductions FROM anon, authenticated`
+  -- (20260703194500_dating_mode_v1_1.sql:168) refusing the read
+  -- outright. This test asserted only the first, so the grant — the
+  -- STRONGER of the two, since it denies the read before RLS is even
+  -- consulted — made it fail with "permission denied for table
+  -- dating_introductions" instead of passing.
+  BEGIN
+    SELECT count(*) INTO v FROM public.dating_introductions;
+    IF v <> 0 THEN RAISE EXCEPTION 'C: read % introduction rows (must be 0)', v; END IF;
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL; -- refused outright: a stronger guarantee than returning 0 rows.
+  END;
 END $$;
 
 -- ---------------------------------------------------------------------------

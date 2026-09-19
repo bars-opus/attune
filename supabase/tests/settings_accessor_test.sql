@@ -40,7 +40,18 @@ END $$;
 
 -- An empty secret counts as unset, not as a usable value: posting to
 -- '/functions/v1/...' with an empty host would be a silent 404 loop.
-UPDATE vault.decrypted_secrets SET decrypted_secret = '' WHERE name = 'supabase_url';
+-- Written through vault.update_secret(), not `UPDATE
+-- vault.decrypted_secrets`: that is a VIEW whose decrypted_secret
+-- column is not directly updatable ("cannot update column
+-- decrypted_secret of view decrypted_secrets"), which is what this
+-- line used to fail with. update_secret() is Vault's own supported
+-- write path and re-encrypts properly.
+DO $$
+DECLARE v_id uuid;
+BEGIN
+  SELECT id INTO v_id FROM vault.secrets WHERE name = 'supabase_url';
+  PERFORM vault.update_secret(v_id, '');
+END $$;
 DO $$
 BEGIN
   IF public.app_setting('supabase_url') IS NOT NULL THEN

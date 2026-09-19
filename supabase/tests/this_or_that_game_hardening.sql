@@ -431,9 +431,20 @@ RESET ROLE;
 SELECT public.test_set_tot_auth('00000000-0000-0000-0000-00000000a701');
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM public.this_or_that_round_answers) THEN
-    RAISE EXCEPTION 'authenticated client can read the private answer table';
-  END IF;
+  -- The private answer table must be unreadable by an authenticated
+  -- client. Two mechanisms enforce that and BOTH satisfy the contract:
+  -- RLS hiding every row, or the table's own `REVOKE ALL ON
+  -- public.this_or_that_round_answers` (20260934100000) refusing the
+  -- read outright. This asserted only the first, so the grant — the
+  -- stronger of the two — made it fail with "permission denied for
+  -- table this_or_that_round_answers" rather than pass.
+  BEGIN
+    IF EXISTS (SELECT 1 FROM public.this_or_that_round_answers) THEN
+      RAISE EXCEPTION 'authenticated client can read the private answer table';
+    END IF;
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL; -- refused outright: a stronger guarantee than hiding rows.
+  END;
 END $$;
 RESET ROLE;
 
