@@ -430,8 +430,19 @@ class MessageBubble extends StatelessWidget {
                                 horizontal: 16,
                                 vertical: 10,
                               ),
+                      // A shadow cast by a Container extends past its own
+                      // box, so at true 0 spacing the bubble below always
+                      // painted over its predecessor's shadow — the shadow
+                      // was only ever visible on a bubble with the FULL
+                      // 4px gap after it (a group's last bubble, or a
+                      // standalone message), never on one immediately
+                      // followed by another grouped bubble. 1.5px is
+                      // enough to clear the shadow's own reach while
+                      // staying close enough to still read as the same
+                      // flush, WhatsApp/iMessage-style grouped run this
+                      // value was originally 0 for.
                       verticalPadding:
-                          isGrouped || isGroupedWithPrevious ? 0 : 4,
+                          isGrouped || isGroupedWithPrevious ? 1.5 : 4,
                       footerSpacing: hasVisibleFooter ? 4 : 0,
                       showFooter: hasVisibleFooter,
                       // Under the bubble for every message type. The

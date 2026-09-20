@@ -562,7 +562,11 @@ void main() {
 
     final olderRect = _messageBubbleFillRect(tester, olderKey);
     final newerRect = _messageBubbleFillRect(tester, newerKey);
-    expect(newerRect.top - olderRect.bottom, 3);
+    // 3 (the list's own item-spacing wrapper below) + 1.5 (older
+    // bubble's own bottom verticalPadding, so its shadow clears the
+    // touching edge) + 1.5 (newer bubble's own top verticalPadding,
+    // same reason) = 6.
+    expect(newerRect.top - olderRect.bottom, 6);
   });
 
   testWidgets('reaction adornments do not add extra grouped-message spacing', (
@@ -611,7 +615,9 @@ void main() {
 
     final olderRect = _messageBubbleFillRect(tester, olderKey);
     final reactedRect = _messageBubbleFillRect(tester, reactedKey);
-    expect(reactedRect.top - olderRect.bottom, 3);
+    // See the identical comment on "consecutive same-sender bubble
+    // fills keep a small grouped gap" above — same 3 + 1.5 + 1.5.
+    expect(reactedRect.top - olderRect.bottom, 6);
     expect(find.text('😂'), findsOneWidget);
   });
 
@@ -658,7 +664,9 @@ void main() {
 
     final olderRect = _messageBubbleFillRect(tester, olderKey);
     final starredRect = _messageBubbleFillRect(tester, starredKey);
-    expect(starredRect.top - olderRect.bottom, 3);
+    // See the identical comment on "consecutive same-sender bubble
+    // fills keep a small grouped gap" above — same 3 + 1.5 + 1.5.
+    expect(starredRect.top - olderRect.bottom, 6);
     expect(find.byIcon(Icons.star_rounded), findsOneWidget);
   });
 
