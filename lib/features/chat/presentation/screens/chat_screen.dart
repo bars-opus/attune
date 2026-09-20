@@ -1215,37 +1215,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       );
     }
 
-    return GestureDetector(
-      onTap: () => FocusScope.of(context).unfocus(),
-      child: Stack(
-        children: [
-          Scaffold(
-            backgroundColor: Theme.of(context).colorScheme.neutral,
-            appBar: AppBar(
-              toolbarHeight: 72,
-              backgroundColor: Theme.of(context).colorScheme.neutral,
-              surfaceTintColor: Colors.transparent,
-              elevation: 0,
-              scrolledUnderElevation: 0,
-              centerTitle: false,
-              titleSpacing: 0,
-              title: InkWell(
-                onTap: () => unawaited(_openPulse()),
-                child: _ConversationHeaderCard(
-                  conversation: conversation,
-                  isExpanded: _headerExpanded,
-                  expandedEnabled: headerDrawerEnabled.valueOrNull == true,
-                  onToggleExpanded: _toggleHeaderExpanded,
-                  isOnline: isOnline,
-                  lastSyncedAt: state.lastSyncedAt,
-                ),
-              ),
+    // The header height a fixed AppBar used to reserve (72, matching the
+    // old toolbarHeight) — the message column below still needs this
+    // much clearance now that nothing reserves it automatically, so
+    // pinned/state banners and the first message don't render under the
+    // floating pills.
+    const headerHeight = 72.0;
 
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(0.5),
-                child: AppDivider(),
-              ),
-            ),
+    // No outer keyboard-unfocus GestureDetector wrapping the whole
+    // screen: that used to compete with the header pills' own InkWell
+    // taps in the same gesture arena (both are TapGestureRecognizers on
+    // an ancestor/descendant pair), which was the actual cause of the
+    // insights-tap regression — the unfocus handler is scoped to the
+    // message-list layer below instead, so header taps are never
+    // contested by it.
+    return Stack(
+      children: [
+        Scaffold(
+          backgroundColor: Theme.of(context).colorScheme.neutral,
+          // No AppBar: the header is three separate floating pills
+          // (back+avatar, name+status, expand chevron) painted directly
+          // over the wallpaper inside the body, with the pattern
+          // visible through the gaps between and around them — an
+          // AppBar's own opaque bar has no way to let the wallpaper
+          // show through it, so the header moved into the body Stack
+          // entirely.
+          extendBodyBehindAppBar: true,
             body: Stack(
               children: [
                 Positioned.fill(
@@ -1254,53 +1249,88 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                     child: const SizedBox.expand(),
                   ),
                 ),
-                // Message list fills the whole body; the composer floats on top
-                // (see the Positioned block below) rather than being stacked in
-                // flow beneath it, so bubbles keep scrolling visibly behind the
-                // composer instead of stopping short above it — matches
-                // DebateRoomScreen's floating composer treatment.
-                Column(
-                  children: [
-                    if (state.pinnedMessages.isNotEmpty)
-                      _PinnedMessagesBanner(
-                        pinnedMessages: state.pinnedMessages,
-                        onTap:
-                            (message) => unawaited(
-                              _jumpToMessage(message.id, state.messages),
-                            ),
-                      ),
-                    _ConversationStateBanner(
-                      conversation: conversation,
-                      state: state,
-                      isOnline: isOnline,
-                      errorMessage: state.error,
-                      onRetry: () => notifier.loadMessages(),
+                // Bubbles stop short of the header rather than scrolling
+                // underneath it (tried the scroll-under-with-blur
+                // treatment; it did not read well against the floating
+                // pills, so this reverted to a fixed reserve).
+                //
+                // The keyboard-unfocus tap is scoped to THIS layer, not
+                // the whole screen: wrapping the whole Stack (including
+                // the header) used to put the header pills' own InkWell
+                // taps in the same gesture arena as this GestureDetector,
+                // which was the actual cause of a real regression where
+                // tapping the name/status pill stopped opening Pulse.
+                Positioned.fill(
+                  top: MediaQuery.of(context).padding.top + headerHeight,
+                  child: GestureDetector(
+                    onTap: () => FocusScope.of(context).unfocus(),
+                    behavior: HitTestBehavior.translucent,
+                    child: Column(
+                      children: [
+                        if (state.pinnedMessages.isNotEmpty)
+                          _PinnedMessagesBanner(
+                            pinnedMessages: state.pinnedMessages,
+                            onTap:
+                                (message) => unawaited(
+                                  _jumpToMessage(message.id, state.messages),
+                                ),
+                          ),
+                        _ConversationStateBanner(
+                          conversation: conversation,
+                          state: state,
+                          isOnline: isOnline,
+                          errorMessage: state.error,
+                          onRetry: () => notifier.loadMessages(),
+                        ),
+                        Expanded(
+                          child: _MessageList(
+                            conversation: widget.conversation,
+                            state: state,
+                            scrollController: _scrollController,
+                            animatedMessageIds: _animatedMessageIds,
+                            messageKeys: _messageKeys,
+                            bubbleFillKeys: _bubbleFillKeys,
+                            reactionImpactTokens: _reactionImpactTokens,
+                            flyingMessageIds: _flyingMessageIds,
+                            flyingGameSessionIds: _flyingGameSessionIds,
+                            highlightedMessageId: _highlightedMessageId,
+                            composerFocused: _composerFocusNode.hasFocus,
+                            onReply: _setReplyTarget,
+                            onJumpToParent: _jumpToMessage,
+                            onReactionFlight: _startReactionFlight,
+                          ),
+                        ),
+                      ],
                     ),
-                    Expanded(
-                      child: _MessageList(
-                        conversation: widget.conversation,
-                        state: state,
-                        scrollController: _scrollController,
-                        animatedMessageIds: _animatedMessageIds,
-                        messageKeys: _messageKeys,
-                        bubbleFillKeys: _bubbleFillKeys,
-                        reactionImpactTokens: _reactionImpactTokens,
-                        flyingMessageIds: _flyingMessageIds,
-                        flyingGameSessionIds: _flyingGameSessionIds,
-                        highlightedMessageId: _highlightedMessageId,
-                        composerFocused: _composerFocusNode.hasFocus,
-                        onReply: _setReplyTarget,
-                        onJumpToParent: _jumpToMessage,
-                        onReactionFlight: _startReactionFlight,
+                  ),
+                ),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    bottom: false,
+                    child: SizedBox(
+                      height: headerHeight,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: Spacing.md.w,
+                          vertical: Spacing.sm.h,
+                        ),
+                        child: _ConversationHeaderCard(
+                          conversation: conversation,
+                          isExpanded: _headerExpanded,
+                          expandedEnabled:
+                              headerDrawerEnabled.valueOrNull == true,
+                          onToggleExpanded: _toggleHeaderExpanded,
+                          isOnline: isOnline,
+                          lastSyncedAt: state.lastSyncedAt,
+                          onTapHeader: () => unawaited(_openPulse()),
+                          onBack: () => Navigator.of(context).pop(),
+                        ),
                       ),
                     ),
-                    // No trailing gap: it exposed a band of the scaffold's
-                    // own background (colorScheme.neutral) below the
-                    // wallpaper. The composer is Positioned over this
-                    // column and carries its own SafeArea, so nothing here
-                    // needs to reserve room for it, and the list already
-                    // pads its bottom by 96 to clear it.
-                  ],
+                  ),
                 ),
                 Positioned(
                   left: 0,
@@ -1528,8 +1558,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                 },
               ),
             ),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -1789,6 +1818,8 @@ class _ConversationHeaderCard extends ConsumerWidget {
     required this.onToggleExpanded,
     required this.isOnline,
     required this.lastSyncedAt,
+    required this.onTapHeader,
+    required this.onBack,
   });
 
   final Conversation conversation;
@@ -1797,6 +1828,16 @@ class _ConversationHeaderCard extends ConsumerWidget {
   final VoidCallback onToggleExpanded;
   final bool isOnline;
   final DateTime? lastSyncedAt;
+
+  /// Tapping the avatar/name/status pill opens Pulse — matches the
+  /// original AppBar title's own `onTap: _openPulse` (this was
+  /// mistakenly re-pointed at chat insights during the pill redesign;
+  /// insights is reached from the expand-chevron drawer's own explicit
+  /// "Open Insights" affordance, a separate, correct path that this
+  /// does not touch).
+  final VoidCallback onTapHeader;
+
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1821,80 +1862,172 @@ class _ConversationHeaderCard extends ConsumerWidget {
     // `tag: conversation.name`, flying a full-width preview row into a
     // 40pt avatar and title. Different shapes, so the flight distorted
     // both rather than reading as one element moving.
+    //
+    // Three SEPARATE floating pills, not one bar: back, avatar+name+
+    // status, and the expand chevron each sit in their own rounded
+    // surface with the wallpaper pattern showing through the gaps
+    // between them — the same floating-pill language the composer
+    // already uses on this screen (kComposerShadows, translucent
+    // colorScheme.surface, fully rounded corners), not a new one.
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // Breathes a few times when the partner is here, then settles
-        // to a static glow — a moment, not a session-long loop.
-        GlowPulse(
-          // Follows the partner, not the viewer's connectivity, so the
-          // avatar stops glowing permanently for everyone.
-          active: partnerActive,
-          child: ProfileAvatar(
-            avatarUrl: conversation.avatarUrl ?? '',
-            currentUserId: '',
-            size: 40.h,
-            enableHero: false,
+        _HeaderPill(
+          padding: const EdgeInsets.all(4),
+          child: IconButton(
+            // BackButtonIcon: Flutter's own platform-adaptive glyph — a
+            // chevron on iOS/macOS, the Material arrow elsewhere —
+            // rather than a hardcoded Icons.arrow_back.
+            icon: const BackButtonIcon(),
+            onPressed: onBack,
           ),
         ),
         Gap(Spacing.sm.w),
         Expanded(
-          child: RichText(
-            text: TextSpan(
+          child: _HeaderPill(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            onTap: onTapHeader,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                TextSpan(
-                  text: conversation.name,
-                  style: textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.onSurface.withValues(alpha: 0.8),
+                // Breathes a few times when the partner is here, then
+                // settles to a static glow — a moment, not a
+                // session-long loop.
+                GlowPulse(
+                  // Follows the partner, not the viewer's
+                  // connectivity, so the avatar stops glowing
+                  // permanently for everyone.
+                  active: partnerActive,
+                  child: ProfileAvatar(
+                    avatarUrl: conversation.avatarUrl ?? '',
+                    currentUserId: '',
+                    size: 40.h,
+                    enableHero: false,
                   ),
                 ),
+                Gap(Spacing.sm.w),
+                Flexible(
+                  child: RichText(
+                    textAlign: TextAlign.left,
+                    overflow: TextOverflow.ellipsis,
+                    text: TextSpan(
+                      children: [
+                        TextSpan(
+                          text: conversation.name,
+                          style: textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.onSurface.withValues(
+                              alpha: 0.8,
+                            ),
+                          ),
+                        ),
 
-                // "Online" here used to be driven by isOnline -- the
-                // VIEWER's own connectivity -- so it read Online
-                // whenever you had a connection, whatever your partner
-                // was doing. It was decoration, not data.
-                //
-                // Now it reports whether the partner is in THIS
-                // conversation. Deliberately not a general online
-                // status: in a couples app that answers "they are on
-                // their phone and not replying to me", which starts
-                // arguments the app should not help start. Scoped here
-                // it says something kinder and true -- they are with
-                // you now -- and it is the only thing chat_presence
-                // actually measures.
-                partnerActive
-                    ? TextSpan(
-                      text: '\nActive in this chat',
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colorScheme.primary,
-                      ),
-                    )
-                    : TextSpan(
-                      text: "\n$subtitle",
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurface.withValues(alpha: 0.4),
-                      ),
+                        // "Online" here used to be driven by isOnline --
+                        // the VIEWER's own connectivity -- so it read
+                        // Online whenever you had a connection, whatever
+                        // your partner was doing. It was decoration, not
+                        // data.
+                        //
+                        // Now it reports whether the partner is in THIS
+                        // conversation. Deliberately not a general online
+                        // status: in a couples app that answers "they
+                        // are on their phone and not replying to me",
+                        // which starts arguments the app should not help
+                        // start. Scoped here it says something kinder
+                        // and true -- they are with you now -- and it is
+                        // the only thing chat_presence actually
+                        // measures.
+                        partnerActive
+                            ? TextSpan(
+                              text: '\nActive in this chat',
+                              style: textTheme.bodySmall?.copyWith(
+                                color: colorScheme.primary,
+                              ),
+                            )
+                            : TextSpan(
+                              text: "\n$subtitle",
+                              style: textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurface.withValues(
+                                  alpha: 0.4,
+                                ),
+                              ),
+                            ),
+                      ],
                     ),
+                  ),
+                ),
               ],
             ),
           ),
         ),
-        if (expandedEnabled)
-          AppIconButton(
-            icon:
+        // more_vert removed: it duplicated the expand chevron's own
+        // onToggleExpanded action rather than opening a distinct menu.
+        if (expandedEnabled) ...[
+          Gap(Spacing.sm.w),
+          _HeaderPill(
+            padding: const EdgeInsets.all(4),
+            child: IconButton(
+              icon: Icon(
                 isExpanded
                     ? Icons.expand_less_rounded
                     : Icons.expand_more_rounded,
-            onPressed: onToggleExpanded,
-            tooltip: isExpanded ? 'Hide chat details' : 'Show chat details',
+              ),
+              onPressed: onToggleExpanded,
+              tooltip: isExpanded ? 'Hide chat details' : 'Show chat details',
+            ),
           ),
-
-        AppIconButton(
-          icon: Icons.more_vert,
-          onPressed: onToggleExpanded,
-          tooltip: isExpanded ? 'Hide chat details' : 'Show chat details',
-        ),
+        ],
       ],
+    );
+  }
+}
+
+/// One floating rounded surface for the header — the same recipe
+/// chat_text_field.dart's composer already uses to float over this
+/// same wallpaper (kComposerShadows, colorScheme.surface at 94% alpha,
+/// fully rounded corners), so the header and composer read as one
+/// consistent "floating over the pattern" visual language rather than
+/// two different treatments.
+// A distinct, more visible shadow than kComposerShadows (the composer's
+// own values, tuned to sit faintly at the bottom of a message list —
+// under 6% opacity on every layer, which read as barely-there once the
+// pills float directly over the busier wallpaper pattern). Same two-
+// layer contact-shadow-plus-falloff shape, stronger so each pill
+// visibly lifts off the pattern behind it.
+const List<BoxShadow> _kHeaderPillShadows = [
+  BoxShadow(offset: Offset(0, 2), blurRadius: 6, color: Color(0x26000000)),
+  BoxShadow(offset: Offset(0, 1), blurRadius: 2, color: Color(0x1F000000)),
+];
+
+class _HeaderPill extends StatelessWidget {
+  const _HeaderPill({
+    required this.child,
+    required this.padding,
+    this.onTap,
+  });
+
+  final Widget child;
+  final EdgeInsets padding;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final pill = Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: _kHeaderPillShadows,
+      ),
+      child: child,
+    );
+    if (onTap == null) return pill;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(999),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(onTap: onTap, child: pill),
     );
   }
 }

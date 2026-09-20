@@ -98,7 +98,13 @@ void main() {
     expect(find.text('Star'), findsOneWidget);
     expect(find.text('Pin'), findsOneWidget);
 
-    await tester.tapAt(const Offset(10, 10));
+    // Dismisses the menu via its own barrierDismissible tap-outside
+    // handler (focused_action_menu.dart) — a point far from both the
+    // menu content (which anchors near the tapped bubble, not here)
+    // and the header's own controls. The old (10, 10) used to be
+    // safely empty; it stopped being once the chat header grew an
+    // explicit back button in that exact corner.
+    await tester.tapAt(const Offset(400, 1350));
     await tester.pump(const Duration(milliseconds: 400));
     await tearDownChat(tester, container);
   });
@@ -498,7 +504,13 @@ void main() {
     expect(find.text('the typo'), findsOneWidget);
     expect(find.text('edited'), findsNothing);
 
-    await tester.tapAt(const Offset(10, 10));
+    // Dismisses the menu via its own barrierDismissible tap-outside
+    // handler (focused_action_menu.dart) — a point far from both the
+    // menu content (which anchors near the tapped bubble, not here)
+    // and the header's own controls. The old (10, 10) used to be
+    // safely empty; it stopped being once the chat header grew an
+    // explicit back button in that exact corner.
+    await tester.tapAt(const Offset(400, 1350));
     await tester.pump(const Duration(milliseconds: 400));
     await tearDownChat(tester, container);
   });
