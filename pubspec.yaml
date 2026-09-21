@@ -120,6 +120,8 @@ dependencies:
   flutter_screenutil: ^5.9.0
   flutter_slidable: ^4.0.3
   emoji_picker_flutter: ^4.4.0
+  animated_emoji: ^3.1.0
+  visibility_detector: ^0.4.0+2
 
 dependency_overrides:
   web:
@@ -222,6 +224,28 @@ flutter:
   uses-material-design: true
 
   assets:
+    # Noto animated emoji, bundled for offline chat (CC BY 4.0; app licenses).
+    - packages/animated_emoji/lottie/sleep.json
+    - packages/animated_emoji/lottie/sleepy.json
+    - packages/animated_emoji/lottie/rollingEyes.json
+    - packages/animated_emoji/lottie/relieved.json
+    - packages/animated_emoji/lottie/redHeart.json
+    - packages/animated_emoji/lottie/twoHearts.json
+    - packages/animated_emoji/lottie/sparklingHeart.json
+    - packages/animated_emoji/lottie/heartGrow.json
+    - packages/animated_emoji/lottie/joy.json
+    - packages/animated_emoji/lottie/rofl.json
+    - packages/animated_emoji/lottie/blush.json
+    - packages/animated_emoji/lottie/heartFace.json
+    - packages/animated_emoji/lottie/heartEyes.json
+    - packages/animated_emoji/lottie/kissingHeart.json
+    - packages/animated_emoji/lottie/hugFace.json
+    - packages/animated_emoji/lottie/cry.json
+    - packages/animated_emoji/lottie/loudlyCrying.json
+    - packages/animated_emoji/lottie/partyPopper.json
+    - packages/animated_emoji/lottie/fire.json
+    - packages/animated_emoji/lottie/thumbsUp.json
+    - packages/animated_emoji/lottie/clap.json
     - assets/images/
     # Not covered by assets/images/ above: Flutter's directory entries are
     # shallow, so a nested folder needs its own line.

@@ -5,6 +5,8 @@ import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
 import 'package:attune/features/chat/presentation/widgets/reply_composer_preview.dart';
 import 'package:flutter/material.dart';
+import 'package:animated_emoji/animated_emoji.dart';
+import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -78,6 +80,91 @@ void main() {
     await tester.pump(const Duration(milliseconds: 10));
     container.dispose();
   }
+
+  testWidgets('opening the chat animates its latest emoji message', (
+    tester,
+  ) async {
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    repo.seedIncoming(
+      id: 'last-emoji',
+      relationshipId: 'rel-1',
+      senderId: 'partner',
+      content: '😴',
+      createdAt: DateTime.now(),
+    );
+    final container = await pumpChat(tester, repo);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<AnimatedEmoji>(find.byType(AnimatedEmoji))
+          .controller!
+          .value,
+      1,
+    );
+    await tearDownChat(tester, container);
+  });
+
+  testWidgets('receiving an emoji starts its animation', (tester) async {
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    repo.seedIncoming(
+      id: 'previous',
+      relationshipId: 'rel-1',
+      senderId: 'partner',
+      content: 'hello',
+      createdAt: DateTime.now().subtract(const Duration(minutes: 1)),
+    );
+    final container = await pumpChat(tester, repo);
+    repo.seedIncoming(
+      id: 'new-emoji',
+      relationshipId: 'rel-1',
+      senderId: 'partner',
+      content: '😴',
+      createdAt: DateTime.now(),
+    );
+    repo.emitRealtime();
+    for (var frame = 0; frame < 60; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(find.byType(AnimatedEmoji), findsOneWidget);
+    expect(
+      tester
+          .widget<AnimatedEmoji>(find.byType(AnimatedEmoji))
+          .controller!
+          .value,
+      greaterThan(0),
+    );
+    await tester.pumpAndSettle();
+    await tearDownChat(tester, container);
+  });
+
+  testWidgets('keyboard emoji keeps playing after the send flight lands', (
+    tester,
+  ) async {
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    final container = await pumpChat(tester, repo);
+    await tester.enterText(find.byType(TextField).last, '😴');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send message'));
+    // Sample well after the short flight but before the emoji's full cycle.
+    for (var frame = 0; frame < 70; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    final animation = find.descendant(
+      of: find.byType(MessageBubble),
+      matching: find.byType(AnimatedEmoji),
+    );
+    expect(animation, findsOneWidget);
+    final controller = tester.widget<AnimatedEmoji>(animation).controller!;
+    expect(controller.value, greaterThan(0));
+    final before = controller.value;
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      tester.widget<AnimatedEmoji>(animation).controller!.value,
+      greaterThan(before),
+    );
+    await tester.pumpAndSettle();
+    await tearDownChat(tester, container);
+  });
 
   testWidgets('long-pressing a bubble opens the actions sheet', (tester) async {
     final repo = FakeChatRepository(currentUserId: 'user-a');
@@ -383,9 +470,7 @@ void main() {
         ],
       );
 
-      await tester.longPress(
-        find.text('want to grab dinner this weekend?'),
-      );
+      await tester.longPress(find.text('want to grab dinner this weekend?'));
       await tester.pump(const Duration(milliseconds: 400));
 
       expect(find.text('Ask Attune'), findsOneWidget);
@@ -403,78 +488,71 @@ void main() {
     },
   );
 
-  testWidgets(
-    'Ask Attune is absent for a deleted message',
-    (tester) async {
-      final repo = FakeChatRepository(currentUserId: 'user-a');
-      repo.seedIncoming(
-        id: 'm-deleted',
-        relationshipId: 'rel-1',
-        senderId: 'user-a',
-        content: 'oops sent this',
-        createdAt: DateTime.now(),
-        deletedAt: DateTime.now(),
-      );
-      final container = await pumpChat(tester, repo);
+  testWidgets('Ask Attune is absent for a deleted message', (tester) async {
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    repo.seedIncoming(
+      id: 'm-deleted',
+      relationshipId: 'rel-1',
+      senderId: 'user-a',
+      content: 'oops sent this',
+      createdAt: DateTime.now(),
+      deletedAt: DateTime.now(),
+    );
+    final container = await pumpChat(tester, repo);
 
-      await tester.longPress(find.text('You deleted this message'));
-      await tester.pump(const Duration(milliseconds: 400));
+    await tester.longPress(find.text('You deleted this message'));
+    await tester.pump(const Duration(milliseconds: 400));
 
-      // A deleted message's tombstone offers no action surface at all
-      // (canOpenActions requires !message.isDeleted), so no menu opens.
-      expect(find.text('Ask Attune'), findsNothing);
+    // A deleted message's tombstone offers no action surface at all
+    // (canOpenActions requires !message.isDeleted), so no menu opens.
+    expect(find.text('Ask Attune'), findsNothing);
 
-      await tearDownChat(tester, container);
-    },
-  );
+    await tearDownChat(tester, container);
+  });
 
-  testWidgets(
-    'Ask Attune is absent for an over-4000-character message',
-    (tester) async {
-      final repo = FakeChatRepository(currentUserId: 'user-a');
-      final longContent = 'a' * 4001;
-      repo.seedIncoming(
-        id: 'm-toolong',
-        relationshipId: 'rel-1',
-        senderId: 'partner',
-        content: longContent,
-        createdAt: DateTime.now(),
-      );
-      final container = await pumpChat(tester, repo);
+  testWidgets('Ask Attune is absent for an over-4000-character message', (
+    tester,
+  ) async {
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    final longContent = 'a' * 4001;
+    repo.seedIncoming(
+      id: 'm-toolong',
+      relationshipId: 'rel-1',
+      senderId: 'partner',
+      content: longContent,
+      createdAt: DateTime.now(),
+    );
+    final container = await pumpChat(tester, repo);
 
-      await tester.longPress(find.textContaining('aaaa'));
-      await tester.pump(const Duration(milliseconds: 400));
+    await tester.longPress(find.textContaining('aaaa'));
+    await tester.pump(const Duration(milliseconds: 400));
 
-      expect(find.text('Ask Attune'), findsNothing);
+    expect(find.text('Ask Attune'), findsNothing);
 
-      await tearDownChat(tester, container);
-    },
-  );
+    await tearDownChat(tester, container);
+  });
 
-  testWidgets(
-    'Ask Attune is absent for an Attune Assist output message',
-    (tester) async {
-      final repo = FakeChatRepository(currentUserId: 'user-a');
-      repo.seedIncoming(
-        id: 'm-assist-output',
-        relationshipId: 'rel-1',
-        senderId: 'partner',
-        content: 'Here is an idea: a picnic in the park.',
-        createdAt: DateTime.now(),
-        messageOrigin: 'attune_assist',
-      );
-      final container = await pumpChat(tester, repo);
+  testWidgets('Ask Attune is absent for an Attune Assist output message', (
+    tester,
+  ) async {
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    repo.seedIncoming(
+      id: 'm-assist-output',
+      relationshipId: 'rel-1',
+      senderId: 'partner',
+      content: 'Here is an idea: a picnic in the park.',
+      createdAt: DateTime.now(),
+      messageOrigin: 'attune_assist',
+    );
+    final container = await pumpChat(tester, repo);
 
-      await tester.longPress(
-        find.text('Here is an idea: a picnic in the park.'),
-      );
-      await tester.pump(const Duration(milliseconds: 400));
+    await tester.longPress(find.text('Here is an idea: a picnic in the park.'));
+    await tester.pump(const Duration(milliseconds: 400));
 
-      expect(find.text('Ask Attune'), findsNothing);
+    expect(find.text('Ask Attune'), findsNothing);
 
-      await tearDownChat(tester, container);
-    },
-  );
+    await tearDownChat(tester, container);
+  });
 
   testWidgets('Edit saves the new content through the controller', (
     tester,

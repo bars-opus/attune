@@ -1,4 +1,6 @@
 import 'package:attune/app/routing/app_router.dart';
+import 'live_message_motion.dart';
+import 'emoji_message_content.dart';
 import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
@@ -154,9 +156,13 @@ class MessageBubble extends StatelessWidget {
     this.mediaGroup = const [],
     this.bubbleFillKey,
     this.reactionImpactToken = 0,
+    this.animateEmojiArrival = false,
+    this.emojiPlaybackEnabled = true,
   });
 
   final Message message;
+  final bool animateEmojiArrival;
+  final bool emojiPlaybackEnabled;
 
   /// True when this message immediately follows another from the SAME
   /// sender with no reply from the other side (or day boundary) in
@@ -319,15 +325,9 @@ class MessageBubble extends StatelessWidget {
     // grey sat on the accent-coloured sender bubble and read as a panel
     // floating inside a coloured frame.
     final isSelfSurfaced = message.isGame && message.gameSessionId != null;
-    // Only a media group is bare now.
-    //
-    // Game trails used to be bare too, on the reasoning that a trail is a
-    // record rather than a message and a ten-round game would otherwise
-    // read as twenty bubbles. That cost them their SIDE: with no fill,
-    // a trail gave no sign of who had moved, which is the one thing it
-    // exists to record. They now take the ordinary sender/receiver bubble
-    // like any other message.
-    final isBare = isMediaGroup || isSelfSurfaced;
+    final emojiGlyphs = emojiMessageGlyphs(message);
+    final isEmojiOnly = emojiGlyphs.isNotEmpty;
+    final isBare = isMediaGroup || isSelfSurfaced || isEmojiOnly;
     final onBubbleColor =
         isMine ? chatColors.onSenderBubble : chatColors.onReceiverBubble;
     // The footer sits on the chat wallpaper now rather than inside a
@@ -410,260 +410,279 @@ class MessageBubble extends StatelessWidget {
             Align(
               alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
               child: IntrinsicWidth(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    UniversalBubble(
-                      isMine: isMine,
-                      bubbleColor: isBare ? Colors.transparent : bubbleColor,
-                      bubbleGradient: isBare ? null : bubbleGradient,
-                      onBubbleColor: onBubbleColor,
-                      leading: null,
-                      showCardBorder: false,
-                      showShadow: !isBare,
-                      bubbleBorderRadius: 24,
-                      bubbleBorderRadiusOverride: bubbleRadius,
-                      contentPadding:
-                          isBare
-                              ? EdgeInsets.zero
-                              : const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 10,
-                              ),
-                      // A shadow cast by a Container extends past its own
-                      // box, so at true 0 spacing the bubble below always
-                      // painted over its predecessor's shadow — the shadow
-                      // was only ever visible on a bubble with the FULL
-                      // 4px gap after it (a group's last bubble, or a
-                      // standalone message), never on one immediately
-                      // followed by another grouped bubble. 1.5px is
-                      // enough to clear the shadow's own reach while
-                      // staying close enough to still read as the same
-                      // flush, WhatsApp/iMessage-style grouped run this
-                      // value was originally 0 for.
-                      verticalPadding:
-                          isGrouped || isGroupedWithPrevious ? 1.5 : 4,
-                      footerSpacing: hasVisibleFooter ? 4 : 0,
-                      showFooter: hasVisibleFooter,
-                      // Under the bubble for every message type. The
-                      // metadata describes the message rather than being
-                      // part of it, and inside the lower edge it crowded
-                      // the text on a short message. Media groups already
-                      // put it outside, so this also settles a
-                      // disagreement between the two treatments.
-                      footerInsideBubble: false,
-                      dragOffsetOverride:
-                          timestampRevealOffset > 0
-                              ? -timestampRevealOffset
-                              : null,
-                      startReveal: null,
-                      replyIconColor: colorScheme.primary,
-                      onEndRevealDragChanged: onTimestampRevealChanged,
-                      quotedText:
-                          parentDeleted
-                              ? 'Original message deleted'
-                              : message.quotedText,
-                      // isStoryQuote tells this WHICH quote it renders —
-                      // story replies and message replies share this one
-                      // quotedText/onJumpToParent rendering path, but
-                      // never both at once (Message.storyItemId's doc
-                      // comment: replyToMessageId is null whenever
-                      // storyItemId is set, by construction). See below.
-                      // A step below the message content's own size (bodyLarge) — a
-                      // little smaller reads as a preview/citation rather than a
-                      // second full-size message, while UniversalBubble's own 12px
-                      // fallback read too small next to the bumped-up content text.
-                      quoteBackgroundColor: replySurface,
-                      quoteForegroundColor: replyBubbleTextColor,
-                      quoteTextStyle: Theme.of(
-                        context,
-                      ).textTheme.bodyMedium?.copyWith(
-                        color: replyBubbleTextColor,
-                        fontSize: 14,
-                        height: 1.18,
-                      ),
-                      // "You" when replying to your own message; the partner's real
-                      // chat name otherwise (falls back to "Partner" if conversation
-                      // wasn't passed — matches this file's existing nullable-
-                      // conversation convention). Omitted (no label row) when
-                      // parentIsMine is null — the parent message isn't in the loaded
-                      // window, so who sent it genuinely isn't known here, same
-                      // "don't guess" principle as parentDeleted.
-                      //
-                      // A story quote has no per-message "who sent the parent"
-                      // question the way a message reply does — it labels the
-                      // TYPE of thing quoted ("Photo story"/"Video story" is
-                      // already the quotedText itself), so no author label row
-                      // is added on top of it.
-                      quoteAuthorLabel:
-                          message.quotedText == null ||
-                                  message.storyItemId != null ||
-                                  parentIsMine == null
-                              ? null
-                              : parentIsMine!
-                              ? 'You'
-                              // partnerName, not name: name is the
-                              // COUPLE's chat name, and labelling a quoted
-                              // message with it credits one person's words
-                              // to the pair.
-                              : (conversation?.partnerName ?? 'Partner'),
-                      // WhatsApp-style colored side border on the quote block. Same
-                      // null-means-unknown gate as quoteAuthorLabel.
-                      quoteAuthorIsMine:
-                          message.quotedText == null ||
-                                  message.storyItemId != null
-                              ? null
-                              : parentIsMine,
-                      quoteMineBorderColor:
-                          isLightMode
-                              ? replyAccent
-                              : chatColors.relationshipAccent,
-                      quotePartnerBorderColor:
-                          isLightMode ? replyAccent : chatColors.pattern,
-                      quoteBarOnLeft: isLightMode,
-                      quoteAuthorAlignLeft: isLightMode,
-                      showQuoteIcon: !isLightMode,
-                      // A story quote's tap target is resolved live (Task 6,
-                      // spec §5.4: "the quote may render its live thumbnail
-                      // after the normal story authorization check," and a
-                      // deleted story must say "Story no longer available"
-                      // rather than opening an empty reel) — never the
-                      // ordinary message-jump callback, which has no idea
-                      // what a story_item_id even is.
-                      onJumpToParent:
-                          message.quotedText == null
-                              ? null
-                              : message.storyItemId != null
-                              ? () => unawaited(
-                                _openStoryQuote(context, message.storyItemId!),
-                              )
-                              : onJumpToParent,
-                      isHighlighted: isHighlighted,
-                      bubbleKey: ValueKey(message.clientMessageId),
-                      bubbleFillKey: bubbleFillKey,
-                      reactionImpactToken: reactionImpactToken,
-                      onLongPress:
-                          canOpenActions
-                              ? (
-                                bubbleRect,
-                                bubbleSnapshot,
-                              ) => showFocusedActionMenu(
-                                context: context,
-                                anchorRect: bubbleRect,
-                                anchorSnapshot: bubbleSnapshot,
-                                quickReactions: const [
-                                  ReactionQuickOption(emoji: '❤️'),
-                                  ReactionQuickOption(emoji: '👍'),
-                                  ReactionQuickOption(emoji: '😂'),
-                                  ReactionQuickOption(emoji: '🥹'),
-                                  ReactionQuickOption(emoji: '🤗'),
-                                  ReactionQuickOption(emoji: '😢'),
-                                ],
-                                onReact: (emoji) => onReact?.call(emoji),
-                                onReactionFlight: onReactionFlight,
-                                // Resolve the Navigator NOW, while this bubble's element
-                                // is definitely still mounted (we are inside its
-                                // long-press handler). Looking it up later, after the
-                                // menu route pops, can fail because the list may have
-                                // recycled this element away by then.
-                                onOpenFullPicker: _buildFullPickerOpener(
-                                  context,
-                                  onReact,
-                                  onReactionFlight,
+                child: LiveMessageMotion(
+                  message: message,
+                  viewerId: currentUserId,
+                  // Emoji messages now animate their artwork, not the row.
+                  animateArrival: false,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      UniversalBubble(
+                        isMine: isMine,
+                        bubbleColor: isBare ? Colors.transparent : bubbleColor,
+                        bubbleGradient: isBare ? null : bubbleGradient,
+                        onBubbleColor: onBubbleColor,
+                        leading: null,
+                        showCardBorder: false,
+                        showShadow: !isBare,
+                        bubbleBorderRadius: 24,
+                        bubbleBorderRadiusOverride: bubbleRadius,
+                        contentPadding:
+                            isBare
+                                ? EdgeInsets.zero
+                                : const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 10,
                                 ),
-                                horizontalAlignment:
-                                    isMine
-                                        ? FocusedActionMenuHorizontalAlignment
-                                            .right
-                                        : FocusedActionMenuHorizontalAlignment
-                                            .left,
-                                actions: buildMessageActionItems(
-                                  context: context,
-                                  message: message,
-                                  currentUserId: currentUserId!,
-                                  isStarred: isStarred,
-                                  isPinned: isPinned,
-                                  onReply: onReply ?? () {},
-                                  onCopy: onCopy ?? () {},
-                                  onStar: onStar ?? () {},
-                                  onUnstar: onUnstar ?? () {},
-                                  onPin: onPin ?? () {},
-                                  onUnpin: onUnpin ?? () {},
-                                  onInfo: _buildInfoOpener(context, message),
-                                  onAskAttune: _buildAskAttuneOpener(
+                        // A shadow cast by a Container extends past its own
+                        // box, so at true 0 spacing the bubble below always
+                        // painted over its predecessor's shadow — the shadow
+                        // was only ever visible on a bubble with the FULL
+                        // 4px gap after it (a group's last bubble, or a
+                        // standalone message), never on one immediately
+                        // followed by another grouped bubble. 1.5px is
+                        // enough to clear the shadow's own reach while
+                        // staying close enough to still read as the same
+                        // flush, WhatsApp/iMessage-style grouped run this
+                        // value was originally 0 for.
+                        verticalPadding:
+                            isGrouped || isGroupedWithPrevious ? 1.5 : 4,
+                        footerSpacing: hasVisibleFooter ? 4 : 0,
+                        showFooter: hasVisibleFooter,
+                        // Under the bubble for every message type. The
+                        // metadata describes the message rather than being
+                        // part of it, and inside the lower edge it crowded
+                        // the text on a short message. Media groups already
+                        // put it outside, so this also settles a
+                        // disagreement between the two treatments.
+                        footerInsideBubble: false,
+                        dragOffsetOverride:
+                            timestampRevealOffset > 0
+                                ? -timestampRevealOffset
+                                : null,
+                        startReveal: null,
+                        replyIconColor: colorScheme.primary,
+                        onEndRevealDragChanged: onTimestampRevealChanged,
+                        quotedText:
+                            parentDeleted
+                                ? 'Original message deleted'
+                                : message.quotedText,
+                        // isStoryQuote tells this WHICH quote it renders —
+                        // story replies and message replies share this one
+                        // quotedText/onJumpToParent rendering path, but
+                        // never both at once (Message.storyItemId's doc
+                        // comment: replyToMessageId is null whenever
+                        // storyItemId is set, by construction). See below.
+                        // A step below the message content's own size (bodyLarge) — a
+                        // little smaller reads as a preview/citation rather than a
+                        // second full-size message, while UniversalBubble's own 12px
+                        // fallback read too small next to the bumped-up content text.
+                        quoteBackgroundColor: replySurface,
+                        quoteForegroundColor: replyBubbleTextColor,
+                        quoteTextStyle: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.copyWith(
+                          color: replyBubbleTextColor,
+                          fontSize: 14,
+                          height: 1.18,
+                        ),
+                        // "You" when replying to your own message; the partner's real
+                        // chat name otherwise (falls back to "Partner" if conversation
+                        // wasn't passed — matches this file's existing nullable-
+                        // conversation convention). Omitted (no label row) when
+                        // parentIsMine is null — the parent message isn't in the loaded
+                        // window, so who sent it genuinely isn't known here, same
+                        // "don't guess" principle as parentDeleted.
+                        //
+                        // A story quote has no per-message "who sent the parent"
+                        // question the way a message reply does — it labels the
+                        // TYPE of thing quoted ("Photo story"/"Video story" is
+                        // already the quotedText itself), so no author label row
+                        // is added on top of it.
+                        quoteAuthorLabel:
+                            message.quotedText == null ||
+                                    message.storyItemId != null ||
+                                    parentIsMine == null
+                                ? null
+                                : parentIsMine!
+                                ? 'You'
+                                // partnerName, not name: name is the
+                                // COUPLE's chat name, and labelling a quoted
+                                // message with it credits one person's words
+                                // to the pair.
+                                : (conversation?.partnerName ?? 'Partner'),
+                        // WhatsApp-style colored side border on the quote block. Same
+                        // null-means-unknown gate as quoteAuthorLabel.
+                        quoteAuthorIsMine:
+                            message.quotedText == null ||
+                                    message.storyItemId != null
+                                ? null
+                                : parentIsMine,
+                        quoteMineBorderColor:
+                            isLightMode
+                                ? replyAccent
+                                : chatColors.relationshipAccent,
+                        quotePartnerBorderColor:
+                            isLightMode ? replyAccent : chatColors.pattern,
+                        quoteBarOnLeft: isLightMode,
+                        quoteAuthorAlignLeft: isLightMode,
+                        showQuoteIcon: !isLightMode,
+                        // A story quote's tap target is resolved live (Task 6,
+                        // spec §5.4: "the quote may render its live thumbnail
+                        // after the normal story authorization check," and a
+                        // deleted story must say "Story no longer available"
+                        // rather than opening an empty reel) — never the
+                        // ordinary message-jump callback, which has no idea
+                        // what a story_item_id even is.
+                        onJumpToParent:
+                            message.quotedText == null
+                                ? null
+                                : message.storyItemId != null
+                                ? () => unawaited(
+                                  _openStoryQuote(
                                     context,
-                                    message,
+                                    message.storyItemId!,
                                   ),
-                                  onEdit: onEdit ?? () {},
-                                  onDelete: onDelete ?? () {},
+                                )
+                                : onJumpToParent,
+                        isHighlighted: isHighlighted,
+                        bubbleKey: ValueKey(message.clientMessageId),
+                        bubbleFillKey: bubbleFillKey,
+                        reactionImpactToken: reactionImpactToken,
+                        onLongPress:
+                            canOpenActions
+                                ? (
+                                  bubbleRect,
+                                  bubbleSnapshot,
+                                ) => showFocusedActionMenu(
+                                  context: context,
+                                  anchorRect: bubbleRect,
+                                  anchorSnapshot: bubbleSnapshot,
+                                  quickReactions: const [
+                                    ReactionQuickOption(emoji: '❤️'),
+                                    ReactionQuickOption(emoji: '👍'),
+                                    ReactionQuickOption(emoji: '😂'),
+                                    ReactionQuickOption(emoji: '🥹'),
+                                    ReactionQuickOption(emoji: '🤗'),
+                                    ReactionQuickOption(emoji: '😢'),
+                                  ],
+                                  onReact: (emoji) => onReact?.call(emoji),
+                                  onReactionFlight: onReactionFlight,
+                                  // Resolve the Navigator NOW, while this bubble's element
+                                  // is definitely still mounted (we are inside its
+                                  // long-press handler). Looking it up later, after the
+                                  // menu route pops, can fail because the list may have
+                                  // recycled this element away by then.
+                                  onOpenFullPicker: _buildFullPickerOpener(
+                                    context,
+                                    onReact,
+                                    onReactionFlight,
+                                  ),
+                                  horizontalAlignment:
+                                      isMine
+                                          ? FocusedActionMenuHorizontalAlignment
+                                              .right
+                                          : FocusedActionMenuHorizontalAlignment
+                                              .left,
+                                  actions: buildMessageActionItems(
+                                    context: context,
+                                    message: message,
+                                    currentUserId: currentUserId!,
+                                    isStarred: isStarred,
+                                    isPinned: isPinned,
+                                    onReply: onReply ?? () {},
+                                    onCopy: onCopy ?? () {},
+                                    onStar: onStar ?? () {},
+                                    onUnstar: onUnstar ?? () {},
+                                    onPin: onPin ?? () {},
+                                    onUnpin: onUnpin ?? () {},
+                                    onInfo: _buildInfoOpener(context, message),
+                                    onAskAttune: _buildAskAttuneOpener(
+                                      context,
+                                      message,
+                                    ),
+                                    onEdit: onEdit ?? () {},
+                                    onDelete: onDelete ?? () {},
+                                  ),
+                                )
+                                : null,
+                        onReply: onReply,
+                        content: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (message.isImported)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 2),
+                                child: Text(
+                                  'Imported from WhatsApp',
+                                  style: Theme.of(context).textTheme.labelSmall,
                                 ),
-                              )
-                              : null,
-                      onReply: onReply,
-                      content: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (message.isImported)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 2),
-                              child: Text(
-                                'Imported from WhatsApp',
-                                style: Theme.of(context).textTheme.labelSmall,
                               ),
-                            ),
-                          _BubbleBody(
-                            message: message,
-                            mediaGroup: mediaGroup,
-                            isMine: isMine,
-                            bubbleColor: bubbleColor,
-                            conversation: conversation,
-                            onImageTap: onImageTap,
-                            onVideoTap: onVideoTap,
-                            onStreakViewSpent: onStreakViewSpent,
-                            onGameTap: onGameTap,
-                            viewerId: currentUserId,
-                            onBubbleColor: onBubbleColor,
-                          ),
-                        ],
-                      ),
-                      footer:
-                          hasVisibleFooter
-                              ? _MessageMeta(
-                                message: message,
-                                isMine: isMine,
-                                isStarred: false,
-                                showStatus: showStatus,
-                                showTime: showLatestTimestamp,
-                                showEdited: false,
-                                onBubbleColor: metadataColor,
-                                onRetry: onRetry,
-                                onRemove: onRemove,
-                                onShowEditHistory: onShowEditHistory,
-                                colorScheme: colorScheme,
-                                inline: false,
+                            if (isEmojiOnly)
+                              EmojiMessageContent(
+                                key: ValueKey(
+                                  'emoji-message-${message.clientMessageId}',
+                                ),
+                                glyphs: emojiGlyphs,
+                                animate: animateEmojiArrival,
+                                playbackEnabled: emojiPlaybackEnabled,
                               )
-                              : const SizedBox.shrink(),
-                    ),
-                    if (reactionAdornments != null)
-                      Positioned(
-                        top: 0,
-                        // Keep the reaction inside the row's paint bounds so
-                        // virtualized list rows do not clip it, while still
-                        // overlapping the bubble instead of reserving extra
-                        // inter-message spacing.
-                        left: isMine ? -22 : null,
-                        right: isMine ? null : -22,
-                        child: reactionAdornments,
+                            else
+                              _BubbleBody(
+                                message: message,
+                                mediaGroup: mediaGroup,
+                                isMine: isMine,
+                                bubbleColor: bubbleColor,
+                                conversation: conversation,
+                                onImageTap: onImageTap,
+                                onVideoTap: onVideoTap,
+                                onStreakViewSpent: onStreakViewSpent,
+                                onGameTap: onGameTap,
+                                viewerId: currentUserId,
+                                onBubbleColor: onBubbleColor,
+                              ),
+                          ],
+                        ),
+                        footer:
+                            hasVisibleFooter
+                                ? _MessageMeta(
+                                  message: message,
+                                  isMine: isMine,
+                                  isStarred: false,
+                                  showStatus: showStatus,
+                                  showTime: showLatestTimestamp,
+                                  showEdited: false,
+                                  onBubbleColor: metadataColor,
+                                  onRetry: onRetry,
+                                  onRemove: onRemove,
+                                  onShowEditHistory: onShowEditHistory,
+                                  colorScheme: colorScheme,
+                                  inline: false,
+                                )
+                                : const SizedBox.shrink(),
                       ),
-                    if (starAdornment != null)
-                      Positioned(
-                        bottom: 4,
-                        left: isMine ? 0 : null,
-                        right: isMine ? null : 0,
-                        child: starAdornment,
-                      ),
-                  ],
+                      if (reactionAdornments != null)
+                        Positioned(
+                          top: 0,
+                          // Keep the reaction inside the row's paint bounds so
+                          // virtualized list rows do not clip it, while still
+                          // overlapping the bubble instead of reserving extra
+                          // inter-message spacing.
+                          left: isMine ? -22 : null,
+                          right: isMine ? null : -22,
+                          child: reactionAdornments,
+                        ),
+                      if (starAdornment != null)
+                        Positioned(
+                          bottom: 4,
+                          left: isMine ? 0 : null,
+                          right: isMine ? null : 0,
+                          child: starAdornment,
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -747,9 +766,6 @@ class _RevealTimestamp extends StatelessWidget {
 Color _bubbleFill(BuildContext context, {required bool isMine}) {
   final chatColors = Theme.of(context).chatColors;
   if (isMine) return chatColors.senderBubble;
-  if (Theme.of(context).brightness == Brightness.dark) {
-    return Theme.of(context).colorScheme.surface.withValues(alpha: 0.94);
-  }
   return chatColors.receiverBubble;
 }
 

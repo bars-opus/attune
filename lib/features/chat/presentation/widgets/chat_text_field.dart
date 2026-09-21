@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
+import 'package:attune/app/theme/chat_color_scheme.dart';
 
 import 'package:attune/core/services/media/voice_recorder_service.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
@@ -222,7 +223,7 @@ class ComposerSatellite extends StatelessWidget {
             boxShadow: kComposerShadows,
           ),
           child: Material(
-            color: fillColor ?? colorScheme.surface.withValues(alpha: 0.94),
+            color: fillColor ?? Theme.of(context).chatControlSurface,
             shape: const CircleBorder(),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
@@ -260,8 +261,6 @@ class _ComposerSatelliteSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Opacity(
       opacity: enabled ? 1.0 : 0.38,
       child: DecoratedBox(
@@ -270,7 +269,7 @@ class _ComposerSatelliteSurface extends StatelessWidget {
           boxShadow: kComposerShadows,
         ),
         child: Material(
-          color: colorScheme.surface.withValues(alpha: 0.94),
+          color: Theme.of(context).chatControlSurface,
           shape: const CircleBorder(),
           clipBehavior: Clip.antiAlias,
           child: SizedBox(
@@ -1389,7 +1388,7 @@ class _ChatTextFieldState extends State<ChatTextField>
                       vertical: verticalPadding,
                     ),
                     decoration: BoxDecoration(
-                      color: colorScheme.surface.withValues(alpha: 0.94),
+                      color: Theme.of(context).chatControlSurface,
                       borderRadius: BorderRadius.circular(radius),
                       boxShadow: kComposerShadows,
                     ),
@@ -1518,7 +1517,7 @@ class _ChatTextFieldState extends State<ChatTextField>
               fillColor:
                   _hasText || widget.gameStaged
                       ? widget.sendButtonColor ?? colorScheme.primary
-                      : colorScheme.surface.withValues(alpha: 0.94),
+                      : Theme.of(context).chatControlSurface,
               iconColor:
                   _hasText || widget.gameStaged
                       ? widget.onSendButtonColor ?? colorScheme.onPrimary

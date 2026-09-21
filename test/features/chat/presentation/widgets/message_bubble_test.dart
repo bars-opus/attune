@@ -191,7 +191,7 @@ void main() {
     final bubble = tester.widget<UniversalBubble>(find.byType(UniversalBubble));
     expect(
       bubble.bubbleColor,
-      darkTheme.colorScheme.surface.withValues(alpha: 0.94),
+      ChatColorScheme.dark.receiverBubble,
     );
     expect(bubble.quoteBarOnLeft, isFalse);
     expect(bubble.quoteAuthorAlignLeft, isFalse);

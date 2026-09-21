@@ -125,8 +125,9 @@ class GameMessageBubble extends ConsumerWidget {
     // Painted here rather than behind the card (the transcript makes the
     // bubble transparent for games) because a grey panel inside a green
     // frame reads as a floating panel, not a message.
-    final surface =
-        viewerIsSender ? chatColors.senderBubble : chatColors.receiverBubble;
+    final surface = viewerIsSender
+        ? chatColors.senderBubble
+        : chatColors.receiverBubble;
     final onSurface =
         viewerIsSender
             ? chatColors.onSenderBubble

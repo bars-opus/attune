@@ -36,6 +36,7 @@ import 'dart:typed_data' show Uint8List;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/widgets.dart' show FlutterError;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 /// Fraction of differing pixels tolerated on non-macOS hosts.
 ///
@@ -63,6 +64,8 @@ import 'package:flutter_test/flutter_test.dart';
 const double _kGoldenTolerance = 0.02;
 
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
+  // Visibility callbacks run per frame in tests, without pending batch timers.
+  VisibilityDetectorController.instance.updateInterval = Duration.zero;
   // macOS is the reference platform these goldens were authored on:
   // leave the default byte-exact comparator completely untouched there.
   if (!kIsWeb && !Platform.isMacOS) {
@@ -78,7 +81,8 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
 /// `--update-goldens`, and failing loudly on a real difference — is the
 /// inherited behaviour.
 class _TolerantGoldenComparator extends LocalFileComparator {
-  _TolerantGoldenComparator(Uri basedir) : super(Uri.parse('$basedir/test.dart'));
+  _TolerantGoldenComparator(Uri basedir)
+    : super(Uri.parse('$basedir/test.dart'));
 
   @override
   Future<bool> compare(Uint8List imageBytes, Uri golden) async {

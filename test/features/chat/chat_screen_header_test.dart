@@ -2,6 +2,7 @@ import 'package:attune/core/ui/motion/glow_pulse.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
 import 'package:attune/features/chat/presentation/widgets/attune_chat_wallpaper.dart';
+import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:flutter/foundation.dart' show debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -416,9 +417,7 @@ void main() {
   );
 
   testWidgets(
-    'the pill shadows are strong enough to read against the wallpaper '
-    '— stronger than the composer\'s own near-invisible shadow, which '
-    'was too faint once reused here',
+    'the header pill shadows match the composer shadows',
     (tester) async {
       final repo = FakeChatRepository(currentUserId: 'user-a');
       final convo = activeConversation('rel-1');
@@ -428,39 +427,27 @@ void main() {
         buildRouter(convo),
       );
 
-      // kComposerShadows' strongest layer sits under 6% opacity
-      // (0x0F alpha ≈ 5.9%); anything reused for the header pills must
-      // clear that bar by a wide margin to read as a real shadow rather
-      // than the composer's own barely-there one.
-      const composerStrongestAlpha = 0x0F;
-
-      final pillShadowAlphas = tester
+      final pillShadows = tester
           .widgetList<Container>(find.byType(Container))
-          .expand((container) {
+          .map((container) {
             final decoration = container.decoration;
             if (decoration is! BoxDecoration ||
                 decoration.borderRadius != BorderRadius.circular(999)) {
-              return const <int>[];
+              return null;
             }
-            return decoration.boxShadow?.map(
-                  (s) => (s.color.toARGB32() >> 24) & 0xFF,
-                ) ??
-                const <int>[];
+            return decoration.boxShadow;
           })
+          .whereType<List<BoxShadow>>()
           .toList();
 
       expect(
-        pillShadowAlphas,
+        pillShadows,
         isNotEmpty,
         reason: 'expected at least one rounded pill with a shadow',
       );
-      expect(
-        pillShadowAlphas.reduce((a, b) => a > b ? a : b),
-        greaterThan(composerStrongestAlpha),
-        reason:
-            'the header pill shadow must be visibly stronger than the '
-            'composer\'s own faint shadow',
-      );
+      for (final shadows in pillShadows) {
+        expect(shadows, kComposerShadows);
+      }
 
       await tester.pump(const Duration(milliseconds: 100));
       await tester.pumpWidget(const SizedBox());

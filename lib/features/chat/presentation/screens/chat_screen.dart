@@ -23,6 +23,7 @@ import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/state/typing_controller.dart';
 import 'package:attune/features/chat/presentation/widgets/attune_chat_wallpaper.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
+import 'package:attune/features/chat/presentation/widgets/emoji_message_content.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_media_group.dart';
 import 'package:attune/features/chat/presentation/widgets/message_arrival_tracker.dart';
@@ -1873,8 +1874,15 @@ class _ConversationHeaderCard extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         _HeaderPill(
-          padding: const EdgeInsets.all(4),
+          padding: EdgeInsets.zero,
           child: IconButton(
+            padding: EdgeInsets.zero,
+            iconSize: 25,
+            visualDensity: VisualDensity.standard,
+            constraints: const BoxConstraints.tightFor(
+              width: ComposerSatellite.size,
+              height: ComposerSatellite.size,
+            ),
             // BackButtonIcon: Flutter's own platform-adaptive glyph — a
             // chevron on iOS/macOS, the Material arrow elsewhere —
             // rather than a hardcoded Icons.arrow_back.
@@ -1965,8 +1973,15 @@ class _ConversationHeaderCard extends ConsumerWidget {
         if (expandedEnabled) ...[
           Gap(Spacing.sm.w),
           _HeaderPill(
-            padding: const EdgeInsets.all(4),
+            padding: EdgeInsets.zero,
             child: IconButton(
+              padding: EdgeInsets.zero,
+              iconSize: 25,
+              visualDensity: VisualDensity.standard,
+              constraints: const BoxConstraints.tightFor(
+                width: ComposerSatellite.size,
+                height: ComposerSatellite.size,
+              ),
               icon: Icon(
                 isExpanded
                     ? Icons.expand_less_rounded
@@ -1982,23 +1997,6 @@ class _ConversationHeaderCard extends ConsumerWidget {
   }
 }
 
-/// One floating rounded surface for the header — the same recipe
-/// chat_text_field.dart's composer already uses to float over this
-/// same wallpaper (kComposerShadows, colorScheme.surface at 94% alpha,
-/// fully rounded corners), so the header and composer read as one
-/// consistent "floating over the pattern" visual language rather than
-/// two different treatments.
-// A distinct, more visible shadow than kComposerShadows (the composer's
-// own values, tuned to sit faintly at the bottom of a message list —
-// under 6% opacity on every layer, which read as barely-there once the
-// pills float directly over the busier wallpaper pattern). Same two-
-// layer contact-shadow-plus-falloff shape, stronger so each pill
-// visibly lifts off the pattern behind it.
-const List<BoxShadow> _kHeaderPillShadows = [
-  BoxShadow(offset: Offset(0, 2), blurRadius: 6, color: Color(0x26000000)),
-  BoxShadow(offset: Offset(0, 1), blurRadius: 2, color: Color(0x1F000000)),
-];
-
 class _HeaderPill extends StatelessWidget {
   const _HeaderPill({
     required this.child,
@@ -2012,22 +2010,25 @@ class _HeaderPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final pill = Container(
-      padding: padding,
+    final borderRadius = BorderRadius.circular(999);
+    // Paint the shadow outside the clipped Material so the tappable center
+    // pill has the same visible depth as the two buttons.
+    return Container(
       decoration: BoxDecoration(
-        color: colorScheme.surface.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(999),
-        boxShadow: _kHeaderPillShadows,
+        borderRadius: borderRadius,
+        boxShadow: kComposerShadows,
       ),
-      child: child,
-    );
-    if (onTap == null) return pill;
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(999),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(onTap: onTap, child: pill),
+      child: Material(
+        color: Theme.of(context).chatControlSurface,
+        borderRadius: borderRadius,
+        clipBehavior: Clip.antiAlias,
+        child: onTap == null
+            ? Padding(padding: padding, child: child)
+            : InkWell(
+              onTap: onTap,
+              child: Padding(padding: padding, child: child),
+            ),
+      ),
     );
   }
 }
@@ -2586,6 +2587,17 @@ class _OutgoingTextFlight extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final glyphs = emojiOnlyGlyphs(text);
+    if (glyphs.isNotEmpty) {
+      return FittedBox(
+        fit: BoxFit.contain,
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          width: glyphs.length == 1 ? 68 : glyphs.length <= 3 ? 168 : 240,
+          child: EmojiMessageContent(glyphs: glyphs, animate: false, replayOnVisibility: false),
+        ),
+      );
+    }
     final theme = Theme.of(context);
     final chatColors = theme.chatColors;
     final surfaceProgress = Curves.easeOutCubic.transform(
@@ -3169,6 +3181,8 @@ class _MessageListState extends ConsumerState<_MessageList>
                     builder:
                         (context, timestampRevealOffset, _) => MessageBubble(
                           message: message,
+                          animateEmojiArrival: shouldAnimate || index == 0,
+                          emojiPlaybackEnabled: !widget.flyingMessageIds.contains(message.clientMessageId),
                           bubbleFillKey: bubbleFillKey,
                           reactionImpactToken:
                               widget.reactionImpactTokens[message

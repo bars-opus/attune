@@ -12,6 +12,9 @@ class AttuneChatWallpaper extends StatelessWidget {
 
   static const _assetPath =
       'assets/images/attune_chat_wallpaper_tile_refined.png';
+  static const _showDarkGradient = true;
+  // Restore the background accent independently of the pattern tint/glow.
+  static const _showPatternGlow = false;
 
   final Widget child;
   final ScrollController? scrollController;
@@ -20,7 +23,9 @@ class AttuneChatWallpaper extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = scrollController;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    if (controller == null || !isDark) return _buildWallpaper(context, 0);
+    if (controller == null || !isDark || !_showDarkGradient) {
+      return _buildWallpaper(context, 0);
+    }
 
     return AnimatedBuilder(
       animation: controller,
@@ -31,12 +36,14 @@ class AttuneChatWallpaper extends StatelessWidget {
   }
 
   Widget _buildWallpaper(BuildContext context, double scrollProgress) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDark =
+        Theme.of(context).brightness == Brightness.dark && _showDarkGradient;
+    final showPatternGlow = isDark && _showPatternGlow;
     final chatColors = Theme.of(context).chatColors;
     final topLeftAccentOpacity = scrollProgress;
     final bottomRightAccentOpacity = 1 - scrollProgress;
     final backgroundAccent =
-        Color.lerp(chatColors.background, chatColors.backgroundAccent, 0.42)!;
+        Color.lerp(chatColors.background, chatColors.backgroundAccent, 0.28)!;
     final patternAccent =
         Color.lerp(chatColors.pattern, chatColors.backgroundAccent, 0.42)!;
     final patternGlow =
@@ -64,7 +71,7 @@ class AttuneChatWallpaper extends StatelessWidget {
           ),
         ] else
           ExcludeSemantics(child: ColoredBox(color: chatColors.background)),
-        if (isDark)
+        if (showPatternGlow)
           ExcludeSemantics(
             child: IgnorePointer(
               child: RepaintBoundary(
@@ -112,7 +119,7 @@ class AttuneChatWallpaper extends StatelessWidget {
               ),
             ),
           ),
-        if (isDark)
+        if (showPatternGlow)
           ExcludeSemantics(
             child: IgnorePointer(
               child: RepaintBoundary(
@@ -172,7 +179,7 @@ class AttuneChatWallpaper extends StatelessWidget {
                       stops: [0, 0.78, 1],
                     ).createShader(bounds),
                 child:
-                    isDark
+                    showPatternGlow
                         ? ShaderMask(
                           blendMode: BlendMode.srcIn,
                           shaderCallback:
@@ -207,7 +214,7 @@ class AttuneChatWallpaper extends StatelessWidget {
             ),
           ),
         ),
-        if (isDark)
+        if (showPatternGlow)
           ExcludeSemantics(
             child: IgnorePointer(
               child: RepaintBoundary(
@@ -294,8 +301,12 @@ class _WallpaperGradientLayer extends StatelessWidget {
             gradient: LinearGradient(
               begin: begin,
               end: end,
-              colors: [background, background, accent],
-              stops: const [0, 0.34, 1],
+              colors: [
+                background,
+                Color.lerp(background, accent, 0.2)!,
+                accent,
+              ],
+              stops: const [0, 0.5, 1],
             ),
           ),
         ),
@@ -309,17 +320,22 @@ class _WallpaperTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const DecoratedBox(
-      decoration: BoxDecoration(
-        image: DecorationImage(
-          image: AssetImage(AttuneChatWallpaper._assetPath),
-          repeat: ImageRepeat.noRepeat,
-          alignment: Alignment.topCenter,
-          fit: BoxFit.cover,
-          filterQuality: FilterQuality.high,
+    return LayoutBuilder(
+      builder: (context, constraints) => DecoratedBox(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: const AssetImage(AttuneChatWallpaper._assetPath),
+            // The 1024px artwork occupies 85% of the chat width. Scaling the
+            // whole composition tightens gaps along with the existing shapes.
+            scale: 1024 / (constraints.maxWidth * 0.85),
+            repeat: ImageRepeat.repeat,
+            alignment: Alignment.topCenter,
+            fit: BoxFit.none,
+            filterQuality: FilterQuality.high,
+          ),
         ),
+        child: const SizedBox.expand(),
       ),
-      child: SizedBox.expand(),
     );
   }
 }

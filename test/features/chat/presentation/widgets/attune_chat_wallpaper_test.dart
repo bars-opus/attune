@@ -70,7 +70,7 @@ void main() {
       findsOneWidget,
     );
 
-    // Every wallpaper layer must use the same single-cover composition. If a
+    // Every wallpaper layer must use the same width-fitted composition. If a
     // dark-mode glow layer drifts from these settings it will visibly
     // misregister against the base pattern.
     final wallpapers =
@@ -95,9 +95,9 @@ void main() {
       reason: 'the portrait artwork must be painted once',
     );
     for (final wallpaper in wallpapers) {
-      expect(wallpaper.repeat, ImageRepeat.noRepeat);
+      expect(wallpaper.repeat, ImageRepeat.repeat);
       expect(wallpaper.alignment, Alignment.topCenter);
-      expect(wallpaper.fit, BoxFit.cover);
+      expect(wallpaper.fit, BoxFit.none);
       expect(wallpaper.filterQuality, FilterQuality.high);
     }
 
@@ -127,7 +127,7 @@ void main() {
     );
   });
 
-  testWidgets('dark mode keeps the opposed ambient gradients', (tester) async {
+  testWidgets('dark mode restores background gradients without pattern glow', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(
@@ -162,11 +162,11 @@ void main() {
             )
             .toList();
 
-    expect(wallpapers, hasLength(4));
+    expect(wallpapers, hasLength(1));
     for (final wallpaper in wallpapers) {
-      expect(wallpaper.repeat, ImageRepeat.noRepeat);
+      expect(wallpaper.repeat, ImageRepeat.repeat);
       expect(wallpaper.alignment, Alignment.topCenter);
-      expect(wallpaper.fit, BoxFit.cover);
+      expect(wallpaper.fit, BoxFit.none);
       expect(wallpaper.filterQuality, FilterQuality.high);
     }
 
@@ -184,27 +184,12 @@ void main() {
             .whereType<LinearGradient>()
             .toList();
 
-    final base = canvas.firstWhere(
-      (gradient) =>
-          gradient.begin == Alignment.topLeft &&
-          gradient.end == Alignment.bottomRight,
-      orElse: () => throw StateError('no base topLeft -> bottomRight gradient'),
-    );
-    expect(base.colors, [
+    expect(canvas, hasLength(2));
+    expect(canvas.first.colors.first, ChatColorScheme.dark.background);
+    expect(canvas.first.colors.last, Color.lerp(
       ChatColorScheme.dark.background,
-      ChatColorScheme.dark.background,
-      Color.lerp(
-        ChatColorScheme.dark.background,
-        ChatColorScheme.dark.backgroundAccent,
-        0.42,
-      ),
-    ]);
-    expect(
-      canvas.any(
-        (g) => g.begin == Alignment.bottomRight && g.end == Alignment.topLeft,
-      ),
-      isTrue,
-      reason: 'the scroll accent mirrors the base gradient',
-    );
+      ChatColorScheme.dark.backgroundAccent,
+      0.28,
+    ));
   });
 }
