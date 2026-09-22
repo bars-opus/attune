@@ -23,6 +23,13 @@ whether the reversal should happen.
 | R2 | "Never supports follow-up turns… no assistant identity persists across calls" (§1) | Bounded thread: max 10 turns per session, 15-minute idle expiry | Context is *only* that session's own turns plus an optional 6-message window; turn cap and character ceilings enforced server-side | Is 10 turns × the per-turn ceiling an acceptable cumulative disclosure to the provider? |
 | R3 | Context is server-selected around **one explicitly chosen** message; §4.3 cut history precisely because a day's transcript is "far more context than one terse message needs" | Shared sessions may include the last 6 same-day messages the partners did not individually choose | Server-selected only (never client-supplied), same-day bounded, character-capped, transcript handled as quoted data, window contents shown in the UI before the first call and revocable | **This is the highest-risk item in the document.** Is a visible, revocable, 6-message, same-day, server-selected window an acceptable replacement for per-message choice? |
 
+This spec was self-audited against
+`lib/architecture/algorithms/algorithm_quality_review_checklist.md` v3.1
+before review; §8.2 carries the engineering contract (timeouts, concurrency,
+failure compensation, privacy/retention, latency, complexity) and §8.2.6
+documents the skips. A reviewer should treat that self-audit as a claim to
+check, not as evidence.
+
 A fourth item is new rather than a reversal:
 
 | # | New capability | Why it is risky | Control |
@@ -289,11 +296,40 @@ other partner's device.
 
 ### 6.2 Concurrency
 
-Two partners may submit at once. Turns are serialised server-side by
-`(session_id, created_at, id)`; each provider call sees the turns committed at
-the moment it was authorised. Both submissions are answered. Quota is charged
-to each submitting partner independently — there is no shared quota pool, so
-one partner cannot exhaust the other's allowance.
+Two partners may submit at once. This is the only genuinely concurrent write
+path in the feature, so the mechanism is specified rather than implied
+(checklist 1.6).
+
+**Shared mutable state:** `ai_sessions.turn_count` and the
+`ai_session_turns.ordinal` sequence. Both are mutated by two devices through
+one server.
+
+**Mechanism:** the turn-reserving RPC takes a row-level lock —
+`SELECT … FROM ai_sessions WHERE id = $1 FOR UPDATE` — then validates the cap,
+increments `turn_count`, and returns the reserved `ordinal`, all in one
+transaction. The lock is released before the provider call; provider work
+never holds a database lock. Ordinal allocation is therefore serialised even
+though generation is not.
+
+**Ordering:** each provider call sees exactly the turns committed at the moment
+its ordinal was reserved. Two simultaneous submissions both succeed and both
+are answered; they may interleave, and the UI renders strictly by `ordinal`,
+never by client arrival order.
+
+**Cap under race:** when two partners submit at turns 9 and 10 simultaneously,
+the lock guarantees exactly one receives ordinal 20 and the other receives
+`SESSION_TURN_LIMIT` before any provider call — so the cap cannot be exceeded
+by racing, and the loser is never charged quota.
+
+**Consistency model (checklist 1.9):** read-your-writes for the submitting
+partner (the RPC returns their reserved turn synchronously) and eventual for
+the other partner (realtime broadcast, typically sub-second). A missed
+broadcast is corrected by refetching turns by `session_id` on reconnect and on
+sheet foreground; the `ordinal` sequence makes gap detection trivial. The
+client treats realtime as an accelerator, never as the source of truth.
+
+**Quota** is charged to each submitting partner independently — there is no
+shared pool, so one partner cannot exhaust the other's allowance.
 
 ### 6.3 Switching visibility
 
@@ -423,6 +459,125 @@ safety outbox uses. It is not a new classifier and it costs no model call.
 
 ---
 
+### 8.2 Engineering contract
+
+Audited against `lib/architecture/algorithms/algorithm_quality_review_checklist.md`
+v3.1. Items the base spec already answers are inherited and cited rather than
+restated; items this feature introduces are specified here.
+
+#### 8.2.1 Timeouts (checklist 1.2)
+
+Every external call is bounded. A session turn may make two provider calls, so
+the per-turn ceiling is stated explicitly rather than left to sum:
+
+| Call | Connect | Read | Total |
+|---|---|---|---|
+| Gemini (`callGeminiJson`) | 3s | 20s | 25s |
+| Mapbox (Nearby only) | 3s | 8s | 10s |
+| **Per-turn ceiling** | — | — | **30s** |
+
+Exceeding the ceiling returns `PROVIDER_UNAVAILABLE`. These are configuration
+values, not magic numbers in code (checklist 4.11). The 30s ceiling is the
+number the client's loading state and the user-facing copy are designed
+against.
+
+#### 8.2.2 Failure compensation (checklist 1.10)
+
+A turn is a multi-step mutation: reserve ordinal → reserve quota → call
+provider → insert turn → broadcast. Each failure point has a defined outcome,
+and the invariant is **never show the partner a charge with no result, and
+never leave a reserved ordinal unusable**.
+
+| Fails at | Quota | Ordinal | User sees |
+|---|---|---|---|
+| Ordinal reservation | Not reserved | Not allocated | `SESSION_TURN_LIMIT` or `SESSION_ENDED` |
+| Quota reservation | `RATE_LIMITED` | **Released** — the reserving transaction rolls back | `retry_after_seconds`; session stays open |
+| Provider call | **Charged** (cost incurred, per base spec §7.3) | Held, marked failed | `PROVIDER_UNAVAILABLE` + retry; retry uses a **new** `request_id` and a new ordinal |
+| Turn insert | Charged | Held, marked failed | Same as provider failure — the compensating action is a visible error, never a silent swallow |
+| Broadcast | Charged | Committed | Submitter sees their turn; partner reconciles on reconnect (§6.2) |
+
+There is no partial turn. A turn row is inserted only with complete, validated
+content; a failed generation never writes a half-formed row that a later
+provider call could read back as context.
+
+Failed ordinals leave gaps in the sequence. This is intentional: gaps are
+cheap, and reusing an ordinal would let a retry silently overwrite a committed
+turn. `turn_count` counts *reserved* exchanges, so a session with failures
+reaches its cap sooner — the cap bounds provider work, not successful replies.
+
+#### 8.2.3 Privacy and retention (checklist 1.11)
+
+PII reaching the provider is bounded by §4.2 and consists only of
+conversational content the partners wrote. Never sent to any provider:
+profiles, names, user/relationship IDs, presence, location history, safety
+state, Planning, prior sessions, or coordinates (Nearby sends coordinates to
+Mapbox only, never to Gemini — base spec §5.2).
+
+| Data | Where | Retention |
+|---|---|---|
+| `ai_sessions` row | Attune DB | Until end, or 15 min idle; purged by the existing job |
+| `ai_session_turns` rows | Attune DB | Deleted on session end; purged with the session |
+| Prompt + turn content | Gemini | Per provider contract — **gate 2, §14** |
+| Coordinates + category | Mapbox | One request, then discarded; never stored by Attune |
+| Posted turn | `messages` | Ordinary chat retention |
+
+Telemetry follows the base spec §10.3 allowed/forbidden field list unchanged
+(checklist 4.4, P0-U). Sessions add exactly two allowed operational fields:
+`session_id` (pseudonymous UUID) and `turn_ordinal`. Session content, prompts,
+and the recent-window contents are forbidden in logs, analytics, and Sentry,
+and are covered by the same canary-content scrubbing test the base spec
+already requires.
+
+#### 8.2.4 Latency and first feedback (checklist 5.2)
+
+A session turn is provider-bound and will exceed 1 second, so the interactive
+target is **first feedback within 200ms**, not completion:
+
+- Composer button tap → sheet + scrim rendered: ≤200ms (no network on open,
+  §5.1).
+- Turn submitted → the partner's own turn rendered and a thinking indicator
+  visible: ≤200ms (optimistic local render; the turn is already theirs).
+- Turn submitted → `partner_thinking` visible on the other device: best-effort,
+  realtime-bound.
+- Turn completion: p95 target ≤8s for Ideas, ≤12s for Nearby (two provider
+  calls), hard ceiling 30s per §8.2.1.
+
+Progressive rendering of a partial model response is explicitly **not** in v1:
+output is validated against the §5.3 schema before display, and streaming
+unvalidated text would defeat that validation.
+
+#### 8.2.5 Complexity and cost (checklist 1.8, 1.12)
+
+Context assembly is O(t + w) time and space in turns `t` (≤20) and window
+messages `w` (≤6) — both hard-capped, so per-turn work is O(1) with respect to
+relationship size and chat history length. No query scans unbounded history:
+the window query is `ORDER BY created_at DESC LIMIT 6` against the existing
+chat index, and turn loading is a bounded index scan on
+`idx_ai_session_turns_session` (checklist 3.3).
+
+Cost per session is at most 10 Gemini calls, plus up to 10 Mapbox calls if
+every turn is Nearby. The existing 20-per-24h per-account quota is the binding
+cost control; a full 10-turn session consumes half a partner's daily
+allowance, which is deliberate — it makes multi-turn cost visible rather than
+hidden (§7.2).
+
+#### 8.2.6 Applicability notes
+
+Skips, documented per the checklist's "Skip checks that don't apply" rule:
+
+- **`[FIN]` (2.19–2.23)** — no monetary value. N/A.
+- **`[UI-WEB]` (7.6 CSRF/CORS)** — native mobile only; Edge Functions are
+  token-authenticated, not cookie-authenticated. N/A.
+- **3.12 graceful shutdown, 4.12/4.13 health/readiness** — Supabase Edge
+  Functions are platform-managed; not this feature's surface.
+- **3.11 circuit breaker (P3)** — deferred. The 20/24h quota already bounds
+  blast radius from a degraded provider.
+- **6.10 soak / 6.11 load / 6.12 chaos** — deployment-gate items, not design
+  items; they belong to the implementation plan's verification phase, and are
+  listed in §11 as such.
+
+---
+
 ## 9. Client architecture
 
 ```
@@ -465,14 +620,32 @@ button. No other chat file changes.
 
 ## 11. Testing
 
+Checklist references in brackets.
+
 - **SQL:** RLS proves a partner cannot read a private session; `authenticated`
-  cannot INSERT/UPDATE either table; turn cap and ordinal uniqueness hold under
-  concurrent insert; purge removes expired sessions and their turns.
+  cannot INSERT/UPDATE either table; purge removes expired sessions and their
+  turns.
+- **Concurrency [6.3, 1.6]:** two simultaneous turn reservations against the
+  same session — assert exactly one ordinal per submitter, no duplicate
+  ordinal, cap never exceeded, and the capped-out submitter charged no quota.
+  Run repeatedly; flaky is a failure.
 - **Edge function:** client-supplied turns rejected; window never exceeds 6
   messages/2,400 characters; window excludes deleted/system/assist messages;
   quota charged per turn; `SAFETY_INTERCEPT` short-circuits before the provider.
-- **Privacy:** a static test asserting no session type exposes an Understand
-  result, mirroring the base spec's existing no-write contract test.
+- **Failure paths [6.2, 6.4]:** inject provider timeout, provider 5xx, and a
+  turn-insert failure. Assert the §8.2.2 table holds — specifically that a
+  failed turn writes no partial row and that a retry uses a new ordinal rather
+  than overwriting a committed turn. Negative assertion: after a failed
+  generation, `ai_session_turns` contains no row for that `request_id`.
+- **Boundary [6.1]:** empty instruction, 300-character instruction, 301
+  (reject), a single turn exceeding the 6,000-character budget (reject, per
+  §4.2), a 2,000-character turn, turn 10 and turn 11, Unicode and
+  NFC-normalisation cases, and the same-day boundary at the partners' UTC
+  offset.
+- **Privacy [4.4]:** a static test asserting no session type exposes an
+  Understand result, mirroring the base spec's existing no-write contract test;
+  plus canary content in a turn and in the recent window, asserted absent from
+  logs, analytics, and Sentry payloads.
 - **Widget:** AI mode hides exactly the expected composer controls and restores
   them on exit; the context banner renders the real window and its off state.
 - **Adversarial evals:** prompt injection from the recent window; a partner
@@ -480,6 +653,22 @@ button. No other chat file changes.
   never emit partial factual answers.
 - **Two-account manual:** shared session visibility, concurrent turns, either
   partner ending, consent withdrawal mid-session.
+
+### 11.1 Deployment-gate verification
+
+Not design-time items; they belong to the implementation plan's final phase
+and must be evidenced before the flag is enabled:
+
+- Load behaviour at 2x expected peak session starts [6.11].
+- Provider-failure chaos: kill Gemini mid-turn, assert §8.2.2 holds and no
+  session is left in an unrecoverable state [6.12].
+- Branch coverage thresholds: edge-function logic ≥90%, repository ≥70%,
+  widgets ≥50% [6.7].
+- Rollback runbook (Tier 2 acceptable): the flag kill-switch plus
+  `supabase functions deploy ai-assist@<prev>` , time-to-recovery ≤30 min [8.1].
+- Alerts with runbooks for: turn error-rate spike, provider-failure rate,
+  quota-rejection rate, and purge-job failure (an unpurged session is a
+  retention violation, not just a leak) [4.9, 6.14].
 
 ---
 
