@@ -94,3 +94,53 @@ BEGIN
   RETURN QUERY SELECT 'reserved'::text, NULL::int;
 END;
 $$;
+
+-- The single write point for provider_started_at. "true" means THIS
+-- call is the one that claimed it -- the caller proceeds to contact the
+-- provider. "false" means it was already claimed (by a retry of the
+-- same request, or a concurrent duplicate) -- the caller must NOT
+-- contact the provider again; per spec §6.2, "Never retry uncertain
+-- external calls, even with the same request ID; expose terminal
+-- failure instead."
+CREATE OR REPLACE FUNCTION public.claim_ai_assistant_provider_start(
+  p_actor_id uuid, p_request_id uuid
+) RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_claimed boolean;
+BEGIN
+  IF p_actor_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.ai_assistant_usage
+    WHERE request_id = p_request_id AND user_id = p_actor_id
+  ) THEN
+    RAISE EXCEPTION 'Reservation not found for this actor';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.ai_assistant_usage
+    WHERE request_id = p_request_id AND user_id = p_actor_id
+      AND outcome != 'reserved'
+  ) THEN
+    RAISE EXCEPTION 'Cannot claim provider start on a terminal reservation';
+  END IF;
+
+  UPDATE public.ai_assistant_usage
+  SET provider_started_at = now()
+  WHERE request_id = p_request_id AND user_id = p_actor_id
+    AND provider_started_at IS NULL;
+  v_claimed := FOUND;
+
+  RETURN v_claimed;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.claim_ai_assistant_provider_start(uuid, uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_ai_assistant_provider_start(uuid, uuid)
+  TO service_role;
