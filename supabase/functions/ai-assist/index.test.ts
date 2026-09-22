@@ -353,13 +353,20 @@ Deno.test({
     await resetFixtures();
     await grantDualConsent();
     const client = await makeRlsClientForUser(USER_T6_A);
+    const serviceClient = await makeServiceRoleClient();
 
     // Exhaust the real rolling-window quota (Task 4) for this user so the
     // 21st reservation attempt is genuinely rate_limited -- this proves
     // the ai-assist handler correctly surfaces reserve_ai_assistant_quota's
     // real outcome, not a fake bypassing the real RPC.
+    //
+    // Called via the service-role client with an explicit p_actor_id:
+    // reserve_ai_assistant_quota is no longer granted to `authenticated`
+    // (20260951030000) and no longer trusts auth.uid(), which is NULL
+    // under a service-role connection.
     for (let i = 0; i < 20; i++) {
-      await client.rpc("reserve_ai_assistant_quota", {
+      await serviceClient.rpc("reserve_ai_assistant_quota", {
+        p_actor_id: USER_T6_A,
         p_request_id: crypto.randomUUID(),
         p_relationship_id: REL_T6,
         p_mode: "assist",
@@ -369,7 +376,11 @@ Deno.test({
     const response = await processAssistRequest(
       makeReq(validIdeasBody()),
       { client: client as never, user: { id: USER_T6_A } },
-      { callGemini: neverCalledGemini(), searchMapbox: neverCalledMapbox() },
+      {
+        callGemini: neverCalledGemini(),
+        searchMapbox: neverCalledMapbox(),
+        serviceClient: serviceClient as never,
+      },
     );
 
     assertEquals(response.status, 429);

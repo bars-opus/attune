@@ -111,7 +111,26 @@ Deno.test("ai-understand's source does not import the chat repository, any messa
   assertFalse(src.includes("insert_ai_assist_draft"), "must never call insert_ai_assist_draft");
   assertFalse(/\bfrom\(\s*["']messages["']\s*\)/.test(src), "must never query/write the messages table directly");
   assertFalse(src.includes("chat_repository"), "must never import a chat repository");
-  assertFalse(src.includes("serviceRoleClient"), "must never use a service-role connection (no write path needs one)");
+});
+
+// serviceRoleClient is now used for exactly one narrow purpose: the
+// quota RPCs (20260951030000 -- reserve_ai_assistant_quota and
+// mark_ai_assistant_usage_outcome are service_role-only, since a client
+// that could call them directly could replay a request_id for unlimited
+// provider calls or erase its own usage). The test above still proves
+// service-role is never used for anything message/draft-adjacent; this
+// one proves the ONLY service-role calls are the two quota RPCs, so a
+// future edit that reaches for serviceRoleClient to write something else
+// fails loudly here rather than silently widening Understand's no-write
+// boundary.
+Deno.test("ai-understand's only service-role RPC calls are the quota ledger", async () => {
+  const src = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+  const rpcCalls = [...src.matchAll(/service\.rpc\(\s*["'](\w+)["']/g)].map((m) => m[1]);
+  assertEquals(
+    new Set(rpcCalls),
+    new Set(["reserve_ai_assistant_quota", "mark_ai_assistant_usage_outcome"]),
+    "a service-role client must only ever call the quota RPCs here",
+  );
 });
 
 // ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
 import { userScopedClient } from "../_shared/user_scoped_client.ts";
+import { serviceRoleClient } from "../_shared/attune_auth.ts";
 import {
   loadAiAssistantTarget,
   loadBoundedContext,
@@ -296,6 +297,7 @@ export function buildUserPrompt(
 
 export interface UnderstandDeps {
   callGemini: typeof callGeminiJson;
+  serviceClient?: SupabaseClient;
 }
 
 const defaultDeps: UnderstandDeps = {
@@ -378,7 +380,15 @@ export async function processUnderstandRequest(
 
   // Quota reservation -- MUST happen before the first external provider
   // call. Nothing above this line calls Gemini.
-  const quotaResult = await client.rpc("reserve_ai_assistant_quota", {
+  //
+  // Called via the SERVICE-ROLE client, not the user-scoped `client`: see
+  // ai-assist/index.ts's identical comment at its own quota call for why
+  // (20260951030000 migration -- reserve_ai_assistant_quota and
+  // mark_ai_assistant_usage_outcome are no longer granted to
+  // `authenticated`, and no longer trust auth.uid()).
+  const service = deps.serviceClient ?? serviceRoleClient();
+  const quotaResult = await service.rpc("reserve_ai_assistant_quota", {
+    p_actor_id: user.id,
     p_request_id: request.requestId,
     p_relationship_id: target.relationshipId,
     p_mode: "understand",
@@ -391,16 +401,19 @@ export async function processUnderstandRequest(
     return errorResponse(assistantError("RATE_LIMITED", quotaRow.retry_after_seconds ?? null));
   }
   if (quotaRow?.outcome !== "reserved") {
+    // Includes 'already_reserved': see ai-assist/index.ts's identical
+    // comment.
     return errorResponse(assistantError("INTERNAL_ERROR"));
   }
 
   try {
-    return await handleUnderstand(client, user.id, target, request, deps);
+    return await handleUnderstand(client, service, user.id, target, request, deps);
   } catch (err) {
     console.error("ai_understand_unhandled_error", {
       error: err instanceof Error ? err.message : String(err),
     });
-    await client.rpc("mark_ai_assistant_usage_outcome", {
+    await service.rpc("mark_ai_assistant_usage_outcome", {
+      p_actor_id: user.id,
       p_request_id: request.requestId,
       p_outcome: "provider_failed",
       p_provider_calls: 0,
@@ -411,6 +424,7 @@ export async function processUnderstandRequest(
 
 async function handleUnderstand(
   client: SupabaseClient,
+  service: SupabaseClient,
   userId: string,
   target: LoadedTarget,
   request: UnderstandRequest,
@@ -440,7 +454,8 @@ async function handleUnderstand(
     maxOutputTokens: 700,
   });
 
-  await client.rpc("mark_ai_assistant_usage_outcome", {
+  await service.rpc("mark_ai_assistant_usage_outcome", {
+    p_actor_id: userId,
     p_request_id: request.requestId,
     p_outcome: parsed ? "succeeded" : "provider_failed",
     p_provider_calls: 1,

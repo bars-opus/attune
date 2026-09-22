@@ -485,7 +485,18 @@ export async function processAssistRequest(
   // Quota reservation -- MUST happen before the first external provider
   // call (spec §7.3, and this plan's own global constraint). Nothing
   // above this line calls Gemini or Mapbox.
-  const quotaResult = await client.rpc("reserve_ai_assistant_quota", {
+  //
+  // Called via the SERVICE-ROLE client, not the user-scoped `client`:
+  // reserve_ai_assistant_quota and mark_ai_assistant_usage_outcome are no
+  // longer granted to `authenticated` (20260951030000 migration) because
+  // a client that could call them directly could replay a request_id for
+  // unlimited provider calls, or mark its own usage 'cancelled' to evade
+  // the cap. `user.id` is safe to pass as the actor here because it came
+  // from requireUser(req)'s server-side auth.getUser verification, never
+  // from the request body.
+  const service = deps.serviceClient ?? serviceRoleClient();
+  const quotaResult = await service.rpc("reserve_ai_assistant_quota", {
+    p_actor_id: user.id,
     p_request_id: request.requestId,
     p_relationship_id: target.relationshipId,
     p_mode: "assist",
@@ -498,19 +509,23 @@ export async function processAssistRequest(
     return errorResponse(assistantError("RATE_LIMITED", quotaRow.retry_after_seconds ?? null));
   }
   if (quotaRow?.outcome !== "reserved") {
+    // Includes 'already_reserved': a replay of a request_id that already
+    // holds its lease. The ORIGINAL invocation owns that lease; this one
+    // must not call a provider on its behalf.
     return errorResponse(assistantError("INTERNAL_ERROR"));
   }
 
   try {
     if (request.assistKind === "ideas") {
-      return await handleIdeas(client, user.id, target, request, deps);
+      return await handleIdeas(client, service, user.id, target, request, deps);
     }
-    return await handleNearby(client, user.id, target, request, deps);
+    return await handleNearby(client, service, user.id, target, request, deps);
   } catch (err) {
     console.error("ai_assist_unhandled_error", {
       error: err instanceof Error ? err.message : String(err),
     });
-    await client.rpc("mark_ai_assistant_usage_outcome", {
+    await service.rpc("mark_ai_assistant_usage_outcome", {
+      p_actor_id: user.id,
       p_request_id: request.requestId,
       p_outcome: "provider_failed",
       p_provider_calls: 0,
@@ -521,6 +536,7 @@ export async function processAssistRequest(
 
 async function handleIdeas(
   client: SupabaseClient,
+  service: SupabaseClient,
   userId: string,
   target: LoadedTarget,
   request: AssistRequest,
@@ -546,7 +562,8 @@ async function handleIdeas(
     maxOutputTokens: 600,
   });
 
-  await client.rpc("mark_ai_assistant_usage_outcome", {
+  await service.rpc("mark_ai_assistant_usage_outcome", {
+    p_actor_id: userId,
     p_request_id: request.requestId,
     p_outcome: parsed ? "succeeded" : "provider_failed",
     p_provider_calls: 1,
@@ -571,7 +588,6 @@ async function handleIdeas(
   };
 
   const draftId = crypto.randomUUID();
-  const service = deps.serviceClient ?? serviceRoleClient();
   const draftResult = await service.rpc("insert_ai_assist_draft", {
     p_id: draftId,
     p_relationship_id: target.relationshipId,
@@ -596,6 +612,7 @@ async function handleIdeas(
 
 async function handleNearby(
   client: SupabaseClient,
+  service: SupabaseClient,
   userId: string,
   target: LoadedTarget,
   request: AssistRequest,
@@ -624,7 +641,8 @@ async function handleNearby(
   });
 
   if (!parsed) {
-    await client.rpc("mark_ai_assistant_usage_outcome", {
+    await service.rpc("mark_ai_assistant_usage_outcome", {
+      p_actor_id: userId,
       p_request_id: request.requestId,
       p_outcome: "provider_failed",
       p_provider_calls: 1,
@@ -632,7 +650,8 @@ async function handleNearby(
     return errorResponse(assistantError("PROVIDER_UNAVAILABLE"));
   }
   if ((parsed as Record<string, unknown>).unsupported === true) {
-    await client.rpc("mark_ai_assistant_usage_outcome", {
+    await service.rpc("mark_ai_assistant_usage_outcome", {
+      p_actor_id: userId,
       p_request_id: request.requestId,
       p_outcome: "rejected",
       p_provider_calls: 1,
@@ -647,7 +666,8 @@ async function handleNearby(
   // is ever reached below. No free-text category value can pass through.
   const categoryOutput = validateNearbyCategoryOutput(parsed);
   if (!categoryOutput) {
-    await client.rpc("mark_ai_assistant_usage_outcome", {
+    await service.rpc("mark_ai_assistant_usage_outcome", {
+      p_actor_id: userId,
       p_request_id: request.requestId,
       p_outcome: "rejected",
       p_provider_calls: 1,
@@ -664,7 +684,8 @@ async function handleNearby(
   });
 
   if (places === null) {
-    await client.rpc("mark_ai_assistant_usage_outcome", {
+    await service.rpc("mark_ai_assistant_usage_outcome", {
+      p_actor_id: userId,
       p_request_id: request.requestId,
       p_outcome: "provider_failed",
       p_provider_calls: 2,
@@ -672,7 +693,8 @@ async function handleNearby(
     return errorResponse(assistantError("PROVIDER_UNAVAILABLE"));
   }
   if (places.length === 0) {
-    await client.rpc("mark_ai_assistant_usage_outcome", {
+    await service.rpc("mark_ai_assistant_usage_outcome", {
+      p_actor_id: userId,
       p_request_id: request.requestId,
       p_outcome: "succeeded",
       p_provider_calls: 2,
@@ -680,7 +702,8 @@ async function handleNearby(
     return errorResponse(assistantError("NO_RESULTS"));
   }
 
-  await client.rpc("mark_ai_assistant_usage_outcome", {
+  await service.rpc("mark_ai_assistant_usage_outcome", {
+    p_actor_id: userId,
     p_request_id: request.requestId,
     p_outcome: "succeeded",
     p_provider_calls: 2,
@@ -694,7 +717,6 @@ async function handleNearby(
   };
 
   const draftId = crypto.randomUUID();
-  const service = deps.serviceClient ?? serviceRoleClient();
   const draftResult = await service.rpc("insert_ai_assist_draft", {
     p_id: draftId,
     p_relationship_id: target.relationshipId,
