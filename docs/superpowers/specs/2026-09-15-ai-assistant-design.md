@@ -6,6 +6,16 @@ feature flag; production release is blocked on the gates in §14.1
 **Scope:** on-demand, single-turn assistance from a text message in an active
 couple chat
 
+**2026-09-22 amendment:** [AI Sessions](2026-09-22-ai-sessions-design.md)
+defines a separately gated multi-turn exception; its §13 lists the exact
+overrides. Understand's non-sharing/non-persistence boundary is unchanged.
+The [Sessions review](2026-09-22-ai-sessions-review.md) found that the existing
+quota implementation does not satisfy this document's exclusive-lease contract:
+request replay and authenticated outcome mutation must be repaired across modes
+before Sessions merges. These documents are requirements, not proof of deployed
+compliance. A global privacy cover now exists in code; real-device release
+verification is still required. No external gate is marked cleared by this note.
+
 ## 0. Adversarial review findings incorporated here
 
 The pre-review draft was not implementation-ready. These were the material
