@@ -5,8 +5,8 @@
 
 DO $$
 DECLARE
-  v_rel uuid := 'b1000000-0000-0000-0000-000000000008';
-  v_user_a uuid := 'b1000000-0000-0000-0000-00000000007a';
+  v_rel uuid := 'b1000000-0000-0000-0000-000000000009';
+  v_user_a uuid := 'b1000000-0000-0000-0000-00000000009a';
   v_session uuid;
   v_admit record;
   v_row record;
