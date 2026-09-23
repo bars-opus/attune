@@ -16,7 +16,7 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
 import { userScopedClient } from "../_shared/user_scoped_client.ts";
-import { serviceRoleClient } from "../_shared/attune_auth.ts";
+import { claimProviderStart, serviceRoleClient } from "../_shared/attune_auth.ts";
 import {
   loadAiAssistantTarget,
   loadBoundedContext,
@@ -35,6 +35,7 @@ export type AssistantErrorCode =
   | "INVALID_INPUT"
   | "UNSUPPORTED_REQUEST"
   | "RATE_LIMITED"
+  | "REQUEST_IN_PROGRESS"
   | "RESULT_UNAVAILABLE"
   | "PROVIDER_UNAVAILABLE"
   | "INTERNAL_ERROR";
@@ -70,6 +71,7 @@ const HTTP_STATUS: Record<AssistantErrorCode, number> = {
   INVALID_INPUT: 400,
   UNSUPPORTED_REQUEST: 422,
   RATE_LIMITED: 429,
+  REQUEST_IN_PROGRESS: 409,
   RESULT_UNAVAILABLE: 410,
   PROVIDER_UNAVAILABLE: 502,
   INTERNAL_ERROR: 500,
@@ -430,6 +432,17 @@ async function handleUnderstand(
   request: UnderstandRequest,
   deps: UnderstandDeps,
 ): Promise<Response> {
+  // Claim the provider-start marker before the first external call this
+  // request makes (spec §6.2/§8.2.2) -- identical guard to ai-assist's
+  // handleIdeas/handleNearby. `false` means a retry/duplicate of this
+  // exact request_id already claimed it -- refuse to dispatch to Gemini
+  // again rather than risk a second billed provider call for the same
+  // attempt.
+  const canDispatch = await claimProviderStart(service, userId, request.requestId);
+  if (!canDispatch) {
+    return errorResponse(assistantError("REQUEST_IN_PROGRESS"));
+  }
+
   const context = await loadBoundedContext(
     client,
     target,

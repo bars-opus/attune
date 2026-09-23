@@ -12,7 +12,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
-import { jsonResponse, serviceRoleClient } from "../_shared/attune_auth.ts";
+import { claimProviderStart, jsonResponse, serviceRoleClient } from "../_shared/attune_auth.ts";
 import { userScopedClient } from "../_shared/user_scoped_client.ts";
 import {
   loadAiAssistantTarget,
@@ -542,6 +542,16 @@ async function handleIdeas(
   request: AssistRequest,
   deps: AssistDeps,
 ): Promise<Response> {
+  // Claim the provider-start marker before the first external call this
+  // request makes (spec §6.2/§8.2.2). `false` means a retry/duplicate of
+  // this exact request_id already claimed it -- refuse to dispatch to
+  // Gemini again rather than risk a second billed provider call for the
+  // same attempt.
+  const canDispatch = await claimProviderStart(service, userId, request.requestId);
+  if (!canDispatch) {
+    return errorResponse(assistantError("REQUEST_IN_PROGRESS"));
+  }
+
   const context = await loadBoundedContext(client, target, "assist", userId);
   const { system, userTemplate } = await loadPrompts();
   const userPrompt = buildUserPrompt(userTemplate, {
@@ -618,6 +628,15 @@ async function handleNearby(
   request: AssistRequest,
   deps: AssistDeps,
 ): Promise<Response> {
+  // One shared claim covers BOTH of Nearby's provider calls (Gemini then
+  // Mapbox) -- the marker means "a provider call for this request has
+  // started," not "which provider," so it is claimed once here, before
+  // the first of the two calls, and never re-claimed before the second.
+  const canDispatch = await claimProviderStart(service, userId, request.requestId);
+  if (!canDispatch) {
+    return errorResponse(assistantError("REQUEST_IN_PROGRESS"));
+  }
+
   const context = await loadBoundedContext(client, target, "assist", userId);
   const { system, userTemplate } = await loadPrompts();
   const userPrompt = buildUserPrompt(userTemplate, {

@@ -23,6 +23,7 @@ import {
 } from "./index.ts";
 import {
   makeRlsClientForUser,
+  makeServiceRoleClient,
   serviceRoleQuery,
 } from "../_shared/test_support/pg_rls_client.ts";
 
@@ -204,6 +205,101 @@ Deno.test({
 });
 
 // ---------------------------------------------------------------------------
+// Provider-start marker -- identical guard to ai-assist's handleIdeas/
+// handleNearby (see that file's own tests of the same name for the
+// architectural note on why this is proven via call ORDERING rather than
+// a forced `false` return through processUnderstandRequest: once
+// reserve_ai_assistant_quota returns 'reserved', the caller is the sole
+// owner of that request_id, so claimProviderStart returning false is
+// unreachable via this entrypoint for a fresh reservation -- the ordering
+// test below is what actually proves the guard runs before Gemini).
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  name: "handleUnderstand claims the provider-start marker before calling Gemini, not after",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    const client = await makeRlsClientForUser(USER_T7_A);
+    const serviceClient = await makeServiceRoleClient();
+    const requestId = crypto.randomUUID();
+
+    const orderCheckingGemini: UnderstandDeps["callGemini"] = async () => {
+      const rows = await serviceRoleQuery(
+        `SELECT provider_started_at FROM public.ai_assistant_usage WHERE request_id = $1`,
+        [requestId],
+      );
+      assertEquals(rows.length, 1);
+      assertEquals(rows[0].provider_started_at !== null, true);
+      return {
+        status: "ok",
+        possible_readings: [
+          "They may be asking for a small favor on your way home.",
+          "They might be checking whether you have time before you arrive.",
+        ],
+        response_options: ["Sure, I can grab that.", "I might be running late, can it wait?"],
+        confidence: "low",
+      };
+    };
+
+    const response = await processUnderstandRequest(
+      makeReq({ ...validBody(), request_id: requestId }),
+      { client: client as never, user: { id: USER_T7_A } },
+      { callGemini: orderCheckingGemini, serviceClient: serviceClient as never },
+    );
+
+    assertEquals(response.status, 200);
+  },
+});
+
+Deno.test({
+  name: "a request whose provider-start marker is already set is never dispatched to Gemini again",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    const client = await makeRlsClientForUser(USER_T7_A);
+    const serviceClient = await makeServiceRoleClient();
+    const requestId = crypto.randomUUID();
+
+    // Reserve, then claim the marker directly -- standing in for "the
+    // first attempt already dispatched to Gemini, and this is a retry
+    // of the same request_id arriving after a lost HTTP response."
+    await serviceClient.rpc("reserve_ai_assistant_quota", {
+      p_actor_id: USER_T7_A,
+      p_request_id: requestId,
+      p_relationship_id: REL_T7,
+      p_mode: "understand",
+    });
+    const claimed = await serviceClient.rpc("claim_ai_assistant_provider_start", {
+      p_actor_id: USER_T7_A,
+      p_request_id: requestId,
+    });
+    assertEquals(claimed.data?.[0]?.claim_ai_assistant_provider_start ?? claimed.data?.[0], true);
+
+    let geminiCalls = 0;
+    const countingGemini: UnderstandDeps["callGemini"] = () => {
+      geminiCalls++;
+      return Promise.resolve(null);
+    };
+
+    const response = await processUnderstandRequest(
+      makeReq({ ...validBody(), request_id: requestId }),
+      { client: client as never, user: { id: USER_T7_A } },
+      { callGemini: countingGemini, serviceClient: serviceClient as never },
+    );
+
+    // The handler must recognize the marker is already set and refuse
+    // to dispatch, rather than calling Gemini a second time for a
+    // request that may already be in flight or already billed. (This
+    // also happens to be blocked by reserve_ai_assistant_quota's own
+    // already_reserved guard before handleUnderstand is ever reached --
+    // both layers independently agree no second dispatch may occur.)
+    assertEquals(geminiCalls, 0);
+    assertEquals(response.status >= 400, true);
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Cache-Control: no-store on every response.
 // ---------------------------------------------------------------------------
 
@@ -211,12 +307,13 @@ Deno.test({
   name: "every response, success or failure, carries Cache-Control: no-store",
   fn: async () => {
     await resetFixtures();
+    const serviceClient = await makeServiceRoleClient();
     // Failure branch (no consent granted).
     const client = await makeRlsClientForUser(USER_T7_A);
     const failResponse = await processUnderstandRequest(
       makeReq(validBody()),
       { client: client as never, user: { id: USER_T7_A } },
-      { callGemini: neverCalledGemini() },
+      { callGemini: neverCalledGemini(), serviceClient: serviceClient as never },
     );
     assertEquals(failResponse.headers.get("Cache-Control"), "no-store");
 
@@ -234,7 +331,7 @@ Deno.test({
     const okResponse = await processUnderstandRequest(
       makeReq(validBody()),
       { client: client as never, user: { id: USER_T7_A } },
-      { callGemini: fakeGemini },
+      { callGemini: fakeGemini, serviceClient: serviceClient as never },
     );
     assertEquals(okResponse.headers.get("Cache-Control"), "no-store");
   },
@@ -250,6 +347,7 @@ Deno.test({
     await resetFixtures();
     await grantDualConsent();
     const client = await makeRlsClientForUser(USER_T7_A);
+    const serviceClient = await makeServiceRoleClient();
     const fakeGemini: UnderstandDeps["callGemini"] = () => Promise.resolve({
       status: "cannot_help",
       reason: "unsafe_to_infer",
@@ -257,7 +355,7 @@ Deno.test({
     const response = await processUnderstandRequest(
       makeReq(validBody()),
       { client: client as never, user: { id: USER_T7_A } },
-      { callGemini: fakeGemini },
+      { callGemini: fakeGemini, serviceClient: serviceClient as never },
     );
     assertEquals(response.status, 200);
     const body = await response.json();
@@ -282,6 +380,7 @@ Deno.test({
     await resetFixtures();
     await grantDualConsent();
     const client = await makeRlsClientForUser(USER_T7_A);
+    const serviceClient = await makeServiceRoleClient();
     const fakeGemini: UnderstandDeps["callGemini"] = () => Promise.resolve({
       status: "ok",
       possible_readings: [
@@ -300,7 +399,7 @@ Deno.test({
     const response = await processUnderstandRequest(
       makeReq(validBody()),
       { client: client as never, user: { id: USER_T7_A } },
-      { callGemini: fakeGemini },
+      { callGemini: fakeGemini, serviceClient: serviceClient as never },
     );
     assertEquals(response.status, 200);
     const body = await response.json();

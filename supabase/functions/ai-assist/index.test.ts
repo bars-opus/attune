@@ -273,6 +273,7 @@ Deno.test({
     await resetFixtures();
     await grantDualConsent();
     const client = await makeRlsClientForUser(USER_T6_A);
+    const serviceClient = await makeServiceRoleClient();
 
     const fakeGemini: AssistDeps["callGemini"] = () => Promise.resolve({
       category: "bar_or_nightclub", // NOT in the fixed allowlist
@@ -287,7 +288,7 @@ Deno.test({
         requester_location: { latitude: 5.6, longitude: -0.19, accuracy_m: 20 },
       }),
       { client: client as never, user: { id: USER_T6_A } },
-      { callGemini: fakeGemini, searchMapbox: neverCalledMapbox() },
+      { callGemini: fakeGemini, searchMapbox: neverCalledMapbox(), serviceClient: serviceClient as never },
     );
 
     assertEquals(response.status, 422);
@@ -340,6 +341,150 @@ Deno.test({
     // Never a coordinate/distance leak into the response.
     assertEquals("distance" in body.sources[0], false);
     assertEquals("latitude" in body.sources[0], false);
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Provider-start marker -- a retry of an already-claimed request_id must
+// never dispatch to Gemini/Mapbox again.
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  name: "handleIdeas claims the provider-start marker before calling Gemini, not after",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    const client = await makeRlsClientForUser(USER_T6_A);
+    const serviceClient = await makeServiceRoleClient();
+    const requestId = crypto.randomUUID();
+
+    // A fake Gemini that reads the marker's own state at the moment it is
+    // invoked: if handleIdeas claims before dispatching (as required),
+    // provider_started_at must already be non-null by the time this
+    // runs. This proves ORDERING, not just that the guard exists
+    // somewhere -- a guard added after the callGemini call would pass a
+    // "does it ever get called" test but fail this one.
+    const orderCheckingGemini: AssistDeps["callGemini"] = async () => {
+      const rows = await serviceRoleQuery(
+        `SELECT provider_started_at FROM public.ai_assistant_usage WHERE request_id = $1`,
+        [requestId],
+      );
+      assertEquals(rows.length, 1);
+      assertEquals(rows[0].provider_started_at !== null, true);
+      return { reply_text: "ordering check ok", suggested_planning_item: null };
+    };
+
+    const response = await processAssistRequest(
+      makeReq({ ...validIdeasBody(), request_id: requestId }),
+      { client: client as never, user: { id: USER_T6_A } },
+      {
+        callGemini: orderCheckingGemini,
+        searchMapbox: neverCalledMapbox(),
+        serviceClient: serviceClient as never,
+      },
+    );
+
+    assertEquals(response.status, 200);
+  },
+});
+
+Deno.test({
+  name: "handleNearby's Gemini-then-Mapbox pair shares ONE provider-start claim, not two",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    const client = await makeRlsClientForUser(USER_T6_A);
+    const serviceClient = await makeServiceRoleClient();
+    const requestId = crypto.randomUUID();
+
+    const fakeGemini: AssistDeps["callGemini"] = () => Promise.resolve({ category: "cafe" });
+    const fakeMapbox: AssistDeps["searchMapbox"] = () =>
+      Promise.resolve([
+        {
+          provider_id: "mbx.place.1",
+          name: "Third Place Coffee",
+          formatted_address: "12 Liberation Rd",
+          category: "cafe",
+          map_url: "https://www.mapbox.com/search/mbx.place.1",
+        },
+      ]);
+
+    const response = await processAssistRequest(
+      makeReq({
+        request_id: requestId,
+        message_id: MSG_TARGET,
+        assist_kind: "nearby",
+        user_instruction: null,
+        requester_location: { latitude: 5.6, longitude: -0.19, accuracy_m: 20 },
+      }),
+      { client: client as never, user: { id: USER_T6_A } },
+      { callGemini: fakeGemini, searchMapbox: fakeMapbox, serviceClient: serviceClient as never },
+    );
+
+    assertEquals(response.status, 200);
+
+    // handleNearby's own request now sits in a terminal outcome
+    // ('succeeded', written by mark_ai_assistant_usage_outcome after the
+    // Mapbox call). Inspecting provider_started_at directly proves the
+    // marker was set exactly once by the single claim before Gemini --
+    // if handleNearby had claimed a second time before Mapbox, that
+    // second claim would have raised "Cannot claim provider start on a
+    // terminal reservation" and the whole request would have failed
+    // before ever reaching Mapbox/the 200 response asserted above.
+    const rows = await serviceRoleQuery(
+      `SELECT provider_started_at FROM public.ai_assistant_usage WHERE request_id = $1`,
+      [requestId],
+    );
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0].provider_started_at !== null, true);
+  },
+});
+
+Deno.test({
+  name: "a request whose provider-start marker is already set is never dispatched to Gemini again",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    const client = await makeRlsClientForUser(USER_T6_A);
+    const serviceClient = await makeServiceRoleClient();
+    const requestId = crypto.randomUUID();
+
+    // Reserve, then claim the marker directly -- standing in for "the
+    // first attempt already dispatched to Gemini, and this is a retry
+    // of the same request_id arriving after a lost HTTP response."
+    await serviceClient.rpc("reserve_ai_assistant_quota", {
+      p_actor_id: USER_T6_A,
+      p_request_id: requestId,
+      p_relationship_id: REL_T6,
+      p_mode: "assist",
+    });
+    const claimed = await serviceClient.rpc("claim_ai_assistant_provider_start", {
+      p_actor_id: USER_T6_A,
+      p_request_id: requestId,
+    });
+    assertEquals(claimed.data?.[0]?.claim_ai_assistant_provider_start ?? claimed.data?.[0], true);
+
+    let geminiCalls = 0;
+    const countingGemini: AssistDeps["callGemini"] = () => {
+      geminiCalls++;
+      return Promise.resolve(null);
+    };
+
+    const response = await processAssistRequest(
+      makeReq({ ...validIdeasBody(), request_id: requestId }),
+      { client: client as never, user: { id: USER_T6_A } },
+      {
+        callGemini: countingGemini,
+        searchMapbox: neverCalledMapbox(),
+        serviceClient: serviceClient as never,
+      },
+    );
+
+    // The handler must recognize the marker is already set and refuse
+    // to dispatch, rather than calling Gemini a second time for a
+    // request that may already be in flight or already billed.
+    assertEquals(geminiCalls, 0);
+    assertEquals(response.status >= 400, true);
   },
 });
 

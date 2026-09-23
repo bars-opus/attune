@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
 export interface AuthenticatedUser {
   id: string;
@@ -68,4 +68,32 @@ export class HttpError extends Error {
     super(message);
     this.name = "HttpError";
   }
+}
+
+/// Claims this request's provider-start marker via the trusted RPC, and
+/// returns whether THIS call is the one that claimed it. `false` means
+/// the marker was already set (a retry, a duplicate, or a concurrent
+/// call for the same request_id) -- the caller must not dispatch to any
+/// provider in that case. See migration 20260952010000 and spec §6.2/
+/// §8.2.2 for why this check happens once, immediately before the FIRST
+/// external call a request makes, never repeated per-provider within
+/// one request (Nearby's Gemini-then-Mapbox pair shares one claim).
+export async function claimProviderStart(
+  service: SupabaseClient,
+  actorId: string,
+  requestId: string,
+): Promise<boolean> {
+  const result = await service.rpc("claim_ai_assistant_provider_start", {
+    p_actor_id: actorId,
+    p_request_id: requestId,
+  });
+  if (result.error) {
+    throw new Error(`claim_ai_assistant_provider_start failed: ${result.error.message}`);
+  }
+  // RETURNS boolean (not TABLE) -- supabase-js/PostgREST wraps a scalar
+  // RPC return in [{ <function_name>: value }], and this test suite's
+  // pg_rls_client.ts RpcCaller mirrors that exact shape (see its own
+  // doc comment on why RPC results are always an array of rows).
+  const row = result.data?.[0] as Record<string, unknown> | undefined;
+  return row?.claim_ai_assistant_provider_start === true;
 }
