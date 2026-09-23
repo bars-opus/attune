@@ -52,9 +52,14 @@
 -- including the quota reservation -- rolls back. That is the only way
 -- to avoid leaking a reservation for a request that never became an
 -- attempt, given the reservation lives in this same transaction. For
--- 'busy'/'limit_reached' the pre-check is what returns them as normal
--- outcomes in the overwhelmingly common case; the post-lock RAISE is
--- the unreachable-in-practice safety net.
+-- 'busy'/'limit_reached' the pre-check returns them as normal outcomes
+-- in the conforming case, but the post-lock RAISE is reachable: a
+-- writer that takes the session row lock without first taking the
+-- relationship advisory lock -- the non-conforming writer this fence
+-- exists to guard against -- can still land here. Failing with an
+-- exception (and rolling back the reservation) rather than returning a
+-- declared outcome row is the deliberate fail-closed behavior for that
+-- case.
 CREATE OR REPLACE FUNCTION public.admit_ai_session_generation(
   p_actor_id uuid,
   p_request_id uuid,
