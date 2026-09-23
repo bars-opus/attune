@@ -55,5 +55,47 @@ BEGIN
     END IF;
   END;
 
+  -- Contract 5 (fix round 1): a successful claim sets the REAL,
+  -- ledger-level provider-start marker on ai_assistant_usage, not just
+  -- the session-local ai_session_requests.provider_started_at. Uses a
+  -- FRESH relationship + session (rather than v_session, whose only
+  -- request from contract 1 is still 'started' and would make any
+  -- further admission on that session return 'busy' per
+  -- admit_ai_session_generation's single-outstanding-request gate;
+  -- and prepare_ai_session itself refuses a second pending/active
+  -- private session for the same (creator, relationship) pair).
+  DECLARE
+    v_rel2 uuid := 'b1000000-0000-0000-0000-000000000107';
+    v_session3 uuid;
+    v_admit3 record;
+  BEGIN
+    INSERT INTO public.relationships (id, user_a, status) VALUES (v_rel2, v_user_a, 'active') ON CONFLICT DO NOTHING;
+    SELECT session_id INTO v_session3 FROM public.prepare_ai_session(
+      v_user_a, gen_random_uuid(), v_rel2, 'ideas', 'private', NULL, false
+    );
+    PERFORM public.approve_ai_session_context(v_user_a, v_session3, 1, 'd', 'v1');
+    PERFORM public.activate_ai_session(v_user_a, v_session3, 1);
+    SELECT * INTO v_admit3 FROM public.admit_ai_session_generation(v_user_a, gen_random_uuid(), v_session3, 1, 'ideas:fp-3');
+    PERFORM public.claim_ai_session_dispatch(v_admit3.worker_token, v_admit3.request_id);
+
+    IF (SELECT provider_started_at FROM public.ai_assistant_usage WHERE request_id = v_admit3.request_id) IS NULL THEN
+      RAISE EXCEPTION 'EXPLOIT: claim_ai_session_dispatch did not set the ai_assistant_usage provider-start marker';
+    END IF;
+
+    -- Contract 6: with the marker now genuinely set,
+    -- release_ai_assistant_quota_reservation must correctly REFUSE to
+    -- release this reservation (it raises per its own guard), proving
+    -- the quota consumption is now permanent for a 'started' request.
+    BEGIN
+      PERFORM public.release_ai_assistant_quota_reservation(v_user_a, v_admit3.request_id);
+      RAISE EXCEPTION 'EXPLOIT: quota reservation for a STARTED request was released';
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLERRM != 'Cannot release a reservation whose provider call has started' THEN
+          RAISE;
+        END IF;
+    END;
+  END;
+
   RAISE NOTICE 'dispatch claim / reconcile contracts: all held';
 END $$;
