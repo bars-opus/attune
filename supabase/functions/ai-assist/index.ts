@@ -547,6 +547,13 @@ async function handleIdeas(
   // this exact request_id already claimed it -- refuse to dispatch to
   // Gemini again rather than risk a second billed provider call for the
   // same attempt.
+  //
+  // Unreachable via current entrypoints by design: a replayed request_id
+  // is already rejected by reserve_ai_assistant_quota's own
+  // already_reserved check before we ever get here, so `canDispatch` is
+  // always true on this path today. Do not remove as dead code --
+  // required for Plan B's Sessions dispatch, which can reserve once and
+  // dispatch more than once across retries.
   const canDispatch = await claimProviderStart(service, userId, request.requestId);
   if (!canDispatch) {
     return errorResponse(assistantError("REQUEST_IN_PROGRESS"));
@@ -632,6 +639,13 @@ async function handleNearby(
   // Mapbox) -- the marker means "a provider call for this request has
   // started," not "which provider," so it is claimed once here, before
   // the first of the two calls, and never re-claimed before the second.
+  //
+  // Unreachable via current entrypoints by design: a replayed request_id
+  // is already rejected by reserve_ai_assistant_quota's own
+  // already_reserved check before we ever get here, so `canDispatch` is
+  // always true on this path today. Do not remove as dead code --
+  // required for Plan B's Sessions dispatch, which can reserve once and
+  // dispatch more than once across retries.
   const canDispatch = await claimProviderStart(service, userId, request.requestId);
   if (!canDispatch) {
     return errorResponse(assistantError("REQUEST_IN_PROGRESS"));

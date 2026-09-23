@@ -78,6 +78,14 @@ export class HttpError extends Error {
 /// §8.2.2 for why this check happens once, immediately before the FIRST
 /// external call a request makes, never repeated per-provider within
 /// one request (Nearby's Gemini-then-Mapbox pair shares one claim).
+///
+/// Unreachable via current entrypoints by design: on the two shipped
+/// callers (ai-assist, ai-understand), a replayed request_id is already
+/// rejected by reserve_ai_assistant_quota's own already_reserved check
+/// before this function is ever called, so it always returns true today.
+/// Do not remove as dead code -- required for Plan B's Sessions dispatch
+/// RPC, which reserves once and can dispatch to a provider more than
+/// once across retries.
 export async function claimProviderStart(
   service: SupabaseClient,
   actorId: string,

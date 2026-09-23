@@ -2,6 +2,8 @@
 # Proves claim_ai_assistant_provider_start grants exactly one "true"
 # claim under genuine concurrent contention on the same request_id.
 # Spec §11 item 2.
+# Uses fixed UUIDs -- run `bash scripts/local_pg_setup.sh` first for a
+# fresh DB, or a dirty rerun fails loudly on a UUID collision.
 set -euo pipefail
 
 REL="c8000000-0000-0000-0000-000000000003"
