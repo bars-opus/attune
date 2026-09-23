@@ -74,6 +74,13 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- exactly the kind of security bug this replay pattern exists to catch.
 \i supabase/migrations/20260950030000_ai_assistant_table_grants.sql
 
+-- Same replay for the AI Sessions tables: the blanket GRANT above would
+-- otherwise silently hand authenticated direct access to ai_sessions,
+-- ai_session_approvals, and ai_session_sources (which must have NO
+-- authenticated grant at all) -- all access goes through SECURITY DEFINER
+-- RPCs built in later tasks. Task 1's contract test enforces this.
+\i supabase/migrations/20260953010100_ai_sessions_table_grants.sql
+
 -- Deliberately NOT granting EXECUTE on all functions.
 --
 -- Supabase's default is EXECUTE for PUBLIC on new functions, and the
