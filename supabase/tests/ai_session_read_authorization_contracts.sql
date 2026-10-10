@@ -1385,5 +1385,92 @@ BEGIN
       'SUPERSESSION BROKEN FORWARD: reconcile_ai_session_leases no longer calls release_ai_assistant_quota_reservation at all. Fault isolation must SKIP the release for an orphan, never remove it for every row -- dropping it strands the quota reservation of every never-dispatched request, which is review finding F1 (Critical) again.';
   END IF;
 
-  RAISE NOTICE 'migration supersession ordering: 8 superseded definitions all still superseded';
+  -- ---- commit_ai_session_ideas_turn: Task 2 of the merge-blockers
+  -- plan, 20260953170000, WINS over Task 7's 20260953070000 AND over
+  -- Task 1's lock-order fix 20260953120000 -- so, like
+  -- reconcile_ai_session_leases above, there are TWO distinct reverting
+  -- accidents to catch here, not one, and they revert DIFFERENT things.
+  -- Both are asserted separately rather than as one check.
+  --
+  -- Marker A: `session_revision`, the return-shape column
+  -- 20260953170000 adds. NEITHER superseded body contains it; both
+  -- return only (committed, user_ordinal, attune_ordinal).
+  --
+  -- THE GAP THIS GUARDS. admit_ai_session_generation refuses an
+  -- admission unless p_expected_revision equals ai_sessions.revision,
+  -- and this RPC bumps that revision as its last write. Reverting
+  -- either superseded file means NO RPC in the plan discloses the new
+  -- value, and a multi-turn Ideas session becomes unreachable: turn 1
+  -- admits, the commit bumps 1->2, and turn 2 raises CONTEXT_CHANGED
+  -- with no legitimate way for the caller to learn that 2 is the
+  -- answer. public.ai_sessions grants `authenticated` nothing (56
+  -- combinations asserted at 0 leaked above), and a service-role read
+  -- bypasses all four of spec 7.2's gates -- so there is no workaround,
+  -- only a defect. That is the branch's stated purpose failing for its
+  -- only intended consumer, which is why it is asserted structurally
+  -- here as well as behaviourally in
+  -- ai_session_commit_ideas_contracts.sql Contract 5.
+  v_def := pg_temp.strip_sql_comments(pg_get_functiondef(
+    'public.commit_ai_session_ideas_turn(uuid, uuid, text, text, jsonb)'::regprocedure));
+  IF v_def !~ '\msession_revision\M' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live commit_ai_session_ideas_turn does not mention session_revision, so it discloses nothing about the revision it bumps. That is Task 7''s superseded body (20260953070000) or Task 1''s lock-order fix (20260953120000), under either of which a bounded MULTI-TURN Ideas session is unreachable -- admit_ai_session_generation fences on ai_sessions.revision and no RPC returns the new value (final-branch-review N2, Critical); 20260953170000 WINS. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
+  END IF;
+  -- Marker B: Task 1's relationship advisory lock, which 20260953170000
+  -- BUILDS ON and must not have dropped. Re-applying 20260953070000
+  -- last reverts BOTH markers; re-applying 20260953120000 last reverts
+  -- only marker A. Asserting the lock here as well means a Task 2
+  -- migration that had been written against the WRONG (pre-Task-1)
+  -- source body fails loudly on this leg -- which is the specific
+  -- supersession hazard this plan's pre-flight Ruling 1 recorded.
+  IF v_def !~ 'pg_advisory_xact_lock' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live commit_ai_session_ideas_turn takes NO relationship advisory lock, so Task 1''s lock-order fix (20260953120000) is gone -- most likely because a later migration was written against Task 7''s pre-fix body instead of building on Task 1''s. Without it this RPC deadlocked against end_ai_session in 10/10 measured trials. 20260953170000 must contain BOTH the advisory lock AND session_revision; it is not a valid winner with only one.';
+  END IF;
+
+  -- ---- publish_ai_session_nearby_result: Task 2's 20260953170000 WINS
+  -- over Task 8's 20260953080000, Task 11's 20260953110000 AND Task 1's
+  -- 20260953120000 -- FOUR definitions, the most of any function in the
+  -- plan, so THREE distinct reverting accidents each costing a
+  -- different thing. All three markers are asserted separately, because
+  -- any one of them can be lost without the others.
+  v_def := pg_temp.strip_sql_comments(pg_get_functiondef(
+    'public.publish_ai_session_nearby_result(uuid, uuid)'::regprocedure));
+  -- Marker A: Task 2's return-shape disclosure.
+  IF v_def !~ '\msession_revision\M' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live publish_ai_session_nearby_result does not mention session_revision, so it discloses nothing about the revision it bumps and a multi-turn NEARBY session is unreachable -- stage_ai_session_nearby_result cannot supply the value either, since it RETURNS void and bumps nothing (final-branch-review N2, Critical); 20260953170000 WINS over 20260953080000, 20260953110000 and 20260953120000.';
+  END IF;
+  -- Marker B: Task 1's advisory lock.
+  IF v_def !~ 'pg_advisory_xact_lock' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live publish_ai_session_nearby_result takes NO relationship advisory lock, so Task 1''s lock-order fix (20260953120000) is gone -- most likely a later migration written against Task 8''s or Task 11''s pre-fix body rather than building on Task 1''s. Without it, publish deadlocked against end_ai_session in 9/10 trials and against purge_expired_ai_sessions in 10/10.';
+  END IF;
+  -- Marker C: Task 11's consent gate. Already asserted by
+  -- ai_session_purge_contracts.sql Contract 11, and asserted again here
+  -- because the accident this contract models is "one file re-applied
+  -- last", and Task 8's 20260953080000 reverts the gate and the lock
+  -- and the disclosure all at once.
+  IF v_def !~ 'ai_processing_consent_events' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live publish_ai_session_nearby_result never reads ai_processing_consent_events, so Task 11''s membership + consent gate is gone and a staged Nearby result would be committed into the permanent transcript after a partner withdrew AI-processing consent. Every migration after 20260953110000 must preserve that gate; 20260953170000 WINS and does.';
+  END IF;
+  -- Anti-vacuity / broken-forward: the revision disclosure must NOT
+  -- have been bought by moving the idempotent-replay branch below the
+  -- consent gate. Task 11 placed that replay ahead of the gates on
+  -- purpose (verified by Task 10's re-review) so a retry of a publish
+  -- that already happened is not reported as a failure, and Task 2's
+  -- addition to that branch is a READ of the already-locked session
+  -- row -- which needs no gate because it commits nothing and the
+  -- content is already in the transcript. A reordering would satisfy
+  -- all three markers above while changing that behaviour.
+  IF position('IF v_request.state = ''committed'' THEN' in v_def)
+     > position('ai_processing_consent_events' in v_def) THEN
+    RAISE EXCEPTION
+      'SUPERSESSION BROKEN FORWARD: publish_ai_session_nearby_result''s already-committed idempotent-replay branch (at %) now sits AFTER its consent gate (at %). Task 11 placed it BEFORE on purpose: a retry of a publish that already succeeded must return its original answer rather than raise, or a caller that lost its HTTP response is told the publish failed and publishes again. Task 2 reports the current revision from inside that branch for the same reason -- a replay that could not answer would leave such a caller with no fence and no way to obtain one.',
+      position('IF v_request.state = ''committed'' THEN' in v_def),
+      position('ai_processing_consent_events' in v_def);
+  END IF;
+
+  RAISE NOTICE 'migration supersession ordering: 10 superseded definitions all still superseded';
 END $$;

@@ -89,9 +89,22 @@ BEGIN
   DECLARE
     v_admit2 record;
   BEGIN
-    -- Note: expected_revision is 2 here, not 1 -- contract 3's publish
-    -- bumped ai_sessions.revision from 1 to 2.
-    SELECT * INTO v_admit2 FROM public.admit_ai_session_generation(v_user_a, gen_random_uuid(), v_session, 2, 'nearby:fp-2');
+    -- The expected_revision comes from `v_row.session_revision` -- the
+    -- value contract 3's publish just returned -- NOT from a literal.
+    -- It used to be a literal `2`, with a note that contract 3's
+    -- publish "bumped ai_sessions.revision from 1 to 2". Task 2
+    -- (20260953170000) replaced it: a hardcoded fence is a test
+    -- asserting a number it computed by hand, and when a mutant makes
+    -- the revision move unexpectedly such a line dies with a bare
+    -- `CONTEXT_CHANGED` that diagnoses nothing. A returned fence
+    -- asserts the RPC's own answer and fails in the right place. This
+    -- is a test-only change -- no assertion here is altered, and the
+    -- value is the same 2 on correct code.
+    IF v_row.session_revision IS NULL THEN
+      RAISE EXCEPTION
+        'SETUP FAILED: contract 3''s publish reported a NULL session_revision, so contract 4 has no fence to admit on. publish_ai_session_nearby_result must disclose the revision it bumped (20260953170000).';
+    END IF;
+    SELECT * INTO v_admit2 FROM public.admit_ai_session_generation(v_user_a, gen_random_uuid(), v_session, v_row.session_revision, 'nearby:fp-2');
     PERFORM public.claim_ai_session_dispatch(v_admit2.worker_token, v_admit2.request_id);
     PERFORM public.stage_ai_session_nearby_result(v_admit2.worker_token, v_admit2.request_id, 'more places', '[]'::jsonb);
     PERFORM public.discard_ai_session_nearby_staging(v_user_a, v_admit2.request_id);
@@ -669,3 +682,386 @@ BEGIN
 
   RAISE NOTICE 'nearby contract 7 (ruling 8): ai_session_requests.session_id is immutable -- 0 non-internal triggers, 0 function writers -- so the completion RPCs'' pre-read lock key and locked write target cannot diverge';
 END $$;
+
+
+-- =====================================================================
+-- Contract 8 (Task 2, merge-blocker fix 20260953170000): A GENUINE
+-- MULTI-TURN NEARBY SESSION DRIVEN ENTIRELY BY RPC RETURN VALUES, WITH
+-- NO READ OF public.ai_sessions ANYWHERE.
+--
+-- The Nearby twin of ai_session_commit_ideas_contracts.sql's Contract
+-- 5, and it is NOT redundant with it: the Nearby path has FOUR hops
+-- rather than three (admit -> claim -> stage -> publish), the revision
+-- bump happens in PUBLISH rather than in the function that first wrote
+-- content, and stage_ai_session_nearby_result RETURNS void and bumps
+-- nothing. So the disclosure point for this path is publish, and that
+-- had to be verified on the real sequence rather than inferred from the
+-- Ideas one.
+--
+-- THE DEFECT. admit_ai_session_generation refuses an admission unless
+-- p_expected_revision equals ai_sessions.revision.
+-- publish_ai_session_nearby_result bumps that revision as its last
+-- write and, until 20260953170000, returned only
+-- (committed, user_ordinal, attune_ordinal). So turn 2 of a Nearby
+-- session had no legitimate way to learn its fence.
+--
+-- WHY CONTRACT 4 ABOVE DID NOT CATCH IT. Contract 4 does perform a
+-- second admission -- with a hardcoded literal `2` and a comment
+-- saying "contract 3's publish bumped ai_sessions.revision from 1 to
+-- 2". That is knowledge a test has statically and a real caller does
+-- not. Plan C's edge function handles a turn on a session it did not
+-- create, cannot know its turn count, and forbids itself raw table
+-- reads -- and public.ai_sessions grants `authenticated` nothing (56
+-- combinations asserted at 0 leaked), so a direct read is not merely
+-- discouraged, it is denied; doing it with the service role instead
+-- would bypass all four of spec 7.2's authorization gates.
+--
+-- THE SHAPE OF THE PROOF. Every revision fed to admit comes from a
+-- value an RPC RETURNED:
+--
+--   prepare_ai_session -> .revision             (turn 1's fence)
+--   admit -> claim -> stage -> publish
+--                      -> .session_revision     (turn 2's fence)
+--   admit -> claim -> stage -> publish
+--                      -> .session_revision     (turn 3's fence)
+--
+-- Three hops, not two, so a session_revision that happened to be a
+-- constant, the ordinal, or the attempt number cannot pass.
+--
+-- IT ALSO PROVES stage DISCLOSES NOTHING AND NEEDS NOT TO. stage is
+-- called on every turn below and its return value is never used for a
+-- fence, because it has none -- it RETURNS void. If a future change
+-- moved the revision bump into stage, this contract's publish-side
+-- assertions would fail (publish would report an unadvanced revision),
+-- which is the correct outcome: the disclosure must live with the bump.
+--
+-- A SHARED SESSION IS USED, not a private one, because Nearby's own
+-- fixture above uses 'shared' and both partners must approve the
+-- context. prepare_ai_session forbids two concurrent SHARED sessions
+-- per relationship, so this contract uses its OWN relationship rather
+-- than reusing the one above -- otherwise the two shared sessions would
+-- collide and this contract would fail on preparation rather than on
+-- anything it means to test.
+-- =====================================================================
+DO $$
+DECLARE
+  v_rel uuid := 'b1000000-0000-0000-0000-000000000153';
+  v_user_a uuid := 'b1000000-0000-0000-0000-000000000154';
+  v_user_b uuid := 'b1000000-0000-0000-0000-000000000155';
+  v_session uuid;
+  v_prepare record;
+  v_admit record;
+  v_pub record;
+  -- The ONLY revision state this block keeps: seeded from
+  -- prepare_ai_session's returned value, thereafter advanced ONLY by
+  -- assigning a value publish returned. Never read from a table.
+  v_fence int;
+  v_turn int;
+  v_expect_user int;
+  v_expect_attune int;
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES
+    (v_user_a, 'nearbyturn_a@t.test'), (v_user_b, 'nearbyturn_b@t.test')
+  ON CONFLICT DO NOTHING;
+  -- users.phone is UNIQUE and a silently-colliding ON CONFLICT DO
+  -- NOTHING insert is how several fixture bugs in this plan's history
+  -- produced false passes. +1555002200x was swept against the whole of
+  -- supabase/ and scripts/ before being chosen, and the fixture
+  -- assertion below fails loudly if either row was in fact dropped.
+  INSERT INTO public.users (id, phone, display_name) VALUES
+    (v_user_a, '+15550022003', 'A'), (v_user_b, '+15550022004', 'B')
+  ON CONFLICT DO NOTHING;
+  INSERT INTO public.relationships (id, user_a, user_b, status)
+  VALUES (v_rel, v_user_a, v_user_b, 'active')
+  ON CONFLICT DO NOTHING;
+  -- BOTH partners must hold a current grant: admit enforces the
+  -- membership + two-party consent gate (20260953140000) and publish
+  -- enforces it again (20260953110000), so without both grants every
+  -- turn below fails before it reaches the revision fence -- and this
+  -- contract would fail for the wrong reason.
+  --
+  -- clock_timestamp(), never now(): now() is frozen per transaction, so
+  -- events written in one DO block would share an identical created_at
+  -- and the consent lookup's tiebreak would fall to `id DESC` on a
+  -- random uuid. idempotency_key is NOT NULL.
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES
+    (v_rel, v_user_a, 'v1', 'granted', gen_random_uuid(), clock_timestamp()),
+    (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
+
+  IF NOT EXISTS (SELECT 1 FROM public.relationships r
+                 WHERE r.id = v_rel AND r.user_a = v_user_a AND r.user_b = v_user_b
+                   AND r.status = 'active' AND r.chat_archived_at IS NULL) THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: contract 8''s relationship fixture is not the two active members this contract needs -- most likely a uuid collision with another test file. Every admit and publish below would deny on the membership gate and this contract would report a revision problem it never tested.';
+  END IF;
+
+  -- ---- TURN 1's FENCE from prepare_ai_session, the one RPC that has
+  -- always disclosed a revision. The ONLY seed; everything after it must
+  -- come from publish.
+  SELECT * INTO v_prepare FROM public.prepare_ai_session(
+    v_user_a, gen_random_uuid(), v_rel, 'nearby', 'shared', NULL, false
+  );
+  v_session := v_prepare.session_id;
+  v_fence := v_prepare.revision;
+  IF v_fence IS NULL THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: prepare_ai_session returned a NULL revision, so this contract has no legitimate starting fence.';
+  END IF;
+
+  PERFORM public.approve_ai_session_context(v_user_a, v_session, v_fence, 'd', 'v1');
+  PERFORM public.approve_ai_session_context(v_user_b, v_session, v_fence, 'd', 'v1');
+  PERFORM public.activate_ai_session(v_user_a, v_session, v_fence);
+
+  FOR v_turn IN 1..3 LOOP
+    v_expect_user := (v_turn * 2) - 1;
+    v_expect_attune := v_turn * 2;
+
+    BEGIN
+      SELECT * INTO v_admit FROM public.admit_ai_session_generation(
+        v_user_a, gen_random_uuid(), v_session, v_fence, 'nearby:multiturn-' || v_turn
+      );
+    EXCEPTION WHEN OTHERS THEN
+      IF SQLERRM = 'CONTEXT_CHANGED' THEN
+        RAISE EXCEPTION
+          'EXPLOIT: NEARBY TURN % IS UNREACHABLE. admit_ai_session_generation raised CONTEXT_CHANGED on expected_revision=%, and % is the most recent revision any RPC in this plan DISCLOSED. publish_ai_session_nearby_result bumps ai_sessions.revision and must RETURN it (migration 20260953170000); stage_ai_session_nearby_result cannot supply it -- it RETURNS void and bumps nothing. Without the disclosure the only route to the next fence is a raw public.ai_sessions read, which Plan C''s edge function forbids itself, which the table''s grants deny to `authenticated`, and which bypasses all four of spec 7.2''s authorization gates.',
+          v_turn, v_fence, v_fence;
+      END IF;
+      RAISE;
+    END;
+    IF v_admit.outcome IS DISTINCT FROM 'admitted' THEN
+      RAISE EXCEPTION 'EXPLOIT: Nearby turn % was not admitted (outcome=%) even with a fence obtained from an RPC return value',
+        v_turn, v_admit.outcome;
+    END IF;
+
+    IF NOT public.claim_ai_session_dispatch(v_admit.worker_token, v_admit.request_id) THEN
+      RAISE EXCEPTION 'SETUP FAILED: Nearby turn % could not be claimed', v_turn;
+    END IF;
+
+    -- stage. Returns void -- there is no fence to take from here, which
+    -- is the point: the Nearby path's disclosure point is publish,
+    -- because publish is what bumps.
+    PERFORM public.stage_ai_session_nearby_result(
+      v_admit.worker_token, v_admit.request_id, 'places for turn ' || v_turn, '[]'::jsonb
+    );
+    IF (SELECT state FROM public.ai_session_requests WHERE id = v_admit.request_id) != 'staged' THEN
+      RAISE EXCEPTION 'SETUP FAILED: Nearby turn % did not reach state=staged, so the publish below tests nothing', v_turn;
+    END IF;
+
+    SELECT * INTO v_pub FROM public.publish_ai_session_nearby_result(v_user_a, v_admit.request_id);
+
+    IF v_pub.committed IS DISTINCT FROM true THEN
+      RAISE EXCEPTION 'EXPLOIT: Nearby turn %''s publish did not report committed=true', v_turn;
+    END IF;
+    IF v_pub.user_ordinal != v_expect_user OR v_pub.attune_ordinal != v_expect_attune THEN
+      RAISE EXCEPTION 'EXPLOIT: Nearby turn % produced ordinals (%,%), expected (%,%)',
+        v_turn, v_pub.user_ordinal, v_pub.attune_ordinal, v_expect_user, v_expect_attune;
+    END IF;
+
+    -- ---- THE DISCLOSURE ITSELF.
+    IF v_pub.session_revision IS NULL THEN
+      RAISE EXCEPTION
+        'EXPLOIT: publish_ai_session_nearby_result returned a NULL session_revision on Nearby turn %. The field exists but carries nothing, so the next admit has no fence and the Nearby session is single-turn in practice. 20260953170000 takes the value from the revision bump''s own RETURNING clause, which cannot be NULL for a row that was just updated.',
+        v_turn;
+    END IF;
+    IF v_pub.session_revision <= v_fence THEN
+      RAISE EXCEPTION
+        'EXPLOIT: publish_ai_session_nearby_result returned session_revision=% on Nearby turn %, which does not advance past the fence % this turn was admitted on. publish bumps ai_sessions.revision, so the value it discloses must be the POST-bump revision -- a pre-bump read sends the caller back with the stale fence it already had.',
+        v_pub.session_revision, v_turn, v_fence;
+    END IF;
+
+    -- ADVANCE USING ONLY THE RETURNED VALUE. No table read here; the
+    -- next iteration's admit accepts this value or fails.
+    v_fence := v_pub.session_revision;
+  END LOOP;
+
+  IF (SELECT count(*) FROM public.ai_session_turns WHERE session_id = v_session) != 6 THEN
+    RAISE EXCEPTION 'EXPLOIT: three published Nearby turns did not produce exactly 6 turn rows (got %)',
+      (SELECT count(*) FROM public.ai_session_turns WHERE session_id = v_session);
+  END IF;
+  IF (SELECT count(DISTINCT ordinal) FROM public.ai_session_turns WHERE session_id = v_session) != 6
+     OR (SELECT min(ordinal) FROM public.ai_session_turns WHERE session_id = v_session) != 1
+     OR (SELECT max(ordinal) FROM public.ai_session_turns WHERE session_id = v_session) != 6 THEN
+    RAISE EXCEPTION 'EXPLOIT: the three Nearby turns did not produce ordinals 1..6 contiguously';
+  END IF;
+
+  -- ANTI-VACUITY: the fence must have actually moved, or every admit
+  -- above accepted the same value and this contract proved nothing.
+  IF v_fence <= v_prepare.revision THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: after three publishes the disclosed revision (%) has not advanced past prepare_ai_session''s initial value (%). Either publish stopped bumping ai_sessions.revision -- in which case admit''s optimistic fence guards nothing -- or every admit accepted an unchanging value and this contract proved nothing.',
+      v_fence, v_prepare.revision;
+  END IF;
+
+  -- ---- THE IDEMPOTENT REPLAY MUST REPORT THE CURRENT REVISION WITHOUT
+  -- RE-BUMPING, AND MUST STILL BE ANSWERED BEFORE THE CONSENT GATE.
+  -- publish's replay branch sits ahead of the membership and consent
+  -- gates on purpose (Task 11's design, verified by Task 10's
+  -- re-review), so Task 2's addition to that branch must be a READ of
+  -- the already-locked session row -- never a write, and never a bump.
+  -- A replay that re-bumped would invalidate the fence the caller holds
+  -- and guarantee CONTEXT_CHANGED on its next admit, a different number
+  -- of times depending on how often it retried.
+  DECLARE
+    v_replay record;
+  BEGIN
+    SELECT * INTO v_replay FROM public.publish_ai_session_nearby_result(v_user_a, v_admit.request_id);
+    IF v_replay.committed IS DISTINCT FROM true THEN
+      RAISE EXCEPTION 'EXPLOIT: replaying a committed publish did not report committed=true';
+    END IF;
+    IF v_replay.user_ordinal != v_pub.user_ordinal
+       OR v_replay.attune_ordinal != v_pub.attune_ordinal THEN
+      RAISE EXCEPTION 'EXPLOIT: replaying a committed publish produced different ordinals';
+    END IF;
+    IF v_replay.session_revision IS DISTINCT FROM v_fence THEN
+      RAISE EXCEPTION
+        'EXPLOIT: the idempotent replay of publish_ai_session_nearby_result reported session_revision=% but the current revision is % -- the replay path RE-BUMPED the revision (or read a stale one). A replay inserts nothing and must bump nothing: it already answered committed=true with the original ordinals, and moving the revision under a caller holding % as its fence guarantees CONTEXT_CHANGED on its next admit. That breaks the exact multi-turn reachability 20260953170000 exists to enable, non-deterministically.',
+        v_replay.session_revision, v_fence, v_fence;
+    END IF;
+    IF (SELECT count(*) FROM public.ai_session_turns WHERE session_id = v_session) != 6 THEN
+      RAISE EXCEPTION 'EXPLOIT: the publish replay inserted turn rows';
+    END IF;
+  END;
+
+  -- ---- THE REPLAY IS STILL ANSWERED BEFORE THE CONSENT GATE, with the
+  -- revision disclosure in place. Withdraw a partner's consent, replay,
+  -- and require the SAME answer including the SAME unchanged revision.
+  -- This is Task 11's design restated as a Task 2 assertion: if the
+  -- revision read had been placed after the gates, this replay would
+  -- raise instead -- and a caller retrying a lost response would be
+  -- told its successful publish had failed.
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES (v_rel, v_user_b, 'v1', 'withdrawn', gen_random_uuid(), clock_timestamp());
+  DECLARE
+    v_replay2 record;
+  BEGIN
+    SELECT * INTO v_replay2 FROM public.publish_ai_session_nearby_result(v_user_a, v_admit.request_id);
+    IF v_replay2.committed IS DISTINCT FROM true
+       OR v_replay2.user_ordinal != v_pub.user_ordinal
+       OR v_replay2.attune_ordinal != v_pub.attune_ordinal THEN
+      RAISE EXCEPTION
+        'EXPLOIT: after a consent withdrawal, the replay of an ALREADY-COMMITTED publish no longer returns its original answer. Task 11 placed that replay branch BEFORE the consent gate precisely so a retry of a publish that already happened does not look like a failure and drive the caller to publish again. Task 2''s revision read must sit INSIDE that branch, not after the gates.';
+    END IF;
+    IF v_replay2.session_revision IS DISTINCT FROM v_fence THEN
+      RAISE EXCEPTION
+        'EXPLOIT: the post-withdrawal replay reported session_revision=% instead of the unchanged %. The replay path must report the CURRENT revision and bump nothing, whatever the consent state.',
+        v_replay2.session_revision, v_fence;
+    END IF;
+  END;
+  -- A FRESH publish must still be refused by the gate -- otherwise the
+  -- assertion above would be proving that the gate is gone rather than
+  -- that the replay precedes it.
+  DECLARE
+    v_admit3 record;
+  BEGIN
+    BEGIN
+      SELECT * INTO v_admit3 FROM public.admit_ai_session_generation(
+        v_user_a, gen_random_uuid(), v_session, v_fence, 'nearby:after-withdrawal'
+      );
+      RAISE EXCEPTION 'EXPLOIT: a NEW admission succeeded after a partner withdrew AI-processing consent -- the gate the replay assertion above relies on is not there, so that assertion proved nothing.';
+    EXCEPTION WHEN OTHERS THEN
+      IF SQLERRM LIKE 'EXPLOIT:%' THEN RAISE; END IF;
+      IF SQLERRM != 'AI processing consent is not current for this relationship' THEN
+        RAISE EXCEPTION
+          'EXPLOIT: a new admission after a consent withdrawal failed with "%" instead of the expected "AI processing consent is not current for this relationship". The replay-precedes-the-gate assertion above needs the gate to be the thing that refuses a FRESH request; a different error means something else refused it and the asymmetry is unproven.',
+          SQLERRM;
+      END IF;
+    END;
+  END;
+
+  -- Restore consent so this fixture leaves the relationship in the
+  -- state it found it, for any later contract in this file.
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
+
+  RAISE NOTICE 'nearby contract 8: a three-turn Nearby session is reachable using ONLY RPC return values (fences %, ..., % from publish''s session_revision); the idempotent replay reports the current revision without re-bumping and is still answered ahead of the consent gate, while a fresh admission is refused',
+    v_prepare.revision, v_fence;
+END $$;
+
+
+-- =====================================================================
+-- Contract 9 (Task 2): CONTRACT 8 MUST NOT READ public.ai_sessions.
+--
+-- The Nearby twin of ai_session_commit_ideas_contracts.sql's Contract
+-- 6, and necessary for the same reason: Contract 8's whole value is
+-- that it drives a multi-turn Nearby session through the RPC SURFACE
+-- ALONE, and the single easiest way to "fix" a failing Contract 8 is to
+-- add `SELECT revision FROM public.ai_sessions` -- the shortcut every
+-- pre-existing test in this suite took, and how the defect stayed
+-- hidden for twelve task reviews. A property of the test TEXT is
+-- asserted against the test text, not promised in a comment.
+--
+-- pg_read_file() resolves a relative path against the server's DATA
+-- DIRECTORY, not the client's cwd, so a relative path would always fail
+-- and this leg would always skip while looking like it passed. The
+-- absolute path is interpolated by psql from `pwd`, and handed to the
+-- block through a session GUC because psql does NOT interpolate :'var'
+-- inside a dollar-quoted body.
+-- =====================================================================
+\set c9_path `pwd`/supabase/tests/ai_session_nearby_staging_contracts.sql
+\o /dev/null
+SELECT set_config('attune_test.c9_path', :'c9_path', false);
+\o
+
+DO $c9$
+DECLARE
+  v_path text := current_setting('attune_test.c9_path');
+  v_text text;
+  v_c8 text;
+  v_hits text;
+BEGIN
+  BEGIN
+    v_text := pg_read_file(v_path);
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'nearby contract 9: SKIPPED -- reading % needs superuser or pg_read_server_files, which this role lacks. Local-runner guard only; contract 8 itself ran above.', v_path;
+    RETURN;
+  END;
+  IF v_text IS NULL OR length(v_text) < 10000 THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: contract 9 read % but got % characters, which is not this file, so its no-raw-read assertion covers the wrong text.',
+      v_path, coalesce(length(v_text), 0);
+  END IF;
+
+  v_c8 := substring(v_text from position('Contract 8 (Task 2' in v_text));
+  v_c8 := substring(v_c8 for position('Contract 9 (Task 2' in v_c8) - 1);
+  IF v_c8 IS NULL OR length(v_c8) < 2000 THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: contract 9 could not isolate contract 8''s text (got % chars); its assertion covers the wrong region and must be re-derived.',
+      coalesce(length(v_c8), 0);
+  END IF;
+
+  -- Strip comments FIRST: contract 8's own commentary discusses
+  -- `SELECT revision FROM public.ai_sessions` while explaining why it
+  -- must not do that, so an unstripped match would fail on correct code.
+  v_c8 := pg_temp.strip_sql_comments(v_c8);
+
+  SELECT string_agg(btrim(m[1]), ' | ') INTO v_hits
+  FROM regexp_matches(v_c8,
+         '((?:from|join|into|update)[ \t]+(?:public\.)?ai_sessions\M[^\n]*)',
+         'gi') AS m;
+  IF v_hits IS NOT NULL THEN
+    RAISE EXCEPTION
+      'EXPLOIT: contract 8 now reads or writes public.ai_sessions directly: %. It exists to prove a multi-turn Nearby session is reachable through the RPC SURFACE ALONE -- the one thing Plan C''s edge function can do, since it forbids itself raw table reads, public.ai_sessions grants `authenticated` nothing, and a service-role read bypasses all four of spec 7.2''s gates. A direct read makes the contract pass while the defect is fully present. If the revision cannot be had from a return value, that is the defect reasserting itself -- fix the RPC, not the test.',
+      v_hits;
+  END IF;
+
+  IF NOT ('  SELECT revision INTO v FROM public.ai_sessions WHERE id = v_session;'
+          ~* '(?:from|join|into|update)[ \t]+(?:public\.)?ai_sessions\M') THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: contract 9''s pattern does not match a known-positive raw read, so it asserts NOTHING. Re-derive it.';
+  END IF;
+  IF ('  SELECT * INTO v_admit FROM public.admit_ai_session_generation(a, b, c, d, e);'
+      ~* '(?:from|join|into|update)[ \t]+(?:public\.)?ai_sessions\M') THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: contract 9''s pattern matches an ordinary RPC call, so it is unsatisfiable.';
+  END IF;
+  IF v_c8 !~ 'v_fence := v_pub\.session_revision' THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: the isolated region does not contain contract 8''s fence advance (`v_fence := v_pub.session_revision`), so contract 9 scanned the wrong text and its silence means nothing.';
+  END IF;
+
+  RAISE NOTICE 'nearby contract 9: contract 8 touches public.ai_sessions nowhere -- its three-turn Nearby sequence is driven by RPC return values alone';
+END $c9$;
