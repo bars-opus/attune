@@ -86,6 +86,46 @@ be confirmed fixed before this plan's Task 4 (which calls
     §6.1, or a follow-up plan does, or the spec is amended to make
     polling the sanctioned mechanism. Any of the three is fine; silence
     is not.
+  - **DECIDED 2026-10-10 (user delegated the call): amend the spec —
+    polling `session_revision` is the sanctioned mechanism.** Plan C does
+    NOT build §6.1, and no follow-up plan is required. Rationale, with
+    the measurements behind it:
+    - An AI session is a foreground, user-initiated flow: the client has
+      just issued a command and knows it is waiting. Polling one integer
+      on a session the user is actively watching is cheap, and the
+      latency a push would save is latency the user is already
+      anticipating. That is the opposite of a background feed, where
+      push earns its complexity.
+    - §6.1 would be this repo's **first** `realtime.messages` policy —
+      verified by catalog query: ZERO policies on `realtime.messages`
+      and zero across the whole `realtime` schema, and no migration
+      anywhere references either. The codebase overwhelmingly uses
+      Postgres Changes (14 `.onPostgresChanges` call sites vs 2
+      `onBroadcast`), so there is no in-repo pattern to follow for
+      authorizing a private channel.
+    - A policy gating a private channel carrying session-scoped hints is
+      security-sensitive surface that would need its own adversarial
+      review — the kind this plan's history shows takes a full
+      review-and-fix cycle to get right — for a latency improvement in
+      a flow that is already synchronous from the user's point of view.
+    - Task 2 of the merge-blocker plan already made this cheap and
+      correct: `commit_ai_session_ideas_turn` and
+      `publish_ai_session_nearby_result` now return `session_revision`,
+      and `read_ai_session_turns` is gated and author-checked. A client
+      polls the revision it was handed and re-reads only when it moves.
+    - **Not foreclosed.** If Plan D's real UI shows the poll interval
+      actually hurts, §6.1 remains available as its own plan, and
+      nothing in Plan C's design prevents adding it later — a push would
+      simply invalidate the same revision clients already poll.
+    - **Spec amendment required (fold into Ruling 26's amendment):**
+      §6.1 should state that content-free invalidation is delivered by
+      the client polling `session_revision` from the completion RPCs'
+      return values, that direct Postgres Changes publication of
+      transcript/staging/source tables remains forbidden, and that
+      private-channel Broadcast authorization is explicitly out of scope
+      unless a later plan claims it. **Plan D must implement the poll**
+      and should treat a `session_revision` it did not cause as the
+      signal to re-read.
 
 - **Every RPC call in this function passes `p_actor_id` from
   `requireUser(req)`'s verified `user.id` — never from the request
