@@ -7,8 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/settings/data/streak_replay_preference.dart';
 import 'package:attune/features/location/presentation/providers/presence_providers.dart';
 
-/// The three CardInkWell sections of ChatSettingsScreen below the
-/// avatar/name identity card — Shared location/End relationship, Search/
+/// The three CardInkWell sections that used to sit in the (now deleted)
+/// ChatSettingsScreen below its avatar/name identity card, and that now
+/// render inside Pulse — Shared location/End relationship, Search/
 /// Media/Starred, and Export/Import/Previous relationships. None of this
 /// content depends on Conversation having resolved: every icon, title, and
 /// subtitle is static, only each row's onTap closure needs the real

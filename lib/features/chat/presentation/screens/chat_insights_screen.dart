@@ -48,7 +48,7 @@ class _ChatInsightsScreenState extends ConsumerState<ChatInsightsScreen> {
     );
   }
 
-  @override
+@override
   void dispose() {
     _subscription?.close();
     super.dispose();

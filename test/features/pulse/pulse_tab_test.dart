@@ -30,12 +30,12 @@ void main() {
   const relId = 'rel-1';
 
   // Full end-to-end exercise of the REAL PulseTab widget — every provider
-  // PulseScreen/TimelineScreen/ChatIdentityCard touch during build is
+  // PulseScreen/TimelineScreen/PulseIdentityRow touch during build is
   // overridden to a harmless value so this reaches actual layout without a
   // live Supabase client, while still using PulseTab's real
   // NestedScrollView + SliverOverlapAbsorber/Injector wiring end to end.
   // Uses a REAL (non-null) conversation via FakeChatRepository — chat's own
-  // test harness — so ChatIdentityCard and ChatSettingsStaticRows both
+  // test harness — so PulseIdentityRow and ChatSettingsStaticRows both
   // render their actual content rather than PulseTab's "unavailable"
   // fallback, which is what a null conversation would hit instead.
   Widget buildHarness() {
@@ -74,9 +74,9 @@ void main() {
       find.descendant(of: find.byType(TabBar), matching: find.text(label));
 
   // flutter_test's default surface is 800x600 — shorter than any real
-  // phone, and too short for the identity card header plus the tab bar to
-  // both fit, which pushes the tab bar out of hit-testable range. Use a
-  // realistic tall portrait surface so taps on the tab bar land.
+  // phone, and too short for the tab bar's content to lay out with room
+  // to hit-test it. Use a realistic tall portrait surface so taps on the
+  // tab bar land.
   void useTallPhoneSurface(WidgetTester tester) {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3.0;
@@ -86,9 +86,10 @@ void main() {
     });
   }
 
-  testWidgets('builds all three tabs with no layout exceptions '
+  testWidgets('builds both tabs with no layout exceptions '
       '(guards the NestedScrollView/SliverOverlapAbsorber wiring compiling '
-      'and laying out correctly end to end)', (tester) async {
+      'and laying out correctly end to end) — Timeline is commented out, '
+      'not a third tab', (tester) async {
     useTallPhoneSurface(tester);
     await tester.pumpWidget(buildHarness());
     await tester.pumpAndSettle();
@@ -96,11 +97,57 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(tabLabel('Settings'), findsOneWidget);
     expect(tabLabel('Pulse'), findsOneWidget);
-    expect(tabLabel('Timeline'), findsOneWidget);
-    // The identity card is real content now (non-null conversation) —
-    // confirms the header itself rendered, not just the tab bar below it.
-    expect(find.text('Partner'), findsOneWidget); // activeConversation's name
+    expect(tabLabel('Timeline'), findsNothing);
+    // The identity row now lives inside the Settings tab (not a shared
+    // header above both tabs) — confirms the default (Pulse) tab renders
+    // its own real content, not the identity row.
+    expect(find.text('Partner'), findsNothing); // activeConversation's name
   });
+
+  testWidgets(
+    'the two tabs are centered and split the bar evenly, matching '
+    'ReflectionJournalScreen\'s own TabsWithContent(scrollable: false) '
+    'look — not left-aligned, content-sized tabs',
+    (tester) async {
+      useTallPhoneSurface(tester);
+      await tester.pumpWidget(buildHarness());
+      await tester.pumpAndSettle();
+
+      final tabBar = tester.widget<TabBar>(find.byType(TabBar));
+      expect(
+        tabBar.isScrollable,
+        isFalse,
+        reason: 'scrollable tabs are left-aligned and content-sized, not '
+            'centered and evenly split',
+      );
+
+      // Each tab's own rect should be exactly half the TabBar's width and
+      // start where the other one ends — the concrete shape
+      // "half of each screen like Expanded" describes. Compares the tabs'
+      // own containing Tab widgets, not just their text labels (a short
+      // label sits centered within a much wider tab), so this reads the
+      // actual half-and-half split rather than incidental text position.
+      final barRect = tester.getRect(find.byType(TabBar));
+      final pulseTabRect = tester.getRect(
+        find.ancestor(of: tabLabel('Pulse'), matching: find.byType(Tab)).first,
+      );
+      final settingsTabRect = tester.getRect(
+        find.ancestor(
+          of: tabLabel('Settings'),
+          matching: find.byType(Tab),
+        ).first,
+      );
+
+      expect(pulseTabRect.left, closeTo(barRect.left, 1));
+      expect(settingsTabRect.right, closeTo(barRect.right, 1));
+      expect(pulseTabRect.right, closeTo(settingsTabRect.left, 1));
+      expect(
+        pulseTabRect.width,
+        closeTo(settingsTabRect.width, 1),
+        reason: 'each tab should take an equal half of the bar',
+      );
+    },
+  );
 
   testWidgets(
     'scrolling the Pulse tab (which owns its own CustomScrollView) moves '
@@ -120,7 +167,12 @@ void main() {
       // fills it) rather than a specific text label — a label positioned
       // below the small test viewport can't be hit-tested at all, where the
       // TabBarView's own body is always large and on-screen.
-      await tester.drag(find.byType(TabBarView), const Offset(0, -300));
+      //
+      // A small offset, not -300: the header above the tab bar shrank once
+      // the identity card moved out of it, so a large drag now scrolls the
+      // tab bar fully off-screen (0 widgets found) instead of just moving
+      // it — this only needs to prove movement, not scroll it away.
+      await tester.drag(find.byType(TabBarView), const Offset(0, -40));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
 
@@ -140,10 +192,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // Settings is no longer the initial tab: 31b97499 reordered them to
-    // Pulse / Timeline / Settings. Navigate to it by LABEL rather than
-    // index, so a future reorder moves this test with it instead of
-    // silently exercising whichever tab happens to sit at a hardcoded
-    // position.
+    // Pulse / Settings (Timeline is currently commented out). Navigate to
+    // it by LABEL rather than index, so a future reorder moves this test
+    // with it instead of silently exercising whichever tab happens to sit
+    // at a hardcoded position.
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
 
@@ -152,6 +204,10 @@ void main() {
     // test is actually exercising the plain-Column-with-no-scroll shape the
     // regression is about, not the null-conversation "unavailable" branch.
     expect(find.text('Search'), findsOneWidget);
+    // The identity row (moved here from the old shared header) is real
+    // content too — confirms it renders inside Settings, not above both
+    // tabs.
+    expect(find.text('Partner'), findsOneWidget); // activeConversation's name
 
     final tabBarBefore = tester.getTopLeft(find.byType(TabBar));
 
@@ -159,7 +215,11 @@ void main() {
     // 'Search' sits below the small test viewport at initial layout and
     // can't be hit-tested there, where the TabBarView's own body is always
     // large and on-screen.
-    await tester.drag(find.byType(TabBarView), const Offset(0, -300));
+    //
+    // A small offset: a -300 drag now scrolls the tab bar fully off-screen
+    // (0 widgets found by the later getTopLeft) rather than just moving
+    // it — this only needs to prove movement, not scroll it away.
+    await tester.drag(find.byType(TabBarView), const Offset(0, -40));
     await tester.pumpAndSettle();
 
     // The regression this guards: ChatSettingsStaticRows is a plain Column

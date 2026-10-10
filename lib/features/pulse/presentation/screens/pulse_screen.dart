@@ -11,6 +11,8 @@ import 'package:attune/features/pulse/presentation/widgets/checkin_banner.dart';
 import 'package:attune/features/pulse/presentation/widgets/trend_chart.dart';
 import 'package:attune/features/pulse/presentation/widgets/visualisation_switcher.dart';
 import 'package:attune/features/pulse/providers/pulse_providers.dart';
+import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
+    show bothPartnersSharedProvider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -240,6 +242,17 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
                               ],
                             ),
                           ),
+
+                          Gap(Spacing.md.h),
+                          Text(
+                            'Relationship Center',
+                            style: textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Gap(Spacing.sm.h),
+                          const _RelationshipCenterPanel(),
+                          Gap(Spacing.md.h),
 
                           // Dimensions rows
                           CardInkWell(
@@ -522,5 +535,236 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
       // '${date.day}/${date.month}/${date.year}';
     }
     return 'Not yet';
+  }
+}
+
+/// "Relationship Center" panel — the couple's Pulse at a glance, plus the
+/// two actions that most directly improve it.
+///
+/// Moved here from the old ChatIdentityCard (deleted — its identity row
+/// moved to _ChatSettingsRowsTab, its photo strip was removed entirely).
+/// This panel now sits inside PulseScreen itself, right after the Score
+/// card, rather than in a header shared across every PulseTab tab.
+///
+/// ## What is deliberately NOT here
+///
+/// The three stat tiles were originally dummy ("7d streak", "Response
+/// rate", "Shared goals"). Two of those three can never ship:
+///
+/// - **Streaks are a permanent product ban.** PULSE.md §6 states verbatim:
+///   "Do not implement streak tracking for check-ins. Do not show 'X week
+///   streak' anywhere... This is a permanent constraint from
+///   ATTUNE_SOUL.md." A missed week must carry no visible penalty.
+/// - **Response rate is chat-derived, per-partner attribution.** The
+///   chat→Pulse integration spec's Privacy section forbids surfacing
+///   chat-derived signal on any client surface, and permanent constraint
+///   #2 forbids per-partner behavioural attribution entirely ("Jordan
+///   tends to withdraw" must never exist). A response-rate number is
+///   exactly that, just numeric.
+///
+/// So the tiles show Pulse itself instead: the score, its week-over-week
+/// movement, and how much data it is standing on. All three are already
+/// computed by `compute-pulse`, are relationship-level (never
+/// per-partner), and are explicitly designed to be seen by both partners.
+class _RelationshipCenterPanel extends ConsumerWidget {
+  const _RelationshipCenterPanel();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final pulseAsync = ref.watch(currentPulseScoreProvider);
+    final bothSharedQuizAsync = ref.watch(bothPartnersSharedProvider);
+
+    return CardInkWell(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Gap(Spacing.md.h),
+          _PulseStatRow(pulseAsync: pulseAsync),
+          Gap(Spacing.xl.h),
+          InfoRowWidget(
+            title: 'Weekly check-in',
+            subtitle: 'Five quick questions. Takes about 60 seconds.',
+            icon: Icons.checklist_rtl_outlined,
+            iconColor: colorScheme.info,
+            circularRadius: 10,
+            backgroundColor: colorScheme.info.withValues(alpha: .2),
+            showAvatar: true,
+            showTrailingArrow: true,
+            showDivider: true,
+            onTap: () => context.pushNamed('weeklyCheckin'),
+          ),
+          // Attachment quiz — the one other real, already-built input to
+          // Pulse (PULSE.md §5: both partners completing it adds +20 to
+          // Alignment, one partner only adds +5). bothPartnersSharedProvider
+          // is mutual by construction (it checks BOTH directions of
+          // quiz_shares), so this states a shared fact about the couple
+          // rather than reporting on either partner individually.
+          bothSharedQuizAsync.when(
+            loading: () => _quizRow(context, colorScheme, bothShared: null),
+            error: (_, _) => _quizRow(context, colorScheme, bothShared: null),
+            data:
+                (bothShared) =>
+                    _quizRow(context, colorScheme, bothShared: bothShared),
+          ),
+          InfoRowWidget(
+            title: 'Relationship tips',
+            subtitle: 'Ideas curated for you two',
+            icon: Icons.lightbulb_outline,
+            iconColor: colorScheme.warning,
+            circularRadius: 10,
+            backgroundColor: colorScheme.warning.withValues(alpha: .2),
+            showAvatar: true,
+            showTrailingArrow: true,
+            showDivider: false,
+            // Intentionally non-tappable: no backing feature exists yet.
+            // Kept as a deliberate placeholder for a spec'd-and-built
+            // follow-up rather than wired to a dead route.
+          ),
+          Gap(Spacing.md.h),
+        ],
+      ),
+    );
+  }
+
+  /// The attachment-quiz row. [bothShared] null means "still resolving or
+  /// unavailable" — the row still renders with its real title/icon (same
+  /// convention ChatSettingsStaticRows uses for a not-yet-loaded
+  /// conversation) rather than flashing a spinner into the list.
+  Widget _quizRow(
+    BuildContext context,
+    ColorScheme colorScheme, {
+    required bool? bothShared,
+  }) {
+    return InfoRowWidget(
+      title: 'Attachment styles',
+      subtitle: switch (bothShared) {
+        true => 'You have both shared your results',
+        false => 'Take it together to strengthen your Pulse',
+        null => 'See how your styles fit together',
+      },
+      icon: Icons.favorite_outline,
+      iconColor: colorScheme.primary,
+      circularRadius: 10,
+      backgroundColor: colorScheme.primary.withValues(alpha: .2),
+      showAvatar: true,
+      showTrailingArrow: true,
+      showDivider: true,
+      onTap: () => context.pushNamed('quizEntry'),
+    );
+  }
+}
+
+/// The three Pulse stat tiles. Renders real values once
+/// [currentPulseScoreProvider] resolves; an em-dash placeholder before
+/// then, and for a couple with no Pulse score computed yet (a brand-new
+/// relationship, which is a normal state rather than an error).
+class _PulseStatRow extends StatelessWidget {
+  const _PulseStatRow({required this.pulseAsync});
+
+  final AsyncValue<PulseScore?> pulseAsync;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final pulse = pulseAsync.valueOrNull;
+
+    final overallDelta = pulse?.getDeltaForDimension('overall');
+
+    Widget divider() => Container(
+      width: .3,
+      height: 50.h,
+      color: colorScheme.onSurface.withValues(alpha: .5),
+    );
+
+    return Row(
+      children: [
+        Expanded(
+          child: _StatTile(
+            value: pulse == null ? '—' : '${pulse.overallScore}',
+            label: 'Pulse',
+          ),
+        ),
+        divider(),
+        Expanded(
+          child: _StatTile(
+            // No previous week to compare against yet is a real, common
+            // state (first computed score) — distinct from "no movement",
+            // so it shows the placeholder rather than a misleading "0".
+            value: overallDelta == null ? '—' : _signed(overallDelta),
+            label: 'This week',
+            valueColor: switch (overallDelta) {
+              null => null,
+              > 0 => colorScheme.success,
+              < 0 => colorScheme.error,
+              _ => null,
+            },
+          ),
+        ),
+        divider(),
+        Expanded(
+          child: _StatTile(
+            value: pulse == null ? '—' : _confidenceLabel(pulse.dataConfidence),
+            label: 'Confidence',
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _signed(int delta) => delta > 0 ? '+$delta' : '$delta';
+
+  /// PULSE.md §7's four levels, title-cased for a compact tile. 'none' is
+  /// rendered as "Early" rather than "None" — the spec's own copy for that
+  /// state is encouraging ("Not enough data yet — keep using Attune"), and
+  /// a bare "None" reads as a failure the couple caused.
+  static String _confidenceLabel(String confidence) => switch (confidence) {
+    'high' => 'High',
+    'medium' => 'Medium',
+    'low' => 'Low',
+    _ => 'Early',
+  };
+}
+
+class _StatTile extends StatelessWidget {
+  const _StatTile({required this.value, required this.label, this.valueColor});
+
+  final String value;
+  final String label;
+
+  /// Tints the value only — used by the week-over-week delta tile to show
+  /// direction. Null keeps the default text colour, which is what every
+  /// non-directional tile wants.
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Column(
+      // Centered rather than left-aligned: each tile sits in an Expanded
+      // slot with a divider at the boundary between slots, so a
+      // left-aligned tile's text hugs one side and the divider ends up
+      // nowhere near the visual midpoint between two stats. Centering the
+      // text is what makes the divider actually read as splitting the two
+      // neighboring stats down the middle.
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          value,
+          style: textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: valueColor,
+          ),
+        ),
+        Text(
+          label,
+          style: textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
   }
 }

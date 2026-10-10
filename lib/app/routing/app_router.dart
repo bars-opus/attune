@@ -40,7 +40,6 @@ import 'package:attune/features/chat/presentation/screens/chat_insights_screen.d
 import 'package:attune/features/chat/presentation/screens/chat_media_screen.dart';
 import 'package:attune/features/chat/presentation/screens/chat_message_search_screen.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
-import 'package:attune/features/chat/presentation/screens/chat_settings_screen.dart';
 import 'package:attune/features/chat/presentation/screens/ephemeral_camera_screen.dart';
 import 'package:attune/features/chat/presentation/screens/ephemeral_video_viewer_screen.dart';
 import 'package:attune/features/chat/presentation/screens/image_caption_screen.dart';
@@ -153,7 +152,6 @@ class RouteNames {
   static const String chatChannel = '/chat-channel';
   static const String previousRelationships = '/previous-relationships';
   static const String starredMessages = '/starred-messages';
-  static const String chatSettings = '/chat-settings';
   static const String chatMedia = '/chat-media';
   static const String chatMessageSearch = '/chat-message-search';
   static const String imageCaption = '/image-caption';
@@ -1414,19 +1412,6 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
             );
           }
           return StarredMessagesScreen(conversation: conversation);
-        },
-      ),
-      GoRoute(
-        path: RouteNames.chatSettings,
-        name: 'chatSettings',
-        builder: (context, state) {
-          final conversation = state.extra as Conversation?;
-          if (conversation == null) {
-            return const Scaffold(
-              body: Center(child: Text('Conversation unavailable.')),
-            );
-          }
-          return ChatSettingsScreen(conversation: conversation);
         },
       ),
       GoRoute(

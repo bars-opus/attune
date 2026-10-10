@@ -147,14 +147,13 @@ class _ZoomableImageState extends State<_ZoomableImage>
         minScale: 1.0,
         maxScale: 5.0,
         child: Center(
-          // Keyed on clientMessageId — the same identity both known source
-          // widgets (MessageBubble's chat thumbnail, ChatIdentityCard's
-          // recent-photos strip) tag their own Hero with, so whichever one
-          // this screen was pushed from flies its thumbnail into this full
-          // image. ChatMediaScreen's grid tiles don't carry a matching Hero
-          // (out of scope for now), so a push from there is just a normal,
-          // un-animated route change — Hero only activates when both ends
-          // of a navigation carry the same tag.
+          // Keyed on clientMessageId — the same identity MessageBubble's
+          // chat thumbnail tags its own Hero with, so a push from there
+          // flies its thumbnail into this full image. ChatMediaScreen's
+          // grid tiles don't carry a matching Hero (out of scope for
+          // now), so a push from there is just a normal, un-animated
+          // route change — Hero only activates when both ends of a
+          // navigation carry the same tag.
           child: Hero(
             tag: message.clientMessageId,
             child:

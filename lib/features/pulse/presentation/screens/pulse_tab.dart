@@ -3,14 +3,21 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
-import 'package:attune/features/chat/presentation/widgets/chat_identity_card.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_settings_static_rows.dart';
 import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'pulse_identity_row.dart';
 import 'pulse_screen.dart';
 
-/// Hosts the couple's identity card, then Pulse, Timeline, and Chat settings
-/// as sibling tabs.
+/// Hosts Pulse and Chat settings as sibling tabs.
+///
+/// The couple's identity row (avatar + editable chat name) no longer
+/// lives in a shared header above the tabs — it moved into the Settings
+/// tab itself (see [PulseIdentityRow], rendered at the top of
+/// [_ChatSettingsRowsTab]), and the "Relationship Center" panel that used
+/// to sit below it moved into PulseScreen. This keeps each tab
+/// self-contained rather than sharing state through a header both tabs
+/// scroll underneath.
 ///
 /// Built directly on Flutter's own [NestedScrollView] rather than
 /// TabsWithContent's `useNestedScrollMode` (a simplified single-
@@ -19,17 +26,16 @@ import 'pulse_screen.dart';
 /// when every tab's own content has no scrollable of its own. PulseScreen
 /// and TimelineScreen both already own a full CustomScrollView — under
 /// SliverFillRemaining that inner scrollable owns the drag gesture
-/// entirely, so this header never moved with them (the reported bug), and
-/// ChatSettingsStaticRows (a plain Column, no scrollable) had nowhere to
-/// go but overflow (the reported BOTTOM OVERFLOWED error).
+/// entirely, so the tab bar header never moved with them (the reported
+/// bug), and ChatSettingsStaticRows (a plain Column, no scrollable) had
+/// nowhere to go but overflow (the reported BOTTOM OVERFLOWED error).
 ///
 /// NestedScrollView is the real fix: it links one outer scroll position to
 /// every inner Scrollable inside its `body`, via a
 /// SliverOverlapAbsorber/SliverOverlapInjector pair (see PulseScreen's and
 /// TimelineScreen's own build methods for the inner half of that pairing).
-/// The identity card, then the tab bar, are the header slivers — neither
-/// pinned nor floating, so both scroll away with the rest exactly as
-/// before.
+/// The tab bar is the only header sliver now — neither pinned nor
+/// floating, so it scrolls away with the rest exactly as before.
 class PulseTab extends ConsumerStatefulWidget {
   const PulseTab({super.key});
 
@@ -46,7 +52,7 @@ class _PulseTabState extends ConsumerState<PulseTab>
 
   static const _tabs = [
     AppTabItem(label: 'Pulse', icon: Icons.monitor_heart_outlined),
-    AppTabItem(label: 'Timeline', icon: Icons.timeline),
+    // AppTabItem(label: 'Timeline', icon: Icons.timeline),
     AppTabItem(label: 'Settings', icon: Icons.settings_outlined),
   ];
 
@@ -76,33 +82,19 @@ class _PulseTabState extends ConsumerState<PulseTab>
         child: NestedScrollView(
           headerSliverBuilder: (context, innerBoxIsScrolled) {
             return [
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: Spacing.md.h),
-                  child: conversationAsync.when(
-                    loading: () => const SizedBox.shrink(),
-                    error: (_, _) => const SizedBox.shrink(),
-                    data:
-                        (conversation) =>
-                            conversation == null
-                                ? const SizedBox.shrink()
-                                : ChatIdentityCard(conversation: conversation),
-                  ),
-                ),
-              ),
-              // Wraps the tab bar (the last header element) rather than
-              // standing alone with no sliver: a bare, childless
-              // SliverOverlapAbsorber never actually runs a layout pass, so
-              // it never reports an extent — every inner CustomScrollView's
-              // matching SliverOverlapInjector then hits "found no absorbed
-              // extent to inject" on the very first frame. Matches
-              // Flutter's own NestedScrollView example, which wraps its
-              // SliverAppBar the same way. Redirects the header's layout
-              // extent into the matching SliverOverlapInjector each tab's
-              // own CustomScrollView carries as its first sliver — without
-              // this pair, an inner scrollable can end up rendering as if
-              // it starts under the header even though its own scroll
-              // offset reads as zero.
+              // Wraps the tab bar (the only header element now) rather
+              // than standing alone with no sliver: a bare, childless
+              // SliverOverlapAbsorber never actually runs a layout pass,
+              // so it never reports an extent — every inner
+              // CustomScrollView's matching SliverOverlapInjector then
+              // hits "found no absorbed extent to inject" on the very
+              // first frame. Matches Flutter's own NestedScrollView
+              // example, which wraps its SliverAppBar the same way.
+              // Redirects the header's layout extent into the matching
+              // SliverOverlapInjector each tab's own CustomScrollView
+              // carries as its first sliver — without this pair, an inner
+              // scrollable can end up rendering as if it starts under the
+              // header even though its own scroll offset reads as zero.
               SliverOverlapAbsorber(
                 handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
                   context,
@@ -111,8 +103,17 @@ class _PulseTabState extends ConsumerState<PulseTab>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Gap(20.h),
-                      SimpleTabs(tabs: _tabs, controller: _tabController),
+                      // scrollable: false — matches ReflectionJournalScreen's
+                      // own TabsWithContent(scrollable: false) call, which is
+                      // what makes SimpleTabs use TabAlignment.fill (each tab
+                      // takes an equal, centered share of the bar) instead of
+                      // the scrollable default's left-aligned, content-sized
+                      // tabs.
+                      SimpleTabs(
+                        tabs: _tabs,
+                        controller: _tabController,
+                        scrollable: false,
+                      ),
                     ],
                   ),
                 ),
@@ -123,7 +124,7 @@ class _PulseTabState extends ConsumerState<PulseTab>
             controller: _tabController,
             children: [
               const PulseScreen(),
-              const TimelineScreen(),
+              // const TimelineScreen(),
               _ChatSettingsRowsTab(conversationAsync: conversationAsync),
             ],
           ),
@@ -133,21 +134,18 @@ class _PulseTabState extends ConsumerState<PulseTab>
   }
 }
 
-/// The Settings tab's remaining content once the identity card moved up to
-/// PulseTab's own header — just the static rows (Search, Media, Starred,
-/// Export/Import, Previous relationships). Showing the identity card again
-/// here would duplicate the one above.
+/// The Settings tab: the couple's identity row at the top (moved here from
+/// the old shared ChatIdentityCard header — its photo strip was removed
+/// entirely; "Media, docs and links" below already covers shared photos),
+/// then the static rows (Search, Media, Starred, Export/Import, Previous
+/// relationships).
 ///
 /// Takes the already-resolved [conversationAsync] from PulseTab rather than
-/// re-reading primaryConversationProvider itself — PulseTab needs it first
-/// for the identity card anyway, and re-watching the same provider here
-/// would just be a second consumer of the same cached value.
+/// re-reading primaryConversationProvider itself.
 ///
 /// Wrapped in its own CustomScrollView (with the SliverOverlapInjector
 /// NestedScrollView requires of every inner scrollable) since
-/// ChatSettingsStaticRows is a plain Column with no scroll of its own —
-/// without this, its content had nowhere to go but overflow once the
-/// identity card pushed the available height below what the rows need.
+/// ChatSettingsStaticRows is a plain Column with no scroll of its own.
 class _ChatSettingsRowsTab extends StatelessWidget {
   const _ChatSettingsRowsTab({required this.conversationAsync});
 
@@ -159,6 +157,26 @@ class _ChatSettingsRowsTab extends StatelessWidget {
       slivers: [
         SliverOverlapInjector(
           handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: Spacing.md.h),
+            child: conversationAsync.when(
+              loading: () => const SizedBox.shrink(),
+              error: (_, _) => const SizedBox.shrink(),
+              data:
+                  (conversation) =>
+                      conversation == null
+                          ? const SizedBox.shrink()
+                          : Padding(
+                            padding: EdgeInsets.only(
+                              top: Spacing.lg.h,
+                              bottom: Spacing.xs.h,
+                            ),
+                            child: PulseIdentityRow(conversation: conversation),
+                          ),
+            ),
+          ),
         ),
         SliverToBoxAdapter(
           // No horizontal padding here — matches the original
