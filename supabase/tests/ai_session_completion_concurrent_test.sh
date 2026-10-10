@@ -102,6 +102,25 @@ export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
 
 DB="attune_test"
 TRIALS="${1:-10}"
+
+# NF-1 (final review round 2): TRIALS was interpolated into `seq 1 "$TRIALS"`
+# unvalidated, so a non-numeric or zero argument ran ZERO races and still
+# printed the full green summary with exit 0 -- this script certifying a
+# Critical fix it never exercised. Reproduced at HEAD with `… 0` and
+# `… bogus`. The canonical runner passes no argument, so the suite itself was
+# honest; this guard makes a hand-invocation honest too. A floor of 10 is the
+# documented minimum per pair per ordering, so anything lower cannot certify
+# the pairs this script exists to certify.
+case "$TRIALS" in
+  ''|*[!0-9]*)
+    echo "FAIL  TRIALS must be a positive integer (got: $TRIALS); refusing to report a verdict on zero races"
+    exit 1
+    ;;
+esac
+if [ "$TRIALS" -lt 10 ]; then
+  echo "FAIL  TRIALS=$TRIALS is below the documented minimum of 10 per pair per ordering; refusing to certify"
+  exit 1
+fi
 FAILED=0
 SUMMARY=()
 
@@ -461,6 +480,14 @@ restore_shipped_discard() {
   fi
   return 0
 }
+
+# Final review round 2: the gapped legs install a pg_sleep-injected discard
+# body and restore it on every exit path the script controls (including
+# SETUP FAILED and a failed install). A SIGNAL was the one residual -- a
+# ctrl-C mid-window could leave the gapped body in the local DB, where every
+# later contract would measure a body nobody shipped. The restore is
+# idempotent and md5-asserted, so running it again on a clean exit is free.
+trap 'restore_shipped_discard >/dev/null 2>&1 || true' EXIT INT TERM
 
 # One publish x discard race. $1 = launch order (ab = publish first,
 # ba = discard first). $2 = gap in seconds, informational only (the body
