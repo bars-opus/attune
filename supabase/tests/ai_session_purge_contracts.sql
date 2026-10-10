@@ -1411,9 +1411,20 @@ BEGIN
   v_def := pg_temp.strip_sql_comments(pg_get_functiondef(
     'public.publish_ai_session_nearby_result(uuid, uuid)'::regprocedure));
 
-  IF v_def !~ 'ai_processing_consent_events' THEN
+  -- TASK 5 RE-DERIVED THIS MARKER. It used to assert the literal table
+  -- name `ai_processing_consent_events` in publish's own body.
+  -- 20260953180000 extracted the predicate into the shared
+  -- public.ai_consent_granted_for_relationship, so publish no longer
+  -- names that table -- it names the helper. The marker is just as
+  -- sharp: every superseded body (20260953080000, 20260953110000,
+  -- 20260953120000, 20260953170000) predates the helper and cannot
+  -- contain its name, so each one still fails this leg if re-applied
+  -- last. The predicate's own internals are asserted ONCE against the
+  -- helper, by Contract 10 of
+  -- ai_session_read_authorization_contracts.sql.
+  IF v_def !~ 'IF NOT public\.ai_consent_granted_for_relationship\(v_relationship_id\) THEN' THEN
     RAISE EXCEPTION
-      'SUPERSESSION REVERTED: the live publish_ai_session_nearby_result never reads ai_processing_consent_events, so it enforces no consent gate. That is Task 8''s superseded body (20260953080000), which committed a staged Nearby result into the permanent transcript after a partner withdrew AI-processing consent; 20260953110000 WINS. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
+      'SUPERSESSION REVERTED: the live publish_ai_session_nearby_result does not gate on public.ai_consent_granted_for_relationship, so it enforces no consent gate. That is Task 8''s superseded body (20260953080000), which committed a staged Nearby result into the permanent transcript after a partner withdrew AI-processing consent; 20260953180000 WINS (over 20260953170000, 20260953120000 and 20260953110000). Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
   END IF;
   IF v_def !~ 'r\.status = ''active'' AND r\.chat_archived_at IS NULL' THEN
     RAISE EXCEPTION
@@ -1453,15 +1464,20 @@ BEGIN
   -- verbatim, and this function's own commentary names the gates and
   -- the INSERT, so an unstripped position comparison would be measuring
   -- the prose (Task 10's finding N1).
-  IF position('COALESCE(v_a_granted, false)' in v_def) = 0 THEN
+  -- TASK 5 RE-DERIVED: the gate's position marker was its inline
+  -- COALESCE; 20260953180000 moved the predicate into the shared
+  -- public.ai_consent_granted_for_relationship, so the gate is located
+  -- by the CALL. The COALESCE itself is asserted against the helper, by
+  -- Contract 10 of ai_session_read_authorization_contracts.sql.
+  IF position('ai_consent_granted_for_relationship' in v_def) = 0 THEN
     RAISE EXCEPTION
-      'SETUP FAILED: the consent-gate marker COALESCE(v_a_granted, false) is absent from the live publish_ai_session_nearby_result, so the gate-order assertion below no longer discriminates and must be re-derived';
+      'SETUP FAILED: the consent-gate marker public.ai_consent_granted_for_relationship is absent from the live publish_ai_session_nearby_result, so the gate-order assertion below no longer discriminates and must be re-derived';
   END IF;
   IF position('INSERT INTO public.ai_session_turns' in v_def) = 0 THEN
     RAISE EXCEPTION
       'SETUP FAILED: the turns INSERT is absent from the live publish_ai_session_nearby_result -- the gate-order assertion no longer discriminates';
   END IF;
-  IF position('COALESCE(v_a_granted, false)' in v_def)
+  IF position('ai_consent_granted_for_relationship' in v_def)
      > position('INSERT INTO public.ai_session_turns' in v_def) THEN
     RAISE EXCEPTION
       'EXPLOIT: publish_ai_session_nearby_result''s CONSENT gate sits AFTER the turns INSERT it is supposed to guard. It is saved today only by plpgsql''s subtransaction rollback -- not by the gate -- so any future non-transactional side effect or committed subtransaction between the INSERT and the gate makes a post-withdrawal publish leak for real. The gate must precede the write.';

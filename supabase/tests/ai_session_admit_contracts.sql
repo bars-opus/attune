@@ -398,8 +398,15 @@ BEGIN
   IF position('IF p_actor_id IS NULL THEN' in v_def) = 0 THEN
     RAISE EXCEPTION 'EXPLOIT: admit_ai_session_generation has no explicit `IF p_actor_id IS NULL` guard.';
   END IF;
+  -- TASK 5 RE-DERIVED: the gate's position marker was the literal table
+  -- name; 20260953180000 moved the predicate into the shared
+  -- public.ai_consent_granted_for_relationship, so the gate is now
+  -- located by the CALL.
+  IF position('ai_consent_granted_for_relationship' in v_def) = 0 THEN
+    RAISE EXCEPTION 'EXPLOIT: admit_ai_session_generation does not call public.ai_consent_granted_for_relationship -- its consent gate is gone. 20260953180000 routes it through the shared predicate; a body without that call enforces no consent at all.';
+  END IF;
   IF position('IF p_actor_id IS NULL THEN' in v_def)
-     > position('ai_processing_consent_events' in v_def) THEN
+     > position('ai_consent_granted_for_relationship' in v_def) THEN
     RAISE EXCEPTION 'EXPLOIT: the NULL-actor guard no longer precedes the consent gate in admit_ai_session_generation. The Global Constraint requires it to be the FIRST statement.';
   END IF;
 
@@ -415,30 +422,42 @@ BEGIN
   IF position('pg_advisory_xact_lock' in v_def) = 0 THEN
     RAISE EXCEPTION 'EXPLOIT: admit_ai_session_generation no longer takes pg_advisory_xact_lock -- LOCK 1 of the documented order is gone.';
   END IF;
-  IF position('ai_processing_consent_events' in v_def)
+  IF position('ai_consent_granted_for_relationship' in v_def)
      > position('pg_advisory_xact_lock' in v_def) THEN
     RAISE EXCEPTION 'EXPLOIT: the consent gate in admit_ai_session_generation now sits AFTER pg_advisory_xact_lock. It must slot between the relationship_id resolution and LOCK 1, where no lock is yet held, so that it adds no lock and cannot perturb the documented lock order.';
   END IF;
 
-  -- The gate must take no lock of its own.
+  -- The gate must BRANCH on the predicate, not merely call it. A body
+  -- that called the helper and ignored the answer would satisfy the
+  -- position legs above while enforcing nothing.
+  IF v_def !~ 'IF NOT public\.ai_consent_granted_for_relationship\(v_relationship_id\) THEN' THEN
+    RAISE EXCEPTION 'EXPLOIT: admit_ai_session_generation does not branch on the consent predicate as `IF NOT public.ai_consent_granted_for_relationship(v_relationship_id) THEN`. Calling it and discarding its answer is indistinguishable from having no gate.';
+  END IF;
+
+  -- The gate must take no lock of its own. The helper is STABLE and
+  -- lock-free (asserted against the helper itself by Contract 10 of
+  -- ai_session_read_authorization_contracts.sql); what is asserted here
+  -- is that admit did not reintroduce a locking consent read alongside
+  -- the call.
   IF v_def ~ 'FROM public\.ai_processing_consent_events[^;]*FOR (UPDATE|SHARE|NO KEY UPDATE|KEY SHARE)' THEN
     RAISE EXCEPTION 'EXPLOIT: the consent gate now takes a row lock on ai_processing_consent_events. It must be a plain MVCC read; a lock here is outside the documented order.';
   END IF;
 
-  -- Both halves of the two-party predicate, and the COALESCE that makes
-  -- a MISSING event deny rather than pass. A mutant that dropped the
-  -- COALESCE would let a never-granted couple through on NULL.
-  IF v_def !~ 'e\.user_id = v_user_a' OR v_def !~ 'e\.user_id = v_user_b' THEN
-    RAISE EXCEPTION 'EXPLOIT: the consent gate no longer looks up BOTH partners (e.user_id = v_user_a AND e.user_id = v_user_b). A one-partner gate admits when the OTHER partner has withdrawn.';
-  END IF;
-  IF v_def !~ 'COALESCE\(v_a_granted, false\) AND COALESCE\(v_b_granted, false\)' THEN
-    RAISE EXCEPTION 'EXPLOIT: the consent gate no longer requires COALESCE(v_a_granted,false) AND COALESCE(v_b_granted,false). Without the COALESCE a MISSING consent event reads NULL and the gate admits.';
-  END IF;
-  IF v_def !~ 'ORDER BY e\.created_at DESC, e\.id DESC LIMIT 1' THEN
-    RAISE EXCEPTION 'EXPLOIT: the consent gate no longer reads the LATEST event per user (ORDER BY e.created_at DESC, e.id DESC LIMIT 1). Task 5 extracts this predicate across four call sites; a divergence here breaks that extraction and the covering index idx_ai_processing_consent_current.';
-  END IF;
-  IF v_def !~ 'e\.policy_version = v_version' THEN
-    RAISE EXCEPTION 'EXPLOIT: the consent gate no longer pins the policy version, so a stale grant at an older version would count as current.';
+  -- TASK 5: the two-party rule, the COALESCE-denial, the LATEST-event
+  -- ORDER BY and the policy-version pin used to be asserted HERE, on
+  -- admit's own inline copy. 20260953180000 moved the predicate into
+  -- public.ai_consent_granted_for_relationship, so those four legs moved
+  -- with it -- they are asserted ONCE, against the helper, by Contract 10
+  -- of ai_session_read_authorization_contracts.sql, instead of four times
+  -- across four callers that could drift apart. Re-asserting them here
+  -- would be asserting the absence of code that is correctly absent.
+  --
+  -- What this contract keeps is the part that is still admit's own
+  -- responsibility: that it CALLS the predicate, BRANCHES on it, RAISES
+  -- rather than returning silently, and does so between the
+  -- relationship_id resolution and LOCK 1.
+  IF v_def !~ 'AI processing consent is not current for this relationship' THEN
+    RAISE EXCEPTION 'EXPLOIT: admit_ai_session_generation no longer raises ''AI processing consent is not current for this relationship''. admit returns a row on EVERY path, so a silent return would report success while admitting nothing -- the gate must RAISE.';
   END IF;
 
   -- The active-membership half of the gate.

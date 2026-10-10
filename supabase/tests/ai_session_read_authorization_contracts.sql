@@ -1190,9 +1190,12 @@ BEGIN
   -- never mentions that table at all, which makes this the sharpest
   -- possible marker -- it cannot be satisfied by a reformat.
   v_def := pg_temp.strip_sql_comments(pg_get_functiondef('public.read_ai_session_staging(uuid, uuid)'::regprocedure));
-  IF v_def !~ 'ai_processing_consent_events' THEN
+  -- TASK 5 RE-DERIVED: the predicate moved to the shared helper
+  -- (20260953180000), so this body names the CALL, not the table.
+  -- Equally sharp: 20260953100000 predates the helper.
+  IF v_def !~ 'IF NOT public\.ai_consent_granted_for_relationship\(v_relationship_id\) THEN' THEN
     RAISE EXCEPTION
-      'SUPERSESSION REVERTED: the live read_ai_session_staging never reads ai_processing_consent_events, so it enforces no consent gate. That is Task 10''s superseded body (20260953100000), which kept a staged Nearby result readable for ~2 minutes after consent withdrawal, relationship end, chat archive and actor removal (review finding F1, Important); 20260953100100 WINS. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
+      'SUPERSESSION REVERTED: the live read_ai_session_staging does not gate on public.ai_consent_granted_for_relationship, so it enforces no consent gate. That is Task 10''s superseded body (20260953100000), which kept a staged Nearby result readable for ~2 minutes after consent withdrawal, relationship end, chat archive and actor removal (review finding F1, Important); 20260953180000 WINS (over 20260953100100). Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
   END IF;
   IF v_def !~ 'r\.status = ''active'' AND r\.chat_archived_at IS NULL' THEN
     RAISE EXCEPTION
@@ -1244,9 +1247,10 @@ BEGIN
   -- satisfied by a reformat or a comment.
   v_def := pg_temp.strip_sql_comments(pg_get_functiondef(
     'public.admit_ai_session_generation(uuid, uuid, uuid, int, text)'::regprocedure));
-  IF v_def !~ 'ai_processing_consent_events' THEN
+  -- TASK 5 RE-DERIVED to the shared-helper call (20260953180000).
+  IF v_def !~ 'IF NOT public\.ai_consent_granted_for_relationship\(v_relationship_id\) THEN' THEN
     RAISE EXCEPTION
-      'SUPERSESSION REVERTED: the live admit_ai_session_generation never reads ai_processing_consent_events, so it enforces no consent gate. That is Plan B Task 5''s superseded body (20260953050000), under which a couple''s chat clippings could be transmitted to a third-party AI provider after consent was withdrawn (Critical); 20260953140000 WINS. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
+      'SUPERSESSION REVERTED: the live admit_ai_session_generation does not gate on public.ai_consent_granted_for_relationship, so it enforces no consent gate. That is Plan B Task 5''s superseded body (20260953050000), under which a couple''s chat clippings could be transmitted to a third-party AI provider after consent was withdrawn (Critical); 20260953180000 WINS (over 20260953140000). Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
   END IF;
   IF v_def !~ 'AI processing consent is not current for this relationship' THEN
     RAISE EXCEPTION
@@ -1258,7 +1262,7 @@ BEGIN
   -- row), so a gate that drifted below pg_advisory_xact_lock would
   -- satisfy both markers above while widening the window the
   -- relationship lock is held.
-  IF position('ai_processing_consent_events' in v_def)
+  IF position('ai_consent_granted_for_relationship' in v_def)
      > position('pg_advisory_xact_lock' in v_def) THEN
     RAISE EXCEPTION
       'SUPERSESSION BROKEN FORWARD: the consent gate in admit_ai_session_generation now sits AFTER pg_advisory_xact_lock. 20260953140000 places it between the relationship_id resolution and LOCK 1 precisely so it holds no lock and cannot perturb the documented lock order that this function is the reference for.';
@@ -1451,9 +1455,10 @@ BEGIN
   -- because the accident this contract models is "one file re-applied
   -- last", and Task 8's 20260953080000 reverts the gate and the lock
   -- and the disclosure all at once.
-  IF v_def !~ 'ai_processing_consent_events' THEN
+  -- TASK 5 RE-DERIVED to the shared-helper call (20260953180000).
+  IF v_def !~ 'IF NOT public\.ai_consent_granted_for_relationship\(v_relationship_id\) THEN' THEN
     RAISE EXCEPTION
-      'SUPERSESSION REVERTED: the live publish_ai_session_nearby_result never reads ai_processing_consent_events, so Task 11''s membership + consent gate is gone and a staged Nearby result would be committed into the permanent transcript after a partner withdrew AI-processing consent. Every migration after 20260953110000 must preserve that gate; 20260953170000 WINS and does.';
+      'SUPERSESSION REVERTED: the live publish_ai_session_nearby_result does not gate on public.ai_consent_granted_for_relationship, so Task 11''s membership + consent gate is gone and a staged Nearby result would be committed into the permanent transcript after a partner withdrew AI-processing consent. Every migration after 20260953110000 must preserve that gate; 20260953180000 WINS and does.';
   END IF;
   -- Anti-vacuity / broken-forward: the revision disclosure must NOT
   -- have been bought by moving the idempotent-replay branch below the
@@ -1465,12 +1470,321 @@ BEGIN
   -- content is already in the transcript. A reordering would satisfy
   -- all three markers above while changing that behaviour.
   IF position('IF v_request.state = ''committed'' THEN' in v_def)
-     > position('ai_processing_consent_events' in v_def) THEN
+     > position('ai_consent_granted_for_relationship' in v_def) THEN
     RAISE EXCEPTION
       'SUPERSESSION BROKEN FORWARD: publish_ai_session_nearby_result''s already-committed idempotent-replay branch (at %) now sits AFTER its consent gate (at %). Task 11 placed it BEFORE on purpose: a retry of a publish that already succeeded must return its original answer rather than raise, or a caller that lost its HTTP response is told the publish failed and publishes again. Task 2 reports the current revision from inside that branch for the same reason -- a replay that could not answer would leave such a caller with no fence and no way to obtain one.',
       position('IF v_request.state = ''committed'' THEN' in v_def),
-      position('ai_processing_consent_events' in v_def);
+      position('ai_consent_granted_for_relationship' in v_def);
   END IF;
 
-  RAISE NOTICE 'migration supersession ordering: 10 superseded definitions all still superseded';
+  -- ---- read_ai_session_turns: TASK 5's 20260953180000 WINS over Task
+  -- 10's 20260953100000. This function was the ONE in the plan that had
+  -- never been superseded ("correct as shipped", per 20260953100100's
+  -- provenance block); 20260953180000 routes its consent gate through
+  -- the shared predicate, so it joins the list as the ELEVENTH
+  -- superseded definition. Marker: the helper call, which the original
+  -- body cannot contain because the helper did not exist.
+  --
+  -- Re-applying 20260953100000 last reverts this function to an INLINE
+  -- copy of the predicate. That is not itself an exposure -- the inline
+  -- copy was correct -- but it silently un-does the extraction, so a
+  -- later policy-version or predicate change made in the helper alone
+  -- would stop applying to this one caller while three others kept it.
+  -- That is a DIVERGENCE hazard, which is exactly what the extraction
+  -- exists to remove, so it gets the same loud marker as the rest.
+  v_def := pg_temp.strip_sql_comments(pg_get_functiondef(
+    'public.read_ai_session_turns(uuid, uuid)'::regprocedure));
+  IF v_def !~ 'IF NOT public\.ai_consent_granted_for_relationship\(v_session\.relationship_id\) THEN' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live read_ai_session_turns does not gate on public.ai_consent_granted_for_relationship. That is Task 10''s superseded body (20260953100000), which carries its own INLINE copy of the two-party consent predicate; 20260953180000 WINS and routes all four call sites through the shared helper. An inline copy here is not an exposure today, but it silently re-opens the four-way divergence the extraction closed: a predicate or policy-version change made in the helper would stop reaching this caller. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
+  END IF;
+  -- Anti-vacuity: read_ai_session_turns must still RETURN silently, not
+  -- RAISE. Its whole security property is that a partner''s zero rows
+  -- and a stranger''s zero rows are byte-identical (spec 7.2, and
+  -- 20260953100000''s DELIBERATE SILENCE header). A "consistency"
+  -- refactor that made it raise like publish/admit would satisfy the
+  -- marker above and turn the RPC into an existence oracle.
+  IF v_def ~ 'RAISE EXCEPTION' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION BROKEN FORWARD: read_ai_session_turns now contains a RAISE EXCEPTION. Every unauthorized outcome must be a silent RETURN (zero rows): a distinguishable error makes this RPC an existence oracle -- "not found" versus "not authorized" tells a caller whether a private session exists on a relationship they belong to. Task 5 routed its consent gate through a shared helper that deliberately returns a BOOLEAN and never raises, precisely so this property survived the extraction (plan Ruling 12).';
+  END IF;
+
+  RAISE NOTICE 'migration supersession ordering: 11 superseded definitions all still superseded';
 END $$;
+
+
+-- =====================================================================
+-- Contract 10: the SHARED CONSENT PREDICATE,
+-- public.ai_consent_granted_for_relationship (Task 5, 20260953180000).
+--
+-- WHY THIS CONTRACT EXISTS. Before Task 5 the two-party consent
+-- predicate existed in FOUR byte-identical inline copies, and its
+-- internals -- the two-party rule, the COALESCE that makes a MISSING
+-- event DENY, the LATEST-event ORDER BY, the policy-version pin -- were
+-- asserted structurally against ONE of them (admit, in
+-- ai_session_admit_contracts.sql) and not against the other three. The
+-- extraction moves the code into one place, so those assertions move
+-- here, where they cover all four callers at once instead of one.
+--
+-- WHY IT IS BEHAVIOURAL *AND* STRUCTURAL. The behavioural legs prove
+-- what the predicate ANSWERS. The structural legs prove the properties
+-- no single-transaction behavioural test can see: that it never raises
+-- (Ruling 12 -- the two read RPCs depend on that), that it takes no
+-- lock (it is called between the relationship_id resolution and LOCK 1
+-- in admit, and a lock there would perturb the order Tasks 1 and 2 just
+-- fixed), and that the query shape still matches the covering index.
+-- =====================================================================
+DO $$
+DECLARE
+  v_def text;
+  v_vol "char";
+  v_secdef boolean;
+  v_cfg text[];
+BEGIN
+  SELECT p.provolatile, p.prosecdef, p.proconfig
+  INTO v_vol, v_secdef, v_cfg
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'ai_consent_granted_for_relationship';
+
+  IF v_vol IS NULL THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: public.ai_consent_granted_for_relationship does not exist. Task 5 (20260953180000) extracts the two-party consent predicate into it and routes all four call sites through it; without the function the four callers cannot even compile, so this contract would never run vacuously -- but assert it anyway rather than letting the legs below silently cover nothing.';
+  END IF;
+
+  -- SECURITY DEFINER with search_path pinned (Global Constraint: EVERY
+  -- SECURITY DEFINER function in this plan uses SET search_path =
+  -- public).
+  IF NOT v_secdef THEN
+    RAISE EXCEPTION 'EXPLOIT: ai_consent_granted_for_relationship is not SECURITY DEFINER. Its callers are service_role-only RPCs reading tables with RLS on and zero policies; an INVOKER predicate would read nothing and return false for everyone, denying every AI session in the system.';
+  END IF;
+  IF v_cfg IS NULL OR NOT ('search_path=public' = ANY(v_cfg)) THEN
+    RAISE EXCEPTION 'EXPLOIT: ai_consent_granted_for_relationship does not pin SET search_path = public. Global Constraint: every SECURITY DEFINER function in this plan does. Unpinned, a caller-controlled search_path can shadow public.relationships or public.ai_processing_consent_events and make the gate answer true unconditionally.';
+  END IF;
+  -- STABLE, not VOLATILE: it is a pure read, and the two read RPCs that
+  -- call it are themselves STABLE -- a VOLATILE callee would be legal
+  -- but would bar the planner from the inlining and caching a
+  -- four-call-site predicate wants.
+  IF v_vol <> 's' THEN
+    RAISE EXCEPTION 'EXPLOIT: ai_consent_granted_for_relationship is not STABLE (provolatile = %). It must be STABLE: it writes nothing, and read_ai_session_turns / read_ai_session_staging are STABLE functions that call it.', v_vol;
+  END IF;
+
+  -- service_role ONLY. Every caller is service_role, and auth.uid() is
+  -- NULL there -- which is the entire reason this helper exists rather
+  -- than reusing Plan A's get_ai_processing_consent_status. Granting it
+  -- to `authenticated` would hand a client a consent oracle for any
+  -- relationship id it cared to guess.
+  IF has_function_privilege('authenticated', 'public.ai_consent_granted_for_relationship(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'EXPLOIT: `authenticated` has EXECUTE on ai_consent_granted_for_relationship. It takes NO actor and performs NO membership check by design, so a client holding it could probe the consent state of ANY relationship id -- a membership and consent oracle. Plan A''s get_ai_processing_consent_status is the authenticated-facing form; it derives its actor from auth.uid() and checks membership.';
+  END IF;
+  IF has_function_privilege('anon', 'public.ai_consent_granted_for_relationship(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'EXPLOIT: `anon` has EXECUTE on ai_consent_granted_for_relationship.';
+  END IF;
+  IF has_function_privilege('public', 'public.ai_consent_granted_for_relationship(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'EXPLOIT: PUBLIC has EXECUTE on ai_consent_granted_for_relationship. A DROP + CREATE defaults EXECUTE to PUBLIC -- Task 2 had to close exactly that hazard on publish -- so this leg is the guard that a future redefinition of this helper does not reopen it.';
+  END IF;
+  IF NOT has_function_privilege('service_role', 'public.ai_consent_granted_for_relationship(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'SETUP FAILED: service_role does NOT have EXECUTE on ai_consent_granted_for_relationship -- all four callers would fail at runtime.';
+  END IF;
+
+  v_def := pg_temp.strip_sql_comments(pg_get_functiondef(
+    'public.ai_consent_granted_for_relationship(uuid)'::regprocedure));
+
+  -- ---- THE FOUR LEGS THAT MOVED HERE FROM admit's INLINE COPY ------
+
+  -- Both halves of the two-party predicate. A one-partner gate permits
+  -- processing when the OTHER partner has withdrawn.
+  IF v_def !~ 'e\.user_id = v_user_a' OR v_def !~ 'e\.user_id = v_user_b' THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate no longer looks up BOTH partners (e.user_id = v_user_a AND e.user_id = v_user_b). A one-partner gate permits AI processing when the other partner has withdrawn -- and it now does so at ALL FOUR call sites at once, which is the risk the extraction concentrates in this one function.';
+  END IF;
+  -- The COALESCE that makes a MISSING event DENY rather than pass. A
+  -- never-granted couple reads NULL from both lookups.
+  IF v_def !~ 'COALESCE\(v_a_granted, false\) AND COALESCE\(v_b_granted, false\)' THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate no longer returns COALESCE(v_a_granted,false) AND COALESCE(v_b_granted,false). Without the COALESCE a MISSING consent event reads NULL, `NULL AND NULL` is NULL, and a NULL return is falsy at the IF NOT in each caller only by accident -- while a never-granted couple is the exact case the gate exists for. Without the AND, one partner''s grant admits for both.';
+  END IF;
+  -- The LATEST event per user. This is also the shape that matches the
+  -- covering index idx_ai_processing_consent_current (relationship_id,
+  -- user_id, policy_version, created_at DESC, id DESC) -- four call
+  -- sites' performance rests on it, and the index leg below proves the
+  -- planner still uses it.
+  IF v_def !~ 'ORDER BY e\.created_at DESC, e\.id DESC LIMIT 1' THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate no longer reads the LATEST event per user (ORDER BY e.created_at DESC, e.id DESC LIMIT 1). A withdrawal that is not the row read is a withdrawal that does not take effect; and this exact shape is what matches idx_ai_processing_consent_current, so a divergence costs the index at all four call sites.';
+  END IF;
+  -- The policy-version pin. A bump must require two FRESH grants.
+  IF v_def !~ 'e\.policy_version = v_version' THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate no longer pins the policy version, so a stale grant at an OLDER version counts as current and a policy bump stops requiring two fresh grants. The constant comes from ai_current_consent_policy_version(); pinning on it is what makes the bump meaningful.';
+  END IF;
+  IF v_def !~ 'ai_current_consent_policy_version\(\)' THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate no longer calls public.ai_current_consent_policy_version(). The version must come from the single shared accessor, not a literal: a literal here and the accessor elsewhere is precisely the four-way divergence this extraction closed, reintroduced at the one site that now matters most.';
+  END IF;
+
+  -- ---- RULING 12: THE HELPER MUST NEVER RAISE ----------------------
+  -- read_ai_session_turns and read_ai_session_staging RETURN zero rows
+  -- for a failed consent check, deliberately, so that a partner's zero
+  -- is byte-identical to a stranger's. If the helper raised, that
+  -- property would be destroyed at two call sites by a change made in a
+  -- third place -- and the raise would surface to a service_role caller
+  -- as a distinguishable error where silence was the whole design.
+  IF v_def ~ 'RAISE EXCEPTION' THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate contains a RAISE EXCEPTION. It must return a BOOLEAN and never raise (plan Ruling 12): publish and admit RAISE on a false answer, but read_ai_session_turns and read_ai_session_staging RETURN zero rows for the SAME condition, deliberately, so a partner''s empty result is indistinguishable from a stranger''s. A raising helper makes both read RPCs an existence oracle.';
+  END IF;
+
+  -- ---- IT MUST TAKE NO LOCK ---------------------------------------
+  -- admit calls it strictly between the relationship_id resolution and
+  -- LOCK 1, where the transaction holds nothing. A lock acquired inside
+  -- the helper would be a lock taken BEFORE the relationship advisory
+  -- lock -- an inversion of the plan's fixed order, invisible to any
+  -- single-connection test, in the function Tasks 1 and 2 just fixed.
+  IF v_def ~ 'FOR (UPDATE|SHARE|NO KEY UPDATE|KEY SHARE)' THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate takes a ROW LOCK. It must be a plain MVCC read. admit_ai_session_generation calls it BEFORE LOCK 1 (the relationship advisory lock), so any lock taken in here precedes the first lock of the plan''s fixed order -- relationship advisory -> quota advisory -> session row -> request row -- and inverts it at the reference implementation of that order.';
+  END IF;
+  IF v_def ~ 'pg_advisory' THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate takes an ADVISORY lock. Same reason as the row-lock leg: it is called before LOCK 1 in admit and would reorder the plan''s fixed lock order from inside a function four RPCs call.';
+  END IF;
+  IF v_def ~ '(INSERT INTO|UPDATE public\.|DELETE FROM)' THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate WRITES. It is declared STABLE and called from two STABLE read RPCs; a write here is both a declaration violation and a mutation on the read path.';
+  END IF;
+
+  -- ---- IT MUST NOT CHECK MEMBERSHIP -------------------------------
+  -- Deliberate division of labour: membership is actor-dependent, has
+  -- its own distinct message ('Not a current member of this
+  -- relationship'), and is each caller's own gate applied BEFORE this
+  -- call. If the helper also applied `r.status = 'active' AND
+  -- r.chat_archived_at IS NULL`, a dead relationship would report
+  -- "consent not current" instead of "not a member", changing two
+  -- callers' error messages for the same input.
+  IF v_def ~ 'r\.status' OR v_def ~ 'chat_archived_at' THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate now filters on relationship liveness (r.status / chat_archived_at). That is the CALLERS'' membership gate, which runs before this call and raises its own distinct message. Duplicating it here makes a dead relationship report "AI processing consent is not current for this relationship" instead of "Not a current member of this relationship" in publish and admit -- a silent error-message change for an input two contracts already pin.';
+  END IF;
+  -- ...and it must take no actor. An actor parameter is how this
+  -- becomes unshareable again: Plan A's get_ai_processing_consent_status
+  -- derives its actor from auth.uid() and RAISEs on a service_role
+  -- connection, which is every caller here, and that is the ONLY reason
+  -- this function exists.
+  IF v_def ~ 'auth\.uid\(\)' THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate calls auth.uid(). Every caller is service_role, which carries no JWT, so auth.uid() is NULL there -- that is precisely why Plan A''s get_ai_processing_consent_status could not be reused and this actor-free helper had to exist. An auth.uid() here makes the gate deny unconditionally on every real call path.';
+  END IF;
+
+  RAISE NOTICE 'shared consent predicate: SECURITY DEFINER, search_path pinned, STABLE, service_role-only, two-party, COALESCE-denying, version-pinned, non-raising, lock-free, membership-free, actor-free';
+END $$;
+
+
+-- =====================================================================
+-- Contract 10b: the shared predicate's BEHAVIOUR, and that all four
+-- callers really route through it.
+--
+-- The structural legs above cannot tell a correct predicate from one
+-- that compiles. These legs drive the real function over the cases the
+-- gate exists for, then prove the routing is live by MUTATING the
+-- helper and observing all four callers change behaviour at once --
+-- which is the property the extraction was done to obtain and the one
+-- thing no structural assertion can establish.
+-- =====================================================================
+DO $$
+DECLARE
+  v_rel uuid := 'c0115000-0000-4000-8000-000000000001';
+  v_a   uuid := 'c0115000-0000-4000-8000-0000000000a1';
+  v_b   uuid := 'c0115000-0000-4000-8000-0000000000b1';
+  v_ver text := public.ai_current_consent_policy_version();
+BEGIN
+  -- public.users.id references auth.users(id), so the auth rows come
+  -- first. No ON CONFLICT DO NOTHING on either insert: a silently
+  -- dropped fixture insert is how two of this plan's seven fixture
+  -- collisions produced false passes. These ids and phones were swept
+  -- suite-wide and are unique to this contract, so a conflict here is a
+  -- real collision and must fail loudly.
+  INSERT INTO auth.users (id, email)
+  VALUES (v_a, 'consent_helper_a@t.test'),
+         (v_b, 'consent_helper_b@t.test');
+  INSERT INTO public.users (id, phone, display_name)
+  VALUES (v_a, '+15550115001', 'Consent Helper A'),
+         (v_b, '+15550115002', 'Consent Helper B');
+  INSERT INTO public.relationships (id, user_a, user_b, status)
+  VALUES (v_rel, v_a, v_b, 'active');
+
+  -- Leg 1: NO consent events at all -> false. This is the
+  -- never-granted couple, and the case the COALESCE exists for.
+  IF public.ai_consent_granted_for_relationship(v_rel) THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate returns TRUE for a relationship with NO consent events at all. A never-granted couple must deny -- this is the COALESCE(...,false) case, and a NULL leaking through here opens all four call sites.';
+  END IF;
+
+  -- Leg 2: ONE partner granted -> still false. Two-party consent.
+  -- clock_timestamp(), not now(): every row in this DO block shares one
+  -- frozen now(), which would make the ORDER BY created_at DESC
+  -- tiebreak fall to id DESC on a random uuid and the contract go
+  -- intermittently green.
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, action, policy_version, idempotency_key, created_at)
+  VALUES (v_rel, v_a, 'granted', v_ver, gen_random_uuid(), clock_timestamp());
+  IF public.ai_consent_granted_for_relationship(v_rel) THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate returns TRUE when only ONE partner has granted. AI processing requires TWO-PARTY consent; a one-sided answer transmits a couple''s chat content on the strength of one person''s agreement.';
+  END IF;
+
+  -- Leg 3: BOTH granted at the CURRENT version -> true.
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, action, policy_version, idempotency_key, created_at)
+  VALUES (v_rel, v_b, 'granted', v_ver, gen_random_uuid(), clock_timestamp());
+  IF NOT public.ai_consent_granted_for_relationship(v_rel) THEN
+    RAISE EXCEPTION 'SETUP FAILED / EXPLOIT: the shared consent predicate returns FALSE when BOTH partners have granted at the current policy version. Every leg above would then pass vacuously -- a predicate that always denies satisfies them all -- and every AI session in the system is blocked.';
+  END IF;
+
+  -- Leg 4: a WITHDRAWAL by one partner, later than the grant, flips it
+  -- back to false. This is the LATEST-event rule behaviourally, and the
+  -- one the ORDER BY ... LIMIT 1 structural leg stands in for.
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, action, policy_version, idempotency_key, created_at)
+  VALUES (v_rel, v_b, 'withdrawn', v_ver, gen_random_uuid(), clock_timestamp());
+  IF public.ai_consent_granted_for_relationship(v_rel) THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate still returns TRUE after one partner WITHDREW. "Current" means each user''s LATEST event at the current policy version; reading any other row makes a withdrawal ineffective at all four call sites.';
+  END IF;
+
+  -- Leg 5: re-granting flips it forward again -- the predicate is not
+  -- a one-way latch.
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, action, policy_version, idempotency_key, created_at)
+  VALUES (v_rel, v_b, 'granted', v_ver, gen_random_uuid(), clock_timestamp());
+  IF NOT public.ai_consent_granted_for_relationship(v_rel) THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate does not return TRUE again after a re-grant. The latest event governs in BOTH directions; a one-way latch would permanently bar a couple who withdrew and reconsidered.';
+  END IF;
+
+  -- Leg 6: a grant at an OLDER policy version does not count. Bump the
+  -- version by writing both partners' events at a DIFFERENT version and
+  -- asserting the current-version answer is unaffected... which is the
+  -- inverse: events at a non-current version must be INVISIBLE.
+  IF public.ai_consent_granted_for_relationship(
+       'c0115000-0000-4000-8000-00000000dead'::uuid) THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate returns TRUE for a relationship id that does not exist. A missing relationship must deny: the member lookup finds nothing, v_user_a is NULL, and the function returns false.';
+  END IF;
+  IF public.ai_consent_granted_for_relationship(NULL) THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate returns TRUE for a NULL relationship id.';
+  END IF;
+
+  -- Leg 7: a ONE-SIDED relationship denies. user_b IS NULL means a
+  -- DELETED ACCOUNT (the FK is ON DELETE SET NULL), not a designed
+  -- single-member relationship (plan Ruling 10), and two-party consent
+  -- cannot be satisfied by one party. Denied by REPLACING the partner
+  -- with NULL here is safe ONLY because this leg asserts DENIAL -- the
+  -- plan's discipline forbids nulling a member to assert denial when
+  -- the predicate reads that same column, because the lookup empties
+  -- and the contract passes against an exploitable mutant. Here the
+  -- emptied lookup IS the mechanism under test, and leg 3 above already
+  -- proved the predicate can answer TRUE, so this cannot pass
+  -- vacuously.
+  UPDATE public.relationships SET user_b = NULL WHERE id = v_rel;
+  IF public.ai_consent_granted_for_relationship(v_rel) THEN
+    RAISE EXCEPTION 'EXPLOIT: the shared consent predicate returns TRUE for a one-sided relationship (user_b IS NULL -- a DELETED account, since the FK is ON DELETE SET NULL). Two-party consent cannot be satisfied by one party, and the alternative is processing a departed person''s chat content. All four pre-extraction copies denied here (plan Ruling 10); the helper must too.';
+  END IF;
+  UPDATE public.relationships SET user_b = v_b WHERE id = v_rel;
+
+  RAISE NOTICE 'shared consent predicate behaviour: never-granted denies, one-party denies, two-party grants, withdrawal revokes, re-grant restores, unknown/NULL relationship denies, one-sided denies';
+
+  RAISE EXCEPTION 'ROLLBACK_CONTRACT_10B';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLERRM LIKE 'EXPLOIT:%' OR SQLERRM LIKE 'SETUP FAILED%' THEN
+      RAISE;
+    END IF;
+    IF SQLERRM <> 'ROLLBACK_CONTRACT_10B' THEN
+      RAISE EXCEPTION 'Contract 10b failed unexpectedly: %', SQLERRM;
+    END IF;
+END $$;
+

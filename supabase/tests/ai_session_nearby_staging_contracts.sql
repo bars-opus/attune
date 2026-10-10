@@ -333,9 +333,26 @@ BEGIN
       'EXPLOIT: publish_ai_session_nearby_result''s NULL-actor guard (at %) now sits AFTER the relationship advisory lock (at %). It must remain the FIRST statement: a NULL actor must be refused before the function takes a lock on anything, let alone resolves a relationship to lock.',
       position('IF p_actor_id IS NULL THEN' in v_def), v_adv;
   END IF;
-  IF v_def !~ 'COALESCE\(v_a_granted, false\) AND COALESCE\(v_b_granted, false\)' THEN
+  -- TASK 5 RE-DERIVED THIS MARKER. It used to assert the inline
+  -- `COALESCE(v_a_granted, false) AND COALESCE(v_b_granted, false)`.
+  -- 20260953180000 extracted the two-party predicate into the shared
+  -- public.ai_consent_granted_for_relationship, so the COALESCE now
+  -- lives in the helper -- where it is asserted ONCE, by Contract 10 of
+  -- ai_session_read_authorization_contracts.sql. The marker here becomes
+  -- the CALL, which is exactly as sharp: every superseded body of
+  -- publish (20260953080000, 20260953110000, 20260953120000,
+  -- 20260953170000) predates the helper and cannot name it, so a
+  -- re-apply of any of them still fails this leg.
+  IF v_def !~ 'ai_consent_granted_for_relationship' THEN
     RAISE EXCEPTION
-      'SUPERSESSION REVERTED: publish_ai_session_nearby_result no longer enforces the both-partner consent gate. 20260953120000 BUILDS ON Task 11''s 20260953110000 and must preserve that gate; a lock-order fix that reverted to Task 8''s pre-gate body would commit a staged Nearby result into the permanent transcript after a partner withdrew AI-processing consent.';
+      'SUPERSESSION REVERTED: publish_ai_session_nearby_result no longer enforces the both-partner consent gate -- it does not call public.ai_consent_granted_for_relationship (nor, per the companion leg below, does it carry the pre-Task-5 inline predicate). 20260953120000 BUILDS ON Task 11''s 20260953110000 and 20260953180000 BUILDS ON Task 2''s 20260953170000; every one of them must preserve that gate. A lock-order fix or a refactor that reverted to Task 8''s pre-gate body would commit a staged Nearby result into the permanent transcript after a partner withdrew AI-processing consent.';
+  END IF;
+  -- ANTI-VACUITY, and the reason this is two legs and not one: a body
+  -- that called the helper and then IGNORED its answer would pass the
+  -- leg above. The gate must RAISE on a false answer.
+  IF v_def !~ 'IF NOT public\.ai_consent_granted_for_relationship\(v_relationship_id\) THEN' THEN
+    RAISE EXCEPTION
+      'EXPLOIT: publish_ai_session_nearby_result calls public.ai_consent_granted_for_relationship but does not branch on it as `IF NOT ... THEN`. Calling the predicate and discarding its answer is indistinguishable from having no gate at all.';
   END IF;
   IF v_def !~ 'v_relationship_id uuid' OR v_def !~ 'WHERE r\.id = v_relationship_id' THEN
     RAISE EXCEPTION
