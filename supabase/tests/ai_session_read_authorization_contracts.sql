@@ -1221,5 +1221,48 @@ BEGIN
       'SUPERSESSION REVERTED: authenticated has EXECUTE on share_ai_session_turn. That is Task 9''s superseded GRANT (20260953090000), an actor-impersonation hole (review finding F2, Critical); 20260953090100 WINS with service_role-only.';
   END IF;
 
-  RAISE NOTICE 'migration supersession ordering: 5 superseded definitions all still superseded';
+  -- ---- admit_ai_session_generation: Task 3 of the merge-blockers
+  -- plan, 20260953140000, WINS over Plan B Task 5's 20260953050000
+  -- (which was, until this file, the SOLE definition -- established by
+  -- grep: the five other migrations naming the function mention it only
+  -- in comments). Marker: the consent gate. The superseded body checked
+  -- no consent at all, so with zero consent events -- or after a
+  -- granted-then-withdrawn -- prepare/approve/activate/admit/claim/
+  -- commit ALL succeeded and the Ideas transcript was written.
+  --
+  -- This marker guards the worst reversion in the plan. admit is the
+  -- single choke point the whole dispatch path inherits its consent gate
+  -- from: claim_ai_session_dispatch requires a request row at
+  -- state='reserved' with a worker_token, and admit's INSERT is the only
+  -- code that creates one. So re-applying 20260953050000 last does not
+  -- degrade one RPC -- it re-opens the ENTIRE write path, and a
+  -- successful claim is the authorization to transmit the couple's chat
+  -- clippings to a third-party AI provider.
+  --
+  -- The superseded body never mentions ai_processing_consent_events,
+  -- which makes this the sharpest possible marker: it cannot be
+  -- satisfied by a reformat or a comment.
+  v_def := pg_temp.strip_sql_comments(pg_get_functiondef(
+    'public.admit_ai_session_generation(uuid, uuid, uuid, int, text)'::regprocedure));
+  IF v_def !~ 'ai_processing_consent_events' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live admit_ai_session_generation never reads ai_processing_consent_events, so it enforces no consent gate. That is Plan B Task 5''s superseded body (20260953050000), under which a couple''s chat clippings could be transmitted to a third-party AI provider after consent was withdrawn (Critical); 20260953140000 WINS. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
+  END IF;
+  IF v_def !~ 'AI processing consent is not current for this relationship' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live admit_ai_session_generation does not raise ''AI processing consent is not current for this relationship''. 20260953140000 WINS over 20260953050000 and its gate must RAISE -- admit returns a row on every path, so a silent return would report success while admitting nothing.';
+  END IF;
+  -- Anti-vacuity / broken-forward: the gate must sit BEFORE LOCK 1.
+  -- admit is the reference implementation of the documented lock order
+  -- (relationship advisory -> quota advisory -> session row -> request
+  -- row), so a gate that drifted below pg_advisory_xact_lock would
+  -- satisfy both markers above while widening the window the
+  -- relationship lock is held.
+  IF position('ai_processing_consent_events' in v_def)
+     > position('pg_advisory_xact_lock' in v_def) THEN
+    RAISE EXCEPTION
+      'SUPERSESSION BROKEN FORWARD: the consent gate in admit_ai_session_generation now sits AFTER pg_advisory_xact_lock. 20260953140000 places it between the relationship_id resolution and LOCK 1 precisely so it holds no lock and cannot perturb the documented lock order that this function is the reference for.';
+  END IF;
+
+  RAISE NOTICE 'migration supersession ordering: 6 superseded definitions all still superseded';
 END $$;

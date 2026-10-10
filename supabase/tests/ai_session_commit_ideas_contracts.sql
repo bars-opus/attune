@@ -7,6 +7,7 @@ DO $$
 DECLARE
   v_rel uuid := 'b1000000-0000-0000-0000-000000000009';
   v_user_a uuid := 'b1000000-0000-0000-0000-00000000009a';
+  v_user_b uuid := 'b1000000-0000-0000-0000-000000000131';
   v_session uuid;
   v_admit record;
   v_row record;
@@ -14,7 +15,39 @@ DECLARE
 BEGIN
   INSERT INTO auth.users (id, email) VALUES (v_user_a, 'commit_a@t.test') ON CONFLICT DO NOTHING;
   INSERT INTO public.users (id, phone, display_name) VALUES (v_user_a, '+15550015001', 'A') ON CONFLICT DO NOTHING;
-  INSERT INTO public.relationships (id, user_a, status) VALUES (v_rel, v_user_a, 'active') ON CONFLICT DO NOTHING;
+  -- FIXTURE COMPLETION (Task 3, merge-blockers plan). This fixture
+  -- previously created a ONE-SIDED relationship (user_b NULL) with NO
+  -- consent events and still passed, because no dispatch-path RPC in
+  -- Plan B ever checked consent -- only the Task 10 read RPCs and
+  -- Task 11's Nearby publish did. admit_ai_session_generation now
+  -- enforces the membership + AI-processing consent gate spec §7.2
+  -- requires (20260953140000), so every admission here needs a real
+  -- partner and two current grants.
+  --
+  -- This is an ADDITION, not a correction: the fixture was incomplete
+  -- relative to §7.2, not wrong relative to the code as it then stood.
+  -- No assertion below is changed.
+  --
+  -- A one-sided relationship can never satisfy two-party consent, which
+  -- is correct by construction rather than incidental: the gate reads
+  -- BOTH r.user_a and r.user_b, and a NULL user_b makes the second
+  -- consent lookup filter on `e.user_id = NULL`, match nothing, and
+  -- COALESCE(NULL, false) deny. That is the intended semantics for a
+  -- relationship with only one member.
+  --
+  -- clock_timestamp(), never now(): now() is frozen per transaction, so
+  -- events written in one DO block would share an identical created_at
+  -- and the consent lookup's tiebreak would fall to `id DESC` on a
+  -- random uuid, making any consent-ordering assertion a coin flip.
+  -- ai_processing_consent_events.idempotency_key is NOT NULL.
+  INSERT INTO auth.users (id, email) VALUES (v_user_b, 'admitgate_partner_commit@t.test') ON CONFLICT DO NOTHING;
+  INSERT INTO public.users (id, phone, display_name) VALUES (v_user_b, '+15550021002', 'B') ON CONFLICT DO NOTHING;
+  INSERT INTO public.relationships (id, user_a, user_b, status) VALUES (v_rel, v_user_a, v_user_b, 'active') ON CONFLICT DO NOTHING;
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES
+    (v_rel, v_user_a, 'v1', 'granted', gen_random_uuid(), clock_timestamp()),
+    (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
     v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false
