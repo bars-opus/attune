@@ -81,4 +81,56 @@ if [ -x scripts/concurrency/word_hunt_races.sh ]; then
   fi
 fi
 
+# The AI-session / AI-assistant concurrency contracts under
+# supabase/tests/*.sh. These were committed by Tasks 5, 6 and 9 but were
+# never invoked by this runner, so they only ever ran when someone
+# remembered to run them by hand -- and Task 9's migration header cites
+# its own script as the PROOF of its lock-order correctness. Task 9's
+# review (finding F5) caught both that gap and the fact that its script
+# had been committed non-executable (mode 644), so it would not even run
+# via `./`. Wired in here so the claim and the check live together.
+#
+# They each hardcode `-d attune_test` internally (unlike
+# word_hunt_races.sh, which takes the db name as $1), so they are skipped
+# with a loud notice when the runner was pointed at a different database
+# via ATTUNE_TEST_DB rather than silently testing the wrong one.
+#
+# ai_session_end_admit_concurrent_test.sh is run TWICE on purpose: with
+# no argument it runs the unbiased race (which lands on outcome A -- end
+# wins the lock), and with "admit" it gives the admission a head start to
+# deterministically force outcome B. Both outcomes are admissible and
+# both have their own consistency conditions, so exercising only
+# whichever one the scheduler happens to favour would leave half the
+# contract unproven.
+CONCURRENCY_SH=(
+  supabase/tests/ai_assistant_provider_start_concurrent_test.sh
+  supabase/tests/ai_session_admit_concurrent_test.sh
+  supabase/tests/ai_session_admit_same_request_concurrent_test.sh
+  "supabase/tests/ai_session_end_admit_concurrent_test.sh"
+  "supabase/tests/ai_session_end_admit_concurrent_test.sh admit"
+)
+if [ "$DB" != "attune_test" ]; then
+  echo "==> SKIPPING supabase/tests/*.sh concurrency contracts (they hardcode -d attune_test; this run used $DB)"
+else
+  echo "==> Running AI session concurrency contracts"
+  for entry in "${CONCURRENCY_SH[@]}"; do
+    # shellcheck disable=SC2206  # deliberate word split: "<script> <arg>"
+    parts=($entry)
+    script="${parts[0]}"
+    label="$(basename "$script")${parts[1]:+ ${parts[1]}}"
+    if [ ! -x "$script" ]; then
+      echo "    FAIL  $label (not executable -- chmod +x it)"
+      status=1
+      continue
+    fi
+    if "${parts[@]}" >/tmp/attune_conc.log 2>&1; then
+      echo "    PASS  $label"
+    else
+      echo "    FAIL  $label"
+      tail -5 /tmp/attune_conc.log | sed 's/^/      /'
+      status=1
+    fi
+  done
+fi
+
 exit $status

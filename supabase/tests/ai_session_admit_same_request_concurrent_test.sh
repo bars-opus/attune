@@ -14,20 +14,54 @@
 #
 # Uses fixed UUIDs -- run `bash scripts/local_pg_setup.sh` first for a
 # fresh DB, or a dirty rerun fails loudly on a UUID collision.
+#
+# FIXTURE UUIDs (moved during Task 9's fix round 1): this script
+# originally shared REL/USER_A with Task 6's
+# ai_session_dispatch_claim_contracts.sql
+# (...-000000000007 / ...-00000000006a). That contract leaves an ACTIVE
+# private session on that (creator, relationship) pair, so once this
+# script was wired into scripts/local_pg_setup.sh -- which runs the SQL
+# suite first -- its own prepare_ai_session hit Task 3's
+# one-private-session-per-creator-per-relationship slot limit
+# ("A private session is already pending or active for this creator"),
+# $SESSION came back empty, and every admission failed on an empty-string
+# uuid cast. The script only ever passed because nothing invoked it after
+# the SQL suite had run.
+#
+# This is the same fixture-collision class Tasks 4, 5 and 7 each hit; the
+# fix is the same one Task 7's fix round applied -- move to a genuinely
+# free block rather than loosen anything. ...-000000000038 /
+# ...-00000000038a / ...-000000000702 were swept against every
+# supabase/tests/* file and every migration before use. No assertion,
+# expected value or RPC argument changed.
 set -euo pipefail
 
-REL="b1000000-0000-0000-0000-000000000007"
-USER_A="b1000000-0000-0000-0000-00000000006a"
-REQ="b1000000-0000-0000-0000-000000000701"
+REL="b1000000-0000-0000-0000-000000000038"
+USER_A="b1000000-0000-0000-0000-00000000038a"
+REQ="b1000000-0000-0000-0000-000000000702"
 
 SETUP=$(psql -q -d attune_test -t -A <<SQL
-INSERT INTO auth.users (id, email) VALUES ('$USER_A', 'admitrace_a@t.test') ON CONFLICT DO NOTHING;
-INSERT INTO public.users (id, phone, display_name) VALUES ('$USER_A', '+15550014001', 'A') ON CONFLICT DO NOTHING;
+INSERT INTO auth.users (id, email) VALUES ('$USER_A', 'admitrace_same_a@t.test') ON CONFLICT DO NOTHING;
+INSERT INTO public.users (id, phone, display_name) VALUES ('$USER_A', '+15550019001', 'A') ON CONFLICT DO NOTHING;
 INSERT INTO public.relationships (id, user_a, status) VALUES ('$REL', '$USER_A', 'active') ON CONFLICT DO NOTHING;
 SELECT session_id FROM public.prepare_ai_session('$USER_A', gen_random_uuid(), '$REL', 'ideas', 'private', NULL, false);
 SQL
 )
 SESSION=$(echo "$SETUP" | tail -n1)
+
+# Fail LEGIBLY if the fixture could not create a session. Without this,
+# an empty $SESSION is interpolated into the admissions below and each
+# one dies with `invalid input syntax for type uuid: ""` -- which reads
+# like a product bug rather than the fixture collision it actually is.
+# Task 9's fix round 1 hit exactly that.
+case "$SESSION" in
+  [0-9a-f]*-*-*-*-*) : ;;
+  *)
+    echo "SETUP FAILED: prepare_ai_session returned no session id. Raw setup output:"
+    echo "$SETUP"
+    exit 1
+    ;;
+esac
 
 psql -q -d attune_test <<SQL
 SELECT public.approve_ai_session_context('$USER_A', '$SESSION', 1, 'd', 'v1');
