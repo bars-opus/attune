@@ -950,6 +950,21 @@ END $$;
 -- =====================================================================
 -- Contract 8: the read RPCs' own privileges and hardening, by query.
 -- =====================================================================
+-- Strip SQL comments from a function definition before any structural
+-- assertion matches against it. pg_get_functiondef() returns comments
+-- verbatim, so a plain substring match is satisfied by a guard that has
+-- been COMMENTED OUT -- the assertion passes while the guard is gone
+-- (review finding N1: measured on all four structural assertions, 4/4
+-- guard deletions undetected when the text was left in a comment).
+-- Stripping line comments first, then block comments, makes every
+-- structural assertion in this file match only executable text.
+CREATE OR REPLACE FUNCTION pg_temp.strip_sql_comments(p_def text)
+RETURNS text LANGUAGE sql IMMUTABLE AS $strip$
+  SELECT regexp_replace(
+           regexp_replace(p_def, '--[^\n]*', '', 'g'),
+           '/\*.*?\*/', '', 'gs');
+$strip$;
+
 DO $$
 DECLARE
   v_fn text;
@@ -1021,7 +1036,7 @@ BEGIN
     -- must survive a future refactor which reorders or replaces the
     -- gate that currently happens to cover for it. Only a structural
     -- assertion can enforce that.
-    SELECT pg_get_functiondef(v_fn::regprocedure) INTO v_def;
+    SELECT pg_temp.strip_sql_comments(pg_get_functiondef(v_fn::regprocedure)) INTO v_def;
     IF v_def !~ 'IF p_actor_id IS NULL THEN' THEN
       RAISE EXCEPTION
         'EXPLOIT: % has no explicit `IF p_actor_id IS NULL` guard. Every SECURITY DEFINER function in this plan must validate its actor parameter as its first statement (Global Constraint). A later gate may happen to cover for its absence today -- that is not the same as the guard being there.', v_fn;
@@ -1095,8 +1110,8 @@ BEGIN
   -- Task 9 loosened that CHECK and removed the fabricated timestamp, so
   -- the winning body closes expired preparing sessions WITHOUT it.
   -- Re-applying Task 3's file last would put the fake stamp back.
-  v_def := pg_get_functiondef(
-    'public.prepare_ai_session(uuid, uuid, uuid, text, text, uuid, boolean)'::regprocedure);
+  v_def := pg_temp.strip_sql_comments(pg_get_functiondef(
+    'public.prepare_ai_session(uuid, uuid, uuid, text, text, uuid, boolean)'::regprocedure));
   IF v_def ~ 'SET state = ''closed'', activated_at = now\(\)' THEN
     RAISE EXCEPTION
       'SUPERSESSION REVERTED: the live prepare_ai_session stamps a FAKE activated_at on its expired-slot reclaim. That is Task 3''s superseded body (20260953030000); Task 9''s 20260953090000 WINS and removed it. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
@@ -1111,7 +1126,7 @@ BEGIN
   -- release_ai_assistant_quota_reservation. The superseded body has NO
   -- such call -- that WAS the bug: either partner could burn the
   -- creator's entire 24h AI quota with zero provider calls.
-  v_def := pg_get_functiondef('public.end_ai_session(uuid, uuid)'::regprocedure);
+  v_def := pg_temp.strip_sql_comments(pg_get_functiondef('public.end_ai_session(uuid, uuid)'::regprocedure));
   IF v_def !~ 'release_ai_assistant_quota_reservation' THEN
     RAISE EXCEPTION
       'SUPERSESSION REVERTED: the live end_ai_session never calls release_ai_assistant_quota_reservation. That is Task 9''s superseded body (20260953090000), which stranded the quota reservation (review finding F1, Critical -- partner-weaponizable quota DoS); 20260953090100 WINS. Re-apply migrations in order.';
@@ -1124,7 +1139,7 @@ BEGIN
   -- The superseded body set only the session-local bookkeeping column,
   -- so NO path ever set the real marker and a consumed reservation
   -- could still be released.
-  v_def := pg_get_functiondef('public.claim_ai_session_dispatch(uuid, uuid)'::regprocedure);
+  v_def := pg_temp.strip_sql_comments(pg_get_functiondef('public.claim_ai_session_dispatch(uuid, uuid)'::regprocedure));
   IF v_def !~ 'claim_ai_assistant_provider_start' THEN
     RAISE EXCEPTION
       'SUPERSESSION REVERTED: the live claim_ai_session_dispatch never calls claim_ai_assistant_provider_start, so the write-once ai_assistant_usage.provider_started_at marker is never set. That is Task 6''s superseded body (20260953060000); 20260953060100 WINS. Re-apply migrations in order.';
@@ -1140,7 +1155,7 @@ BEGIN
   -- winning body reads ai_processing_consent_events; the superseded one
   -- never mentions that table at all, which makes this the sharpest
   -- possible marker -- it cannot be satisfied by a reformat.
-  v_def := pg_get_functiondef('public.read_ai_session_staging(uuid, uuid)'::regprocedure);
+  v_def := pg_temp.strip_sql_comments(pg_get_functiondef('public.read_ai_session_staging(uuid, uuid)'::regprocedure));
   IF v_def !~ 'ai_processing_consent_events' THEN
     RAISE EXCEPTION
       'SUPERSESSION REVERTED: the live read_ai_session_staging never reads ai_processing_consent_events, so it enforces no consent gate. That is Task 10''s superseded body (20260953100000), which kept a staged Nearby result readable for ~2 minutes after consent withdrawal, relationship end, chat archive and actor removal (review finding F1, Important); 20260953100100 WINS. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
