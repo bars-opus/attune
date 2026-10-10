@@ -450,6 +450,25 @@ END $$;
 -- mechanisms protect against different mistakes: a grant without RLS
 -- opens the table outright, while RLS with a permissive policy would
 -- open it the moment someone added a grant.
+--
+-- KNOWN LIMITATION OF THE LOCAL HARNESS (pre-existing; affects Task 1's
+-- contract test identically, and production not at all). Mutation
+-- testing this contract turned up a survivor worth recording:
+-- scripts/local_pg_grants.sql re-applies (\i) the two AI Sessions
+-- REVOKE migrations AFTER every migration has run, to undo the blanket
+-- `GRANT ... ON ALL TABLES IN SCHEMA public TO authenticated` it needs
+-- in order to emulate Supabase's platform-side grants. That replay
+-- therefore SCRUBS any stray grant a migration file adds to these seven
+-- tables -- from ANY migration, including one sorting after the REVOKE
+-- files -- before this test ever runs. So in the local harness the
+-- privilege half of this contract cannot catch a stray grant that
+-- arrives inside a migration; it catches one applied at any later point
+-- (verified by applying exactly that grant post-setup, which fails this
+-- block with its specific message). In production there is no replay,
+-- so a stray grant in a migration stands and IS caught here. The RLS
+-- and zero-policy halves are unaffected and catch their mutants in both
+-- environments. Do not "fix" this by reordering the harness: the replay
+-- is what makes every other table-grant contract in the suite honest.
 -- =====================================================================
 DO $$
 DECLARE
@@ -531,6 +550,7 @@ DECLARE
   v_config text[];
   v_secdef boolean;
   v_volatile char;
+  v_def text;
 BEGIN
   FOREACH v_fn IN ARRAY v_fns LOOP
     -- service_role (Plan C's edge function) is the one and only caller.
@@ -572,6 +592,29 @@ BEGIN
     IF v_volatile = 'v' THEN
       RAISE EXCEPTION
         'EXPLOIT: % is VOLATILE -- a read RPC must be STABLE so it cannot write', v_fn;
+    END IF;
+
+    -- Global Constraint: every new SECURITY DEFINER function "validates
+    -- its actor parameter is non-NULL as its first statement".
+    --
+    -- Asserted STRUCTURALLY, on the live body, rather than behaviourally
+    -- -- and that choice is deliberate, because mutation testing proved
+    -- a behavioural assertion cannot see this. Deleting the NULL check
+    -- from read_ai_session_turns changes NOTHING observable: a NULL
+    -- actor is already stopped one gate later, since `r.user_a =
+    -- p_actor_id` is NULL (not true) for a NULL actor, so the
+    -- membership lookup finds no row and the function returns empty
+    -- anyway. The behavioural contract (1f) therefore SURVIVES that
+    -- mutation, correctly -- the function's behaviour is genuinely
+    -- unchanged. But the constraint is about the function's SHAPE, not
+    -- only its behaviour: the explicit check is defence-in-depth that
+    -- must survive a future refactor which reorders or replaces the
+    -- gate that currently happens to cover for it. Only a structural
+    -- assertion can enforce that.
+    SELECT pg_get_functiondef(v_fn::regprocedure) INTO v_def;
+    IF v_def !~ 'IF p_actor_id IS NULL THEN' THEN
+      RAISE EXCEPTION
+        'EXPLOIT: % has no explicit `IF p_actor_id IS NULL` guard. Every SECURITY DEFINER function in this plan must validate its actor parameter as its first statement (Global Constraint). A later gate may happen to cover for its absence today -- that is not the same as the guard being there.', v_fn;
     END IF;
   END LOOP;
 
