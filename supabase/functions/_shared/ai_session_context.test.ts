@@ -921,3 +921,42 @@ Deno.test({
     );
   },
 });
+
+Deno.test("canonicalTimestamp accepts a Date WITHOUT losing milliseconds -- String(date) would", () => {
+  // A measured defect, not hypothetical. The Deno pg driver decodes a
+  // timestamptz to a JS Date, and String() on a Date renders
+  //   "Sat Oct 10 2026 23:17:59 GMT+0000 (Greenwich Mean Time)"
+  // which has no millisecond field. A caller that stringified first
+  // would hash a timestamp 159ms from the one a caller receiving ISO
+  // text hashes -- two partners, two digests, a session that can never
+  // activate.
+  const instant = new Date("2026-10-10T23:17:59.159Z");
+
+  // The trap, demonstrated.
+  assertEquals(
+    new Date(String(instant)).toISOString(),
+    "2026-10-10T23:17:59.000Z",
+    "precondition: String(date) really does drop the milliseconds",
+  );
+
+  // And the function does not fall into it.
+  assertEquals(canonicalTimestamp(instant), "2026-10-10T23:17:59.159Z");
+  // A Date and the ISO string of the same instant agree, which is the
+  // property the digest depends on.
+  assertEquals(
+    canonicalTimestamp(instant),
+    canonicalTimestamp("2026-10-10T23:17:59.159Z"),
+  );
+  // And two instants 1ms apart still differ.
+  assertNotEquals(
+    canonicalTimestamp(instant),
+    canonicalTimestamp(new Date("2026-10-10T23:17:59.160Z")),
+  );
+
+  // Non-timestamp inputs are null, not a hashed "Invalid Date".
+  assertEquals(canonicalTimestamp(new Date("nonsense")), null);
+  assertEquals(canonicalTimestamp(null), null);
+  assertEquals(canonicalTimestamp(undefined), null);
+  assertEquals(canonicalTimestamp(12345), null);
+  assertEquals(canonicalTimestamp({}), null);
+});

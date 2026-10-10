@@ -156,7 +156,24 @@ export function isValidUtcOffsetMinutes(value: unknown): value is number {
 ///
 /// Returns null for anything unparseable, so a caller must decide
 /// explicitly rather than hashing the string "Invalid Date".
-export function canonicalTimestamp(raw: string): string | null {
+export function canonicalTimestamp(raw: unknown): string | null {
+  // A Date is handled WITHOUT going through String() first. This is not
+  // defensive typing -- it is a measured bug. The Deno pg driver decodes
+  // a timestamptz to a JS Date, and `String(date)` renders
+  //
+  //   "Sat Oct 10 2026 23:17:59 GMT+0000 (Greenwich Mean Time)"
+  //
+  // which has NO millisecond field at all. Re-parsing that gives
+  // ...59.000Z, so a caller that stringified first would hash a
+  // timestamp 159ms away from the one a caller receiving ISO text
+  // hashes -- two partners, two digests, a session that can never
+  // activate. Exactly the "floating timestamp precision wider than what
+  // is actually stored" the plan's Global Constraints forbid.
+  if (raw instanceof Date) {
+    const ms = raw.getTime();
+    return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+  }
+  if (typeof raw !== "string") return null;
   const parsed = new Date(raw);
   const ms = parsed.getTime();
   if (!Number.isFinite(ms)) return null;
