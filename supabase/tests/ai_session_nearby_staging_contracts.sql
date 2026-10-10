@@ -66,6 +66,33 @@ BEGIN
 
   -- Contract 2: the PARTNER cannot publish someone else's staged Nearby
   -- result (spec §6.1: only the requester may disclose).
+  --
+  -- ============ LEDGER CORRECTION -- DO NOT "FIX" THIS ============
+  -- The PREDECESSOR plan's Ruling 11 recorded this contract as a BARE
+  -- `EXCEPTION WHEN OTHERS` -- a seventh vacuous test. THAT RULING WAS
+  -- WRONG. The handler below carries
+  -- `IF SQLERRM LIKE 'EXPLOIT:%' THEN RAISE; END IF;`, which is this
+  -- suite's standard anti-vacuity guard: the EXPLOIT raise two lines up
+  -- fires if the partner's publish SUCCEEDS, and the guard re-raises it
+  -- rather than letting the handler swallow it. Without the guard this
+  -- contract would pass whether the publish was refused or accepted;
+  -- with it, only a refusal passes.
+  --
+  -- The final whole-branch review MUTATION-PROVED this (an unguarded
+  -- copy of the handler lets the exploit through; this one does not)
+  -- and audited all 11 plan test files: 28 handlers, EVERY ONE
+  -- message-checked or re-raise-guarded. Re-audited by Task 5 of the
+  -- merge-blocker plan across 14 files and 52 handlers, same result --
+  -- the apparent exceptions are all comments mentioning the string,
+  -- structural assertions ABOUT handlers, or over-restriction legs that
+  -- raise EXPLOIT unconditionally because the call they wrap is
+  -- supposed to SUCCEED.
+  --
+  -- Recorded here, at the contract itself, so nobody spends a cycle
+  -- "fixing" a non-defect on the strength of a superseded ruling. If
+  -- you arrived here from Ruling 11: there is no defect. The discipline
+  -- holds branch-wide.
+  -- ===============================================================
   BEGIN
     PERFORM public.publish_ai_session_nearby_result(v_user_b, v_admit.request_id);
     RAISE EXCEPTION 'EXPLOIT: the non-requester partner published a staged Nearby result';
@@ -472,6 +499,37 @@ BEGIN
   IF v_def !~ 'pg_advisory_xact_lock\(hashtext\(v_relationship_id::text\)\)' THEN
     RAISE EXCEPTION
       'EXPLOIT: discard_ai_session_nearby_staging''s advisory lock is not keyed on hashtext(v_relationship_id::text). Every other RPC in this chain keys on the RELATIONSHIP; a per-session, per-request or per-staging-row key serializes against NONE of them and the publish x discard deadlock returns in full. The key is the whole point of the lock.';
+  END IF;
+
+  -- ---- RULING 14: the NULL-actor guard must be the LITERAL FIRST
+  -- statement, ahead of the lock-target lookup and the locks.
+  --
+  -- Global Constraint: every SECURITY DEFINER function in this plan
+  -- validates its actor parameter non-NULL as its FIRST statement.
+  -- Before 20260953190000, discard was the one function satisfying that
+  -- only INDIRECTLY: `v_actor != p_actor_id` is NULL when p_actor_id is
+  -- NULL, so the requester check fell THROUGH, the staging DELETE and
+  -- the request UPDATE both ran, and the refusal came afterwards from
+  -- mark_ai_assistant_usage_outcome -- correct by plpgsql's
+  -- subtransaction rollback rather than by construction. MEASURED both
+  -- ways on a fresh database before the change.
+  --
+  -- Asserted by POSITION, not presence: a guard added BELOW the
+  -- lock-target lookup, or below the advisory lock, still "contains"
+  -- the string while performing work before authorizing it.
+  IF position('IF p_actor_id IS NULL THEN' in v_def) = 0 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: discard_ai_session_nearby_staging has no explicit `IF p_actor_id IS NULL` guard. Global Constraint: every SECURITY DEFINER function in this plan validates its actor parameter non-NULL as its FIRST statement. Without it a NULL actor reaches the staging DELETE and the request UPDATE and is refused only afterwards, indirectly, by mark_ai_assistant_usage_outcome -- two unauthorized writes undone by rollback instead of never attempted. 20260953190000 WINS over 20260953150000.';
+  END IF;
+  IF position('IF p_actor_id IS NULL THEN' in v_def) > v_adv THEN
+    RAISE EXCEPTION
+      'EXPLOIT: discard_ai_session_nearby_staging''s NULL-actor guard (at %) sits AFTER the relationship advisory lock (at %). It must be the FIRST statement: a NULL actor must be refused before the function resolves a relationship, takes a lock, or touches a row.',
+      position('IF p_actor_id IS NULL THEN' in v_def), v_adv;
+  END IF;
+  IF position('IF p_actor_id IS NULL THEN' in v_def)
+     > position('FROM public.ai_session_staging st' in v_def) THEN
+    RAISE EXCEPTION
+      'EXPLOIT: discard_ai_session_nearby_staging''s NULL-actor guard sits AFTER its lock-target lookup. "First statement" means ahead of every read, not merely ahead of the locks: the lookup is what makes the no-staging-row case return silently, so a guard below it leaves a NULL actor silently accepted on exactly that path.';
   END IF;
 
   -- ---- The FOR UPDATE count, so neither row marker can silently stop

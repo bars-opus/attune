@@ -373,7 +373,29 @@ SQL
 # pre-fix, which is the bar this fix round has to clear.
 # ----------------------------------------------------------------------
 
-DISCARD_MIGRATION="supabase/migrations/20260953150000_ai_session_discard_lock_order_fix.sql"
+# The migration that WINS for discard_ai_session_nearby_staging, used to
+# restore the shipped body after the gapped legs mutate it.
+#
+# RESOLVED DYNAMICALLY, not hardcoded. It used to name
+# 20260953150000_ai_session_discard_lock_order_fix.sql directly, and that
+# broke the moment a later migration superseded that body: the restore
+# re-applied a file that no longer wins, the md5 check correctly refused
+# to confirm it, and this script failed with "the shipped
+# discard_ai_session_nearby_staging body was NOT restored" -- a true
+# report of a stale pointer, not of a lock-order defect. (Caught for real
+# by Task 5 of the merge-blocker plan, whose 20260953190000 added
+# discard's explicit NULL-actor guard.)
+#
+# The winner is the LAST migration by filename sort that actually
+# redefines the function -- the same rule the migration runner applies,
+# so this cannot disagree with what is deployed. The md5 assertion in
+# restore_shipped_discard() is what makes a wrong answer here loud rather
+# than silent, so the two together are safe.
+DISCARD_MIGRATION="$(grep -l 'CREATE OR REPLACE FUNCTION public\.discard_ai_session_nearby_staging' supabase/migrations/*.sql 2>/dev/null | sort | tail -1)"
+if [ -z "$DISCARD_MIGRATION" ]; then
+  echo "FAIL  no migration defines discard_ai_session_nearby_staging -- cannot restore the shipped body after the gapped legs"
+  exit 1
+fi
 PRISTINE_DISCARD_MD5=""
 
 discard_md5() {

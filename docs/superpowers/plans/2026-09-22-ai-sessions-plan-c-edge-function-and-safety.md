@@ -59,6 +59,34 @@ be confirmed fixed before this plan's Task 4 (which calls
 
 ## Global Constraints
 
+- **§6.1 Realtime authorization is UNCLAIMED BY BOTH PLANS as the work
+  is divided.** (Recorded by Task 5 of the merge-blocker plan, N6.) Plan
+  B's Goal paragraph listed "per-user Realtime authorization for
+  content-free invalidation hints" as one of its deliverables; it was
+  never built, and Plan B's own §6.1 note disclaims it — the Goal text
+  was the inconsistency, now corrected there. Verified by catalog query
+  against the Plan B branch: **ZERO** policies on `realtime.messages`,
+  and zero on the entire `realtime` schema.
+  - Plan B's stated reason for deferring was that writing a
+    `realtime.messages` policy with no consumer to test it against
+    proves nothing. That reasoning is sound, and Plan C IS the consumer
+    — but this plan's own task list does not pick it up either, so as
+    divided the work falls between them.
+  - **Consequence if nobody claims it:** spec §6.1 forbids direct
+    Postgres Changes publication of the transcript/staging tables (and
+    the 56/88-combination privilege sweeps make it impossible anyway, so
+    there is no accidental fallback). With no private-channel Broadcast
+    authorization either, clients have **no push path at all** for
+    content-free invalidation hints and must poll the read RPCs.
+    Functionally acceptable — the `session_revision` Task 2 added to
+    `commit`/`publish` gives a client something cheap to poll on — but
+    it is a deliberate product decision about latency and request
+    volume, not a thing to discover after shipping.
+  - **Owner required before Plan C's own exit:** either Plan C adds
+    §6.1, or a follow-up plan does, or the spec is amended to make
+    polling the sanctioned mechanism. Any of the three is fine; silence
+    is not.
+
 - **Every RPC call in this function passes `p_actor_id` from
   `requireUser(req)`'s verified `user.id` — never from the request
   body.** This is the same rule Plan A/B enforce at the database layer;

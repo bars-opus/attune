@@ -141,7 +141,16 @@ else
       echo "    PASS  $label"
     else
       echo "    FAIL  $label"
-      tail -5 /tmp/attune_conc.log | sed 's/^/      /'
+      # RULING 13: show the WHOLE log, not `tail -5`.
+      #
+      # These scripts race many pairs in sequence and print a line per
+      # trial, so a failing pair's diagnosis routinely scrolls past the
+      # last five lines -- it cost an implementer real debugging time on
+      # a transient failure whose failing pair had already scrolled off,
+      # and the log is deleted on the next script's run. The whole log
+      # is at most a few hundred lines and only ever printed on a
+      # failure, so there is nothing to save by truncating it.
+      cat /tmp/attune_conc.log | sed 's/^/      /'
       status=1
     fi
   done

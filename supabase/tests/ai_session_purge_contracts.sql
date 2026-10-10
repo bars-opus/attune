@@ -2040,6 +2040,133 @@ END $$;
 
 
 -- =====================================================================
+-- Contract 10b (RULING 3): the Global Constraint, widened to EVERY
+-- `public.ai\_%` table, with a documented allow-list.
+--
+-- THE GAP THIS CLOSES. Contract 10 above enumerates 7 tables x 2 roles
+-- x 4 privileges = 56 combinations and asserts all 56 denied. That is
+-- the number quoted throughout the plan -- but the Global Constraint is
+-- worded for EVERY table in the plan, and the plan's tables are 11, not
+-- 7. The four it does not cover are Plan A's (ai_assist_drafts,
+-- ai_assistant_usage, ai_processing_consent_events,
+-- ai_assist_planning_links), and a FUTURE grant of DML on one of them
+-- would be caught by no Plan B contract at all -- in production rather
+-- than by the suite.
+--
+-- WHY THIS IS A SIBLING AND NOT AN EDIT TO CONTRACT 10. The 56-
+-- combination assertion is quoted by name in five other contracts'
+-- failure messages as the reason a raw-table-read exploit is
+-- impossible. Renumbering it to 88 would make all five messages wrong,
+-- and would also lose the distinction that matters: the 7 session
+-- tables grant `authenticated` NOTHING and have ZERO policies, which is
+-- a strictly stronger property than the 11-table sweep can assert.
+-- Contract 10 keeps the strong claim for the 7; this keeps the broad
+-- claim for all 11.
+--
+-- THE ALLOW-LIST, AND WHY IT HAS EXACTLY ONE ENTRY. Widening surfaces
+-- one hit: `authenticated` has SELECT on ai_assist_planning_links.
+-- Established by query, not assumed:
+--
+--   * It is INTENTIONAL PLAN A DESIGN. 20260950030000 does
+--     `REVOKE ALL ... FROM PUBLIC, anon, authenticated;` and then
+--     `GRANT SELECT ON public.ai_assist_planning_links TO authenticated;`
+--     -- an explicit, narrow re-grant after a blanket revoke, which is
+--     the opposite shape from an accidental leak.
+--   * RLS IS ON and there is exactly ONE policy, a SELECT policy whose
+--     USING clause requires the row's relationship to be active,
+--     un-archived, and to have auth.uid() as user_a or user_b. So the
+--     grant exposes a member's own relationship's planning links and
+--     nothing else.
+--   * It is OUTSIDE the 7-table session set, predates this plan, and no
+--     migration in this plan grants it.
+--
+-- So it is not a leak, and it is allow-listed BY NAME AND BY PRIVILEGE
+-- (SELECT only) rather than by excluding the table. That distinction is
+-- the point of the allow-list: a future INSERT, UPDATE or DELETE grant
+-- on this same table still fails, and so does a SELECT grant to `anon`.
+--
+-- THE ALLOW-LIST IS ITSELF ASSERTED NON-VACUOUS. If the allow-listed
+-- grant ever goes away, this contract FAILS -- loudly, telling the
+-- reader to remove the entry. An allow-list that silently tolerates an
+-- entry that no longer applies is how a real leak eventually hides
+-- behind a stale exception.
+-- =====================================================================
+DO $$
+DECLARE
+  t text;
+  r text;
+  p text;
+  v_roles text[] := ARRAY['authenticated', 'anon'];
+  v_privs text[] := ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
+  v_tables text[];
+  v_checked int := 0;
+  v_allowed int := 0;
+  v_rls boolean;
+BEGIN
+  -- Enumerate from the CATALOG, not from a hand-written list. A
+  -- hand-written list is exactly what left the four Plan A tables
+  -- uncovered, and it would leave the NEXT table uncovered too.
+  SELECT array_agg(c.relname ORDER BY c.relname) INTO v_tables
+  FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname LIKE 'ai\_%';
+
+  IF v_tables IS NULL OR array_length(v_tables, 1) < 11 THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: the catalog sweep found % public.ai_%% table(s), expected at least 11 (7 session + 4 Plan A). A pattern that matches too little passes vacuously, which is the failure mode this contract exists to remove.',
+      COALESCE(array_length(v_tables, 1), 0);
+  END IF;
+
+  FOREACH t IN ARRAY v_tables LOOP
+    FOREACH r IN ARRAY v_roles LOOP
+      FOREACH p IN ARRAY v_privs LOOP
+        v_checked := v_checked + 1;
+        IF has_table_privilege(r, 'public.' || t, p) THEN
+          -- THE ALLOW-LIST. One entry, by table AND role AND privilege.
+          IF t = 'ai_assist_planning_links' AND r = 'authenticated' AND p = 'SELECT' THEN
+            v_allowed := v_allowed + 1;
+            -- Even the allow-listed grant must keep its guards: RLS on,
+            -- and at least one policy to narrow it. A grant whose policy
+            -- was dropped is an OPEN TABLE, which is precisely what the
+            -- "no grant" rule exists to make impossible elsewhere.
+            SELECT c.relrowsecurity INTO v_rls
+            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relname = t;
+            IF NOT v_rls THEN
+              RAISE EXCEPTION
+                'EXPLOIT: public.% is allow-listed for `authenticated` SELECT but RLS is NOT ENABLED on it. The grant is only safe because RLS plus its one membership policy narrows it to the caller''s own active relationships; without RLS it is an open table.', t;
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_policies
+              WHERE schemaname = 'public' AND tablename = t AND cmd IN ('SELECT', 'ALL')
+            ) THEN
+              RAISE EXCEPTION
+                'EXPLOIT: public.% is allow-listed for `authenticated` SELECT but has NO SELECT policy. RLS with zero policies denies everything, so this would not leak today -- but the allow-list''s whole justification is "explicit grant, RLS on, ONE narrowing policy", and that justification no longer holds. Re-derive the allow-list rather than letting it stand on a condition that changed.', t;
+            END IF;
+          ELSE
+            RAISE EXCEPTION
+              'EXPLOIT: role % has direct % on public.% -- this plan grants NO table-level DML on its tables to % ; every access must go through a SECURITY DEFINER RPC. The ONE documented exception is `authenticated` SELECT on ai_assist_planning_links (intentional Plan A design: explicit GRANT after a REVOKE ALL in 20260950030000, RLS on, one membership policy). If this new grant is also intentional, it needs its own allow-list entry here AND a reviewed justification -- not a widened exception.',
+              r, p, t, r;
+          END IF;
+        END IF;
+      END LOOP;
+    END LOOP;
+  END LOOP;
+
+  -- THE ALLOW-LIST MUST NOT BE STALE. If the grant it exists for is
+  -- gone, the entry must go too -- a tolerated-but-inapplicable
+  -- exception is a place for a future real leak to hide.
+  IF v_allowed <> 1 THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: the allow-list matched % grant(s), expected exactly 1 (`authenticated` SELECT on ai_assist_planning_links). If that grant was intentionally REMOVED, delete the allow-list entry so this sweep is exception-free; a stale entry would silently re-permit the grant if it ever came back.',
+      v_allowed;
+  END IF;
+
+  RAISE NOTICE 'purge contract 10b (ruling 3): % (role, privilege, table) combinations across % public.ai_%% tables -- all denied except the 1 documented allow-list entry',
+    v_checked, array_length(v_tables, 1);
+END $$;
+
+
+-- =====================================================================
 -- Contract 11: the supersession marker for
 -- publish_ai_session_nearby_result.
 --
