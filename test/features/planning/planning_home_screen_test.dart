@@ -3,6 +3,11 @@ import 'dart:async';
 import 'package:attune/features/planning/data/repositories/planning_repository.dart';
 import 'package:attune/features/planning/presentation/providers/planning_providers.dart';
 import 'package:attune/features/planning/presentation/screens/planning_home_screen.dart';
+import 'package:attune/features/reminders/data/models/reminder_model.dart';
+import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
+import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart'
+    as timeline_providers;
+import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,6 +29,16 @@ class _FakeGateway implements PlanningRpcGateway {
   }
 }
 
+/// Overrides RemindersListNotifier's build() — the real one reaches
+/// Supabase.instance.client synchronously, which throws with no app-level
+/// Supabase.initialize() in this test host (same constraint
+/// pulse_tab_test.dart documents for TimelineScreen's own reminders read;
+/// the Calendar tab below embeds that same TimelineScreen).
+class _FakeRemindersListNotifier extends RemindersListNotifier {
+  @override
+  Future<List<ReminderModel>> build() async => const [];
+}
+
 // planningGoalsProvider/planningTasksProvider/planningEventsProvider all
 // internally `ref.listen` planningChangeSignalProvider, which synchronously
 // reaches Supabase.instance.client to open a Realtime channel — there is no
@@ -31,6 +46,10 @@ class _FakeGateway implements PlanningRpcGateway {
 // note on remindersListProvider for the identical constraint), so that
 // signal provider must be overridden to a harmless empty stream rather than
 // left to hit the real ambient client.
+//
+// The Calendar tab is the real TimelineScreen now (not a Planning-only
+// calendar), so its own providers need the same harmless overrides
+// pulse_tab_test.dart uses to reach it without a live Supabase client.
 Widget _wrap(Widget child, PlanningRepository repository) {
   return ProviderScope(
     overrides: [
@@ -38,6 +57,14 @@ Widget _wrap(Widget child, PlanningRepository repository) {
       planningChangeSignalProvider.overrideWith(
         (ref, relationshipId) => const Stream<void>.empty(),
       ),
+      timeline_providers.currentUserIdProvider.overrideWithValue(null),
+      timeline_providers.currentRelationshipIdProvider.overrideWith(
+        (ref) async => 'r1',
+      ),
+      timeline_providers.timelineEventsProvider.overrideWith(
+        (ref, month) async => [],
+      ),
+      remindersListProvider.overrideWith(_FakeRemindersListNotifier.new),
     ],
     child: withScreenUtil(MaterialApp(home: child)),
   );
@@ -61,6 +88,119 @@ void main() {
     expect(find.text('Goals'), findsOneWidget);
     expect(find.text('Tasks'), findsOneWidget);
     expect(find.text('Events'), findsOneWidget);
+  });
+
+  group('two tabs: Planning and Calendar', () {
+    testWidgets(
+      'both tab labels are shown, and the Planning tab (the original '
+      'sections list) is selected by default',
+      (tester) async {
+        final repository = PlanningRepository(_FakeGateway({
+          'list_planning_goals': (_) async => <dynamic>[],
+          'list_planning_tasks': (_) async => <dynamic>[],
+          'list_planning_events': (_) async => <dynamic>[],
+        }));
+
+        await tester.pumpWidget(_wrap(
+          const PlanningHomeScreen(relationshipId: 'r1'), repository,
+        ));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Planning'), findsWidgets);
+        expect(find.text('Calendar'), findsOneWidget);
+        // The list tab's own content (Goals/Tasks/Events sections) is
+        // visible without switching tabs.
+        expect(find.text('Goals'), findsOneWidget);
+        expect(find.text('Tasks'), findsOneWidget);
+        expect(find.text('Events'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'switching to the Calendar tab shows the real TimelineScreen '
+      '(the same calendar Pulse uses), not a second Planning-only '
+      'calendar implementation',
+      (tester) async {
+        final calendarCallParams = <Map<String, dynamic>?>[];
+        final repository = PlanningRepository(_FakeGateway({
+          'list_planning_goals': (_) async => <dynamic>[],
+          'list_planning_tasks': (_) async => <dynamic>[],
+          'list_planning_events': (_) async => <dynamic>[],
+          'list_planning_calendar_entries': (params) async {
+            calendarCallParams.add(params);
+            return <dynamic>[];
+          },
+        }));
+
+        await tester.pumpWidget(_wrap(
+          const PlanningHomeScreen(relationshipId: 'r1'), repository,
+        ));
+        await tester.pumpAndSettle();
+
+        // TimelineScreen (and the calendar RPC it triggers) must not
+        // build while the Planning tab is the only one built (TabBarView
+        // is lazy) — asserted before the switch so the later, post-switch
+        // call is unambiguous.
+        expect(find.byType(TimelineScreen), findsNothing);
+        expect(calendarCallParams, isEmpty);
+
+        await tester.tap(find.text('Calendar'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(TimelineScreen), findsOneWidget);
+        expect(calendarCallParams, hasLength(1));
+        expect(calendarCallParams.single!['p_relationship_id'], 'r1');
+        // TimelineScreen's own calendar strip: weekday header letters
+        // plus its month grid.
+        expect(find.text('M'), findsWidgets);
+        expect(find.byType(GridView), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'the Calendar tab suppresses TimelineScreen\'s own AppBar (this '
+      'screen already supplies one, and two would stack) without '
+      'suppressing the Family action the standalone route depends on',
+      (tester) async {
+        final repository = PlanningRepository(_FakeGateway({
+          'list_planning_goals': (_) async => <dynamic>[],
+          'list_planning_tasks': (_) async => <dynamic>[],
+          'list_planning_events': (_) async => <dynamic>[],
+          'list_planning_calendar_entries': (_) async => <dynamic>[],
+        }));
+
+        await tester.pumpWidget(_wrap(
+          const PlanningHomeScreen(relationshipId: 'r1'), repository,
+        ));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Calendar'));
+        await tester.pumpAndSettle();
+
+        // Exactly one AppBar on screen — this screen's own. If
+        // TimelineScreen rendered its bar here too there would be two.
+        expect(find.byType(AppBar), findsOneWidget);
+        expect(find.byTooltip('Family'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'the standalone TimelineScreen keeps its own AppBar and the Family '
+      'action — the only entry point to the Family screen, so suppressing '
+      'it for the Planning tab must not suppress it here',
+      (tester) async {
+        final repository = PlanningRepository(_FakeGateway({
+          'list_planning_calendar_entries': (_) async => <dynamic>[],
+        }));
+
+        await tester.pumpWidget(_wrap(
+          const TimelineScreen(showAppBar: true), repository,
+        ));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AppBar), findsOneWidget);
+        expect(find.byTooltip('Family'), findsOneWidget);
+      },
+    );
   });
 
   testWidgets('renders a Goal and a Task once loaded', (tester) async {

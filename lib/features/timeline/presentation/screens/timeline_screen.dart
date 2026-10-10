@@ -19,9 +19,23 @@ import 'package:attune/features/timeline/presentation/widgets/upcoming_reminders
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class TimelineScreen extends ConsumerStatefulWidget {
-  const TimelineScreen({super.key, this.showAppBar = false});
+  const TimelineScreen({
+    super.key,
+    this.showAppBar = false,
+    this.showOwnAppBar = true,
+  });
 
+  /// Whether this instance owns its own Scaffold/scroll controller rather
+  /// than relying on an ancestor `NestedScrollView` (see the controller
+  /// note below).
   final bool showAppBar;
+
+  /// Whether to render the timeline's own `AppBar` when [showAppBar] is
+  /// true. Embedded as a tab under a host screen that already supplies an
+  /// `AppBar` (Planning's Calendar tab), this is false so the two do not
+  /// stack — while the standalone `/couples-calendar` route keeps its own
+  /// bar, and with it the only entry point to the Family screen.
+  final bool showOwnAppBar;
 
   @override
   ConsumerState<TimelineScreen> createState() => _TimelineScreenState();
@@ -137,7 +151,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
 
         return Scaffold(
           appBar:
-              widget.showAppBar
+              widget.showAppBar && widget.showOwnAppBar
                   ? AppBar(
                     backgroundColor: Colors.transparent,
                     actions: [

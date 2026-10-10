@@ -1,7 +1,10 @@
 // lib/features/planning/presentation/screens/planning_home_screen.dart
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/app_divider.dart';
+import 'package:attune/core/widgets/app_tabs.dart';
 import 'package:attune/core/widgets/buttons/app_icon_button.dart';
+import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
+import 'package:attune/home/widgets/tabs_with_content.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -18,82 +21,125 @@ import 'create_planning_task_screen.dart';
 import 'create_planning_event_screen.dart';
 import 'planning_notes_screen.dart';
 
-/// Three sections, not tabs (spec §6.2): Goals, Tasks, Events, each
-/// with its own "+", plus a Notes row that opens the dedicated
-/// `PlanningNotesScreen` (added once that screen existed — see this
-/// plan's Task 4).
+/// Two tabs: the original sections list (Goals/Tasks/Events, each with
+/// its own "+", plus a Notes row opening `PlanningNotesScreen`) and the
+/// real `TimelineScreen` — same calendar the Pulse tab shows, not a
+/// second calendar implementation, so tasks/events set here appear on
+/// exactly the calendar the rest of the app already uses. Built with
+/// `showAppBar: true` since this tab has no `NestedScrollView` ancestor
+/// (unlike PulseTab's embedding, which supplies one) — TimelineScreen
+/// then owns its own Scaffold/CustomScrollView and needs no header
+/// coordination here — but with `showOwnAppBar: false`, since this
+/// screen's own AppBar is already above the tab bar and two would
+/// stack. The standalone `/couples-calendar` route keeps its bar.
 class PlanningHomeScreen extends ConsumerWidget {
   const PlanningHomeScreen({super.key, required this.relationshipId});
   final String relationshipId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    final tabs = [
+      AppTabItem(
+        label: 'Planning',
+        icon: Icons.checklist_rounded,
+        content: _PlanningListTab(relationshipId: relationshipId),
+      ),
+      AppTabItem(
+        label: 'Calendar',
+        icon: Icons.calendar_month_rounded,
+        content: const TimelineScreen(showAppBar: true, showOwnAppBar: false),
+      ),
+    ];
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Planning'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
+        automaticallyImplyLeading: true,
+        backgroundColor: Colors.transparent,
+        title: Text(
+          'Planning',
+          style: textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface.withValues(alpha: 0.8),
+          ),
         ),
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await Future.wait([
-            ref.read(planningGoalsProvider(relationshipId).notifier).refresh(),
-            ref.read(planningTasksProvider(relationshipId).notifier).refresh(),
-            ref.read(planningEventsProvider(
-              PlanningEventsKey(relationshipId: relationshipId, upcoming: true),
-            ).notifier).refresh(),
-          ]);
-        },
-        child: ListView(
-          padding: EdgeInsets.all(Spacing.md),
-          children: [
-            _SectionHeader(
-              title: 'Goals',
-              onAdd: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => CreatePlanningGoalScreen(relationshipId: relationshipId),
-              )),
-            ),
-            _GoalsSection(relationshipId: relationshipId),
-            Gap(Spacing.md),
-            const AppDivider(),
-            Gap(Spacing.md),
-            _SectionHeader(
-              title: 'Tasks',
-              onAdd: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => CreatePlanningTaskScreen(relationshipId: relationshipId),
-              )),
-            ),
-            _TasksSection(relationshipId: relationshipId),
-            Gap(Spacing.md),
-            const AppDivider(),
-            Gap(Spacing.md),
-            _SectionHeader(
-              title: 'Events',
-              onAdd: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => CreatePlanningEventScreen(relationshipId: relationshipId),
-              )),
-            ),
-            _EventsSection(relationshipId: relationshipId),
-            Gap(Spacing.md),
-            const AppDivider(),
-            Gap(Spacing.md),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.sticky_note_2_outlined),
-              title: const Text('Notes'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => PlanningNotesScreen(relationshipId: relationshipId),
-              )),
-            ),
-          ],
-        ),
+      body: TabsWithContent(
+        tabs: tabs,
+        initialIndex: 0,
+        scrollable: false,
+        showContent: true,
       ),
     );
   }
 }
+
+class _PlanningListTab extends ConsumerWidget {
+  const _PlanningListTab({required this.relationshipId});
+  final String relationshipId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        await Future.wait([
+          ref.read(planningGoalsProvider(relationshipId).notifier).refresh(),
+          ref.read(planningTasksProvider(relationshipId).notifier).refresh(),
+          ref.read(planningEventsProvider(
+            PlanningEventsKey(relationshipId: relationshipId, upcoming: true),
+          ).notifier).refresh(),
+        ]);
+      },
+      child: ListView(
+        padding: EdgeInsets.all(Spacing.md),
+        children: [
+          _SectionHeader(
+            title: 'Goals',
+            onAdd: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => CreatePlanningGoalScreen(relationshipId: relationshipId),
+            )),
+          ),
+          _GoalsSection(relationshipId: relationshipId),
+          Gap(Spacing.md),
+          const AppDivider(),
+          Gap(Spacing.md),
+          _SectionHeader(
+            title: 'Tasks',
+            onAdd: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => CreatePlanningTaskScreen(relationshipId: relationshipId),
+            )),
+          ),
+          _TasksSection(relationshipId: relationshipId),
+          Gap(Spacing.md),
+          const AppDivider(),
+          Gap(Spacing.md),
+          _SectionHeader(
+            title: 'Events',
+            onAdd: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => CreatePlanningEventScreen(relationshipId: relationshipId),
+            )),
+          ),
+          _EventsSection(relationshipId: relationshipId),
+          Gap(Spacing.md),
+          const AppDivider(),
+          Gap(Spacing.md),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.sticky_note_2_outlined),
+            title: const Text('Notes'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => PlanningNotesScreen(relationshipId: relationshipId),
+            )),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({required this.title, required this.onAdd});
