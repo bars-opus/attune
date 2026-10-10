@@ -1,3 +1,33 @@
+-- ======================================================================
+-- SUPERSEDED: a LATER migration re-defines prepare_ai_session.
+--
+-- The authoritative definition of public.prepare_ai_session is in
+--   supabase/migrations/20260953090000_ai_session_end_share_rpcs.sql
+-- (Task 9, "CORRECTION 1"), which CREATE OR REPLACEs it to remove the
+-- fake `activated_at = now()` that the expired-slot reclaim UPDATE
+-- below needed only to satisfy Task 1's original 2-way CHECK on
+-- ai_sessions. Task 9 loosened that CHECK to the honest 3-way form, so
+-- the fabricated timestamp became unnecessary -- and untrue, since the
+-- reclaimed session provably never activated. Task 9's reviewer
+-- verified the safety argument: the only reader of
+-- ai_sessions.activated_at anywhere is admit_ai_session_generation's
+-- expires_at computation, which runs only after asserting
+-- state = 'active', a state the 3-way constraint still guarantees
+-- carries a non-NULL activated_at.
+--
+-- DO NOT edit the function body below expecting the change to take
+-- effect: on any rebuild, migrations apply in filename order and
+-- 20260953090000 runs last, silently overriding whatever is here.
+-- A change to prepare_ai_session belongs in a NEW migration sorting
+-- after 20260953090100 (this plan's additive-migrations discipline,
+-- established by Task 6's fix round). See the MIGRATION PROVENANCE
+-- block at the end of 20260953090100_ai_session_end_share_fix.sql for
+-- the full map of which file wins for each function in this feature.
+--
+-- This file is left byte-identical in its SQL as the historical record
+-- of what Task 3 shipped; only this comment was added (fix round 1 for
+-- Task 9, review finding F4).
+-- ======================================================================
 -- prepare_ai_session: idempotent, slot-limited session creation.
 -- Spec §3.2. Lock order: relationship advisory lock, then no further
 -- row lock is needed here (this RPC only ever touches ai_sessions rows

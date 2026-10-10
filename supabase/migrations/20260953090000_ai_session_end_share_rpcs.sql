@@ -1,6 +1,39 @@
 -- end_ai_session (either-partner-ends, synchronous content purge, no
 -- actor recorded) and share_ai_session_turn (adapts the existing Plan A
 -- draft/share pipeline to a session-turn source). Spec §5.4, §8.1.
+--
+-- ======================================================================
+-- SUPERSEDED IN PART: a LATER migration re-defines both RPCs below.
+--
+-- The authoritative definitions of public.end_ai_session and
+-- public.share_ai_session_turn, and the GRANT on the latter, are in
+--   supabase/migrations/20260953090100_ai_session_end_share_fix.sql
+-- (fix round 1), which addressed two Critical review findings:
+--
+--   F1 -- end_ai_session below cancels an outstanding
+--     ai_session_requests row without releasing the matching
+--     ai_assistant_usage reservation, so a never-dispatched request's
+--     quota was charged forever and no reconciler path could release it.
+--     Either partner could burn the creator's whole 24h AI quota with
+--     zero provider calls.
+--   F2 -- share_ai_session_turn below is granted to `authenticated`
+--     while taking its actor as a PARAMETER, which let any logged-in
+--     user impersonate another. The grant moved to service_role,
+--     matching Plan C's actual caller and Plan B's Task 10 Step 5.
+--
+-- DO NOT edit either function body below expecting the change to take
+-- effect: migrations apply in filename order and 20260953090100 runs
+-- after this file, silently overriding whatever is here. A change
+-- belongs in a NEW migration sorting after it. See the MIGRATION
+-- PROVENANCE block at the end of 20260953090100 for the full map of
+-- which file wins for each function in this feature.
+--
+-- NOTE on "CORRECTION 1" below: this file's re-definition of
+-- public.prepare_ai_session (Task 3's function) is NOT superseded and is
+-- still authoritative. It is retained deliberately -- reviewed and
+-- accepted on the merits -- and Task 3's own migration file carries a
+-- pointer comment saying so.
+-- ======================================================================
 
 -- ---------------------------------------------------------------------
 -- CORRECTION 1: loosen ai_sessions' activated_at invariant to the
@@ -42,7 +75,22 @@
 -- constraint, not an edit to Task 1's committed migration file. The
 -- replacement is given an explicit name so a future migration never has
 -- to guess at a Postgres-assigned one again.
-ALTER TABLE public.ai_sessions DROP CONSTRAINT ai_sessions_check;
+-- Fix round 1 (review finding F7): `IF EXISTS` added. Without it,
+-- re-applying this migration to a database that already ran it aborts
+-- with `constraint "ai_sessions_check" ... does not exist` -- which is
+-- exactly what broke the reviewer's first mutation-testing harness, and
+-- what a forward-only migration has no business doing. This is the one
+-- in-place edit this fix round makes to an already-committed migration,
+-- and it is deliberately confined to re-apply safety: no SQL logic, no
+-- constraint definition and no behaviour changes, and the resulting
+-- schema is byte-for-byte what this file already produced on a fresh
+-- run. An additive migration cannot repair this particular defect,
+-- because the defect IS this file aborting before a later migration
+-- could run. The companion migration
+-- 20260953090100_ai_session_end_share_fix.sql re-asserts the same
+-- constraint defensively for the same reason.
+ALTER TABLE public.ai_sessions DROP CONSTRAINT IF EXISTS ai_sessions_check;
+ALTER TABLE public.ai_sessions DROP CONSTRAINT IF EXISTS ai_sessions_activated_at_state_check;
 ALTER TABLE public.ai_sessions ADD CONSTRAINT ai_sessions_activated_at_state_check
   CHECK (
     (state = 'preparing' AND activated_at IS NULL)
