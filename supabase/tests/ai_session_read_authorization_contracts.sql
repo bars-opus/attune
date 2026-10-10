@@ -1308,5 +1308,82 @@ BEGIN
       'SUPERSESSION BROKEN FORWARD: discard_ai_session_nearby_staging''s relationship advisory lock now sits AFTER its ai_session_staging DELETE. 20260953150000 takes it FIRST, before any row, precisely so publish and discard serialize on it before either touches the staging or request rows. Taking it after the DELETE serializes nothing and restores Finding 1''s deadlock with the lock statement still present.';
   END IF;
 
-  RAISE NOTICE 'migration supersession ordering: 7 superseded definitions all still superseded';
+  -- ---- reconcile_ai_session_leases: Task 4 of the merge-blockers
+  -- plan, 20260953160000, WINS over Task 6's 20260953060000 AND over
+  -- Task 6 fix round 1's 20260953060100 -- the only function in this
+  -- plan with THREE definitions, so there are two distinct reverting
+  -- accidents to catch here, not one. (Established by grep: the five
+  -- other migrations naming the function mention it only in comments.)
+  -- Marker: the per-row EXCEPTION handler.
+  --
+  -- Both superseded bodies call release_ai_assistant_quota_reservation
+  -- directly in the function body, with NO handler of any kind. That
+  -- RPC raises 'Reservation not found for this actor' when the
+  -- ai_assistant_usage row is missing, and an uncaught RAISE aborts the
+  -- WHOLE transaction -- which for this function is the whole cron run.
+  -- Measured on the superseded body: one orphaned request plus one
+  -- healthy request in a single run left the HEALTHY row at
+  -- state='reserved', usage outcome='reserved', byte-identical to its
+  -- BEFORE state. It was resolved and then rolled back.
+  --
+  -- This marker guards a PLATFORM-WIDE availability property, which is
+  -- what makes it worth asserting structurally rather than only
+  -- behaviourally. pg_cron runs this every minute and the scan
+  -- predicate is unbounded with no LIMIT, so an orphan matches on every
+  -- subsequent run forever: reverting either superseded file means no
+  -- expired lease is EVER marked 'failed' again for ANY user, and no
+  -- never-dispatched quota reservation is ever released again. And the
+  -- orphan needs no operator error to appear -- Plan A's registered
+  -- purge_old_ai_assistant_usage() manufactures one at 30 days, with no
+  -- FK in either direction to stop it.
+  v_def := pg_temp.strip_sql_comments(pg_get_functiondef(
+    'public.reconcile_ai_session_leases()'::regprocedure));
+  IF v_def !~ 'EXCEPTION WHEN OTHERS THEN' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live reconcile_ai_session_leases has NO per-row EXCEPTION handler, so one orphaned request row aborts the entire cron run and rolls back every healthy row reconciled alongside it. That is Task 6''s superseded body (20260953060000) or its fix round 1 (20260953060100); 20260953160000 WINS. Because pg_cron runs this every minute over an unbounded scan, a single orphan -- which Plan A''s registered 30-day purge_old_ai_assistant_usage() creates on its own -- then starves lease reconciliation platform-wide forever. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
+  END IF;
+  -- Anti-vacuity leg 1: the handler must be INSIDE the loop. A body
+  -- that wrapped the whole FOR loop in one EXCEPTION block would
+  -- satisfy the marker above -- every statement present -- while
+  -- restoring the exact defect: the first orphan would still roll back
+  -- every healthy row in the run, just quietly, with the WARNING
+  -- replacing the ERROR. That is the mutation class a presence check
+  -- survives, so compare positions.
+  --
+  -- Bounded on BOTH sides. position() returns the FIRST match, so
+  -- position('LOOP') is the FOR loop's opening LOOP (verified: 378,
+  -- vs 1576 for 'END LOOP' on the winning body). Asserting only
+  -- "after the opening LOOP" would pass a handler placed after
+  -- END LOOP, which is the outside-the-loop mutant this leg exists to
+  -- kill; asserting only "before END LOOP" would pass one placed
+  -- before the loop. Both bounds are needed.
+  IF position('EXCEPTION WHEN OTHERS THEN' in v_def)
+       < position('LOOP' in v_def)
+     OR position('EXCEPTION WHEN OTHERS THEN' in v_def)
+       > position('END LOOP' in v_def) THEN
+    RAISE EXCEPTION
+      'SUPERSESSION BROKEN FORWARD: reconcile_ai_session_leases''s EXCEPTION handler now sits OUTSIDE its FOR loop. 20260953160000 puts a BEGIN...EXCEPTION block INSIDE the loop body precisely so a plpgsql subtransaction scopes each failure to its own iteration. A handler wrapping the whole loop still rolls back every healthy row the run had already reconciled -- the original defect, with a WARNING instead of an ERROR.';
+  END IF;
+  -- Anti-vacuity leg 2: the orphan case must be an EXPLICIT branch that
+  -- SKIPS the release, not merely something the handler catches. If
+  -- release_ai_assistant_quota_reservation were called unconditionally
+  -- and its raise caught, the subtransaction would roll back the
+  -- terminal-state UPDATE too, leaving the orphan matching the scan
+  -- predicate forever: one WARNING per minute per orphan, and that
+  -- session's admit gate blocked for good. The EXISTS guard on
+  -- ai_assistant_usage is what makes the terminal state COMMIT.
+  IF v_def !~ 'EXISTS \(\s*SELECT 1 FROM public\.ai_assistant_usage' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION BROKEN FORWARD: reconcile_ai_session_leases no longer guards its release call with an EXISTS check on ai_assistant_usage. 20260953160000 handles the missing-usage case as an explicit branch that SKIPS the release, so the terminal-state UPDATE commits and the orphan leaves the scan predicate. Relying on the EXCEPTION handler to catch the raise instead rolls that UPDATE back and re-wedges the row forever.';
+  END IF;
+  -- Anti-vacuity leg 3: the release must still HAPPEN on the healthy
+  -- path. A "fix" that dropped the release call entirely would satisfy
+  -- every leg above while re-opening the F1 quota-stranding leak that
+  -- 20260953090100 exists to fix.
+  IF v_def !~ 'release_ai_assistant_quota_reservation' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION BROKEN FORWARD: reconcile_ai_session_leases no longer calls release_ai_assistant_quota_reservation at all. Fault isolation must SKIP the release for an orphan, never remove it for every row -- dropping it strands the quota reservation of every never-dispatched request, which is review finding F1 (Critical) again.';
+  END IF;
+
+  RAISE NOTICE 'migration supersession ordering: 8 superseded definitions all still superseded';
 END $$;
