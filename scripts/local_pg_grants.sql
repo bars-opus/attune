@@ -88,6 +88,17 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- Task 2's contract test enforces this.
 \i supabase/migrations/20260953020100_ai_session_requests_turns_staging_publications_table_grants.sql
 
+-- Same replay for feature_flags, the rollout table. 20260705190000 shipped
+-- `REVOKE ALL ... FROM anon, authenticated` + `GRANT SELECT TO authenticated`
+-- when it created the table, but the blanket grant above was re-granting
+-- INSERT/UPDATE/DELETE to authenticated locally -- measured as
+-- `authenticated=arwd` in relacl -- so the harness could not catch a client
+-- write privilege on the table that carries every capability kill switch.
+-- Replaying it makes local behaviour match production, where the migration's
+-- REVOKE stands. 20260953200100 re-asserts the pair for exactly this replay;
+-- see its header for the measurement and why RLS alone was holding.
+\i supabase/migrations/20260953200100_feature_flags_table_grants.sql
+
 -- Deliberately NOT granting EXECUTE on all functions.
 --
 -- Supabase's default is EXECUTE for PUBLIC on new functions, and the
