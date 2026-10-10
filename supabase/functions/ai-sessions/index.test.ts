@@ -67,6 +67,15 @@ async function enableCapabilities(...keys: string[]): Promise<void> {
 }
 
 /// Restores every AI capability flag to its seeded OFF state.
+///
+/// Called by resetFixtures() at the START of each test, and once more
+/// at the END of the file's last capability-touching test, so this
+/// suite leaves the database in the state the migration seeded.
+/// ai_capability_flag_contracts.sql asserts that seeded state, and the
+/// canonical runner executes the SQL suite against a freshly built
+/// database -- but leaving a flag ON would make that SQL contract fail
+/// for anyone who runs the two suites back to back without a rebuild,
+/// which is a confusing failure to hand the next person.
 async function resetCapabilities(): Promise<void> {
   await serviceRoleQuery(
     `UPDATE public.feature_flags SET enabled = false WHERE key LIKE 'ai\_%'`,
@@ -2468,6 +2477,25 @@ Deno.test({
       body.digest,
       await digestWith(truncated),
       "the digest must NOT match a String()-truncated version -- that truncation is how two partners' digests silently diverge",
+    );
+  },
+});
+
+Deno.test({
+  name: "teardown: this suite leaves every capability flag OFF, as the migration seeded them",
+  fn: async () => {
+    // Not decoration. ai_capability_flag_contracts.sql asserts the
+    // seeded OFF state, so a flag left ON here makes that SQL contract
+    // fail for anyone running both suites without rebuilding the
+    // database -- verified by doing exactly that.
+    await resetCapabilities();
+    const rows = await serviceRoleQuery(
+      `SELECT key FROM public.feature_flags WHERE key LIKE 'ai\_%' AND enabled`,
+    );
+    assertEquals(
+      rows.map((r) => r.key),
+      [],
+      "every AI capability flag must be OFF when this suite finishes",
     );
   },
 });
