@@ -40,11 +40,25 @@ DECLARE
   v_user_a uuid := 'b1000000-0000-0000-0000-00000000010a';
   v_user_b uuid := 'b1000000-0000-0000-0000-00000000010b';
   v_stranger uuid := 'b1000000-0000-0000-0000-00000000010c';
+  -- Contract 5d's forged-approval outsider (fix round 1, review finding
+  -- F2). A FOURTH user, distinct from v_stranger, because 5b leaves
+  -- v_stranger deliberately approval-free: that is exactly what makes
+  -- 5b a Gate 4 probe rather than a Gate 1 probe, and giving it an
+  -- approval row would destroy the distinction 5d exists to draw.
+  -- Fixture sweep: ...-00000000010d is unused across every
+  -- supabase/**/*.sql and every scripts/*.sh (...-00000000011a is
+  -- RESERVED for Task 11 and deliberately not taken here), and
+  -- +15550020004 is unused across the whole suite -- public.users.phone
+  -- is UNIQUE, and a collision would make the ON CONFLICT DO NOTHING
+  -- insert below silently drop. Both uuid-cast-validated.
+  v_outsider uuid := 'b1000000-0000-0000-0000-00000000010d';
   v_session uuid;
   v_shared uuid;
   v_nearby uuid;
+  v_shared_nearby uuid;
   v_admit record;
   v_nearby_admit record;
+  v_shared_admit record;
   v_count int;
   v_partner_count int;
   v_stranger_count int;
@@ -52,11 +66,13 @@ DECLARE
 BEGIN
   INSERT INTO auth.users (id, email) VALUES
     (v_user_a, 'read_a@t.test'), (v_user_b, 'read_b@t.test'),
-    (v_stranger, 'read_stranger@t.test')
+    (v_stranger, 'read_stranger@t.test'),
+    (v_outsider, 'read_outsider@t.test')
   ON CONFLICT DO NOTHING;
   INSERT INTO public.users (id, phone, display_name) VALUES
     (v_user_a, '+15550020001', 'A'), (v_user_b, '+15550020002', 'B'),
-    (v_stranger, '+15550020003', 'S')
+    (v_stranger, '+15550020003', 'S'),
+    (v_outsider, '+15550020004', 'O')
   ON CONFLICT DO NOTHING;
 
   -- SETUP GUARD (Task 9's precedent): turn a silently-dropped fixture
@@ -65,9 +81,9 @@ BEGIN
   -- drop the row, and every contract after it then fails for the wrong
   -- reason.
   IF (SELECT count(*) FROM public.users
-      WHERE id IN (v_user_a, v_user_b, v_stranger)) != 3 THEN
+      WHERE id IN (v_user_a, v_user_b, v_stranger, v_outsider)) != 4 THEN
     RAISE EXCEPTION
-      'SETUP FAILED: not all three fixture users exist -- a phone/email unique collision with another test file silently dropped an ON CONFLICT DO NOTHING insert';
+      'SETUP FAILED: not all four fixture users exist -- a phone/email unique collision with another test file silently dropped an ON CONFLICT DO NOTHING insert';
   END IF;
 
   INSERT INTO public.relationships (id, user_a, user_b, status)
@@ -347,6 +363,115 @@ BEGIN
       'EXPLOIT: restoring context_revision did not restore the read (% rows) -- Contract 5c''s zero was not caused by the revision predicate', v_count;
   END IF;
 
+  -- 5d: AN APPROVAL ROW IS NOT MEMBERSHIP. A total outsider -- not a
+  -- member of this relationship or any related one -- who holds an
+  -- ai_session_approvals row at the session's CURRENT context_revision
+  -- still reads ZERO rows from the shared session, because Gate 1's
+  -- ACTOR predicate denies them before Gate 4's approvals lookup is
+  -- ever consulted.
+  --
+  -- WHY THIS CONTRACT EXISTS (fix round 1, review finding F2,
+  -- Important). Gate 1 in read_ai_session_turns is
+  --
+  --   AND r.status = 'active' AND r.chat_archived_at IS NULL     <- liveness
+  --   AND (r.user_a = p_actor_id OR r.user_b = p_actor_id)        <- actor
+  --
+  -- and before this contract, the ACTOR half had ZERO coverage: the
+  -- reviewer deleted it and all four contract blocks passed silently
+  -- while the mutant served an outsider the full 2-row transcript. The
+  -- two contracts that LOOK like they cover it each stop one step short,
+  -- and the distinction is worth spelling out because it is subtle:
+  --
+  --   * Contract 3 mutates relationships.status and chat_archived_at
+  --     only, so it exercises Gate 1's LIVENESS half. Deleting the actor
+  --     predicate leaves liveness intact, so 3 passes.
+  --   * Contract 5b probes v_stranger against this same shared session,
+  --     but v_stranger holds NO approval row -- so 5b's zero is produced
+  --     by GATE 4 (the approvals EXISTS), not Gate 1. 5b passes
+  --     identically with the actor predicate removed. The contract that
+  --     reads as "a non-member cannot read" is in fact asserting "a
+  --     non-approver cannot read".
+  --
+  -- This contract is the one that separates them, by making the outsider
+  -- satisfy Gate 4 and letting only Gate 1 stand in the way. It is also
+  -- what makes Gate 1 INDEPENDENTLY LOAD-BEARING rather than incidentally
+  -- covered by the consent gate downstream -- see the note under the
+  -- restore leg below (review finding F3, Minor).
+  --
+  -- The forged row is insertable because ai_session_approvals has no FK
+  -- or CHECK tying member_id to the session's relationship (member_id
+  -- references users(id) only). That is a real structural gap, carried
+  -- to Task 11 as a defence-in-depth item; until it is closed, Gate 1 is
+  -- the ONLY thing standing between a stray approvals row and a full
+  -- transcript, which is exactly why it needs a contract.
+  INSERT INTO public.ai_session_approvals
+    (session_id, member_id, revision, digest, policy_version)
+  SELECT v_shared, v_outsider, s.context_revision, 'd', 'v1'
+  FROM public.ai_sessions s WHERE s.id = v_shared;
+  -- Non-vacuity: the forged row must really satisfy Gate 4, otherwise
+  -- this contract degenerates into a second copy of 5b.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.ai_session_approvals a
+    JOIN public.ai_sessions s ON s.id = a.session_id
+    WHERE a.session_id = v_shared AND a.member_id = v_outsider
+      AND a.revision = s.context_revision
+  ) THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: Contract 5d''s forged approval row is not at the session''s current context_revision, so it would be denied by Gate 4 and this contract would duplicate 5b instead of isolating Gate 1';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.relationships r
+    WHERE r.id = v_rel AND (r.user_a = v_outsider OR r.user_b = v_outsider)
+  ) THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: Contract 5d''s outsider is a member of the fixture relationship, so Gate 1 would pass and this contract would assert nothing';
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.read_ai_session_turns(v_outsider, v_shared);
+  IF v_count != 0 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: a NON-MEMBER holding an ai_session_approvals row at the session''s CURRENT context_revision read % rows of a shared session''s transcript -- the active-membership gate''s ACTOR predicate (r.user_a = p_actor_id OR r.user_b = p_actor_id) did not fire. An approval row is not membership: ai_session_approvals has no FK tying member_id to the relationship, so Gate 1 is the only check standing between a stray approval and the full transcript.', v_count;
+  END IF;
+
+  -- Restore half, matching this file's non-vacuity discipline: with the
+  -- forged row gone, the LEGITIMATE participant still reads 2, proving
+  -- 5d's zero came from the outsider's non-membership and not from the
+  -- insert having broken the fixture.
+  DELETE FROM public.ai_session_approvals
+  WHERE session_id = v_shared AND member_id = v_outsider;
+  SELECT count(*) INTO v_count FROM public.read_ai_session_turns(v_user_b, v_shared);
+  IF v_count != 2 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: removing the forged approval row broke the legitimate participant''s read (% rows, expected 2) -- Contract 5d''s zero was not caused by non-membership', v_count;
+  END IF;
+
+  -- A NOTE ON F3 (Minor), AND WHY IT IS *NOT* COVERED BY 5d. The review
+  -- that produced 5d predicted that this contract would also kill the
+  -- deletion of Gate 1's `IF v_user_a IS NULL THEN RETURN` guard. It
+  -- does NOT -- measured, not assumed: with the guard deleted and 5d
+  -- present, the whole file still passes.
+  --
+  -- The mechanism is worth recording, because the prediction is a
+  -- natural one. With the guard gone, the outsider's membership lookup
+  -- finds no row, so v_user_a and v_user_b stay NULL; the two consent
+  -- lookups then filter on `e.user_id = NULL`, match nothing, leave
+  -- v_a_granted/v_b_granted NULL, and
+  -- `COALESCE(NULL,false) AND COALESCE(NULL,false)` denies ONE GATE
+  -- LATER. So 5d's zero still appears -- produced by Gate 2 instead of
+  -- Gate 1. 5d isolates Gate 1 from Gate 4 (which is what F2 needed);
+  -- it cannot isolate Gate 1 from Gate 2, because the mutation that
+  -- removes the guard also empties the inputs Gate 2 depends on.
+  --
+  -- That is exactly why the guard needs the STRUCTURAL assertion in
+  -- Contract 8 below rather than a behavioural one: the membership gate
+  -- is not independently load-bearing today, its denial being produced
+  -- downstream, and if the consent rule were ever relaxed to per-actor
+  -- -- the kind of change a policy revision invites -- Gate 1 would
+  -- silently become dead code with nothing firing. This is the same
+  -- argument Contract 8 already makes for the NULL-actor guard
+  -- (M16/M17), applied to the second gate it turns out to hold for.
+
+
   -- ===================================================================
   -- Contract 6: read_ai_session_staging is AUTHOR-CHECKING -- requester
   -- only, never a shared read, even on a SHARED session whose turns
@@ -426,6 +551,291 @@ BEGIN
   FROM public.read_ai_session_staging(NULL, v_nearby_admit.request_id);
   IF v_count != 0 THEN
     RAISE EXCEPTION 'EXPLOIT: a NULL actor read % staging rows', v_count;
+  END IF;
+
+  -- ===================================================================
+  -- Contracts 6f-6i: THE CONTENT-READ GATES ON STAGING (fix round 1,
+  -- review finding F1, Important).
+  --
+  -- Spec §7.2: "Content reads require active membership, current
+  -- consent, unexpired active state and creator (private) or accepted
+  -- participant (shared). […] Own staged Nearby is accessible only
+  -- through an author-checking RPC, never a shared SELECT policy."
+  -- A staged Nearby reply IS content derived from the relationship's
+  -- data, so the author-check clause adds the author requirement ON TOP
+  -- OF the content-read requirements rather than replacing them. As
+  -- shipped in 20260953100000, read_ai_session_staging enforced the
+  -- author check and its own expiry and NOTHING else -- so a staged
+  -- result stayed readable for up to two minutes after the partner
+  -- withdrew AI-processing consent, after the relationship ended, after
+  -- chat archive, and after the actor was removed from the
+  -- relationship. 20260953100100 adds the membership and consent gates,
+  -- reusing read_ai_session_turns' byte-identical predicate shape.
+  --
+  -- Each contract below follows the file's zero-row discipline: break
+  -- ONE piece of state, assert 0, restore it, assert 1 again -- so a
+  -- zero can only mean "that gate fired", never "the row was gone".
+  --
+  -- WHAT IS DELIBERATELY NOT ASSERTED HERE: a session-STATE gate.
+  -- read_ai_session_turns' Gate 3 (state = 'active' AND unexpired) has
+  -- no staging counterpart, and that is correct rather than an
+  -- oversight -- see 20260953100100's comment. end_ai_session purges
+  -- ai_session_staging synchronously in the transaction that closes the
+  -- session (Global Constraint), prepare_ai_session's only other close
+  -- path touches 'preparing' sessions that cannot hold staging rows, and
+  -- stage_ai_session_nearby_result caps expires_at at LEAST(now() + 2
+  -- minutes, session.expires_at) so 6d's own-expiry check subsumes the
+  -- session's. Both broken-state variants are reachable only by direct
+  -- UPDATE, i.e. already past the trust boundary.
+  -- ===================================================================
+
+  -- 6f: CONSENT. The partner withdraws AI-processing consent -> the
+  -- REQUESTER can no longer read their OWN staged result. This is F1's
+  -- headline scenario, and the gate that makes a withdrawal effective
+  -- immediately on staged reads rather than only on new generations.
+  -- clock_timestamp() (not now()) because now() is frozen for the whole
+  -- transaction: with equal created_at the consent lookup's tiebreak
+  -- falls to a RANDOM gen_random_uuid() id, making this contract pass
+  -- or fail by coin flip. Contract 4 already uses clock_timestamp() for
+  -- exactly this reason.
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES (v_rel, v_user_b, 'v1', 'withdrawn', gen_random_uuid(), clock_timestamp());
+  SELECT count(*) INTO v_count
+  FROM public.read_ai_session_staging(v_user_a, v_nearby_admit.request_id);
+  IF v_count != 0 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the requester read % rows of their own staged Nearby result after the PARTNER withdrew AI-processing consent -- the consent gate on read_ai_session_staging did not fire. A staged reply is AI-derived content about the relationship; this plan''s premise is that consent gates content, so a post-withdrawal read is a consent violation even for the actor''s own result (review finding F1).', v_count;
+  END IF;
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
+  SELECT count(*) INTO v_count
+  FROM public.read_ai_session_staging(v_user_a, v_nearby_admit.request_id);
+  IF v_count != 1 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: re-granting consent did not restore the staging read (% rows) -- 6f''s zero was not caused by the consent gate', v_count;
+  END IF;
+
+  -- 6g: STALE POLICY VERSION. A grant at an OLD policy version never
+  -- satisfies the gate, so a version bump requires two FRESH grants on
+  -- the staging path exactly as it does on the turns path (Contract 4's
+  -- third leg). Without this, the consent gate could be satisfied by
+  -- dropping the policy_version predicate and 6f would still pass.
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES
+    (v_rel, v_user_b, 'v1', 'withdrawn', gen_random_uuid(), clock_timestamp()),
+    (v_rel, v_user_b, 'v0-stale', 'granted', gen_random_uuid(), clock_timestamp());
+  SELECT count(*) INTO v_count
+  FROM public.read_ai_session_staging(v_user_a, v_nearby_admit.request_id);
+  IF v_count != 0 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: a consent grant at a STALE policy version satisfied read_ai_session_staging''s consent gate (% rows read)', v_count;
+  END IF;
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
+  SELECT count(*) INTO v_count
+  FROM public.read_ai_session_staging(v_user_a, v_nearby_admit.request_id);
+  IF v_count != 1 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: re-granting at the current version did not restore the staging read (% rows) -- 6g''s zero was not caused by the policy_version predicate', v_count;
+  END IF;
+
+  -- 6h: MEMBERSHIP LIVENESS. Ending the relationship, and separately
+  -- archiving the chat, each closes the staging read. Both are
+  -- user-initiated and instantaneous, and NOTHING in the schema
+  -- cascades either to an in-flight session -- no trigger, RPC or cron
+  -- closes a session on relationship end, and Task 11's purger is
+  -- purely time-based. That is precisely why the gate has to live here.
+  UPDATE public.relationships SET status = 'ended' WHERE id = v_rel;
+  SELECT count(*) INTO v_count
+  FROM public.read_ai_session_staging(v_user_a, v_nearby_admit.request_id);
+  IF v_count != 0 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the requester read % rows of a staged Nearby result after the relationship ENDED -- the active-membership gate on read_ai_session_staging did not fire', v_count;
+  END IF;
+  UPDATE public.relationships SET status = 'active' WHERE id = v_rel;
+  UPDATE public.relationships SET chat_archived_at = now() WHERE id = v_rel;
+  SELECT count(*) INTO v_count
+  FROM public.read_ai_session_staging(v_user_a, v_nearby_admit.request_id);
+  IF v_count != 0 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the requester read % rows of a staged Nearby result after the chat was ARCHIVED -- the active-membership gate on read_ai_session_staging did not fire', v_count;
+  END IF;
+  UPDATE public.relationships SET chat_archived_at = NULL WHERE id = v_rel;
+  SELECT count(*) INTO v_count
+  FROM public.read_ai_session_staging(v_user_a, v_nearby_admit.request_id);
+  IF v_count != 1 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: restoring the relationship did not restore the staging read (% rows) -- 6h''s zeros were not caused by the membership gate', v_count;
+  END IF;
+
+  -- 6i: MEMBERSHIP, ACTOR HALF. The requester is REMOVED from the
+  -- relationship while their staged result is still unexpired. The
+  -- requester must stop reading their own staged content the moment
+  -- they are no longer a member -- membership, not authorship, is what
+  -- the consent was given under.
+  --
+  -- THE REQUESTER IS *REPLACED* BY ANOTHER CONSENTING USER, NOT SET TO
+  -- NULL, AND THAT DETAIL IS THE WHOLE CONTRACT. Setting user_a = NULL
+  -- is the obvious way to write this, is reachable in production
+  -- (relationships.user_a/user_b are ON DELETE SET NULL), and is
+  -- USELESS as a test of the actor predicate: a NULL member also
+  -- empties the consent lookup downstream -- `e.user_id = NULL` matches
+  -- nothing, COALESCE(...,false) denies -- so the zero appears whether
+  -- the actor predicate is present or not. Mutation testing proved
+  -- exactly that: deleting
+  -- `AND (r.user_a = p_actor_id OR r.user_b = p_actor_id)` from
+  -- read_ai_session_staging's membership lookup SURVIVED the NULL form
+  -- of this contract, while an ex-member read their staged content.
+  --
+  -- Swapping in v_outsider -- who holds a current-version consent grant
+  -- on this relationship -- keeps the relationship active with TWO
+  -- CONSENTING members, so Gate 2 PASSES and cannot cover. The only
+  -- thing left to deny the ex-requester is the actor predicate itself.
+  -- (This is the staging-side twin of Contract 5d's reasoning for the
+  -- turns RPC, and of the F3 note under it.)
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES (v_rel, v_outsider, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
+  UPDATE public.relationships SET user_a = v_outsider WHERE id = v_rel;
+  -- Non-vacuity: the consent gate must still be SATISFIED for the
+  -- relationship's two current members, or this degenerates into 6f.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.relationships r
+    WHERE r.id = v_rel AND r.user_a IS NOT NULL AND r.user_b IS NOT NULL
+      AND r.status = 'active' AND r.chat_archived_at IS NULL
+  ) THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: Contract 6i needs the relationship LIVE with two non-NULL members after the swap, so the consent gate passes and only the actor predicate can deny';
+  END IF;
+  SELECT count(*) INTO v_count
+  FROM public.read_ai_session_staging(v_outsider, v_nearby_admit.request_id);
+  IF v_count != 0 THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: Contract 6i''s replacement member read % rows of the ex-member''s staging -- the author check is broken, which would mask what 6i measures', v_count;
+  END IF;
+
+  SELECT count(*) INTO v_count
+  FROM public.read_ai_session_staging(v_user_a, v_nearby_admit.request_id);
+  IF v_count != 0 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: a requester REMOVED from the relationship -- replaced by another member who still consents, so the consent gate PASSES -- read % rows of their own staged Nearby result. The active-membership gate''s ACTOR predicate (r.user_a = p_actor_id OR r.user_b = p_actor_id) on read_ai_session_staging did not fire. Authorship is not membership: consent was given by the relationship, and leaving it ends the read.', v_count;
+  END IF;
+  UPDATE public.relationships SET user_a = v_user_a WHERE id = v_rel;
+  SELECT count(*) INTO v_count
+  FROM public.read_ai_session_staging(v_user_a, v_nearby_admit.request_id);
+  IF v_count != 1 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: restoring membership did not restore the staging read (% rows) -- 6i''s zero was not caused by the actor predicate', v_count;
+  END IF;
+
+  -- 6j: THE ASYMMETRY SURVIVES THE FIX. The gates added by
+  -- 20260953100100 can only ever REMOVE access from the requester; they
+  -- must never grant it to anyone else. Re-assert, AFTER all of the
+  -- above, that the partner and a stranger still read zero and still
+  -- read the SAME zero -- the property 6b/6c establish, re-checked
+  -- against the new code path so a future refactor that reaches for the
+  -- turns RPC's visibility/approvals branches cannot widen staging.
+  SELECT count(*) INTO v_partner_count
+  FROM public.read_ai_session_staging(v_user_b, v_nearby_admit.request_id);
+  SELECT count(*) INTO v_stranger_count
+  FROM public.read_ai_session_staging(v_stranger, v_nearby_admit.request_id);
+  IF v_partner_count != 0 OR v_stranger_count != 0 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: adding the content-read gates WIDENED staging -- the partner read % rows and a stranger read % rows, both must be 0. Staging is requester-private by construction (spec §7.2); the new gates must subtract access, never add a partner path.',
+      v_partner_count, v_stranger_count;
+  END IF;
+  IF v_partner_count != v_stranger_count THEN
+    RAISE EXCEPTION
+      'EXPLOIT: staging reads distinguish the partner (%) from a stranger (%) after the gate change -- existence oracle',
+      v_partner_count, v_stranger_count;
+  END IF;
+
+  -- ===================================================================
+  -- Contract 6k: THE ASYMMETRY IN ITS STRONGEST FORM -- an actor who
+  -- passes EVERY gate on read_ai_session_turns for a session still
+  -- reads ZERO of the other member's staging on that same session.
+  --
+  -- 6b/6c prove the partner is denied on a PRIVATE session, where the
+  -- partner is denied by read_ai_session_turns too -- so they do not
+  -- isolate the asymmetry from the ordinary private-session denial.
+  -- This contract does: a SHARED nearby session, created and approved
+  -- by A, where B is the one who REQUESTS the generation. A holds a
+  -- current-revision approval row, so A is fully authorized for the
+  -- session's turns and reads them. A must still read zero of B's
+  -- staged result.
+  --
+  -- This is the property that would break if a future refactor
+  -- "unified" the two read RPCs by giving staging the turns RPC's
+  -- visibility/approvals branch -- a plausible refactor, since fix
+  -- round 1 deliberately copied that RPC's Gate 1 and Gate 2 predicates
+  -- into staging. The gates copied must stay SUBTRACTIVE.
+  -- ===================================================================
+  -- Close Contract 5's shared session first: prepare_ai_session allows
+  -- one pending-or-active SHARED session per relationship, and Contract
+  -- 5's is still active. Same housekeeping the file already does for
+  -- Contract 1's private session before Contract 5.
+  UPDATE public.ai_sessions SET state = 'closed' WHERE id = v_shared;
+  SELECT session_id INTO v_shared_nearby FROM public.prepare_ai_session(
+    v_user_a, gen_random_uuid(), v_rel, 'nearby', 'shared', NULL, false
+  );
+  PERFORM public.approve_ai_session_context(v_user_a, v_shared_nearby, 1, 'd', 'v1');
+  PERFORM public.approve_ai_session_context(v_user_b, v_shared_nearby, 1, 'd', 'v1');
+  PERFORM public.activate_ai_session(v_user_a, v_shared_nearby, 1);
+  -- B, not the creator, requests the generation -- so B owns the
+  -- staging row.
+  SELECT * INTO v_shared_admit FROM public.admit_ai_session_generation(
+    v_user_b, gen_random_uuid(), v_shared_nearby, 1, 'nearby:fp2'
+  );
+  PERFORM public.claim_ai_session_dispatch(
+    v_shared_admit.worker_token, v_shared_admit.request_id
+  );
+  PERFORM public.stage_ai_session_nearby_result(
+    v_shared_admit.worker_token, v_shared_admit.request_id,
+    'B''s own staged nearby suggestion', '[]'::jsonb
+  );
+  IF NOT EXISTS (
+    SELECT 1 FROM public.ai_session_staging
+    WHERE request_id = v_shared_admit.request_id AND requester_id = v_user_b
+  ) THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: Contract 6k''s staging row is not owned by B, so the creator-vs-requester asymmetry it asserts is not set up';
+  END IF;
+
+  -- Non-vacuity anchor: B reads their own staging.
+  SELECT count(*) INTO v_count
+  FROM public.read_ai_session_staging(v_user_b, v_shared_admit.request_id);
+  IF v_count != 1 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the requester could not read their own staged result on a SHARED session (% rows, expected 1)', v_count;
+  END IF;
+
+  -- Prove A really is authorized for this session's TURNS, so 6k's zero
+  -- below is the asymmetry and not an ordinary denial. A committed turn
+  -- is inserted directly: the nearby flow STAGES rather than commits,
+  -- and publish_ai_session_nearby_result is the requester's own RPC
+  -- (Task 8's surface), which would conflate the two things being
+  -- measured here.
+  INSERT INTO public.ai_session_turns
+    (session_id, request_id, ordinal, role, kind, payload)
+  VALUES (v_shared_nearby, v_shared_admit.request_id, 1, 'attune',
+          'nearby_result', '{"probe":"6k"}'::jsonb);
+  SELECT count(*) INTO v_count
+  FROM public.read_ai_session_turns(v_user_a, v_shared_nearby);
+  IF v_count != 1 THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: Contract 6k''s creator cannot read the shared session''s turns (% rows, expected 1), so the asymmetry assertion below would pass for the wrong reason -- a blanket denial rather than a staging-specific one', v_count;
+  END IF;
+
+  -- THE ASSERTION: fully authorized for the turns, zero for the staging.
+  SELECT count(*) INTO v_count
+  FROM public.read_ai_session_staging(v_user_a, v_shared_admit.request_id);
+  IF v_count != 0 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the CREATOR of a shared session -- who passes every gate on read_ai_session_turns and reads that session''s transcript -- read % rows of the OTHER member''s staged Nearby result. Staging is requester-private by construction (spec §7.2: "own staged Nearby is accessible only through an author-checking RPC, never a shared SELECT policy"). The content-read gates fix round 1 copied from read_ai_session_turns must SUBTRACT access from the requester, never extend it to an approved participant.', v_count;
   END IF;
 
   RAISE NOTICE 'read authorization contracts: all held';
@@ -616,6 +1026,35 @@ BEGIN
       RAISE EXCEPTION
         'EXPLOIT: % has no explicit `IF p_actor_id IS NULL` guard. Every SECURITY DEFINER function in this plan must validate its actor parameter as its first statement (Global Constraint). A later gate may happen to cover for its absence today -- that is not the same as the guard being there.', v_fn;
     END IF;
+
+    -- THE MEMBERSHIP GATE'S OWN GUARD (fix round 1, review finding F3,
+    -- Minor). Both read RPCs resolve the session's relationship members
+    -- into v_user_a/v_user_b through a membership lookup that already
+    -- carries the actor predicate, then bail out if v_user_a came back
+    -- NULL. Deleting that bail-out changes NOTHING observable, and the
+    -- reason is the same shape as the NULL-actor guard above: the two
+    -- consent lookups downstream then filter on `e.user_id = NULL`,
+    -- match nothing, and COALESCE(...,false) denies one gate later.
+    --
+    -- Asserted structurally because a behavioural assertion provably
+    -- cannot see it. This was MEASURED, not assumed: Contract 5d --
+    -- which was added in this same fix round specifically to cover
+    -- Gate 1's actor predicate, and which DOES kill that mutation --
+    -- SURVIVES the guard's deletion, because the mutation that removes
+    -- the guard also empties the inputs the covering gate reads. See
+    -- the extended note at Contract 5d.
+    --
+    -- The constraint being enforced is independence: the membership
+    -- gate must DENY ON ITS OWN, not by borrowing the consent gate's
+    -- denial. Today it borrows. If the consent rule were ever relaxed
+    -- to per-actor rather than both-partner, Gate 1 would become dead
+    -- code and the membership denial would vanish with no contract
+    -- firing. The guard's presence is the only thing a test can hold on
+    -- to until that independence is real.
+    IF v_def !~ 'IF v_user_a IS NULL THEN' THEN
+      RAISE EXCEPTION
+        'EXPLOIT: % has no explicit `IF v_user_a IS NULL` bail-out after its membership lookup. The membership gate must deny on its own rather than relying on the consent gate downstream to deny for it: with this guard gone, a non-member falls through to two consent lookups keyed on NULL, which deny only incidentally. Relax the consent rule to per-actor and that incidental denial disappears. (Review finding F3; behaviourally invisible, which is why this assertion is structural.)', v_fn;
+    END IF;
   END LOOP;
 
   RAISE NOTICE 'read RPC privileges: service_role-only, SECURITY DEFINER, search_path pinned, STABLE';
@@ -626,7 +1065,7 @@ END $$;
 -- deferred note 2 -- carried into Task 10 as the next task to add a
 -- migration).
 --
--- THE GAP THIS CLOSES: three functions in this plan are defined TWICE,
+-- THE GAP THIS CLOSES: four functions in this plan are defined TWICE,
 -- in an original migration and again in a later one that wins. Nothing
 -- previously enforced the ORDERING. Re-applying a superseded file alone,
 -- last -- a plausible accident during a manual repair, a cherry-pick, or
@@ -691,6 +1130,35 @@ BEGIN
       'SUPERSESSION REVERTED: the live claim_ai_session_dispatch never calls claim_ai_assistant_provider_start, so the write-once ai_assistant_usage.provider_started_at marker is never set. That is Task 6''s superseded body (20260953060000); 20260953060100 WINS. Re-apply migrations in order.';
   END IF;
 
+  -- ---- read_ai_session_staging: fix round 1's 20260953100100 WINS
+  -- over Task 10's 20260953100000. Marker: the consent gate. The
+  -- superseded body gated ONLY on the author check and its own expiry,
+  -- so a staged Nearby result stayed readable for up to two minutes
+  -- after the partner withdrew AI-processing consent, after the
+  -- relationship ended, after chat archive, and after the actor was
+  -- removed from the relationship (review finding F1, Important). The
+  -- winning body reads ai_processing_consent_events; the superseded one
+  -- never mentions that table at all, which makes this the sharpest
+  -- possible marker -- it cannot be satisfied by a reformat.
+  v_def := pg_get_functiondef('public.read_ai_session_staging(uuid, uuid)'::regprocedure);
+  IF v_def !~ 'ai_processing_consent_events' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live read_ai_session_staging never reads ai_processing_consent_events, so it enforces no consent gate. That is Task 10''s superseded body (20260953100000), which kept a staged Nearby result readable for ~2 minutes after consent withdrawal, relationship end, chat archive and actor removal (review finding F1, Important); 20260953100100 WINS. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
+  END IF;
+  IF v_def !~ 'r\.status = ''active'' AND r\.chat_archived_at IS NULL' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live read_ai_session_staging has no active-membership gate. That is Task 10''s superseded body (20260953100000); 20260953100100 WINS (review finding F1).';
+  END IF;
+  -- Anti-vacuity on the asymmetry side: the winning body must STILL be
+  -- author-checked. A future "unification" with read_ai_session_turns
+  -- that satisfied both markers above while dropping requester_id would
+  -- pass this contract's first two legs and break spec §7.2's core
+  -- asymmetry, so assert the author check is still present too.
+  IF v_def !~ 'requester_id = p_actor_id' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION BROKEN FORWARD: the live read_ai_session_staging no longer checks requester_id = p_actor_id. Spec §7.2 requires own staged Nearby to be reachable ONLY through an author-checking RPC; the content-read gates 20260953100100 added must SUBTRACT access from the requester, never replace the author check.';
+  END IF;
+
   -- ---- share_ai_session_turn: fix round 1's 20260953090100 WINS over
   -- Task 9's 20260953090000. The bodies are IDENTICAL; only the GRANT
   -- moved (authenticated -> service_role), so there is no body marker
@@ -704,5 +1172,5 @@ BEGIN
       'SUPERSESSION REVERTED: authenticated has EXECUTE on share_ai_session_turn. That is Task 9''s superseded GRANT (20260953090000), an actor-impersonation hole (review finding F2, Critical); 20260953090100 WINS with service_role-only.';
   END IF;
 
-  RAISE NOTICE 'migration supersession ordering: 4 superseded definitions all still superseded';
+  RAISE NOTICE 'migration supersession ordering: 5 superseded definitions all still superseded';
 END $$;
