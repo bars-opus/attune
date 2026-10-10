@@ -398,16 +398,50 @@ BEGIN
   -- covered by the consent gate downstream -- see the note under the
   -- restore leg below (review finding F3, Minor).
   --
-  -- The forged row is insertable because ai_session_approvals has no FK
-  -- or CHECK tying member_id to the session's relationship (member_id
-  -- references users(id) only). That is a real structural gap, carried
-  -- to Task 11 as a defence-in-depth item; until it is closed, Gate 1 is
-  -- the ONLY thing standing between a stray approvals row and a full
-  -- transcript, which is exactly why it needs a contract.
+  -- The forged row USED to be insertable outright, because
+  -- ai_session_approvals had no FK or CHECK tying member_id to the
+  -- session's relationship (member_id references users(id) only). That
+  -- structural gap was carried to Task 11 as a defence-in-depth item
+  -- and TASK 11 HAS NOW CLOSED IT: 20260953110000 adds the
+  -- trg_ai_session_approvals_membership BEFORE INSERT trigger, which
+  -- rejects exactly this row (asserted from the write side by
+  -- ai_session_purge_contracts.sql Contract 7).
+  --
+  -- THE TRIGGER IS DISABLED FOR THIS ONE INSERT, DELIBERATELY, AND THE
+  -- ASSERTIONS BELOW ARE UNCHANGED. The two defences answer different
+  -- questions and both must stay proven:
+  --
+  --   * Task 11's trigger proves the forged row cannot be CREATED.
+  --   * This contract proves the forged row cannot be USED -- that
+  --     Gate 1's actor predicate in read_ai_session_turns denies it
+  --     independently, on its own, without relying on the trigger.
+  --
+  -- Collapsing the second into the first would be a regression dressed
+  -- up as cleanup: it would delete the only coverage of Gate 1's actor
+  -- predicate (review finding F2) and leave the read path trusting a
+  -- write-side constraint it cannot see. Defence in depth means each
+  -- layer is tested with the others assumed absent, so this contract
+  -- deliberately manufactures the state the trigger now prevents. The
+  -- trigger is re-enabled immediately after the insert, so every
+  -- subsequent write in this file -- including the legitimate
+  -- approvals in the restore leg -- is still trigger-checked.
+  ALTER TABLE public.ai_session_approvals DISABLE TRIGGER trg_ai_session_approvals_membership;
   INSERT INTO public.ai_session_approvals
     (session_id, member_id, revision, digest, policy_version)
   SELECT v_shared, v_outsider, s.context_revision, 'd', 'v1'
   FROM public.ai_sessions s WHERE s.id = v_shared;
+  ALTER TABLE public.ai_session_approvals ENABLE TRIGGER trg_ai_session_approvals_membership;
+  -- Non-vacuity on the disable itself: the forged row must actually be
+  -- there. A silently-failed insert would make 5d's zero below mean
+  -- "no approval row" rather than "approval row denied by Gate 1",
+  -- which is 5b's assertion, not this one's.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.ai_session_approvals
+    WHERE session_id = v_shared AND member_id = v_outsider
+  ) THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: Contract 5d could not manufacture the forged approval row even with trg_ai_session_approvals_membership disabled -- Gate 1''s actor predicate would then be asserted against a row that does not exist, degenerating this contract into a copy of 5b';
+  END IF;
   -- Non-vacuity: the forged row must really satisfy Gate 4, otherwise
   -- this contract degenerates into a second copy of 5b.
   IF NOT EXISTS (
