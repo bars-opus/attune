@@ -1264,5 +1264,49 @@ BEGIN
       'SUPERSESSION BROKEN FORWARD: the consent gate in admit_ai_session_generation now sits AFTER pg_advisory_xact_lock. 20260953140000 places it between the relationship_id resolution and LOCK 1 precisely so it holds no lock and cannot perturb the documented lock order that this function is the reference for.';
   END IF;
 
-  RAISE NOTICE 'migration supersession ordering: 6 superseded definitions all still superseded';
+  -- ---- discard_ai_session_nearby_staging: Task 1 FIX ROUND 1 of the
+  -- merge-blockers plan, 20260953150000, WINS over Plan B Task 8's
+  -- 20260953080000 (which was, until that file, the SOLE definition --
+  -- established by grep: the two other migrations naming the function,
+  -- 20260953110000 and Task 1's 20260953120000, mention it only in
+  -- comments, the latter explicitly recording that it left this
+  -- function alone). Marker: the relationship advisory lock, which the
+  -- superseded body does not contain at all.
+  --
+  -- This marker guards the fix for Task 1 review Finding 1 (Critical).
+  -- The superseded body took the ai_session_staging row FIRST (its
+  -- DELETE) and the ai_session_requests row SECOND, with NO advisory
+  -- lock, while publish_ai_session_nearby_result takes the advisory
+  -- lock, the session row, the request row, and only ~74 lines later
+  -- the staging row. Opposite orders over the same two rows, and no
+  -- advisory lock on the discard side for publish's to serialize
+  -- against -- so Task 1's own fix to publish closed nothing here.
+  -- Measured against the FIXED publish: 14/15 deadlocks at a 1 ms gap
+  -- in discard's DELETE->UPDATE window, 15/15 at 10 ms, 20/20 at
+  -- 250 ms, and 1/40 with NO gap at all under ordinary load. The
+  -- captured victim was the DISCARD side -- the user's own "discard
+  -- this Nearby result" failing with a raw SQLSTATE 40P01.
+  --
+  -- Re-applying 20260953080000 last is the specific accident this
+  -- catches, and it is a worse accident than most: that file defines
+  -- THREE functions, so re-applying it reverts this fix AND Task 1's
+  -- stage/publish lock-order fix in 20260953120000 at the same time.
+  v_def := pg_temp.strip_sql_comments(pg_get_functiondef(
+    'public.discard_ai_session_nearby_staging(uuid, uuid)'::regprocedure));
+  IF v_def !~ 'pg_advisory_xact_lock' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live discard_ai_session_nearby_staging takes NO relationship advisory lock. That is Plan B Task 8''s superseded body (20260953080000), which deadlocked against the fixed publish_ai_session_nearby_result in 14/15 trials at a 1 ms window, the victim being the user''s own discard action failing with a raw SQLSTATE 40P01 (Task 1 review Finding 1, Critical); 20260953150000 WINS. Note 20260953080000 also defines stage_ai_session_nearby_result and publish_ai_session_nearby_result, so re-applying it last reverts Task 1''s 20260953120000 too. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
+  END IF;
+  -- Anti-vacuity / broken-forward: the advisory lock must sit BEFORE
+  -- the staging DELETE that is discard's whole purpose. A body that
+  -- took the lock afterwards would satisfy the marker above while
+  -- leaving the cycle wide open -- every statement present, only
+  -- reordered, which is the mutation class a presence check survives.
+  IF position('pg_advisory_xact_lock' in v_def)
+     > position('DELETE FROM public.ai_session_staging' in v_def) THEN
+    RAISE EXCEPTION
+      'SUPERSESSION BROKEN FORWARD: discard_ai_session_nearby_staging''s relationship advisory lock now sits AFTER its ai_session_staging DELETE. 20260953150000 takes it FIRST, before any row, precisely so publish and discard serialize on it before either touches the staging or request rows. Taking it after the DELETE serializes nothing and restores Finding 1''s deadlock with the lock statement still present.';
+  END IF;
+
+  RAISE NOTICE 'migration supersession ordering: 7 superseded definitions all still superseded';
 END $$;
