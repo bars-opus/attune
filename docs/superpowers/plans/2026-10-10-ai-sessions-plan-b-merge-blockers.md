@@ -193,21 +193,22 @@ Every committed test gets past turn 1 by `SELECT revision FROM ai_sessions`
 directly — a raw table read Plan C forbids itself, and which bypasses all four
 §7.2 gates.
 
-**Decision required before implementing — this is the user's call:**
-- **Option A (recommended): return the new revision from `commit` and `publish`.**
-  Smallest change; the caller that caused the bump learns the result atomically.
-  Changes two RPCs' return shapes, which Plan C and Plan D must match.
-- **Option B: add a gated `read_ai_session_state(p_actor_id, p_session_id)` RPC**
-  returning revision plus request state. Also closes Plan C's inability to read
-  request state at all (a client that loses its response currently cannot learn
-  what happened). Larger surface; needs the full §7.2 gate set.
-- Not mutually exclusive — A unblocks multi-turn, B additionally unblocks
-  recovery after a lost response.
+**DECIDED 2026-10-10 by the user: Option A.** Return the new revision from
+`commit_ai_session_ideas_turn` and `publish_ai_session_nearby_result`. The caller
+that caused the bump learns the result atomically; two return shapes change, which
+Plans C and D must match.
+
+Option B (a gated `read_ai_session_state` RPC returning revision plus request
+state) was considered and **not** chosen now. It remains the fix for a separate
+gap this plan does not close: a client that loses its response has no way to learn
+what happened. The two are not mutually exclusive — revisit B when Plan C's error
+handling needs recovery-after-lost-response, and record it in Plan C's own plan
+rather than reopening this task.
 
 **Steps:**
-- [ ] Confirm the chosen option with the user before writing code.
 - [ ] Implement additively, preserving every existing return field and the
-      pre-gate idempotent-replay path in `publish`.
+      pre-gate idempotent-replay path in `publish`. Returning the revision from
+      the replay path must report the CURRENT revision, not re-bump it.
 - [ ] Contract: a genuine **two-turn** sequence that never reads `ai_sessions`
       directly — admit → claim → commit → admit again using only values the RPCs
       returned. This is the assertion whose absence hid the defect; it must fail
