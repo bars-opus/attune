@@ -223,6 +223,493 @@ END $$;
 
 
 -- =====================================================================
+-- Contract 1b (TASK 11 FINDING F1): the purger's QUOTA-RESOLUTION LOOP,
+-- executed for real -- a session purged with a genuinely `reserved`
+-- request still outstanding.
+--
+-- THE GAP THIS CLOSES. Contract 1 commits its turn before forcing
+-- expiry, so by purge time the request is `committed` -- OUTSIDE the
+-- three states (reserved / started / staged) the loop scans. MEASURED
+-- on both purge sites: `0 requests in reserved/started/staged at purge
+-- time`. The loop was therefore never behaviourally executed by any
+-- contract in the plan, and TWO mutants survived the whole suite:
+--
+--   M-A  release for ALL THREE states, not just 'reserved'. A 'started'
+--        or 'staged' request has its write-once
+--        ai_assistant_usage.provider_started_at set by
+--        claim_ai_session_dispatch (20260953060100), so
+--        release_ai_assistant_quota_reservation RAISES 'Cannot release
+--        a reservation whose provider call has started'.
+--   M-B  key the release on the SESSION's creator_id instead of the
+--        ROW's own actor_id. The usage row is keyed (request_id,
+--        user_id), so for a request admitted by the non-creator partner
+--        the lookup misses and the RPC RAISES 'Reservation not found
+--        for this actor'. Contract 1c is the leg that catches this one.
+--
+-- WHY THESE FAIL *WORSE* THAN A QUOTA HOLE, which is why this contract
+-- exists rather than being filed. The raise propagates out of
+-- purge_ai_session_content into purge_expired_ai_sessions' deliberate
+-- per-session EXCEPTION handler, which swallows it into a WARNING. The
+-- session is then NEVER PURGED -- it stays 'active' past expiry with
+-- its full transcript, its approved message clippings and its staged
+-- results retained INDEFINITELY, and the only trace is a line in the
+-- cron log. That is a content-retention failure of the Global
+-- Constraint ("session content is deleted in the SAME transaction that
+-- closes the session"), not merely a leaked quota reservation.
+--
+-- HOW A `reserved` REQUEST IS PRODUCED HONESTLY. admit_ai_session_
+-- generation creates the row in state 'reserved' and
+-- reserve_ai_assistant_quota creates the matching ai_assistant_usage
+-- row with outcome='reserved' and provider_started_at NULL. This
+-- contract then does NOT call claim_ai_session_dispatch -- the one step
+-- that would set the provider marker and move the row to 'started'.
+-- Nothing is hand-written into either table: the fixture is the real
+-- admission path stopped one step short, which is also the real
+-- production shape (a worker that was admitted and then died).
+-- =====================================================================
+DO $$
+DECLARE
+  v_rel uuid := 'b1050000-0000-4000-8000-00000000000c';
+  v_user_a uuid := 'b1050000-0000-4000-8000-0000000000aa';
+  v_user_b uuid := 'b1050000-0000-4000-8000-0000000000bb';
+  v_session uuid;
+  v_admit record;
+  v_purged int;
+  v_state text;
+  v_terminal text;
+  v_outcome text;
+  v_started timestamptz;
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES
+    (v_user_a, 't5_f1_reserved_a@t.test'), (v_user_b, 't5_f1_reserved_b@t.test');
+  INSERT INTO public.users (id, phone, display_name) VALUES
+    (v_user_a, '+15550512001', 'F1 Reserved A'), (v_user_b, '+15550512002', 'F1 Reserved B');
+  INSERT INTO public.relationships (id, user_a, user_b, status)
+  VALUES (v_rel, v_user_a, v_user_b, 'active');
+  -- Task 3's consent gate: BOTH partners, granted, at the current
+  -- version. clock_timestamp() not now(): every row in one DO block
+  -- shares a frozen now(), which makes the predicate's
+  -- `ORDER BY created_at DESC, id DESC` tiebreak on a random uuid and
+  -- the contract go intermittently green.
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES
+    (v_rel, v_user_a, 'v1', 'granted', gen_random_uuid(), clock_timestamp()),
+    (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
+
+  SELECT session_id INTO v_session FROM public.prepare_ai_session(
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+  );
+  IF v_session IS NULL THEN
+    RAISE EXCEPTION 'SETUP FAILED: prepare_ai_session returned no session';
+  END IF;
+  PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
+  PERFORM public.approve_ai_session_context(v_user_b, v_session, 1, 'd', 'v1');
+  PERFORM public.activate_ai_session(v_user_a, v_session, 1);
+
+  SELECT * INTO v_admit FROM public.admit_ai_session_generation(
+    v_user_a, gen_random_uuid(), v_session, 1, 'ideas:f1-reserved'
+  );
+  IF v_admit.request_id IS NULL THEN
+    RAISE EXCEPTION 'SETUP FAILED: the F1 fixture failed to admit (outcome=%)', v_admit.outcome;
+  END IF;
+
+  -- DELIBERATELY NO claim_ai_session_dispatch. The request stays
+  -- 'reserved' and its usage row keeps provider_started_at NULL.
+
+  -- NON-VACUITY ANCHORS. Without these the whole contract passes
+  -- against a fixture that produced no reserved request at all -- which
+  -- is EXACTLY the defect being closed (Contract 1 passes that way
+  -- today).
+  SELECT state INTO v_state FROM public.ai_session_requests WHERE id = v_admit.request_id;
+  IF v_state IS DISTINCT FROM 'reserved' THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: the request is in state % , not ''reserved'', at purge time. This contract exists BECAUSE no other contract reaches the purger''s quota loop; if the fixture does not produce a reserved request the loop is still never executed and every assertion below is vacuous.',
+      COALESCE(v_state, '<missing>');
+  END IF;
+  SELECT outcome, provider_started_at INTO v_outcome, v_started
+  FROM public.ai_assistant_usage WHERE request_id = v_admit.request_id;
+  IF v_outcome IS DISTINCT FROM 'reserved' THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: the ai_assistant_usage row for this request has outcome % , not ''reserved'' -- the quota release assertion below would not discriminate',
+      COALESCE(v_outcome, '<missing row>');
+  END IF;
+  IF v_started IS NOT NULL THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: provider_started_at is already set on a request that was never dispatched -- the reservation is not genuinely unconsumed and the release would legitimately refuse';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.ai_session_approvals WHERE session_id = v_session) THEN
+    RAISE EXCEPTION 'SETUP FAILED: no approval rows exist before the purge -- the content assertions would pass vacuously';
+  END IF;
+
+  -- Force expiry with the request still outstanding.
+  UPDATE public.ai_sessions
+  SET last_admitted_at = now() - interval '1 hour',
+      expires_at = now() - interval '45 minutes'
+  WHERE id = v_session;
+
+  SELECT public.purge_expired_ai_sessions() INTO v_purged;
+
+  -- LEG 1 -- THE ONE BOTH MUTANTS FAIL. Either mutant raises inside
+  -- purge_ai_session_content, the per-session handler swallows it into
+  -- a WARNING, and the session is simply never purged. This leg is
+  -- therefore the content-retention assertion, not a quota assertion.
+  IF v_purged < 1 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: purge_expired_ai_sessions reported % purged for an expired session with an outstanding RESERVED request. The quota-resolution loop raised and purge_expired_ai_sessions'' per-session EXCEPTION handler swallowed it into a WARNING, so the session was NEVER PURGED -- its transcript, its approved message clippings and its staged results are retained INDEFINITELY and the only trace is a cron-log line. Two known mutants do exactly this: releasing for all three states (''Cannot release a reservation whose provider call has started'') and keying the release on creator_id instead of the row''s own actor_id (''Reservation not found for this actor'').',
+      v_purged;
+  END IF;
+  IF (SELECT state FROM public.ai_sessions WHERE id = v_session) != 'closed' THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the expired session with an outstanding RESERVED request was not closed. See the message above: a raise in the quota loop is swallowed into a WARNING and the session is retained.';
+  END IF;
+
+  -- LEG 2: the content really is gone (Global Constraint). Asserted
+  -- separately from LEG 1 because a purge that closed the session but
+  -- aborted mid-loop would satisfy LEG 1 alone.
+  IF EXISTS (SELECT 1 FROM public.ai_session_turns WHERE session_id = v_session) THEN
+    RAISE EXCEPTION 'EXPLOIT: turn row(s) survived the purge of a session with a reserved request';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.ai_session_sources WHERE session_id = v_session) THEN
+    RAISE EXCEPTION 'EXPLOIT: source row(s) -- approved message clippings -- survived the purge of a session with a reserved request';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.ai_session_approvals WHERE session_id = v_session) THEN
+    RAISE EXCEPTION 'EXPLOIT: approval row(s) survived the purge of a session with a reserved request';
+  END IF;
+
+  -- LEG 3: the request row was RESOLVED, not left dangling in a state
+  -- the lease reconciler keeps scanning forever.
+  SELECT state, terminal_code INTO v_state, v_terminal
+  FROM public.ai_session_requests WHERE id = v_admit.request_id;
+  IF v_state IS DISTINCT FROM 'cancelled' THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the outstanding request is in state % after its session was purged, not ''cancelled''. It must leave the states the reconciler scans in the SAME transaction, or reconcile_ai_session_leases scans a request whose session no longer has content, once a minute, forever.',
+      COALESCE(v_state, '<deleted>');
+  END IF;
+  IF v_terminal IS DISTINCT FROM 'session_ended' THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the cancelled request''s terminal_code is % , not ''session_ended''. The purger must record WHY the request ended, and ''session_ended'' is the code end_ai_session uses for the identical transition -- a system purge is recorded exactly as a user close is.',
+      COALESCE(v_terminal, '<null>');
+  END IF;
+
+  -- LEG 4: THE QUOTA WAS ACTUALLY RELEASED. This is the leg that makes
+  -- the loop's PURPOSE non-vacuous: a purge that cancelled the request
+  -- but skipped the release would pass legs 1-3 and silently charge the
+  -- actor for a generation that never reached a provider.
+  SELECT outcome, provider_started_at INTO v_outcome, v_started
+  FROM public.ai_assistant_usage WHERE request_id = v_admit.request_id;
+  IF v_outcome IS DISTINCT FROM 'cancelled' THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the ai_assistant_usage row for a RESERVED request purged with its session has outcome % , expected ''cancelled''. The reservation was never dispatched (provider_started_at IS NULL), so it is genuinely unconsumed and must be released: left at ''reserved'' it counts against the actor''s rolling quota permanently, for a generation that never reached a provider.',
+      COALESCE(v_outcome, '<missing row>');
+  END IF;
+  IF v_started IS NOT NULL THEN
+    RAISE EXCEPTION
+      'EXPLOIT: provider_started_at was SET on a request that was never dispatched. The marker is write-once and means "this generation was genuinely charged"; setting it on the purge path makes an abandoned reservation permanently unreleasable.';
+  END IF;
+
+  RAISE NOTICE 'purge contract 1b (F1): the quota-resolution loop RAN -- reserved request cancelled, reservation released, session purged';
+END $$;
+
+
+-- =====================================================================
+-- Contract 1c (TASK 11 FINDING F1, the MIS-KEYING leg): a session
+-- purged with a reserved request admitted by the NON-CREATOR PARTNER.
+--
+-- WHY THIS LEG IS SEPARATE FROM 1b. In 1b the creator and the admitting
+-- actor are the SAME user, so a mutant that keyed the release on the
+-- session's creator_id instead of the request row's own actor_id reads
+-- the same uuid and passes. This contract is the one where those two
+-- uuids DIFFER: a SHARED session is prepared by user A, and user B --
+-- the partner, not the creator -- admits the generation. The usage row
+-- is then keyed (request_id, user_id = B), while creator_id is A.
+--
+-- Under the mis-keying mutant, release_ai_assistant_quota_reservation(A,
+-- request) finds no row for A and raises 'Reservation not found for this
+-- actor'. The per-session handler swallows it and THE SESSION IS NEVER
+-- PURGED -- the same content-retention failure as 1b, reached by the
+-- other mutant.
+--
+-- This is also the production-realistic shape: a shared session exists
+-- precisely so BOTH partners can generate on it, so the non-creator
+-- admitting is ordinary use, not an edge case.
+--
+-- NOTE ON THE FIXTURE: a SHARED session is required (prepare_ai_session
+-- forbids two concurrent shared sessions per relationship, so this
+-- contract uses its own relationship rather than sharing 1b's), and the
+-- partner must hold an approval at the current revision to admit.
+-- =====================================================================
+DO $$
+DECLARE
+  v_rel uuid := 'b1051000-0000-4000-8000-00000000000c';
+  v_creator uuid := 'b1051000-0000-4000-8000-0000000000aa';
+  v_partner uuid := 'b1051000-0000-4000-8000-0000000000bb';
+  v_session uuid;
+  v_admit record;
+  v_purged int;
+  v_state text;
+  v_outcome text;
+  v_usage_user uuid;
+  v_req_actor uuid;
+  v_creator_col uuid;
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES
+    (v_creator, 't5_f1_partner_c@t.test'), (v_partner, 't5_f1_partner_p@t.test');
+  INSERT INTO public.users (id, phone, display_name) VALUES
+    (v_creator, '+15550513001', 'F1 Creator'), (v_partner, '+15550513002', 'F1 Partner');
+  INSERT INTO public.relationships (id, user_a, user_b, status)
+  VALUES (v_rel, v_creator, v_partner, 'active');
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES
+    (v_rel, v_creator, 'v1', 'granted', gen_random_uuid(), clock_timestamp()),
+    (v_rel, v_partner, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
+
+  -- SHARED, created by v_creator.
+  SELECT session_id INTO v_session FROM public.prepare_ai_session(
+    v_creator, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+  );
+  IF v_session IS NULL THEN
+    RAISE EXCEPTION 'SETUP FAILED: prepare_ai_session returned no shared session';
+  END IF;
+  PERFORM public.approve_ai_session_context(v_creator, v_session, 1, 'd', 'v1');
+  PERFORM public.approve_ai_session_context(v_partner, v_session, 1, 'd', 'v1');
+  PERFORM public.activate_ai_session(v_creator, v_session, 1);
+
+  -- THE PARTNER admits -- NOT the creator. This is the whole point.
+  SELECT * INTO v_admit FROM public.admit_ai_session_generation(
+    v_partner, gen_random_uuid(), v_session, 1, 'ideas:f1-partner'
+  );
+  IF v_admit.request_id IS NULL THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: the non-creator PARTNER could not admit on a shared session (outcome=%). A shared session exists so BOTH partners can generate; if the partner cannot admit, this contract cannot set up the creator_id != actor_id divergence it exists to test.',
+      v_admit.outcome;
+  END IF;
+
+  -- No dispatch: the request stays 'reserved'.
+
+  -- NON-VACUITY: the two uuids MUST differ, or the mis-keying mutant
+  -- reads the same value and this contract degenerates into 1b.
+  SELECT creator_id INTO v_creator_col FROM public.ai_sessions WHERE id = v_session;
+  SELECT actor_id, state INTO v_req_actor, v_state
+  FROM public.ai_session_requests WHERE id = v_admit.request_id;
+  SELECT user_id, outcome INTO v_usage_user, v_outcome
+  FROM public.ai_assistant_usage WHERE request_id = v_admit.request_id;
+
+  IF v_creator_col IS NOT DISTINCT FROM v_req_actor THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: the session''s creator_id (%) equals the request''s actor_id (%), so a mutant keying the quota release on creator_id would read the SAME uuid and this contract would not discriminate. The whole purpose of this leg is the divergence.',
+      v_creator_col, v_req_actor;
+  END IF;
+  IF v_usage_user IS DISTINCT FROM v_req_actor THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: the ai_assistant_usage row is keyed on user_id=% but the request''s actor_id is %. The charged actor must be whoever admitted the generation, or the release cannot be keyed on it.',
+      v_usage_user, v_req_actor;
+  END IF;
+  IF v_state IS DISTINCT FROM 'reserved' THEN
+    RAISE EXCEPTION 'SETUP FAILED: the partner''s request is in state %, not ''reserved''', COALESCE(v_state,'<missing>');
+  END IF;
+  IF v_outcome IS DISTINCT FROM 'reserved' THEN
+    RAISE EXCEPTION 'SETUP FAILED: the partner''s usage row has outcome %, not ''reserved''', COALESCE(v_outcome,'<missing>');
+  END IF;
+
+  UPDATE public.ai_sessions
+  SET last_admitted_at = now() - interval '1 hour',
+      expires_at = now() - interval '45 minutes'
+  WHERE id = v_session;
+
+  SELECT public.purge_expired_ai_sessions() INTO v_purged;
+
+  IF v_purged < 1 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: purge_expired_ai_sessions reported % purged for an expired shared session whose outstanding RESERVED request was admitted by the NON-CREATOR partner. A quota release keyed on the session''s creator_id instead of the request row''s own actor_id finds no ai_assistant_usage row for the creator and raises ''Reservation not found for this actor''; the per-session EXCEPTION handler swallows that into a WARNING and THE SESSION IS NEVER PURGED -- transcript, approved clippings and staged results retained indefinitely. The charged actor is whoever ADMITTED the generation, never the session''s creator.',
+      v_purged;
+  END IF;
+  IF (SELECT state FROM public.ai_sessions WHERE id = v_session) != 'closed' THEN
+    RAISE EXCEPTION 'EXPLOIT: the expired shared session with a partner-admitted reserved request was not closed -- see the message above.';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.ai_session_turns WHERE session_id = v_session)
+     OR EXISTS (SELECT 1 FROM public.ai_session_sources WHERE session_id = v_session)
+     OR EXISTS (SELECT 1 FROM public.ai_session_approvals WHERE session_id = v_session) THEN
+    RAISE EXCEPTION 'EXPLOIT: content survived the purge of a shared session with a partner-admitted reserved request';
+  END IF;
+
+  -- The PARTNER's reservation was released -- keyed on the row's own
+  -- actor_id, which is the partner, not the creator.
+  SELECT outcome INTO v_outcome
+  FROM public.ai_assistant_usage WHERE request_id = v_admit.request_id;
+  IF v_outcome IS DISTINCT FROM 'cancelled' THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the NON-CREATOR partner''s unconsumed reservation is still % after their session was purged, expected ''cancelled''. The release must be keyed on the request row''s own actor_id; keyed on the session''s creator_id it either raises (wedging the purge entirely) or silently releases nothing and charges the partner for a generation that never reached a provider.',
+      COALESCE(v_outcome, '<missing row>');
+  END IF;
+  -- And the CREATOR, who admitted nothing, has no usage row invented
+  -- for them.
+  IF EXISTS (
+    SELECT 1 FROM public.ai_assistant_usage
+    WHERE request_id = v_admit.request_id AND user_id = v_creator
+  ) THEN
+    RAISE EXCEPTION
+      'EXPLOIT: an ai_assistant_usage row exists for the session CREATOR on a request the PARTNER admitted. Quota is charged to the actor who admitted, never to the session owner.';
+  END IF;
+
+  RAISE NOTICE 'purge contract 1c (F1 mis-keying): partner-admitted reserved request released on its OWN actor_id, session purged';
+END $$;
+
+
+-- =====================================================================
+-- Contract 1d (TASK 11 FINDING F1, the OVER-RELEASE leg): a session
+-- purged with a `started` request, whose reservation is LEGITIMATELY
+-- CONSUMED and must stay charged.
+--
+-- WHY THIS LEG IS SEPARATE FROM 1b AND 1c. Both of those produce a
+-- `reserved` request, so the mutant that releases for ALL THREE states
+-- (reserved / started / staged) behaves identically to the correct body
+-- on their fixtures and SURVIVES them -- measured. The mutant only
+-- misbehaves when a `started` or `staged` request is present at purge
+-- time, because claim_ai_session_dispatch has by then set the
+-- write-once ai_assistant_usage.provider_started_at marker
+-- (20260953060100), and release_ai_assistant_quota_reservation refuses
+-- such a row with 'Cannot release a reservation whose provider call has
+-- started'. That raise propagates into purge_expired_ai_sessions'
+-- per-session EXCEPTION handler, is swallowed into a WARNING, and THE
+-- SESSION IS NEVER PURGED.
+--
+-- So this contract is the third of three, and the three together pin
+-- the loop's state discrimination from both sides:
+--
+--   1b  'reserved'  -> MUST release   (under-release mutant dies)
+--   1c  'reserved', non-creator actor -> keyed on the ROW's actor_id
+--   1d  'started'   -> MUST NOT release (over-release mutant dies)
+--
+-- THE CORRECTNESS BEING ASSERTED IS NOT "the quota is leaked". A
+-- `started` request reached a provider, so the generation was really
+-- paid for and the charge is correct -- Plan A's write-once marker
+-- exists to make that irreversible. What this contract asserts is that
+-- the purger RECOGNISES that and purges anyway, rather than trying to
+-- un-charge a consumed reservation and wedging itself on the refusal.
+-- =====================================================================
+DO $$
+DECLARE
+  v_rel uuid := 'b1052000-0000-4000-8000-00000000000c';
+  v_user_a uuid := 'b1052000-0000-4000-8000-0000000000aa';
+  v_user_b uuid := 'b1052000-0000-4000-8000-0000000000bb';
+  v_session uuid;
+  v_admit record;
+  v_purged int;
+  v_state text;
+  v_terminal text;
+  v_outcome text;
+  v_started timestamptz;
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES
+    (v_user_a, 't5_f1_started_a@t.test'), (v_user_b, 't5_f1_started_b@t.test');
+  INSERT INTO public.users (id, phone, display_name) VALUES
+    (v_user_a, '+15550514001', 'F1 Started A'), (v_user_b, '+15550514002', 'F1 Started B');
+  INSERT INTO public.relationships (id, user_a, user_b, status)
+  VALUES (v_rel, v_user_a, v_user_b, 'active');
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES
+    (v_rel, v_user_a, 'v1', 'granted', gen_random_uuid(), clock_timestamp()),
+    (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
+
+  SELECT session_id INTO v_session FROM public.prepare_ai_session(
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+  );
+  IF v_session IS NULL THEN
+    RAISE EXCEPTION 'SETUP FAILED: prepare_ai_session returned no session';
+  END IF;
+  PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
+  PERFORM public.approve_ai_session_context(v_user_b, v_session, 1, 'd', 'v1');
+  PERFORM public.activate_ai_session(v_user_a, v_session, 1);
+  SELECT * INTO v_admit FROM public.admit_ai_session_generation(
+    v_user_a, gen_random_uuid(), v_session, 1, 'ideas:f1-started'
+  );
+  IF v_admit.request_id IS NULL THEN
+    RAISE EXCEPTION 'SETUP FAILED: the F1 started fixture failed to admit (outcome=%)', v_admit.outcome;
+  END IF;
+
+  -- THE ONE STEP 1b AND 1c DELIBERATELY OMIT: dispatch. This moves the
+  -- request to 'started' and sets the write-once provider marker, and
+  -- it is the real path -- nothing is hand-written into either table.
+  PERFORM public.claim_ai_session_dispatch(v_admit.worker_token, v_admit.request_id);
+
+  -- ...and NO commit. The worker died mid-generation, which is the
+  -- production shape that leaves a 'started' request at purge time.
+
+  -- NON-VACUITY ANCHORS. Without these, a fixture that failed to reach
+  -- 'started' would leave the over-release mutant alive -- exactly how
+  -- it survived 1b and 1c.
+  SELECT state INTO v_state FROM public.ai_session_requests WHERE id = v_admit.request_id;
+  IF v_state IS DISTINCT FROM 'started' THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: the request is in state % , not ''started'', at purge time. This contract exists ONLY to kill the mutant that releases for all three states, and that mutant misbehaves ONLY on a started/staged request -- a fixture that did not reach ''started'' leaves it alive.',
+      COALESCE(v_state, '<missing>');
+  END IF;
+  SELECT outcome, provider_started_at INTO v_outcome, v_started
+  FROM public.ai_assistant_usage WHERE request_id = v_admit.request_id;
+  IF v_started IS NULL THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: ai_assistant_usage.provider_started_at is NULL on a DISPATCHED request. That write-once marker is what makes the reservation legitimately consumed and unreleasable; without it the over-release mutant does not raise and this contract does not discriminate.';
+  END IF;
+  IF v_outcome IS DISTINCT FROM 'reserved' THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: the dispatched request''s usage row has outcome % , expected ''reserved'' (in flight, marker set) -- the refusal this contract relies on is keyed on exactly that combination',
+      COALESCE(v_outcome, '<missing row>');
+  END IF;
+
+  UPDATE public.ai_sessions
+  SET last_admitted_at = now() - interval '1 hour',
+      expires_at = now() - interval '45 minutes'
+  WHERE id = v_session;
+
+  SELECT public.purge_expired_ai_sessions() INTO v_purged;
+
+  -- THE LEG THAT KILLS THE OVER-RELEASE MUTANT.
+  IF v_purged < 1 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: purge_expired_ai_sessions reported % purged for an expired session with a STARTED request. A loop that calls release_ai_assistant_quota_reservation for all three scanned states hits ''Cannot release a reservation whose provider call has started'' -- claim_ai_session_dispatch already set the write-once provider marker -- and that raise is swallowed by the per-session EXCEPTION handler into a WARNING, so THE SESSION IS NEVER PURGED and its content is retained indefinitely. A started request is LEGITIMATELY charged; it must be excluded from the release, not passed to it.',
+      v_purged;
+  END IF;
+  IF (SELECT state FROM public.ai_sessions WHERE id = v_session) != 'closed' THEN
+    RAISE EXCEPTION 'EXPLOIT: the expired session with a STARTED request was not closed -- see the message above.';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.ai_session_turns WHERE session_id = v_session)
+     OR EXISTS (SELECT 1 FROM public.ai_session_sources WHERE session_id = v_session)
+     OR EXISTS (SELECT 1 FROM public.ai_session_approvals WHERE session_id = v_session) THEN
+    RAISE EXCEPTION 'EXPLOIT: content survived the purge of a session with a STARTED request';
+  END IF;
+
+  -- The request is resolved, like every other outstanding state.
+  SELECT state, terminal_code INTO v_state, v_terminal
+  FROM public.ai_session_requests WHERE id = v_admit.request_id;
+  IF v_state IS DISTINCT FROM 'cancelled' OR v_terminal IS DISTINCT FROM 'session_ended' THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the STARTED request is state=% terminal_code=% after its session was purged, expected cancelled/session_ended. Being legitimately charged does not exempt it from leaving the states the reconciler scans.',
+      COALESCE(v_state,'<deleted>'), COALESCE(v_terminal,'<null>');
+  END IF;
+
+  -- AND THE CHARGE STANDS. This is the other half of the
+  -- discrimination: a purge that "helpfully" released a consumed
+  -- reservation would hand back quota for a generation the provider was
+  -- really paid for.
+  SELECT outcome, provider_started_at INTO v_outcome, v_started
+  FROM public.ai_assistant_usage WHERE request_id = v_admit.request_id;
+  IF v_outcome IS DISTINCT FROM 'reserved' THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the STARTED request''s reservation was changed to % by the purge. Its provider call really happened (provider_started_at is set, write-once), so the quota is legitimately consumed and must stay charged -- releasing it refunds a generation that was paid for.',
+      COALESCE(v_outcome, '<missing row>');
+  END IF;
+  IF v_started IS NULL THEN
+    RAISE EXCEPTION 'EXPLOIT: the purge CLEARED the write-once provider_started_at marker. It is write-once by design: once a provider call has started, nothing may make the reservation look unconsumed again.';
+  END IF;
+
+  RAISE NOTICE 'purge contract 1d (F1 over-release): started request cancelled, reservation correctly LEFT CHARGED, session purged';
+END $$;
+
+
+-- =====================================================================
 -- Contract 2: the PREPARING arm -- a session past its
 -- preparation_deadline that Task 3's reclaim-on-prepare never catches.
 --
@@ -914,6 +1401,12 @@ DECLARE
   v_user_b uuid := 'b1000000-0000-0000-0000-00000000011b';
   v_outsider uuid := 'b1000000-0000-0000-0000-000000000126';
   v_session uuid;
+  -- TASK 11 F4: a SECOND relationship and session, on which v_user_a is
+  -- NOT a member, so the `UPDATE OF session_id` forgery leg below has
+  -- somewhere illegitimate to repoint a legitimate approval.
+  v_rel_other uuid := 'b1000000-0000-0000-0000-000000000127';
+  v_third uuid := 'b1000000-0000-0000-0000-000000000128';
+  v_other_session uuid;
 BEGIN
   INSERT INTO auth.users (id, email) VALUES (v_outsider, 't11_purge_out@t.test')
   ON CONFLICT DO NOTHING;
@@ -921,6 +1414,13 @@ BEGIN
   ON CONFLICT DO NOTHING;
   IF NOT EXISTS (SELECT 1 FROM public.users WHERE id = v_outsider) THEN
     RAISE EXCEPTION 'SETUP FAILED: the outsider fixture was silently dropped (phone +15550110004 collides) -- the forged-approval assertion would be vacuous';
+  END IF;
+  INSERT INTO auth.users (id, email) VALUES (v_third, 't5_f4_third@t.test')
+  ON CONFLICT DO NOTHING;
+  INSERT INTO public.users (id, phone, display_name) VALUES (v_third, '+15550110007', 'THIRD')
+  ON CONFLICT DO NOTHING;
+  IF NOT EXISTS (SELECT 1 FROM public.users WHERE id = v_third) THEN
+    RAISE EXCEPTION 'SETUP FAILED: the F4 third-party fixture was silently dropped (phone +15550110007 collides) -- the session_id UPDATE forgery leg would be vacuous';
   END IF;
 
   INSERT INTO public.relationships (id, user_a, user_b, status)
@@ -937,6 +1437,34 @@ BEGIN
   );
   IF v_session IS NULL THEN
     RAISE EXCEPTION 'SETUP FAILED: prepare_ai_session returned no session for the approvals-constraint fixture';
+  END IF;
+
+  -- TASK 11 F4 SETUP: the OTHER relationship's session. v_outsider and
+  -- v_third are its members, so v_user_a is NOT -- which is what makes
+  -- repointing v_user_a's approval at it a forgery. PRIVATE visibility,
+  -- because prepare_ai_session forbids two concurrent SHARED sessions
+  -- per relationship and this is a different relationship anyway; a
+  -- private session is enough, since the trigger reads only
+  -- ai_sessions.relationship_id.
+  INSERT INTO public.relationships (id, user_a, user_b, status)
+  VALUES (v_rel_other, v_outsider, v_third, 'active')
+  ON CONFLICT DO NOTHING;
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES
+    (v_rel_other, v_outsider, 'v1', 'granted', gen_random_uuid(), clock_timestamp()),
+    (v_rel_other, v_third, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
+  SELECT session_id INTO v_other_session FROM public.prepare_ai_session(
+    v_outsider, gen_random_uuid(), v_rel_other, 'ideas', 'private', NULL, false
+  );
+  IF v_other_session IS NULL THEN
+    RAISE EXCEPTION 'SETUP FAILED: could not prepare the OTHER relationship''s session -- the session_id UPDATE forgery leg has nowhere to repoint and would be vacuous';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.relationships r
+    WHERE r.id = v_rel_other AND (r.user_a = v_user_a OR r.user_b = v_user_a)
+  ) THEN
+    RAISE EXCEPTION 'SETUP FAILED: v_user_a IS a member of the other relationship, so repointing their approval at its session would be legitimate and the forgery leg would not discriminate';
   END IF;
 
   -- THE FORGERY: a direct INSERT of an approval row for a user who has
@@ -974,6 +1502,128 @@ BEGIN
       'EXPLOIT (over-restriction): the approvals membership constraint blocked a legitimate approval -- % row(s) exist where 2 are expected',
       (SELECT count(*) FROM public.ai_session_approvals WHERE session_id = v_session);
   END IF;
+
+  -- ---- TASK 11 FINDING F4: THE **UPDATE** ARM ---------------------
+  --
+  -- THE GAP THIS CLOSES. The trigger is
+  -- `BEFORE INSERT OR UPDATE OF member_id, session_id`, but every
+  -- assertion above drives it through INSERT only. MEASURED: narrowing
+  -- the trigger to `BEFORE INSERT` passes the entire suite, and the
+  -- UPDATE forgery was then reconstructed live on that mutant --
+  -- insert a legitimate approval, then repoint its member_id at an
+  -- outsider. The row that results is byte-identical to the forged
+  -- INSERT the leg above rejects, so the whole INSERT-side guard is
+  -- bypassable by anyone who can write the table at all (service_role,
+  -- a migration, Plan C's edge function, an operator).
+  --
+  -- WHY member_id AND session_id BOTH. The trigger names both columns
+  -- in its `UPDATE OF` list, and each is a distinct forgery:
+  --   * repointing member_id   -> grants an OUTSIDER read access to
+  --                               this session's turns via Gate 4's
+  --                               approvals lookup.
+  --   * repointing session_id  -> moves a legitimate member's approval
+  --                               onto ANOTHER relationship's session,
+  --                               where they are not a member.
+  -- A trigger narrowed to `UPDATE OF member_id` alone would pass the
+  -- first leg and fail the second, so both are asserted separately.
+  --
+  -- THE FORGERY TARGET. v_outsider is a real user who is NOT a member
+  -- of this session's relationship -- the same actor the INSERT leg
+  -- above uses. Denying by nulling a member would be self-defeating
+  -- here for the usual reason (the trigger reads relationships.user_a /
+  -- user_b, so a NULL member empties its own lookup), so the denial is
+  -- asserted against a REPLACEMENT non-member, never an absent one.
+  BEGIN
+    UPDATE public.ai_session_approvals
+    SET member_id = v_outsider
+    WHERE session_id = v_session AND member_id = v_user_a;
+    RAISE EXCEPTION
+      'EXPLOIT: a legitimate approval row was UPDATEd to point at an OUTSIDER (member_id -> a non-member of this session''s relationship) and the membership trigger did not fire. The resulting row is byte-identical to the forged INSERT this contract rejects above, so the entire INSERT-side guard is bypassable in two statements: insert legitimately, then repoint. That row satisfies read_ai_session_turns'' Gate 4 (an approvals row at the session''s current context_revision) and hands an outsider the couple''s transcript. The trigger must be BEFORE INSERT **OR UPDATE OF member_id, session_id** -- narrowing it to BEFORE INSERT passes every other assertion in this suite.';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE 'EXPLOIT:%' THEN RAISE; END IF;
+    -- ANTI-VACUITY: assert the SPECIFIC error, never "any error". A
+    -- deadlock, a permission error or an FK violation must not read as
+    -- a kill -- the plan's history has six vacuous tests in it.
+    IF SQLERRM NOT LIKE '%is not a member of session%' THEN
+      RAISE EXCEPTION
+        'SETUP FAILED: the member_id UPDATE forgery was refused, but by the WRONG error -- expected the membership trigger''s "... is not a member of session ...", got: %. The contract would otherwise pass on an incidental failure rather than on the guard it exists to prove.',
+        SQLERRM;
+    END IF;
+  END;
+
+  -- The legitimate row is UNTOUCHED -- the trigger refused the
+  -- statement, it did not partially apply it.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.ai_session_approvals
+    WHERE session_id = v_session AND member_id = v_user_a AND revision = 1
+  ) THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the rejected member_id UPDATE removed or altered the legitimate approval row it targeted. A BEFORE trigger that raises must leave the row exactly as it was.';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.ai_session_approvals
+    WHERE session_id = v_session AND member_id = v_outsider
+  ) THEN
+    RAISE EXCEPTION
+      'EXPLOIT: an approval row for the OUTSIDER exists after the UPDATE was supposedly refused.';
+  END IF;
+
+  -- THE session_id LEG. Move a legitimate member's approval onto a
+  -- session belonging to a relationship they are not party to. v_other
+  -- is that session, built on v_rel_other below.
+  BEGIN
+    UPDATE public.ai_session_approvals
+    SET session_id = v_other_session
+    WHERE session_id = v_session AND member_id = v_user_a AND revision = 1;
+    RAISE EXCEPTION
+      'EXPLOIT: a legitimate approval row was UPDATEd to point at a session on a DIFFERENT relationship (session_id -> a session whose relationship this member is not party to) and the membership trigger did not fire. The trigger lists session_id in its `UPDATE OF` clause precisely because repointing it forges exactly the cross-relationship approval the INSERT leg rejects -- a trigger narrowed to `UPDATE OF member_id` alone would pass the leg above and fail here.';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE 'EXPLOIT:%' THEN RAISE; END IF;
+    IF SQLERRM NOT LIKE '%is not a member of session%' THEN
+      RAISE EXCEPTION
+        'SETUP FAILED: the session_id UPDATE forgery was refused, but by the WRONG error -- expected the membership trigger''s "... is not a member of session ...", got: %',
+        SQLERRM;
+    END IF;
+  END;
+  IF EXISTS (
+    SELECT 1 FROM public.ai_session_approvals
+    WHERE session_id = v_other_session AND member_id = v_user_a
+  ) THEN
+    RAISE EXCEPTION
+      'EXPLOIT: the approval row was moved onto the other relationship''s session despite the refusal.';
+  END IF;
+
+  -- OVER-RESTRICTION, the other direction: a LEGITIMATE update that
+  -- changes neither forged column must still succeed. A trigger that
+  -- raised on every UPDATE would pass both legs above while making the
+  -- table effectively append-only -- and the purge path, re-approval
+  -- and any operator repair would break.
+  BEGIN
+    UPDATE public.ai_session_approvals
+    SET digest = 'd-rewritten'
+    WHERE session_id = v_session AND member_id = v_user_a AND revision = 1;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION
+      'EXPLOIT (over-restriction): the membership trigger rejected a legitimate UPDATE that touched neither member_id nor session_id (it rewrote digest). The trigger''s `UPDATE OF member_id, session_id` clause must scope it to the two columns that can forge membership; firing on every UPDATE makes the table append-only. It raised: %',
+      SQLERRM;
+  END;
+  IF (SELECT digest FROM public.ai_session_approvals
+      WHERE session_id = v_session AND member_id = v_user_a AND revision = 1) != 'd-rewritten' THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: the legitimate digest UPDATE did not apply, so the over-restriction assertion proved nothing';
+  END IF;
+  -- ...and a self-UPDATE that REWRITES member_id to the SAME legitimate
+  -- member must pass: the trigger fires (member_id is in its UPDATE OF
+  -- list) and must find that member IS a member.
+  BEGIN
+    UPDATE public.ai_session_approvals
+    SET member_id = v_user_a
+    WHERE session_id = v_session AND member_id = v_user_a AND revision = 1;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION
+      'EXPLOIT (over-restriction): the membership trigger rejected an UPDATE that set member_id to the SAME, legitimate member. It must validate the NEW value against relationship membership, not reject change as such. It raised: %',
+      SQLERRM;
+  END;
 
   -- THE TRIGGER MUST ENFORCE *MEMBERSHIP*, NOT *LIVENESS*.
   --
