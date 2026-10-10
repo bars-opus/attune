@@ -22,6 +22,27 @@ BEGIN
   INSERT INTO public.relationships (id, user_a, user_b, status)
   VALUES (v_rel, v_user_a, v_user_b, 'active')
   ON CONFLICT DO NOTHING;
+  -- BOTH partners grant AI-processing consent at the current policy
+  -- version. Added by Task 11: publish_ai_session_nearby_result now
+  -- enforces the membership + consent gate that spec §7.2 requires and
+  -- that it never had (20260953110000, routed from Task 10's Ruling 8
+  -- -- the WRITE leg of the leak Task 10's F1 closed on the read side).
+  --
+  -- This fixture previously set up NO consent at all and still passed,
+  -- because no write-path RPC in this plan has ever checked consent --
+  -- only the Task 10 read RPCs did. That is why this setup is an
+  -- addition rather than a correction: the fixture was incomplete
+  -- relative to §7.2, not wrong relative to the code as it then stood.
+  --
+  -- clock_timestamp(), never now(): now() is frozen per transaction, so
+  -- events written in one DO block would share an identical created_at
+  -- and the consent lookup's tiebreak would fall to `id DESC` on a
+  -- random uuid, making any consent-ordering assertion a coin flip.
+  INSERT INTO public.ai_processing_consent_events
+    (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES
+    (v_rel, v_user_a, 'v1', 'granted', gen_random_uuid(), clock_timestamp()),
+    (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
     v_user_a, gen_random_uuid(), v_rel, 'nearby', 'shared', NULL, false
