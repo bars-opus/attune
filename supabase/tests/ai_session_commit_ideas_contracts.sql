@@ -75,3 +75,157 @@ BEGIN
 
   RAISE NOTICE 'commit_ai_session_ideas_turn contracts: all held';
 END $$;
+
+
+-- =====================================================================
+-- Contract 4 (merge-blocker fix 20260953120000): THE LOCK ORDER,
+-- STRUCTURALLY, on the comment-stripped live body.
+--
+-- THE DEFECT THIS PINS. commit_ai_session_ideas_turn took the
+-- ai_session_requests row FOR UPDATE as its FIRST lock and only then
+-- touched ai_sessions, and took no relationship advisory lock at all.
+-- The order is fixed at relationship advisory lock -> quota advisory
+-- lock (inside reserve_ai_assistant_quota, admission path only) ->
+-- session row -> request row. end_ai_session, purge_ai_session_content,
+-- admit_ai_session_generation and reconcile_ai_session_leases all take
+-- that order; this RPC inverted its last two, which deadlocked against
+-- every one of them -- measured 10/10 trials against end_ai_session on
+-- unmodified shipped code, with the victim alternating between the
+-- worker's commit and the user's own End action.
+--
+-- WHY STRUCTURAL AND NOT BEHAVIOURAL. A deadlock needs two concurrent
+-- backends, which a single-transaction SQL contract cannot create --
+-- that is exactly why no committed test caught this for eleven task
+-- reviews. The behavioural proof is
+-- supabase/tests/ai_session_completion_concurrent_test.sh, which races
+-- real backends. This contract is the cheap always-on guard that the
+-- ORDER has not rotted back, and it runs in the main suite.
+--
+-- WHY position() AND NOT A PRESENCE CHECK. A presence check passes a
+-- body that still contains all three lock statements in the WRONG
+-- order -- which is precisely the pre-fix body plus an advisory lock
+-- bolted on at the end. Positions are compared so a REORDERING fails
+-- with every statement present.
+--
+-- WHY THE SECOND `FOR UPDATE` AND NOT `FROM public.ai_session_requests`.
+-- The fixed body reads ai_session_requests TWICE: once unlocked, at the
+-- very top, purely to resolve which relationship and session to lock
+-- (it decides nothing -- every guard is evaluated from the locked
+-- re-read), and once FOR UPDATE under both locks. So the TABLE NAME now
+-- legitimately appears BEFORE the advisory lock, and an assertion keyed
+-- on the table name would fail on the correct body. The request ROW
+-- LOCK is the second of exactly two FOR UPDATEs; that is what is
+-- ordered, and the count is asserted so the marker cannot silently stop
+-- discriminating.
+--
+-- COMMENTS ARE STRIPPED FIRST. pg_get_functiondef() returns them
+-- verbatim and 20260953120000's own comments name all three locks in
+-- the right order, so an unstripped match would be satisfied by the
+-- commentary alone even if every lock were deleted (Task 10's finding
+-- N1, measured there on 4/4 structural assertions).
+-- =====================================================================
+CREATE OR REPLACE FUNCTION pg_temp.strip_sql_comments(p_def text)
+RETURNS text LANGUAGE sql IMMUTABLE AS $strip$
+  SELECT regexp_replace(
+           regexp_replace(p_def, '--[^\n]*', '', 'g'),
+           '/\*.*?\*/', '', 'gs');
+$strip$;
+
+DO $$
+DECLARE
+  v_def text;
+  v_adv int;
+  v_sess_fu int;
+  v_req_fu int;
+  v_fu_count int;
+BEGIN
+  v_def := pg_temp.strip_sql_comments(pg_get_functiondef(
+    'public.commit_ai_session_ideas_turn(uuid, uuid, text, text, jsonb)'::regprocedure));
+
+  -- LOCK 1 must exist at all. The superseded body (20260953070000) has
+  -- no advisory lock anywhere, so this leg alone catches a full revert.
+  v_adv := position('pg_advisory_xact_lock(hashtext(' in v_def);
+  IF v_adv = 0 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: commit_ai_session_ideas_turn takes NO relationship advisory lock. It is the FIRST lock in this plan''s fixed, non-negotiable order, and this RPC races end_ai_session, purge_ai_session_content and admit_ai_session_generation on the same session -- all three of which take it first. Without it this RPC deadlocked against end_ai_session in 10/10 measured trials, killing the user''s own End action in 3 of them. That is Task 7''s superseded body (20260953070000); 20260953120000 WINS.';
+  END IF;
+
+  -- Exactly two row locks, in a known order: session row, then request
+  -- row. Asserted so the "second FOR UPDATE" marker below cannot
+  -- silently stop meaning what it says.
+  v_fu_count := (length(v_def) - length(replace(v_def, 'FOR UPDATE', ''))) / length('FOR UPDATE');
+  IF v_fu_count <> 2 THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: commit_ai_session_ideas_turn has % FOR UPDATE clause(s), expected exactly 2 (the ai_sessions row then the ai_session_requests row). This contract''s ordering legs identify the request row lock as the SECOND FOR UPDATE, so they no longer discriminate and must be re-derived.',
+      v_fu_count;
+  END IF;
+
+  -- LOCK 2: the session row, locked explicitly. The pre-fix body never
+  -- locked it explicitly at all -- it acquired it implicitly, via the
+  -- ai_session_turns INSERT's FK check taking FOR KEY SHARE on the
+  -- parent, which is where the deadlock actually fired (before the
+  -- explicit revision bump was ever reached). An explicit FOR UPDATE
+  -- taken first subsumes that implicit lock and makes the acquisition
+  -- order deterministic instead of statement-order-dependent.
+  v_sess_fu := position('FROM public.ai_sessions WHERE id = v_session_id FOR UPDATE' in v_def);
+  IF v_sess_fu = 0 THEN
+    RAISE EXCEPTION
+      'EXPLOIT: commit_ai_session_ideas_turn does not lock the ai_sessions row explicitly. It takes that row''s lock REGARDLESS -- the ai_session_turns INSERT''s FK check takes FOR KEY SHARE on the parent session row, and the revision bump takes it exclusively -- so the only question is in what ORDER. Lock it explicitly, before the request row, or the order is whatever the statement sequence happens to produce, which is the deadlock.';
+  END IF;
+
+  -- LOCK 3: the request row. Identified by its own full locked-read
+  -- text, so this is an ABSOLUTE position comparable with the two
+  -- above -- not an offset into a substring, which would make the
+  -- ordering comparison below tautologically true and therefore
+  -- vacuous.
+  v_req_fu := position('WHERE id = p_request_id AND worker_token = p_worker_token
+  FOR UPDATE' in v_def);
+  IF v_req_fu = 0 THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: commit_ai_session_ideas_turn has no `WHERE id = p_request_id AND worker_token = p_worker_token FOR UPDATE` locked read -- the request row is no longer locked under that predicate, or this contract''s marker must be re-derived.';
+  END IF;
+
+  -- THE ORDERING ITSELF.
+  IF v_adv > v_sess_fu THEN
+    RAISE EXCEPTION
+      'LOCK ORDER VIOLATED: commit_ai_session_ideas_turn locks the ai_sessions ROW before the relationship advisory lock (advisory at %, session row at %). The order is fixed at relationship -> session row -> request row and must never vary; inverting it deadlocks against end_ai_session, purge_ai_session_content and admit_ai_session_generation, which all take the advisory lock first. A change needing a different order is a plan defect, not a local decision.',
+      v_adv, v_sess_fu;
+  END IF;
+  -- THE INVERSION ITSELF: this is the comparison that fails on the
+  -- pre-fix body. Both are absolute positions in the same string, so a
+  -- reordering fails here with all three lock statements still present.
+  IF v_sess_fu > v_req_fu THEN
+    RAISE EXCEPTION
+      'LOCK ORDER VIOLATED: commit_ai_session_ideas_turn locks the ai_session_requests row (at %) before the ai_sessions row (at %) -- the exact inversion 20260953120000 exists to fix, which deadlocked against end_ai_session in 10/10 measured trials. The order is fixed at relationship -> session row -> request row.',
+      v_req_fu, v_sess_fu;
+  END IF;
+
+  -- ANTI-VACUITY, THE OTHER DIRECTION: the advisory lock must be keyed
+  -- on the RELATIONSHIP, not on the session or the request. A
+  -- per-session key would serialize nothing against end_ai_session's
+  -- per-relationship key and the deadlock would come straight back
+  -- while every leg above still passed.
+  IF v_def !~ 'pg_advisory_xact_lock\(hashtext\(v_relationship_id::text\)\)' THEN
+    RAISE EXCEPTION
+      'EXPLOIT: commit_ai_session_ideas_turn''s advisory lock is not keyed on hashtext(v_relationship_id::text). end_ai_session, purge_ai_session_content, admit_ai_session_generation and reconcile_ai_session_leases all key on the RELATIONSHIP; a different key serializes against none of them and the deadlock returns.';
+  END IF;
+
+  -- THE AUTHENTICATION PREDICATE IS ON THE LOCKED ROW. The marker used
+  -- for LOCK 3 above is deliberately the FULL locked read including
+  -- `AND worker_token = p_worker_token`, not a bare FOR UPDATE: that
+  -- predicate IS this RPC's authentication -- it has no actor parameter
+  -- (Global Constraint: validate the actor parameter as the first
+  -- statement; here the worker token is validated by the same statement
+  -- that authenticates it) -- and it must be enforced on the row the
+  -- function ACTS on, not only on the unlocked lock-target pre-read.
+  -- A body that locked the request row without re-checking the token
+  -- fails the LOCK 3 marker above, by construction.
+  --
+  -- THE PRE-READ MUST STAY UNLOCKED. If the lock-target lookup ever
+  -- acquired a lock of its own it would be a third row lock taken
+  -- BEFORE the advisory lock, reintroducing the inversion ahead of
+  -- everything this contract checks. The FOR UPDATE count of exactly 2
+  -- asserted above is what forbids that.
+
+  RAISE NOTICE 'commit contract 4: lock order relationship -> session row -> request row holds structurally';
+END $$;

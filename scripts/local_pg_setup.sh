@@ -102,12 +102,26 @@ fi
 # both have their own consistency conditions, so exercising only
 # whichever one the scheduler happens to favour would leave half the
 # contract unproven.
+# ai_session_completion_concurrent_test.sh is the newest entry and the
+# reason the list above was incomplete in the first place: every one of
+# the four scripts that preceded it races only prepare/activate/admit/
+# end -- precisely the RPCs that already followed the documented lock
+# order. No test raced any COMPLETION RPC (commit/stage/publish) against
+# anything, which is how a lock-order inversion that deadlocks on the
+# first attempt survived eleven task reviews. It races all three
+# completion RPCs against end_ai_session and against
+# purge_expired_ai_sessions, in both launch orderings, and additionally
+# asserts that the purger never swallows a deadlock into a WARNING
+# (which would leave an expired session active with its content
+# retained). Run with no argument it does 10 trials per pair per
+# ordering = 120 races, which takes a couple of minutes.
 CONCURRENCY_SH=(
   supabase/tests/ai_assistant_provider_start_concurrent_test.sh
   supabase/tests/ai_session_admit_concurrent_test.sh
   supabase/tests/ai_session_admit_same_request_concurrent_test.sh
   "supabase/tests/ai_session_end_admit_concurrent_test.sh"
   "supabase/tests/ai_session_end_admit_concurrent_test.sh admit"
+  supabase/tests/ai_session_completion_concurrent_test.sh
 )
 if [ "$DB" != "attune_test" ]; then
   echo "==> SKIPPING supabase/tests/*.sh concurrency contracts (they hardcode -d attune_test; this run used $DB)"
