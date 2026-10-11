@@ -63,6 +63,8 @@ class ChatTextField extends StatefulWidget {
     this.showCaptureVideo = false,
     this.showGames = false,
     this.gameStaged = false,
+    this.aiMode = false,
+    this.onAiButtonTap,
     this.enabled = true,
     this.hintText = 'Message',
     this.focusNode,
@@ -120,6 +122,47 @@ class ChatTextField extends StatefulWidget {
   /// games icon stays so the choice can be changed, and Send is always
   /// available because there is something to send even with no text.
   final bool gameStaged;
+
+  /// The composer is addressing an AI session rather than the chat
+  /// (spec §3.3).
+  ///
+  /// The same argument [gameStaged] makes, for a different payload: AI
+  /// Send addresses the SESSION, not a message, and §4's nine commands
+  /// take text. So the controls that send something other than text --
+  /// attachments, the streak camera, the games picker, the microphone --
+  /// have nowhere to put their payload and leave, exactly as they do
+  /// for a staged game. §3.3's "restore on exit" is satisfied by this
+  /// being read from the widget on every build and never copied into
+  /// [State]: flipping it back rebuilds the full row.
+  ///
+  /// DEFAULTS FALSE AND MUST STAY SO. `ai_assist_enabled` is off in
+  /// every environment and flips only after Plan D ships, and this
+  /// widget has FOUR construction sites of which three are not chat
+  /// (`debate_room_screen.dart`, `comment_thread_screen.dart`,
+  /// `image_caption_screen.dart`). A caller that names neither this nor
+  /// [onAiButtonTap] gets the composer unchanged, which
+  /// `chat_text_field_ai_mode_test.dart`'s first group pins.
+  final bool aiMode;
+
+  /// Opens (or leaves) the AI session surface. **Null hides the entry
+  /// point entirely, and that is the capability gate.**
+  ///
+  /// This widget reads no providers -- every optional control here is
+  /// switched by a nullable callback plus a `show*` flag supplied by
+  /// whoever builds it, and the AI button follows that convention
+  /// rather than introducing the first `ref.watch` into a composer
+  /// shared by four screens. The §12 capability read
+  /// (`aiSessionCapabilitiesProvider`, field `.assist`) therefore lands
+  /// at the chat construction site, which already has a `WidgetRef` and
+  /// already resolves `showAttachImage`, `showTranslator` and
+  /// `showVoiceMessage` from providers the same way. Plan D's Task 9
+  /// owns that wiring; until it lands nothing passes this, so no AI
+  /// button is drawn anywhere.
+  ///
+  /// Kept visible while [aiMode] is true: removing the control that
+  /// entered the mode would leave no way out, which is the reason the
+  /// games icon survives [gameStaged].
+  final VoidCallback? onAiButtonTap;
 
   final bool enabled;
   final String hintText;
@@ -1228,9 +1271,12 @@ class _ChatTextFieldState extends State<ChatTextField>
   @override
   Widget build(BuildContext context) {
     // A staged game is the attachment. Offering the sheet as well would
-    // invite a photo the send path has nowhere to put.
+    // invite a photo the send path has nowhere to put. AI mode is the
+    // same problem: the send path is a session command (§4.1), which
+    // carries text only.
     final showAttachSheet =
         !widget.gameStaged &&
+        !widget.aiMode &&
         (widget.showAttachImage ||
             widget.showAttachVideo ||
             widget.onAttachFile != null);
@@ -1312,6 +1358,44 @@ class _ChatTextFieldState extends State<ChatTextField>
       Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // The AI session entry point. Null callback -> nothing here at
+          // all, not a disabled button: this is the §12 capability gate
+          // (Ruling 19) and a greyed-out control would advertise an
+          // unlaunched feature, which is the disclosure
+          // 20260712150000_dating_flag_defense_in_depth.sql exists to
+          // prevent. Constructed exactly as the camera satellite below
+          // is, inside the same AnimatedSize so entering and leaving
+          // the mode does not jump the row's width.
+          AnimatedSize(
+            duration:
+                reduceMotionOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.centerLeft,
+            child:
+                widget.onAiButtonTap == null
+                    ? const SizedBox.shrink()
+                    : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ComposerSatellite(
+                          icon: Icons.auto_awesome,
+                          onTap:
+                              widget.enabled ? widget.onAiButtonTap : null,
+                          tooltip:
+                              widget.aiMode ? 'Leave Attune' : 'Ask Attune',
+                          fillColor:
+                              widget.aiMode ? colorScheme.primary : null,
+                          iconColor:
+                              widget.aiMode
+                                  ? colorScheme.onPrimary
+                                  : _composerIconColor(colorScheme),
+                        ),
+                        const SizedBox(width: Spacing.sm),
+                      ],
+                    ),
+          ),
           AnimatedSize(
             duration:
                 reduceMotionOf(context)
@@ -1323,8 +1407,12 @@ class _ChatTextFieldState extends State<ChatTextField>
                 // Gone while a game is staged, for the same reason the
                 // attachment sheet is: the thing being sent is already
                 // chosen, and a streak video is not something you send
-                // alongside a game invitation.
-                widget.showCaptureVideo && !_hasText && !widget.gameStaged
+                // alongside a game invitation. Gone in AI mode because
+                // a streak video cannot be a session turn.
+                widget.showCaptureVideo &&
+                        !_hasText &&
+                        !widget.gameStaged &&
+                        !widget.aiMode
                     ? Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1345,8 +1433,14 @@ class _ChatTextFieldState extends State<ChatTextField>
                 final textStyle = Theme.of(
                   context,
                 ).textTheme.bodyLarge?.copyWith(fontSize: 18, height: 1.25);
+                // Must agree with what the trailing `if`s below
+                // actually render, or the line-count estimate that
+                // drives the pill's height is measured against a width
+                // the text does not have. AI mode drops the games icon,
+                // so it drops this slot with it.
                 final visibleTrailingIconSlots =
-                    widget.showTranslator || (!_hasText && widget.showGames)
+                    widget.showTranslator ||
+                            (!_hasText && widget.showGames && !widget.aiMode)
                         ? 1
                         : 0;
                 final textWidth =
@@ -1470,8 +1564,12 @@ class _ChatTextFieldState extends State<ChatTextField>
                         // Normally hidden once typing starts, to make
                         // room. Kept while a game is staged: it is the
                         // only way back to the picker to change it.
+                        // Gone in AI mode: unlike a staged game, there
+                        // is no "change the choice" role for it here,
+                        // and a game invitation is not a session turn.
                         if ((!_hasText || widget.gameStaged) &&
-                            widget.showGames)
+                            widget.showGames &&
+                            !widget.aiMode)
                           _ComposerIcon(
                             icon: Icons.sports_esports_outlined,
                             onTap: widget.enabled ? widget.onOpenGames : null,
@@ -1503,9 +1601,20 @@ class _ChatTextFieldState extends State<ChatTextField>
           // so the mic gives up its slot: you cannot narrate a game
           // invitation with a voice note, and an empty-looking Send with
           // nothing to press would be a dead end.
-          if (!_hasText && widget.showVoiceMessage && !widget.gameStaged)
+          if (!_hasText &&
+              widget.showVoiceMessage &&
+              !widget.gameStaged &&
+              !widget.aiMode)
             _ComposerSatelliteSurface(enabled: widget.enabled, child: micSlot)
-          else if (_hasText || widget.gameStaged || !widget.showVoiceMessage)
+          // `|| widget.aiMode` so the trailing slot is never empty once
+          // the mic leaves: without it an AI-mode composer with no text
+          // and showVoiceMessage true would render neither branch and
+          // leave a 48pt hole beside the pill. Send is drawn disabled
+          // there, the state this satellite already models.
+          else if (_hasText ||
+              widget.gameStaged ||
+              widget.aiMode ||
+              !widget.showVoiceMessage)
             ComposerSatellite(
               icon: null,
               onTap:
