@@ -3151,7 +3151,17 @@ void main() {
         };
         final repository = AiSessionRepository(gateway);
 
-        final published = await repository.publishNearby(_validRequestId);
+        // RULING 15: `publishNearby` returns the SEALED
+        // `AiSessionPublishResult`, so reading the ordinals requires
+        // handling the redirect branch too. This cast is the test
+        // asserting WHICH branch arrived; a sheet pattern-matches
+        // instead. Note the compile-time force: before the sealed
+        // return type, `published.committed` read straight off a single
+        // concrete type and a refusal body would have reached
+        // `AiSessionPublishNearbyResult.fromJson` and raised.
+        final published =
+            await repository.publishNearby(_validRequestId)
+                as AiSessionPublishNearbyResult;
 
         expect(published.committed, isTrue);
         expect(published.userOrdinal, 3);
@@ -3246,6 +3256,186 @@ void main() {
         throwsA(isA<AiSessionConsentRequiredError>()),
       );
     });
+
+    // =================================================================
+    // RULING 15 — the publish-time redirect, resolved by the SEALED
+    // return type. Task 4 left this open and the ledger assigned it
+    // here.
+    //
+    // `handlePublishNearby` re-runs `classifySessionContent` over the
+    // STORED staged fields and, on a refusal, returns
+    // `safetyRefusalResponse(verdict)` at index.ts:3537 — the SAME
+    // helper `generate` uses at index.ts:2144, so the SAME body at HTTP
+    // 200, committing nothing.
+    // =================================================================
+
+    test(
+      'RULING 15: a publish-time refusal parses as a redirect carrying the '
+      'IDENTICAL type generate returns — not an AiSessionInternalError',
+      () async {
+        final gateway = _FakeAiSessionGateway();
+        // The refusal fixture is the SAME ONE the generate tests use,
+        // because the server builds both bodies from the same helper.
+        // Using a publish-specific fixture would be asserting against a
+        // shape the server does not send.
+        gateway.nextInvokeResult = _safetyRefusalRedirectResponse();
+        final repository = AiSessionRepository(gateway);
+
+        final result = await repository.publishNearby(_validRequestId);
+
+        // THE REGRESSION THIS CLOSES. Before the sealed return type
+        // this body had no `committed` key, so
+        // `AiSessionPublishNearbyResult.fromJson` raised a
+        // FormatException and `_invoke` mapped it to
+        // AiSessionInternalError — "something went wrong" instead of
+        // §5.3's server-rendered copy.
+        expect(result, isA<AiSessionPublishRedirect>());
+        final redirect = (result as AiSessionPublishRedirect).redirect;
+
+        // THE REUSE IS THE POINT, and this is the assertion that pins
+        // it: `runtimeType` EQUALITY against generate's own redirect
+        // type, not `isA<>`. A publish-specific subtype would satisfy
+        // isA<AiSessionGeneratedRedirect>() while being perfectly
+        // distinguishable with an `is` check at any call site — which
+        // on THIS command, where a redirect is always a safety
+        // refusal, would be `wasBlockedBySafety` by another name.
+        expect(redirect.runtimeType, AiSessionGeneratedRedirect);
+
+        // And the server's copy is reachable, through the SAME total
+        // accessor a generate redirect uses and no other.
+        const generic = 'generic copy the caller would have written';
+        expect(
+          redirect.resolveCopy(genericRedirectCopy: generic),
+          isNot(generic),
+        );
+        expect(redirect.resolveCopy(genericRedirectCopy: generic), isNotEmpty);
+        expect(redirect.reason, 'unsafe_to_assist');
+        expect(redirect.offered, isEmpty);
+        expect(redirect.showSafetyResources, isTrue);
+      },
+    );
+
+    test(
+      'RULING 15: the publish body and the refusal body route to DIFFERENT '
+      'branches of the sealed type, and the publish branch still requires '
+      'committed',
+      () async {
+        final gateway = _FakeAiSessionGateway();
+        final repository = AiSessionRepository(gateway);
+
+        gateway.nextInvokeResult = <String, dynamic>{
+          'committed': true,
+          'user_ordinal': 3,
+          'attune_ordinal': 4,
+          'session_revision': 9,
+        };
+        final published = await repository.publishNearby(_validRequestId);
+        expect(published, isA<AiSessionPublishNearbyResult>());
+
+        gateway.nextInvokeResult = _safetyRefusalRedirectResponse();
+        final refused = await repository.publishNearby(_validRequestId);
+        expect(refused, isA<AiSessionPublishRedirect>());
+
+        // The two branches are DISJOINT, which is what sealing buys:
+        // "published" and "refused" cannot both be true of one value,
+        // so there is no `redirect != null` test for a caller to write
+        // beside a `committed` it also read. On this command that test
+        // would be exactly the getter Ruling 6 forbids.
+        expect(published, isNot(isA<AiSessionPublishRedirect>()));
+        expect(refused, isNot(isA<AiSessionPublishNearbyResult>()));
+
+        // The publish branch did NOT get looser: a body with no
+        // `committed` and no `kind` is still malformed rather than a
+        // silently-empty publish.
+        gateway.nextInvokeResult = <String, dynamic>{
+          'user_ordinal': 1,
+          'attune_ordinal': 2,
+          'session_revision': 3,
+        };
+        await expectLater(
+          repository.publishNearby(_validRequestId),
+          throwsA(isA<AiSessionInternalError>()),
+        );
+      },
+    );
+
+    test(
+      'RULING 15 x RULING 6: an ORDINARY-shaped redirect body on the publish '
+      'path yields a value indistinguishable from the refusal through every '
+      'member the type exposes',
+      () async {
+        // The handler has no ordinary-redirect branch today — verified
+        // at index.ts:3431-3570, whose only non-error 200s are the
+        // publish body and `safetyRefusalResponse`. This test does NOT
+        // claim otherwise. It asserts the parser cannot BECOME a
+        // publish-path oracle if that ever changes, and — more
+        // usefully today — that nothing on the parsed value differs
+        // between the two wire shapes, which is the property the sheet
+        // renders against.
+        final gateway = _FakeAiSessionGateway();
+        final repository = AiSessionRepository(gateway);
+
+        gateway.nextInvokeResult = _safetyRefusalRedirectResponse(
+          reason: 'unsupported',
+        );
+        final refusal =
+            (await repository.publishNearby(_validRequestId)
+                    as AiSessionPublishRedirect)
+                .redirect;
+
+        gateway.nextInvokeResult = _ordinaryRedirectResponse(
+          reason: 'unsupported',
+          offered: const <String>[],
+        );
+        final ordinary =
+            (await repository.publishNearby(_validRequestId)
+                    as AiSessionPublishRedirect)
+                .redirect;
+
+        // Exhaustive over the public surface — the same four members
+        // the generate group enumerates, which the structural test in
+        // ai_session_turn_model_test.dart proves is the whole surface.
+        expect(refusal.runtimeType, ordinary.runtimeType);
+        expect(refusal.reason, ordinary.reason);
+        expect(refusal.reason, 'unsupported');
+        expect(refusal.offered, ordinary.offered);
+        expect(refusal.showSafetyResources, ordinary.showSafetyResources);
+
+        // And the WRAPPER adds nothing distinguishing either: both are
+        // the same AiSessionPublishRedirect runtime type, so "which
+        // branch of the sealed type" does not separate them.
+        gateway.nextInvokeResult = _safetyRefusalRedirectResponse();
+        final wrappedRefusal = await repository.publishNearby(_validRequestId);
+        gateway.nextInvokeResult = _ordinaryRedirectResponse();
+        final wrappedOrdinary = await repository.publishNearby(_validRequestId);
+        expect(wrappedRefusal.runtimeType, wrappedOrdinary.runtimeType);
+      },
+    );
+
+    test(
+      'RULING 15: an unrecognized kind is malformed rather than silently '
+      'read as a publish',
+      () async {
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = <String, dynamic>{
+          'kind': 'answer',
+          'committed': true,
+          'user_ordinal': 1,
+          'attune_ordinal': 2,
+          'session_revision': 3,
+        };
+        final repository = AiSessionRepository(gateway);
+
+        // The dispatch must not fall through to the publish parser on
+        // an unknown `kind` just because the publish keys happen to be
+        // present: that would read a shape the server does not send as
+        // a successful publish.
+        await expectLater(
+          repository.publishNearby(_validRequestId),
+          throwsA(isA<AiSessionInternalError>()),
+        );
+      },
+    );
   });
 
   group('discardNearby', () {

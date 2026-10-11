@@ -612,25 +612,41 @@ class AiSessionRepository {
   /// SAME `kind: "redirect"` body `generate` would have, at HTTP 200,
   /// committing nothing.
   ///
-  /// **So a 200 from this command is not necessarily a publish.** That
-  /// body is a redirect, not an [AiSessionPublishNearbyResult], and it
-  /// has no `committed` key — so parsing it raises a [FormatException]
-  /// and surfaces as [AiSessionInternalError], which is the wrong thing
-  /// to show a user. Resolving it properly requires a UI decision about
-  /// what to render for a publish-time refusal, which belongs to the
-  /// sheet task; it is recorded here rather than papered over, and
-  /// nothing here reports which happened.
+  /// **So a 200 from this command is not necessarily a publish** — and
+  /// RULING 15, which Task 4 left open for the sheet task, is now
+  /// resolved by the return type. This method returns the sealed
+  /// [AiSessionPublishResult]: either an [AiSessionPublishNearbyResult]
+  /// (a pair was committed) or an [AiSessionPublishRedirect] carrying
+  /// the IDENTICAL [AiSessionGeneratedRedirect] value `generate`
+  /// returns, so §5.3's server-rendered copy is shown verbatim instead
+  /// of the generic [AiSessionInternalError] a failed parse used to
+  /// produce.
+  ///
+  /// The reuse of `generate`'s own redirect type is deliberate and is
+  /// Ruling 6's enforcement on this path: on the publish path a
+  /// redirect is ALWAYS a safety refusal (the handler has no ordinary
+  /// redirect branch), so the indistinguishability has to hold in the
+  /// RENDERER — and a caller holding the same type `generate` hands it
+  /// has nothing publish-specific to render from. See
+  /// [AiSessionPublishResult]'s own header for the full reasoning and
+  /// the handler measurement behind it.
+  ///
+  /// Nothing here reports which of the two redirect shapes arrived;
+  /// nothing could.
   ///
   /// Throws [AiSessionResultUnavailableError] when there is no staged
   /// result to publish — expired, already discarded, or belonging to
   /// someone else, all one code deliberately — or
   /// [AiSessionConsentRequiredError] when consent moved since staging.
-  Future<AiSessionPublishNearbyResult> publishNearby(String requestId) {
+  Future<AiSessionPublishResult> publishNearby(String requestId) {
     return _invoke(
       command: 'publish_nearby',
       // Exactly `handlePublishNearby`'s allowlist.
       body: {'request_id': requestId},
-      onResult: AiSessionPublishNearbyResult.fromJson,
+      // RULING 15: the sealed parser, which routes the refusal body to
+      // `generate`'s own redirect type rather than raising on a missing
+      // `committed` key.
+      onResult: AiSessionPublishResult.fromJson,
     );
   }
 

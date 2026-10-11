@@ -1038,8 +1038,13 @@ class AiSessionStagedNearbyGeneration extends AiSessionGenerateResult {
 /// the PARTNER, who is the party that must poll to notice the new
 /// turns, cannot read it from any command. Nothing here may be built on
 /// the assumption that the partner can.
-class AiSessionPublishNearbyResult {
-  /// The exact key set `handlePublishNearby` returns.
+class AiSessionPublishNearbyResult extends AiSessionPublishResult {
+  /// The exact key set `handlePublishNearby`'s PUBLISH body returns.
+  ///
+  /// RULING 15: the handler has a second non-error 200 — the safety
+  /// refusal, whose key set is [AiSessionGeneratedRedirect.safetyShapeWireKeys]
+  /// — and it is modelled as [AiSessionPublishRedirect], a sibling
+  /// under [AiSessionPublishResult], rather than as optional keys here.
   static const Set<String> wireKeys = {
     'committed',
     'user_ordinal',
@@ -1066,7 +1071,7 @@ class AiSessionPublishNearbyResult {
     required this.userOrdinal,
     required this.attuneOrdinal,
     required this.sessionRevision,
-  });
+  }) : super();
 
   factory AiSessionPublishNearbyResult.fromJson(Map<String, dynamic> json) {
     final committed = json['committed'];
@@ -1105,4 +1110,137 @@ class AiSessionPublishNearbyResult {
       sessionRevision: sessionRevision,
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// RULING 15 — what `publish_nearby` can return, and why it is TWO shapes
+//
+// Task 4 left this open deliberately and the ledger assigned it to the
+// sheet task, because the resolution is a UI decision: `publish_nearby`
+// can answer HTTP 200 with a body that is NOT a publish.
+//
+// VERIFIED AT THE HANDLER (index.ts:3431-3570), not taken from the
+// brief. `handlePublishNearby` re-runs `classifySessionContent` over
+// the STORED staged fields — the reply text plus every card's `name`
+// and `formatted_address` — because the safety corpus is versioned and
+// the staging window must not be a hole in it. On a refusal it returns
+// `safetyRefusalResponse(verdict)` (index.ts:3537), which is the SAME
+// helper `generate` uses at index.ts:2144, producing the SAME body:
+//
+//     {kind: "redirect", reason, copy, show_safety_resources,
+//      offered: []}
+//
+// at HTTP 200, committing nothing: the staged row is left alone, no
+// transcript pair exists, and `ai_sessions.revision` is NOT bumped, so
+// the partner sees the same integer they would see if the requester had
+// simply never published.
+//
+// Before this type existed, that body hit
+// `AiSessionPublishNearbyResult.fromJson`, which found no `committed`
+// key, raised a `FormatException`, and surfaced as
+// `AiSessionInternalError`. That FAILS CLOSED — nothing is published
+// and no detector signal leaks, which is the property that matters —
+// but the copy is wrong: §5.3 requires the server's own string be
+// shown verbatim when present, and the user instead saw "something
+// went wrong".
+//
+// ## THE SHAPE CHOSEN, AND WHY IT IS THIS ONE
+//
+// The redirect case carries the EXACT SAME [AiSessionGeneratedRedirect]
+// value `generate` produces — not a parallel type, not a copy of its
+// fields, not a publish-specific variant. That is the whole decision:
+//
+//   * **Ruling 6 extends to this path and the reuse is what enforces
+//     it.** On the publish path, a `kind: "redirect"` is ALWAYS a
+//     safety refusal: `safetyRefusalResponse` is the only non-error
+//     200 besides the publish body (verified — the handler's returns
+//     are five §10 errors, one refusal and one publish). There is no
+//     ordinary publish-time redirect to be indistinguishable FROM
+//     within this command. So the indistinguishability has to hold
+//     somewhere else, and the only place left is the renderer: if the
+//     sheet draws a publish-time refusal with any widget, copy, icon
+//     or telemetry that a `generate` redirect does not get, then
+//     "the publish-refusal UI appeared" IS the detector signal, visible
+//     to anyone looking at the screen. Reusing the identical type
+//     means the sheet CANNOT draw it differently — there is nothing
+//     different in scope to draw from.
+//   * **It keeps `_copy` private and total.** The sheet reaches the
+//     server's string only through `resolveCopy({genericRedirectCopy})`,
+//     the same call it makes for a `generate` redirect, so it still
+//     cannot ask which shape it got.
+//   * **A sealed base rather than a nullable field on the publish
+//     result.** `AiSessionPublishNearbyResult.committed` is already
+//     non-null-and-must-be-true; bolting a nullable redirect beside it
+//     would make "published" and "refused" expressible at once and
+//     give a caller a `redirect != null` test — which on THIS command
+//     is exactly `wasBlockedBySafety`, the getter Ruling 6 forbids.
+//     Sealing makes the two mutually exclusive at the type level, so
+//     the only way to read the outcome is to handle both branches.
+//
+// What is deliberately NOT here: no `isRefused`, no `wasBlocked`, no
+// discriminator string, and no field naming the field that tripped the
+// corpus (the handler builds its refusal from a verdict-only helper, so
+// which string tripped it is not observable on the wire either).
+// ---------------------------------------------------------------------------
+
+/// What [AiSessionRepository.publishNearby] returns: a committed pair,
+/// or a redirect that committed nothing.
+///
+/// Sealed, so a caller must handle both and cannot fall through to a
+/// default that treats a refusal as a publish. See the block comment
+/// above for the measurement and Ruling 15's reasoning.
+sealed class AiSessionPublishResult {
+  const AiSessionPublishResult();
+
+  /// Parses whichever shape arrived.
+  ///
+  /// Dispatches on `kind` being the literal `'redirect'` — the ONE key
+  /// the refusal body has and the publish body does not. The publish
+  /// body sends no `kind` at all (index.ts:3569 sends exactly
+  /// `{committed, user_ordinal, attune_ordinal, session_revision}`), so
+  /// absence routes to the publish parser, which then requires
+  /// `committed` rather than defaulting it.
+  ///
+  /// **This dispatch is not a Ruling 6 branch.** It separates "a pair
+  /// was committed" from "nothing was committed", which is a fact about
+  /// the caller's own write that the caller must act on; it does not
+  /// separate a safety refusal from an ordinary redirect, and on this
+  /// command there is no ordinary redirect to separate it from. The
+  /// redirect branch hands back [AiSessionGeneratedRedirect] unchanged
+  /// and keeps no record that it came from a publish.
+  ///
+  /// Throws [FormatException] — never a typed [AiSessionError] — on a
+  /// shape it cannot read (RULING 11: the code-preserving path through
+  /// `_invoke`'s `_mapTransportError` must stay the only path).
+  factory AiSessionPublishResult.fromJson(Map<String, dynamic> json) {
+    final kind = json['kind'];
+    if (kind == 'redirect') {
+      return AiSessionPublishRedirect(
+        AiSessionGeneratedRedirect._fromJson(json),
+      );
+    }
+    if (kind != null) {
+      throw FormatException(
+        'AiSessionPublishResult.fromJson: unrecognized kind "$kind"',
+      );
+    }
+    return AiSessionPublishNearbyResult.fromJson(json);
+  }
+}
+
+/// `publish_nearby` answered with a redirect: **nothing was committed.**
+///
+/// Holds the identical [AiSessionGeneratedRedirect] `generate` returns,
+/// by composition, so the renderer that draws one draws the other with
+/// the same widget tree and the same `resolveCopy` call. See Ruling 15's
+/// block comment above for why that reuse is the enforcement mechanism
+/// rather than a convenience.
+///
+/// The staged row is UNTOUCHED — the requester may still discard it —
+/// and the session revision did not move, so there is nothing for a
+/// partner to poll and notice.
+class AiSessionPublishRedirect extends AiSessionPublishResult {
+  final AiSessionGeneratedRedirect redirect;
+
+  const AiSessionPublishRedirect(this.redirect);
 }
