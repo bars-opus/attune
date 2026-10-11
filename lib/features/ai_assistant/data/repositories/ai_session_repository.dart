@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/ai_session_model.dart';
+import '../models/ai_session_turn_model.dart';
 import 'ai_assistant_repository.dart';
 import 'ai_session_error.dart';
 
@@ -101,9 +103,10 @@ class AiSessionPrepareResult {
 /// `FEATURE_DISABLED`, deliberately, because §7.2 requires silence. So
 /// an empty `read` is NOT evidence that the session is gone, ended, or
 /// that the feature was turned off — it is indistinguishable from "no
-/// turns committed yet". When `read` lands here (Task 5), it must not
-/// let a caller conclude otherwise, and no caller may treat emptiness as
-/// a terminal state.
+/// turns committed yet". [read] therefore never converts emptiness into
+/// an error and returns an [AiSessionTranscript] with no member a caller
+/// could read a verdict from; no caller may treat emptiness as a
+/// terminal state.
 class AiSessionRepository {
   static const String functionName = 'ai-sessions';
 
@@ -168,11 +171,274 @@ class AiSessionRepository {
     );
   }
 
-  // Task 3 adds reviewContext/approve.
+  /// `review_context` (spec §4.1, §4.3): reads the context the session
+  /// will be generated against, and — optionally, via
+  /// [setIncludeWindow] — toggles the recent window while doing so.
+  ///
+  /// ## Returns gate 2's TWO HALVES, deliberately unrecombined
+  ///
+  /// The server sends one flat object; this method splits it into
+  /// [AiSessionContextReview] (what a UI renders: snippets, the stored
+  /// toggle, the offset) and [AiSessionApprovalTicket] (what `approve`
+  /// echoes: revision, digest, policy version). Their wire key sets
+  /// intersect in exactly `{session_id}`, which a test asserts.
+  ///
+  /// The split is not tidiness. A client **cannot** recompute the
+  /// digest from the snippets it was shown — `selectSharedWindow`'s
+  /// 2,400-scalar total budget re-clips the final snippet, and
+  /// `review_context` hashes the target snippet as stored text while
+  /// hashing window snippets as the live selection produced them — so
+  /// handing a caller the digest *beside* its apparent inputs invites
+  /// exactly the recomputation that would disagree with the server for
+  /// reasons the client cannot see. Keeping them in separate values
+  /// means a widget that renders the review half has no digest in
+  /// scope, and the approval path has no snippet in scope.
+  ///
+  /// **Returning a record of two rather than one combined type is the
+  /// point**; this method must not grow a convenience accessor that
+  /// puts a digest and a snippet in the same object.
+  ///
+  /// `civil_day_start_utc` is sent by the server and read by neither
+  /// half — see [AiSessionContextReview.wireKeysDeliberatelyDropped].
+  ///
+  /// [utcOffsetMinutes] is REQUIRED on every call, including a pure
+  /// re-read: `isValidUtcOffsetMinutes` refuses an absent or
+  /// out-of-range value with `INVALID_INPUT` rather than clamping. It
+  /// must be the offset the UI DISPLAYED. The offset is no longer part
+  /// of the digest pre-image (Ruling 35 / N3: binding it meant two
+  /// partners in different timezones could never activate a shared
+  /// session, and `DIGEST_FORMAT_VERSION` is now v2), but it still
+  /// decides WHICH messages the window selects, so it is still required
+  /// on the wire.
+  ///
+  /// [setIncludeWindow] is tri-state and the third state matters:
+  /// `null` means "do not toggle" and keeps this command read-only,
+  /// while `false` means "turn the window OFF" — a real write that
+  /// bumps the revision and clears BOTH partners' approvals. So `null`
+  /// omits the key entirely rather than sending `false`; defaulting to
+  /// `false` would silently invalidate a partner's approval on every
+  /// plain re-read.
+  ///
+  /// After a toggle the revision in the returned ticket is the
+  /// POST-toggle one — the server re-reads the row rather than assuming
+  /// — so the ticket is always approvable as returned.
+  Future<({AiSessionContextReview review, AiSessionApprovalTicket ticket})>
+  reviewContext({
+    required String sessionId,
+    required int utcOffsetMinutes,
+    bool? setIncludeWindow,
+  }) {
+    return _invoke(
+      command: 'review_context',
+      // Exactly `handleReviewContext`'s allowlist and nothing else.
+      // NOTE: NO `relationship_id`. The server looks the session up
+      // first and takes the relationship, kind, visibility and window
+      // setting from THAT ROW — "never from the request body" — because
+      // a digest computed from a client-supplied relationship would let
+      // a caller aim the window query at a relationship the session
+      // does not belong to. The key is not allowlisted, so sending it
+      // is `INVALID_INPUT` on every call.
+      body: {
+        'session_id': sessionId,
+        'utc_offset_minutes': utcOffsetMinutes,
+        if (setIncludeWindow != null) 'set_include_window': setIncludeWindow,
+      },
+      // Parsed TWICE, from the same map, into two types that cannot see
+      // each other's fields. Neither factory is given the other's keys.
+      onResult: (data) => (
+        review: AiSessionContextReview.fromJson(data),
+        ticket: AiSessionApprovalTicket.fromJson(data),
+      ),
+    );
+  }
+
+  /// `approve` (spec §4.1, §4.3): records this caller's approval of the
+  /// reviewed context and attempts activation in the same command.
+  ///
+  /// **Takes the whole [AiSessionApprovalTicket], not loose
+  /// digest/revision/policy arguments.** Gate 2 again: the ticket is
+  /// the only thing `reviewContext` hands out that belongs here, and
+  /// accepting it whole means a caller cannot assemble an approval from
+  /// a digest it obtained anywhere else — in particular not from a
+  /// digest it computed, and not from a revision it read from a
+  /// different call than the digest. The three values must come from
+  /// ONE `review_context` response or the server's equality check is
+  /// meaningless, and a record of three parameters would let them drift
+  /// apart silently.
+  ///
+  /// ## There is no `start` command and none is needed
+  ///
+  /// `processSessionCommand` has exactly nine cases and none is
+  /// `start`: activation rides inside `handleApprove`, which calls
+  /// `activate_ai_session` itself.
+  ///
+  /// ## A first approver's `activated: false` is a SUCCESS
+  ///
+  /// On a shared session the first partner to approve legitimately
+  /// cannot activate yet, and the server returns HTTP 200 with
+  /// `{approved: true, activated: false, state: "preparing"}` — NOT
+  /// `APPROVAL_REQUIRED`, whose own comment is that reporting it here
+  /// "would tell a partner who did everything right that they failed".
+  /// So this method returns normally in that case and the caller reads
+  /// [AiSessionApprovalResult.state]; §10's `APPROVAL_REQUIRED` belongs
+  /// to a caller that tried to GENERATE without approval.
+  ///
+  /// [AiSessionApprovalResult] makes `state` required, so waiting-ness
+  /// is read rather than inferred from `!activated`.
+  ///
+  /// Throws [AiSessionContextChangedError] when the revision moved, the
+  /// two partners' digests differ, the consent policy was superseded,
+  /// or the frozen snapshot no longer validates. Its remedy is always
+  /// "call [reviewContext] again and approve the digest it returns" —
+  /// never "rebuild the digest and retry".
+  Future<AiSessionApprovalResult> approve({
+    required AiSessionApprovalTicket ticket,
+  }) {
+    return _invoke(
+      command: 'approve',
+      // `toApproveBody()` is the ticket's own transcription of
+      // `handleApprove`'s allowlist: session_id, revision, digest and
+      // policy_version. The policy version is sent so the server can
+      // detect that consent moved between review and approval — a
+      // CONTEXT_CHANGED rather than something to overwrite.
+      body: ticket.toApproveBody(),
+      onResult: AiSessionApprovalResult.fromJson,
+    );
+  }
+
+  /// `read` (spec §4.1, §7.2): the committed transcript, plus — only
+  /// when [requestId] is supplied — this caller's own staged Nearby
+  /// result.
+  ///
+  /// ## AN EMPTY TRANSCRIPT IS NOT EVIDENCE THE SESSION IS GONE
+  ///
+  /// `handleRead` returns HTTP 200 with `turns: []` for every
+  /// unauthorized outcome — unknown session, non-member, withdrawn
+  /// consent, a shared session this actor never approved — *and* for a
+  /// perfectly healthy session that has not committed a turn yet.
+  /// `read_ai_session_turns` and `read_ai_session_staging` contain no
+  /// `RAISE EXCEPTION` at all (a live contract test asserts that), so
+  /// "a partner's zero rows and a stranger's zero rows must be
+  /// byte-identical". The branch deliberately does not even run the
+  /// eligibility gate first, because that gate raises distinguishable
+  /// codes and would reintroduce at the edge the oracle the SQL removes.
+  ///
+  /// So this method **never** converts emptiness into an error, and
+  /// [AiSessionTranscript] offers no `isGone`/`exists`/`isTerminal` to
+  /// read a verdict from. A UI that wants to say anything about a
+  /// session's existence must learn it from a command entitled to say
+  /// so — [reviewContext], [approve] or `generate`, which return
+  /// `UNAVAILABLE` explicitly.
+  ///
+  /// A missing `turns` KEY is different and throws: the server always
+  /// sends it, so its absence is a malformed response, and reading that
+  /// as an empty transcript would manufacture a benign empty state out
+  /// of a broken one.
+  ///
+  /// ## `staged`: null and empty mean different things
+  ///
+  /// The server sends `staged` ABSENT when no [requestId] was supplied
+  /// and as a possibly-empty ARRAY when one was, "so a client can tell
+  /// 'I did not ask' from 'I asked and there is nothing'". That is a
+  /// distinction about the caller's own request, not about anyone's
+  /// authorization, and [AiSessionTranscript.staged] is nullable
+  /// precisely to carry it. **No `?? []` may appear at this call site
+  /// or downstream** — the first one destroys the distinction.
+  Future<AiSessionTranscript> read({
+    required String sessionId,
+    String? requestId,
+  }) {
+    return _invoke(
+      command: 'read',
+      // Exactly `handleRead`'s allowlist. `request_id` is OPTIONAL and
+      // is OMITTED rather than sent as null: the server branches on
+      // `typeof requestId === "string"`, so a null would read the turns
+      // and return `staged` absent — the same observable result today,
+      // but it would put the key on the wire, and a present-but-null
+      // key is a shape the server's own validator tolerates only
+      // because `undefined` and `null` both fail its uuid check. Not
+      // sending it keeps "I did not ask" literal.
+      body: {
+        'session_id': sessionId,
+        if (requestId != null) 'request_id': requestId,
+      },
+      onResult: AiSessionTranscript.fromJson,
+    );
+  }
+
+  /// `end` (spec §5.4): ends the session and purges its transcript,
+  /// sources, approvals and staging rows synchronously.
+  ///
+  /// Returns nothing, deliberately. The server answers `{ended: true}`
+  /// idempotently — for an unknown session, an already-ended one, and
+  /// one it just closed alike — and that boolean "means 'this session
+  /// is not running now'", not "there was something to end". Returning
+  /// it would invite a caller to read it as existence, which §3.1
+  /// forbids: "a session the caller may not end is indistinguishable
+  /// from one that does not exist", and both authorization raises map
+  /// to [AiSessionUnavailableError] for that reason.
+  ///
+  /// §5.4 also forbids disclosing WHO ended a session, and nothing here
+  /// could: the response has no actor field and the table has no
+  /// column.
+  Future<void> end(String sessionId) {
+    return _invoke(
+      command: 'end',
+      // Exactly `handleEnd`'s allowlist.
+      body: {'session_id': sessionId},
+      // The body is read but nothing is returned from it — see above.
+      onResult: (_) {},
+    );
+  }
+
+  /// `share_answer` (spec §5.3, §8.1): posts a committed `ideas_answer`
+  /// turn into ordinary chat with `attune_assist` provenance, and
+  /// returns the new `public.messages` id.
+  ///
+  /// [ordinal] is the transcript ordinal **as the server numbered it**,
+  /// passed through unchanged. Ordinals are `2n-1`/`2n` and may be
+  /// non-contiguous (3,4 measured after one failed attempt), so a
+  /// client that renumbered a rendered list to 1..n would share the
+  /// wrong turn. The server bounds it to 1..20 itself and answers
+  /// `INVALID_INPUT` out of range, so this method does not duplicate
+  /// the bound.
+  ///
+  /// Only a committed `ideas_answer` is shareable: `share_ai_session_turn`
+  /// allowlists that kind alone, so a redirect cannot be posted at all
+  /// (§8.1) and a Nearby result has its own requester-only publish path.
+  ///
+  /// Throws [AiSessionConsentRequiredError] — the one refusal §10
+  /// distinguishes by name, "precisely because 'caller can open
+  /// consent' is a refusal the caller can ACT on" — or
+  /// [AiSessionResultUnavailableError] for everything else. The latter
+  /// deliberately collapses a closed session, a missing ordinal, a
+  /// user-authored turn, an unshareable kind and a non-member into one
+  /// response, so a caller cannot tell which check refused.
+  Future<String> shareAnswer({
+    required String sessionId,
+    required int ordinal,
+  }) {
+    return _invoke(
+      command: 'share_answer',
+      // Exactly `handleShareAnswer`'s allowlist.
+      body: {'session_id': sessionId, 'ordinal': ordinal},
+      onResult: (data) {
+        final messageId = data['message_id'];
+        if (messageId is! String || messageId.isEmpty) {
+          // The server returns INTERNAL_ERROR rather than an empty id
+          // when the RPC yields no row, so an unreadable id here is a
+          // malformed response, not a shareable outcome.
+          throw const FormatException(
+            'share_answer: missing/invalid message_id',
+          );
+        }
+        return messageId;
+      },
+    );
+  }
+
   // Task 4 adds generate.
-  // Task 5 adds read.
   // Task 6 adds publishNearby/discardNearby.
-  // Task 7 adds end/shareAnswer.
 
   // ---------------------------------------------------------------------
   // Shared call helper
