@@ -5,11 +5,21 @@
 **Goal:** Build the complete server-side backbone for AI Sessions — seven
 new tables, RLS with no direct authenticated grants, the full admission/
 dispatch/completion transaction protocol (§6.2), the private-Nearby-
-staging and shared-publication flows, per-user Realtime authorization for
-content-free invalidation hints, and the every-minute reconciler/purge job
-— with SQL contract tests that prove concurrency, authorization, and the
-compensation table in §8.2.2 against a real Postgres, not against this
-plan's own narration of what the code does.
+staging and shared-publication flows, and the every-minute
+reconciler/purge job — with SQL contract tests that prove concurrency,
+authorization, and the compensation table in §8.2.2 against a real
+Postgres, not against this plan's own narration of what the code does.
+
+**Not in this plan: §6.1 Realtime authorization.** (Corrected by Task 5
+of the merge-blocker plan, N6. This paragraph previously listed "per-user
+Realtime authorization for content-free invalidation hints" as a
+deliverable; it was never built. Verified by catalog query: ZERO policies
+exist on `realtime.messages`, and zero on the whole `realtime` schema.
+The plan's own §6.1 note and its "What this plan deliberately does NOT
+do" section already disclaimed it correctly — only this Goal paragraph
+disagreed, which is the one place a reader looks first.) See
+`docs/superpowers/plans/2026-09-22-ai-sessions-plan-c-edge-function-and-safety.md`
+for who owns it: as the work is divided, NEITHER plan claims it.
 
 **Architecture:** No edge function in this plan — that is Plan C. Every
 RPC here is `service_role`-only (client-callable commands are a thin,
@@ -27,9 +37,10 @@ convention already established across the games features (see
 the closest existing precedent: authorization check → relationship lock
 → idempotency-key lookup → existing-slot check, the same shape §3.2's
 session-creation admission and §6.2's generation admission both need).
-Realtime uses Supabase's private-channel Broadcast authorization (RLS on
-`realtime.messages`), which is genuinely new infrastructure for this
-codebase — every existing feature (`supabase_chat_repository.dart`,
+Realtime is INTENDED to use Supabase's private-channel Broadcast
+authorization (RLS on `realtime.messages`) — intended, not built here:
+see the Goal section's §6.1 note. It is genuinely new infrastructure for
+this codebase — every existing feature (`supabase_chat_repository.dart`,
 Planning, the games) uses public `onPostgresChanges` on the underlying
 table instead, which spec §6.1 explicitly forbids for Sessions'
 transcript/staging tables ("No direct Postgres Changes publication of

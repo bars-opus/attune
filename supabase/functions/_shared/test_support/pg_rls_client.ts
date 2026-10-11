@@ -39,7 +39,16 @@ export interface PgRow {
 
 interface Filter {
   col: string;
-  op: "eq" | "lt" | "gt" | "gte" | "lte" | "not_is_null" | "is_null" | "not_eq";
+  op:
+    | "eq"
+    | "lt"
+    | "gt"
+    | "gte"
+    | "lte"
+    | "not_is_null"
+    | "is_null"
+    | "not_eq"
+    | "in";
   value: unknown;
 }
 
@@ -96,6 +105,19 @@ class QueryBuilder {
     }
     throw new Error(`pg_rls_client test double: .is() only supports null`);
   }
+  // Mirrors supabase-js's .in(col, values). Added for ai-sessions'
+  // frozen-source revalidation, which reads every frozen source's live
+  // row in ONE query -- the production path uses PostgREST's own .in(),
+  // so the double has to model it rather than the caller working around
+  // its absence with N round trips.
+  //
+  // Rendered as `= ANY($n)` with the array bound as a single parameter,
+  // the same shape the uuid[] binding below already relies on, so a
+  // uuid column compares against a uuid[] without per-element casts.
+  in(col: string, values: readonly unknown[]): this {
+    this.filters.push({ col, op: "in", value: [...values] });
+    return this;
+  }
   order(col: string, opts?: { ascending?: boolean }): this {
     this.orders.push({ col, ascending: opts?.ascending ?? true });
     return this;
@@ -116,10 +138,21 @@ class QueryBuilder {
       not_eq: "!=",
       is_null: "IS NULL",
       not_is_null: "IS NOT NULL",
+      in: "= ANY",
     };
     const whereParts = this.filters.map((f) => {
       if (f.op === "is_null" || f.op === "not_is_null") {
         return `${quoteIdent(f.col)} ${opSql[f.op]}`;
+      }
+      if (f.op === "in") {
+        params.push(f.value);
+        // The explicit uuid[] cast matters: the driver sends a JS string
+        // array as text[], and `uuid = ANY(text[])` is an operator
+        // Postgres does not have. Every .in() call site in this repo
+        // filters on a uuid column (ai-sessions' frozen sources), so
+        // casting here is correct and a non-uuid call site would fail
+        // loudly rather than silently comparing as text.
+        return `${quoteIdent(f.col)} = ANY($${params.length}::uuid[])`;
       }
       params.push(f.value);
       return `${quoteIdent(f.col)} ${opSql[f.op]} $${params.length}`;
@@ -324,7 +357,10 @@ class RpcCaller {
   }
 
   private async exec(): Promise<
-    { data: PgRow[] | null; error: { message: string } | null }
+    {
+      data: PgRow[] | null;
+      error: { message: string; code?: string } | null;
+    }
   > {
     const argNames = Object.keys(this.args);
     const params: unknown[] = [];
@@ -332,9 +368,48 @@ class RpcCaller {
     // driver needs an explicit cast for an object/array param, same as
     // UpdateBuilder above -- otherwise it is sent as a Postgres row/array
     // literal instead of JSON text and the function call fails to bind.
+    //
+    // AN ARRAY OF UUID STRINGS IS THE ONE EXCEPTION, and it is NOT a
+    // convenience: prepare_ai_session's p_window_message_ids is
+    // `uuid[]`, not jsonb. Real PostgREST sends a JSON array and
+    // Postgres coerces it to the declared uuid[] parameter type; this
+    // driver binds a positional parameter, so an explicit ::uuid[] cast
+    // is what makes the same call reach the same function here. Casting
+    // it to ::jsonb instead -- which is what the unconditional branch
+    // below used to do -- makes the call fail to resolve, and the
+    // failure surfaces as a generic RPC error rather than as a bind
+    // error, which is how it would have been mistaken for a logic bug.
+    // An EMPTY array counts. The real case that forced this: a shared
+    // Ideas session whose civil day holds no eligible messages selects
+    // an empty window, so the edge function passes [] -- and sending
+    // that as `'[]'::jsonb` fails to resolve against a uuid[] parameter
+    // exactly as a non-empty one does. The `.every()` on an empty array
+    // is vacuously true, so the length check is the only thing that
+    // would have excluded it; it is deliberately absent. uuidArgs that
+    // are genuinely jsonb and genuinely empty do not exist in this
+    // codebase (every jsonb RPC arg is an object or a non-empty array of
+    // objects: p_proposal, p_sources, p_assistant_payload), and the
+    // `uuidArrayArgNames` allowlist below makes that irrelevant anyway.
+    const UUID_ARRAY_ARG_NAMES = new Set(["p_window_message_ids"]);
+    const isUuidArray = (name: string, value: unknown): value is string[] =>
+      UUID_ARRAY_ARG_NAMES.has(name) && Array.isArray(value) &&
+      value.every((item) =>
+        typeof item === "string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+          .test(item)
+      );
+
     const callArgs = argNames
       .map((name, i) => {
         const value = this.args[name];
+        if (isUuidArray(name, value)) {
+          // Rendered as a Postgres array literal, bound as text, cast
+          // by the server. `{a,b}` needs no quoting for uuids -- the
+          // regex above already proved every element is bare hex and
+          // dashes, so no element can contain a comma, brace or quote.
+          params.push(`{${value.join(",")}}`);
+          return `${quoteIdent(name)} := $${i + 1}::uuid[]`;
+        }
         const isJsonValue = Array.isArray(value) ||
           (typeof value === "object" && value !== null);
         params.push(isJsonValue ? JSON.stringify(value) : value);
@@ -348,9 +423,20 @@ class RpcCaller {
       const rows = await this.conn.query(sql, params);
       return { data: rows, error: null };
     } catch (err) {
+      // SQLSTATE is carried through as `code`, matching supabase-js's
+      // PostgrestError shape. Without it this double could not exercise
+      // a caller that discriminates by error code -- and Plan C's
+      // prepare branch now does exactly that for the slot limit
+      // (ERRCODE 'AT001', added by 20260953200200 so the mapping does
+      // not depend on the exception's wording). deno-postgres puts it
+      // on err.fields.code for a PostgresError.
+      const fields = (err as { fields?: { code?: string } } | null)?.fields;
       return {
         data: null,
-        error: { message: err instanceof Error ? err.message : String(err) },
+        error: {
+          message: err instanceof Error ? err.message : String(err),
+          ...(typeof fields?.code === "string" ? { code: fields.code } : {}),
+        },
       };
     }
   }

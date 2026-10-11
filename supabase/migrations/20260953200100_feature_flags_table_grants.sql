@@ -1,0 +1,58 @@
+-- feature_flags table grants: re-assert SELECT-only for clients, and
+-- bring the table under the local harness's grant-replay discipline.
+--
+-- Companion to 20260953200000_ai_capability_flags.sql, which seeds spec
+-- §12's six capability flags and narrows the table's RLS policy to hide
+-- them. This file is split out so scripts/local_pg_grants.sql can `\i`
+-- the grants ALONE after its blanket grant, the way every other
+-- table-grant migration in this repo is replayed -- replaying the whole
+-- capability migration would needlessly re-run its seed INSERT and
+-- CREATE OR REPLACE FUNCTION on every local rebuild.
+--
+-- NOT a new grant and NOT a production change: 20260705190000 already
+-- shipped exactly these two statements when it created the table. They
+-- are repeated here because the LOCAL harness could not see them.
+--
+-- What I found while writing the capability-flag contract test, by
+-- querying relacl rather than reading SQL:
+--
+--   feature_flags relacl = {..., authenticated=arwd/user, ...}
+--
+-- i.e. `authenticated` held INSERT/UPDATE/DELETE on the rollout table
+-- in `attune_test`, despite 20260705190000's `REVOKE ALL ... FROM anon,
+-- authenticated`. The cause is documented in scripts/local_pg_grants.sql's
+-- own header: that file's blanket
+-- `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public
+--  TO authenticated` runs AFTER all migrations and silently re-grants
+-- what a migration deliberately revoked. In production Supabase applies
+-- its grant at CREATE time and never again, so the migration's REVOKE
+-- stands there -- which is why this is a HARNESS modelling gap, not a
+-- live privilege defect. The established remedy in this repo is to put
+-- the REVOKE in its own migration and `\i` it from local_pg_grants.sql
+-- after the blanket grant, exactly as the games/stories/planning/
+-- AI-assistant/AI-sessions table-grant migrations already are. This
+-- file is the feature_flags entry in that pattern, and
+-- local_pg_grants.sql now replays it.
+--
+-- Why it matters: the companion migration hides capability state from
+-- clients at the ROW level (its RLS predicate) and at the FUNCTION
+-- level (ai_capability_enabled is service_role-only). A client holding
+-- UPDATE on the table is one missing RLS clause away from switching a
+-- capability ON.
+--
+-- I measured the current exposure rather than assuming it. As
+-- `authenticated` in `attune_test`, with the write grant still present:
+--
+--   UPDATE public.feature_flags SET enabled = true
+--     WHERE key = 'ai_sessions_private_enabled';
+--   -- succeeds, 0 ROWS AFFECTED
+--
+-- So RLS does hold today: the policy is `FOR SELECT` only, there is
+-- no permissive UPDATE policy, and a row that no policy exposes
+-- cannot be updated. The flip is NOT currently possible even with the
+-- grant, so this is defense in depth, not a live-bug fix. The privilege
+-- is still wrong to hold: it makes one RLS predicate the single point
+-- of failure for a rollout kill switch, which is the same argument
+-- 20260712150000 makes against relying on one advisory layer.
+REVOKE ALL ON public.feature_flags FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.feature_flags TO authenticated;
