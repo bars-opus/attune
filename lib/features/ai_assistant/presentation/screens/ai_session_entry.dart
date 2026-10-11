@@ -30,8 +30,10 @@
 // [aiSessionSheetMountedProvider] is that flag, and
 // [openAiSessionSheet] is the only writer. A caller cannot forget it:
 // pushing the sheet directly is what this function exists to replace,
-// and a test asserts there is exactly one `AiSessionSheet(` in `lib/`
-// outside this file (namely none).
+// and `ai_session_entry_test.dart` scans all of `lib/` and fails unless
+// THIS FILE holds the only `AiSessionSheet(` construction in it — so a
+// future entry point that pushes the sheet itself fails that test even
+// though every behavioural test would still pass.
 //
 // If a future product decision genuinely needs two concurrent
 // sessions, the controller's key must become a **sheet-instance id**
