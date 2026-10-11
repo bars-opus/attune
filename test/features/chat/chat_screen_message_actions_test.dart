@@ -1,4 +1,5 @@
 import 'package:attune/features/ai_assistant/data/repositories/ai_assistant_repository.dart';
+import 'package:attune/features/ai_assistant/data/services/ai_session_capabilities.dart';
 import 'package:attune/features/ai_assistant/presentation/providers/ai_assistant_providers.dart';
 import 'package:attune/features/ai_assistant/presentation/screens/ask_attune_mode_sheet.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
@@ -455,6 +456,23 @@ void main() {
         tester,
         repo,
         extraOverrides: [
+          // RULING 23 (Plan D Task 9): "Ask Attune" is now gated on
+          // §12's `ai_assist_enabled`, read through Task 5's capability
+          // service. Nothing gated it before — the base spec's own
+          // recorded finding — so this override is what makes the
+          // ENTRY POINT available, and the test asserts the entry point
+          // appears. Without it the capability fails closed and the
+          // tile is correctly absent, which is what the dedicated gate
+          // test below asserts instead.
+          aiSessionCapabilitiesProvider.overrideWith(
+            (ref) async => const AiSessionCapabilities(
+              assist: true,
+              sessionsPrivate: false,
+              sessionsShared: false,
+              sessionsRecentWindow: false,
+              sessionsNearby: false,
+            ),
+          ),
           // The mode sheet reads the relationship id and consent status
           // via these providers; point them at fixed values instead of
           // hitting Supabase — this test only asserts on the pushed

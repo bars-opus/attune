@@ -158,11 +158,35 @@ class MessageBubble extends StatelessWidget {
     this.reactionImpactToken = 0,
     this.animateEmojiArrival = false,
     this.emojiPlaybackEnabled = true,
+    this.assistEnabled = true,
   });
 
   final Message message;
   final bool animateEmojiArrival;
   final bool emojiPlaybackEnabled;
+
+  /// Spec §12's `ai_assist_enabled` (Plan D RULING 23): whether the
+  /// long-press menu may offer "Ask Attune" at all.
+  ///
+  /// Resolved by the CALLER, not here, and that follows this file's own
+  /// established division rather than inventing one: [MessageBubble] is
+  /// a deliberate `StatelessWidget` (see `_openStoryQuote`'s note on
+  /// not converting it to a `ConsumerWidget`), and `ChatScreen` already
+  /// resolves every other capability this way — `showAttachImage`,
+  /// `showTranslator`, `showVoiceMessage` and the composer's own AI
+  /// button all come from `ref.watch` at that one site. The capability
+  /// is read there through Task 5's `aiSessionCapabilitiesProvider`,
+  /// never from `feature_flags` (whose SELECT policy hides every
+  /// `ai_%` key from clients — PF2).
+  ///
+  /// **Defaults true, which is today's behaviour exactly.** Every
+  /// existing call site and test keeps the menu it has; only
+  /// `ChatScreen` passes a resolved value.
+  ///
+  /// Not a gate. §12: "A client flag alone is insufficient." The
+  /// ai-assist edge function enforces the same flag server-side, so
+  /// this only decides whether to offer a door.
+  final bool assistEnabled;
 
   /// True when this message immediately follows another from the SAME
   /// sender with no reply from the other side (or day boundary) in
@@ -604,6 +628,10 @@ class MessageBubble extends StatelessWidget {
                                     ),
                                     onEdit: onEdit ?? () {},
                                     onDelete: onDelete ?? () {},
+                                    // RULING 23: §12's
+                                    // `ai_assist_enabled`, which
+                                    // NOTHING gated before this.
+                                    assistEnabled: assistEnabled,
                                   ),
                                 )
                                 : null,

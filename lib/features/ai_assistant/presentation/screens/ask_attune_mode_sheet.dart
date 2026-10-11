@@ -22,8 +22,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../auth/providers/auth_provider.dart';
 import '../../../chat/domain/entities/message.dart';
+import '../../data/models/ai_session_model.dart' show AiSessionKind;
+import '../../data/services/ai_session_capabilities.dart';
 import '../providers/ai_assistant_providers.dart';
 import 'ai_consent_screen.dart';
+import 'ai_session_entry.dart';
 import 'assist_sheet.dart';
 import 'understand_sheet.dart';
 
@@ -147,6 +150,7 @@ class _ConsentGatedModeChoice extends ConsumerWidget {
 
         return _ModeChoiceList(
           message: message,
+          relationshipId: relationshipId,
           waitingForPartner: !consent.bothGranted,
           understandAvailable: understandAvailable,
           colorScheme: colorScheme,
@@ -207,6 +211,7 @@ class _ConsentDisclosure extends ConsumerWidget {
 class _ModeChoiceList extends StatelessWidget {
   const _ModeChoiceList({
     required this.message,
+    required this.relationshipId,
     required this.waitingForPartner,
     required this.understandAvailable,
     required this.colorScheme,
@@ -214,6 +219,13 @@ class _ModeChoiceList extends StatelessWidget {
   });
 
   final Message message;
+
+  /// Needed only by the multi-turn session path: `prepare` takes a
+  /// `relationship_id`, whereas single-turn Assist derives the pairing
+  /// from the target message server-side. Threaded from the ancestor
+  /// that already resolved it rather than re-read here, so one value
+  /// reaches both the consent gate above and the session below.
+  final String relationshipId;
   final bool waitingForPartner;
   final bool understandAvailable;
   final ColorScheme colorScheme;
@@ -257,7 +269,11 @@ class _ModeChoiceList extends StatelessWidget {
             enabled: !waitingForPartner,
             onTap: waitingForPartner
                 ? null
-                : () => _chooseAssistKindThenOpen(context, message),
+                : () => _chooseAssistKindThenOpen(
+                      context,
+                      message,
+                      relationshipId: relationshipId,
+                    ),
           ),
           const SizedBox(height: 12),
           if (understandAvailable)
@@ -289,10 +305,49 @@ class _ModeChoiceList extends StatelessWidget {
 /// of the two Assist jobs the user wants via a lightweight modal picker
 /// BEFORE pushing `AssistSheet`, which itself takes a required `kind`
 /// (Task 5's own interface) rather than choosing internally.
+/// ## PLAN D TASK 9: this is where "Get ideas" becomes a SESSION, and
+/// only when the capability for the chosen kind is actually on
+///
+/// The task brief says to repoint this from
+/// `AssistSheet(kind: AssistKind.ideas)` to `AiSessionSheet`. Two
+/// things about the real code contradict the brief, and the code wins:
+///
+/// 1. **"Get ideas" does not open `AssistSheet` directly.** It opens
+///    the kind picker below (Ideas / Nearby) and pushes `AssistSheet`
+///    with whichever the user chose. So the repoint belongs at the
+///    picker's OUTCOME, not at the tile — repointing the tile would
+///    have deleted the Nearby choice that the single-turn path offers
+///    today.
+/// 2. **An unconditional repoint would be a REGRESSION, not a
+///    feature.** The six capability flags are OFF in every environment
+///    and flip only after Plan D ships (the user's own decision). A
+///    session opened against an off capability gets
+///    `FEATURE_DISABLED` from `checkEligibility`'s CHECK 0, so
+///    "Get ideas" would go from working single-turn Assist to an error
+///    screen for every user, today. That is exactly the regression
+///    this plan's capability-OFF constraint exists to prevent.
+///
+/// So the branch is per-kind and reads the §12 capability for the kind
+/// the user PICKED, independently (§12 forbids inferring one
+/// capability from another):
+///
+///   * Ideas  -> a session needs `sessionsPrivate || sessionsShared`,
+///     the same disjunction `_PreparationView` itself uses to decide
+///     whether to offer the Ideas kind at all. Offering a session the
+///     sheet would immediately render as unavailable is worse than not
+///     offering one.
+///   * Nearby -> a session needs `sessionsNearby`, AND a visibility,
+///     for the same reason: the sheet refuses with
+///     `kAiSessionUnavailableMessage` when either list is empty.
+///
+/// Otherwise the single-turn `AssistSheet` push below runs **exactly as
+/// it does today**, unchanged — which is what every environment gets
+/// until an operator flips the flags.
 Future<void> _chooseAssistKindThenOpen(
   BuildContext context,
-  Message message,
-) async {
+  Message message, {
+  required String relationshipId,
+}) async {
   final kind = await showModalBottomSheet<AssistKind>(
     context: context,
     builder: (sheetContext) {
@@ -321,6 +376,43 @@ Future<void> _chooseAssistKindThenOpen(
   );
   if (kind == null || !context.mounted) return;
 
+  // The capability read, per RULING 23's "never `feature_flags`
+  // directly". Resolved through the container rather than a `ref`
+  // because this is a plain function reached from a tap callback — the
+  // same one-shot-read-from-a-tap pattern `message_bubble.dart` already
+  // uses for `storyReadGatewayProvider`.
+  //
+  // `.valueOrNull` and NOT `await ...future`: the provider is already
+  // resolved by the time a user has long-pressed, opened this sheet,
+  // passed the consent gate and picked a kind, and a null (still
+  // loading, which the service's fail-closed `load()` makes transient)
+  // reads as OFF -> today's single-turn path. Awaiting here would
+  // instead make an unreachable server DELAY the existing feature.
+  final container = ProviderScope.containerOf(context, listen: false);
+  final capabilities = container.read(aiSessionCapabilitiesProvider).valueOrNull;
+  final sessionKind = _sessionKindFor(kind, capabilities);
+
+  if (sessionKind != null) {
+    // RULING 24: one sheet at a time, enforced in the container, not
+    // here. The composer's own entry point is in `chat_screen.dart`'s
+    // `State`, which this subtree cannot see.
+    openAiSessionSheet(
+      container: container,
+      navigator: Navigator.of(context, rootNavigator: true),
+      relationshipId: relationshipId,
+      initialKind: sessionKind,
+      utcOffsetMinutes: displayedUtcOffsetMinutes(),
+      // The long-pressed message, pre-attached as the session's target
+      // (this plan's Architecture note: "pre-seeded with the selected
+      // message"). `prepare` allowlists `target_message_id`, and this
+      // is the only entry point that HAS one -- the composer button
+      // names no message.
+      targetMessageId: message.id,
+      onShared: (_) {},
+    );
+    return;
+  }
+
   final navigator = Navigator.of(context);
   // `AssistSheet`'s own two completion callbacks both close it; on
   // "Edit as my message" the edited text is popped as this route's
@@ -344,6 +436,58 @@ Future<void> _chooseAssistKindThenOpen(
     ),
   );
 }
+
+/// The [AiSessionKind] a multi-turn session would use for [picked], or
+/// `null` when a session must not be offered for it and the existing
+/// single-turn `AssistSheet` path should run unchanged.
+///
+/// Exposed to tests via [debugSessionKindFor] so the per-kind gate is
+/// asserted on its own, across every combination of the five flags,
+/// rather than only through a widget pump that can only reach a few.
+///
+/// **Each capability is read independently (§12).** No branch infers
+/// one from another, and there is deliberately no "any session
+/// capability is on" shortcut: `AiSessionCapabilities` does not expose
+/// one precisely because it would be the wrong question
+/// (`noneAvailable`'s own doc records that).
+///
+/// A null [capabilities] -- not yet loaded, or the service failed
+/// closed -- yields `null`, i.e. today's behaviour. There is no path
+/// here that turns an unknown into permission.
+AiSessionKind? _sessionKindFor(
+  AssistKind picked,
+  AiSessionCapabilities? capabilities,
+) {
+  if (capabilities == null) return null;
+  // A session also needs somewhere to BE: `_PreparationView` renders
+  // `kAiSessionUnavailableMessage` when no visibility is available, so
+  // a kind without one is not an offerable session. Checked for both
+  // kinds rather than folded into the Ideas branch, because Nearby
+  // sessions carry a visibility too.
+  final hasVisibility =
+      capabilities.sessionsPrivate || capabilities.sessionsShared;
+  if (!hasVisibility) return null;
+
+  return switch (picked) {
+    // The same disjunction `_PreparationView` uses to offer the Ideas
+    // kind, which here is `hasVisibility` by construction -- written
+    // out rather than reusing the variable so the two reads stay
+    // legible as the independent §12 questions they are.
+    AssistKind.ideas =>
+      capabilities.sessionsPrivate || capabilities.sessionsShared
+          ? AiSessionKind.ideas
+          : null,
+    AssistKind.nearby =>
+      capabilities.sessionsNearby ? AiSessionKind.nearby : null,
+  };
+}
+
+/// Test-only seam onto [_sessionKindFor].
+@visibleForTesting
+AiSessionKind? debugSessionKindFor(
+  AssistKind picked,
+  AiSessionCapabilities? capabilities,
+) => _sessionKindFor(picked, capabilities);
 
 class _ModeTile extends StatelessWidget {
   const _ModeTile({

@@ -14,6 +14,11 @@ import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/ui/presence/breathing_dots.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/ai_assistant/data/models/ai_session_model.dart'
+    show AiSessionKind;
+import 'package:attune/features/ai_assistant/presentation/providers/ai_assistant_providers.dart'
+    show aiSessionCapabilitiesProvider;
+import 'package:attune/features/ai_assistant/presentation/screens/ai_session_entry.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
@@ -1020,6 +1025,38 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         );
   }
 
+  /// The composer's AI entry point (spec §3.3, Plan D Task 9).
+  ///
+  /// Routes through `openAiSessionSheet` rather than pushing the sheet
+  /// itself, which is RULING 24: the long-press "Get ideas" entry point
+  /// lives in `ask_attune_mode_sheet.dart`, pushed from a
+  /// `StatelessWidget` bubble with no access to this `State`, so a
+  /// `bool` here could not see it and two sheets would share Task 7's
+  /// single `aiSessionControllerProvider` instance. The invariant is
+  /// enforced in the container both entry points share. See that
+  /// function's header.
+  ///
+  /// The root navigator, matching `_buildAskAttuneOpener`'s own choice,
+  /// so the session covers the chat rather than nesting inside a
+  /// sub-navigator the composer might be in.
+  void _openAiSession() {
+    FocusScope.of(context).unfocus();
+    _closeHeaderExpanded();
+    openAiSessionSheet(
+      container: ProviderScope.containerOf(context, listen: false),
+      navigator: Navigator.of(context, rootNavigator: true),
+      relationshipId: widget.conversation.relationshipId,
+      // Ideas, because the composer button is the generic entry: it
+      // names no place and no target message. Nearby is still
+      // reachable from the sheet's own kind choice when
+      // `sessionsNearby` allows it — `initialKind` is the kind the
+      // entry point ASKED for, not a lock.
+      initialKind: AiSessionKind.ideas,
+      utcOffsetMinutes: displayedUtcOffsetMinutes(),
+      onShared: (_) => _scrollToLatest(),
+    );
+  }
+
   Future<void> _openTranslator() async {
     final message = _controller.text.trim();
     if (message.isEmpty) return;
@@ -1197,6 +1234,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         ref.watch(gameComposerProvider(conversation.relationshipId)).gameType;
     final voiceMessagesEnabled = ref.watch(chatVoiceMessagesEnabledProvider);
     final translatorEnabled = ref.watch(chatTranslatorEntryEnabledProvider);
+    // Spec §12's `ai_assist_enabled`, read through Task 5's RPC-backed
+    // capability service and NEVER through `feature_flags` directly --
+    // that table's SELECT policy hides every `ai_%` key from clients
+    // (migration 20260953200000), so a direct read returns no row and
+    // would be permanently false. See `ai_session_capabilities.dart`.
+    //
+    // `.valueOrNull == true` matches the three flag reads above
+    // exactly: loading and (impossible here, the service never throws)
+    // error both read as OFF, which is the direction §12's "defaults
+    // off" points. The capability is OFF in every environment today, so
+    // this resolves false and `onAiButtonTap` stays null -- which is
+    // what hides the button, per `ChatTextField.onAiButtonTap`'s own
+    // contract.
+    final aiAssistEnabled =
+        ref.watch(aiSessionCapabilitiesProvider).valueOrNull?.assist == true;
     final headerDrawerEnabled = ref.watch(
       chatExpandedHeaderDrawerEnabledProvider,
     );
@@ -1495,6 +1547,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                             onAttachFile: _attachFile,
                             onSharePlace: _sharePlace,
                             onOpenGames: _openGames,
+                            // Null hides the entry point, and that IS
+                            // the capability gate (ChatTextField's own
+                            // contract). Nothing else about the
+                            // composer changes: `aiMode` is NOT passed,
+                            // so it stays at its `false` default and
+                            // every control the composer draws today
+                            // keeps drawing. Entering AI mode is a
+                            // later task's work; this task only opens
+                            // the door.
+                            onAiButtonTap:
+                                aiAssistEnabled ? _openAiSession : null,
                             showAttachImage:
                                 imageSharingEnabled.valueOrNull == true,
                             showAttachVideo: videoAttachEnabled,
@@ -2984,6 +3047,26 @@ class _MessageListState extends ConsumerState<_MessageList>
     final expressive =
         ref.watch(chatExpressivenessProvider) == ChatExpressiveness.expressive;
 
+    // RULING 23: §12's `ai_assist_enabled`, which gates the long-press
+    // "Ask Attune" entry point. Nothing gated it before — Task 5
+    // confirmed that across all 16 `ChatFeatureFlags.` call sites, and
+    // it is the BASE spec's own recorded finding rather than something
+    // Plan D introduced.
+    //
+    // Read through Task 5's capability service, NEVER `feature_flags`:
+    // that table's SELECT policy hides every `ai_%` key from clients
+    // (migration 20260953200000), so a direct read returns no row and
+    // the flag would be false forever whatever an operator sets (PF2).
+    //
+    // `.valueOrNull?.assist == true` matches `translatorEnabled`'s own
+    // `.valueOrNull == true` shape at the composer site: loading reads
+    // as OFF, which is where §12's "defaults off" points. The
+    // capability is OFF in every environment today, so this is
+    // `false` — the ONE behavioural change this task makes with the
+    // flags as they ship, and it closes a gap rather than opening one.
+    final assistEnabled =
+        ref.watch(aiSessionCapabilitiesProvider).valueOrNull?.assist == true;
+
     if (state.isLoading && state.messages.isEmpty) {
       // Keep the wallpaper visible while the first page (and any cached video
       // posters) is restored. The real empty-conversation prompt is rendered
@@ -3181,6 +3264,14 @@ class _MessageListState extends ConsumerState<_MessageList>
                     builder:
                         (context, timestampRevealOffset, _) => MessageBubble(
                           message: message,
+                          // RULING 23: §12's `ai_assist_enabled`, the
+                          // base spec's own missing gate on Ask
+                          // Attune. Read here, at the one site that
+                          // already resolves every other chat
+                          // capability from a provider, so
+                          // `MessageBubble` stays the deliberate
+                          // `StatelessWidget` it is.
+                          assistEnabled: assistEnabled,
                           animateEmojiArrival: shouldAnimate || index == 0,
                           emojiPlaybackEnabled: !widget.flyingMessageIds.contains(message.clientMessageId),
                           bubbleFillKey: bubbleFillKey,

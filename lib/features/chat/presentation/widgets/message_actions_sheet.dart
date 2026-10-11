@@ -45,6 +45,15 @@ List<Widget> buildMessageActionItems({
   required VoidCallback onAskAttune,
   required VoidCallback onEdit,
   required VoidCallback onDelete,
+  /// Spec §12's `ai_assist_enabled`, read by the CALLER through Task
+  /// 5's capability service (`aiSessionCapabilitiesProvider`, field
+  /// `.assist`) — never from `feature_flags`, whose SELECT policy
+  /// hides every `ai_%` key from clients.
+  ///
+  /// **Defaults true: that is today's behaviour, and the default is
+  /// load-bearing rather than tidy.** See the RULING 23 note at
+  /// `canAskAttune` below.
+  bool assistEnabled = true,
 }) {
   final windowNow = DateTime.now();
   final canEdit = message.canEdit(
@@ -58,7 +67,24 @@ List<Widget> buildMessageActionItems({
   // AI Assistant spec §3's entry-eligibility gate, computed once here —
   // the same "compute once, pass down" shape canEdit/canDelete already
   // use — rather than an ad hoc check inline in the tile list below.
-  final canAskAttune = message.isEligibleForAskAttune;
+  //
+  // RULING 23 (Plan D): [assistEnabled] is §12's `ai_assist_enabled`,
+  // AND-ed with the per-message eligibility that was previously the
+  // ONLY condition. Ask Attune was wired live with no feature flag
+  // guarding it — the base spec's own recorded finding, confirmed by
+  // Task 5 across all 16 `ChatFeatureFlags.` call sites, not something
+  // Plan D introduced — and this is its fix.
+  //
+  // **It defaults TRUE, which is today's behaviour exactly.** This is
+  // a pure function with no Riverpod (and must stay that way: its only
+  // production caller, `MessageBubble`, is a deliberate
+  // `StatelessWidget` — see that file's own note on not converting it
+  // to a `ConsumerWidget`). The capability read therefore lands at the
+  // caller, which resolves it from the provider container the same
+  // one-shot way it already resolves `storyReadGatewayProvider`. A
+  // caller that passes nothing — every existing test, and any future
+  // non-chat reuse — gets the menu it gets today.
+  final canAskAttune = assistEnabled && message.isEligibleForAskAttune;
   final errorColor = Theme.of(context).colorScheme.error;
 
   /// Pops the menu using [tileContext] — the tile's own, always-live
