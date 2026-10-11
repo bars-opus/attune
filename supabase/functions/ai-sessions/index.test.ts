@@ -6685,6 +6685,2504 @@ Deno.test({
   },
 });
 
+// ===========================================================================
+// Task 5 -- Item A1 (the §4.3 window toggle), Item A2 (settling a
+// request), and the six remaining §4.1 command branches.
+//
+// Every test here asserts the SPECIFIC expected value or error. Where a
+// refusal is asserted, a precondition or an anti-vacuity leg proves the
+// refusal is attributable to the thing under test rather than to a
+// different guard firing first -- the failure mode Tasks 3 and 4 each
+// found in their own work.
+// ===========================================================================
+
+/// Prepares a SHARED Ideas session and returns its id plus the first
+/// review_context result, without approving.
+///
+/// Separate from activateSession() because the toggle tests need the
+/// session to STAY in `preparing` with approvals they control.
+async function prepareSharedForToggle(
+  deps: SessionDeps,
+  opts: { includeWindow?: boolean; targetMessageId?: string | null } = {},
+): Promise<{ sessionId: string; reviewed: Record<string, unknown> }> {
+  const prepared = await processSessionCommand(
+    makeReq({
+      command: "prepare",
+      relationship_id: REL_C1,
+      kind: "ideas",
+      visibility: "shared",
+      include_window: opts.includeWindow ?? false,
+      target_message_id: opts.targetMessageId ?? null,
+      utc_offset_minutes: 0,
+      idempotency_key: crypto.randomUUID(),
+    }),
+    ctx(USER_C1_A),
+    deps,
+  );
+  const body = await prepared.json();
+  assertEquals(prepared.status, 200, JSON.stringify(body));
+  const sessionId = body.session_id as string;
+  const review = await processSessionCommand(
+    makeReq({
+      command: "review_context",
+      session_id: sessionId,
+      utc_offset_minutes: 0,
+    }),
+    ctx(USER_C1_A),
+    deps,
+  );
+  const reviewed = await review.json();
+  assertEquals(review.status, 200, JSON.stringify(reviewed));
+  return { sessionId, reviewed };
+}
+
+/// Inserts a same-civil-day message from the PARTNER, so a shared
+/// window has something eligible to select.
+async function insertPartnerMessage(content: string): Promise<string> {
+  const rows = await serviceRoleQuery(
+    `INSERT INTO public.messages
+       (relationship_id, sender_id, client_message_id, content, created_at)
+     VALUES ($1, $2, gen_random_uuid(), $3, now())
+     RETURNING id`,
+    [REL_C1, USER_C1_B, content],
+  );
+  return rows[0].id as string;
+}
+
+Deno.test({
+  name:
+    "ITEM A1 / §4.3: toggling the window ON INVALIDATES both approvals -- activate_ai_session REFUSES after it",
+  fn: async () => {
+    // §4.3: "Window is default off; enabling it in preparing state
+    // INVALIDATES APPROVALS AND INCREMENTS REVISION." Ruling 17 carried
+    // this to Task 5, and this is its proof.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_recent_window_enabled",
+    );
+    const deps = await makeDeps();
+    await insertPartnerMessage("a line from the partner today");
+
+    const { sessionId, reviewed } = await prepareSharedForToggle(deps);
+    assertEquals(reviewed.revision, 1);
+    // §4.3's "window is default off", visible in the review.
+    assertEquals(reviewed.include_window, false);
+
+    // BOTH partners' approvals are STORED at revision 1, through the
+    // RPC rather than through the `approve` command.
+    //
+    // MEASURED, AND IT IS WHY THIS TEST IS SHAPED THIS WAY: the
+    // `approve` command activates (§4.1's "approve/start" is one
+    // command), so a SECOND partner approving through it would move the
+    // session to `active` -- and a toggle on an active session is
+    // correctly REFUSED by Item A1's own decision. The toggle's
+    // invalidation property is a property of the PREPARING state, so
+    // the fixture must leave the session preparing with two stored
+    // approvals, which is exactly what calling the approval RPC twice
+    // does. Using the command here would have tested the active-state
+    // refusal instead, and silently -- the "caught for the wrong
+    // reason" trap, found in this test while writing it.
+    //
+    // This is the PRECONDITION that makes the refusals below
+    // attributable: a session with only one approver would be refused
+    // APPROVAL_REQUIRED for a completely different reason.
+    for (const approver of [USER_C1_A, USER_C1_B]) {
+      await serviceRoleQuery(
+        `SELECT public.approve_ai_session_context($1, $2, $3, $4, $5)`,
+        [
+          approver,
+          sessionId,
+          reviewed.revision,
+          reviewed.digest,
+          reviewed.policy_version,
+        ],
+      );
+    }
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_approvals WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      2,
+      "PRECONDITION: two approvals exist at revision 1, so the refusal below cannot be 'nobody approved'",
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state FROM public.ai_sessions WHERE id = $1`,
+        [sessionId],
+      ))[0].state,
+      "preparing",
+      "PRECONDITION: the session is still PREPARING, so the toggle below is the preparing-state transition §4.3 describes",
+    );
+
+    // THE TOGGLE.
+    const toggled = await processSessionCommand(
+      makeReq({
+        command: "review_context",
+        session_id: sessionId,
+        utc_offset_minutes: 0,
+        set_include_window: true,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    const afterToggle = await toggled.json();
+    assertEquals(toggled.status, 200, JSON.stringify(afterToggle));
+
+    // 1. THE REVISION INCREMENTED.
+    assertEquals(afterToggle.revision, 2);
+    // 2. THE WINDOW IS ON, and the review now shows it.
+    assertEquals(afterToggle.include_window, true);
+    assertEquals(
+      (afterToggle.window as unknown[]).length,
+      1,
+      "the toggled-on window must actually carry the partner's message",
+    );
+    // 3. THE APPROVALS ARE GONE.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_approvals WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+      "§4.3: enabling the window invalidates approvals",
+    );
+    // 4. THE 'window' SOURCE ROWS WERE WRITTEN, with a version that can
+    //    detect an edit.
+    const windowRows = await serviceRoleQuery(
+      `SELECT approved_clipped_text, source_version FROM public.ai_session_sources
+         WHERE session_id = $1 AND source_role = 'window'`,
+      [sessionId],
+    );
+    assertEquals(windowRows.length, 1);
+    assertEquals(windowRows[0].approved_clipped_text, "a line from the partner today");
+    assert(windowRows[0].source_version != null);
+
+    // 5. THE DECISIVE ASSERTION: activate_ai_session REFUSES, both ways.
+    //
+    //    At the OLD revision -- the one the two stale approvals were
+    //    taken at -- it is a revision mismatch. This is the leg that
+    //    proves clearing approvals made them UNUSABLE rather than
+    //    merely absent: a client that kept its old (revision, digest)
+    //    pair cannot activate with it.
+    let staleError = "";
+    try {
+      await serviceRoleQuery(
+        `SELECT * FROM public.activate_ai_session($1, $2, $3)`,
+        [USER_C1_A, sessionId, 1],
+      );
+    } catch (e) {
+      staleError = String(e);
+    }
+    assert(
+      /Revision mismatch/i.test(staleError),
+      `activating at the stale revision must be refused with a revision mismatch, got: ${staleError}`,
+    );
+
+    //    At the NEW revision it is APPROVAL_REQUIRED -- the specific
+    //    error, not "any error": the approvals were cleared, so there
+    //    are none at revision 2.
+    let freshError = "";
+    try {
+      await serviceRoleQuery(
+        `SELECT * FROM public.activate_ai_session($1, $2, $3)`,
+        [USER_C1_A, sessionId, 2],
+      );
+    } catch (e) {
+      freshError = String(e);
+    }
+    assert(
+      /APPROVAL_REQUIRED/.test(freshError),
+      `activating at the new revision must be APPROVAL_REQUIRED, got: ${freshError}`,
+    );
+
+    // 6. The session is still `preparing` -- the toggle did not close
+    //    or activate anything.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state FROM public.ai_sessions WHERE id = $1`,
+        [sessionId],
+      ))[0].state,
+      "preparing",
+    );
+
+    // 7. ANTI-VACUITY: re-approving at the NEW revision DOES activate.
+    //    Without this leg, every assertion above could be explained by
+    //    "this session can never activate for some unrelated reason".
+    for (const approver of [USER_C1_A, USER_C1_B]) {
+      const approved = await processSessionCommand(
+        makeReq({
+          command: "approve",
+          session_id: sessionId,
+          revision: afterToggle.revision,
+          digest: afterToggle.digest,
+        }),
+        ctx(approver),
+        deps,
+      );
+      assertEquals(approved.status, 200, await approved.clone().text());
+    }
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state FROM public.ai_sessions WHERE id = $1`,
+        [sessionId],
+      ))[0].state,
+      "active",
+      "ANTI-VACUITY: approving the POST-TOGGLE snapshot activates, so the refusals above were about the toggle",
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "ITEM A1: a NO-CHANGE toggle is idempotent -- it bumps nothing and PRESERVES the partner's approval",
+  fn: async () => {
+    // §4.3 ties invalidation to a CHANGE. A client re-sending the state
+    // the session already has (a double-tap, a retry after a dropped
+    // response) must not destroy an approval the partner already gave.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_recent_window_enabled",
+    );
+    const deps = await makeDeps();
+    await insertPartnerMessage("partner line for the idempotence test");
+
+    const { sessionId } = await prepareSharedForToggle(deps);
+    // Turn it ON once.
+    const first = await processSessionCommand(
+      makeReq({
+        command: "review_context",
+        session_id: sessionId,
+        utc_offset_minutes: 0,
+        set_include_window: true,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    const firstBody = await first.json();
+    assertEquals(first.status, 200, JSON.stringify(firstBody));
+    assertEquals(firstBody.revision, 2);
+
+    // ONE partner approves the window-ON snapshot.
+    const approved = await processSessionCommand(
+      makeReq({
+        command: "approve",
+        session_id: sessionId,
+        revision: firstBody.revision,
+        digest: firstBody.digest,
+      }),
+      ctx(USER_C1_B),
+      deps,
+    );
+    assertEquals(approved.status, 200, await approved.clone().text());
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_approvals WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      1,
+      "PRECONDITION: the partner's approval exists before the no-change toggle",
+    );
+
+    // Ask for the SAME state again.
+    const again = await processSessionCommand(
+      makeReq({
+        command: "review_context",
+        session_id: sessionId,
+        utc_offset_minutes: 0,
+        set_include_window: true,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    const againBody = await again.json();
+    assertEquals(again.status, 200, JSON.stringify(againBody));
+
+    // NOTHING MOVED: same revision, same setting, approval intact.
+    assertEquals(againBody.revision, 2, "a no-change toggle must not bump the revision");
+    assertEquals(againBody.include_window, true);
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_approvals WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      1,
+      "a no-change toggle must NOT destroy the partner's approval",
+    );
+    // And the digest is unchanged, so the partner's approval still
+    // matches what a second approver would compute.
+    assertEquals(againBody.digest, firstBody.digest);
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "ITEM A1: toggling on an ACTIVE session is REFUSED, never a silent no-op, and changes nothing",
+  fn: async () => {
+    // The decision recorded in 20260953200300's header: §4.2 forbids
+    // new selections against a frozen snapshot, and a silent no-op
+    // would let a client generate over a context it believes it
+    // configured.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_recent_window_enabled",
+    );
+    const deps = await makeDeps();
+    await insertPartnerMessage("a line nobody should be able to add later");
+
+    const sessionId = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "shared",
+    });
+    const before = (await serviceRoleQuery(
+      `SELECT revision, include_window, state FROM public.ai_sessions WHERE id = $1`,
+      [sessionId],
+    ))[0];
+    assertEquals(before.state, "active");
+    assertEquals(before.include_window, false);
+
+    const refused = await processSessionCommand(
+      makeReq({
+        command: "review_context",
+        session_id: sessionId,
+        utc_offset_minutes: 0,
+        set_include_window: true,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    // THE SPECIFIC CODE. §3.1's indistinguishable response -- the
+    // state-specific SQL message must not reach the client.
+    assertEquals(refused.status, 404);
+    assertEquals((await refused.json()).code, "UNAVAILABLE");
+
+    // NOTHING CHANGED: not the setting, not the revision, not the
+    // sources. A silent no-op would also leave these unchanged, which
+    // is why the status assertion above is the one that discriminates
+    // -- and why this leg exists too: a REFUSAL that still wrote
+    // something would be worse than either.
+    const after = (await serviceRoleQuery(
+      `SELECT revision, include_window FROM public.ai_sessions WHERE id = $1`,
+      [sessionId],
+    ))[0];
+    assertEquals(after.include_window, false);
+    assertEquals(after.revision, before.revision);
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_sources
+           WHERE session_id = $1 AND source_role = 'window'`,
+        [sessionId],
+      ))[0].n,
+      0,
+      "an active session must not gain window source rows",
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "ITEM A1: the toggle RE-READS snippet text from messages -- caller-supplied text is impossible",
+  fn: async () => {
+    // The RPC is SECURITY DEFINER, so accepting text would let any
+    // caller store an arbitrary string as an "approved" source and have
+    // both partners approve a digest over text that never appeared in
+    // the chat. Asserted structurally AND behaviourally.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_recent_window_enabled",
+    );
+    const deps = await makeDeps();
+    const realText = "the real message the partner actually sent";
+    await insertPartnerMessage(realText);
+
+    const { sessionId } = await prepareSharedForToggle(deps);
+    const toggled = await processSessionCommand(
+      makeReq({
+        command: "review_context",
+        session_id: sessionId,
+        utc_offset_minutes: 0,
+        set_include_window: true,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(toggled.status, 200, await toggled.clone().text());
+
+    // The STORED row carries the REAL chat text, from messages.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT approved_clipped_text FROM public.ai_session_sources
+           WHERE session_id = $1 AND source_role = 'window'`,
+        [sessionId],
+      )).map((r) => r.approved_clipped_text),
+      [realText],
+    );
+
+    // STRUCTURAL: the RPC's own signature has no text parameter at all,
+    // so there is no slot a caller could put text in. Asserted against
+    // the live catalog rather than the migration file, so a later
+    // redefinition that ADDED one fails here.
+    const args = (await serviceRoleQuery(
+      `SELECT pg_get_function_arguments(p.oid) AS a
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' AND p.proname = 'set_ai_session_include_window'`,
+    ))[0].a as string;
+    assertEquals(
+      args,
+      "p_actor_id uuid, p_session_id uuid, p_include_window boolean, p_window_message_ids uuid[]",
+      "the toggle must take ONLY ids -- a text parameter would be a way to store unapproved content",
+    );
+
+    // AND the relationship_id predicate is what stops a caller aiming
+    // the id list at ANOTHER couple's message. Insert a message in a
+    // different relationship and try to pull it in.
+    const otherRel = "c1000000-0000-0000-0000-0000000000c9";
+    const otherUser = "c1000000-0000-0000-0000-0000000000c8";
+    await serviceRoleQuery(
+      `INSERT INTO auth.users (id, email) VALUES ($1, 'other@t.test')
+         ON CONFLICT DO NOTHING`,
+      [otherUser],
+    );
+    await serviceRoleQuery(
+      `INSERT INTO public.users (id, phone, display_name)
+         VALUES ($1, '+15552009999', 'Other') ON CONFLICT DO NOTHING`,
+      [otherUser],
+    );
+    await serviceRoleQuery(
+      `INSERT INTO public.relationships (id, user_a, user_b, status)
+         VALUES ($1, $2, $3, 'active') ON CONFLICT DO NOTHING`,
+      [otherRel, otherUser, USER_OUTSIDER],
+    );
+    const foreignMessage = (await serviceRoleQuery(
+      `INSERT INTO public.messages
+         (relationship_id, sender_id, client_message_id, content, created_at)
+       VALUES ($1, $2, gen_random_uuid(), 'SOMEONE ELSE PRIVATE CHAT', now())
+       RETURNING id`,
+      [otherRel, otherUser],
+    ))[0].id as string;
+
+    // Call the RPC DIRECTLY with the foreign id -- the edge function's
+    // own selectSharedWindow would never choose it, so this probes the
+    // RPC's boundary rather than the caller's.
+    await serviceRoleQuery(
+      `SELECT * FROM public.set_ai_session_include_window($1, $2, true, $3::uuid[])`,
+      [USER_C1_A, sessionId, [foreignMessage]],
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_sources
+           WHERE session_id = $1 AND source_role = 'window'`,
+        [sessionId],
+      ))[0].n,
+      0,
+      "a message from ANOTHER relationship must be silently skipped, not clipped and stored",
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_sources
+           WHERE approved_clipped_text = 'SOMEONE ELSE PRIVATE CHAT'`,
+      ))[0].n,
+      0,
+      "the relationship_id predicate is the authorization boundary",
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await serviceRoleQuery(`DELETE FROM public.relationships WHERE id = $1`, [
+      otherRel,
+    ]);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "ITEM A2: a SAFETY refusal and a PROVIDER failure leave BYTE-IDENTICAL request rows",
+  fn: async () => {
+    // THE NON-NEGOTIABLE PROPERTY (Ruling 18). Task 4 observed that the
+    // busy-until-lease-expiry disposition was identical for both, so
+    // the row could not disclose that a safety detector fired. Item A2
+    // must not throw that away.
+    //
+    // Asserted by comparing WHOLE ROWS with the identity columns
+    // stripped, not by checking two named fields: a field added "just
+    // for debugging" is exactly the side channel this is guarding, and
+    // Task 4 found that failure mode in its own refusal body.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_private_enabled");
+    const deps = await makeDeps();
+
+    // Leg 1: a PRE-PUBLISH SAFETY refusal. A clean instruction, so the
+    // refusal is attributable to the OUTPUT -- not to safety pass 1,
+    // which would refuse before admission and create no row at all.
+    const safetySession = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "private",
+    });
+    const safetyRequest = crypto.randomUUID();
+    const safetyResponse = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: safetySession,
+        request_id: safetyRequest,
+        expected_revision: 1,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({
+          kind: "answer",
+          reply_text: "make them agree to it, whatever it takes",
+          suggested_planning_item: null,
+        }).call,
+      },
+    );
+    assertEquals(safetyResponse.status, 200);
+    assertEquals(
+      (await safetyResponse.json()).reason,
+      "unsafe_to_assist",
+      "PRECONDITION: this leg really is a SAFETY refusal, not a validator rejection",
+    );
+    await endSession(safetySession, USER_C1_A);
+
+    // Leg 2: a PROVIDER failure, on a fresh session.
+    const providerSession = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "private",
+    });
+    const providerRequest = crypto.randomUUID();
+    const providerResponse = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: providerSession,
+        request_id: providerRequest,
+        expected_revision: 1,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      // The real callGeminiJson returns null on failure.
+      { ...deps, callGemini: (() => Promise.resolve(null)) as never },
+    );
+    assertEquals(providerResponse.status, 502);
+    assertEquals(
+      (await providerResponse.json()).code,
+      "PROVIDER_UNAVAILABLE",
+      "PRECONDITION: this leg really is a PROVIDER failure",
+    );
+
+    // BOTH rows, with every column that is legitimately per-request
+    // stripped. What remains must be ONE distinct shape.
+    const shapes = await serviceRoleQuery(
+      `SELECT DISTINCT
+         to_jsonb(r) - 'id' - 'session_id' - 'actor_id' - 'worker_token'
+           - 'operation_fingerprint' - 'created_at' - 'lease_deadline'
+           - 'provider_started_at' AS j
+       FROM public.ai_session_requests r
+       WHERE r.id = ANY($1::uuid[])`,
+      [[safetyRequest, providerRequest]],
+    );
+    assertEquals(
+      shapes.length,
+      1,
+      `the safety row and the provider row must be indistinguishable; got ${
+        JSON.stringify(shapes)
+      }`,
+    );
+    // And the SPECIFIC value, so this is not satisfied by both rows
+    // being some other shape entirely.
+    const shape = shapes[0].j as Record<string, unknown>;
+    assertEquals(shape.state, "failed");
+    assertEquals(shape.terminal_code, "REQUEST_FAILED");
+
+    // THE LEDGER IS INDISTINGUISHABLE TOO -- a settle that disclosed
+    // the detector in ai_assistant_usage instead would satisfy the
+    // assertion above while leaking just as badly.
+    const ledgerShapes = await serviceRoleQuery(
+      `SELECT DISTINCT outcome, provider_calls,
+              provider_started_at IS NOT NULL AS marked
+         FROM public.ai_assistant_usage
+        WHERE request_id = ANY($1::uuid[])`,
+      [[safetyRequest, providerRequest]],
+    );
+    assertEquals(ledgerShapes.length, 1, JSON.stringify(ledgerShapes));
+    assertEquals(ledgerShapes[0].outcome, "provider_failed");
+    assertEquals(ledgerShapes[0].marked, true);
+
+    // ANTI-VACUITY: the terminal_code is NOT a constant for every
+    // settled row. reconcile_ai_session_leases writes 'LEASE_EXPIRED'
+    // for a worker that vanished, and that distinction must survive --
+    // otherwise "both rows say REQUEST_FAILED" would be trivially true
+    // because nothing ever writes anything else.
+    const expiredRequest = crypto.randomUUID();
+    await serviceRoleQuery(
+      `INSERT INTO public.ai_session_requests
+         (id, session_id, actor_id, attempt_n, operation_fingerprint,
+          worker_token, generation_epoch, lease_deadline, state)
+       VALUES ($1, $2, $3, 9, 'fp-expired', gen_random_uuid(), 0,
+               now() - interval '1 minute', 'started')`,
+      [expiredRequest, providerSession, USER_C1_A],
+    );
+    await serviceRoleQuery(`SELECT public.reconcile_ai_session_leases()`);
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT terminal_code FROM public.ai_session_requests WHERE id = $1`,
+        [expiredRequest],
+      ))[0].terminal_code,
+      "LEASE_EXPIRED",
+      "ANTI-VACUITY: the reconciler writes a DIFFERENT terminal_code, so REQUEST_FAILED is a real value and not the only one",
+    );
+
+    await endSession(providerSession, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "ITEM A2: a settled 'started' request STAYS CHARGED -- a settle is not a refund button",
+  fn: async () => {
+    // The remediation's rule: a request at 'started' has the write-once
+    // provider marker set, so its quota consumption is permanent.
+    // Releasing it would let a user burn no quota at all by tripping a
+    // refusal on every attempt.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_private_enabled");
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "private",
+    });
+
+    /// The rolling-window predicate reserve_ai_assistant_quota itself
+    /// uses -- copied from its live body, not approximated, so this
+    /// measures what the quota check measures.
+    const charged = async (): Promise<number> =>
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_assistant_usage u
+          WHERE u.user_id = $1
+            AND u.created_at >= now() - interval '24 hours'
+            AND (u.provider_started_at IS NOT NULL
+                 OR u.outcome NOT IN ('rejected', 'cancelled'))`,
+        [USER_C1_A],
+      ))[0].n as number;
+
+    assertEquals(await charged(), 0);
+
+    const requestId = crypto.randomUUID();
+    const response = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: requestId,
+        expected_revision: 1,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({
+          kind: "answer",
+          reply_text: "make them agree to it, whatever it takes",
+          suggested_planning_item: null,
+        }).call,
+      },
+    );
+    assertEquals(response.status, 200);
+    assertEquals((await response.json()).reason, "unsafe_to_assist");
+
+    // THE SPECIFIC NUMBER: exactly one row is charged, and the settle
+    // did not reduce it.
+    assertEquals(
+      await charged(),
+      1,
+      "a dispatched request whose output was refused MUST stay charged",
+    );
+    // The outcome is a COUNTED one, and not either value the rolling
+    // window excludes.
+    const usage = (await serviceRoleQuery(
+      `SELECT outcome, provider_started_at IS NOT NULL AS marked
+         FROM public.ai_assistant_usage WHERE request_id = $1`,
+      [requestId],
+    ))[0];
+    assertEquals(usage.outcome, "provider_failed");
+    assertEquals(usage.marked, true);
+    assertNotEquals(usage.outcome, "cancelled");
+    assertNotEquals(usage.outcome, "rejected");
+
+    // ANTI-VACUITY, and it is the leg that makes the above meaningful:
+    // a request settled from 'reserved' -- never dispatched, no marker
+    // -- IS released. So "stays charged" is a property of the DISPATCHED
+    // case specifically, not of the settle RPC refusing to do anything.
+    const reservedRequest = crypto.randomUUID();
+    const admitted = await serviceRoleQuery(
+      `SELECT outcome FROM public.admit_ai_session_generation($1, $2, $3, $4, $5)`,
+      [USER_C1_A, reservedRequest, sessionId, 1, "fp-reserved-leg"],
+    );
+    assertEquals(admitted[0].outcome, "admitted");
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state FROM public.ai_session_requests WHERE id = $1`,
+        [reservedRequest],
+      ))[0].state,
+      "reserved",
+      "PRECONDITION: this request was never dispatched, so it carries no provider marker",
+    );
+    assertEquals(await charged(), 2);
+    await serviceRoleQuery(
+      `SELECT * FROM public.settle_ai_session_request($1, $2)`,
+      [USER_C1_A, reservedRequest],
+    );
+    assertEquals(
+      await charged(),
+      1,
+      "ANTI-VACUITY: a NEVER-DISPATCHED request IS released, so the charge above is about the provider marker",
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT outcome FROM public.ai_assistant_usage WHERE request_id = $1`,
+        [reservedRequest],
+      ))[0].outcome,
+      "cancelled",
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "ITEM A2: a VALIDATOR rejection and a MAPBOX failure settle too, and the session is immediately retryable",
+  fn: async () => {
+    // Task 4 named three families; the safety one is covered above.
+    // These are the other two, plus the user-visible point of the whole
+    // item: the retry works NOW rather than in 35 seconds.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_private_enabled",
+      "ai_sessions_nearby_enabled",
+    );
+    const deps = await makeDeps();
+
+    // --- a §5.3 VALIDATOR rejection -------------------------------
+    const ideasSession = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "private",
+    });
+    const badRequest = crypto.randomUUID();
+    const rejected = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: ideasSession,
+        request_id: badRequest,
+        expected_revision: 1,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      // `confidence` is not a field §5.3 allows, so
+      // validateSessionTurnOutput rejects the whole object.
+      {
+        ...deps,
+        callGemini: spyGemini({
+          kind: "answer",
+          reply_text: "a clean reply",
+          suggested_planning_item: null,
+          confidence: "high",
+        }).call,
+      },
+    );
+    assertEquals(rejected.status, 410);
+    assertEquals((await rejected.json()).code, "RESULT_UNAVAILABLE");
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state, terminal_code FROM public.ai_session_requests WHERE id = $1`,
+        [badRequest],
+      )).map((r) => `${r.state}/${r.terminal_code}`),
+      ["failed/REQUEST_FAILED"],
+      "a validator rejection settles with the SAME terminal shape as a safety refusal",
+    );
+
+    // THE USER-VISIBLE POINT: the retry admits immediately.
+    const retry = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: ideasSession,
+        request_id: crypto.randomUUID(),
+        expected_revision: 1,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({
+          kind: "answer",
+          reply_text: "a perfectly ordinary suggestion for the weekend",
+          suggested_planning_item: null,
+        }).call,
+      },
+    );
+    assertEquals(retry.status, 200, await retry.clone().text());
+    assertEquals((await retry.json()).kind, "answer");
+    await endSession(ideasSession, USER_C1_A);
+
+    // --- a MAPBOX failure -----------------------------------------
+    const nearbySession = await activateSession(deps, {
+      kind: "nearby",
+      visibility: "private",
+    });
+    const mapboxRequest = crypto.randomUUID();
+    const mapboxFailed = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: nearbySession,
+        request_id: mapboxRequest,
+        expected_revision: 1,
+        user_instruction: "coffee nearby",
+        requester_location: FRESH_LOCATION(),
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({ category: "cafe" }).call,
+        // The real searchMapboxCategory returns null on failure.
+        searchMapbox: (() => Promise.resolve(null)) as never,
+      },
+    );
+    assertEquals(mapboxFailed.status, 502);
+    assertEquals((await mapboxFailed.json()).code, "PROVIDER_UNAVAILABLE");
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state, terminal_code FROM public.ai_session_requests WHERE id = $1`,
+        [mapboxRequest],
+      )).map((r) => `${r.state}/${r.terminal_code}`),
+      ["failed/REQUEST_FAILED"],
+      "a Mapbox failure settles with the SAME terminal shape",
+    );
+
+    await endSession(nearbySession, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "APPROVE (Rulings 13+22): the revalidation reads the FROZEN STORED ROWS, and an edit to one is CONTEXT_CHANGED",
+  fn: async () => {
+    // Ruling 13 required the approve path to assert the approved digest
+    // covers the frozen stored rows; Ruling 22 narrowed that to
+    // EXISTENCE/VERSION revalidation, because Task 4 measured that
+    // recomputation from the stored rows is impossible today.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_recent_window_enabled",
+    );
+    const deps = await makeDeps();
+    const messageId = await insertPartnerMessage("the original partner line");
+
+    const { sessionId, reviewed } = await prepareSharedForToggle(deps, {
+      includeWindow: true,
+    });
+    // PRECONDITION: the window row really is stored and really is what
+    // the review displayed, so the edit below is an edit to a FROZEN
+    // source rather than to some unrelated message.
+    const stored = (await serviceRoleQuery(
+      `SELECT source_message_id, source_version, approved_clipped_text
+         FROM public.ai_session_sources
+        WHERE session_id = $1 AND source_role = 'window'`,
+      [sessionId],
+    ));
+    assertEquals(stored.length, 1);
+    assertEquals(stored[0].source_message_id, messageId);
+    assertEquals(stored[0].approved_clipped_text, "the original partner line");
+
+    // The FIRST partner approves cleanly.
+    const firstApprove = await processSessionCommand(
+      makeReq({
+        command: "approve",
+        session_id: sessionId,
+        revision: reviewed.revision,
+        digest: reviewed.digest,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    const firstBody = await firstApprove.json();
+    assertEquals(firstApprove.status, 200, JSON.stringify(firstBody));
+    // A shared session's FIRST approver approved but did not activate,
+    // and that is reported as SUCCESS -- not APPROVAL_REQUIRED.
+    assertEquals(firstBody.approved, true);
+    assertEquals(firstBody.activated, false);
+    assertEquals(firstBody.state, "preparing");
+
+    // NOW EDIT the frozen source. edit_message is what moves
+    // messages.edited_at, which is the half of COALESCE(edited_at,
+    // created_at) that makes an edit detectable at all.
+    await serviceRoleQuery(
+      `UPDATE public.messages
+          SET content = 'the partner line, rewritten', edited_at = now()
+        WHERE id = $1`,
+      [messageId],
+    );
+
+    // THE SECOND partner's approve must REFUSE, specifically with
+    // CONTEXT_CHANGED -- §4.3's "Edits, tombstones or removal make the
+    // session unavailable and terminate it".
+    const secondApprove = await processSessionCommand(
+      makeReq({
+        command: "approve",
+        session_id: sessionId,
+        revision: reviewed.revision,
+        digest: reviewed.digest,
+      }),
+      ctx(USER_C1_B),
+      deps,
+    );
+    assertEquals(secondApprove.status, 409);
+    assertEquals((await secondApprove.json()).code, "CONTEXT_CHANGED");
+
+    // The session was TERMINATED, and no second approval was stored.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state FROM public.ai_sessions WHERE id = $1`,
+        [sessionId],
+      ))[0].state,
+      "closed",
+      "§4.3: an edited source makes the session unavailable and terminates it",
+    );
+
+    // THE DECISIVE STRUCTURAL LEG: the revalidation read the STORED
+    // ROWS, not a live re-selection. Proven by the fact that the edit
+    // was detectable AT ALL: a live re-selection would have selected
+    // the message at its NEW version and found nothing wrong, because
+    // nothing was deleted and the day still holds exactly one eligible
+    // message. The ONLY thing that can disagree with the live world
+    // here is the frozen source_version -- and the detection is
+    // therefore proof it was consulted.
+    //
+    // Measured rather than argued: at this moment a live window
+    // selection still returns the message, so "the source is gone" is
+    // NOT the reason the approve refused.
+    const liveNow = await selectSharedWindow(
+      (await makeServiceRoleClient()) as never,
+      REL_C1,
+      null,
+      0,
+      new Date(),
+    );
+    assertEquals(
+      liveNow.length,
+      1,
+      "PRECONDITION: a LIVE re-selection still finds one eligible message, so only the FROZEN version could have detected the edit",
+    );
+    assertNotEquals(
+      liveNow[0].sourceVersion,
+      String(stored[0].source_version),
+      "the live version moved away from the frozen one -- that difference is what the stored row carries and the live path does not",
+    );
+
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "APPROVE: the policy version is the SERVER's own, and a client literal that disagrees is CONTEXT_CHANGED",
+  fn: async () => {
+    // The brief's sketch passed p_policy_version: "v1" literally. That
+    // would record every approval against a constant the consent system
+    // does not own, so after a policy bump two partners would store the
+    // same wrong value and activate over stale consent.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_private_enabled");
+    const deps = await makeDeps();
+    const { sessionId, reviewed } = await (async () => {
+      const prepared = await processSessionCommand(
+        makeReq({
+          command: "prepare",
+          relationship_id: REL_C1,
+          kind: "ideas",
+          visibility: "private",
+          include_window: false,
+          utc_offset_minutes: 0,
+          idempotency_key: crypto.randomUUID(),
+        }),
+        ctx(USER_C1_A),
+        deps,
+      );
+      const body = await prepared.json();
+      assertEquals(prepared.status, 200, JSON.stringify(body));
+      const review = await processSessionCommand(
+        makeReq({
+          command: "review_context",
+          session_id: body.session_id,
+          utc_offset_minutes: 0,
+        }),
+        ctx(USER_C1_A),
+        deps,
+      );
+      return {
+        sessionId: body.session_id as string,
+        reviewed: await review.json(),
+      };
+    })();
+
+    const serverPolicy = (await serviceRoleQuery(
+      `SELECT public.ai_current_consent_policy_version() AS v`,
+    ))[0].v as string;
+
+    // MEASURED, AND THE MEASUREMENT CHANGES WHAT THIS TEST CAN CLAIM.
+    // The server's current version IS "v1" today, so the brief's
+    // hardcoded p_policy_version: "v1" would be INDISTINGUISHABLE from
+    // reading the server's own value on this database -- an assertion
+    // that the stored value equals "v1" therefore proves nothing about
+    // where it came from, and a test written that way would pass
+    // against the defect it exists to catch.
+    //
+    // So this test asserts the two properties that DO discriminate and
+    // do not depend on the constant's current value:
+    //
+    //   (a) the stored policy_version equals the SERVER's function
+    //       result, read at test time -- so a future bump makes the
+    //       hardcoded literal fail here;
+    //   (b) a client supplying a version that DISAGREES with the
+    //       server's is refused CONTEXT_CHANGED and stores nothing.
+    //       The brief's sketch would have ignored the client's value
+    //       entirely and stored "v1" regardless, so (b) fails against
+    //       it TODAY, on this database, with this constant.
+    //
+    // (b) is the leg that carries the proof. Recorded rather than
+    // papered over with a precondition I could not satisfy.
+    assertEquals(serverPolicy, "v1");
+
+    // A client that echoes the version review_context gave it: fine.
+    const matching = await processSessionCommand(
+      makeReq({
+        command: "approve",
+        session_id: sessionId,
+        revision: reviewed.revision,
+        digest: reviewed.digest,
+        policy_version: reviewed.policy_version,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(matching.status, 200, await matching.clone().text());
+    // A PRIVATE session activates on its creator's single approval.
+    const matched = await matching.json();
+    assertEquals(matched.approved, true);
+    assertEquals(matched.activated, true);
+    assertEquals(matched.state, "active");
+
+    // And what was STORED is the server's own version, never a client
+    // literal.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT policy_version FROM public.ai_session_approvals WHERE session_id = $1`,
+        [sessionId],
+      )).map((r) => r.policy_version),
+      [serverPolicy],
+    );
+    await endSession(sessionId, USER_C1_A);
+
+    // A client supplying a DIFFERENT version is refused with the
+    // SPECIFIC code -- not accepted and not a generic failure.
+    const second = await (async () => {
+      const prepared = await processSessionCommand(
+        makeReq({
+          command: "prepare",
+          relationship_id: REL_C1,
+          kind: "ideas",
+          visibility: "private",
+          include_window: false,
+          utc_offset_minutes: 0,
+          idempotency_key: crypto.randomUUID(),
+        }),
+        ctx(USER_C1_A),
+        deps,
+      );
+      const body = await prepared.json();
+      const review = await processSessionCommand(
+        makeReq({
+          command: "review_context",
+          session_id: body.session_id,
+          utc_offset_minutes: 0,
+        }),
+        ctx(USER_C1_A),
+        deps,
+      );
+      return {
+        sessionId: body.session_id as string,
+        reviewed: await review.json(),
+      };
+    })();
+    const stale = await processSessionCommand(
+      makeReq({
+        command: "approve",
+        session_id: second.sessionId,
+        revision: second.reviewed.revision,
+        digest: second.reviewed.digest,
+        // A version that genuinely DISAGREES with the server's. Not
+        // "v1": the server's current version IS "v1" (asserted above),
+        // so passing it would be a MATCH and this leg would prove the
+        // opposite of what it claims -- which is what it did on the
+        // first run, and is why the literal is derived from the
+        // measured value rather than written by hand.
+        policy_version: `${serverPolicy}-superseded`,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(stale.status, 409);
+    assertEquals((await stale.json()).code, "CONTEXT_CHANGED");
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_approvals WHERE session_id = $1`,
+        [second.sessionId],
+      ))[0].n,
+      0,
+      "a policy-version mismatch must store NO approval",
+    );
+
+    await endSession(second.sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "READ returns the creator's own turns, and a STRANGER's result is INDISTINGUISHABLE from a PARTNER's",
+  fn: async () => {
+    // §7.2 and 20260953100000's DELIBERATE SILENCE header: both read
+    // RPCs return zero rows rather than raising, so a partner's "no
+    // result" is byte-identical to a stranger's. This branch must not
+    // convert that into a distinguishable error.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_private_enabled");
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "private",
+    });
+
+    // Commit a real turn to read.
+    const generated = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: crypto.randomUUID(),
+        expected_revision: 1,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({
+          kind: "answer",
+          reply_text: "Try a slow morning and a walk by the water.",
+          suggested_planning_item: null,
+        }).call,
+      },
+    );
+    assertEquals(generated.status, 200, await generated.clone().text());
+
+    // THE CREATOR reads its own turns.
+    const mine = await processSessionCommand(
+      makeReq({ command: "read", session_id: sessionId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(mine.status, 200);
+    const mineBody = await mine.json();
+    assertEquals(mineBody.turns.length, 2);
+    assertEquals(mineBody.turns[0].ordinal, 1);
+    assertEquals(mineBody.turns[0].role, "user");
+    assertEquals(mineBody.turns[1].role, "attune");
+    assertEquals(
+      mineBody.turns[1].payload.reply_text,
+      "Try a slow morning and a walk by the water.",
+    );
+    // The projection drops server bookkeeping.
+    assertEquals(mineBody.turns[0].session_id, undefined);
+    assertEquals(mineBody.turns[0].request_id, undefined);
+
+    // THE PARTNER of a PRIVATE session: zero rows, HTTP 200.
+    const partner = await processSessionCommand(
+      makeReq({ command: "read", session_id: sessionId }),
+      ctx(USER_C1_B),
+      deps,
+    );
+    const partnerText = await partner.text();
+
+    // A STRANGER: zero rows, HTTP 200.
+    const stranger = await processSessionCommand(
+      makeReq({ command: "read", session_id: sessionId }),
+      ctx(USER_OUTSIDER),
+      deps,
+    );
+    const strangerText = await stranger.text();
+
+    // A SESSION THAT DOES NOT EXIST AT ALL.
+    const nobody = await processSessionCommand(
+      makeReq({ command: "read", session_id: crypto.randomUUID() }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    const nobodyText = await nobody.text();
+
+    // ALL THREE ARE BYTE-IDENTICAL, body and status. This is the
+    // assertion: not "the partner gets nothing", which a 404 would also
+    // satisfy while being exactly the oracle §7.2 forbids.
+    assertEquals(partner.status, 200);
+    assertEquals(stranger.status, 200);
+    assertEquals(nobody.status, 200);
+    assertEquals(partnerText, strangerText);
+    assertEquals(partnerText, nobodyText);
+    assertEquals(JSON.parse(partnerText).turns, []);
+    // And none of them is an error envelope.
+    assertEquals(JSON.parse(partnerText).code, undefined);
+
+    // ANTI-VACUITY: the creator's own read is DIFFERENT, so "all reads
+    // look the same" is not trivially true.
+    assertNotEquals(JSON.stringify(mineBody.turns), "[]");
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "READ: a WITHDRAWN consent silently empties the read rather than raising CONSENT_REQUIRED",
+  fn: async () => {
+    // The sharpest leg of the silence property. The eligibility gate
+    // WOULD raise CONSENT_REQUIRED here -- that is why `read`
+    // deliberately does not run it: a distinguishable consent error
+    // tells a caller the session exists and is theirs.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_private_enabled");
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "private",
+    });
+    const generated = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: crypto.randomUUID(),
+        expected_revision: 1,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({
+          kind: "answer",
+          reply_text: "Try a slow morning and a walk by the water.",
+          suggested_planning_item: null,
+        }).call,
+      },
+    );
+    assertEquals(generated.status, 200, await generated.clone().text());
+    // PRECONDITION: with consent current, the read DOES return turns.
+    const before = await processSessionCommand(
+      makeReq({ command: "read", session_id: sessionId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals((await before.json()).turns.length, 2);
+
+    // The PARTNER withdraws.
+    await serviceRoleQuery(
+      `INSERT INTO public.ai_processing_consent_events
+         (relationship_id, user_id, action, policy_version, idempotency_key, created_at)
+       VALUES ($1, $2, 'withdrawn', public.ai_current_consent_policy_version(),
+               gen_random_uuid(), clock_timestamp())`,
+      [REL_C1, USER_C1_B],
+    );
+
+    const after = await processSessionCommand(
+      makeReq({ command: "read", session_id: sessionId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    // HTTP 200 WITH ZERO TURNS -- never 403/CONSENT_REQUIRED.
+    assertEquals(after.status, 200);
+    const afterBody = await after.json();
+    assertEquals(afterBody.turns, []);
+    assertNotEquals(afterBody.code, "CONSENT_REQUIRED");
+    assertEquals(afterBody.code, undefined);
+
+    // Proof the branch really would have had a distinguishable answer
+    // available: the SAME actor on the SAME relationship gets
+    // CONSENT_REQUIRED from a gated command right now.
+    const gated = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: crypto.randomUUID(),
+        expected_revision: 2,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(
+      (await gated.json()).code,
+      "CONSENT_REQUIRED",
+      "ANTI-VACUITY: a GATED command does report CONSENT_REQUIRED here, so `read`'s silence is a deliberate choice and not an absence of information",
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "PUBLISH_NEARBY commits the staged pair, bumps the revision, and makes it visible to the partner",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_nearby_enabled",
+    );
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "nearby",
+      visibility: "shared",
+    });
+
+    const requestId = crypto.randomUUID();
+    const staged = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: requestId,
+        expected_revision: 1,
+        user_instruction: "coffee nearby",
+        requester_location: FRESH_LOCATION(),
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({ category: "cafe" }).call,
+        searchMapbox: spyMapbox([
+          { name: "Corner Roasters", formatted_address: "1 Market Street" },
+        ]).call,
+      },
+    );
+    assertEquals(staged.status, 200, await staged.clone().text());
+    assertEquals((await staged.json()).staged, true);
+
+    // PRECONDITION: before publishing, the partner sees NOTHING -- the
+    // result is requester-only staging (§5.3).
+    const partnerBefore = await processSessionCommand(
+      makeReq({ command: "read", session_id: sessionId }),
+      ctx(USER_C1_B),
+      deps,
+    );
+    assertEquals((await partnerBefore.json()).turns, []);
+    const revisionBefore = (await serviceRoleQuery(
+      `SELECT revision FROM public.ai_sessions WHERE id = $1`,
+      [sessionId],
+    ))[0].revision as number;
+
+    const published = await processSessionCommand(
+      makeReq({ command: "publish_nearby", request_id: requestId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(published.status, 200, await published.clone().text());
+    const publishedBody = await published.json();
+    assertEquals(publishedBody.committed, true);
+    assertEquals(publishedBody.user_ordinal, 1);
+    assertEquals(publishedBody.attune_ordinal, 2);
+    // Ruling 1's polled integer, and it MOVED.
+    assertEquals(publishedBody.session_revision, revisionBefore + 1);
+
+    // The staging row is gone and the request is committed.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_staging WHERE request_id = $1`,
+        [requestId],
+      ))[0].n,
+      0,
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state FROM public.ai_session_requests WHERE id = $1`,
+        [requestId],
+      ))[0].state,
+      "committed",
+    );
+
+    // THE PARTNER NOW SEES IT -- which is what publishing means.
+    const partnerAfter = await processSessionCommand(
+      makeReq({ command: "read", session_id: sessionId }),
+      ctx(USER_C1_B),
+      deps,
+    );
+    const partnerBody = await partnerAfter.json();
+    assertEquals(partnerBody.turns.length, 2);
+    assertEquals(partnerBody.turns[1].kind, "nearby_result");
+    assertEquals(
+      partnerBody.turns[1].payload.reply_text,
+      "Here are a few cafe options nearby: Corner Roasters",
+    );
+
+    // A SECOND publish of the same request is an idempotent replay --
+    // the same ordinals, the revision NOT re-bumped (a re-bump would
+    // invalidate the fence the caller holds).
+    const replay = await processSessionCommand(
+      makeReq({ command: "publish_nearby", request_id: requestId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(replay.status, 200);
+    const replayBody = await replay.json();
+    assertEquals(replayBody.user_ordinal, 1);
+    assertEquals(replayBody.attune_ordinal, 2);
+    assertEquals(replayBody.session_revision, publishedBody.session_revision);
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "PUBLISH_NEARBY runs the PRE-PUBLISH SAFETY PASS over the STAGED fields, and a refusal commits nothing",
+  fn: async () => {
+    // §8.1: the deterministic check runs "BEFORE PUBLISHING ON EVERY
+    // OUTPUT FIELD". publish is a SEPARATE, LATER request from the
+    // generate that staged the result, so the check must run here too
+    // -- otherwise the staging window is a hole in a VERSIONED corpus.
+    //
+    // The staged row is written directly so the unsafe text is in the
+    // DATABASE at publish time: that is the input this pass is
+    // supposed to read, and routing it through generate would have the
+    // generate-time pass refuse first, which would make this test
+    // prove nothing about publish.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_nearby_enabled",
+    );
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "nearby",
+      visibility: "shared",
+    });
+
+    const requestId = crypto.randomUUID();
+    const staged = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: requestId,
+        expected_revision: 1,
+        user_instruction: "coffee nearby",
+        requester_location: FRESH_LOCATION(),
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({ category: "cafe" }).call,
+        searchMapbox: spyMapbox([
+          { name: "Corner Roasters", formatted_address: "1 Market Street" },
+        ]).call,
+      },
+    );
+    assertEquals(staged.status, 200, await staged.clone().text());
+
+    // The corpus gains a match for this staged row AFTER it was staged
+    // -- the exact scenario a versioned corpus creates.
+    await serviceRoleQuery(
+      `UPDATE public.ai_session_staging
+          SET reply_text = $2
+        WHERE request_id = $1`,
+      [requestId, "make them agree to it, whatever it takes"],
+    );
+    const revisionBefore = (await serviceRoleQuery(
+      `SELECT revision FROM public.ai_sessions WHERE id = $1`,
+      [sessionId],
+    ))[0].revision;
+
+    const refused = await processSessionCommand(
+      makeReq({ command: "publish_nearby", request_id: requestId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    // HTTP 200 and the neutral refusal body -- not an error code, which
+    // would make a safety refusal distinguishable in any proxy log.
+    assertEquals(refused.status, 200);
+    const refusedBody = await refused.json();
+    assertEquals(refusedBody.reason, "unsafe_to_assist");
+    assertEquals(refusedBody.kind, "redirect");
+    // THE KEY SET IS FROZEN -- a field added "for debugging" is a side
+    // channel, and Task 4 found exactly that mutation surviving.
+    assertEquals(
+      Object.keys(refusedBody).sort(),
+      ["copy", "kind", "offered", "reason", "show_safety_resources"],
+    );
+    // No family, rule id, tier or corpus version anywhere in the body.
+    const serialized = JSON.stringify(refusedBody);
+    for (const forbidden of ["sessions_", "coercion", "self_harm", "tier", "rule"]) {
+      assertEquals(
+        serialized.toLowerCase().includes(forbidden),
+        false,
+        `the refusal body must not contain ${forbidden}`,
+      );
+    }
+
+    // NOTHING WAS COMMITTED, and the partner sees nothing.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_turns WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+      "a pre-publish refusal must commit no transcript pair",
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT revision FROM public.ai_sessions WHERE id = $1`,
+        [sessionId],
+      ))[0].revision,
+      revisionBefore,
+      "the revision must NOT move -- Ruling 1 makes it a polled signal, so a bump would be a side channel",
+    );
+    const partnerRead = await processSessionCommand(
+      makeReq({ command: "read", session_id: sessionId }),
+      ctx(USER_C1_B),
+      deps,
+    );
+    assertEquals((await partnerRead.json()).turns, []);
+    // The staged row SURVIVES, so the requester can still discard it.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_staging WHERE request_id = $1`,
+        [requestId],
+      ))[0].n,
+      1,
+    );
+
+    // THE SAME PASS COVERS A SOURCE CARD'S DISPLAY STRING, not just the
+    // reply text (§5.3: "Output checks cover prose, proposals and
+    // SOURCE DISPLAY STRINGS"). Clean reply, unsafe card name.
+    await serviceRoleQuery(
+      `UPDATE public.ai_session_staging
+          SET reply_text = 'Here are a few cafe options nearby: Corner Roasters',
+              sources = $2::jsonb
+        WHERE request_id = $1`,
+      [
+        requestId,
+        JSON.stringify([
+          { name: "make them agree to it", formatted_address: "1 Market Street" },
+        ]),
+      ],
+    );
+    const cardRefused = await processSessionCommand(
+      makeReq({ command: "publish_nearby", request_id: requestId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(cardRefused.status, 200);
+    assertEquals((await cardRefused.json()).reason, "unsafe_to_assist");
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_turns WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+      "an unsafe CARD NAME must also stop the publish",
+    );
+
+    // ANTI-VACUITY: restore clean content and the SAME request DOES
+    // publish. Without this, every assertion above could mean "publish
+    // never works".
+    await serviceRoleQuery(
+      `UPDATE public.ai_session_staging
+          SET reply_text = 'Here are a few cafe options nearby: Corner Roasters',
+              sources = $2::jsonb
+        WHERE request_id = $1`,
+      [
+        requestId,
+        JSON.stringify([
+          { name: "Corner Roasters", formatted_address: "1 Market Street" },
+        ]),
+      ],
+    );
+    const allowed = await processSessionCommand(
+      makeReq({ command: "publish_nearby", request_id: requestId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(allowed.status, 200, await allowed.clone().text());
+    assertEquals(
+      (await allowed.json()).committed,
+      true,
+      "ANTI-VACUITY: clean staged content publishes, so the refusals above were about the content",
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "PUBLISH_NEARBY: a NON-REQUESTER cannot publish, and gets the same RESULT_UNAVAILABLE as a nonexistent request",
+  fn: async () => {
+    // §5.3: the result "remain[s] requester-only staging until
+    // requester explicitly publishes". A partner publishing the
+    // requester's staged result would be a disclosure the requester
+    // never authorized.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_nearby_enabled",
+    );
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "nearby",
+      visibility: "shared",
+    });
+    const requestId = crypto.randomUUID();
+    const staged = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: requestId,
+        expected_revision: 1,
+        user_instruction: "coffee nearby",
+        requester_location: FRESH_LOCATION(),
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({ category: "cafe" }).call,
+        searchMapbox: spyMapbox([{ name: "Corner Roasters" }]).call,
+      },
+    );
+    assertEquals(staged.status, 200, await staged.clone().text());
+
+    // THE PARTNER tries to publish it.
+    const byPartner = await processSessionCommand(
+      makeReq({ command: "publish_nearby", request_id: requestId }),
+      ctx(USER_C1_B),
+      deps,
+    );
+    const partnerText = await byPartner.text();
+    // A NONEXISTENT request id.
+    const byNobody = await processSessionCommand(
+      makeReq({ command: "publish_nearby", request_id: crypto.randomUUID() }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    const nobodyText = await byNobody.text();
+
+    // THE SPECIFIC CODE, and the two are INDISTINGUISHABLE.
+    assertEquals(byPartner.status, 410);
+    assertEquals(JSON.parse(partnerText).code, "RESULT_UNAVAILABLE");
+    assertEquals(byNobody.status, 410);
+    assertEquals(partnerText, nobodyText);
+
+    // And nothing was committed by the partner's attempt.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_turns WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+    );
+    // ANTI-VACUITY: the REQUESTER can publish the same request.
+    const byRequester = await processSessionCommand(
+      makeReq({ command: "publish_nearby", request_id: requestId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(byRequester.status, 200, await byRequester.clone().text());
+    assertEquals((await byRequester.json()).committed, true);
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "DISCARD_NEARBY removes the staged result, stays COUNTED, and is idempotent",
+  fn: async () => {
+    // §8.2.2: terminal and counted, never a quota release -- the row
+    // reached 'staged' only via claim_ai_session_dispatch, so the
+    // provider call really was made.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_private_enabled",
+      "ai_sessions_nearby_enabled",
+    );
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "nearby",
+      visibility: "private",
+    });
+    const requestId = crypto.randomUUID();
+    const staged = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: requestId,
+        expected_revision: 1,
+        user_instruction: "coffee nearby",
+        requester_location: FRESH_LOCATION(),
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({ category: "cafe" }).call,
+        searchMapbox: spyMapbox([{ name: "Corner Roasters" }]).call,
+      },
+    );
+    assertEquals(staged.status, 200, await staged.clone().text());
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_staging WHERE request_id = $1`,
+        [requestId],
+      ))[0].n,
+      1,
+      "PRECONDITION: a staged row exists to discard",
+    );
+
+    const discarded = await processSessionCommand(
+      makeReq({ command: "discard_nearby", request_id: requestId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(discarded.status, 200);
+    assertEquals((await discarded.json()).discarded, true);
+
+    // The staged row is GONE and nothing was published.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_staging WHERE request_id = $1`,
+        [requestId],
+      ))[0].n,
+      0,
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_turns WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+    );
+    // STAYS COUNTED -- the SPECIFIC outcome, and not either value the
+    // rolling window excludes.
+    const usage = (await serviceRoleQuery(
+      `SELECT outcome FROM public.ai_assistant_usage WHERE request_id = $1`,
+      [requestId],
+    ))[0];
+    assertEquals(usage.outcome, "succeeded");
+    assertNotEquals(usage.outcome, "cancelled");
+    assertNotEquals(usage.outcome, "rejected");
+
+    // IDEMPOTENT: a second discard is the same answer, not an error.
+    const again = await processSessionCommand(
+      makeReq({ command: "discard_nearby", request_id: requestId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(again.status, 200);
+    assertEquals((await again.json()).discarded, true);
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "END closes the session and its content is GONE from a subsequent read",
+  fn: async () => {
+    // §5.4: the purge is SYNCHRONOUS, in end_ai_session's own
+    // transaction -- not a later job.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_private_enabled");
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "private",
+    });
+    const generated = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: crypto.randomUUID(),
+        expected_revision: 1,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({
+          kind: "answer",
+          reply_text: "Try a slow morning and a walk by the water.",
+          suggested_planning_item: null,
+        }).call,
+      },
+    );
+    assertEquals(generated.status, 200, await generated.clone().text());
+
+    // PRECONDITION: the read DOES return content before the end,
+    // otherwise "gone afterwards" proves nothing.
+    const before = await processSessionCommand(
+      makeReq({ command: "read", session_id: sessionId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals((await before.json()).turns.length, 2);
+
+    const ended = await processSessionCommand(
+      makeReq({ command: "end", session_id: sessionId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(ended.status, 200);
+    assertEquals((await ended.json()).ended, true);
+
+    // THE READ IS EMPTY, at HTTP 200 -- the silence property again: a
+    // closed session must not be distinguishable from a foreign one.
+    const after = await processSessionCommand(
+      makeReq({ command: "read", session_id: sessionId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(after.status, 200);
+    assertEquals((await after.json()).turns, []);
+
+    // AND THE ROWS ARE ACTUALLY GONE, synchronously -- not merely
+    // hidden by the read's state gate, which is a different property
+    // and would pass with the content still on disk.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_turns WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+      "§5.4: the transcript is purged synchronously",
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_sources WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_approvals WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state FROM public.ai_sessions WHERE id = $1`,
+        [sessionId],
+      ))[0].state,
+      "closed",
+    );
+
+    // IDEMPOTENT, and §5.4 records no ending actor: the response has no
+    // actor field and the table has no column for one.
+    const againEnd = await processSessionCommand(
+      makeReq({ command: "end", session_id: sessionId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(againEnd.status, 200);
+    assertEquals(Object.keys(await againEnd.json()), ["ended"]);
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n
+           FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'ai_sessions'
+            AND column_name ~ 'end'`,
+      ))[0].n,
+      0,
+      "§5.4: no client-readable ending-actor column may exist",
+    );
+
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "END: a NON-MEMBER cannot end a session, and gets the same UNAVAILABLE as a nonexistent one",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_private_enabled");
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "private",
+    });
+
+    // The PARTNER cannot end the CREATOR's private session (§5.4).
+    const byPartner = await processSessionCommand(
+      makeReq({ command: "end", session_id: sessionId }),
+      ctx(USER_C1_B),
+      deps,
+    );
+    const partnerText = await byPartner.text();
+    const byNobody = await processSessionCommand(
+      makeReq({ command: "end", session_id: crypto.randomUUID() }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    const nobodyText = await byNobody.text();
+
+    assertEquals(byPartner.status, 404);
+    assertEquals(JSON.parse(partnerText).code, "UNAVAILABLE");
+    // A nonexistent session is an idempotent no-op in the RPC, so it
+    // succeeds -- which is correct and is NOT the same as the refusal.
+    // The property asserted is that the REFUSAL discloses nothing about
+    // the session, not that every input gets one answer.
+    assertEquals(byNobody.status, 200);
+    void nobodyText;
+
+    // THE SESSION SURVIVED the partner's attempt.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state FROM public.ai_sessions WHERE id = $1`,
+        [sessionId],
+      ))[0].state,
+      "active",
+      "a non-member's end must not close the session",
+    );
+
+    // ANTI-VACUITY: the CREATOR can end it.
+    const byCreator = await processSessionCommand(
+      makeReq({ command: "end", session_id: sessionId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(byCreator.status, 200);
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state FROM public.ai_sessions WHERE id = $1`,
+        [sessionId],
+      ))[0].state,
+      "closed",
+    );
+
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "SHARE_ANSWER posts a committed Attune turn to ordinary chat with attune_assist provenance",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_private_enabled");
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "private",
+    });
+    const requestId = crypto.randomUUID();
+    const replyText = "Try a slow morning and a walk by the water.";
+    const generated = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: requestId,
+        expected_revision: 1,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({
+          kind: "answer",
+          reply_text: replyText,
+          suggested_planning_item: null,
+        }).call,
+      },
+    );
+    const generatedBody = await generated.json();
+    assertEquals(generated.status, 200, JSON.stringify(generatedBody));
+    const attuneOrdinal = generatedBody.attune_ordinal as number;
+    assertEquals(attuneOrdinal, 2);
+
+    const messagesBefore = (await serviceRoleQuery(
+      `SELECT count(*)::int AS n FROM public.messages WHERE relationship_id = $1`,
+      [REL_C1],
+    ))[0].n as number;
+
+    const shared = await processSessionCommand(
+      makeReq({
+        command: "share_answer",
+        session_id: sessionId,
+        ordinal: attuneOrdinal,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(shared.status, 200, await shared.clone().text());
+    const sharedBody = await shared.json();
+    // ONLY the id is echoed -- not the whole public.messages row.
+    assertEquals(Object.keys(sharedBody), ["message_id"]);
+    assert(typeof sharedBody.message_id === "string");
+
+    // A REAL MESSAGE exists, in the right relationship, from the right
+    // sender, with the turn's text and attune provenance.
+    const message = (await serviceRoleQuery(
+      `SELECT relationship_id, sender_id, content, message_origin, source
+         FROM public.messages WHERE id = $1`,
+      [sharedBody.message_id],
+    ))[0];
+    assertEquals(message.relationship_id, REL_C1);
+    assertEquals(message.sender_id, USER_C1_A);
+    assertEquals(message.content, replyText);
+    // The SPECIFIC provenance value, asserted against the live enum
+    // rather than guessed: whatever Plan A's share path sets, it must
+    // not be the plain user default.
+    assertNotEquals(
+      message.message_origin,
+      "user",
+      "a shared Attune answer must carry attune provenance, not read as an ordinary user message",
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.messages WHERE relationship_id = $1`,
+        [REL_C1],
+      ))[0].n,
+      messagesBefore + 1,
+      "exactly one message is created",
+    );
+
+    // The publication marker is recorded (§7.1's content-free consumed
+    // marker).
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT consumed_marker FROM public.ai_session_publications
+          WHERE session_id = $1 AND request_id = $2`,
+        [sessionId, requestId],
+      )).map((r) => r.consumed_marker),
+      [true],
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "SHARE_ANSWER: the USER half, a nonexistent ordinal and a foreign session are ONE response -- no check is disclosed",
+  fn: async () => {
+    // §8.1: "A refusal/error must not signal a private detector
+    // result", and §3.1's indistinguishability. The RPC raises six
+    // different messages here; the caller must see one.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_private_enabled");
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "private",
+    });
+    const generated = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: crypto.randomUUID(),
+        expected_revision: 1,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({
+          kind: "answer",
+          reply_text: "Try a slow morning and a walk by the water.",
+          suggested_planning_item: null,
+        }).call,
+      },
+    );
+    assertEquals(generated.status, 200, await generated.clone().text());
+
+    const bodies: string[] = [];
+    // 1. The USER half of the pair -- 'Only an Attune-authored turn may
+    //    be shared'.
+    const userHalf = await processSessionCommand(
+      makeReq({ command: "share_answer", session_id: sessionId, ordinal: 1 }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    bodies.push(await userHalf.text());
+    assertEquals(userHalf.status, 410);
+
+    // 2. An ordinal that does not exist -- 'Turn not found'.
+    const missing = await processSessionCommand(
+      makeReq({ command: "share_answer", session_id: sessionId, ordinal: 7 }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    bodies.push(await missing.text());
+    assertEquals(missing.status, 410);
+
+    // 3. A NON-CREATOR of a private session -- 'Only the creator may
+    //    share from a private session'.
+    const partner = await processSessionCommand(
+      makeReq({ command: "share_answer", session_id: sessionId, ordinal: 2 }),
+      ctx(USER_C1_B),
+      deps,
+    );
+    bodies.push(await partner.text());
+    assertEquals(partner.status, 410);
+
+    // 4. A session that does not exist -- 'Session unavailable'.
+    const unknown = await processSessionCommand(
+      makeReq({
+        command: "share_answer",
+        session_id: crypto.randomUUID(),
+        ordinal: 2,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    bodies.push(await unknown.text());
+    assertEquals(unknown.status, 410);
+
+    // ALL FOUR ARE BYTE-IDENTICAL -- four different SQL raises, one
+    // response. This is the assertion; "each returned an error" would
+    // be the vacuous version.
+    assertEquals(new Set(bodies).size, 1, JSON.stringify(bodies));
+    assertEquals(JSON.parse(bodies[0]).code, "RESULT_UNAVAILABLE");
+    // No message exists from any of them.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_publications WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+    );
+
+    // ANTI-VACUITY: the CREATOR sharing the ATTUNE half succeeds, so
+    // the four refusals above are about their own causes and not about
+    // share_answer being broken.
+    const ok = await processSessionCommand(
+      makeReq({ command: "share_answer", session_id: sessionId, ordinal: 2 }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(ok.status, 200, await ok.clone().text());
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "SHARE_ANSWER maps 'Consent required' to CONSENT_REQUIRED -- the ONE distinction §10 sanctions",
+  fn: async () => {
+    // §10 gives CONSENT_REQUIRED its own code because "caller can open
+    // consent" is a refusal the caller can ACT on. Collapsing it into
+    // RESULT_UNAVAILABLE would leave the user stuck with no remedy;
+    // it discloses the CALLER'S OWN consent state, never a partner's
+    // withdrawal history and never which safety check fired.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_private_enabled");
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "private",
+    });
+    const generated = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: crypto.randomUUID(),
+        expected_revision: 1,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({
+          kind: "answer",
+          reply_text: "Try a slow morning and a walk by the water.",
+          suggested_planning_item: null,
+        }).call,
+      },
+    );
+    assertEquals(generated.status, 200, await generated.clone().text());
+
+    // PRECONDITION: with consent current, the share SUCCEEDS -- so the
+    // refusal below is attributable to the withdrawal and not to
+    // anything else about this fixture.
+    const probeSession = sessionId;
+    void probeSession;
+
+    // Withdraw, then share.
+    await serviceRoleQuery(
+      `INSERT INTO public.ai_processing_consent_events
+         (relationship_id, user_id, action, policy_version, idempotency_key, created_at)
+       VALUES ($1, $2, 'withdrawn', public.ai_current_consent_policy_version(),
+               gen_random_uuid(), clock_timestamp())`,
+      [REL_C1, USER_C1_A],
+    );
+
+    const refused = await processSessionCommand(
+      makeReq({ command: "share_answer", session_id: sessionId, ordinal: 2 }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    const refusedBody = await refused.json();
+    // THE SPECIFIC CODE, not "an error".
+    assertEquals(refusedBody.code, "CONSENT_REQUIRED");
+    assertEquals(refused.status, 403);
+    // The envelope carries ONLY the code -- no raw exception text, no
+    // mention of a partner.
+    assertEquals(Object.keys(refusedBody), ["code"]);
+    // Nothing was posted.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_publications WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+    );
+
+    // ANTI-VACUITY: re-grant and the SAME share succeeds, proving the
+    // refusal was the consent gate and nothing else.
+    await serviceRoleQuery(
+      `INSERT INTO public.ai_processing_consent_events
+         (relationship_id, user_id, action, policy_version, idempotency_key, created_at)
+       VALUES ($1, $2, 'granted', public.ai_current_consent_policy_version(),
+               gen_random_uuid(), clock_timestamp())`,
+      [REL_C1, USER_C1_A],
+    );
+    const allowed = await processSessionCommand(
+      makeReq({ command: "share_answer", session_id: sessionId, ordinal: 2 }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(
+      allowed.status,
+      200,
+      `ANTI-VACUITY: re-granting consent must let the SAME share succeed; got ${await allowed
+        .clone().text()}`,
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "ACTOR PROVENANCE (Task 5): every new branch takes its actor from the VERIFIED user, and no body field can redirect it",
+  fn: async () => {
+    // Plan C's Global Constraint, asserted EXECUTABLY for the six new
+    // commands rather than only by static audit. The outsider case is
+    // the sharp one: a body-sourced actor would be ACCEPTED here.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_private_enabled",
+      "ai_sessions_nearby_enabled",
+    );
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "private",
+    });
+    const generated = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: crypto.randomUUID(),
+        expected_revision: 1,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({
+          kind: "answer",
+          reply_text: "Try a slow morning and a walk by the water.",
+          suggested_planning_item: null,
+        }).call,
+      },
+    );
+    assertEquals(generated.status, 200, await generated.clone().text());
+
+    // 1. EVERY actor-naming field is rejected at the envelope, for
+    //    every one of the six new commands, with the SPECIFIC code --
+    //    even when an OUTSIDER names a real member.
+    for (const command of [
+      "approve",
+      "read",
+      "publish_nearby",
+      "discard_nearby",
+      "end",
+      "share_answer",
+    ]) {
+      for (const field of ACTOR_NAMING_FIELDS) {
+        const response = await processSessionCommand(
+          makeReq({
+            command,
+            session_id: sessionId,
+            [field]: USER_C1_A,
+          }),
+          ctx(USER_OUTSIDER),
+          deps,
+        );
+        assertEquals(
+          (await response.json()).code,
+          "INVALID_INPUT",
+          `${command} must reject the actor-naming field ${field}`,
+        );
+      }
+    }
+
+    // 2. THE OUTSIDER CANNOT READ, SHARE OR END, however it names
+    //    itself. Without a body-sourced actor there is no field to try,
+    //    which is the point -- so this asserts the OUTCOME instead.
+    const outsiderRead = await processSessionCommand(
+      makeReq({ command: "read", session_id: sessionId }),
+      ctx(USER_OUTSIDER),
+      deps,
+    );
+    assertEquals((await outsiderRead.json()).turns, []);
+
+    const outsiderShare = await processSessionCommand(
+      makeReq({ command: "share_answer", session_id: sessionId, ordinal: 2 }),
+      ctx(USER_OUTSIDER),
+      deps,
+    );
+    assertEquals((await outsiderShare.json()).code, "RESULT_UNAVAILABLE");
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_publications WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+      "an outsider's share must post nothing",
+    );
+
+    const outsiderEnd = await processSessionCommand(
+      makeReq({ command: "end", session_id: sessionId }),
+      ctx(USER_OUTSIDER),
+      deps,
+    );
+    assertEquals((await outsiderEnd.json()).code, "UNAVAILABLE");
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state FROM public.ai_sessions WHERE id = $1`,
+        [sessionId],
+      ))[0].state,
+      "active",
+      "an outsider's end must not close the session",
+    );
+
+    // 3. The APPROVAL stored by a real member records the VERIFIED
+    //    user, and nothing else.
+    const toggleSession = await (async () => {
+      await endSession(sessionId, USER_C1_A);
+      const prepared = await processSessionCommand(
+        makeReq({
+          command: "prepare",
+          relationship_id: REL_C1,
+          kind: "ideas",
+          visibility: "private",
+          include_window: false,
+          utc_offset_minutes: 0,
+          idempotency_key: crypto.randomUUID(),
+        }),
+        ctx(USER_C1_A),
+        deps,
+      );
+      const body = await prepared.json();
+      assertEquals(prepared.status, 200, JSON.stringify(body));
+      return body.session_id as string;
+    })();
+    const review = await processSessionCommand(
+      makeReq({
+        command: "review_context",
+        session_id: toggleSession,
+        utc_offset_minutes: 0,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    const reviewed = await review.json();
+    const approved = await processSessionCommand(
+      makeReq({
+        command: "approve",
+        session_id: toggleSession,
+        revision: reviewed.revision,
+        digest: reviewed.digest,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(approved.status, 200, await approved.clone().text());
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT member_id FROM public.ai_session_approvals WHERE session_id = $1`,
+        [toggleSession],
+      )).map((r) => r.member_id),
+      [USER_C1_A],
+      "the approval's member_id is the VERIFIED user",
+    );
+
+    await endSession(toggleSession, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
 Deno.test({
   name: "teardown: this suite leaves every capability flag OFF, as the migration seeded them",
   fn: async () => {

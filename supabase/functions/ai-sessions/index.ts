@@ -3402,22 +3402,61 @@ async function handlePublishNearby(branch: BranchContext): Promise<Response> {
 
   const service = branch.service();
 
+  // AN ALREADY-COMMITTED PUBLISH IS AN IDEMPOTENT REPLAY, and it must
+  // reach the RPC rather than being refused here.
+  //
+  // FOUND BY A TEST, AND IT WAS A REAL BUG IN MY FIRST ORDERING. The
+  // safety pre-read below reads ai_session_staging, which
+  // publish_ai_session_nearby_result DELETES on success -- so a second
+  // publish of the same request found no staged row and returned
+  // RESULT_UNAVAILABLE, converting a legitimate retry-after-a-dropped-
+  // response into a failure. The RPC answers a replay from its own
+  // `v_request.state = 'committed'` branch, deliberately placed BEFORE
+  // its consent gate for exactly this reason (20260953180000's note:
+  // "a retry of a publish that already succeeded must return its
+  // original answer rather than raise ... and could drive a caller to
+  // publish again").
+  //
+  // SKIPPING THE SAFETY PASS HERE IS CORRECT, NOT A LOOSENING, and the
+  // reason is that there is nothing left to gate: the content is
+  // ALREADY in the transcript and already visible to the partner. The
+  // pass exists to decide whether to publish; on this path the publish
+  // happened, and the only thing the RPC does is re-report the
+  // ordinals of a write that is already durable. Re-checking would
+  // either (a) pass, changing nothing, or (b) refuse, reporting failure
+  // for content the partner can already see while committing nothing --
+  // which tells the caller something false and leaves the transcript
+  // exactly as it was.
+  const requestState = await service
+    .from("ai_session_requests")
+    .select("state")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (requestState.error) {
+    return errorResponse(sessionError("INTERNAL_ERROR"));
+  }
+  const alreadyCommitted =
+    (requestState.data as Record<string, unknown> | null)?.state ===
+      "committed";
+
   // THE PRE-PUBLISH SAFETY PASS, over the STAGED fields, read back
   // through the AUTHOR-CHECKED RPC (§7.2) rather than with a direct
   // table read -- so an actor who is not the staging row's author
   // cannot even cause the safety check to run over someone else's
   // content, and the "no staged result" answer stays the RPC's silent
   // one.
-  const staged = await service.rpc("read_ai_session_staging", {
-    // THE ACTOR COMES FROM THE VERIFIED USER, never the body.
-    p_actor_id: branch.actorId,
-    p_request_id: requestId,
-  });
+  const staged = alreadyCommitted
+    ? { error: null, data: [] as Record<string, unknown>[] }
+    : await service.rpc("read_ai_session_staging", {
+      // THE ACTOR COMES FROM THE VERIFIED USER, never the body.
+      p_actor_id: branch.actorId,
+      p_request_id: requestId,
+    });
   if (staged.error) return errorResponse(sessionError("INTERNAL_ERROR"));
   const stagedRow = (staged.data ?? [])[0] as
     | Record<string, unknown>
     | undefined;
-  if (!stagedRow) {
+  if (!stagedRow && !alreadyCommitted) {
     // §10: RESULT_UNAVAILABLE -> "expired/revoked result; never replay
     // provider". Covers a staged row that expired, was already
     // published, was discarded, or belongs to someone else -- ONE
@@ -3432,8 +3471,10 @@ async function handlePublishNearby(branch: BranchContext): Promise<Response> {
   // §8.1's "every output field", and §5.3's "Output checks cover prose,
   // proposals and SOURCE DISPLAY STRINGS": the reply text plus every
   // card's name and address.
-  const stagedFields: string[] = [String(stagedRow.reply_text ?? "")];
-  const sources = stagedRow.sources;
+  const stagedFields: string[] = stagedRow
+    ? [String(stagedRow.reply_text ?? "")]
+    : [];
+  const sources = stagedRow?.sources;
   if (Array.isArray(sources)) {
     for (const source of sources) {
       const card = source as Record<string, unknown>;
