@@ -25,6 +25,8 @@
 import 'dart:io';
 
 import 'package:attune/features/ai_assistant/data/services/ai_session_capabilities.dart';
+import 'package:attune/features/ai_assistant/presentation/providers/ai_assistant_providers.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Records what was asked for, so a test can assert the RPC NAME and
@@ -536,5 +538,85 @@ void main() {
         );
       }
     });
+  });
+
+  // =================================================================
+  // FINDING 5 — the cached `unavailable` is RECOVERABLE
+  // =================================================================
+
+  group('aiSessionCapabilitiesProvider: invalidation', () {
+    test(
+      'a transient failure caches `unavailable` for the whole app '
+      'session, and ref.invalidate is what recovers it',
+      () async {
+        // The two correct decisions whose INTERACTION is the finding:
+        // the provider is deliberately NOT autoDispose (these are
+        // server rollout flags, so caching for the app session is the
+        // point) and `load()` deliberately never throws (it collapses
+        // "the server said no" and "I could not ask" to `unavailable`,
+        // the fail-closed direction). Together, ONE transient error on
+        // the FIRST read hides every AI entry point until relaunch.
+        //
+        // The provider's own doc promised "`ref.invalidate` or next
+        // launch". Before this test, `grep` over `lib/` and `test/`
+        // found ZERO invalidate calls on it, so only the second half
+        // existed and the first was unverified. This pins it.
+        var calls = 0;
+        final container = ProviderContainer(
+          overrides: [
+            aiSessionCapabilitiesServiceProvider.overrideWithValue(
+              AiSessionCapabilitiesService((name) async {
+                calls++;
+                // The transient failure: `load()` swallows the throw
+                // and answers `unavailable`.
+                if (calls == 1) throw StateError('transient');
+                return <String, Object?>{
+                  'ai_assist_enabled': true,
+                  'ai_sessions_private_enabled': true,
+                  'ai_sessions_shared_enabled': false,
+                  'ai_sessions_recent_window_enabled': false,
+                  'ai_sessions_nearby_enabled': false,
+                };
+              }),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final first = await container.read(
+          aiSessionCapabilitiesProvider.future,
+        );
+        expect(first.noneAvailable, isTrue);
+        expect(calls, 1);
+
+        // THE CACHE, demonstrated: a second read does NOT re-ask, so
+        // the server having recovered changes nothing.
+        final cached = await container.read(
+          aiSessionCapabilitiesProvider.future,
+        );
+        expect(cached.noneAvailable, isTrue);
+        expect(
+          calls,
+          1,
+          reason: 'a second read must be served from the cache — if it '
+              're-asked, there would be no finding to fix',
+        );
+
+        container.invalidate(aiSessionCapabilitiesProvider);
+        final recovered = await container.read(
+          aiSessionCapabilitiesProvider.future,
+        );
+
+        expect(calls, 2);
+        // THE SPECIFIC recovered value, not merely "not unavailable":
+        // the second answer has `shared` OFF, so an assertion of
+        // `noneAvailable == false` alone would also pass for a provider
+        // that invented an all-true optimistic value.
+        expect(recovered.assist, isTrue);
+        expect(recovered.sessionsPrivate, isTrue);
+        expect(recovered.sessionsShared, isFalse);
+        expect(recovered.sessionsNearby, isFalse);
+      },
+    );
   });
 }
