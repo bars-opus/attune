@@ -2015,6 +2015,70 @@ void main() {
     );
 
     test(
+      'a LOCAL DateTime is converted to UTC before it is sent',
+      () async {
+        // ==== THIS TEST EXISTS BECAUSE A MUTATION SURVIVED ====
+        //
+        // MUTATION M16 removed the `.toUtc()` and the suite stayed
+        // green, because the test above passes `DateTime.utc(...)`,
+        // which makes the conversion a no-op. The REALISTIC caller
+        // passes a local `DateTime` — a geolocation fix is timestamped
+        // with `DateTime.now()` — and `toIso8601String()` on a local
+        // DateTime emits NO offset and NO `Z`.
+        //
+        // `Date.parse` then reads that offsetless string as the
+        // server's own local time (UTC on the edge runtime), so the
+        // instant is wrong by the device's offset. §4.1's window is two
+        // minutes, and `handleGenerate` answers LOCATION_EXPIRED beyond
+        // it — so in Accra (UTC+0) this would pass and in most of the
+        // world it would fail, which is the worst possible failure
+        // shape: correct on the developer's machine.
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = _stagedNearbyResponse();
+        final repository = AiSessionRepository(gateway);
+
+        // A LOCAL DateTime, constructed with a deliberate offset from
+        // UTC so the conversion is observable. Its UTC instant is the
+        // value the server must receive.
+        final local = DateTime.fromMillisecondsSinceEpoch(
+          DateTime.utc(2026, 10, 11, 12, 30, 15).millisecondsSinceEpoch,
+        );
+        expect(local.isUtc, isFalse, reason: 'the fixture must be local');
+
+        await repository.generate(
+          sessionId: _validUuid,
+          requestId: _validRequestId,
+          expectedRevision: 1,
+          userInstruction: 'coffee nearby',
+          requesterLocation: (
+            latitude: 5.6,
+            longitude: -0.19,
+            accuracyM: 12.0,
+          ),
+          locationCapturedAt: local,
+        );
+
+        final sent = Map<String, dynamic>.from(
+          gateway.lastInvokeBody!['requester_location'] as Map,
+        )['captured_at'] as String;
+
+        // THE SAME INSTANT, expressed in UTC. Asserting the exact
+        // string — rather than that it merely ends in 'Z' — is what
+        // makes this catch a conversion that ran in the wrong
+        // direction as well as one that did not run.
+        expect(sent, '2026-10-11T12:30:15.000Z');
+        expect(
+          sent.endsWith('Z'),
+          isTrue,
+          reason: 'an offsetless string is read by Date.parse as the '
+              "SERVER'S local time, not the device's",
+        );
+        // And it round-trips to the instant the caller gave.
+        expect(DateTime.parse(sent).isAtSameMomentAs(local), isTrue);
+      },
+    );
+
+    test(
       'omits requester_location entirely when there is none, rather than '
       'sending null',
       () async {
