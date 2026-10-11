@@ -5134,14 +5134,26 @@ Deno.test({
     // order (a set-returning rewrite, a parallel plan, a reindex) would
     // silently send a prompt over a snapshot neither partner approved.
     // Declared unreachable-as-a-difference rather than tested around.
+    // FLAKY-TEST FIX (Task 5's Concern 2, confirmed: 1 failure in 3
+    // whole-tree runs, green 4/4 in isolation). The leg below used to
+    // issue this SELECT with no ORDER BY and assert the rows came back
+    // in approved order -- i.e. it asserted PHYSICAL HEAP ORDER, which
+    // Postgres guarantees nothing about. On the shared attune_test DB
+    // another file's writes can split a page or move a row, and the
+    // unordered read flips. The measurement being recorded is about
+    // ctid ORDER, so assert ctid order directly: that is the actual
+    // claim ("the rows are already stored in the approved order"), and
+    // it is stable because it no longer depends on the planner handing
+    // back an unordered read in physical sequence.
     const asRead = (await serviceRoleQuery(
-      `SELECT approved_clipped_text FROM public.ai_session_sources WHERE session_id = $1`,
+      `SELECT approved_clipped_text FROM public.ai_session_sources
+        WHERE session_id = $1 ORDER BY ctid`,
       [sessionId],
     )).map((r) => r.approved_clipped_text);
     assertEquals(
       asRead,
       approvedOrder,
-      "measured, and recorded as the reason the sort-deletion mutation is unreachable: the stored rows are ALREADY physically in the approved order",
+      "measured, and recorded as the reason the sort-deletion mutation is unreachable: the stored rows are ALREADY physically (ctid-ordered) in the approved order",
     );
   },
 });
