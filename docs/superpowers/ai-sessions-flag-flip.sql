@@ -5,21 +5,30 @@
 -- 20260712150000_dating_flag_defense_in_depth.sql for why the table is
 -- locked down). Nothing in the app or the test suite can perform this.
 --
--- PREREQUISITES, in order:
---   1. The two flag-gate findings are fixed and on main. Without them:
---      - a lost response after `prepare` locks the user out of the session
---        they just created until its deadline expires (and on a SHARED
---        session the slot limit is per-relationship, so it blocks the
---        partner too);
---      - the sheet can send a visibility whose capability is off, so a
---        partial rollout gives every user a Start button that always errors.
---   2. Migration 20260953200500 (get_ai_session_capabilities) is deployed.
+-- PREREQUISITES — both now SATISFIED on main at 097a7a36, verified:
+--   1. The two flag-gate findings are fixed (merged 097a7a36). Before that
+--      fix, a lost response after `prepare` locked the user out of the
+--      session they had just created, and the sheet could send a visibility
+--      whose capability was off.
+--   2. Migration 20260953200500 (get_ai_session_capabilities) is on main.
 --      The client fails closed to all-off if it is absent, so a client-first
 --      deploy degrades to "feature off" rather than an error.
+--
+-- SO THE ONLY REMAINING PREREQUISITE IS DEPLOYMENT: this writes flags that
+-- the *deployed* client and edge function read. Deploy 097a7a36 — the app
+-- build, the edge function, and the migrations through 20260953200600 —
+-- BEFORE running this. Flipping a flag that the deployed code does not yet
+-- understand is the one ordering that fails open rather than closed.
 --
 -- ROLLBACK is the same statement with `false`. The client reads these through
 -- get_ai_session_capabilities() on each app session, so turning them off
 -- takes effect on the next read — this is a live kill switch, not a release.
+--
+-- KNOWN LIMIT while testing: if a user's FIRST capability read fails (a
+-- network blip at app start), the result is cached for that whole app
+-- session and every AI entry point is silently absent — indistinguishable
+-- from these flags being off. There is no in-app recovery short of a
+-- relaunch. If the feature looks dead, relaunch before concluding anything.
 
 BEGIN;
 
@@ -44,20 +53,25 @@ SELECT count(*) AS flags_enabled
 COMMIT;
 
 
--- OR, to roll out in stages. Private before shared: the sheet defaults to
--- private, and enabling shared first is the order that produced the
--- always-erroring Start button.
+-- OR, to roll out in stages. Any order is now safe: the sheet clamps its
+-- selection to whatever is enabled (merged 097a7a36), so enabling shared
+-- before private no longer leaves an unselected chip and a Start button
+-- that always errors. Before that fix this order was the hazard.
 --
 --   UPDATE public.feature_flags SET enabled = true, updated_at = now()
 --    WHERE key IN ('ai_assist_enabled', 'ai_sessions_private_enabled');
 --
--- Then verify as a client before widening:
+-- Then verify AS A CLIENT before widening — this is the only read path a
+-- client has, and it is what the app actually calls:
 --
+--   BEGIN;
 --   SET LOCAL ROLE authenticated;
 --   SELECT set_config('request.jwt.claims',
 --                     json_build_object('sub', '<a real user uuid>')::text, true);
 --   SELECT public.get_ai_session_capabilities();
+--   ROLLBACK;
 --
 -- A direct `SELECT ... FROM feature_flags WHERE key LIKE 'ai\_%'` as
 -- `authenticated` returns ZERO rows — that is the RLS policy hiding the
--- rollout plan, not a failure. The RPC is the client's only read path.
+-- rollout plan, not a failure. Do not "fix" it by widening the policy; that
+-- is the bug 20260712150000 was written to close.
