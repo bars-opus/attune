@@ -2671,19 +2671,36 @@ async function dispatchIdeas(
   }
 
   if (validated.kind === "redirect") {
-    // §5.3: "Only ordinary unsupported redirects become transcript
-    // pairs." The MODEL's redirect is an ordinary one -- a safety
-    // refusal never reaches here, because pass 1 returned above and
-    // pass 2 returns above this line.
+    // §5.3 AS AMENDED BY TASK 6 / ITEM B: "NO redirect becomes a
+    // transcript pair. ALL redirects are requester-only", like safety
+    // refusals. The original text said "only ordinary unsupported
+    // redirects become transcript pairs", which mandated a pair nothing
+    // could create: the ai_session_turns kind CHECK allows 'redirect',
+    // but commit_ai_session_ideas_turn hardcodes 'ideas_answer',
+    // publish_ai_session_nearby_result hardcodes 'nearby_result', and
+    // share_ai_session_turn names 'redirect' only to REJECT it. The
+    // spec was amended rather than an RPC added, because a durable
+    // redirect would be a safety side channel (redirect and refusal
+    // share a reason set, so bumping the revision for 'unsupported' but
+    // not 'unsafe_to_assist' discloses the detector to a partner
+    // polling session_revision -- §8.1 forbids exactly that), would be
+    // partner-visible (read_ai_session_turns does not filter by kind),
+    // and would spend two of §5.2's twenty ordinals on rows the history
+    // builder drops and §8.1 forbids posting.
     //
-    // Plan B has no commit RPC for a 'redirect' turn (verified: the
-    // ai_session_turns kind CHECK allows 'redirect' but
-    // commit_ai_session_ideas_turn hardcodes 'ideas_answer' and no
-    // other RPC inserts turns). So the pair is NOT written and the
-    // redirect is returned to the requester only. Reported as a plan
-    // gap rather than worked around by mislabelling it an
-    // 'ideas_answer', which would put a redirect into the history that
-    // §4.2 item 4 says holds "complete user/answer pairs".
+    // A safety refusal never reaches this line: pass 1 returned before
+    // dispatch and pass 2 returns above it.
+    //
+    // ITEM B: SETTLE THE REQUEST. §5.3 now puts a redirect in the same
+    // class as a provider failure, a validator rejection and a safety
+    // refusal -- an outcome that commits nothing -- and all three of
+    // those settle (Ruling 18 / Item A2). Without this the row stayed
+    // 'started' with a live 35-second lease and every retry got
+    // SESSION_BUSY until the reconciler ran, which is the identical
+    // defect Ruling 18 closed for its three siblings. The same call
+    // with the same two arguments writes the same row, so a redirect is
+    // not distinguishable from any of them.
+    await settleDispatchedRequest(service, branch.actorId, request.requestId);
     return jsonResponse({
       kind: "redirect",
       reason: validated.reason,
@@ -2775,6 +2792,12 @@ async function dispatchNearby(
       await settleDispatchedRequest(service, branch.actorId, request.requestId);
       return safetyRefusalResponse(redirectVerdict);
     }
+    // ITEM B, the same reasoning as dispatchIdeas' redirect branch:
+    // §5.3 as amended makes NO redirect durable, which puts it in the
+    // commits-nothing class, which must settle. Identical call,
+    // identical resulting row, as the provider-failure, validator and
+    // safety paths above and below.
+    await settleDispatchedRequest(service, branch.actorId, request.requestId);
     return jsonResponse({
       kind: "redirect",
       reason: validatedRedirect.reason,

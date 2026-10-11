@@ -9774,6 +9774,200 @@ Deno.test({
   },
 });
 
+// ===========================================================================
+// Task 6 / ITEM B -- a REDIRECT settles its request, like every other
+// non-committing outcome.
+//
+// The spec amendment (§5.3, Item B) made it normative that NO redirect
+// becomes a transcript pair: a redirect is returned to the requester and
+// committed nowhere. That settles the "nothing can write a redirect
+// turn" gap -- but it exposes a second, real one. §5.3 now puts a
+// redirect in the same class as a provider failure, a validator
+// rejection and a safety refusal: an outcome that commits nothing. All
+// three of those settle the request (Ruling 18 / Item A2). The redirect
+// paths did NOT, so the request row stayed 'started' with a live
+// 35-second lease and admit_ai_session_generation's busy check refused
+// every retry until reconcile_ai_session_leases ran -- exactly the
+// SESSION_BUSY defect Ruling 18 closed for its three siblings.
+//
+// These two tests are written to FAIL against the pre-fix code, and
+// they assert the SPECIFIC terminal row ('failed'/'REQUEST_FAILED'),
+// not merely "not started".
+// ===========================================================================
+
+Deno.test({
+  name:
+    "ITEM B: an Ideas redirect commits nothing AND settles its request, so a retry is not SESSION_BUSY",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_private_enabled");
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "private",
+    });
+
+    // An ORDINARY unsupported redirect -- reason 'unsupported', NOT
+    // 'unsafe_to_assist'. This is the case §5.3 used to say "become[s]
+    // [a] transcript pair", so it is the one whose disposition the
+    // amendment changed.
+    const gemini = spyGemini({
+      kind: "redirect",
+      reason: "unsupported",
+      offered: ["ideas"],
+    });
+    const response = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: crypto.randomUUID(),
+        expected_revision: 1,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      { ...deps, callGemini: gemini.call },
+    );
+    assertEquals(response.status, 200, await response.clone().text());
+    const body = await response.json();
+    assertEquals(body.kind, "redirect");
+    // The SPECIFIC reason, so this cannot pass on a safety refusal --
+    // which would reach safetyRefusalResponse, a DIFFERENT code path
+    // that already settles. Without this the test could be green for
+    // the wrong reason.
+    assertEquals(body.reason, "unsupported");
+    assertEquals(
+      gemini.seen.length,
+      1,
+      "the provider must have been called -- this is a MODEL redirect, not a pre-dispatch refusal",
+    );
+
+    // §5.3 as amended: committed nowhere.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_turns WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+      "Item B: no redirect becomes a transcript pair",
+    );
+
+    // THE FIX. The SPECIFIC terminal row, identical to what a provider
+    // failure and a safety refusal write -- settle_ai_session_request
+    // takes no reason parameter, so a redirect cannot be told apart
+    // from either.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state, terminal_code FROM public.ai_session_requests WHERE session_id = $1`,
+        [sessionId],
+      )).map((r) => `${r.state}/${r.terminal_code}`),
+      ["failed/REQUEST_FAILED"],
+      "Item B: a redirect settles its request immediately instead of leaving it 'started' until the lease expires",
+    );
+
+    // And the consequence that makes it matter: the retry ADMITS.
+    const retry = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: crypto.randomUUID(),
+        expected_revision: 1,
+        user_instruction: "something simpler",
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({
+          kind: "answer",
+          reply_text: "A quiet picnic would work well.",
+          suggested_planning_item: null,
+        }).call,
+      },
+    );
+    assertEquals(retry.status, 200, await retry.clone().text());
+    assertEquals((await retry.json()).kind, "answer");
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_turns WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      2,
+      "the retry after a settled redirect commits a real pair",
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "ITEM B: a Nearby redirect settles its request too, and never reaches Mapbox",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_private_enabled",
+      "ai_sessions_nearby_enabled",
+    );
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "nearby",
+      visibility: "private",
+    });
+
+    const gemini = spyGemini({
+      kind: "redirect",
+      reason: "unsupported",
+      offered: ["ideas"],
+    });
+    const mapbox = spyMapbox([]);
+    const response = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: crypto.randomUUID(),
+        expected_revision: 1,
+        user_instruction: "somewhere to go tonight",
+        requester_location: FRESH_LOCATION(),
+      }),
+      ctx(USER_C1_A),
+      { ...deps, callGemini: gemini.call, callMapbox: mapbox.call },
+    );
+    assertEquals(response.status, 200, await response.clone().text());
+    const body = await response.json();
+    assertEquals(body.kind, "redirect");
+    assertEquals(body.reason, "unsupported");
+    assertEquals(gemini.seen.length, 1);
+    // §2's isolation property: the redirect short-circuits BEFORE the
+    // category chokepoint, so no search happens.
+    assertEquals(
+      mapbox.seen.length,
+      0,
+      "a Nearby redirect must short-circuit before Mapbox",
+    );
+    // Nothing staged and nothing committed.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_turns WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state, terminal_code FROM public.ai_session_requests WHERE session_id = $1`,
+        [sessionId],
+      )).map((r) => `${r.state}/${r.terminal_code}`),
+      ["failed/REQUEST_FAILED"],
+      "Item B: a Nearby redirect settles its request as well",
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
 Deno.test({
   name: "teardown: this suite leaves every capability flag OFF, as the migration seeded them",
   fn: async () => {
