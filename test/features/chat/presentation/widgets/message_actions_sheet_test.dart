@@ -248,4 +248,218 @@ void main() {
 
     expect(deleted, isTrue);
   });
+
+  // ===================================================================
+  // RULING 23 — the Ask Attune gate (Plan D Task 9)
+  // ===================================================================
+  //
+  // `ai_assist_enabled` is the BASE spec's own missing gate: Task 5
+  // confirmed nothing gated Ask Attune across all 16
+  // `ChatFeatureFlags.` call sites, so this is a pre-existing finding
+  // being closed, not a regression Plan D introduced.
+  //
+  // The capability is read by the CALLER (ChatScreen) and passed in,
+  // because this is a pure function with no Riverpod and
+  // `MessageBubble` is a deliberate `StatelessWidget`.
+
+  /// Every call this file already makes, with the new parameter left to
+  /// its default — the literal compiled shape of every pre-existing
+  /// caller. Used by the regression leg so "unchanged" is asserted
+  /// against the real default path rather than an explicit `true`.
+  List<Widget> defaultCall(BuildContext context, {bool? assistEnabled}) {
+    // Two literal call shapes rather than one with a conditional
+    // argument, because the whole point of the first is that the
+    // parameter is NOT NAMED — the compiled shape of every
+    // pre-existing caller. A single call site passing `assistEnabled:
+    // someBool` would exercise the parameter in both legs and prove
+    // nothing about the default.
+    if (assistEnabled == null) {
+      return buildMessageActionItems(
+        context: context,
+        message: _ownMessage(),
+        currentUserId: 'u1',
+        isStarred: false,
+        isPinned: false,
+        onReply: () {},
+        onCopy: () {},
+        onStar: () {},
+        onUnstar: () {},
+        onPin: () {},
+        onUnpin: () {},
+        onInfo: () {},
+        onAskAttune: () {},
+        onEdit: () {},
+        onDelete: () {},
+      );
+    }
+    return buildMessageActionItems(
+      context: context,
+      message: _ownMessage(),
+      currentUserId: 'u1',
+      isStarred: false,
+      isPinned: false,
+      onReply: () {},
+      onCopy: () {},
+      onStar: () {},
+      onUnstar: () {},
+      onPin: () {},
+      onUnpin: () {},
+      onInfo: () {},
+      onAskAttune: () {},
+      onEdit: () {},
+      onDelete: () {},
+      assistEnabled: assistEnabled,
+    );
+  }
+
+  group('the capability parameter is OFF-by-caller: the menu is as it was', () {
+    testWidgets(
+      'a caller that never names assistEnabled gets the menu it gets '
+      'today, Ask Attune included',
+      (tester) async {
+        // THE REGRESSION PROOF. Six existing tests in this file and
+        // every non-chat reuse call `buildMessageActionItems` without
+        // the new parameter. If the default had flipped, Ask Attune
+        // would vanish for all of them.
+        await tester.pumpWidget(_wrap((context) => defaultCall(context)));
+
+        expect(find.text('Ask Attune'), findsOneWidget);
+        // And nothing else moved: the full menu for an own recent
+        // message, in order.
+        expect(find.text('Reply'), findsOneWidget);
+        expect(find.text('Copy'), findsOneWidget);
+        expect(find.text('Star'), findsOneWidget);
+        expect(find.text('Pin'), findsOneWidget);
+        expect(find.text('Info'), findsOneWidget);
+        expect(find.text('Edit'), findsOneWidget);
+        expect(find.text('Delete'), findsOneWidget);
+      },
+    );
+
+    testWidgets('an explicit true is identical to omitting it', (tester) async {
+      await tester.pumpWidget(_wrap((context) => defaultCall(context)));
+      final omitted = find.byType(ListTile).evaluate().length;
+      final omittedTitles =
+          tester
+              .widgetList<Text>(
+                find.descendant(
+                  of: find.byType(ListTile),
+                  matching: find.byType(Text),
+                ),
+              )
+              .map((text) => text.data)
+              .toList();
+
+      await tester.pumpWidget(
+        _wrap((context) => defaultCall(context, assistEnabled: true)),
+      );
+      expect(find.byType(ListTile).evaluate().length, omitted);
+      expect(
+        tester
+            .widgetList<Text>(
+              find.descendant(
+                of: find.byType(ListTile),
+                matching: find.byType(Text),
+              ),
+            )
+            .map((text) => text.data)
+            .toList(),
+        omittedTitles,
+        reason:
+            'the default must not merely be truthy — it must produce '
+            'the SAME menu, item for item',
+      );
+      // Anti-vacuity: an empty comparison would pass the above.
+      expect(omittedTitles, contains('Ask Attune'));
+      expect(omittedTitles.length, greaterThan(5));
+    });
+  });
+
+  group('RULING 23: assistEnabled false removes ONLY Ask Attune', () {
+    testWidgets('Ask Attune is omitted when the capability is off', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap((context) => defaultCall(context, assistEnabled: false)),
+      );
+
+      expect(
+        find.text('Ask Attune'),
+        findsNothing,
+        reason:
+            'RULING 23: §12 ai_assist_enabled gates this entry point, '
+            'and it is OFF in every environment today',
+      );
+    });
+
+    testWidgets('every OTHER action survives the capability being off', (
+      tester,
+    ) async {
+      // The regression risk of this change is not "the gate fails
+      // open", it is "the gate takes a neighbour with it". This is the
+      // leg that would catch that.
+      await tester.pumpWidget(
+        _wrap((context) => defaultCall(context, assistEnabled: false)),
+      );
+
+      expect(find.text('Reply'), findsOneWidget);
+      expect(find.text('Copy'), findsOneWidget);
+      expect(find.text('Star'), findsOneWidget);
+      expect(find.text('Pin'), findsOneWidget);
+      expect(find.text('Info'), findsOneWidget);
+      expect(find.text('Edit'), findsOneWidget);
+      expect(find.text('Delete'), findsOneWidget);
+    });
+
+    testWidgets(
+      'the capability is AND-ed with eligibility, not substituted for it',
+      (tester) async {
+        // A gate that REPLACED the eligibility predicate would show
+        // Ask Attune on an ineligible message whenever the flag is on,
+        // which is a §3 violation the flag must not be able to cause.
+        // Over-4000 characters is the eligibility leg chosen because it
+        // is purely about content.
+        final tooLong = Message.optimistic(
+          id: 'm2',
+          clientMessageId: 'c2',
+          relationshipId: 'r1',
+          senderId: 'u1',
+          content: 'a' * 4001,
+          createdAt: DateTime.now(),
+        );
+        expect(tooLong.isEligibleForAskAttune, isFalse);
+
+        await tester.pumpWidget(
+          _wrap(
+            (context) => buildMessageActionItems(
+              context: context,
+              message: tooLong,
+              currentUserId: 'u1',
+              isStarred: false,
+              isPinned: false,
+              onReply: () {},
+              onCopy: () {},
+              onStar: () {},
+              onUnstar: () {},
+              onPin: () {},
+              onUnpin: () {},
+              onInfo: () {},
+              onAskAttune: () {},
+              onEdit: () {},
+              onDelete: () {},
+              assistEnabled: true,
+            ),
+          ),
+        );
+
+        expect(
+          find.text('Ask Attune'),
+          findsNothing,
+          reason:
+              'the capability being ON must not override §3 '
+              'entry-eligibility',
+        );
+      },
+    );
+  });
 }

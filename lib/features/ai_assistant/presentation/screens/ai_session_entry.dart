@@ -144,19 +144,26 @@ bool openAiSessionSheet({
         // widget test's teardown does, and `readProviderElement` throws
         // `StateError` on a disposed container
         // (`riverpod/src/framework/container.dart:418-424`, read).
-        // There is no public `disposed` getter in riverpod 2.6.1 — only
-        // a private `_disposed` — so `exists` is the probe: it is the
-        // one accessor with NO disposed check (`container.dart:245`),
-        // and it returns `false` once the element is gone. The
-        // try/catch is belt-and-braces for a container disposed between
-        // the two calls. Releasing a flag nobody can read any more is a
-        // no-op worth skipping, not an error worth throwing into a
-        // route's completion.
-        if (!container.exists(aiSessionSheetMountedProvider)) return;
+        //
+        // **THE CATCH IS THE GUARD, and that is a measurement rather
+        // than a style choice.** Riverpod 2.6.1 exposes no public
+        // `disposed` getter (only a private `_disposed`), and
+        // `container.exists` — the one accessor with NO disposed check
+        // (`container.dart:245`) — is NOT a usable probe: it returns
+        // **true** after dispose, because disposal does not clear the
+        // element map it reads. My first version gated on `exists` and
+        // a test of that premise caught it; the guard would have fallen
+        // straight through to the throwing `read`, in exactly the
+        // teardown Ruling 29 is about. `ai_session_entry_test.dart`
+        // pins both halves so this cannot be "simplified" back.
+        //
+        // Releasing a flag nobody can read any more is a no-op worth
+        // skipping, not an error worth throwing into a route's
+        // completion.
         try {
           container.read(aiSessionSheetMountedProvider.notifier).state = false;
         } on StateError {
-          // The container went away mid-teardown. Nothing to release.
+          // The container went away first. Nothing left to release.
         }
       });
 
