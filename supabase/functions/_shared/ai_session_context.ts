@@ -90,7 +90,14 @@ export const TRUNCATION_MARKER = " [truncated]";
 /// pre-image FORMAT (as opposed to its content) requires: two clients
 /// running different code versions must not silently agree on a digest
 /// computed from differently-shaped pre-images.
-export const DIGEST_FORMAT_VERSION = "ai-session-digest-v1";
+///
+/// v2: Ruling 35 (N3) dropped the utc_offset_minutes and
+/// civil_day_start_utc fields. That is a FORMAT change by this
+/// constant's own rule -- a v1 client and a v2 client hash
+/// differently-shaped pre-images -- so the namespace moves with it,
+/// invalidating any outstanding v1 approval rather than letting the two
+/// shapes be compared.
+export const DIGEST_FORMAT_VERSION = "ai-session-digest-v2";
 
 export interface WindowMessage {
   messageId: string;
@@ -450,14 +457,37 @@ export interface ApprovalDigestInput {
   sources: { messageId: string; sourceVersion: string }[];
   /// The exact clipped strings shown to the user, in display order.
   displayedSnippets: string[];
-  utcOffsetMinutes: number;
-  /// The civil-day start this window was selected against, as
-  /// civilDayStartUtc returned it. Bound explicitly rather than
-  /// re-derived, because §4.3 names "offset/DAY" as two bindings: the
-  /// offset alone does not pin the day, and two approvals minutes apart
-  /// across local midnight must NOT silently agree.
-  civilDayStartUtc: string;
   contextRevision: number;
+  //
+  // DELIBERATELY ABSENT: utcOffsetMinutes and civilDayStartUtc.
+  //
+  // Ruling 35 (final-branch-review-planc.md, NEW FINDING N3) removed
+  // them. The offset is a *selection* input, and the selected rows
+  // already encode its effect: two partners approving the same source
+  // ids at the same versions with the same snippets are approving the
+  // same content, whatever civil day each device computed in order to
+  // find it. Binding the offset therefore added no integrity, and it
+  // created a hard availability defect -- no offset column exists on
+  // ai_sessions, the offset is a per-call client input, so two partners
+  // in different timezones computed different digests BY CONSTRUCTION
+  // and activate_ai_session's count(DISTINCT digest) = 1 could never
+  // pass. Since approve_ai_session_context ends ON CONFLICT DO NOTHING,
+  // the stale digest at that revision was immutable, and shared Nearby
+  // has no client-reachable revision bump, so it was stuck in
+  // `preparing` until the preparation deadline.
+  //
+  // What this gives up, stated honestly: a pair who really are looking
+  // at DIFFERENT windows -- two offsets that straddle local midnight,
+  // so the §4.2 selection returns different rows -- are no longer
+  // refused on the offset itself. They are still refused on the
+  // content, because different rows mean different source ids, source
+  // versions and snippets, every one of which is still bound. The
+  // narrow case genuinely lost is two windows that differ ONLY in the
+  // offset while selecting a byte-identical row set, which is not a
+  // disagreement about anything the user approved.
+  //
+  // civilDayStartUtc the FUNCTION is unchanged and still selects the
+  // window; it just stops being hashed.
 }
 
 /// Builds the exact byte string that gets hashed. Exported so a test
@@ -512,8 +542,7 @@ export function buildDigestPreimage(input: ApprovalDigestInput): string {
     field(`snippet[${i}]`, snippet);
   });
 
-  field("utc_offset_minutes", String(input.utcOffsetMinutes));
-  field("civil_day_start_utc", input.civilDayStartUtc);
+  // No offset / civil-day fields here: see ApprovalDigestInput's note.
   field("context_revision", String(input.contextRevision));
 
   return parts.join("\n");

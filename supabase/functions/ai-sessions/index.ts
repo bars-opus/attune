@@ -1125,8 +1125,13 @@ async function handleReviewContext(branch: BranchContext): Promise<Response> {
     participants,
     sources,
     displayedSnippets,
-    utcOffsetMinutes: offset,
-    civilDayStartUtc: civilDayStart,
+    // No offset or civil-day start is passed: Ruling 35 (N3) removed
+    // them from the pre-image, because the offset is a selection input
+    // and the selected rows above already encode its effect. The offset
+    // still decides WHICH rows these are -- civilDayStart below is
+    // still computed from it and still echoed to the client -- it just
+    // is not hashed, so two partners in different timezones can agree.
+    // See ApprovalDigestInput in _shared/ai_session_context.ts.
     // §4.3: approvals are stored against a separate context_revision,
     // "frozen at activation". In preparing state the session's own
     // `revision` is what an approval is submitted against (Plan B's
@@ -2924,11 +2929,23 @@ function buildNearbySessionReplyText(
 // Ruling 13 required "Task 5's read/approve path must assert the
 // approved digest is computed over the stored rows". Task 4 then
 // MEASURED that full recomputation from the stored rows is impossible
-// today: prepare_ai_session stores left(content, 4000) while the digest
-// binds §4.2's 600-scalar-clipped snippets with the " [truncated]"
-// marker, and ai_session_sources carries neither civil_day_start_utc
-// nor utc_offset_minutes -- both of which buildDigestPreimage binds.
-// Ruling 22's instruction is therefore EXISTENCE/VERSION
+// today, for three reasons: prepare_ai_session stores
+// left(content, 4000) while the digest binds §4.2's 600-scalar-clipped
+// snippets with the " [truncated]" marker, and ai_session_sources
+// carried neither civil_day_start_utc nor utc_offset_minutes -- both of
+// which buildDigestPreimage bound.
+//
+// Ruling 35 (N3) removed the latter two from the pre-image, so two of
+// those three blockers are gone. The FIRST one remains and is still
+// decisive: review_context hashes the target's snippet as the stored
+// 4000-char `approved_clipped_text` but hashes the WINDOW's snippets as
+// selectSharedWindow computed them LIVE, under the 600-scalar
+// per-message cap and the 2400-scalar total budget that clips the final
+// entry. Those budget-clipped strings are not what any column holds, so
+// a recomputation would have to re-run the live window selection -- the
+// one thing §4.2 forbids on subsequent turns.
+//
+// Ruling 22's instruction is therefore still EXISTENCE/VERSION
 // REVALIDATION, not recompute-and-compare.
 //
 // That is what revalidateFrozenSourcesForApproval does, and it reads

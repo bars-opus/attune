@@ -2617,8 +2617,6 @@ Deno.test({
         String(targetRow.approved_clipped_text),
         ...window.map((m) => m.content),
       ],
-      utcOffsetMinutes: 0,
-      civilDayStartUtc: civilDayStartUtc(now, 0).toISOString(),
       contextRevision: sessionRow.revision as number,
     });
 
@@ -2786,8 +2784,6 @@ Deno.test({
       participants: [relRow.user_a as string, relRow.user_b as string],
       sources: [],
       displayedSnippets: [],
-      utcOffsetMinutes: 0,
-      civilDayStartUtc: civilDayStartUtc(now, 0).toISOString(),
       contextRevision: body.revision as number,
     };
 
@@ -2965,8 +2961,6 @@ Deno.test({
         participants: [relRow.user_a as string, relRow.user_b as string],
         sources: [{ messageId: targetId, sourceVersion: version }],
         displayedSnippets: [String(stored.approved_clipped_text)],
-        utcOffsetMinutes: 0,
-        civilDayStartUtc: civilDayStartUtc(now, 0).toISOString(),
         contextRevision: body.revision as number,
       });
 

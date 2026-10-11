@@ -119,8 +119,6 @@ function baseDigestInput(): ApprovalDigestInput {
       { messageId: "aaaaaaaa-0000-0000-0000-000000000002", sourceVersion: "2026-10-10T09:00:00.000Z" },
     ],
     displayedSnippets: ["first snippet", "second snippet"],
-    utcOffsetMinutes: 60,
-    civilDayStartUtc: "2026-10-09T23:00:00.000Z",
     contextRevision: 1,
   };
 }
@@ -186,8 +184,6 @@ Deno.test("EVERY digest input changes the digest -- field by field, one at a tim
     kind: { ...baseDigestInput(), kind: "nearby" },
     visibility: { ...baseDigestInput(), visibility: "private" },
     contextRevision: { ...baseDigestInput(), contextRevision: 2 },
-    utcOffsetMinutes: { ...baseDigestInput(), utcOffsetMinutes: -300 },
-    civilDayStartUtc: { ...baseDigestInput(), civilDayStartUtc: "2026-10-10T23:00:00.000Z" },
     "a snippet's text": {
       ...baseDigestInput(),
       displayedSnippets: ["first snippet", "CHANGED snippet"],
@@ -231,6 +227,32 @@ Deno.test("EVERY digest input changes the digest -- field by field, one at a tim
     },
   };
 
+  // GUARD THE DENOMINATOR. "Every input changes the digest" is only
+  // worth anything if the set iterated is the set intended: a mutation
+  // silently dropped from the table above would leave this test green
+  // while proving less. Both the count and the exact key set are
+  // asserted, so a rename is caught too.
+  assertEquals(
+    Object.keys(mutations).sort(),
+    [
+      "a dropped snippet",
+      "a source's message id",
+      "a source's version (an EDIT to an approved message)",
+      "a snippet's text",
+      "an EXTRA participant",
+      "a DIFFERENT participant",
+      "contextRevision",
+      "kind",
+      "policyVersion",
+      "sessionId",
+      "snippet ORDER (display order is part of the approval)",
+      "two sources SWAPPING versions (pairing must be bound)",
+      "visibility",
+    ].sort(),
+    "the digest-sensitivity table must contain exactly the thirteen single-field mutations named here (the fourteenth and fifteenth sensitivity cases are the injective-encoding test below)",
+  );
+  assertEquals(Object.keys(mutations).length, 13);
+
   for (const [field, mutated] of Object.entries(mutations)) {
     assertNotEquals(
       await computeApprovalDigest(mutated),
@@ -238,6 +260,97 @@ Deno.test("EVERY digest input changes the digest -- field by field, one at a tim
       `changing ${field} MUST change the digest -- it is not bound into the pre-image`,
     );
   }
+});
+
+// ===========================================================================
+// Ruling 35 / N3: the two inputs that must NOT change the digest.
+//
+// These two tests are the INVERSION of the `utcOffsetMinutes` and
+// `civilDayStartUtc` rows that used to sit in the table above. They are
+// inverted rather than deleted because the property still needs a test:
+// before Ruling 35 the digest was offset-sensitive, which made it
+// impossible for two partners in different timezones to activate a
+// shared session, and a silent reintroduction of either binding would
+// restore that defect.
+//
+// The fields no longer exist on ApprovalDigestInput, so the only way
+// they could come back is through the pre-image itself. These tests
+// therefore assert on buildDigestPreimage's TEXT -- the one thing a
+// reintroduction cannot avoid touching -- rather than passing extra
+// object keys that TypeScript would reject and `...spread` would drop.
+// ===========================================================================
+
+Deno.test("Ruling 35 (N3): the pre-image binds NEITHER utc_offset_minutes NOR civil_day_start_utc", () => {
+  const preimage = buildDigestPreimage(baseDigestInput());
+
+  assertEquals(
+    preimage.includes("utc_offset_minutes"),
+    false,
+    "the offset is a SELECTION input and the selected rows already encode its effect; binding it added no integrity and made cross-timezone shared sessions unactivatable (N3)",
+  );
+  assertEquals(
+    preimage.includes("civil_day_start_utc"),
+    false,
+    "the civil-day start is derived from the offset and carries the same defect",
+  );
+
+  // And the fields that DO describe the approved content are all still
+  // there, so this test cannot pass by the pre-image having collapsed.
+  for (
+    const key of [
+      "session_id",
+      "policy_version",
+      "kind",
+      "visibility",
+      "participant_count",
+      "source_count",
+      "source[0].message_id",
+      "source[0].version",
+      "snippet_count",
+      "snippet[0]",
+      "context_revision",
+    ]
+  ) {
+    assert(
+      preimage.includes(key),
+      `the pre-image must still bind ${key}; got:\n${preimage}`,
+    );
+  }
+});
+
+Deno.test("Ruling 35 (N3): two partners whose devices computed DIFFERENT civil days agree on the digest for the same content", async () => {
+  // The end-to-end form of this -- review_context at offset 0 and -300,
+  // then approve, then activate_ai_session -- lives in
+  // ai-sessions/index.test.ts. This is the unit-level statement: the
+  // digest is a function of the content fields alone, so there is no
+  // offset either partner could send that would move it.
+  const content = baseDigestInput();
+  const digest = await computeApprovalDigest(content);
+
+  // Identical content, built independently, participants enumerated in
+  // the opposite order (the two partners have no reason to agree on
+  // that either).
+  const partnerDigest = await computeApprovalDigest({
+    ...baseDigestInput(),
+    participants: [USER_B, USER_A],
+  });
+
+  assertEquals(
+    partnerDigest,
+    digest,
+    "N3: same source ids, same versions, same snippets => same digest, whatever civil day each device computed to find them",
+  );
+
+  // The civil day really would have differed: these are the two offsets
+  // the review reproduced the defect with, and civilDayStartUtc -- the
+  // function, which is UNCHANGED and still selects the window -- maps
+  // them to different instants.
+  const now = new Date("2026-10-11T12:00:00.000Z");
+  assertNotEquals(
+    civilDayStartUtc(now, 0).toISOString(),
+    civilDayStartUtc(now, -300).toISOString(),
+    "precondition: the two offsets must really yield different civil days, or this test proves nothing",
+  );
 });
 
 Deno.test("the pre-image encoding is injective: a moved field boundary cannot be hidden", async () => {
@@ -273,7 +386,10 @@ Deno.test("the pre-image encoding is injective: a moved field boundary cannot be
 
 Deno.test("the pre-image is versioned, so two code versions cannot silently agree on a differently-shaped digest", () => {
   const preimage = buildDigestPreimage(baseDigestInput());
-  assertEquals(preimage.split("\n")[0], "ai-session-digest-v1");
+  // v2 since Ruling 35 (N3) removed two fields: a pre-image SHAPE
+  // change, which this constant's contract says must move the
+  // namespace so a v1 client and a v2 client cannot silently agree.
+  assertEquals(preimage.split("\n")[0], "ai-session-digest-v2");
 });
 
 // ===========================================================================
