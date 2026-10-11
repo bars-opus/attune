@@ -33,10 +33,16 @@ class _FakeAiSessionGateway implements AiAssistantGateway {
     invokeCount++;
     lastInvokedFunction = functionName;
     lastInvokeBody = body;
+    // Deliberately does NOT clear `nextInvokeError` after throwing,
+    // unlike ai_assistant_repository_test.dart's own fake. A
+    // one-shot error made a repository that silently auto-retried
+    // succeed on the second attempt with whatever `nextInvokeResult`
+    // happened to be — which turned a no-auto-retry defect into
+    // eighteen misleading "wrong error subtype" failures and MASKED the
+    // one test that targets it (`invokeCount`). A persistent error
+    // keeps each test's failure attributable to its own assertion.
     if (nextInvokeError != null) {
-      final error = nextInvokeError!;
-      nextInvokeError = null;
-      throw error;
+      throw nextInvokeError!;
     }
     return nextInvokeResult;
   }
