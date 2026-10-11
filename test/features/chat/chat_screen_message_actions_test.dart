@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:attune/features/ai_assistant/data/repositories/ai_assistant_repository.dart';
 import 'package:attune/features/ai_assistant/data/models/ai_session_model.dart';
 import 'package:attune/features/ai_assistant/data/repositories/ai_session_repository.dart';
@@ -860,6 +861,68 @@ void main() {
               'work, so the composer keeps every control it has',
         );
 
+        await tearDownChat(tester, container);
+      },
+    );
+
+    testWidgets(
+      'an UNRESOLVED capability reads as OFF, not as permission',
+      (tester) async {
+        // ADDED AFTER A MUTATION (M8) SURVIVED. Replacing
+        // `.valueOrNull?.assist == true` with `?? true` passed every
+        // other test here, because every one of them resolves the
+        // provider before the long-press. In production the first chat
+        // open makes a real RPC round trip, so there IS a window where
+        // the value is null — and `?? true` offers Ask Attune during
+        // it. That is the wrong failure direction (§12: defaults off),
+        // and nothing else was measuring it.
+        //
+        // A never-completing override models the window honestly: a
+        // slow or unreachable server, which is exactly when the
+        // capability service fails closed.
+        final repo = FakeChatRepository(currentUserId: 'user-a');
+        repo.seedIncoming(
+          id: 'm-pending',
+          relationshipId: 'rel-1',
+          senderId: 'partner',
+          content: 'still loading?',
+          createdAt: DateTime.now(),
+        );
+        final container = await pumpChat(
+          tester,
+          repo,
+          extraOverrides: [
+            aiSessionCapabilitiesProvider.overrideWith(
+              (ref) => Completer<AiSessionCapabilities>().future,
+            ),
+          ],
+        );
+
+        // The composer half.
+        expect(
+          find.byIcon(Icons.auto_awesome),
+          findsNothing,
+          reason:
+              'a loading capability must not draw the AI entry point',
+        );
+
+        await tester.longPress(find.text('still loading?'));
+        await tester.pump(const Duration(milliseconds: 400));
+
+        // Anti-vacuity: the menu is open, so "no Ask Attune" is a
+        // finding rather than an artefact of a failed long-press.
+        expect(find.text('Copy'), findsOneWidget);
+        expect(
+          find.text('Ask Attune'),
+          findsNothing,
+          reason:
+              'an unknown capability is NOT permission — a `?? true` '
+              'here would offer the entry point for the whole duration '
+              'of the first round trip',
+        );
+
+        await tester.tapAt(const Offset(400, 1350));
+        await tester.pump(const Duration(milliseconds: 400));
         await tearDownChat(tester, container);
       },
     );

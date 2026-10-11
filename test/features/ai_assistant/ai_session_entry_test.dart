@@ -199,6 +199,36 @@ void main() {
     );
 
     testWidgets(
+      'two SYNCHRONOUS opens in one frame still mount exactly one sheet',
+      (tester) async {
+        // ADDED AFTER A MUTATION (M3) exposed the gap. Deferring the
+        // flag's `true` to a microtask was killed ONLY by the
+        // flag-ordering test below — both second-open legs awaited a
+        // settle first, so the flag was already set by the time they
+        // tried. A real double-tap, and a tap that arrives while the
+        // push's route transition is still building, are both
+        // synchronous: nothing awaits between them. This is that case.
+        final container = _container();
+        final navigator = await _pumpHost(tester, container);
+
+        final first = _open(container, navigator);
+        final second = _open(container, navigator); // no await between
+        await tester.pumpAndSettle();
+
+        expect(first, isTrue);
+        expect(
+          second,
+          isFalse,
+          reason:
+              'the flag must be set BEFORE the push, not after it '
+              'resolves, or a double-tap opens two sheets sharing one '
+              'controller',
+        );
+        expect(find.byType(AiSessionSheet), findsOneWidget);
+      },
+    );
+
+    testWidgets(
       'a second attempt is refused even when the FIRST was opened from a '
       'different entry point — the guard is container-scoped, not '
       'widget-scoped',
@@ -527,6 +557,35 @@ void main() {
       // immediately render as unavailable.
       expect(debugSessionKindFor(AssistKind.ideas, _assistOnly), isNull);
       expect(debugSessionKindFor(AssistKind.nearby, _assistOnly), isNull);
+
+      // STRENGTHENED AFTER M13. Substituting `assist` for the
+      // visibility disjunction was killed only by the
+      // Nearby-without-visibility fixture, via a different test — a
+      // right-verdict-wrong-test result of the kind this effort has
+      // caught repeatedly. The direct form is: `assist` OFF while a
+      // session visibility is ON must still offer a session, because
+      // the two capabilities are independent (§12) and a shared-only
+      // session rollout with single-turn Assist killed is a legitimate
+      // operator state.
+      const sessionsWithoutAssist = AiSessionCapabilities(
+        assist: false,
+        sessionsPrivate: true,
+        sessionsShared: false,
+        sessionsRecentWindow: false,
+        sessionsNearby: true,
+      );
+      expect(
+        debugSessionKindFor(AssistKind.ideas, sessionsWithoutAssist),
+        AiSessionKind.ideas,
+        reason:
+            'a gate reading `assist` instead of the visibility flags '
+            'would deny this — but §12 subcapability independence means '
+            'killing single-turn Assist must not close sessions',
+      );
+      expect(
+        debugSessionKindFor(AssistKind.nearby, sessionsWithoutAssist),
+        AiSessionKind.nearby,
+      );
     });
 
     test('a session needs a visibility even for Nearby', () {
