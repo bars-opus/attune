@@ -395,17 +395,103 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Gate 4: creator (private) or current-revision approver (shared),
-  -- unchanged from read_ai_session_turns. A partner who approved an
-  -- OLDER snapshot does not inherit access to a re-approved one.
+  -- Gate 4: creator (private) or current-snapshot approver (shared).
+  --
+  -- THE SNAPSHOT NUMBER TO MATCH DEPENDS ON THE PHASE, and getting this
+  -- wrong makes the function useless for the one wait it exists to
+  -- serve. MEASURED on a live database rather than reasoned about,
+  -- after this file's own Contract 1 failed against a first version
+  -- that copied read_ai_session_turns' single-column form verbatim:
+  --
+  --   after prepare_ai_session:                context_revision = 0
+  --   after approve_ai_session_context(rev 1): context_revision = 0,
+  --                                            approval row at rev 1
+  --
+  -- `context_revision` IS WRITTEN ONLY AT ACTIVATION -- there is exactly
+  -- one `SET context_revision` in the entire schema
+  -- (20260953040000_ai_session_approve_activate_rpcs.sql:84, which sets
+  -- `context_revision = p_revision` in the same statement that sets
+  -- `state = 'active'`). It is 0 for the whole `preparing` phase, while
+  -- approvals are written at `ai_sessions.revision`, which starts at 1.
+  --
+  -- So matching on `context_revision` unconditionally can NEVER be true
+  -- before activation, and a shared session would be unpollable during
+  -- exactly the `preparing` -> `active` wait a first approver sits in.
+  -- read_ai_session_turns can match on it unconditionally only because
+  -- its own gate 3 has already refused every non-active session, so the
+  -- case never arises there; this function deliberately does not refuse
+  -- those, so it must handle the case that gate hid.
+  --
+  -- WHILE PREPARING, match on `revision`: that is the number
+  -- activate_ai_session itself requires approvals at
+  -- (`WHERE session_id = p_session_id AND revision = p_revision`) and
+  -- the number it will stamp into context_revision, so an actor holding
+  -- one is an approver of the snapshot about to be activated -- the
+  -- strongest claim available before activation, and the same one
+  -- activate trusts.
+  --
+  -- ONCE ACTIVE, match on `context_revision`, unchanged from
+  -- read_ai_session_turns: the frozen approved snapshot. `revision`
+  -- advances on every turn after activation, so matching on IT here
+  -- would make a legitimate approver unauthorized the moment anyone
+  -- generated. That asymmetry is the point -- `revision` is the live
+  -- counter, `context_revision` is the frozen approval, and each phase
+  -- must be compared against the one that is meaningful in it.
+  -- AND A CLOSED SHARED SESSION HAS NO APPROVALS LEFT TO MATCH, which
+  -- is the second thing this gate had to be taught. Also measured, also
+  -- after this file's own Contract 8 failed:
+  --
+  --   before end_ai_session:  rev=1, ctx=1, state=active,  approvals=2
+  --   after  end_ai_session:  rev=2, ctx=1, state=closed,  approvals=0
+  --
+  -- §5.4's synchronous purge DELETES ai_session_approvals in the same
+  -- transaction that closes the session (20260953090100:300, alongside
+  -- turns, sources and staging). So the evidence this gate relies on is
+  -- destroyed BY THE VERY EVENT the poll needs to report, and an
+  -- approvals-only gate makes `closed` unreportable to anybody --
+  -- leaving ending indistinguishable from a withdrawal, an expiry or a
+  -- stranger's refusal, when §7.2 forbids the client from reading
+  -- silence as "ended" at all. The session would simply never finish
+  -- from the client's point of view.
+  --
+  -- So for a CLOSED session the gate falls back to RELATIONSHIP
+  -- MEMBERSHIP, which gate 1 has already established above. Why that is
+  -- safe, argued rather than asserted:
+  --
+  --   * THERE IS NOTHING LEFT TO PROTECT. The purge removed every
+  --     content row -- turns, sources, approvals, staging. What remains
+  --     is `state = 'closed'` and a revision, and this function
+  --     discloses no content in any case.
+  --   * IT DOES NOT WIDEN THE PRIVATE CASE. The fallback is inside the
+  --     SHARED branch only. A private session stays creator-only in
+  --     every state, so a partner still cannot learn that a private
+  --     session existed -- which is the disclosure that would matter,
+  --     and Contract 5c pins it.
+  --   * THE FACT DISCLOSED IS ONE THEY ALREADY HELD. Reaching this
+  --     branch requires a SHARED session, and a shared session's two
+  --     members both approved its context to activate it. Telling a
+  --     member that the shared session they were a party to is over is
+  --     not new information; withholding it only breaks their client.
+  --   * IT CANNOT BE USED AS AN ORACLE. Gate 1 already refused every
+  --     non-member, and §5.4 forbids disclosing WHO ended a session --
+  --     nothing here says, and no column records it.
+  --
+  -- A closed session is also terminal: its revision cannot move again,
+  -- so this branch hands out a value that is final rather than a feed.
   IF v_session.visibility = 'private' THEN
     v_authorized := (v_session.creator_id = p_actor_id);
+  ELSIF v_session.state = 'closed' THEN
+    -- Gate 1 proved membership, and the approvals are legitimately gone.
+    v_authorized := true;
   ELSE
     v_authorized := EXISTS (
       SELECT 1 FROM public.ai_session_approvals a
       WHERE a.session_id = p_session_id
         AND a.member_id = p_actor_id
-        AND a.revision = v_session.context_revision
+        AND a.revision = CASE
+          WHEN v_session.state = 'preparing' THEN v_session.revision
+          ELSE v_session.context_revision
+        END
     );
   END IF;
 
