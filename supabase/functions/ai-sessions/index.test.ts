@@ -1660,6 +1660,246 @@ Deno.test({
   },
 });
 
+// ===========================================================================
+// N3 (final-branch-review-planc.md) -- two partners in DIFFERENT timezones
+// must be able to activate a shared session.
+//
+// The test above proves determinism across two instants at the SAME
+// offset. That is the weaker property: the offset is the one input that
+// is genuinely different between two people in a long-distance
+// relationship, which is the exact population this app has. Before
+// Ruling 35 the digest bound `utc_offset_minutes` and
+// `civil_day_start_utc`, so two devices in two timezones computed
+// different digests BY CONSTRUCTION and activate_ai_session's
+// count(DISTINCT digest)=1 could never pass -- and because
+// approve_ai_session_context ends ON CONFLICT DO NOTHING, the stale
+// digest at that revision was immutable, so shared Nearby (which has no
+// client-reachable revision bump) was stuck in `preparing` until the
+// preparation deadline.
+//
+// These two tests are the regression guard. They must run the WHOLE
+// path -- review_context at two different offsets, approve each
+// partner's own digest, then activate -- because the deadlock was only
+// visible at activate.
+// ===========================================================================
+
+/// Seeds three same-day messages so the window is over real content,
+/// and asserts the offsets chosen really do select the same rows (see
+/// the "what is lost" note below).
+async function seedSameDayConversation(now: Date) {
+  for (let i = 0; i < 3; i++) {
+    await serviceRoleQuery(
+      `INSERT INTO public.messages (id, relationship_id, sender_id, client_message_id, content, source, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'native', $6)`,
+      [
+        crypto.randomUUID(),
+        REL_C1,
+        i % 2 === 0 ? USER_C1_A : USER_C1_B,
+        crypto.randomUUID(),
+        `cross-timezone line ${i}`,
+        new Date(now.getTime() - (3 - i) * 60_000).toISOString(),
+      ],
+    );
+  }
+}
+
+Deno.test({
+  name:
+    "N3: a shared IDEAS session activates when the two partners are in DIFFERENT timezones (offset 0 and -300)",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_recent_window_enabled",
+    );
+    const deps = await makeDeps();
+
+    // Anchor `now` at midday UTC so offsets 0 and -300 land in the SAME
+    // civil day and therefore select the SAME window rows. That is the
+    // honest form of this test: the claim being made is that two
+    // partners approving the SAME CONTENT agree, not that two partners
+    // looking at different content agree.
+    const now = new Date("2026-10-11T12:00:00.000Z");
+    await seedSameDayConversation(now);
+
+    const sessionId = await prepareSharedSession(deps, USER_C1_A);
+
+    const review = (actor: string, offset: number) =>
+      processSessionCommand(
+        makeReq({
+          command: "review_context",
+          session_id: sessionId,
+          utc_offset_minutes: offset,
+        }),
+        ctx(actor),
+        { ...deps, now },
+      );
+
+    // Partner A in UTC. Partner B five hours west -- the review's exact
+    // reproduction.
+    const aResponse = await review(USER_C1_A, 0);
+    const aBody = await aResponse.json();
+    assertEquals(aResponse.status, 200, JSON.stringify(aBody));
+    const bResponse = await review(USER_C1_B, -300);
+    const bBody = await bResponse.json();
+    assertEquals(bResponse.status, 200, JSON.stringify(bBody));
+
+    // Preconditions that stop this test passing vacuously.
+    assertEquals(
+      aBody.window.length,
+      3,
+      "precondition: the window is non-empty, so the digest is over real content",
+    );
+    assertEquals(
+      bBody.window.length,
+      3,
+      "precondition: the partner sees the same three rows -- same civil day",
+    );
+    assertEquals(
+      aBody.utc_offset_minutes,
+      0,
+      "precondition: the branch really did receive offset 0",
+    );
+    assertEquals(
+      bBody.utc_offset_minutes,
+      -300,
+      "precondition: the branch really did receive offset -300",
+    );
+    assertNotEquals(
+      aBody.civil_day_start_utc,
+      bBody.civil_day_start_utc,
+      "precondition: the two offsets really do yield DIFFERENT civil-day starts -- otherwise this test proves nothing about the offset",
+    );
+
+    assertEquals(
+      bBody.digest,
+      aBody.digest,
+      "N3: two partners in different timezones approving the SAME source ids at the SAME versions with the SAME snippets must compute the IDENTICAL digest -- the offset is a selection input, not content",
+    );
+
+    // END-TO-END. The deadlock was only observable at activate, so the
+    // regression guard has to go through Plan B.
+    for (
+      const [actor, body] of [
+        [USER_C1_A, aBody],
+        [USER_C1_B, bBody],
+      ] as const
+    ) {
+      await serviceRoleQuery(
+        `SELECT public.approve_ai_session_context($1, $2, $3, $4, $5)`,
+        [actor, sessionId, body.revision, body.digest, body.policy_version],
+      );
+    }
+    const activated = await serviceRoleQuery(
+      `SELECT * FROM public.activate_ai_session($1, $2, $3)`,
+      [USER_C1_A, sessionId, aBody.revision],
+    );
+    assertEquals(
+      activated[0].activated,
+      true,
+      "N3: the cross-timezone shared session MUST activate",
+    );
+    assertEquals(activated[0].state, "active");
+  },
+});
+
+Deno.test({
+  name:
+    "N3: a shared NEARBY session activates across timezones too -- it is the kind with NO client-reachable revision bump, so it had no recovery path",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_nearby_enabled",
+      "ai_sessions_recent_window_enabled",
+    );
+    const deps = await makeDeps();
+    const now = new Date("2026-10-11T12:00:00.000Z");
+    await seedSameDayConversation(now);
+
+    // Shared Nearby. §4.1's ai_sessions_window_only_shared_ideas
+    // forbids include_window here, which is exactly why
+    // set_ai_session_include_window cannot bump its revision and why
+    // this kind was stuck rather than recoverable-by-accident.
+    const sessionId = crypto.randomUUID();
+    const prepared = await processSessionCommand(
+      makeReq({
+        command: "prepare",
+        relationship_id: REL_C1,
+        kind: "nearby",
+        visibility: "shared",
+        utc_offset_minutes: 0,
+        idempotency_key: sessionId,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    const preparedBody = await prepared.json();
+    assertEquals(prepared.status, 200, JSON.stringify(preparedBody));
+
+    const review = (actor: string, offset: number) =>
+      processSessionCommand(
+        makeReq({
+          command: "review_context",
+          session_id: preparedBody.session_id,
+          utc_offset_minutes: offset,
+        }),
+        ctx(actor),
+        { ...deps, now },
+      );
+
+    const aResponse = await review(USER_C1_A, 0);
+    const aBody = await aResponse.json();
+    assertEquals(aResponse.status, 200, JSON.stringify(aBody));
+    const bResponse = await review(USER_C1_B, -300);
+    const bBody = await bResponse.json();
+    assertEquals(bResponse.status, 200, JSON.stringify(bBody));
+
+    assertEquals(aBody.kind, "nearby", "precondition: this is the Nearby kind");
+    assertEquals(aBody.visibility, "shared");
+    assertEquals(
+      aBody.include_window,
+      false,
+      "precondition: shared Nearby carries no window, so no toggle can bump its revision",
+    );
+    assertNotEquals(
+      aBody.civil_day_start_utc,
+      bBody.civil_day_start_utc,
+      "precondition: the two offsets really do yield DIFFERENT civil-day starts",
+    );
+
+    assertEquals(
+      bBody.digest,
+      aBody.digest,
+      "N3: shared Nearby across timezones must agree -- this is the case that had no recovery path at all",
+    );
+
+    for (
+      const [actor, body] of [
+        [USER_C1_A, aBody],
+        [USER_C1_B, bBody],
+      ] as const
+    ) {
+      await serviceRoleQuery(
+        `SELECT public.approve_ai_session_context($1, $2, $3, $4, $5)`,
+        [actor, body.session_id ?? preparedBody.session_id, body.revision, body.digest, body.policy_version],
+      );
+    }
+    const activated = await serviceRoleQuery(
+      `SELECT * FROM public.activate_ai_session($1, $2, $3)`,
+      [USER_C1_A, preparedBody.session_id, aBody.revision],
+    );
+    assertEquals(
+      activated[0].activated,
+      true,
+      "N3: the cross-timezone shared NEARBY session MUST activate",
+    );
+    assertEquals(activated[0].state, "active");
+  },
+});
+
 Deno.test({
   name:
     "a DIFFERING digest is rejected by activate_ai_session with CONTEXT_CHANGED -- proving the equality check is real",
