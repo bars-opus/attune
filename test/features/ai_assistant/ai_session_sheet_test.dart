@@ -3106,6 +3106,519 @@ void main() {
       },
     );
   });
+
+  // ===================================================================
+  // THE TWO ROOT-CAUSE TEST SHAPES
+  //
+  // The final whole-branch review found three defects and named ONE
+  // structural cause for all three:
+  //
+  //   > No test pumps a PARTIAL capability set (every sheet test uses
+  //   > `_allOn`), and no test's gateway fails `prepare` or `generate`
+  //   > on the first call — so the second tap is never exercised
+  //   > anywhere in the branch.
+  //
+  // Both groups below exist to close that, not merely to pin the two
+  // fixes. Every test here drives a capability set in which the
+  // DEFAULTED field is the disabled one, or a gateway that refuses the
+  // FIRST call and answers the SECOND.
+  // ===================================================================
+
+  group('FINDING 2: the idempotency key is STABLE across a retry', () {
+    testWidgets(
+      'FIRST-CALL FAILURE: prepare fails, the user taps Start again, and '
+      'the SAME key is sent — so the server can replay',
+      (tester) async {
+        var prepareCalls = 0;
+        final gateway = _FakeSessionGateway({
+          'prepare': (_) {
+            prepareCalls++;
+            // The lost-response shape: the RPC committed, the HTTP
+            // answer did not arrive. The sheet renders
+            // "Something went wrong — try again", which is the copy
+            // that invites the retry this test drives.
+            if (prepareCalls == 1) {
+              throw _functionError('INTERNAL_ERROR', 500);
+            }
+            // The replay: the ORIGINAL session, `created: false`.
+            return <String, dynamic>{
+              'session_id': _sessionId,
+              'revision': 1,
+              'created': false,
+            };
+          },
+          'review_context': (_) => _reviewResponse(),
+        });
+        await _pumpSheet(tester, gateway);
+
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+        // Still on preparation, with the error that invites a retry.
+        expect(find.text(kAiSessionStartLabel), findsOneWidget);
+
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+
+        final keys = gateway.bodies
+            .where((b) => b['command'] == 'prepare')
+            .map((b) => b['idempotency_key'] as String)
+            .toList();
+        expect(keys, hasLength(2));
+        expect(
+          keys[1],
+          keys[0],
+          reason: 'the retry must reuse the key, or '
+              'prepare_ai_session\'s `v_existing_session IS NOT NULL` '
+              'replay branch cannot fire and the slot-limit guard '
+              'answers SESSION_LIMIT_REACHED instead',
+        );
+        // And the replay actually got through: the sheet reached the
+        // approval step on the session the FIRST tap created.
+        expect(find.text(kAiSessionApproveLabel), findsOneWidget);
+      },
+    );
+
+    testWidgets('the key is a canonical v4 uuid, not merely v4-SHAPED', (
+      tester,
+    ) async {
+      // The file's own comment at the generator: the key BECOMES the
+      // session id and `parsePrepareRequest` runs `isCanonicalUuid`
+      // over it, so a v4-shaped string is an invalid session id and
+      // INVALID_INPUT on every call. A `??=` holding a hand-rolled
+      // string would pass the stability test above and fail every real
+      // call.
+      final gateway = _FakeSessionGateway({
+        'prepare': (_) => _prepareResponse(),
+        'review_context': (_) => _reviewResponse(),
+      });
+      await _pumpSheet(tester, gateway);
+      await tester.tap(find.text(kAiSessionStartLabel));
+      await tester.pumpAndSettle();
+
+      final key =
+          gateway.bodies.firstWhere(
+                (b) => b['command'] == 'prepare',
+              )['idempotency_key']
+              as String;
+      expect(
+        key,
+        matches(
+          RegExp(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-'
+            r'[0-9a-f]{12}$',
+          ),
+        ),
+      );
+    });
+
+    testWidgets(
+      'a DELIBERATELY NEW session gets a FRESH key — a second sheet does '
+      'NOT replay the first one',
+      (tester) async {
+        // ANTI-VACUITY for the KEY'S SCOPE. A key held anywhere longer
+        // than one `State` — a static, a top-level, a non-autoDispose
+        // provider — would pass the retry test above and then replay
+        // the previous session forever, reporting `created: false` on
+        // a session the user meant to be new.
+        //
+        // WHAT THIS DOES NOT PROVE, stated rather than implied: it
+        // does not exercise the release-on-success inside ONE State,
+        // because `choosing` is only the controller's INITIAL phase and
+        // nothing returns to it — a successful prepare moves to
+        // `reviewing` and the Start button is gone, so a second
+        // successful `_start()` from one State is unreachable through
+        // the UI today. The release is there for the day a "start
+        // over" path is added, and it is honestly unpinned until then;
+        // the mutation note in the report records that.
+        final gateway = _FakeSessionGateway({
+          'prepare': (_) => _prepareResponse(),
+          'review_context': (_) => _reviewResponse(),
+          'end': (_) => <String, dynamic>{'ended': true},
+        });
+        await _pumpSheet(tester, gateway);
+
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+        final firstKey = gateway.bodies.firstWhere(
+          (b) => b['command'] == 'prepare',
+        )['idempotency_key'];
+
+        // A fresh sheet is a fresh preparation, which is the path a
+        // user takes to a genuinely new session. The UniqueKey in
+        // `_pumpSheet` tears the previous controller down.
+        await _pumpSheet(tester, gateway);
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+
+        final keys = gateway.bodies
+            .where((b) => b['command'] == 'prepare')
+            .map((b) => b['idempotency_key'])
+            .toList();
+        expect(keys, hasLength(2));
+        expect(
+          keys[1],
+          isNot(firstKey),
+          reason: 'a new session must not replay the previous one',
+        );
+      },
+    );
+
+    testWidgets(
+      'prepare SUCCEEDS but review_context fails: the key is HELD, '
+      'because the session exists and the retry must replay it',
+      (tester) async {
+        // The asymmetry the `??=` has to get right, and the one a
+        // naive `try/catch` around `prepare` gets WRONG. `prepare`
+        // funnels through the controller's `_run`, which CATCHES the
+        // §10 error into `state.error` and returns normally — so
+        // nothing throws here on either path, and a try/catch would
+        // see success and release the key. But `prepare` and
+        // `review_context` are ONE controller call: the prepare half
+        // committed a `preparing` session, so releasing the key would
+        // put the very lockout Finding 2 describes one step later.
+        var prepareCalls = 0;
+        var reviewCalls = 0;
+        final gateway = _FakeSessionGateway({
+          'prepare': (_) {
+            prepareCalls++;
+            return _prepareResponse();
+          },
+          'review_context': (_) {
+            reviewCalls++;
+            if (reviewCalls == 1) throw _functionError('INTERNAL_ERROR', 500);
+            return _reviewResponse();
+          },
+        });
+        await _pumpSheet(tester, gateway);
+
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+        // Still on preparation: the review half failed, so there is
+        // nothing to approve.
+        expect(find.text(kAiSessionStartLabel), findsOneWidget);
+        expect(prepareCalls, 1);
+
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+
+        final keys = gateway.bodies
+            .where((b) => b['command'] == 'prepare')
+            .map((b) => b['idempotency_key'] as String)
+            .toList();
+        expect(keys, hasLength(2));
+        expect(
+          keys[1],
+          keys[0],
+          reason: 'the prepare half COMMITTED, so the second tap must '
+              'replay that session rather than ask for a new one — '
+              'the slot limit would refuse a new one anyway',
+        );
+        expect(find.text(kAiSessionApproveLabel), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'changing the VISIBILITY rotates the key, because the key is the '
+      'session identity and a replay would return the ORIGINAL shape',
+      (tester) async {
+        var prepareCalls = 0;
+        final gateway = _FakeSessionGateway({
+          'prepare': (_) {
+            prepareCalls++;
+            if (prepareCalls == 1) throw _functionError('INTERNAL_ERROR', 500);
+            return _prepareResponse();
+          },
+          'review_context': (_) => _reviewResponse(),
+        });
+        await _pumpSheet(tester, gateway);
+
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+        // Now change the intent before retrying.
+        await tester.tap(find.text(kAiSessionSharedLabel));
+        await tester.pump();
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+
+        final prepares = gateway.bodies
+            .where((b) => b['command'] == 'prepare')
+            .toList();
+        expect(prepares, hasLength(2));
+        expect(prepares[0]['visibility'], 'private');
+        expect(prepares[1]['visibility'], 'shared');
+        expect(
+          prepares[1]['idempotency_key'],
+          isNot(prepares[0]['idempotency_key']),
+          reason: 'detectPrepareKeyConflict compares visibility, so a '
+              'held key here would be REQUEST_CONFLICT — a dead end, '
+              'not a replay',
+        );
+      },
+    );
+
+    testWidgets(
+      'changing the KIND rotates the key — kind is part of the payload '
+      'the server compares, so a held key would be REQUEST_CONFLICT',
+      (tester) async {
+        // The third rotation. Found by mutation: dropping
+        // `_rotateIdempotencyKey()` from `onKind` alone survived the
+        // whole suite until this test existed, because every other
+        // rotation test changes visibility or the window.
+        var prepareCalls = 0;
+        final gateway = _FakeSessionGateway({
+          'prepare': (_) {
+            prepareCalls++;
+            if (prepareCalls == 1) throw _functionError('INTERNAL_ERROR', 500);
+            return _prepareResponse();
+          },
+          'review_context': (_) => _reviewResponse(kind: 'nearby'),
+        });
+        await _pumpSheet(tester, gateway);
+
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.descendant(
+            of: find.byType(ChoiceChip),
+            matching: find.text(kAiSessionNearbyLabel),
+          ),
+        );
+        await tester.pump();
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+
+        final prepares = gateway.bodies
+            .where((b) => b['command'] == 'prepare')
+            .toList();
+        expect(prepares, hasLength(2));
+        expect(prepares[0]['kind'], 'ideas');
+        expect(prepares[1]['kind'], 'nearby');
+        expect(
+          prepares[1]['idempotency_key'],
+          isNot(prepares[0]['idempotency_key']),
+          reason: 'detectPrepareKeyConflict compares kind, so a held '
+              'key here is REQUEST_CONFLICT — a dead end, not a replay',
+        );
+      },
+    );
+
+    testWidgets(
+      'changing the RECENT WINDOW rotates the key too — the server does '
+      'NOT compare include_window, so only rotation makes the toggle real',
+      (tester) async {
+        // Load-bearing, and the one rotation the server cannot cover
+        // for us: `detectPrepareKeyConflict` compares
+        // relationship_id, kind, visibility and the target source — NOT
+        // include_window. A held key across this toggle would be
+        // silently replayed with the ORIGINAL window setting and
+        // reported `created: false`, so the user's toggle would have no
+        // effect they could observe.
+        var prepareCalls = 0;
+        final gateway = _FakeSessionGateway({
+          'prepare': (_) {
+            prepareCalls++;
+            if (prepareCalls == 1) throw _functionError('INTERNAL_ERROR', 500);
+            return _prepareResponse();
+          },
+          'review_context': (_) => _reviewResponse(visibility: 'shared'),
+        });
+        await _pumpSheet(tester, gateway);
+
+        // Shared + Ideas + the window capability is the only shape that
+        // offers the toggle at all.
+        await tester.tap(find.text(kAiSessionSharedLabel));
+        await tester.pump();
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+
+        final keyBefore = gateway.bodies.lastWhere(
+          (b) => b['command'] == 'prepare',
+        )['idempotency_key'];
+
+        await tester.tap(find.byType(SwitchListTile));
+        await tester.pump();
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+
+        final prepares = gateway.bodies
+            .where((b) => b['command'] == 'prepare')
+            .toList();
+        expect(prepares, hasLength(2));
+        expect(prepares[0]['include_window'], isFalse);
+        expect(prepares[1]['include_window'], isTrue);
+        expect(prepares[1]['idempotency_key'], isNot(keyBefore));
+      },
+    );
+  });
+
+  group('FINDING 3: generate\'s request_id is stable, and so is the text', () {
+    /// prepare -> approve -> active, through the WIDGET, so the
+    /// instruction field is real.
+    Future<void> activateSheet(
+      WidgetTester tester,
+      _FakeSessionGateway gateway,
+    ) async {
+      await _pumpSheet(tester, gateway);
+      await tester.tap(find.text(kAiSessionStartLabel));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(kAiSessionApproveLabel));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'FIRST-CALL FAILURE: generate fails, the instruction SURVIVES in '
+      'the field, and the retry sends the SAME request_id',
+      (tester) async {
+        var generateCalls = 0;
+        final gateway = _FakeSessionGateway({
+          'prepare': (_) => _prepareResponse(),
+          'review_context': (_) => _reviewResponse(),
+          'approve': (_) => _approveResponse(activated: true),
+          'read': (_) => <String, dynamic>{
+            'turns': <Map<String, dynamic>>[
+              _turn(ordinal: 1, role: 'user'),
+              _turn(ordinal: 2, role: 'attune'),
+            ],
+            'staged': null,
+          },
+          'generate': (_) {
+            generateCalls++;
+            if (generateCalls == 1) {
+              throw _functionError('INTERNAL_ERROR', 500);
+            }
+            return _ideasAnswer();
+          },
+        });
+        await activateSheet(tester, gateway);
+
+        await tester.enterText(
+          find.byType(TextField),
+          'what should we do friday',
+        );
+        await tester.tap(find.byIcon(Icons.send_rounded));
+        await tester.pumpAndSettle();
+
+        // THE TEXT IS STILL THERE. Clearing before the await threw it
+        // away on every failure, and a retype is a different
+        // fingerprint, so even a byte-identical retype could not
+        // replay.
+        expect(
+          tester.widget<TextField>(find.byType(TextField)).controller!.text,
+          'what should we do friday',
+        );
+
+        await tester.tap(find.byIcon(Icons.send_rounded));
+        await tester.pumpAndSettle();
+
+        final ids = gateway.bodies
+            .where((b) => b['command'] == 'generate')
+            .map((b) => b['request_id'] as String)
+            .toList();
+        expect(ids, hasLength(2));
+        expect(
+          ids[1],
+          ids[0],
+          reason: 'a fresh id cannot reach §6.2\'s already_admitted '
+              'replay, so a lost response costs two provider leases '
+              'for one answer',
+        );
+        // And the retry sent the SAME instruction, which the
+        // fingerprint also covers.
+        final instructions = gateway.bodies
+            .where((b) => b['command'] == 'generate')
+            .map((b) => b['user_instruction'])
+            .toSet();
+        expect(instructions, <String>{'what should we do friday'});
+        // The committed answer cleared the field.
+        expect(
+          tester.widget<TextField>(find.byType(TextField)).controller!.text,
+          isEmpty,
+        );
+      },
+    );
+
+    testWidgets(
+      'a SECOND, different turn gets a FRESH request_id — the id is '
+      'released by a committed answer',
+      (tester) async {
+        // ANTI-VACUITY for the `??=`: an id held forever would make the
+        // second turn a REQUEST_CONFLICT (different instruction, same
+        // id), which is a dead end rather than a replay.
+        final gateway = _FakeSessionGateway({
+          'prepare': (_) => _prepareResponse(),
+          'review_context': (_) => _reviewResponse(),
+          'approve': (_) => _approveResponse(activated: true),
+          'read': (_) => <String, dynamic>{
+            'turns': <Map<String, dynamic>>[_turn(ordinal: 1, role: 'user')],
+            'staged': null,
+          },
+          'generate': (_) => _ideasAnswer(),
+        });
+        await activateSheet(tester, gateway);
+
+        await tester.enterText(find.byType(TextField), 'first question');
+        await tester.tap(find.byIcon(Icons.send_rounded));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'second question');
+        await tester.tap(find.byIcon(Icons.send_rounded));
+        await tester.pumpAndSettle();
+
+        final generates = gateway.bodies
+            .where((b) => b['command'] == 'generate')
+            .toList();
+        expect(generates, hasLength(2));
+        expect(generates[0]['user_instruction'], 'first question');
+        expect(generates[1]['user_instruction'], 'second question');
+        expect(
+          generates[1]['request_id'],
+          isNot(generates[0]['request_id']),
+        );
+      },
+    );
+
+    testWidgets(
+      'a REDIRECT releases the id and clears the field — the server '
+      'spent the attempt, so the next turn is a new request',
+      (tester) async {
+        // RULING 6 SAFE: this asserts only that the id ROTATED and the
+        // field cleared, which happens identically for both redirect
+        // shapes. It never asks which shape arrived, and the two paths
+        // through `_generate` are the same code with the same
+        // `state.error == null`.
+        final gateway = _FakeSessionGateway({
+          'prepare': (_) => _prepareResponse(),
+          'review_context': (_) => _reviewResponse(),
+          'approve': (_) => _approveResponse(activated: true),
+          'read': (_) =>
+              <String, dynamic>{'turns': <Map<String, dynamic>>[], 'staged': null},
+          'generate': (_) => _ordinaryRedirect(),
+        });
+        await activateSheet(tester, gateway);
+
+        await tester.enterText(find.byType(TextField), 'something off topic');
+        await tester.tap(find.byIcon(Icons.send_rounded));
+        await tester.pumpAndSettle();
+
+        expect(
+          tester.widget<TextField>(find.byType(TextField)).controller!.text,
+          isEmpty,
+        );
+
+        await tester.enterText(find.byType(TextField), 'back on topic');
+        await tester.tap(find.byIcon(Icons.send_rounded));
+        await tester.pumpAndSettle();
+
+        final generates = gateway.bodies
+            .where((b) => b['command'] == 'generate')
+            .toList();
+        expect(generates, hasLength(2));
+        expect(
+          generates[1]['request_id'],
+          isNot(generates[0]['request_id']),
+        );
+      },
+    );
+  });
 }
 
 // ---------------------------------------------------------------------
