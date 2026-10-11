@@ -433,6 +433,23 @@ Future<void> _chooseAssistKindThenOpen(
       // is the only entry point that HAS one -- the composer button
       // names no message.
       targetMessageId: message.id,
+      // A DELIBERATE no-op, and the asymmetry with the composer entry
+      // point (which scrolls the chat to the new message) is recorded
+      // rather than accidental.
+      //
+      // `share_answer` has already inserted the real
+      // `public.messages` row by the time this fires, so the message
+      // IS sent — this callback only decides whether the chat scrolls
+      // to it. This subtree cannot do that: `AskAttuneModeSheet` is
+      // pushed on the ROOT navigator from `message_bubble.dart`, so it
+      // holds no handle on the chat screen's scroll controller, and the
+      // chat's own realtime subscription will surface the new message
+      // on its next tick regardless. Threading a scroll callback down
+      // through message_bubble.dart -> message_actions_sheet.dart ->
+      // chat_screen.dart is the same three-shared-file change
+      // `_chooseAssistKindThenOpen`'s own note already defers for
+      // "Edit as my message", and it belongs with that one rather than
+      // being half-done here.
       onShared: (_) {},
     );
     return;
