@@ -39,7 +39,16 @@ export interface PgRow {
 
 interface Filter {
   col: string;
-  op: "eq" | "lt" | "gt" | "gte" | "lte" | "not_is_null" | "is_null" | "not_eq";
+  op:
+    | "eq"
+    | "lt"
+    | "gt"
+    | "gte"
+    | "lte"
+    | "not_is_null"
+    | "is_null"
+    | "not_eq"
+    | "in";
   value: unknown;
 }
 
@@ -96,6 +105,19 @@ class QueryBuilder {
     }
     throw new Error(`pg_rls_client test double: .is() only supports null`);
   }
+  // Mirrors supabase-js's .in(col, values). Added for ai-sessions'
+  // frozen-source revalidation, which reads every frozen source's live
+  // row in ONE query -- the production path uses PostgREST's own .in(),
+  // so the double has to model it rather than the caller working around
+  // its absence with N round trips.
+  //
+  // Rendered as `= ANY($n)` with the array bound as a single parameter,
+  // the same shape the uuid[] binding below already relies on, so a
+  // uuid column compares against a uuid[] without per-element casts.
+  in(col: string, values: readonly unknown[]): this {
+    this.filters.push({ col, op: "in", value: [...values] });
+    return this;
+  }
   order(col: string, opts?: { ascending?: boolean }): this {
     this.orders.push({ col, ascending: opts?.ascending ?? true });
     return this;
@@ -116,10 +138,21 @@ class QueryBuilder {
       not_eq: "!=",
       is_null: "IS NULL",
       not_is_null: "IS NOT NULL",
+      in: "= ANY",
     };
     const whereParts = this.filters.map((f) => {
       if (f.op === "is_null" || f.op === "not_is_null") {
         return `${quoteIdent(f.col)} ${opSql[f.op]}`;
+      }
+      if (f.op === "in") {
+        params.push(f.value);
+        // The explicit uuid[] cast matters: the driver sends a JS string
+        // array as text[], and `uuid = ANY(text[])` is an operator
+        // Postgres does not have. Every .in() call site in this repo
+        // filters on a uuid column (ai-sessions' frozen sources), so
+        // casting here is correct and a non-uuid call site would fail
+        // loudly rather than silently comparing as text.
+        return `${quoteIdent(f.col)} = ANY($${params.length}::uuid[])`;
       }
       params.push(f.value);
       return `${quoteIdent(f.col)} ${opSql[f.op]} $${params.length}`;

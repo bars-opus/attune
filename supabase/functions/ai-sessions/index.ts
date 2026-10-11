@@ -43,7 +43,20 @@ import {
   WINDOW_ROW_CAP,
   type WindowMessage,
 } from "../_shared/ai_session_context.ts";
-import { STATIC_PROHIBITED_PATTERNS } from "../_shared/gemini_json.ts";
+import {
+  callGeminiJson,
+  STATIC_PROHIBITED_PATTERNS,
+} from "../_shared/gemini_json.ts";
+import {
+  type NearbyCategory,
+  type PlaceSource,
+  searchMapboxCategory,
+  validateNearbyCategoryOutput,
+} from "../_shared/mapbox_search.ts";
+import {
+  classifySessionContent,
+  type SessionSafetyVerdict,
+} from "../_shared/ai_session_safety.ts";
 
 // ---------------------------------------------------------------------------
 // Error envelope -- spec §10. "Typed envelope: code, caller-safe
@@ -457,6 +470,14 @@ export async function checkEligibility(
 
 export interface SessionDeps {
   serviceClient?: SupabaseClient;
+  /// The two provider calls, injectable for tests. THE DEFAULTS ARE THE
+  /// REAL HELPERS, so production never depends on a caller remembering
+  /// to supply them. Their TYPES are what carry the cross-provider
+  /// isolation: callGemini takes a prompt and no location, searchMapbox
+  /// takes a six-literal category and two numbers and no string. Task
+  /// 7's spies substitute here.
+  callGemini?: typeof callGeminiJson;
+  searchMapbox?: typeof searchMapboxCategory;
   /// Injected `now` for the one request. Spec §4.2: the civil day is
   /// "computed ONCE from server time plus the displayed, validated
   /// offset", and the whole digest must describe one instant. A test
@@ -505,6 +526,10 @@ export interface BranchContext {
   readonly service: () => SupabaseClient;
   /// The single server instant for this request (see SessionDeps.now).
   readonly now: Date;
+  /// The provider calls, already defaulted -- a branch never has to
+  /// decide whether to fall back, so a branch cannot forget to.
+  readonly callGemini: typeof callGeminiJson;
+  readonly searchMapbox: typeof searchMapboxCategory;
 }
 
 // ---------------------------------------------------------------------------
@@ -1368,6 +1393,1339 @@ export function validateSessionTurnOutput(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Branch: 'generate' -- spec §4.1, §4.3, §5.2, §5.3, §6.2, §8.1, §8.2.5.
+// The ONLY branch in this function that calls a provider.
+// ===========================================================================
+// THE CROSS-PROVIDER ISOLATION IS STRUCTURAL, NOT DISCIPLINARY.
+//
+// Plan B's own review flagged spec §2's "Mapbox response text never
+// re-enters Gemini" as the highest-risk data-flow claim in the whole
+// spec. A comment saying "do not do that" is not a defence against a
+// refactor. Four properties below make the path NOT EXIST, so that
+// creating it requires a visible, reviewable change rather than an
+// accidental one. Each is listed with what breaks if someone tries.
+//
+//  (1) THE PROMPT BUILDER TAKES A NOMINAL TYPE NOTHING MAPBOX-DERIVED
+//      CAN INHABIT. buildSessionUserPrompt accepts only
+//      PromptApprovedText values -- a branded string whose brand symbol
+//      is module-private, so the ONLY way to obtain one is the two
+//      minting functions below, each of which names its provenance
+//      (approvedSourceText, priorSessionTurnText). PlaceSource.name and
+//      PlaceSource.formatted_address are plain `string`, so
+//      `promptApprovedText(place.name)` does not type-check and
+//      `{{CONTEXT_WINDOW_JSON}}` cannot be fed a place. A refactor that
+//      wanted to would have to add a third minting function or cast,
+//      both of which a reviewer sees.
+//
+//  (2) THE PROMPT BUILDER HAS NO DATABASE CLIENT AND IS PURE.
+//      Mapbox results live in public.ai_session_staging (written by
+//      stage_ai_session_nearby_result) and in 'nearby_result' turn
+//      payloads. buildSessionUserPrompt takes no SupabaseClient and
+//      performs no IO, so it cannot read either table. It cannot
+//      reach a Mapbox value even if one is persisted.
+//
+//  (3) THE HISTORY LOADER FILTERS BY TURN KIND AT THE SOURCE, AND
+//      PROJECTS ONLY TWO FIELDS. loadPriorIdeasTurns keeps only
+//      kind='ideas_answer' rows and reads only payload.instruction and
+//      payload.reply_text. A 'nearby_result' turn is dropped before any
+//      field is read, which is also §2's own rule: "No Nearby
+//      transcript, place result, source payload or derived summary
+//      becomes later model history, EVEN WITHIN THE SAME NEARBY
+//      SESSION." The filter is in the SQL predicate, not a post-filter
+//      a mapping could forget.
+//
+//  (4) NEARBY'S TWO PROVIDER CALLS NEVER SHARE A VALUE IN EITHER
+//      DIRECTION, because their parameter and return types are
+//      disjoint. selectNearbyCategory takes PromptApprovedText and
+//      returns a NearbyCategory (one of six literals);
+//      searchMapboxCategory (now in _shared/mapbox_search.ts) takes a
+//      NearbyCategory plus two numbers and returns PlaceSource[]. The
+//      only value crossing between them is the allowlisted category
+//      token, which §2 permits by name, and the coordinates never enter
+//      the Gemini side because the struct the prompt is built from has
+//      no location field at all.
+//
+// Task 7's spy tests prove this on the live call graph. The properties
+// above are why those tests should pass rather than how they are made
+// to.
+// ===========================================================================
+
+/// The brand. Module-private, so no other file and no other function in
+/// this file can forge a PromptApprovedText -- `as PromptApprovedText`
+/// is the only escape and it is grep-able.
+declare const promptApprovedBrand: unique symbol;
+
+/// A string whose PROVENANCE is attested: it came from an approved
+/// context source or from a prior committed Ideas turn of this same
+/// session, and is therefore eligible to be placed inside a provider
+/// prompt. See property (1) above.
+export type PromptApprovedText = string & {
+  readonly [promptApprovedBrand]: true;
+};
+
+/// Mints a PromptApprovedText from an APPROVED CONTEXT SOURCE -- a row
+/// of ai_session_sources that both partners' digests were computed
+/// over. The caller must have read it from that table; the name is the
+/// attestation, and it is the reason this is a function rather than a
+/// cast at the use site.
+function approvedSourceText(text: string): PromptApprovedText {
+  return text as PromptApprovedText;
+}
+
+/// FOR TESTS ONLY, and named so a call site is self-indicting.
+///
+/// Why it exists at all: the brand's whole point is that there is no
+/// way to make a PromptApprovedText except from an attested
+/// provenance, which is also true for a test that wants to measure
+/// buildSessionUserPrompt's output size over synthetic content. The
+/// alternatives were worse -- an inline `as PromptApprovedText` in the
+/// test file, which is the exact cast review is supposed to catch, or
+/// weakening the brand, which would delete the property.
+///
+/// Exporting it does NOT weaken the isolation. The negative compile
+/// probe in isolation_probes/ asserts that place names, addresses and
+/// serialized PlaceSource payloads cannot be passed to
+/// buildSessionUserPrompt WITHOUT a mint, and the three minting
+/// functions are the only ones that exist. A refactor threading Mapbox
+/// text through THIS function is naming it `unsafeTestOnly...` in
+/// production code, which is as loud as a cast and greppable.
+export function unsafeTestOnlyPromptText(text: string): PromptApprovedText {
+  return text as PromptApprovedText;
+}
+
+/// Mints a PromptApprovedText from a PRIOR COMMITTED IDEAS TURN of this
+/// same session (§4.2 item 4). Separate from approvedSourceText so the
+/// two provenances are distinguishable at every call site, and so a
+/// future reviewer can see exactly which of the two a given prompt
+/// field drew from.
+function priorSessionTurnText(text: string): PromptApprovedText {
+  return text as PromptApprovedText;
+}
+
+/// Everything that may be placed in a provider prompt, and nothing
+/// else. §4.2's four inputs, with no location field: spec §2's
+/// "automatically collected coordinates never reach Gemini" is enforced
+/// by this type having nowhere to put them, so the Nearby path cannot
+/// leak a point into a prompt even by passing the whole request struct.
+export interface SessionPromptInputs {
+  /// §4.2 item 1: "Current instruction: at most 300 scalar values,
+  /// never dropped." NOT branded: it is the requester's own live text,
+  /// a third provenance, and §4.1 bounds it separately.
+  readonly userInstruction: string;
+  /// §4.2 item 4: prior committed Ideas pairs of THIS session only.
+  readonly history: readonly {
+    readonly role: "user" | "attune";
+    readonly content: PromptApprovedText;
+  }[];
+  /// §4.2 items 2-3: the frozen target and window snippets, in the
+  /// order review_context displayed them.
+  readonly contextWindow: readonly PromptApprovedText[];
+}
+
+/// PURE. No SupabaseClient, no IO, no Date, no randomness -- see
+/// property (2). Exported so Task 7 can call it directly and assert
+/// over its output without standing up a session.
+export function buildSessionUserPrompt(
+  template: string,
+  assistKind: "ideas" | "nearby",
+  inputs: SessionPromptInputs,
+): string {
+  return template
+    .replaceAll("{{ASSIST_KIND}}", assistKind.toUpperCase())
+    .replaceAll(
+      "{{SESSION_HISTORY_JSON}}",
+      JSON.stringify(
+        inputs.history.map((turn) => ({
+          role: turn.role,
+          content: String(turn.content),
+        })),
+      ),
+    )
+    .replaceAll(
+      "{{CONTEXT_WINDOW_JSON}}",
+      JSON.stringify(inputs.contextWindow.map((snippet) => String(snippet))),
+    )
+    .replaceAll("{{USER_INSTRUCTION}}", inputs.userInstruction);
+}
+
+/// Every string this request's prompt actually contained, for
+/// validateSessionTurnOutput's §8.2.5 quotation check.
+///
+/// DERIVED FROM THE SAME VALUE the prompt was built from, deliberately:
+/// a list assembled by a second query could drift from what was sent
+/// and make the check vacuous -- it would pass because it was scanning
+/// the wrong strings, which is the exact failure mode this plan's
+/// history keeps finding. The instruction is included because §8.2.5's
+/// own fixture is authored BY the requester ("Both are untrusted data
+/// even when authored by the requester").
+export function collectQuotedSources(
+  inputs: SessionPromptInputs,
+): string[] {
+  return [
+    inputs.userInstruction,
+    ...inputs.history.map((turn) => String(turn.content)),
+    ...inputs.contextWindow.map((snippet) => String(snippet)),
+  ];
+}
+
+/// The prompt version identifier. §12: "Pin protocol versions"; §8.1's
+/// audit story needs to say WHICH prompt produced a turn.
+///
+/// PINNED IN THREE PLACES THAT MUST AGREE, and a test asserts all
+/// three: this constant, the `prompts/v1/` directory the files are read
+/// from (via import.meta.url, so the bundler ships them beside the
+/// function), and the `promptId` passed to callGeminiJson, which is
+/// what reaches the provider-call log line. Bumping the prompt text
+/// without bumping this constant is therefore a test failure, not a
+/// silent change -- the test hashes both prompt files and asserts the
+/// digest, so ANY edit to either file fails until the version moves.
+export const SESSION_PROMPT_VERSION = "ai_sessions_v1";
+
+let cachedSystemPrompt: string | null = null;
+let cachedUserTemplate: string | null = null;
+
+/// Loaded relative to import.meta.url so the versioned templates are
+/// packaged with the function, matching ai-assist's loadPrompts.
+export async function loadSessionPrompts(): Promise<
+  { system: string; userTemplate: string }
+> {
+  if (cachedSystemPrompt === null) {
+    cachedSystemPrompt = await Deno.readTextFile(
+      new URL("./prompts/v1/system.txt", import.meta.url),
+    );
+  }
+  if (cachedUserTemplate === null) {
+    cachedUserTemplate = await Deno.readTextFile(
+      new URL("./prompts/v1/user.txt", import.meta.url),
+    );
+  }
+  return { system: cachedSystemPrompt, userTemplate: cachedUserTemplate };
+}
+
+// ---------------------------------------------------------------------------
+// 'generate' request parsing -- spec §4.1's generation schema, verbatim.
+// ---------------------------------------------------------------------------
+
+interface RequesterLocation {
+  latitude: number;
+  longitude: number;
+  accuracyM: number;
+  capturedAt: string;
+}
+
+interface GenerateRequest {
+  sessionId: string;
+  requestId: string;
+  expectedRevision: number;
+  userInstruction: string;
+  /// Nearby only. KEPT OUT of SessionPromptInputs by construction --
+  /// see property (1).
+  requesterLocation: RequesterLocation | null;
+}
+
+export type GenerateParseResult =
+  | { ok: true; request: GenerateRequest }
+  | { ok: false; error: SessionError };
+
+/// §4.1's "strict unknown-field rejection" over the generation schema.
+/// Exported for direct testing, so every bound is provable without a
+/// database.
+///
+/// WHAT IS DELIBERATELY ABSENT, because §4.1 forbids supplying it:
+/// visibility, kind, consent version, prior turns, context text,
+/// relationship ID, output content and author identity. Each would be
+/// rejected by the allowlist below, and the actor-naming ones were
+/// already rejected by validateCommandEnvelope before this ran.
+export function parseGenerateRequest(
+  body: Record<string, unknown>,
+): GenerateParseResult {
+  const allowed = new Set([
+    "command",
+    "session_id",
+    "request_id",
+    "expected_revision",
+    "user_instruction",
+    "requester_location",
+  ]);
+  for (const key of Object.keys(body)) {
+    if (!allowed.has(key)) {
+      return { ok: false, error: sessionError("INVALID_INPUT") };
+    }
+  }
+
+  const sessionId = body.session_id;
+  const requestId = body.request_id;
+  const expectedRevision = body.expected_revision;
+  const userInstruction = body.user_instruction;
+
+  if (!isCanonicalUuid(sessionId) || !isCanonicalUuid(requestId)) {
+    return { ok: false, error: sessionError("INVALID_INPUT") };
+  }
+  // §4.1: "expected_revision: number; // positive integer".
+  if (
+    typeof expectedRevision !== "number" ||
+    !Number.isInteger(expectedRevision) || expectedRevision < 1
+  ) {
+    return { ok: false, error: sessionError("INVALID_INPUT") };
+  }
+  if (typeof userInstruction !== "string") {
+    return { ok: false, error: sessionError("INVALID_INPUT") };
+  }
+  // §4.1: "Reject unpaired surrogates, NUL and invalid JSON". Checked
+  // BEFORE trimming, because trim() does not remove either.
+  if (hasForbiddenCodeUnits(userInstruction)) {
+    return { ok: false, error: sessionError("INVALID_INPUT") };
+  }
+  const trimmedInstruction = userInstruction.trim();
+  // §4.1: "1..300 Unicode scalar values AFTER TRIM" -- scalars, not
+  // UTF-16 units, so 200 astral emoji is a legal instruction.
+  const instructionLength = scalarLength(trimmedInstruction);
+  if (instructionLength < 1 || instructionLength > 300) {
+    return { ok: false, error: sessionError("INVALID_INPUT") };
+  }
+
+  let requesterLocation: RequesterLocation | null = null;
+  const rawLocation = body.requester_location;
+  if (rawLocation !== null && rawLocation !== undefined) {
+    if (typeof rawLocation !== "object" || Array.isArray(rawLocation)) {
+      return { ok: false, error: sessionError("INVALID_INPUT") };
+    }
+    const locationRecord = rawLocation as Record<string, unknown>;
+    // confirmation_nonce is in §4.1's schema but has NO SUBSTRATE in
+    // Plan B: there is no issuing RPC, no column and no table for a
+    // "server-issued, requester/session-bound, single-use, two-minute"
+    // nonce (verified by catalog query). It is accepted in the
+    // allowlist below and NOT trusted, and the gap is reported rather
+    // than faked -- a nonce this function invents and immediately
+    // accepts would gate nothing while reading as implemented.
+    const allowedLocationKeys = new Set([
+      "latitude",
+      "longitude",
+      "accuracy_m",
+      "captured_at",
+      "confirmation_nonce",
+    ]);
+    for (const key of Object.keys(locationRecord)) {
+      if (!allowedLocationKeys.has(key)) {
+        return { ok: false, error: sessionError("INVALID_INPUT") };
+      }
+    }
+    const latitude = locationRecord.latitude;
+    const longitude = locationRecord.longitude;
+    const accuracyM = locationRecord.accuracy_m;
+    const capturedAt = locationRecord.captured_at;
+    // §4.1: "latitude [-90,90], longitude [-180,180], accuracy
+    // (0,5000] metres; all finite." LOCATION_REQUIRED rather than
+    // INVALID_INPUT: §10 gives it "fresh explicit confirmation, no
+    // fallback", which is the remedy for a bad point.
+    if (
+      typeof latitude !== "number" || !Number.isFinite(latitude) ||
+      latitude < -90 || latitude > 90 ||
+      typeof longitude !== "number" || !Number.isFinite(longitude) ||
+      longitude < -180 || longitude > 180 ||
+      typeof accuracyM !== "number" || !Number.isFinite(accuracyM) ||
+      accuracyM <= 0 || accuracyM > 5000 ||
+      typeof capturedAt !== "string"
+    ) {
+      return { ok: false, error: sessionError("LOCATION_REQUIRED") };
+    }
+    const capturedMs = Date.parse(capturedAt);
+    if (!Number.isFinite(capturedMs)) {
+      return { ok: false, error: sessionError("LOCATION_REQUIRED") };
+    }
+    requesterLocation = {
+      latitude,
+      longitude,
+      accuracyM,
+      capturedAt,
+    };
+  }
+
+  return {
+    ok: true,
+    request: {
+      sessionId,
+      requestId,
+      expectedRevision,
+      userInstruction: trimmedInstruction,
+      requesterLocation,
+    },
+  };
+}
+
+/// §6.2's operation fingerprint. §4.1: "Request IDs for retries bind
+/// actor, operation, session and payload revision; different payload
+/// reuse yields REQUEST_CONFLICT", and admit_ai_session_generation
+/// compares this string verbatim on a replay.
+///
+/// A HASH, NOT A LENGTH. The task brief sketched `ideas:${length}`,
+/// which does not distinguish two DIFFERENT instructions of the same
+/// length -- so a client replaying one request_id with a same-length
+/// but different instruction would be told `already_admitted` and
+/// silently get the ORIGINAL request's result, which is the precise
+/// failure §4.1 names. A test asserts the specific REQUEST_CONFLICT.
+///
+/// COORDINATES ARE DELIBERATELY NOT IN THE FINGERPRINT. §4.1: "A
+/// request-ID retry cannot replace coordinates or cause a new call",
+/// and "Coordinates remain Edge memory only, never SQL, telemetry,
+/// PERSISTED REQUEST FINGERPRINTS or content." Hashing them would
+/// persist a (salt-free, low-entropy, brute-forceable) commitment to a
+/// user's position in ai_session_requests.operation_fingerprint, which
+/// §4.1 forbids by name. A retry therefore cannot change the
+/// instruction, and its coordinates are ignored because the result is
+/// replayed rather than regenerated.
+export async function computeOperationFingerprint(
+  kind: string,
+  sessionId: string,
+  expectedRevision: number,
+  userInstruction: string,
+): Promise<string> {
+  // Length-prefixed, like buildDigestPreimage: without it,
+  // ("ab","c") and ("a","bc") share a pre-image, so two different
+  // payloads could produce one fingerprint and a conflict would read
+  // as a replay.
+  const preimage = [
+    "ai-session-op-v1",
+    `kind=${scalarLength(kind)}:${kind}`,
+    `session=${scalarLength(sessionId)}:${sessionId}`,
+    `revision=${expectedRevision}`,
+    `instruction=${scalarLength(userInstruction)}:${userInstruction}`,
+  ].join("\n");
+  const hashed = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(preimage),
+  );
+  return Array.from(new Uint8Array(hashed))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+// ---------------------------------------------------------------------------
+// Context assembly for the prompt -- spec §4.2, §4.3. RULING 13's half.
+// ---------------------------------------------------------------------------
+
+/// A source row as frozen at prepare time. ITEM B / RULING 13: these
+/// come from ai_session_sources, the rows the approved digest was
+/// computed over -- never from a fresh window selection.
+interface FrozenSource {
+  messageId: string;
+  sourceVersion: string;
+  approvedText: string;
+  role: "target" | "window";
+}
+
+/// Reads the FROZEN approved sources for a session.
+///
+/// RULING 13, and the reason this is a separate function rather than a
+/// call to selectSharedWindow: §4.2 requires "Persist source IDs,
+/// versions and snapshot time, NOT NEW SELECTIONS ON SUBSEQUENT TURNS",
+/// and §4.3 requires revalidation "against the FROZEN snapshot". A
+/// re-selection at dispatch time would silently substitute whatever the
+/// civil day now contains for what the two partners actually approved --
+/// which §4.3 says explicitly not to do ("do not use stale copies or
+/// SUBSTITUTE NEW MESSAGES").
+///
+/// ORDER IS DETERMINISTIC AND MATCHES THE APPROVED ORDER: the target
+/// first (review_context put it first, so it is snippet[0] of the
+/// approved digest), then the window rows ordered
+/// (source_version ASC, source_message_id ASC) -- the same chronological,
+/// id-tiebroken order §4.2 fixes and selectWindowFromRows produced.
+/// ai_session_sources has no explicit sequence column, so the order
+/// must be derived from the stored columns; deriving it the same way
+/// §4.2 does is what keeps the prompt's snippet order equal to the
+/// approved one.
+async function loadFrozenSources(
+  service: SupabaseClient,
+  sessionId: string,
+): Promise<FrozenSource[] | null> {
+  const result = await service
+    .from("ai_session_sources")
+    .select("source_message_id, source_version, approved_clipped_text, source_role")
+    .eq("session_id", sessionId);
+  if (result.error) return null;
+  const rows = (result.data ?? []) as Record<string, unknown>[];
+
+  const mapped: FrozenSource[] = [];
+  for (const row of rows) {
+    // Canonicalized for the SAME reason review_context does it: the
+    // stored timestamptz reaches this code in whichever spelling the
+    // transport chose (µs from PostgREST, ms from the test double), and
+    // a revalidation comparing raw strings would bind the transport.
+    const version = canonicalTimestamp(row.source_version);
+    if (version === null) return null;
+    const role = row.source_role;
+    if (role !== "target" && role !== "window") return null;
+    mapped.push({
+      messageId: row.source_message_id as string,
+      sourceVersion: version,
+      approvedText: String(row.approved_clipped_text),
+      role,
+    });
+  }
+
+  const target = mapped.filter((source) => source.role === "target");
+  const window = mapped
+    .filter((source) => source.role === "window")
+    .sort((a, b) =>
+      a.sourceVersion === b.sourceVersion
+        ? (a.messageId < b.messageId ? -1 : a.messageId > b.messageId ? 1 : 0)
+        : (a.sourceVersion < b.sourceVersion ? -1 : 1)
+    );
+  return [...target, ...window];
+}
+
+/// §4.3: "At activation and EVERY DISPATCH, commit and share,
+/// revalidate membership, consent and SOURCE EXISTENCE/VERSION against
+/// the frozen snapshot. Edits, tombstones or removal make the session
+/// unavailable and terminate it."
+///
+/// READS THE STORED ROWS, NOT A RE-SELECTION (Ruling 13). The inputs
+/// are exactly the two columns §4.3 names -- `source_message_id` and
+/// `source_version` -- taken from ai_session_sources, and they are
+/// compared against public.messages' live
+/// (deleted_at, COALESCE(edited_at, created_at)). No window query runs
+/// here, so nothing the day has gained or lost since prepare time can
+/// change the answer.
+///
+/// Returns true when every frozen source still exists undeleted at the
+/// frozen version.
+async function frozenSourcesStillValid(
+  service: SupabaseClient,
+  relationshipId: string,
+  sources: readonly FrozenSource[],
+): Promise<boolean | null> {
+  if (sources.length === 0) return true;
+  const result = await service
+    .from("messages")
+    .select("id, deleted_at, created_at, edited_at, relationship_id")
+    .in("id", sources.map((source) => source.messageId));
+  if (result.error) return null;
+  const live = new Map<string, Record<string, unknown>>();
+  for (const row of (result.data ?? []) as Record<string, unknown>[]) {
+    live.set(row.id as string, row);
+  }
+  for (const source of sources) {
+    const row = live.get(source.messageId);
+    // Existence: a removed or tombstoned source invalidates.
+    if (!row) return false;
+    if (row.deleted_at != null) return false;
+    // Same relationship: belt-and-braces against a source row that
+    // somehow names a foreign message.
+    if (row.relationship_id !== relationshipId) return false;
+    // Version: the SAME expression 20260953200200 writes
+    // (COALESCE(edited_at, created_at)), so an edit moves it and this
+    // comparison sees the edit -- which is the whole point of Ruling
+    // 9's fix.
+    const liveVersion = canonicalTimestamp(row.edited_at ?? row.created_at);
+    if (liveVersion === null) return null;
+    if (liveVersion !== source.sourceVersion) return false;
+  }
+  return true;
+}
+
+/// §4.2 item 4: "Prior committed Ideas exchanges from THIS SESSION
+/// ONLY: at most 6,000 scalars of model-visible content, kept as
+/// complete user/answer pairs."
+///
+/// ISOLATION PROPERTY (3): the kind filter is in the SQL predicate, so
+/// a 'nearby_result' turn is excluded before any field of it is read.
+/// §2: "No Nearby transcript, place result, source payload or derived
+/// summary becomes later model history, even within the same Nearby
+/// session." Only two payload fields are projected, both of which
+/// exist solely on 'ideas_answer' turns.
+///
+/// Read through read_ai_session_turns, NOT a direct table select, so
+/// the RPC's own four gates (state/expiry, membership, consent,
+/// creator-or-accepted-participant) apply -- and p_actor_id comes from
+/// the verified user.
+async function loadPriorIdeasTurns(
+  service: SupabaseClient,
+  actorId: string,
+  sessionId: string,
+): Promise<SessionPromptInputs["history"] | null> {
+  const result = await service.rpc("read_ai_session_turns", {
+    // THE ACTOR COMES FROM THE VERIFIED USER, never the body.
+    p_actor_id: actorId,
+    p_session_id: sessionId,
+  });
+  if (result.error) return null;
+  const rows = (result.data ?? []) as Record<string, unknown>[];
+
+  const pairs: { role: "user" | "attune"; content: PromptApprovedText }[] = [];
+  for (const row of rows) {
+    // THE KIND FILTER. 'nearby_result' and 'redirect' turns are dropped
+    // here: a redirect is not an Ideas exchange (§4.2 item 4 says
+    // "complete user/answer pairs"), and a nearby_result is §2's
+    // forbidden re-entry.
+    if (row.kind !== "ideas_answer") continue;
+    const payload = (row.payload ?? {}) as Record<string, unknown>;
+    const role = row.role;
+    if (role === "user") {
+      const instruction = payload.instruction;
+      if (typeof instruction !== "string") continue;
+      pairs.push({ role: "user", content: priorSessionTurnText(instruction) });
+    } else if (role === "attune") {
+      const replyText = payload.reply_text;
+      if (typeof replyText !== "string") continue;
+      // §4.2: "History includes only text actually displayed AND SAFE
+      // STRUCTURED PROPOSAL TEXT; count all such fields, not just
+      // reply_text." The proposal's title was displayed, so it is
+      // history and it is counted.
+      const proposal = payload.suggested_planning_item as
+        | Record<string, unknown>
+        | null
+        | undefined;
+      const title = typeof proposal?.title === "string"
+        ? proposal.title
+        : null;
+      pairs.push({
+        role: "attune",
+        content: priorSessionTurnText(
+          title === null ? replyText : `${replyText}\n${title}`,
+        ),
+      });
+    }
+  }
+
+  // §4.2: "Drop oldest complete exchanges until within 6,000; no orphan
+  // assistant rows ... Newest committed eligible pair is retained."
+  // read_ai_session_turns orders by ordinal, and Plan B's ordinal parity
+  // is 2n-1 user / 2n attune from one attempt counter, so consecutive
+  // (user, attune) entries are one exchange.
+  const exchanges: typeof pairs[] = [];
+  for (let i = 0; i < pairs.length; i++) {
+    if (
+      pairs[i].role === "user" && pairs[i + 1]?.role === "attune"
+    ) {
+      exchanges.push([pairs[i], pairs[i + 1]]);
+      i++;
+    }
+    // A lone user or attune entry is an ORPHAN and is dropped
+    // entirely: §4.2 forbids "orphan assistant rows", and a lone user
+    // turn with no answer is a failed attempt, which §4.2 also excludes
+    // ("no ... failed/staged turns").
+  }
+
+  // Drop OLDEST first, keeping the newest, until within the budget.
+  const kept: typeof pairs[] = [];
+  let total = 0;
+  for (let i = exchanges.length - 1; i >= 0; i--) {
+    const cost = exchanges[i].reduce(
+      (sum, entry) => sum + scalarLength(String(entry.content)),
+      0,
+    );
+    // The NEWEST pair is retained even if it alone exceeds the budget
+    // (§4.2: "do not silently alter approved sources or remove the
+    // newest pair"); older pairs are dropped once the budget is spent.
+    if (kept.length > 0 && total + cost > HISTORY_SCALAR_BUDGET) break;
+    kept.unshift(exchanges[i]);
+    total += cost;
+  }
+  // §5.2: "At most nine previous pairs are available before attempt
+  // ten", which the 10-attempt cap already bounds; this is the explicit
+  // form so a cap change cannot silently widen the prompt.
+  const bounded = kept.slice(-MAX_HISTORY_PAIRS);
+  return bounded.flat();
+}
+
+/// §4.2: "at most 6,000 scalars of model-visible content".
+const HISTORY_SCALAR_BUDGET = 6000;
+/// §5.2: "At most nine previous pairs are available before attempt ten."
+const MAX_HISTORY_PAIRS = 9;
+/// §4.2: "cap fully serialized provider input, including
+/// instructions/roles, at 64 KiB UTF-8".
+const PROVIDER_INPUT_BYTE_CAP = 64 * 1024;
+
+// ---------------------------------------------------------------------------
+// The safety gate -- spec §8.1, and the plan's non-disclosure constraint.
+// ---------------------------------------------------------------------------
+
+/// The ONE shape a safety refusal takes, on BOTH the pre-dispatch and
+/// pre-publish paths.
+///
+/// HOW THIS AVOIDS DISCLOSING THE DETECTOR, to either party:
+///
+///  - It is built from classifySessionContent -- Task 3's CALLER-FACING
+///    export, whose verdict is four fields with no rule id, family,
+///    tier, count or config version, and whose `unsafe_to_assist` copy
+///    is byte-identical for a tier-1 self-harm match, a tier-2
+///    coercion match and any chat family. detectSessionSafetyConcern,
+///    the operator-side export that DOES carry matchedRuleIds, is not
+///    called on any path whose value reaches a response body.
+///  - It is the SAME response whichever check fired and whichever
+///    content tripped it: the instruction, a frozen source, a prior
+///    turn or the model's own output. A probing requester cannot tell
+///    which of the four it was, nor which pass caught it, because the
+///    body is a function of the verdict alone.
+///  - IT IS A SILENT NON-POST FOR THE PARTNER. No turn is committed, no
+///    staging row is written, and `ai_sessions.revision` is NOT bumped
+///    on this path, so a partner polling session_revision (Ruling 1's
+///    sanctioned mechanism) sees exactly what it sees when the
+///    requester simply typed nothing: the same integer. §5.3: "Safety
+///    refusals remain requester-only, not shared transcript events."
+///  - The HTTP status is 200, not an error code. A distinct status
+///    would make a safety refusal distinguishable from an ordinary
+///    model redirect in any proxy log or client-side metric, and
+///    §8.1's "A refusal/error must not signal a private detector
+///    result" covers the error as much as the refusal.
+function safetyRefusalResponse(verdict: SessionSafetyVerdict): Response {
+  return jsonResponse({
+    kind: "redirect",
+    // §5.3: "server-rendered fixed copy from allowlisted reason". Both
+    // fields are copied verbatim from Task 3's frozen table; nothing is
+    // interpolated, so no phrase or rule name can reach a user.
+    reason: verdict.reason,
+    copy: verdict.copy,
+    // Always true, on every path including the allowed one -- its
+    // presence is a constant, never a signal (§8.1).
+    show_safety_resources: verdict.showSafetyResources,
+    offered: [],
+  });
+}
+
+/// Runs the deterministic safety corpus over EVERY string that is about
+/// to reach a provider: the current instruction, every approved source
+/// and every eligible history entry. §8.1: "Deterministic synchronous
+/// checks run BEFORE DISPATCH on current instruction, approved sources
+/// and eligible history."
+///
+/// SYNCHRONOUS AND PURE -- no await, no IO. That is not incidental:
+/// §8.1 requires the check before dispatch and again on every output
+/// field, and an IO-bearing check could not run on every field inside
+/// §8.2.1's budget. It is also what makes "the check ran before the
+/// provider call" provable by ordering rather than by hope.
+function checkPromptInputsSafety(
+  inputs: SessionPromptInputs,
+): SessionSafetyVerdict {
+  // The instruction FIRST, because it is the one string the requester
+  // just typed and therefore the likeliest to be the reason.
+  const instructionVerdict = classifySessionContent(inputs.userInstruction);
+  if (!instructionVerdict.allowed) return instructionVerdict;
+  for (const snippet of inputs.contextWindow) {
+    const verdict = classifySessionContent(String(snippet));
+    if (!verdict.allowed) return verdict;
+  }
+  for (const turn of inputs.history) {
+    const verdict = classifySessionContent(String(turn.content));
+    if (!verdict.allowed) return verdict;
+  }
+  return instructionVerdict;
+}
+
+/// §8.1: "and BEFORE PUBLISHING ON EVERY OUTPUT FIELD". Every field,
+/// not just reply_text -- the proposal title is an output field and
+/// §5.3's own note says "Output checks cover prose, proposals and
+/// source display strings".
+function checkOutputSafety(
+  output: SessionTurnOutput,
+): SessionSafetyVerdict {
+  if (output.kind === "redirect") {
+    // A redirect carries no model-written text at all (§5.3), so there
+    // is no field to check -- but it must still return an ALLOWED
+    // verdict rather than being skipped, so the caller's "both checks
+    // passed" precondition is satisfied explicitly rather than by
+    // falling through.
+    return classifySessionContent("");
+  }
+  const replyVerdict = classifySessionContent(output.reply_text);
+  if (!replyVerdict.allowed) return replyVerdict;
+  const title = output.suggested_planning_item?.title;
+  if (typeof title === "string") {
+    const titleVerdict = classifySessionContent(title);
+    if (!titleVerdict.allowed) return titleVerdict;
+  }
+  return replyVerdict;
+}
+
+// ---------------------------------------------------------------------------
+// The 'generate' handler.
+// ---------------------------------------------------------------------------
+
+/// THE ORDER OF OPERATIONS, and why each step is where it is.
+///
+///   1. Parse and bound the request (§4.1). No DB work yet.
+///   2. Resolve the session SERVER-SIDE and run the §3.1 eligibility
+///      gate (capability, membership, consent) from the session ROW --
+///      never from the body.
+///   3. Load the FROZEN approved sources and the eligible history
+///      (§4.2, Ruling 13), and revalidate source existence/version
+///      against them (§4.3's "every dispatch").
+///   4. SAFETY PASS 1, synchronous, over the instruction + approved
+///      sources + eligible history (§8.1). BEFORE admission, so an
+///      unsafe instruction consumes no attempt slot and no quota --
+///      §5.2: "Validation, consent, busy, oversized context and
+///      rate-limit rejections consume neither."
+///   5. Budget checks (§4.2's 64 KiB / scalar caps) -> CONTEXT_TOO_LARGE
+///      "before reserving quota/provider work".
+///   6. admit_ai_session_generation -- the slot and the quota. ONE
+///      transaction, entirely before dispatch.
+///   7. claim_ai_session_dispatch -- the provider-start marker.
+///   8. THE PROVIDER CALL(S). No SQL transaction is open across them:
+///      steps 6 and 7 each committed, and step 9 opens a new one.
+///   9. Validate the output (§5.3, §8.2.5), then SAFETY PASS 2 over
+///      every output field (§8.1).
+///  10. commit/stage -- the completion RPC, entirely after dispatch.
+///
+/// NO TRANSACTION SPANS A PROVIDER CALL. Each `service.rpc(...)` above
+/// is its own autocommitted statement; this function never issues
+/// BEGIN, and steps 6/7 complete before step 8 starts. Plan B's RPCs
+/// are built for exactly this split -- admit takes the locks and the
+/// quota, the completion RPCs take them again afterwards -- and the
+/// lease (35s) is what covers the gap instead of a held lock.
+async function handleGenerate(branch: BranchContext): Promise<Response> {
+  const parsed = parseGenerateRequest(branch.body);
+  if (!parsed.ok) return errorResponse(parsed.error);
+  const request = parsed.request;
+  const service = branch.service();
+
+  // --- 2. The session, resolved server-side -----------------------------
+  const session = await service
+    .from("ai_sessions")
+    .select(
+      "id, relationship_id, creator_id, kind, visibility, state, revision, context_revision, include_window, expires_at",
+    )
+    .eq("id", request.sessionId)
+    .maybeSingle();
+  if (session.error) return errorResponse(sessionError("INTERNAL_ERROR"));
+  const row = session.data as Record<string, unknown> | null;
+  // §3.1: "Foreign, ended, expired and unauthorized session IDs return
+  // the same unavailable response."
+  if (!row) return errorResponse(sessionError("UNAVAILABLE"));
+
+  const relationshipId = row.relationship_id as string;
+  const kind = row.kind as string;
+  const visibility = row.visibility as string;
+  const includeWindow = row.include_window === true;
+
+  const eligibility = await checkEligibility(
+    service,
+    // THE ACTOR COMES FROM THE VERIFIED USER.
+    branch.actorId,
+    relationshipId,
+    capabilitiesForSession(kind, visibility, includeWindow),
+  );
+  if (!eligibility.ok) return errorResponse(eligibility.error);
+
+  // §5.1: "Server read-time expiry is authoritative even before
+  // cleanup."
+  //
+  // MUTATION-TESTED, AND THE RESULT IS RECORDED RATHER THAN TIDIED
+  // AWAY: deleting either of these two checks -- or both -- leaves the
+  // suite GREEN, because admit_ai_session_generation makes the same two
+  // refusals itself, twice each (once pre-lock, once under the session
+  // row lock, lines "state != 'active'" and "expires_at <= now()" in
+  // its body). So they are honestly REDUNDANT-BY-DESIGN, not untested:
+  // the §5.1 test below asserts the refusal and the "no provider call /
+  // no slot" consequence, and that test passes with these lines gone
+  // because the RPC is what refuses.
+  //
+  // They stay because they refuse EARLIER -- before the frozen-source
+  // read, the revalidation query, the history read and the three safety
+  // passes -- so a dead session costs four queries and no safety work
+  // instead of all of it. That is a cost property, not a correctness
+  // one, which is why no test is bent into shape around it.
+  if (row.state !== "active") return errorResponse(sessionError("UNAVAILABLE"));
+  const expiresAt = row.expires_at;
+  if (
+    typeof expiresAt === "string" &&
+    new Date(expiresAt).getTime() <= branch.now.getTime()
+  ) {
+    return errorResponse(sessionError("UNAVAILABLE"));
+  }
+
+  // §4.1's "required only for Nearby", enforced both ways: an Ideas
+  // session supplying a point is rejected rather than quietly ignored
+  // (a client that believes it sent a location must not be told it
+  // worked), and a Nearby session without one gets LOCATION_REQUIRED.
+  if (kind === "nearby" && request.requesterLocation === null) {
+    return errorResponse(sessionError("LOCATION_REQUIRED"));
+  }
+  if (kind !== "nearby" && request.requesterLocation !== null) {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
+  // §4.1: "Location timestamp within two minutes of server time."
+  // Checked against branch.now, the single server instant.
+  if (request.requesterLocation !== null) {
+    const skewMs = Math.abs(
+      branch.now.getTime() - Date.parse(request.requesterLocation.capturedAt),
+    );
+    if (skewMs > 120_000) {
+      // §10: LOCATION_EXPIRED -> "fresh explicit confirmation, no
+      // fallback". Distinct from LOCATION_REQUIRED because the remedy
+      // differs: recapture, rather than ask for permission.
+      return errorResponse(sessionError("LOCATION_EXPIRED"));
+    }
+  }
+
+  // --- 3. The FROZEN context (Ruling 13) --------------------------------
+  const frozenSources = await loadFrozenSources(service, request.sessionId);
+  if (frozenSources === null) {
+    return errorResponse(sessionError("INTERNAL_ERROR"));
+  }
+  const sourcesValid = await frozenSourcesStillValid(
+    service,
+    relationshipId,
+    frozenSources,
+  );
+  if (sourcesValid === null) {
+    return errorResponse(sessionError("INTERNAL_ERROR"));
+  }
+  if (!sourcesValid) {
+    // §4.3: "Edits, tombstones or removal make the session unavailable
+    // and terminate it; do not use stale copies or substitute new
+    // messages." Terminating is end_ai_session's job and it is
+    // idempotent, so it is safe to call here; the caller is told
+    // CONTEXT_CHANGED, which §10 gives "no automatic retry or new
+    // context".
+    await service.rpc("end_ai_session", {
+      p_actor_id: branch.actorId,
+      p_session_id: request.sessionId,
+    });
+    return errorResponse(sessionError("CONTEXT_CHANGED"));
+  }
+
+  const history = await loadPriorIdeasTurns(
+    service,
+    branch.actorId,
+    request.sessionId,
+  );
+  if (history === null) return errorResponse(sessionError("INTERNAL_ERROR"));
+
+  // THE ONE STRUCT EVERYTHING DOWNSTREAM IS BUILT FROM. The prompt, the
+  // safety pass and the §8.2.5 quoted-source list all derive from THIS
+  // value, so they cannot disagree about what was sent -- which is the
+  // property that keeps the quotation check from being vacuous.
+  //
+  // Note what is NOT here: no location (isolation property 1), no
+  // Mapbox result, no relationship id, no session id, no actor id, no
+  // policy version -- §2's "Provider requests never contain account/
+  // relationship/session UUIDs".
+  const promptInputs: SessionPromptInputs = {
+    userInstruction: request.userInstruction,
+    history,
+    contextWindow: frozenSources.map((source) =>
+      approvedSourceText(source.approvedText)
+    ),
+  };
+
+  // --- 4. SAFETY PASS 1, before admission -------------------------------
+  const inputVerdict = checkPromptInputsSafety(promptInputs);
+  if (!inputVerdict.allowed) {
+    // No admission, no quota, no slot, no revision bump, no turn. §5.2:
+    // a validation/consent rejection "consume[s] neither". And a
+    // partner polling session_revision sees nothing at all.
+    return safetyRefusalResponse(inputVerdict);
+  }
+
+  // --- 5. Budgets (§4.2), before reserving quota or provider work -------
+  const { system, userTemplate } = await loadSessionPrompts();
+  const assistKind = kind === "nearby" ? "nearby" : "ideas";
+  const userPrompt = buildSessionUserPrompt(
+    userTemplate,
+    assistKind,
+    promptInputs,
+  );
+  // §4.2: "cap FULLY SERIALIZED provider input, INCLUDING
+  // instructions/roles, at 64 KiB UTF-8" -- so the system prompt counts
+  // too, which is why this is measured here and not inside the builder.
+  const serializedBytes = new TextEncoder().encode(system + userPrompt).length;
+  if (serializedBytes > PROVIDER_INPUT_BYTE_CAP) {
+    // §4.2: "If mandatory content still exceeds a cap, reject
+    // CONTEXT_TOO_LARGE BEFORE RESERVING QUOTA/PROVIDER WORK."
+    //
+    // The 16,384-TOKEN half of §4.2's cap is NOT enforced: it requires
+    // "the pinned model's validated tokenizer", and no tokenizer exists
+    // in this repo (verified by grep). §4.2 says "Tokenizer
+    // unavailability fails closed", which this byte cap does not
+    // satisfy -- reported as a plan gap rather than approximated, since
+    // a chars/4 guess would read as implemented while bounding nothing.
+    return errorResponse(sessionError("CONTEXT_TOO_LARGE"));
+  }
+
+  // --- 6. Admission: the slot, the quota, one transaction ---------------
+  const fingerprint = await computeOperationFingerprint(
+    kind,
+    request.sessionId,
+    request.expectedRevision,
+    request.userInstruction,
+  );
+  const admitResult = await service.rpc("admit_ai_session_generation", {
+    // THE ACTOR COMES FROM THE VERIFIED USER, never the body.
+    p_actor_id: branch.actorId,
+    p_request_id: request.requestId,
+    p_session_id: request.sessionId,
+    p_expected_revision: request.expectedRevision,
+    p_operation_fingerprint: fingerprint,
+  });
+  if (admitResult.error) {
+    const message = String(admitResult.error.message ?? "");
+    if (/CONTEXT_CHANGED/.test(message)) {
+      return errorResponse(sessionError("CONTEXT_CHANGED"));
+    }
+    if (/BUSY/.test(message)) {
+      return errorResponse(sessionError("SESSION_BUSY"));
+    }
+    if (/LIMIT_REACHED/.test(message)) {
+      return errorResponse(sessionError("SESSION_LIMIT_REACHED"));
+    }
+    if (/consent/i.test(message)) {
+      return errorResponse(sessionError("CONSENT_REQUIRED"));
+    }
+    // 'UNAVAILABLE', 'Not a current member' and anything unrecognized
+    // collapse to UNAVAILABLE -- §3.1's indistinguishable response.
+    return errorResponse(sessionError("UNAVAILABLE"));
+  }
+  const admission =
+    (admitResult.data as Record<string, unknown>[] | null)?.[0];
+  if (!admission) return errorResponse(sessionError("INTERNAL_ERROR"));
+  switch (admission.outcome) {
+    case "admitted":
+      break;
+    case "already_admitted":
+      // §6.2 step 2: "For an existing actor/request ID, return its
+      // state/result ... NEVER A NEW PROVIDER LEASE." A replay must not
+      // dispatch again, so this returns the committed turn rather than
+      // falling through to the provider call below.
+      return await replayAdmittedRequest(service, branch, request, admission);
+    case "busy":
+      return errorResponse(sessionError("SESSION_BUSY"));
+    case "limit_reached":
+      return errorResponse(sessionError("SESSION_LIMIT_REACHED"));
+    case "rate_limited":
+      return errorResponse(sessionError(
+        "RATE_LIMITED",
+        typeof admission.retry_after_seconds === "number"
+          ? admission.retry_after_seconds
+          : null,
+      ));
+    case "conflict":
+      // §4.1: "different payload reuse yields REQUEST_CONFLICT". This
+      // is the fingerprint doing its work.
+      return errorResponse(sessionError("REQUEST_CONFLICT"));
+    default:
+      return errorResponse(sessionError("UNAVAILABLE"));
+  }
+
+  // --- 7. The dispatch claim -------------------------------------------
+  const workerToken = admission.worker_token as string;
+  const claimed = await service.rpc("claim_ai_session_dispatch", {
+    p_worker_token: workerToken,
+    p_request_id: request.requestId,
+  });
+  if (claimed.error) return errorResponse(sessionError("INTERNAL_ERROR"));
+  const claimRow = (claimed.data as Record<string, unknown>[] | null)?.[0];
+  if (claimRow?.claim_ai_session_dispatch !== true) {
+    // The lease expired or another worker claimed it. §10:
+    // REQUEST_FAILED is a "counted status explained to requester".
+    return errorResponse(sessionError("REQUEST_FAILED"));
+  }
+
+  // --- 8/9/10. Dispatch, validate, commit -------------------------------
+  // Split by kind into two functions with DISJOINT signatures, which is
+  // isolation property (4): the Ideas path never receives a location,
+  // and the Nearby path's Mapbox leg never receives prompt text.
+  if (assistKind === "nearby") {
+    return await dispatchNearby(
+      service,
+      branch,
+      request,
+      workerToken,
+      system,
+      userPrompt,
+      promptInputs,
+      // Non-null by the §4.1 check above; passed as its own argument
+      // rather than inside promptInputs, which has no slot for it.
+      request.requesterLocation!,
+    );
+  }
+  return await dispatchIdeas(
+    service,
+    branch,
+    request,
+    workerToken,
+    system,
+    userPrompt,
+    promptInputs,
+  );
+}
+
+/// §6.2 step 2: "For an existing actor/request ID, return its
+/// state/result ... never a new provider lease."
+///
+/// Reached only on `already_admitted`, i.e. a retry of a request_id with
+/// the SAME fingerprint (a different fingerprint returns `conflict`).
+/// It re-reads the committed turn through read_ai_session_turns -- so
+/// the retry gets the original answer and NO provider call happens. A
+/// request still in flight has no committed turn yet, which is
+/// SESSION_BUSY rather than a second dispatch.
+async function replayAdmittedRequest(
+  service: SupabaseClient,
+  branch: BranchContext,
+  request: GenerateRequest,
+  _admission: Record<string, unknown>,
+): Promise<Response> {
+  const turns = await service.rpc("read_ai_session_turns", {
+    p_actor_id: branch.actorId,
+    p_session_id: request.sessionId,
+  });
+  if (turns.error) return errorResponse(sessionError("INTERNAL_ERROR"));
+  const rows = (turns.data ?? []) as Record<string, unknown>[];
+  const mine = rows.filter((turn) => turn.request_id === request.requestId);
+  const attuneTurn = mine.find((turn) => turn.role === "attune");
+  if (!attuneTurn) {
+    // Admitted but not yet committed: still in flight. §10:
+    // SESSION_BUSY -> "keep own draft, retry explicitly after refetch".
+    return errorResponse(sessionError("SESSION_BUSY"));
+  }
+  const userTurn = mine.find((turn) => turn.role === "user");
+  const payload = (attuneTurn.payload ?? {}) as Record<string, unknown>;
+  return jsonResponse({
+    user_ordinal: userTurn?.ordinal ?? null,
+    attune_ordinal: attuneTurn.ordinal,
+    reply_text: payload.reply_text ?? null,
+    suggested_planning_item: payload.suggested_planning_item ?? null,
+    replayed: true,
+  });
+}
+
+/// Ideas. ONE provider call, no location parameter at all.
+async function dispatchIdeas(
+  service: SupabaseClient,
+  branch: BranchContext,
+  request: GenerateRequest,
+  workerToken: string,
+  systemPrompt: string,
+  userPrompt: string,
+  promptInputs: SessionPromptInputs,
+): Promise<Response> {
+  const gemini = branch.callGemini;
+  const parsed = await gemini({
+    promptId: `${SESSION_PROMPT_VERSION}_ideas`,
+    systemPrompt,
+    userPrompt,
+    maxOutputTokens: 2048,
+  });
+  if (!parsed) return errorResponse(sessionError("PROVIDER_UNAVAILABLE"));
+
+  // §5.3 / §8.2.5. quotedSources is derived from the SAME struct the
+  // prompt was built from -- see collectQuotedSources.
+  const validated = validateSessionTurnOutput(
+    parsed,
+    collectQuotedSources(promptInputs),
+  );
+  if (!validated) return errorResponse(sessionError("RESULT_UNAVAILABLE"));
+
+  // SAFETY PASS 2, on every output field, before anything is published.
+  const outputVerdict = checkOutputSafety(validated);
+  if (!outputVerdict.allowed) {
+    // §8.1: "Unsafe pending prompts are not published." Nothing is
+    // committed, so there is no transcript pair and no revision bump --
+    // the partner sees a silent non-post.
+    //
+    // PLAN GAP, REPORTED NOT PAPERED OVER: the request row stays
+    // 'started' with a live 35-second lease, so the session is
+    // SESSION_BUSY until reconcile_ai_session_leases settles it, and
+    // the requester cannot retry for up to 35 seconds. Plan B exposes
+    // NO RPC to settle a request as failed -- I queried pg_proc for
+    // every %ai_session% function and there is no fail/release/abandon
+    // entry point -- so this function cannot close the lease itself.
+    // Adding one is a Plan B migration, not an edge-function change,
+    // and inventing a column here is exactly what the Global
+    // Constraints forbid. The §8.1 title test asserts the actual
+    // SESSION_BUSY behaviour so the gap is pinned rather than
+    // discovered later.
+    //
+    // ONE GENUINELY GOOD CONSEQUENCE, worth naming because it is part
+    // of the non-disclosure story: this is the IDENTICAL disposition a
+    // provider timeout, a validator rejection and a prohibited-pattern
+    // hit produce, so the request row itself cannot tell an operator --
+    // or anyone reading it -- that a SAFETY detector fired rather than
+    // the provider having failed.
+    return safetyRefusalResponse(outputVerdict);
+  }
+
+  if (validated.kind === "redirect") {
+    // §5.3: "Only ordinary unsupported redirects become transcript
+    // pairs." The MODEL's redirect is an ordinary one -- a safety
+    // refusal never reaches here, because pass 1 returned above and
+    // pass 2 returns above this line.
+    //
+    // Plan B has no commit RPC for a 'redirect' turn (verified: the
+    // ai_session_turns kind CHECK allows 'redirect' but
+    // commit_ai_session_ideas_turn hardcodes 'ideas_answer' and no
+    // other RPC inserts turns). So the pair is NOT written and the
+    // redirect is returned to the requester only. Reported as a plan
+    // gap rather than worked around by mislabelling it an
+    // 'ideas_answer', which would put a redirect into the history that
+    // §4.2 item 4 says holds "complete user/answer pairs".
+    return jsonResponse({
+      kind: "redirect",
+      reason: validated.reason,
+      offered: validated.offered,
+      show_safety_resources: true,
+    });
+  }
+
+  const commitResult = await service.rpc("commit_ai_session_ideas_turn", {
+    p_worker_token: workerToken,
+    p_request_id: request.requestId,
+    p_user_instruction: request.userInstruction,
+    p_reply_text: validated.reply_text,
+    p_proposal: validated.suggested_planning_item,
+  });
+  if (commitResult.error) return errorResponse(sessionError("INTERNAL_ERROR"));
+  const commit = (commitResult.data as Record<string, unknown>[] | null)?.[0];
+  if (!commit) return errorResponse(sessionError("INTERNAL_ERROR"));
+
+  return jsonResponse({
+    kind: "answer",
+    user_ordinal: commit.user_ordinal,
+    attune_ordinal: commit.attune_ordinal,
+    // Ruling 1's sanctioned invalidation mechanism: the client polls
+    // this integer.
+    session_revision: commit.session_revision,
+    reply_text: validated.reply_text,
+    suggested_planning_item: validated.suggested_planning_item,
+    show_safety_resources: true,
+  });
+}
+
+/// Nearby. TWO provider calls, and the only value that crosses between
+/// them is the allowlisted category token -- isolation property (4).
+///
+/// READ THE PARAMETER LIST. `promptInputs` and `userPrompt` are the
+/// GEMINI side; `location` is the MAPBOX side. They are separate
+/// parameters, and nothing below combines them: the Gemini call
+/// receives `userPrompt`, the Mapbox call receives `location` and a
+/// `NearbyCategory`. The Mapbox return value is assigned to `places`
+/// and never read again except to assemble the SERVER-OWNED reply text
+/// and the staged source cards -- neither of which is a prompt, and
+/// neither of which this function could turn into one, because
+/// buildSessionUserPrompt will not accept a plain string.
+async function dispatchNearby(
+  service: SupabaseClient,
+  branch: BranchContext,
+  request: GenerateRequest,
+  workerToken: string,
+  systemPrompt: string,
+  userPrompt: string,
+  promptInputs: SessionPromptInputs,
+  location: RequesterLocation,
+): Promise<Response> {
+  // --- Provider call 1: GEMINI. Receives the prompt, never the point.
+  const gemini = branch.callGemini;
+  const parsed = await gemini({
+    promptId: `${SESSION_PROMPT_VERSION}_nearby_category`,
+    systemPrompt,
+    userPrompt,
+    // §5.3: Gemini's Nearby output is "only a category ... or an
+    // allowlisted refusal reason", so a small cap is correct and is
+    // itself a bound on what can come back.
+    maxOutputTokens: 100,
+  });
+  if (!parsed) return errorResponse(sessionError("PROVIDER_UNAVAILABLE"));
+
+  // A redirect is a legal Nearby output too (§5.3), and it short-
+  // circuits BEFORE Mapbox: no category, no search.
+  if ((parsed as Record<string, unknown>).kind === "redirect") {
+    const validatedRedirect = validateSessionTurnOutput(
+      parsed,
+      collectQuotedSources(promptInputs),
+    );
+    if (!validatedRedirect || validatedRedirect.kind !== "redirect") {
+      return errorResponse(sessionError("RESULT_UNAVAILABLE"));
+    }
+    const redirectVerdict = checkOutputSafety(validatedRedirect);
+    if (!redirectVerdict.allowed) {
+      return safetyRefusalResponse(redirectVerdict);
+    }
+    return jsonResponse({
+      kind: "redirect",
+      reason: validatedRedirect.reason,
+      offered: validatedRedirect.offered,
+      show_safety_resources: true,
+    });
+  }
+
+  // THE ALLOWLIST CHOKEPOINT. validateNearbyCategoryOutput returns null
+  // for ANY value outside the fixed six, and that null short-circuits
+  // before searchMapboxCategory is reached. This is the ONLY value that
+  // crosses from the Gemini side to the Mapbox side, and §2 permits it
+  // by name ("except through the fixed six-category allowlist").
+  const categoryOutput = validateNearbyCategoryOutput(parsed);
+  if (!categoryOutput) return errorResponse(sessionError("RESULT_UNAVAILABLE"));
+
+  // --- Provider call 2: MAPBOX. Receives the category token and the
+  // point. Its signature has no string parameter, so no prompt text,
+  // no instruction, no source snippet and no id can be passed.
+  const places = await branch.searchMapbox(categoryOutput.category, {
+    latitude: location.latitude,
+    longitude: location.longitude,
+  });
+  if (places === null) return errorResponse(sessionError("PROVIDER_UNAVAILABLE"));
+
+  // §5.3: "server-assembled text 1..2,000 plus zero to three source
+  // cards ... Zero results is a deterministic no-results card." The
+  // text is built HERE, by the server, from the category and the names
+  // -- it is never model-written, and it is never a prompt.
+  const replyText = buildNearbySessionReplyText(
+    categoryOutput.category,
+    places,
+  );
+
+  // SAFETY PASS 2 on the server-assembled text and on every source
+  // card's display string. §8.1's "every output field", and §5.3's
+  // "Output checks cover prose, proposals and SOURCE DISPLAY STRINGS."
+  for (
+    const field of [
+      replyText,
+      ...places.flatMap((place) => [place.name, place.formatted_address ?? ""]),
+    ]
+  ) {
+    const verdict = classifySessionContent(field);
+    if (!verdict.allowed) return safetyRefusalResponse(verdict);
+  }
+
+  const stageResult = await service.rpc("stage_ai_session_nearby_result", {
+    p_worker_token: workerToken,
+    p_request_id: request.requestId,
+    p_reply_text: replyText,
+    // The card shape §5.3 requires, assembled server-side. Full
+    // validation of its bounds (name <=160, address <=240, HTTPS URL
+    // <=2,048) is Task 9 per the plan's own self-review; this task
+    // stages what searchMapboxCategory already bounds.
+    p_sources: places,
+  });
+  if (stageResult.error) return errorResponse(sessionError("INTERNAL_ERROR"));
+
+  // §5.3 / §2: the result "remain[s] requester-only staging until
+  // requester explicitly publishes that pair". publish_nearby is Task
+  // 5's command; this returns the staged result to its requester.
+  return jsonResponse({
+    kind: "nearby_result",
+    staged: true,
+    request_id: request.requestId,
+    reply_text: replyText,
+    sources: places,
+    show_safety_resources: true,
+  });
+}
+
+/// SERVER-OWNED, deterministic, and never a prompt. §5.3: "Zero results
+/// is a deterministic no-results card."
+function buildNearbySessionReplyText(
+  category: NearbyCategory,
+  places: readonly PlaceSource[],
+): string {
+  if (places.length === 0) {
+    return `No ${category} results came back nearby. Try a different category.`;
+  }
+  return `Here are a few ${category} options nearby: ${
+    places.map((place) => place.name).join(", ")
+  }`;
+}
+
 /// What requireUser(req) produced. There is no `client` field, unlike
 /// ai-assist's AssistUserContext -- see this file's header note on why
 /// this function has no user-scoped client.
@@ -1446,6 +2804,8 @@ export async function processSessionCommand(
     // the civil day, the window query bound and the digest all describe
     // the same moment even if the request spans a midnight boundary.
     now: deps.now ?? new Date(),
+    callGemini: deps.callGemini ?? callGeminiJson,
+    searchMapbox: deps.searchMapbox ?? searchMapboxCategory,
   };
 
   switch (command) {
@@ -1455,12 +2815,13 @@ export async function processSessionCommand(
     case "review_context":
       return await handleReviewContext(branch);
 
+    case "generate":
+      return await handleGenerate(branch);
+
     // Task 3 implements 'approve'.
-    // Task 4 implements 'generate'.
     // Task 5 implements 'read', 'publish_nearby', 'discard_nearby',
     //                      'end' and 'share_answer'.
     case "approve":
-    case "generate":
     case "read":
     case "publish_nearby":
     case "discard_nearby":
