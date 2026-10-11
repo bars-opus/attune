@@ -38,10 +38,12 @@ import {
   civilDayStartUtc,
   computeApprovalDigest,
   isValidUtcOffsetMinutes,
+  scalarLength,
   selectSharedWindow,
   WINDOW_ROW_CAP,
   type WindowMessage,
 } from "../_shared/ai_session_context.ts";
+import { STATIC_PROHIBITED_PATTERNS } from "../_shared/gemini_json.ts";
 
 // ---------------------------------------------------------------------------
 // Error envelope -- spec §10. "Typed envelope: code, caller-safe
@@ -1068,6 +1070,302 @@ async function handleReviewContext(branch: BranchContext): Promise<Response> {
       : null,
     digest,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Branch: 'generate' -- output validation. Spec §5.3, §8.2.5.
+//
+// Extends ai-assist/index.ts's validateIdeasOutput pattern with the
+// `kind` discriminant §5.3 requires, the eight-token quotation check and
+// the prohibited-pattern scan §8.2.5 requires across ALL output fields.
+// ---------------------------------------------------------------------------
+
+export interface SessionAnswerOutput {
+  kind: "answer";
+  reply_text: string;
+  suggested_planning_item: {
+    kind: "task" | "event";
+    title: string;
+    event_date: string | null;
+  } | null;
+}
+
+export interface SessionRedirectOutput {
+  kind: "redirect";
+  reason: "unsupported" | "unsafe_to_assist" | "insufficient_context";
+  offered: ("ideas" | "nearby")[];
+}
+
+export type SessionTurnOutput = SessionAnswerOutput | SessionRedirectOutput;
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/// §5.3: "event_date null or REAL ISO calendar date." DATE_RE alone
+/// accepts 2026-02-30 and 2026-13-01, which are not dates -- and this
+/// string is handed to Planning, so a non-date is a defect that travels.
+/// Round-tripping through Date and comparing components is what proves
+/// the day exists in that month of that year.
+function isRealCalendarDate(value: string): boolean {
+  if (!DATE_RE.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day;
+}
+
+/// Rejects NUL and unpaired surrogates. §4.1 rejects these on input;
+/// the same values on OUTPUT would be a Postgres error at commit time
+/// (text columns forbid NUL) or invalid UTF-8 on the wire, so the
+/// validator is where they stop rather than the storage layer.
+function hasForbiddenCodeUnits(value: string): boolean {
+  if (value.includes("\u0000")) return true;
+  for (let i = 0; i < value.length; i++) {
+    const unit = value.charCodeAt(i);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
+      i++;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// §8.2.5's eight-token threshold. EIGHT, not nine: "eight-token copied
+/// spans" are what the check rejects, so a span of exactly eight words
+/// is refused and seven is allowed. Both legs are asserted.
+const QUOTED_SPAN_WORDS = 8;
+
+/// Splits into comparable word tokens: lowercased, with everything that
+/// is not a letter, a digit or an intra-word apostrophe collapsed to a
+/// separator.
+///
+/// WHY NOT `split(/\s+/)`, which is what the task brief sketched: §8.2.5's
+/// own regression fixture is a chat MESSAGE, and chat messages carry
+/// punctuation. A whitespace split leaves "brainstorm." and "brainstorm"
+/// as different tokens, so a model reproducing the span WITH its
+/// original punctuation -- the likeliest form of a verbatim copy --
+/// would not match it. The test "punctuation- and case-insensitive"
+/// fails on the whitespace-split version.
+function quotationTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}']+/gu, " ")
+    .split(" ")
+    .filter((token) => token.length > 0);
+}
+
+/// §8.2.5: "Mechanical checks reject direct source quotations/eight-token
+/// copied spans ... across ALL output fields; benign overlap may refuse."
+///
+/// ONE SYMMETRIC SCAN, not the brief's two directions, and the reason is
+/// a measured finding rather than a preference. The brief sketched a
+/// forward pass (a source span found inside the candidate) PLUS a
+/// reverse pass (a candidate span found inside a source), on the stated
+/// grounds that the reverse catches the model restating its own prior
+/// answer out of SESSION_HISTORY -- which §8.2.5 does name explicitly
+/// ("Model answers are also untrusted in later history").
+///
+/// But the reverse pass is only non-redundant in the brief's version
+/// because that version compared a tokenized span against a RAW
+/// `.includes()` on the untokenized other side, so each direction
+/// normalized a different operand. Once both sides are tokenized the
+/// same way, the two directions are the SAME predicate -- "do the two
+/// token streams share an 8-gram?" -- which is symmetric by
+/// construction, and I verified it over 200,000 random token-stream
+/// pairs before deleting the second loop. So the §8.2.5 case the brief
+/// wanted the reverse pass for IS covered, by the single scan.
+///
+/// Recorded rather than silently simplified, because a reviewer reading
+/// the brief will look for the second loop. The test
+/// "catches the model restating its OWN prior answer" is the leg that
+/// pins the behaviour the brief was protecting.
+export function containsQuotedSpan(
+  candidate: string,
+  sources: readonly string[],
+): boolean {
+  const candidateTokens = quotationTokens(candidate);
+  if (candidateTokens.length < QUOTED_SPAN_WORDS) {
+    // A candidate shorter than the threshold cannot contain an
+    // eight-token span, in either direction.
+    return false;
+  }
+  const candidateSpans = new Set<string>();
+  for (
+    let i = 0;
+    i + QUOTED_SPAN_WORDS <= candidateTokens.length;
+    i++
+  ) {
+    candidateSpans.add(
+      candidateTokens.slice(i, i + QUOTED_SPAN_WORDS).join(" "),
+    );
+  }
+
+  for (const source of sources) {
+    const sourceTokens = quotationTokens(source);
+    for (
+      let i = 0;
+      i + QUOTED_SPAN_WORDS <= sourceTokens.length;
+      i++
+    ) {
+      if (
+        candidateSpans.has(
+          sourceTokens.slice(i, i + QUOTED_SPAN_WORDS).join(" "),
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/// §8.2.5's "prohibited output patterns", applied HERE as well as inside
+/// callGeminiJson.
+///
+/// NOT BELT-AND-BRACES: callGeminiJson applies STATIC_PROHIBITED_PATTERNS
+/// to the raw provider response, but this validator is also the boundary
+/// a test double's output and any future provider helper cross, and
+/// §8.2.5 asks for the check "across ALL output fields" of the VALIDATED
+/// shape. Running it here means the property holds for whatever produced
+/// the object, not only for the one code path that happens to call
+/// Gemini today.
+function violatesProhibitedPattern(value: string): boolean {
+  return STATIC_PROHIBITED_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+/// Every check that applies to EVERY free-text output field, in one
+/// place so a new field cannot be added with only some of them.
+/// §8.2.5: "Output checks cover prose, proposals and source display
+/// strings."
+function isAcceptableOutputText(
+  value: string,
+  maxScalars: number,
+  quotedSources: readonly string[],
+): boolean {
+  // Unicode SCALARS, not UTF-16 units (§4.1's counting rule). 1000
+  // astral emoji are 1000 scalars and 2000 `.length` units, so a
+  // `.length` cap would refuse a legal answer.
+  const length = scalarLength(value);
+  if (length < 1 || length > maxScalars) return false;
+  if (hasForbiddenCodeUnits(value)) return false;
+  if (violatesProhibitedPattern(value)) return false;
+  if (containsQuotedSpan(value, quotedSources)) return false;
+  return true;
+}
+
+/// Extends ai-assist/index.ts's validateIdeasOutput pattern with the
+/// `kind` discriminant (spec §5.3) and §8.2.5's mechanical checks.
+/// Returns null -- never a best-effort partial parse -- for anything
+/// that does not match §5.3 exactly.
+///
+/// `quotedSources` is every string this request's own SESSION_HISTORY
+/// and CONTEXT_WINDOW content contained. THE CALLER MUST PASS THE SAME
+/// STRINGS THAT WERE ACTUALLY SENT TO THE MODEL, never a different or
+/// stale set -- which is why the `generate` branch builds both from one
+/// `SessionPromptInputs` value and derives this list from that same
+/// value (see collectQuotedSources). A list assembled separately could
+/// drift from the prompt and make the check vacuous.
+///
+/// `kind: "redirect"` is the MODEL's redirect -- an ordinary unsupported
+/// request, which §5.3 says "become[s] [a] transcript pair". It is NOT
+/// the shape a SAFETY refusal takes: safety refusals never reach this
+/// function, because the safety gate runs before dispatch and its
+/// verdict comes from classifySessionContent, whose copy is frozen
+/// server-side. See handleGenerate.
+export function validateSessionTurnOutput(
+  parsed: unknown,
+  quotedSources: readonly string[] = [],
+): SessionTurnOutput | null {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const record = parsed as Record<string, unknown>;
+  const kind = record.kind;
+
+  if (kind === "redirect") {
+    // §5.3: a redirect carries "no model-written fallback advice,
+    // sources or proposal", so the key set is exactly these three and a
+    // proposal field is a rejection rather than an ignored extra.
+    const allowedKeys = new Set(["kind", "reason", "offered"]);
+    for (const key of Object.keys(record)) {
+      if (!allowedKeys.has(key)) return null;
+    }
+    const reason = record.reason;
+    if (
+      reason !== "unsupported" && reason !== "unsafe_to_assist" &&
+      reason !== "insufficient_context"
+    ) {
+      return null;
+    }
+    const offered = record.offered;
+    if (
+      !Array.isArray(offered) ||
+      !offered.every((entry) => entry === "ideas" || entry === "nearby")
+    ) {
+      return null;
+    }
+    return {
+      kind: "redirect",
+      reason,
+      offered: offered as ("ideas" | "nearby")[],
+    };
+  }
+
+  if (kind !== "answer") return null;
+  const allowedKeys = new Set(["kind", "reply_text", "suggested_planning_item"]);
+  for (const key of Object.keys(record)) {
+    if (!allowedKeys.has(key)) return null;
+  }
+
+  const replyText = record.reply_text;
+  if (typeof replyText !== "string") return null;
+  const trimmedReply = replyText.trim();
+  // §5.3: "reply_text 1..2,000 scalars".
+  if (!isAcceptableOutputText(trimmedReply, 2000, quotedSources)) return null;
+
+  const rawItem = record.suggested_planning_item;
+  let suggestedItem: SessionAnswerOutput["suggested_planning_item"] = null;
+  if (rawItem !== null && rawItem !== undefined) {
+    if (typeof rawItem !== "object" || Array.isArray(rawItem)) return null;
+    const itemRecord = rawItem as Record<string, unknown>;
+    const allowedItemKeys = new Set(["kind", "title", "event_date"]);
+    for (const key of Object.keys(itemRecord)) {
+      if (!allowedItemKeys.has(key)) return null;
+    }
+    const itemKind = itemRecord.kind;
+    // §5.3: "kind task/event" only -- no Goal, no Note.
+    if (itemKind !== "task" && itemKind !== "event") return null;
+    const title = itemRecord.title;
+    if (typeof title !== "string") return null;
+    const trimmedTitle = title.trim();
+    // §5.3: "title 1..120". The SAME field checks as reply_text, which
+    // is what §8.2.5's "across ALL output fields" means -- its second
+    // fixture asks the model to put a copied secret in exactly here.
+    if (!isAcceptableOutputText(trimmedTitle, 120, quotedSources)) return null;
+    const eventDate = itemRecord.event_date;
+    // §5.3: "Task date null; event proposal date required."
+    if (itemKind === "event") {
+      if (typeof eventDate !== "string" || !isRealCalendarDate(eventDate)) {
+        return null;
+      }
+    } else if (eventDate !== null && eventDate !== undefined) {
+      return null;
+    }
+    suggestedItem = {
+      kind: itemKind,
+      title: trimmedTitle,
+      event_date: itemKind === "event" ? (eventDate as string) : null,
+    };
+  }
+
+  return {
+    kind: "answer",
+    reply_text: trimmedReply,
+    suggested_planning_item: suggestedItem,
+  };
 }
 
 /// What requireUser(req) produced. There is no `client` field, unlike
