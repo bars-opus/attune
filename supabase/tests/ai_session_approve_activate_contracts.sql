@@ -34,7 +34,7 @@ BEGIN
 
   -- Private: one approval activates it.
   SELECT session_id INTO v_private_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_private_session, 1, 'digest-a', 'v1');
   SELECT * INTO v_row FROM public.activate_ai_session(v_user_a, v_private_session, 1);
@@ -44,7 +44,7 @@ BEGIN
 
   -- Shared: creator's approval alone is NOT enough.
   SELECT session_id INTO v_shared_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_shared_session, 1, 'digest-shared', 'v1');
   BEGIN
@@ -71,7 +71,7 @@ BEGIN
     v_mismatch_session uuid;
   BEGIN
     SELECT session_id INTO v_mismatch_session FROM public.prepare_ai_session(
-      v_user_a, gen_random_uuid(), v_rel2, 'ideas', 'shared', NULL, false
+      v_user_a, gen_random_uuid(), v_rel2, 'ideas', 'shared', NULL, false, NULL
     );
     PERFORM public.approve_ai_session_context(v_user_a, v_mismatch_session, 1, 'digest-x', 'v1');
     PERFORM public.approve_ai_session_context(v_user_b, v_mismatch_session, 1, 'digest-y', 'v1');

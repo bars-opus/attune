@@ -210,7 +210,7 @@ BEGIN
     ('$rel', '$ub', 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    '$ua', gen_random_uuid(), '$rel', '$mode', 'shared', NULL, false);
+    '$ua', gen_random_uuid(), '$rel', '$mode', 'shared', NULL, false, NULL);
   PERFORM public.approve_ai_session_context('$ua', v_session, 1, 'd', 'v1');
   PERFORM public.approve_ai_session_context('$ub', v_session, 1, 'd', 'v1');
   PERFORM public.activate_ai_session('$ua', v_session, 1);
@@ -537,7 +537,7 @@ BEGIN
     ('$rel', '$ub', 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    '$ua', gen_random_uuid(), '$rel', 'nearby', 'shared', NULL, false);
+    '$ua', gen_random_uuid(), '$rel', 'nearby', 'shared', NULL, false, NULL);
   PERFORM public.approve_ai_session_context('$ua', v_session, 1, 'd', 'v1');
   PERFORM public.approve_ai_session_context('$ub', v_session, 1, 'd', 'v1');
   PERFORM public.activate_ai_session('$ua', v_session, 1);

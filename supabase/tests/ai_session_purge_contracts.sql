@@ -113,7 +113,7 @@ BEGIN
     (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false, NULL
   );
   IF v_session IS NULL THEN
     RAISE EXCEPTION 'SETUP FAILED: prepare_ai_session returned no session -- a slot limit or an unmet gate, not a purge defect';
@@ -298,7 +298,7 @@ BEGIN
     (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false, NULL
   );
   IF v_session IS NULL THEN
     RAISE EXCEPTION 'SETUP FAILED: prepare_ai_session returned no session';
@@ -467,7 +467,7 @@ BEGIN
 
   -- SHARED, created by v_creator.
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_creator, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+    v_creator, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false, NULL
   );
   IF v_session IS NULL THEN
     RAISE EXCEPTION 'SETUP FAILED: prepare_ai_session returned no shared session';
@@ -615,7 +615,7 @@ BEGIN
     (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false, NULL
   );
   IF v_session IS NULL THEN
     RAISE EXCEPTION 'SETUP FAILED: prepare_ai_session returned no session';
@@ -738,7 +738,7 @@ BEGIN
     (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false, NULL
   );
   IF v_session IS NULL THEN
     RAISE EXCEPTION 'SETUP FAILED: prepare_ai_session returned no session for the preparing-arm fixture';
@@ -805,7 +805,7 @@ BEGIN
     (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
   PERFORM public.approve_ai_session_context(v_user_b, v_session, 1, 'd', 'v1');
@@ -890,7 +890,7 @@ BEGIN
     (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
   PERFORM public.approve_ai_session_context(v_user_b, v_session, 1, 'd', 'v1');
@@ -966,7 +966,7 @@ BEGIN
     (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
   PERFORM public.approve_ai_session_context(v_user_b, v_session, 1, 'd', 'v1');
@@ -1069,7 +1069,7 @@ BEGIN
     (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
   PERFORM public.approve_ai_session_context(v_user_b, v_session, 1, 'd', 'v1');
@@ -1162,7 +1162,7 @@ BEGIN
     (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'nearby', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'nearby', 'shared', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
   PERFORM public.approve_ai_session_context(v_user_b, v_session, 1, 'd', 'v1');
@@ -1320,7 +1320,7 @@ BEGIN
     (v_rel, v_user_c, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'nearby', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'nearby', 'shared', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
   PERFORM public.approve_ai_session_context(v_user_b, v_session, 1, 'd', 'v1');
@@ -1433,7 +1433,7 @@ BEGIN
     (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false, NULL
   );
   IF v_session IS NULL THEN
     RAISE EXCEPTION 'SETUP FAILED: prepare_ai_session returned no session for the approvals-constraint fixture';
@@ -1455,7 +1455,7 @@ BEGIN
     (v_rel_other, v_outsider, 'v1', 'granted', gen_random_uuid(), clock_timestamp()),
     (v_rel_other, v_third, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
   SELECT session_id INTO v_other_session FROM public.prepare_ai_session(
-    v_outsider, gen_random_uuid(), v_rel_other, 'ideas', 'private', NULL, false
+    v_outsider, gen_random_uuid(), v_rel_other, 'ideas', 'private', NULL, false, NULL
   );
   IF v_other_session IS NULL THEN
     RAISE EXCEPTION 'SETUP FAILED: could not prepare the OTHER relationship''s session -- the session_id UPDATE forgery leg has nowhere to repoint and would be vacuous';

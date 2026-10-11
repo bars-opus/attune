@@ -2481,6 +2481,499 @@ Deno.test({
   },
 });
 
+// ===========================================================================
+// Task 3, ITEM A -- the 20260953200200 migration's three defects. Spec
+// §4.2 (persist source IDs and versions), §4.3 (window default off, the
+// digest binds source versions, revalidation detects an edit), §10.
+//
+// These tests exist because NOTHING in the suite above could tell the
+// pre-migration body from the post-migration one: prepare's own tests
+// assert the response envelope (which is unchanged), and
+// review_context's digest tests all ran with the window computed LIVE,
+// which is what the branch did when p_include_window was ignored. Each
+// test below asserts a SPECIFIC stored value -- the role, the exact
+// message ids, the exact timestamp -- not "something was persisted".
+// ===========================================================================
+
+Deno.test({
+  name:
+    "A1: prepare with include_window TRUE persists 'window' source rows for EXACTLY the §4.2-selected messages, and sets ai_sessions.include_window",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_recent_window_enabled",
+    );
+    const deps = await makeDeps();
+
+    // Eight same-day messages plus a target. §4.2 caps the window at
+    // six and excludes the target, so the expected set is the SIX
+    // NEWEST non-target messages -- a specific, enumerable set, which
+    // is the whole point: a body that persisted "all same-day
+    // messages", or the oldest six, or seven, fails here.
+    const targetId = crypto.randomUUID();
+    const now = new Date();
+    const ids: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      const id = crypto.randomUUID();
+      ids.push(id);
+      await serviceRoleQuery(
+        `INSERT INTO public.messages (id, relationship_id, sender_id, client_message_id, content, source, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'native', $6)`,
+        [
+          id,
+          REL_C1,
+          i % 2 === 0 ? USER_C1_A : USER_C1_B,
+          crypto.randomUUID(),
+          `window candidate ${i}`,
+          new Date(now.getTime() - (20 - i) * 60_000).toISOString(),
+        ],
+      );
+    }
+    await serviceRoleQuery(
+      `INSERT INTO public.messages (id, relationship_id, sender_id, client_message_id, content, source, created_at)
+       VALUES ($1, $2, $3, $4, 'THE TARGET', 'native', $5)`,
+      [
+        targetId,
+        REL_C1,
+        USER_C1_A,
+        crypto.randomUUID(),
+        new Date(now.getTime() - 60_000).toISOString(),
+      ],
+    );
+
+    const key = crypto.randomUUID();
+    const response = await processSessionCommand(
+      makeReq({
+        command: "prepare",
+        relationship_id: REL_C1,
+        kind: "ideas",
+        visibility: "shared",
+        target_message_id: targetId,
+        include_window: true,
+        utc_offset_minutes: 0,
+        idempotency_key: key,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(response.status, 200, JSON.stringify(await response.json()));
+
+    // (b) the SETTING. Before the migration this column did not exist
+    // and p_include_window was discarded.
+    const sessionRow = (await serviceRoleQuery(
+      `SELECT include_window FROM public.ai_sessions WHERE id = $1`,
+      [key],
+    ))[0];
+    assertEquals(
+      sessionRow.include_window,
+      true,
+      "p_include_window=true must be persisted on ai_sessions.include_window",
+    );
+
+    // (a) the SNAPSHOT: exactly the six newest non-target messages,
+    // compared as a sorted id list so the assertion is on the SET, not
+    // on insertion order.
+    const windowRows = await serviceRoleQuery(
+      `SELECT source_message_id, source_version, approved_clipped_text
+         FROM public.ai_session_sources
+        WHERE session_id = $1 AND source_role = 'window'
+        ORDER BY source_message_id`,
+      [key],
+    );
+    const expected = ids.slice(2).sort(); // the six NEWEST of the eight
+    assertEquals(
+      windowRows.map((r) => String(r.source_message_id)).sort(),
+      expected,
+      "the persisted 'window' rows must be exactly the six §4.2-selected messages -- not all eight, not the oldest six",
+    );
+    // The target is still its own single row, and is NOT in the window
+    // (§4.2 item 3).
+    const targetRows = await serviceRoleQuery(
+      `SELECT source_message_id FROM public.ai_session_sources
+        WHERE session_id = $1 AND source_role = 'target'`,
+      [key],
+    );
+    assertEquals(targetRows.map((r) => String(r.source_message_id)), [
+      targetId,
+    ]);
+    assertEquals(
+      windowRows.some((r) => String(r.source_message_id) === targetId),
+      false,
+      "§4.2 item 3: the selected target must not also be a window source",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "A1: prepare with include_window FALSE persists NO 'window' rows even though the civil day WOULD have filled one",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_shared_enabled");
+    const deps = await makeDeps();
+
+    // ANTI-VACUITY: the day must actually hold windowable messages, or
+    // "zero window rows" proves nothing. Three are seeded and the live
+    // selector is asked directly, so the test fails loudly if the
+    // fixture stopped being windowable.
+    const now = new Date();
+    for (let i = 0; i < 3; i++) {
+      await serviceRoleQuery(
+        `INSERT INTO public.messages (id, relationship_id, sender_id, client_message_id, content, source, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'native', $6)`,
+        [
+          crypto.randomUUID(),
+          REL_C1,
+          USER_C1_A,
+          crypto.randomUUID(),
+          `would-be window line ${i}`,
+          new Date(now.getTime() - (5 - i) * 60_000).toISOString(),
+        ],
+      );
+    }
+    const wouldBe = await selectSharedWindow(
+      (await makeServiceRoleClient()) as never,
+      REL_C1,
+      null,
+      0,
+      now,
+    );
+    assertEquals(
+      wouldBe.length,
+      3,
+      "SETUP: the civil day must hold three windowable messages, or the zero-rows assertion below is vacuous",
+    );
+
+    const key = crypto.randomUUID();
+    const response = await processSessionCommand(
+      makeReq({
+        command: "prepare",
+        relationship_id: REL_C1,
+        kind: "ideas",
+        visibility: "shared",
+        include_window: false,
+        utc_offset_minutes: 0,
+        idempotency_key: key,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(response.status, 200, JSON.stringify(await response.json()));
+
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT include_window FROM public.ai_sessions WHERE id = $1`,
+        [key],
+      ))[0].include_window,
+      false,
+      "§4.3: window is default off, and off must be STORED as off",
+    );
+    assertEquals(
+      await serviceRoleQuery(
+        `SELECT source_message_id FROM public.ai_session_sources
+          WHERE session_id = $1 AND source_role = 'window'`,
+        [key],
+      ),
+      [],
+      "include_window=false must persist ZERO window source rows",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "A1: review_context reads the STORED window setting -- a window-off shared Ideas session gets an EMPTY window and a digest that binds none of the day's text",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_recent_window_enabled",
+      "ai_sessions_private_enabled",
+    );
+    const deps = await makeDeps();
+
+    const now = new Date();
+    await serviceRoleQuery(
+      `INSERT INTO public.messages (id, relationship_id, sender_id, client_message_id, content, source, created_at)
+       VALUES ($1, $2, $3, $4, 'DISTINCTIVE DAY TEXT', 'native', $5)`,
+      [
+        crypto.randomUUID(),
+        REL_C1,
+        USER_C1_A,
+        crypto.randomUUID(),
+        new Date(now.getTime() - 60_000).toISOString(),
+      ],
+    );
+
+    const reviewBody = async (sessionId: string) => {
+      const response = await processSessionCommand(
+        makeReq({
+          command: "review_context",
+          session_id: sessionId,
+          utc_offset_minutes: 0,
+        }),
+        ctx(USER_C1_A),
+        deps,
+      );
+      const body = await response.json();
+      assertEquals(response.status, 200, JSON.stringify(body));
+      return body;
+    };
+
+    // Window OFF. Before the migration this branch derived
+    // includeWindow from `shared && ideas`, so it computed the window
+    // LIVE and this session's review would have shown the day's text.
+    const offKey = crypto.randomUUID();
+    assertEquals(
+      (await processSessionCommand(
+        makeReq({
+          command: "prepare",
+          relationship_id: REL_C1,
+          kind: "ideas",
+          visibility: "shared",
+          include_window: false,
+          utc_offset_minutes: 0,
+          idempotency_key: offKey,
+        }),
+        ctx(USER_C1_A),
+        deps,
+      )).status,
+      200,
+    );
+    const off = await reviewBody(offKey);
+    assertEquals(
+      off.window,
+      [],
+      "a shared Ideas session with the window switched OFF must review as an EMPTY window",
+    );
+    assertEquals(
+      JSON.stringify(off).includes("DISTINCTIVE DAY TEXT"),
+      false,
+      "review_context must not disclose the day's text for a session whose window is off",
+    );
+
+    // Window ON, same relationship and same day. A SHARED session
+    // already occupies the shared slot, so this one is private --
+    // except private sessions cannot have a window (§4.1), so instead
+    // close the OFF session and prepare a shared ON one.
+    await serviceRoleQuery(
+      `UPDATE public.ai_sessions SET state = 'closed' WHERE id = $1`,
+      [offKey],
+    );
+    const onKey = crypto.randomUUID();
+    assertEquals(
+      (await processSessionCommand(
+        makeReq({
+          command: "prepare",
+          relationship_id: REL_C1,
+          kind: "ideas",
+          visibility: "shared",
+          include_window: true,
+          utc_offset_minutes: 0,
+          idempotency_key: onKey,
+        }),
+        ctx(USER_C1_A),
+        deps,
+      )).status,
+      200,
+    );
+    const on = await reviewBody(onKey);
+    // THE CONTRASTING HALF: without it, a branch that returned [] for
+    // EVERY session would satisfy the assertions above. This is the
+    // vacuous-test trap Task 2's digest findings were about.
+    assertEquals(
+      (on.window as { content: string }[]).map((m) => m.content),
+      ["DISTINCTIVE DAY TEXT"],
+      "the SAME relationship and day, with the window ON, must review as the day's one message -- otherwise the empty-window assertion above proves nothing",
+    );
+    assertNotEquals(
+      off.digest,
+      on.digest,
+      "§4.3: the window setting is bound into the digest, so window-off and window-on over the same day cannot approve each other",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "A2: the persisted source_version is COALESCE(edited_at, created_at), so an edit MOVES it -- for the target and for a window row",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_recent_window_enabled",
+    );
+    const deps = await makeDeps();
+
+    const now = new Date();
+    const targetId = crypto.randomUUID();
+    const windowId = crypto.randomUUID();
+    for (const [id, content, minutesAgo] of [
+      [targetId, "the target", 10],
+      [windowId, "a window line", 8],
+    ] as [string, string, number][]) {
+      await serviceRoleQuery(
+        `INSERT INTO public.messages (id, relationship_id, sender_id, client_message_id, content, source, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'native', $6)`,
+        [
+          id,
+          REL_C1,
+          USER_C1_A,
+          crypto.randomUUID(),
+          content,
+          new Date(now.getTime() - minutesAgo * 60_000).toISOString(),
+        ],
+      );
+    }
+
+    // EDIT both messages BEFORE preparing, so the stored row has to
+    // pick up edited_at. created_at is untouched by an edit (no
+    // function in the schema assigns messages.created_at), which is
+    // exactly why the pre-migration body could not detect this.
+    const editedAt = new Date(now.getTime() - 60_000).toISOString();
+    await serviceRoleQuery(
+      `UPDATE public.messages SET content = content || ' (edited)', edited_at = $2
+        WHERE id = ANY($1::uuid[])`,
+      [[targetId, windowId], editedAt],
+    );
+
+    const key = crypto.randomUUID();
+    assertEquals(
+      (await processSessionCommand(
+        makeReq({
+          command: "prepare",
+          relationship_id: REL_C1,
+          kind: "ideas",
+          visibility: "shared",
+          target_message_id: targetId,
+          include_window: true,
+          utc_offset_minutes: 0,
+          idempotency_key: key,
+        }),
+        ctx(USER_C1_A),
+        deps,
+      )).status,
+      200,
+    );
+
+    const rows = await serviceRoleQuery(
+      `SELECT s.source_role, s.source_message_id, s.source_version,
+              m.created_at, m.edited_at
+         FROM public.ai_session_sources s
+         JOIN public.messages m ON m.id = s.source_message_id
+        WHERE s.session_id = $1
+        ORDER BY s.source_role`,
+      [key],
+    );
+    assertEquals(
+      rows.map((r) => String(r.source_role)),
+      ["target", "window"],
+      "SETUP: both a target and a window row must exist, or this test checks one role only",
+    );
+    for (const row of rows) {
+      const version = canonicalTimestamp(row.source_version);
+      // ASSERTS THE SPECIFIC VALUE: the stored version IS the edited_at
+      // instant, to the millisecond.
+      assertEquals(
+        version,
+        canonicalTimestamp(row.edited_at),
+        `${row.source_role}: source_version must be edited_at once the message has been edited`,
+      );
+      // And is NOT created_at, which is what the pre-migration body
+      // wrote. Without this leg, a fixture where the two happened to
+      // coincide would pass.
+      assertNotEquals(
+        version,
+        canonicalTimestamp(row.created_at),
+        `${row.source_role}: source_version must NOT be created_at -- created_at never moves on an edit, so §4.3's revalidation would be blind`,
+      );
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "A3: the slot limit maps to SESSION_LIMIT_REACHED from the SQLSTATE, not from the message text",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_shared_enabled");
+    const deps = await makeDeps();
+
+    const first = crypto.randomUUID();
+    assertEquals(
+      (await processSessionCommand(
+        makeReq({
+          command: "prepare",
+          relationship_id: REL_C1,
+          kind: "ideas",
+          visibility: "shared",
+          utc_offset_minutes: 0,
+          idempotency_key: first,
+        }),
+        ctx(USER_C1_A),
+        deps,
+      )).status,
+      200,
+    );
+
+    // The RPC's error must carry SQLSTATE AT001 -- asserted DIRECTLY
+    // against the RPC, because the branch's own text-matching fallback
+    // would otherwise hide the absence of the code. This is the leg
+    // that makes the test about the ERRCODE rather than about the
+    // mapping.
+    const service = await makeServiceRoleClient();
+    const raw = await (service as unknown as {
+      rpc: (
+        name: string,
+        args: Record<string, unknown>,
+      ) => Promise<{ error: { message: string; code?: string } | null }>;
+    }).rpc("prepare_ai_session", {
+      p_actor_id: USER_C1_A,
+      p_idempotency_key: crypto.randomUUID(),
+      p_relationship_id: REL_C1,
+      p_kind: "ideas",
+      p_visibility: "shared",
+      p_target_message_id: null,
+      p_include_window: false,
+      p_window_message_ids: null,
+    });
+    assertEquals(
+      raw.error?.code,
+      "AT001",
+      "prepare_ai_session's slot-limit RAISE must carry ERRCODE AT001, or the branch is back to regex-matching the exception text",
+    );
+    // The message text is deliberately UNCHANGED, so the pre-existing
+    // test that keys off it still holds.
+    assertEquals(
+      /already pending or active/i.test(raw.error?.message ?? ""),
+      true,
+      "the slot-limit message text must be unchanged -- the ERRCODE was added alongside it, not instead of it",
+    );
+
+    // And the branch maps it.
+    const second = await processSessionCommand(
+      makeReq({
+        command: "prepare",
+        relationship_id: REL_C1,
+        kind: "ideas",
+        visibility: "shared",
+        utc_offset_minutes: 0,
+        idempotency_key: crypto.randomUUID(),
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(second.status, 409);
+    assertEquals((await second.json()).code, "SESSION_LIMIT_REACHED");
+  },
+});
+
 Deno.test({
   name: "teardown: this suite leaves every capability flag OFF, as the migration seeded them",
   fn: async () => {

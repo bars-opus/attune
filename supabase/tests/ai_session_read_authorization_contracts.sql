@@ -110,7 +110,7 @@ BEGIN
   -- and by NOBODY else -- not the partner, not a stranger.
   -- ===================================================================
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
   PERFORM public.activate_ai_session(v_user_a, v_session, 1);
@@ -308,7 +308,7 @@ BEGIN
   -- CURRENT context_revision -- and not by a non-member.
   -- ===================================================================
   SELECT session_id INTO v_shared FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_shared, 1, 'd', 'v1');
   PERFORM public.approve_ai_session_context(v_user_b, v_shared, 1, 'd', 'v1');
@@ -514,7 +514,7 @@ BEGIN
   -- an author-checking RPC, never a shared SELECT policy".
   -- ===================================================================
   SELECT session_id INTO v_nearby FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'nearby', 'private', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'nearby', 'private', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_nearby, 1, 'd', 'v1');
   PERFORM public.activate_ai_session(v_user_a, v_nearby, 1);
@@ -814,7 +814,7 @@ BEGIN
   -- Contract 1's private session before Contract 5.
   UPDATE public.ai_sessions SET state = 'closed' WHERE id = v_shared;
   SELECT session_id INTO v_shared_nearby FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'nearby', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'nearby', 'shared', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_shared_nearby, 1, 'd', 'v1');
   PERFORM public.approve_ai_session_context(v_user_b, v_shared_nearby, 1, 'd', 'v1');
@@ -1144,15 +1144,100 @@ BEGIN
   -- Task 9 loosened that CHECK and removed the fabricated timestamp, so
   -- the winning body closes expired preparing sessions WITHOUT it.
   -- Re-applying Task 3's file last would put the fake stamp back.
+  -- The 8-argument form is the live one: Plan C Task 3's
+  -- 20260953200200 added p_window_message_ids and DROPPED the
+  -- 7-argument overload, so a regprocedure lookup of the old signature
+  -- would itself fail. Asserted here so a revert of 20260953200200 --
+  -- which restores the 7-arg form and takes the window persistence,
+  -- the edit-detecting source_version and the slot-limit ERRCODE with
+  -- it -- fails on THIS line with a clear message rather than on an
+  -- opaque "function does not exist".
+  IF to_regprocedure(
+       'public.prepare_ai_session(uuid, uuid, uuid, text, text, uuid, boolean, uuid[])'
+     ) IS NULL THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: there is no 8-argument public.prepare_ai_session(..., uuid[]). That signature is Plan C Task 3''s 20260953200200, which WINS over 20260953090000: it persists the spec 4.2 shared window as source_role = ''window'' rows (before it, p_include_window was accepted and IGNORED, so spec 4.3''s window toggle had no substrate at all), writes source_version as COALESCE(edited_at, created_at) so an edit is detectable, and raises the slot limit with ERRCODE AT001. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
+  END IF;
+  IF to_regprocedure(
+       'public.prepare_ai_session(uuid, uuid, uuid, text, text, uuid, boolean)'
+     ) IS NOT NULL THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the 7-argument public.prepare_ai_session is back. 20260953200200 dropped it deliberately, so PostgREST cannot resolve a prepare call to the body that IGNORES p_include_window. Two overloads differing only in a trailing array argument is exactly the ambiguity that drop prevents.';
+  END IF;
+
   v_def := pg_temp.strip_sql_comments(pg_get_functiondef(
-    'public.prepare_ai_session(uuid, uuid, uuid, text, text, uuid, boolean)'::regprocedure));
+    'public.prepare_ai_session(uuid, uuid, uuid, text, text, uuid, boolean, uuid[])'::regprocedure));
   IF v_def ~ 'SET state = ''closed'', activated_at = now\(\)' THEN
     RAISE EXCEPTION
-      'SUPERSESSION REVERTED: the live prepare_ai_session stamps a FAKE activated_at on its expired-slot reclaim. That is Task 3''s superseded body (20260953030000); Task 9''s 20260953090000 WINS and removed it. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
+      'SUPERSESSION REVERTED: the live prepare_ai_session stamps a FAKE activated_at on its expired-slot reclaim. That is Task 3''s superseded body (20260953030000); Task 9''s 20260953090000 WINS and removed it, and 20260953200200 preserved the removal. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
   END IF;
   IF v_def !~ 'SET state = ''closed''' THEN
     RAISE EXCEPTION
       'SETUP FAILED: the live prepare_ai_session has no expired-slot reclaim UPDATE at all -- this contract''s marker no longer discriminates and must be re-derived';
+  END IF;
+  -- ---- 20260953200200's three OWN markers, each the specific semantic
+  -- difference the supersession exists to deliver. Not incidental
+  -- strings: delete any one of them and the corresponding spec rule
+  -- stops working, which is why each is asserted separately rather than
+  -- trusting the signature check above.
+  --
+  -- A1: the 'window' source rows. The schema's CHECK has allowed
+  -- source_role = 'window' since 20260953010000 and NO function ever
+  -- wrote one, so spec 4.3's "Window is default off; enabling it in
+  -- preparing state invalidates approvals" had nothing to be a property
+  -- of. A body that persists only 'target' is the pre-fix body.
+  IF v_def !~ '''window''' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live prepare_ai_session never writes a source_role = ''window'' row, so p_include_window is accepted and IGNORED again and spec 4.3''s window toggle has no durable substrate. That is 20260953090000''s superseded body; 20260953200200 WINS. Re-apply migrations in order, or add a NEW migration that sorts after the winner.';
+  END IF;
+  IF v_def !~ 'p_include_window' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live prepare_ai_session''s body does not mention p_include_window at all -- the parameter is in the signature and the body ignores it, which is the exact pre-20260953200200 defect (0 occurrences in prosrc, verified from the catalog at the time).';
+  END IF;
+  -- A2: the edit-detecting source version, for BOTH roles. created_at
+  -- never moves on an edit (no function in public assigns
+  -- messages.created_at), so a stored source_version of m.created_at
+  -- makes spec 4.3's source-version revalidation blind to an edit --
+  -- a partner approves a digest over pre-edit text while the stored
+  -- version says nothing changed.
+  IF v_def !~ 'COALESCE\(m\.edited_at, m\.created_at\)' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live prepare_ai_session does not write source_version as COALESCE(m.edited_at, m.created_at), so the stored source version cannot detect an edit -- messages.created_at never moves on one. Spec 4.3''s revalidation at activation, dispatch, commit and share is then blind for the stored rows, while ai_session_context.ts''s live window uses the COALESCE form, so the two disagree. That is 20260953090000''s superseded body; 20260953200200 WINS.';
+  END IF;
+  -- Anti-vacuity for A2: the pre-fix expression must be GONE, not
+  -- merely joined by the new one. A body containing both would pass the
+  -- marker above while still writing created_at for one of the roles.
+  -- Keyed on the SELECT list shape, not on a span containing
+  -- "m.created_at": the winning expression COALESCE(m.edited_at,
+  -- m.created_at) itself contains m.created_at, so a span match is a
+  -- false positive (measured -- this assertion fired on the CORRECT
+  -- body before being narrowed). The superseded shape is
+  -- `m.id, m.created_at,` with no COALESCE between them.
+  IF v_def ~ 'm\.id,\s*m\.created_at\s*,' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION BROKEN FORWARD: prepare_ai_session''s target source row is back to a bare m.created_at source_version. Both roles must use COALESCE(m.edited_at, m.created_at) or the two stored roles revalidate differently.';
+  END IF;
+  -- A3: the slot-limit ERRCODE. Without it Plan C's prepare branch has
+  -- to regex-match the exception TEXT, and a reword silently degrades
+  -- spec 10's SESSION_LIMIT_REACHED to UNAVAILABLE.
+  IF v_def !~ 'USING ERRCODE = ''AT001''' THEN
+    RAISE EXCEPTION
+      'SUPERSESSION REVERTED: the live prepare_ai_session raises its slot-limit refusals with no ERRCODE, so Plan C''s prepare branch can only discriminate them by regex-matching the exception TEXT and a reword degrades spec 10''s SESSION_LIMIT_REACHED to a generic UNAVAILABLE. That is 20260953090000''s superseded body; 20260953200200 WINS.';
+  END IF;
+  -- Anti-vacuity for A3: BOTH slot-limit RAISEs carry it, not just the
+  -- private one. A single occurrence would leave the shared-session
+  -- limit -- the one two partners can hit -- mapping by text alone.
+  IF (length(v_def) - length(replace(v_def, 'USING ERRCODE = ''AT001''', ''))) / 23 < 2 THEN
+    RAISE EXCEPTION
+      'SUPERSESSION PARTIALLY REVERTED: only one of prepare_ai_session''s two slot-limit RAISEs carries ERRCODE AT001. Both the private-per-creator and the shared-per-relationship limit must, or one of them still maps by exception text alone.';
+  END IF;
+  -- The message TEXT is unchanged on purpose, so the executed edge
+  -- function test that asserts on it keeps passing. If a future change
+  -- rewords it, that is fine -- the ERRCODE is now the contract -- but
+  -- it must not be reworded in the SAME change that removes the code.
+  IF v_def !~ 'already pending or active' THEN
+    RAISE EXCEPTION
+      'SETUP FAILED: prepare_ai_session''s slot-limit message no longer contains "already pending or active". That is permitted now that ERRCODE AT001 carries the contract, but Plan C''s index.ts keeps a text-matching FALLBACK leg for transports that drop the code; update that leg and this assertion together.';
   END IF;
 
   -- ---- end_ai_session: fix round 1's 20260953090100 WINS over Task
@@ -1509,7 +1594,7 @@ BEGIN
       'SUPERSESSION BROKEN FORWARD: read_ai_session_turns now contains a RAISE EXCEPTION. Every unauthorized outcome must be a silent RETURN (zero rows): a distinguishable error makes this RPC an existence oracle -- "not found" versus "not authorized" tells a caller whether a private session exists on a relationship they belong to. Task 5 routed its consent gate through a shared helper that deliberately returns a BOOLEAN and never raises, precisely so this property survived the extraction (plan Ruling 12).';
   END IF;
 
-  RAISE NOTICE 'migration supersession ordering: 11 superseded definitions all still superseded';
+  RAISE NOTICE 'migration supersession ordering: 12 superseded definitions all still superseded';
 END $$;
 
 

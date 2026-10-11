@@ -48,7 +48,7 @@ BEGIN
     (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
   PERFORM public.activate_ai_session(v_user_a, v_session, 1);
@@ -221,7 +221,7 @@ BEGIN
   -- The exact scenario of the live repro's second form. The actor
   -- (user A) still consents; the partner withdrew. Denied.
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_w_a, gen_random_uuid(), v_rel_w, 'ideas', 'private', NULL, false
+    v_w_a, gen_random_uuid(), v_rel_w, 'ideas', 'private', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_w_a, v_session, 1, 'd', 'v1');
   PERFORM public.activate_ai_session(v_w_a, v_session, 1);
@@ -264,7 +264,7 @@ BEGIN
   -- lookups return NULL rather than false -- and a mutant that only
   -- handled an explicit 'withdrawn' row would pass 6a and fail this.
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_n_a, gen_random_uuid(), v_rel_n, 'ideas', 'private', NULL, false
+    v_n_a, gen_random_uuid(), v_rel_n, 'ideas', 'private', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_n_a, v_session, 1, 'd', 'v1');
   PERFORM public.activate_ai_session(v_n_a, v_session, 1);
@@ -287,7 +287,7 @@ BEGIN
   -- covers it, because every other admission here runs on a fixture
   -- that the gate has to let through for unrelated reasons.
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_g_a, gen_random_uuid(), v_rel_g, 'ideas', 'private', NULL, false
+    v_g_a, gen_random_uuid(), v_rel_g, 'ideas', 'private', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_g_a, v_session, 1, 'd', 'v1');
   PERFORM public.activate_ai_session(v_g_a, v_session, 1);

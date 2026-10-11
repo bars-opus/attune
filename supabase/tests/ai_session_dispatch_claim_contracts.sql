@@ -47,7 +47,7 @@ BEGIN
     (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
   PERFORM public.activate_ai_session(v_user_a, v_session, 1);
@@ -118,7 +118,7 @@ BEGIN
       (v_rel2, v_user_a, 'v1', 'granted', gen_random_uuid(), clock_timestamp()),
       (v_rel2, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
     SELECT session_id INTO v_session3 FROM public.prepare_ai_session(
-      v_user_a, gen_random_uuid(), v_rel2, 'ideas', 'private', NULL, false
+      v_user_a, gen_random_uuid(), v_rel2, 'ideas', 'private', NULL, false, NULL
     );
     PERFORM public.approve_ai_session_context(v_user_a, v_session3, 1, 'd', 'v1');
     PERFORM public.activate_ai_session(v_user_a, v_session3, 1);
@@ -227,14 +227,14 @@ BEGIN
     (v_rel_healthy, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_sess_orphan FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel_orphan, 'ideas', 'private', NULL, false);
+    v_user_a, gen_random_uuid(), v_rel_orphan, 'ideas', 'private', NULL, false, NULL);
   PERFORM public.approve_ai_session_context(v_user_a, v_sess_orphan, 1, 'd', 'v1');
   PERFORM public.activate_ai_session(v_user_a, v_sess_orphan, 1);
   SELECT * INTO v_admit_orphan FROM public.admit_ai_session_generation(
     v_user_a, gen_random_uuid(), v_sess_orphan, 1, 'ideas:iso-orphan');
 
   SELECT session_id INTO v_sess_healthy FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel_healthy, 'ideas', 'private', NULL, false);
+    v_user_a, gen_random_uuid(), v_rel_healthy, 'ideas', 'private', NULL, false, NULL);
   PERFORM public.approve_ai_session_context(v_user_a, v_sess_healthy, 1, 'd', 'v1');
   PERFORM public.activate_ai_session(v_user_a, v_sess_healthy, 1);
   SELECT * INTO v_admit_healthy FROM public.admit_ai_session_generation(

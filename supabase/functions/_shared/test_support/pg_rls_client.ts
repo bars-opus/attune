@@ -324,7 +324,10 @@ class RpcCaller {
   }
 
   private async exec(): Promise<
-    { data: PgRow[] | null; error: { message: string } | null }
+    {
+      data: PgRow[] | null;
+      error: { message: string; code?: string } | null;
+    }
   > {
     const argNames = Object.keys(this.args);
     const params: unknown[] = [];
@@ -332,9 +335,48 @@ class RpcCaller {
     // driver needs an explicit cast for an object/array param, same as
     // UpdateBuilder above -- otherwise it is sent as a Postgres row/array
     // literal instead of JSON text and the function call fails to bind.
+    //
+    // AN ARRAY OF UUID STRINGS IS THE ONE EXCEPTION, and it is NOT a
+    // convenience: prepare_ai_session's p_window_message_ids is
+    // `uuid[]`, not jsonb. Real PostgREST sends a JSON array and
+    // Postgres coerces it to the declared uuid[] parameter type; this
+    // driver binds a positional parameter, so an explicit ::uuid[] cast
+    // is what makes the same call reach the same function here. Casting
+    // it to ::jsonb instead -- which is what the unconditional branch
+    // below used to do -- makes the call fail to resolve, and the
+    // failure surfaces as a generic RPC error rather than as a bind
+    // error, which is how it would have been mistaken for a logic bug.
+    // An EMPTY array counts. The real case that forced this: a shared
+    // Ideas session whose civil day holds no eligible messages selects
+    // an empty window, so the edge function passes [] -- and sending
+    // that as `'[]'::jsonb` fails to resolve against a uuid[] parameter
+    // exactly as a non-empty one does. The `.every()` on an empty array
+    // is vacuously true, so the length check is the only thing that
+    // would have excluded it; it is deliberately absent. uuidArgs that
+    // are genuinely jsonb and genuinely empty do not exist in this
+    // codebase (every jsonb RPC arg is an object or a non-empty array of
+    // objects: p_proposal, p_sources, p_assistant_payload), and the
+    // `uuidArrayArgNames` allowlist below makes that irrelevant anyway.
+    const UUID_ARRAY_ARG_NAMES = new Set(["p_window_message_ids"]);
+    const isUuidArray = (name: string, value: unknown): value is string[] =>
+      UUID_ARRAY_ARG_NAMES.has(name) && Array.isArray(value) &&
+      value.every((item) =>
+        typeof item === "string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+          .test(item)
+      );
+
     const callArgs = argNames
       .map((name, i) => {
         const value = this.args[name];
+        if (isUuidArray(name, value)) {
+          // Rendered as a Postgres array literal, bound as text, cast
+          // by the server. `{a,b}` needs no quoting for uuids -- the
+          // regex above already proved every element is bare hex and
+          // dashes, so no element can contain a comma, brace or quote.
+          params.push(`{${value.join(",")}}`);
+          return `${quoteIdent(name)} := $${i + 1}::uuid[]`;
+        }
         const isJsonValue = Array.isArray(value) ||
           (typeof value === "object" && value !== null);
         params.push(isJsonValue ? JSON.stringify(value) : value);
@@ -348,9 +390,20 @@ class RpcCaller {
       const rows = await this.conn.query(sql, params);
       return { data: rows, error: null };
     } catch (err) {
+      // SQLSTATE is carried through as `code`, matching supabase-js's
+      // PostgrestError shape. Without it this double could not exercise
+      // a caller that discriminates by error code -- and Plan C's
+      // prepare branch now does exactly that for the slot limit
+      // (ERRCODE 'AT001', added by 20260953200200 so the mapping does
+      // not depend on the exception's wording). deno-postgres puts it
+      // on err.fields.code for a PostgresError.
+      const fields = (err as { fields?: { code?: string } } | null)?.fields;
       return {
         data: null,
-        error: { message: err instanceof Error ? err.message : String(err) },
+        error: {
+          message: err instanceof Error ? err.message : String(err),
+          ...(typeof fields?.code === "string" ? { code: fields.code } : {}),
+        },
       };
     }
   }

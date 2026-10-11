@@ -711,6 +711,34 @@ async function handlePrepare(branch: BranchContext): Promise<Response> {
   );
   if (conflict) return errorResponse(conflict);
 
+  // §4.2: "Optional shared window: up to six eligible messages AS OF
+  // PREPARE TIME ... Persist source IDs, versions and snapshot time."
+  // The §4.2 selection pipeline lives HERE (ai_session_context.ts's
+  // selectSharedWindow, deterministic and tested); the RPC's job is to
+  // persist WHICH messages were selected, as 'window' source rows. It
+  // deliberately does not re-select in SQL -- two selection
+  // implementations that must agree forever is exactly what the
+  // determinism Global Constraint forbids, and §4.3's two-partner
+  // digest equality depends on there being one.
+  let windowMessageIds: string[] | null = null;
+  if (request.includeWindow) {
+    try {
+      const window = await selectSharedWindow(
+        service,
+        request.relationshipId,
+        // §4.2 item 3: the window excludes the selected target.
+        request.targetMessageId,
+        request.utcOffsetMinutes,
+        // ONE instant for the whole request (§4.2: "computed once from
+        // server time"), the same `now` every other branch uses.
+        branch.now,
+      );
+      windowMessageIds = window.map((message) => message.messageId);
+    } catch {
+      return errorResponse(sessionError("INTERNAL_ERROR"));
+    }
+  }
+
   const result = await service.rpc("prepare_ai_session", {
     // THE ACTOR COMES FROM THE VERIFIED USER, never the body. `request`
     // carries no identity field at all -- parsePrepareRequest's
@@ -723,14 +751,38 @@ async function handlePrepare(branch: BranchContext): Promise<Response> {
     p_visibility: request.visibility,
     p_target_message_id: request.targetMessageId,
     p_include_window: request.includeWindow,
+    p_window_message_ids: windowMessageIds,
   });
 
   if (result.error) {
-    // Plan B's RPC signals the slot limits by RAISE, so the message is
-    // the only discriminator available. Mapped to §10's
-    // SESSION_LIMIT_REACHED ("start a new session explicitly") rather
-    // than a generic failure, because the remedies differ: a limit is
-    // the caller's own other session, which it can end.
+    // The slot limits are signalled by SQLSTATE, not by message text.
+    // 20260953200200 added `USING ERRCODE = 'AT001'` to both slot-limit
+    // RAISEs precisely so this mapping survives a reword of the
+    // message: before it, a reword silently degraded §10's
+    // SESSION_LIMIT_REACHED ("start a new session explicitly") to a
+    // generic UNAVAILABLE, and the remedies differ -- a limit is the
+    // caller's own other session, which it can end.
+    //
+    // The message-text leg is kept BELOW the code as a fallback, not as
+    // the primary: a transport that drops `code` (and the pg_rls_client
+    // test double was one such shape until this change taught it to
+    // carry SQLSTATE) must still map correctly, and keeping it costs
+    // nothing.
+    //
+    // MUTATION-TESTED, and the result is recorded rather than tidied
+    // away: deleting EITHER leg alone survives the suite, because the
+    // other maps the same refusal -- which is what a deliberately
+    // redundant pair is for. Deleting BOTH is caught by two tests. The
+    // code leg's own correctness is asserted directly instead, by the
+    // "A3" test reading `error.code` off the RPC, and that assertion is
+    // proven non-vacuous by a mutation that makes the test double drop
+    // SQLSTATE (caught).
+    const code = String(
+      (result.error as { code?: unknown }).code ?? "",
+    );
+    if (code === "AT001") {
+      return errorResponse(sessionError("SESSION_LIMIT_REACHED"));
+    }
     const message = String(result.error.message ?? "");
     if (/already pending or active/i.test(message)) {
       return errorResponse(sessionError("SESSION_LIMIT_REACHED"));
@@ -806,7 +858,7 @@ async function handleReviewContext(branch: BranchContext): Promise<Response> {
   const session = await service
     .from("ai_sessions")
     .select(
-      "id, relationship_id, creator_id, kind, visibility, state, revision, context_revision, preparation_deadline",
+      "id, relationship_id, creator_id, kind, visibility, state, revision, context_revision, preparation_deadline, include_window",
     )
     .eq("id", sessionId)
     .maybeSingle();
@@ -821,19 +873,23 @@ async function handleReviewContext(branch: BranchContext): Promise<Response> {
   const kind = row.kind as string;
   const visibility = row.visibility as string;
 
-  // Whether this session has a window is a property of the SESSION, and
-  // the only durable record of it is whether prepare recorded 'window'
-  // sources. §4.3: "Window is default off; enabling it in preparing
-  // state invalidates approvals and increments revision" -- so by
-  // review time the setting is already frozen in the source rows.
+  // Whether this session has a window is a property of the SESSION, read
+  // from the STORED setting -- never inferred from kind/visibility.
   //
-  // NOTE: Plan B's prepare_ai_session accepts `p_include_window` and
-  // then IGNORES it -- it writes only the 'target' source row and never
-  // a 'window' one. So there is no stored window setting to read yet.
-  // Reported as a finding. Until it is stored, a shared Ideas session is
-  // treated as window-capable and the window is computed live, which is
-  // what this command must do anyway to show a preview.
-  const includeWindow = visibility === "shared" && kind === "ideas";
+  // 20260953200200 (Item A) is what made this readable: before it,
+  // prepare_ai_session accepted `p_include_window` and ignored it, so
+  // this branch had to treat every shared Ideas session as windowed and
+  // compute live. §4.3: "Window is default off" -- and a shared Ideas
+  // session that the user left the window OFF for must get an EMPTY
+  // window here, not the whole civil day, or the digest both partners
+  // approve would bind context the requester never switched on.
+  //
+  // The `&& shared && ideas` conjunction is belt-and-braces: the
+  // ai_sessions_window_only_shared_ideas CHECK already makes a private
+  // or Nearby session with include_window true unstorable, so this can
+  // only ever narrow, never widen.
+  const includeWindow = row.include_window === true &&
+    visibility === "shared" && kind === "ideas";
 
   const eligibility = await checkEligibility(
     service,

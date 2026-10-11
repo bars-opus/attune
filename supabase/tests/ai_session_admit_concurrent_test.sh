@@ -30,7 +30,7 @@ INSERT INTO public.relationships (id, user_a, user_b, status) VALUES ('$REL', '$
 INSERT INTO public.ai_processing_consent_events (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
   VALUES ('$REL', '$USER_A', 'v1', 'granted', gen_random_uuid(), clock_timestamp()),
          ('$REL', '$USER_B', 'v1', 'granted', gen_random_uuid(), clock_timestamp());
-SELECT session_id FROM public.prepare_ai_session('$USER_A', gen_random_uuid(), '$REL', 'ideas', 'private', NULL, false);
+SELECT session_id FROM public.prepare_ai_session('$USER_A', gen_random_uuid(), '$REL', 'ideas', 'private', NULL, false, NULL);
 SQL
 )
 SESSION=$(echo "$SETUP" | tail -n1)

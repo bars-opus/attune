@@ -50,7 +50,7 @@ BEGIN
     (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
   PERFORM public.activate_ai_session(v_user_a, v_session, 1);
@@ -416,7 +416,7 @@ BEGIN
   -- has always returned a revision. This is the ONLY place the fence is
   -- seeded; everything after it must come from a completion RPC.
   SELECT * INTO v_prepare FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false, NULL
   );
   v_session := v_prepare.session_id;
   v_fence := v_prepare.revision;

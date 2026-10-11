@@ -65,7 +65,7 @@ BEGIN
   -- synchronously in the same transaction (spec §5.4).
   -- ===================================================================
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
   PERFORM public.approve_ai_session_context(v_user_b, v_session, 1, 'd', 'v1');
@@ -157,7 +157,7 @@ BEGIN
     VALUES (v_target_msg, v_rel2, v_user_b, gen_random_uuid(), 'where should we go?', 'native');
 
     SELECT session_id INTO v_nearby_session FROM public.prepare_ai_session(
-      v_user_a, gen_random_uuid(), v_rel2, 'nearby', 'shared', v_target_msg, false
+      v_user_a, gen_random_uuid(), v_rel2, 'nearby', 'shared', v_target_msg, false, NULL
     );
     PERFORM public.approve_ai_session_context(v_user_a, v_nearby_session, 1, 'd', 'v1');
     PERFORM public.approve_ai_session_context(v_user_b, v_nearby_session, 1, 'd', 'v1');
@@ -237,7 +237,7 @@ BEGIN
     -- Case 1: 'reserved' -- admitted but NEVER dispatched. No provider
     -- call was made, so the reservation must be released.
     SELECT session_id INTO v_q_session FROM public.prepare_ai_session(
-      v_user_a, gen_random_uuid(), v_q_rel, 'ideas', 'shared', NULL, false
+      v_user_a, gen_random_uuid(), v_q_rel, 'ideas', 'shared', NULL, false, NULL
     );
     PERFORM public.approve_ai_session_context(v_user_a, v_q_session, 1, 'd', 'v1');
     PERFORM public.approve_ai_session_context(v_user_b, v_q_session, 1, 'd', 'v1');
@@ -291,7 +291,7 @@ BEGIN
     -- opposite direction, and release_ai_assistant_quota_reservation
     -- would RAISE on it.
     SELECT session_id INTO v_q_session FROM public.prepare_ai_session(
-      v_user_a, gen_random_uuid(), v_q_rel, 'ideas', 'shared', NULL, false
+      v_user_a, gen_random_uuid(), v_q_rel, 'ideas', 'shared', NULL, false, NULL
     );
     PERFORM public.approve_ai_session_context(v_user_a, v_q_session, 1, 'd', 'v1');
     PERFORM public.approve_ai_session_context(v_user_b, v_q_session, 1, 'd', 'v1');
@@ -349,7 +349,7 @@ BEGIN
   -- makes 'closed' honest about whether the session ever activated.
   -- ===================================================================
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'shared', NULL, false, NULL
   );
   -- Partner ends it before anyone ever approved/activated.
   PERFORM public.end_ai_session(v_user_b, v_session);
@@ -367,7 +367,7 @@ BEGIN
   -- Asserts the SPECIFIC rejection, not merely "something raised".
   -- ===================================================================
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false, NULL
   );
   BEGIN
     PERFORM public.end_ai_session(v_user_b, v_session);
@@ -416,7 +416,7 @@ BEGIN
   -- carrying attune_assist provenance, plus a publication mapping row.
   -- ===================================================================
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
   PERFORM public.activate_ai_session(v_user_a, v_session, 1);
@@ -518,7 +518,7 @@ BEGIN
     v_admit2 record;
   BEGIN
     SELECT session_id INTO v_session2 FROM public.prepare_ai_session(
-      v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false
+      v_user_a, gen_random_uuid(), v_rel, 'ideas', 'private', NULL, false, NULL
     );
     PERFORM public.approve_ai_session_context(v_user_a, v_session2, 1, 'd', 'v1');
     PERFORM public.activate_ai_session(v_user_a, v_session2, 1);

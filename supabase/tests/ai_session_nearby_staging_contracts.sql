@@ -45,7 +45,7 @@ BEGIN
     (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
 
   SELECT session_id INTO v_session FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'nearby', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'nearby', 'shared', NULL, false, NULL
   );
   PERFORM public.approve_ai_session_context(v_user_a, v_session, 1, 'd', 'v1');
   PERFORM public.approve_ai_session_context(v_user_b, v_session, 1, 'd', 'v1');
@@ -876,7 +876,7 @@ BEGIN
   -- always disclosed a revision. The ONLY seed; everything after it must
   -- come from publish.
   SELECT * INTO v_prepare FROM public.prepare_ai_session(
-    v_user_a, gen_random_uuid(), v_rel, 'nearby', 'shared', NULL, false
+    v_user_a, gen_random_uuid(), v_rel, 'nearby', 'shared', NULL, false, NULL
   );
   v_session := v_prepare.session_id;
   v_fence := v_prepare.revision;
