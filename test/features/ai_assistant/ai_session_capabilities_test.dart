@@ -350,22 +350,95 @@ void main() {
 
       final stripped = strip(body);
 
-      // The stripper WORKS, proved on a token that appears in this
-      // class ONLY inside comments: 'ai_understand_enabled' is named in
-      // the wireKeys doc comment explaining its absence, and nowhere in
-      // code. If it survives stripping, the regexes are not removing
-      // comments and every count below is measuring prose.
+      // THE STRIPPER IS PROVED WITH TWO PROBES, one per KIND of thing
+      // it removes, because one probe was not enough and two mutations
+      // proved it.
+      //
+      // M10 deleted the string-literal regex and the suite stayed
+      // GREEN. The single original probe was `ai_understand_enabled`,
+      // which appears in this class ONLY inside a `///` line, so it
+      // said nothing about string stripping at all — and could not
+      // have, since that key is written in BACKTICKS and the regex
+      // matches single quotes. A probe that passes for a reason other
+      // than the one claimed is Task 4's M1b family, so probe B below
+      // is a quoted token on a code line and M10 now dies.
+      //
+      // DISCLOSED LIMIT, measured rather than assumed: M9 deleted the
+      // `///` regex and no probe can kill it, because `^\s*//.*$`
+      // already matches `///` lines — the two comment regexes are
+      // individually redundant. Confirmed by stripping with each one
+      // disabled in turn: the field and getter counts are identical
+      // (7 / {noneAvailable}) all three ways. So M9 is an EQUIVALENT
+      // MUTANT, not a surviving gap; probe A proves comments are
+      // stripped, not which regex did it, and that is the honest
+      // claim. Both are kept because a future author removing the
+      // `//` regex would then need the `///` one.
+      //
+      // Probe A — a bare identifier on a comment line, unquoted
+      // anywhere, so ONLY comment stripping can remove it.
       expect(
         body,
-        contains('ai_understand_enabled'),
-        reason: 'the stripper probe must exist in the comments to be a probe',
+        contains('aiConsentStatusProvider'),
+        reason:
+            'probe A must appear in a /// comment in this class body. If '
+            'that doc comment changed, re-point it at another bare '
+            'identifier that appears only in prose',
+      );
+      expect(
+        body,
+        isNot(contains("'aiConsentStatusProvider'")),
+        reason:
+            'probe A must be UNQUOTED, or the string-literal regex would '
+            'also remove it and probe A would stop testing comment '
+            'stripping at all — which is how the original single probe '
+            'let M10 survive',
       );
       expect(
         stripped,
-        isNot(contains('ai_understand_enabled')),
+        isNot(contains('aiConsentStatusProvider')),
         reason:
-            'comment stripping failed — the assertions below would be '
-            'counting documentation, not declarations',
+            'DOC-COMMENT STRIPPING FAILED — the counts below would be '
+            'measuring documentation, not declarations',
+      );
+
+      // Probe B — a quoted token on CODE lines, which ONLY the
+      // string-literal regex can remove. It occurs twice legitimately
+      // (wireKeys' set literal and fromRpc's read(...)); what must not
+      // happen is an occurrence inside a comment, because comment
+      // stripping would then remove it and probe B would stop
+      // isolating the string regex. This is the check that makes M10
+      // a kill.
+      //
+      // Why stripping literals matters for the counts below: the field
+      // regex matches `final <type> <name> =`, so a declaration-shaped
+      // string literal could otherwise be counted as a declaration.
+      final probeBLines = body
+          .split('\n')
+          .where((line) => line.contains("'ai_assist_enabled'"))
+          .toList();
+      expect(
+        probeBLines,
+        isNotEmpty,
+        reason:
+            "probe B vanished from the class body — re-point it at another "
+            'quoted token on a code line rather than deleting it',
+      );
+      for (final line in probeBLines) {
+        expect(
+          line.trimLeft().startsWith('//'),
+          isFalse,
+          reason:
+              'probe B occurs inside a comment ("${line.trim()}"), so the '
+              'comment regex can remove it and probe B no longer isolates '
+              'string-literal stripping',
+        );
+      }
+      expect(
+        stripped,
+        isNot(contains('ai_assist_enabled')),
+        reason:
+            'STRING-LITERAL STRIPPING FAILED — a declaration-shaped string '
+            'literal could now be counted as a declaration',
       );
 
       // Field declarations: `final <type> <name>;`
