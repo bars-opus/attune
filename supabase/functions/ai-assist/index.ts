@@ -20,6 +20,18 @@ import {
   LoadedTarget,
 } from "../_shared/ai_context_loader.ts";
 import { callGeminiJson } from "../_shared/gemini_json.ts";
+// RULING 6: moved to _shared/ so ai-sessions can use the same helper
+// without a cross-function-directory import (a pattern this repo has
+// never deployed). Re-exported below so this module's existing public
+// surface is unchanged.
+import {
+  NEARBY_CATEGORY_ALLOWLIST,
+  type NearbyCategory,
+  type NearbyCategoryOutput,
+  type PlaceSource,
+  searchMapboxCategory,
+  validateNearbyCategoryOutput,
+} from "../_shared/mapbox_search.ts";
 
 // ---------------------------------------------------------------------------
 // Error envelope -- spec §11. Every response, success or failure, uses one
@@ -193,19 +205,17 @@ export interface IdeasModelOutput {
   } | null;
 }
 
-export const NEARBY_CATEGORY_ALLOWLIST = [
-  "restaurant",
-  "cafe",
-  "park",
-  "cinema",
-  "museum",
-  "recreation",
-] as const;
-export type NearbyCategory = typeof NEARBY_CATEGORY_ALLOWLIST[number];
-
-export interface NearbyCategoryOutput {
-  category: NearbyCategory;
-}
+// The Nearby category allowlist, its validator, PlaceSource and
+// searchMapboxCategory all live in _shared/mapbox_search.ts now
+// (Plan C Ruling 6). Re-exported here, unchanged, so every existing
+// importer of this module -- including index.test.ts -- keeps working
+// and the move is provably behaviour-preserving.
+export {
+  NEARBY_CATEGORY_ALLOWLIST,
+  searchMapboxCategory,
+  validateNearbyCategoryOutput,
+};
+export type { NearbyCategory, NearbyCategoryOutput, PlaceSource };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -256,100 +266,6 @@ export function validateIdeasOutput(parsed: unknown): IdeasModelOutput | null {
   }
 
   return { reply_text: trimmedReply, suggested_planning_item: suggestedItem };
-}
-
-/// Exported for direct unit testing. This is the ONLY place a Gemini
-/// category string is allowed to reach a decision -- anything outside
-/// the fixed six-value allowlist (spec §5.2) returns null, which the
-/// caller must treat as UNSUPPORTED_REQUEST and never forward to Mapbox.
-export function validateNearbyCategoryOutput(parsed: unknown): NearbyCategoryOutput | null {
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const record = parsed as Record<string, unknown>;
-  const allowedKeys = new Set(["category"]);
-  for (const key of Object.keys(record)) {
-    if (!allowedKeys.has(key)) return null;
-  }
-  const category = record.category;
-  if (typeof category !== "string") return null;
-  if (!(NEARBY_CATEGORY_ALLOWLIST as readonly string[]).includes(category)) return null;
-  return { category: category as NearbyCategory };
-}
-
-// ---------------------------------------------------------------------------
-// Mapbox Search Box integration -- spec §5.2. Server-owned category
-// mapping; Mapbox never receives message text, model output beyond the
-// allowlisted category, user/relationship IDs, or names. Gemini never
-// receives Mapbox candidates.
-// ---------------------------------------------------------------------------
-
-const MAPBOX_CATEGORY_MAP: Record<NearbyCategory, string> = {
-  restaurant: "restaurant",
-  cafe: "cafe",
-  park: "park",
-  cinema: "cinema",
-  museum: "museum",
-  recreation: "recreation",
-};
-
-export interface PlaceSource {
-  provider_id: string;
-  name: string;
-  formatted_address: string | null;
-  category: string | null;
-  map_url: string | null;
-}
-
-/// Exported for testing with a fake fetch. Never called for Ideas, and
-/// never called before quota is reserved. Returns null on any
-/// transport/parse failure (PROVIDER_UNAVAILABLE) or an empty valid
-/// result set (NO_RESULTS is decided by the caller against this
-/// function's empty-array return, so this itself never throws).
-export async function searchMapboxCategory(
-  category: NearbyCategory,
-  location: { latitude: number; longitude: number },
-): Promise<PlaceSource[] | null> {
-  const token = Deno.env.get("MAPBOX_SERVER_ACCESS_TOKEN");
-  if (!token) {
-    console.error("mapbox_missing_server_token");
-    return null;
-  }
-  const mapboxCategory = MAPBOX_CATEGORY_MAP[category];
-  const url =
-    `https://api.mapbox.com/search/searchbox/v1/category/${
-      encodeURIComponent(mapboxCategory)
-    }?access_token=${token}&longitude=${location.longitude}&latitude=${location.latitude}&limit=10`;
-
-  try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!response.ok) {
-      console.error("mapbox_http_error", { status: response.status });
-      return null;
-    }
-    const payload = await response.json();
-    const features = Array.isArray(payload?.features) ? payload.features : [];
-    const results: PlaceSource[] = [];
-    for (const feature of features) {
-      if (results.length >= 3) break;
-      const properties = feature?.properties;
-      const providerId = typeof properties?.mapbox_id === "string" ? properties.mapbox_id : null;
-      const name = typeof properties?.name === "string" ? properties.name : null;
-      if (!providerId || !name) continue;
-      const formattedAddress = typeof properties?.full_address === "string"
-        ? properties.full_address
-        : (typeof properties?.address === "string" ? properties.address : null);
-      results.push({
-        provider_id: providerId,
-        name,
-        formatted_address: formattedAddress,
-        category: mapboxCategory,
-        map_url: `https://www.mapbox.com/search/${encodeURIComponent(providerId)}`,
-      });
-    }
-    return results;
-  } catch (err) {
-    console.error("mapbox_fetch_failed", { error: err instanceof Error ? err.message : String(err) });
-    return null;
-  }
 }
 
 // ---------------------------------------------------------------------------
