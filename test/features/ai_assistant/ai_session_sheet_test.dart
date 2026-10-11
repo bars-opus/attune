@@ -2778,6 +2778,83 @@ void main() {
     );
   });
 
+  group('Task 8: the sheet wires and unwires the poll', () {
+    testWidgets(
+      'the sheet TEARS DOWN cleanly — dispose stops the poll without '
+      'touching `ref`, which throws once the element is unmounted',
+      (tester) async {
+        // REGRESSION TEST FOR A BUG I SHIPPED INTO MY OWN FIRST DRAFT.
+        // `dispose` reached the controller through the `_controller`
+        // getter, which is `ref.read(...)`. Riverpod throws
+        // `Bad state: Cannot use "ref" after the widget was disposed`
+        // at that point, so EVERY teardown of this sheet crashed — and it
+        // took 18 previously-passing widget tests in this file down with
+        // it, each reporting a StateError "while finalizing the widget
+        // tree" rather than anything about the poll.
+        //
+        // IT WAS INVISIBLE TO A SCOPED RUN. `--plain-name "Task 8"` never
+        // instantiates the sheet widget, so the poll tests all passed
+        // while the file was broken. That is why this test renders the
+        // real sheet and disposes it, rather than asserting on the
+        // controller alone.
+        final gateway = _FakeSessionGateway({
+          'prepare': (_) => _prepareResponse(),
+          'review_context': (_) => _reviewResponse(),
+          'approve': (_) => _approveResponse(activated: true),
+          'read': (_) => <String, dynamic>{'turns': <dynamic>[]},
+          'read_state': (_) =>
+              _readStateResponse(revision: 1, state: 'active'),
+        });
+
+        await _pumpSheet(tester, gateway);
+        // Replacing the tree disposes the sheet. If `dispose` touches
+        // `ref`, this pump throws and the test fails here.
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'disposing the sheet must not throw. `dispose` has to '
+              'use a notifier captured in initState, because `ref` is '
+              'unusable once the element is unmounted — and the '
+              'controller outlives the widget anyway, being owned by the '
+              'provider container',
+        );
+      },
+    );
+
+    testWidgets(
+      'no timer survives the sheet: a disposed sheet leaves nothing '
+      'pending for the test binding to complain about',
+      (tester) async {
+        // `testWidgets` fails a test that leaves a timer pending, so
+        // this reaching its end IS the assertion — but it is made
+        // explicit because the failure mode it guards is a leaked
+        // `Timer.periodic` calling into a disposed notifier, which
+        // throws on its first write to `state` and would otherwise
+        // surface as an unrelated-looking crash in whatever test ran
+        // next.
+        final gateway = _FakeSessionGateway({
+          'prepare': (_) => _prepareResponse(),
+          'review_context': (_) => _reviewResponse(),
+          'approve': (_) => _approveResponse(activated: true),
+          'read': (_) => <String, dynamic>{'turns': <dynamic>[]},
+          'read_state': (_) =>
+              _readStateResponse(revision: 1, state: 'active'),
+        });
+
+        await _pumpSheet(tester, gateway);
+        await tester.pumpWidget(const SizedBox.shrink());
+        // Well past several poll intervals. A surviving timer would fire
+        // here, against a torn-down notifier.
+        await tester.pump(const Duration(seconds: 30));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      },
+    );
+  });
+
   group('Task 8: RULING 6 — the polled value does not move on a refusal',
       () {
     testWidgets(

@@ -298,8 +298,7 @@ BEGIN
   -- insertion order.
   INSERT INTO public.ai_processing_consent_events
     (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
-  VALUES (v_rel, v_user_b, 'v1', 'withdrawn', gen_random_uuid(),
-          now() + interval '1 second');
+  VALUES (v_rel, v_user_b, 'v1', 'withdrawn', gen_random_uuid(), clock_timestamp());
 
   -- Non-vacuity for the leg below: prove the withdrawal is actually the
   -- latest event the gate will see, so a zero cannot mean "the insert
@@ -323,8 +322,7 @@ BEGIN
   -- shows the zero above was caused by consent and nothing else.
   INSERT INTO public.ai_processing_consent_events
     (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
-  VALUES (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(),
-          now() + interval '2 seconds');
+  VALUES (v_rel, v_user_b, 'v1', 'granted', gen_random_uuid(), clock_timestamp());
   SELECT count(*) INTO v_count
   FROM public.read_ai_session_state(v_user_a, v_shared);
   IF v_count != 1 THEN

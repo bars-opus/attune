@@ -176,31 +176,47 @@ class _AiSessionSheetState extends ConsumerState<AiSessionSheet> {
     // `listenManual` rather than a `ref.listen` in `build`: this is a
     // side effect on a transition, and `build` must stay free of them.
     // The subscription is closed in `dispose` below.
+    //
+    // THE NOTIFIER IS CAPTURED HERE, NOT READ IN `dispose`. `ref` throws
+    // `Bad state: Cannot use "ref" after the widget was disposed` once
+    // the element is unmounted, so a `dispose` that reaches the
+    // controller through `ref.read` (which `_controller` does) crashes
+    // every teardown of this sheet. MEASURED, not anticipated: my first
+    // version did exactly that and took 18 previously-passing widget
+    // tests in this file down with it, all with that StateError thrown
+    // "while finalizing the widget tree". The notifier itself outlives
+    // the widget — it is owned by the provider container — so holding it
+    // is safe where re-reading it is not.
+    _pollController = ref.read(aiSessionControllerProvider.notifier);
     _phaseSubscription = ref.listenManual<AiSessionViewState>(
       aiSessionControllerProvider,
       (previous, next) {
         if (next.phase == AiSessionPhase.waitingForPartner ||
             next.phase == AiSessionPhase.active) {
-          _controller.startPolling();
+          _pollController.startPolling();
         } else if (next.phase == AiSessionPhase.ended) {
           // Belt-and-braces: the controller already stops itself when
           // the poll OBSERVES `closed`, but this covers the path where
           // THIS actor called `end` and the phase moved without a tick.
-          _controller.stopPolling();
+          _pollController.stopPolling();
         }
       },
     );
   }
+
+  /// The controller, captured in [initState] so [dispose] can stop the
+  /// poll without touching `ref`. See the note there.
+  late final AiSessionController _pollController;
 
   ProviderSubscription<AiSessionViewState>? _phaseSubscription;
 
   @override
   void dispose() {
     // STOP 1 OF 4: the sheet is closing, so the poll must not outlive
-    // it. Called before the subscription is closed so the controller is
-    // still reachable. The controller's own `ref.onDispose` is the
-    // backstop for the autoDispose teardown; this is the explicit close.
-    _controller.stopPolling();
+    // it. Uses the CAPTURED notifier, never `ref` — see initState. The
+    // controller's own `ref.onDispose` is the backstop for the
+    // autoDispose teardown; this is the explicit close.
+    _pollController.stopPolling();
     _phaseSubscription?.close();
     _instructionController.dispose();
     super.dispose();
