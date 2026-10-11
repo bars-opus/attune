@@ -942,11 +942,35 @@ void main() {
         ]) {
           final lines = File(path).readAsLinesSync();
           final hits = <String>[];
+          // STRENGTHENED AFTER MUTATION M4 EVADED THE FIRST VERSION.
+          // That version matched the literal strings `?? []` and
+          // `?? <`, and the mutation wrote `?? const []` — which is the
+          // same defect and matched neither. A regex over `??` followed
+          // by any amount of whitespace, an optional `const`, and
+          // either `[` or `<` covers every spelling of an empty-list
+          // fallback, which is what the ruling is about rather than one
+          // way of typing it.
+          final emptyListFallback = RegExp(r'\?\?\s*(const\s+)?[\[<]');
           for (final line in lines) {
-            if (line.contains('?? []') || line.contains('?? <')) {
-              hits.add(line.trim());
-            }
+            if (emptyListFallback.hasMatch(line)) hits.add(line.trim());
           }
+          // ANTI-VACUITY: the regex really does match the idiom. Proved
+          // against a literal rather than by trusting the pattern —
+          // otherwise a regex that matched nothing would make this
+          // whole test pass for the wrong reason, which is this
+          // codebase's most frequent finding family.
+          expect(
+            emptyListFallback.hasMatch('final x = y ?? [];'),
+            isTrue,
+          );
+          expect(
+            emptyListFallback.hasMatch('final x = y ?? const [];'),
+            isTrue,
+          );
+          expect(
+            emptyListFallback.hasMatch('final x = y ?? <String>[];'),
+            isTrue,
+          );
           for (final hit in hits) {
             expect(
               hit.startsWith('//') || hit.startsWith('///'),
@@ -1925,6 +1949,69 @@ void main() {
               'share the kind AND the reason set deliberately; a '
               'layout/icon difference reconstructs the fact that a '
               'detector fired, to anyone looking at the screen.',
+        );
+      },
+    );
+
+    testWidgets(
+      'the REFUSAL shape and an ordinary redirect WITH offered entries '
+      'differ ONLY by the entries themselves — no icon, container or '
+      'layout difference rides along',
+      (tester) async {
+        // ADDED BECAUSE MUTATION M1 SURVIVED THIS GROUP'S CORE PROOF.
+        // That proof holds `offered: []` on BOTH fixtures in order to
+        // isolate `copy`, which means an `offered.isEmpty ? shieldIcon :
+        // infoIcon` mutation produced the SAME icon on both and the
+        // comparison passed. Only the structural test killed it.
+        //
+        // So this test crosses the other way: a refusal (always `[]`)
+        // against an ordinary redirect WITH entries — the realistic
+        // pair, and the one where an emptiness branch becomes visible.
+        // The comparison therefore excludes the entry labels themselves
+        // (they legitimately differ) and asserts everything STRUCTURAL
+        // around them is identical.
+        final refusalTree = await renderRedirect(
+          tester,
+          _safetyRefusal(reason: 'unsupported'),
+        );
+        final offeringTree = await renderRedirect(
+          tester,
+          _ordinaryRedirect(
+            reason: 'unsupported',
+            offered: const <String>['ideas', 'nearby'],
+          ),
+        );
+
+        // The offering tree has MORE nodes — two entry labels — so the
+        // trees are not equal, and asserting equality would be wrong.
+        expect(offeringTree.length, greaterThan(refusalTree.length));
+
+        // THE ASSERTION: every node type the refusal draws, the
+        // offering draws too, and the ICON nodes are identical. An
+        // `offered.isEmpty` branch on the icon, the container colour or
+        // the padding would break one of these even though the trees
+        // legitimately differ in length.
+        String iconsOf(List<String> tree) => tree
+            .where((node) => node.startsWith('Icon|'))
+            .join(';');
+        expect(iconsOf(refusalTree), isNotEmpty);
+        expect(
+          iconsOf(offeringTree),
+          iconsOf(refusalTree),
+          reason: 'RULING 6: the icon differs between a refusal (which '
+              'always sends `offered: []`) and an ordinary redirect with '
+              'entries. `offered.isEmpty` is a strong detector oracle even '
+              'though an ordinary redirect may legally send [] too.',
+        );
+        String containersOf(List<String> tree) => tree
+            .where((node) => node.startsWith('Container|'))
+            .join(';');
+        expect(containersOf(refusalTree), isNotEmpty);
+        expect(
+          containersOf(offeringTree),
+          containersOf(refusalTree),
+          reason: 'RULING 6: the notice container differs between the two '
+              'shapes, which is visible to anyone looking at the screen.',
         );
       },
     );
