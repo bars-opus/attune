@@ -816,12 +816,21 @@ void main() {
       );
     });
 
-    test('is within the range the server accepts', () {
-      // `isValidUtcOffsetMinutes` bounds this server-side; a value
-      // outside it is INVALID_INPUT on every command.
+    test('is within the range the server accepts, and is an integer', () {
+      // Transcribed from the server's own validator, read rather than
+      // guessed: `isValidUtcOffsetMinutes`
+      // (`supabase/functions/_shared/ai_session_context.ts:147-152`)
+      // requires a NUMBER that is an INTEGER in [-840, 840]. A value
+      // outside it is INVALID_INPUT on every command, and §4.2 forbids
+      // the server clamping, because a clamped offset computes a
+      // different civil day than the client displayed.
       final offset = displayedUtcOffsetMinutes();
-      expect(offset, greaterThanOrEqualTo(-14 * 60));
-      expect(offset, lessThanOrEqualTo(14 * 60));
+      expect(offset, greaterThanOrEqualTo(-840));
+      expect(offset, lessThanOrEqualTo(840));
+      // `Duration.inMinutes` truncates toward zero, so this is an int by
+      // construction — asserted anyway, because the server rejects a
+      // non-integer and the type is the only thing guaranteeing it.
+      expect(offset, isA<int>());
     });
   });
 
