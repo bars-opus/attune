@@ -237,29 +237,152 @@ class _AiSessionSheetState extends ConsumerState<AiSessionSheet> {
   /// into a conflict.
   String _newUuidV4() => const Uuid().v4();
 
+  /// THE IDEMPOTENCY KEY FOR THE PREPARATION ATTEMPT CURRENTLY ON
+  /// SCREEN. Null until the first Start tap for a given payload.
+  ///
+  /// ## Why this is State and not a fresh uuid per tap
+  ///
+  /// `prepare_ai_session`'s own body is explicit that the key is the
+  /// REPLAY handle, not a per-call nonce:
+  ///
+  /// > reuse `ai_sessions.id` itself as the idempotency key when the
+  /// > caller supplies one that already resolves to an existing row for
+  /// > this actor — i.e. **the CALLER is responsible for reusing the
+  /// > same `p_idempotency_key` value as a candidate session_id on
+  /// > retry.**
+  ///
+  /// Minting a new one per tap makes that replay branch
+  /// (`v_existing_session IS NOT NULL`) UNREACHABLE, and the failure is
+  /// not a lost replay — it is a LOCKOUT. The RPC commits, the HTTP
+  /// response is lost, the sheet shows "Something went wrong — try
+  /// again", the user takes that invitation, and the fresh key skips the
+  /// replay and lands on the slot-limit guard instead
+  /// (`state IN ('preparing','active')` → `AT001` →
+  /// `SESSION_LIMIT_REACHED`). The user is then locked out of the
+  /// session they just created — the sheet holds no session id, so
+  /// `read_state` cannot reach it — until `preparation_deadline`
+  /// expires. On a SHARED session the limit is per-RELATIONSHIP, so it
+  /// locks the partner out too.
+  ///
+  /// ## When it rotates
+  ///
+  /// Minted on the first Start tap, kept across every retry of that
+  /// attempt, and dropped in exactly two places:
+  ///
+  ///   * [_rotateIdempotencyKey], whenever the user changes any field
+  ///     `prepare`'s payload carries (kind, visibility, the recent
+  ///     window) — a different payload is a different intent, and the
+  ///     key is the session's IDENTITY, so reusing it would replay the
+  ///     ORIGINAL shape;
+  ///   * on a SUCCESSFUL prepare, so a session deliberately started
+  ///     after this one gets a genuinely fresh key rather than
+  ///     replaying its predecessor.
+  ///
+  /// `relationshipId` and `targetMessageId` are `widget` fields and
+  /// cannot change under a mounted sheet, so they need no rotation.
+  ///
+  /// **Rotating on `includeWindow` is load-bearing, not symmetry.**
+  /// `detectPrepareKeyConflict` (`ai-sessions/index.ts`) compares
+  /// `relationship_id`, `kind`, `visibility` and the target source — it
+  /// does NOT compare `include_window`. So a key held across a window
+  /// toggle would NOT earn a `REQUEST_CONFLICT`; the server would
+  /// silently replay the original session with the ORIGINAL window
+  /// setting and report `created: false`, and the user's toggle would
+  /// have no effect they could see. Rotation is what makes the toggle
+  /// real. For the three fields the server DOES compare, rotating also
+  /// means the client never has to rely on that comparison — but it
+  /// does not defeat it either: a key is only ever reused with the
+  /// identical payload, which is exactly the case the server replays.
+  String? _pendingIdempotencyKey;
+
+  /// THE REQUEST ID FOR THE GENERATION ATTEMPT CURRENTLY PENDING, and
+  /// the instruction that produced it. Same shape as
+  /// [_pendingIdempotencyKey], one layer down.
+  ///
+  /// §6.2's replay (`admit_ai_session_generation` answering
+  /// `already_admitted` → `replayAdmittedRequest`, whose own header
+  /// says *"the retry gets the original answer and NO provider call
+  /// happens"*) is keyed on `(actor, request_id)` plus the payload
+  /// fingerprint. A fresh id per tap can never reach it, so a lost
+  /// `generate` response costs a second §4.2 attempt and a second
+  /// provider lease for ONE answer.
+  ///
+  /// Rotates when the INSTRUCTION TEXT changes, because the instruction
+  /// is part of the fingerprint: reusing an id with different text is
+  /// `REQUEST_CONFLICT`, which is a dead end rather than a replay.
+  /// Dropped once the attempt reaches any terminal answer — a committed
+  /// answer, a staged Nearby result, or a redirect — since each of
+  /// those is the server having spent the attempt.
+  String? _pendingRequestId;
+  String? _pendingInstruction;
+
+  /// Drops the preparation key, so the NEXT Start tap mints a fresh
+  /// one. Called from every field whose value `prepare` sends.
+  void _rotateIdempotencyKey() {
+    _pendingIdempotencyKey = null;
+  }
+
   AiSessionController get _controller =>
       ref.read(aiSessionControllerProvider.notifier);
 
-  Future<void> _start() {
-    return _controller.prepare(
-      idempotencyKey: _newUuidV4(),
+  /// [kind] and [visibility] are passed in ALREADY CLAMPED to the
+  /// capabilities (see [build]) rather than read from `_kind`/
+  /// `_visibility`, so there is no path on which this method can send a
+  /// capability the operator turned off.
+  Future<void> _start({
+    required AiSessionKind kind,
+    required AiSessionVisibility visibility,
+  }) async {
+    // Reused on a retry, minted once otherwise. The `??=` is the whole
+    // fix: a second tap after a failure sends the SAME key, so the
+    // server's replay branch returns the session the first tap created
+    // instead of the slot-limit refusal.
+    final key = _pendingIdempotencyKey ??= _newUuidV4();
+    await _controller.prepare(
+      idempotencyKey: key,
       relationshipId: widget.relationshipId,
-      kind: _kind,
-      visibility: _visibility,
+      kind: kind,
+      visibility: visibility,
       utcOffsetMinutes: widget.utcOffsetMinutes,
       targetMessageId: widget.targetMessageId,
       includeWindow: _includeWindow,
     );
+    if (!mounted) return;
+    // Success is read from the CONTROLLER, not from the absence of a
+    // throw: `prepare` funnels through `_run`, which CATCHES the §10
+    // error into `state.error` and returns normally. A `try/catch` here
+    // would see no throw on either path and keep the key on success —
+    // the exact inversion of what this is for.
+    if (ref.read(aiSessionControllerProvider).error == null) {
+      _pendingIdempotencyKey = null;
+    }
   }
 
   Future<void> _generate() async {
-    final instruction = _instructionController.text.trim();
+    // The field is the source of truth only while no attempt is
+    // pending; a pending attempt's instruction is held so a retry
+    // resends the SAME text and therefore matches the fingerprint the
+    // server admitted.
+    final instruction =
+        _pendingInstruction ?? _instructionController.text.trim();
     if (instruction.isEmpty) return;
-    _instructionController.clear();
+    final requestId = _pendingRequestId ??= _newUuidV4();
+    _pendingInstruction = instruction;
+    // CLEARED AFTER THE AWAIT, NOT BEFORE. Clearing first threw the
+    // instruction away on every failure — `RATE_LIMITED`,
+    // `CONTEXT_CHANGED`, a lost response — leaving the user to retype
+    // it, and a retype is a different fingerprint, so even a
+    // byte-identical retype could not replay.
     await _controller.generate(
-      requestId: _newUuidV4(),
+      requestId: requestId,
       userInstruction: instruction,
     );
+    if (!mounted) return;
+    final state = ref.read(aiSessionControllerProvider);
+    if (state.error != null) return; // keep the id AND the text for the retry
+    _pendingRequestId = null;
+    _pendingInstruction = null;
+    _instructionController.clear();
   }
 
   Future<void> _share(int ordinal) async {
@@ -274,10 +397,55 @@ class _AiSessionSheetState extends ConsumerState<AiSessionSheet> {
         ref.watch(aiSessionCapabilitiesProvider).valueOrNull ??
         AiSessionCapabilities.unavailable;
 
+    // ## FAIL CLOSED: the SELECTION IS CLAMPED TO THE CAPABILITIES, in
+    // the one place that both renders the chips and sends the body.
+    //
+    // The defect this closes: `_visibility` initialized to `private`
+    // unconditionally while `_Preparation` built its chips from the
+    // capabilities and bailed out only when that list was EMPTY. With
+    // `sessionsPrivate: false, sessionsShared: true` — a plausible
+    // staged-rollout order, since shared is the social half — the only
+    // chip rendered UNSELECTED and Start sent `visibility: "private"`,
+    // a capability the operator had turned OFF.
+    // `capabilitiesForSession` maps `private` to
+    // `ai_sessions_private_enabled`, so CHECK 0 answered
+    // `FEATURE_DISABLED` on every tap. `_kind` had the same structural
+    // exposure and was safe only INCIDENTALLY, because both entry
+    // points happen to pre-check the kind they pass.
+    //
+    // ## Why a clamp here rather than a `setState` reconciliation
+    //
+    // The capability provider is a `FutureProvider`, so `valueOrNull` is
+    // null on the FIRST build and resolves LATER — a reconciliation that
+    // wrote the field would therefore have to run on a post-frame
+    // callback, and between that frame and the next the field and the
+    // chips would disagree. Worse, `onStart` is reachable in that
+    // window. Deriving BOTH the chip selection and the values `_start`
+    // sends from one expression removes the window entirely: there is no
+    // frame on which the sheet could send something it is not
+    // displaying, because there is only one value.
+    //
+    // The user's own choice is preserved whenever it is still offered —
+    // the clamp only fires when the selection is NOT in the offered
+    // list — so a capability resolving mid-session cannot silently
+    // discard a deliberate tap.
+    //
+    // Each capability is read INDEPENDENTLY (§12's subcapability
+    // independence) and through the SERVICE, never `feature_flags`
+    // (PF2). The `kinds`/`visibilities` lists are built here rather
+    // than in `_Preparation` so the clamp and the chips cannot drift
+    // apart into two lists.
+    final kinds = _offeredKinds(capabilities);
+    final visibilities = _offeredVisibilities(capabilities);
+    final kind = _clamp(_kind, kinds);
+    final visibility = _clamp(_visibility, visibilities);
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _kind == AiSessionKind.ideas
+          // The clamped kind, so the title names the session that would
+          // actually be started.
+          kind == AiSessionKind.ideas
               ? kAiSessionIdeasLabel
               : kAiSessionNearbyLabel,
           style: Theme.of(context).textTheme.titleMedium,
@@ -296,14 +464,32 @@ class _AiSessionSheetState extends ConsumerState<AiSessionSheet> {
           AiSessionPhase.choosing => _Preparation(
             state: state,
             capabilities: capabilities,
-            kind: _kind,
-            visibility: _visibility,
+            kinds: kinds,
+            visibilities: visibilities,
+            // THE CLAMPED values, so a chip's `selected` and the body
+            // `onStart` sends are the same value by construction.
+            kind: kind,
+            visibility: visibility,
             includeWindow: _includeWindow,
-            onKind: (kind) => setState(() => _kind = kind),
-            onVisibility: (visibility) =>
-                setState(() => _visibility = visibility),
-            onIncludeWindow: (value) => setState(() => _includeWindow = value),
-            onStart: _start,
+            // Each of the three rotates the idempotency key: all three
+            // are fields `prepare`'s payload carries, so a change is a
+            // new intent and must not replay the previous one.
+            onKind: (next) => setState(() {
+              _kind = next;
+              _rotateIdempotencyKey();
+            }),
+            onVisibility: (next) => setState(() {
+              _visibility = next;
+              _rotateIdempotencyKey();
+            }),
+            onIncludeWindow: (value) => setState(() {
+              _includeWindow = value;
+              _rotateIdempotencyKey();
+            }),
+            // The clamped values are passed rather than read from the
+            // fields, which is what makes "never send a capability that
+            // is off" structural instead of a convention.
+            onStart: () => _start(kind: kind, visibility: visibility),
           ),
           AiSessionPhase.reviewing => _Approval(
             state: state,
@@ -340,6 +526,60 @@ class _AiSessionSheetState extends ConsumerState<AiSessionSheet> {
 }
 
 // ---------------------------------------------------------------------
+// Capability reconciliation (FINDING 1)
+//
+// These three are top-level functions rather than methods so the clamp
+// is one expression with no access to `State` — it cannot be "fixed"
+// later by writing a field, which is the thing that would reintroduce
+// the frame on which the field and the chips disagree.
+//
+// EVERY availability question is asked of the capability service, never
+// of `feature_flags` directly: the RLS policy on that table hides every
+// `ai_%` key from the client, so a direct read would return no rows and
+// every flag would read false forever (PF2).
+//
+// And each field is read INDEPENDENTLY: §12 requires subcapability
+// independence, so no capability is inferred from another.
+// ---------------------------------------------------------------------
+
+/// The kinds the capabilities offer, in chip order.
+///
+/// `ideas` requires `sessionsPrivate || sessionsShared` because an Ideas
+/// session must be startable at SOME visibility; `nearby` has its own
+/// flag. The disjunction mirrors `visibilities` rather than inferring
+/// one capability from another — both halves are read.
+List<AiSessionKind> _offeredKinds(AiSessionCapabilities capabilities) {
+  return <AiSessionKind>[
+    if (capabilities.sessionsPrivate || capabilities.sessionsShared)
+      AiSessionKind.ideas,
+    if (capabilities.sessionsNearby) AiSessionKind.nearby,
+  ];
+}
+
+/// The visibilities the capabilities offer, in chip order.
+List<AiSessionVisibility> _offeredVisibilities(
+  AiSessionCapabilities capabilities,
+) {
+  return <AiSessionVisibility>[
+    if (capabilities.sessionsPrivate) AiSessionVisibility.private,
+    if (capabilities.sessionsShared) AiSessionVisibility.shared,
+  ];
+}
+
+/// [selected] when it is still offered, else the first offered value.
+///
+/// Returns [selected] unchanged when [offered] is EMPTY, because an
+/// empty list is the no-capability case and the caller renders
+/// [kAiSessionUnavailableMessage] instead of a Start button — there is
+/// nothing to clamp to, and inventing a value would be the opposite of
+/// failing closed. The caller must therefore still check for empty;
+/// this function deliberately does not decide that for it.
+T _clamp<T>(T selected, List<T> offered) {
+  if (offered.isEmpty || offered.contains(selected)) return selected;
+  return offered.first;
+}
+
+// ---------------------------------------------------------------------
 // Preparation
 // ---------------------------------------------------------------------
 
@@ -347,6 +587,8 @@ class _Preparation extends StatelessWidget {
   const _Preparation({
     required this.state,
     required this.capabilities,
+    required this.kinds,
+    required this.visibilities,
     required this.kind,
     required this.visibility,
     required this.includeWindow,
@@ -358,6 +600,17 @@ class _Preparation extends StatelessWidget {
 
   final AiSessionViewState state;
   final AiSessionCapabilities capabilities;
+
+  /// The offered lists, computed ONCE by the parent (which also clamps
+  /// [kind] and [visibility] against them) rather than recomputed here.
+  /// Two lists would be two places for the chips and the wire body to
+  /// drift apart, which is exactly the defect Finding 1 recorded.
+  final List<AiSessionKind> kinds;
+  final List<AiSessionVisibility> visibilities;
+
+  /// ALREADY CLAMPED to [kinds]/[visibilities] by the parent, so
+  /// `selected: kind == candidate` is true for exactly one chip
+  /// whenever the list is non-empty.
   final AiSessionKind kind;
   final AiSessionVisibility visibility;
   final bool includeWindow;
@@ -368,23 +621,15 @@ class _Preparation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // EVERY availability question is asked of the capability service,
-    // never of `feature_flags` directly — the RLS policy on that table
-    // hides every `ai_%` key from the client, so a direct read would
-    // return no rows and every flag would read false forever (PF2).
+    // The lists come from the parent, which built them with
+    // `_offeredKinds`/`_offeredVisibilities` and clamped `kind` and
+    // `visibility` against them. This widget therefore has nothing to
+    // reconcile — the reconciliation already happened upstream of both
+    // the chips and the wire body.
     //
-    // And each field is read INDEPENDENTLY: §12 requires subcapability
-    // independence, so no capability is inferred from another.
-    final kinds = <AiSessionKind>[
-      if (capabilities.sessionsPrivate || capabilities.sessionsShared)
-        AiSessionKind.ideas,
-      if (capabilities.sessionsNearby) AiSessionKind.nearby,
-    ];
-    final visibilities = <AiSessionVisibility>[
-      if (capabilities.sessionsPrivate) AiSessionVisibility.private,
-      if (capabilities.sessionsShared) AiSessionVisibility.shared,
-    ];
-
+    // The EMPTY check stays here: `_clamp` deliberately does not invent
+    // a value for an empty list, so this is where the no-capability
+    // case becomes the unavailable message instead of a Start button.
     if (kinds.isEmpty || visibilities.isEmpty) {
       return const Center(
         child: Padding(

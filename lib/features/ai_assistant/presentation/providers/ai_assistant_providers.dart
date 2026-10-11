@@ -73,6 +73,27 @@ final aiSessionCapabilitiesServiceProvider =
 /// [AiSessionCapabilities.unavailable] rather than erroring, so a
 /// widget cannot render an entry point out of an `AsyncError` branch it
 /// forgot to handle — there is no error branch to forget.
+///
+/// ## THE COST OF THOSE TWO CORRECT DECISIONS (final-review Finding 5)
+///
+/// Not autoDispose (above) + never throwing means **one transient error
+/// on the FIRST read caches `unavailable` for the whole app session**,
+/// hiding every AI entry point until relaunch. `ref.invalidate` is the
+/// recovery, and `ai_session_capabilities_test.dart`'s invalidation
+/// group now PINS it — it measures the cache (a second read does not
+/// re-ask) and then measures the recovery. Before that test the
+/// "`ref.invalidate` or next launch" promise above was unverified and
+/// nothing in `lib/` or `test/` invalidated this provider at all.
+///
+/// **No automatic trigger is wired, deliberately.** An app-resume
+/// listener, a retry/backoff or a timer would have to be threaded
+/// through the four shared chat widgets that read this provider
+/// (`chat_screen.dart`, `chat_text_field.dart`, `message_bubble.dart`,
+/// `message_actions_sheet.dart`), and a refetch under a live sheet can
+/// change the offered set mid-flow — which `ai_session_sheet.dart`'s
+/// clamp now renders safely, but which is still a product decision
+/// about when to provoke. That half is recorded as open rather than
+/// guessed at here.
 final aiSessionCapabilitiesProvider = FutureProvider<AiSessionCapabilities>((
   ref,
 ) {
