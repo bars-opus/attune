@@ -325,7 +325,14 @@ class _AiSessionSheetState extends ConsumerState<AiSessionSheet> {
   AiSessionController get _controller =>
       ref.read(aiSessionControllerProvider.notifier);
 
-  Future<void> _start() async {
+  /// [kind] and [visibility] are passed in ALREADY CLAMPED to the
+  /// capabilities (see [build]) rather than read from `_kind`/
+  /// `_visibility`, so there is no path on which this method can send a
+  /// capability the operator turned off.
+  Future<void> _start({
+    required AiSessionKind kind,
+    required AiSessionVisibility visibility,
+  }) async {
     // Reused on a retry, minted once otherwise. The `??=` is the whole
     // fix: a second tap after a failure sends the SAME key, so the
     // server's replay branch returns the session the first tap created
@@ -334,8 +341,8 @@ class _AiSessionSheetState extends ConsumerState<AiSessionSheet> {
     await _controller.prepare(
       idempotencyKey: key,
       relationshipId: widget.relationshipId,
-      kind: _kind,
-      visibility: _visibility,
+      kind: kind,
+      visibility: visibility,
       utcOffsetMinutes: widget.utcOffsetMinutes,
       targetMessageId: widget.targetMessageId,
       includeWindow: _includeWindow,
@@ -390,10 +397,55 @@ class _AiSessionSheetState extends ConsumerState<AiSessionSheet> {
         ref.watch(aiSessionCapabilitiesProvider).valueOrNull ??
         AiSessionCapabilities.unavailable;
 
+    // ## FAIL CLOSED: the SELECTION IS CLAMPED TO THE CAPABILITIES, in
+    // the one place that both renders the chips and sends the body.
+    //
+    // The defect this closes: `_visibility` initialized to `private`
+    // unconditionally while `_Preparation` built its chips from the
+    // capabilities and bailed out only when that list was EMPTY. With
+    // `sessionsPrivate: false, sessionsShared: true` — a plausible
+    // staged-rollout order, since shared is the social half — the only
+    // chip rendered UNSELECTED and Start sent `visibility: "private"`,
+    // a capability the operator had turned OFF.
+    // `capabilitiesForSession` maps `private` to
+    // `ai_sessions_private_enabled`, so CHECK 0 answered
+    // `FEATURE_DISABLED` on every tap. `_kind` had the same structural
+    // exposure and was safe only INCIDENTALLY, because both entry
+    // points happen to pre-check the kind they pass.
+    //
+    // ## Why a clamp here rather than a `setState` reconciliation
+    //
+    // The capability provider is a `FutureProvider`, so `valueOrNull` is
+    // null on the FIRST build and resolves LATER — a reconciliation that
+    // wrote the field would therefore have to run on a post-frame
+    // callback, and between that frame and the next the field and the
+    // chips would disagree. Worse, `onStart` is reachable in that
+    // window. Deriving BOTH the chip selection and the values `_start`
+    // sends from one expression removes the window entirely: there is no
+    // frame on which the sheet could send something it is not
+    // displaying, because there is only one value.
+    //
+    // The user's own choice is preserved whenever it is still offered —
+    // the clamp only fires when the selection is NOT in the offered
+    // list — so a capability resolving mid-session cannot silently
+    // discard a deliberate tap.
+    //
+    // Each capability is read INDEPENDENTLY (§12's subcapability
+    // independence) and through the SERVICE, never `feature_flags`
+    // (PF2). The `kinds`/`visibilities` lists are built here rather
+    // than in `_Preparation` so the clamp and the chips cannot drift
+    // apart into two lists.
+    final kinds = _offeredKinds(capabilities);
+    final visibilities = _offeredVisibilities(capabilities);
+    final kind = _clamp(_kind, kinds);
+    final visibility = _clamp(_visibility, visibilities);
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _kind == AiSessionKind.ideas
+          // The clamped kind, so the title names the session that would
+          // actually be started.
+          kind == AiSessionKind.ideas
               ? kAiSessionIdeasLabel
               : kAiSessionNearbyLabel,
           style: Theme.of(context).textTheme.titleMedium,
@@ -412,8 +464,12 @@ class _AiSessionSheetState extends ConsumerState<AiSessionSheet> {
           AiSessionPhase.choosing => _Preparation(
             state: state,
             capabilities: capabilities,
-            kind: _kind,
-            visibility: _visibility,
+            kinds: kinds,
+            visibilities: visibilities,
+            // THE CLAMPED values, so a chip's `selected` and the body
+            // `onStart` sends are the same value by construction.
+            kind: kind,
+            visibility: visibility,
             includeWindow: _includeWindow,
             // Each of the three rotates the idempotency key: all three
             // are fields `prepare`'s payload carries, so a change is a
@@ -430,7 +486,10 @@ class _AiSessionSheetState extends ConsumerState<AiSessionSheet> {
               _includeWindow = value;
               _rotateIdempotencyKey();
             }),
-            onStart: _start,
+            // The clamped values are passed rather than read from the
+            // fields, which is what makes "never send a capability that
+            // is off" structural instead of a convention.
+            onStart: () => _start(kind: kind, visibility: visibility),
           ),
           AiSessionPhase.reviewing => _Approval(
             state: state,
@@ -467,6 +526,60 @@ class _AiSessionSheetState extends ConsumerState<AiSessionSheet> {
 }
 
 // ---------------------------------------------------------------------
+// Capability reconciliation (FINDING 1)
+//
+// These three are top-level functions rather than methods so the clamp
+// is one expression with no access to `State` — it cannot be "fixed"
+// later by writing a field, which is the thing that would reintroduce
+// the frame on which the field and the chips disagree.
+//
+// EVERY availability question is asked of the capability service, never
+// of `feature_flags` directly: the RLS policy on that table hides every
+// `ai_%` key from the client, so a direct read would return no rows and
+// every flag would read false forever (PF2).
+//
+// And each field is read INDEPENDENTLY: §12 requires subcapability
+// independence, so no capability is inferred from another.
+// ---------------------------------------------------------------------
+
+/// The kinds the capabilities offer, in chip order.
+///
+/// `ideas` requires `sessionsPrivate || sessionsShared` because an Ideas
+/// session must be startable at SOME visibility; `nearby` has its own
+/// flag. The disjunction mirrors `visibilities` rather than inferring
+/// one capability from another — both halves are read.
+List<AiSessionKind> _offeredKinds(AiSessionCapabilities capabilities) {
+  return <AiSessionKind>[
+    if (capabilities.sessionsPrivate || capabilities.sessionsShared)
+      AiSessionKind.ideas,
+    if (capabilities.sessionsNearby) AiSessionKind.nearby,
+  ];
+}
+
+/// The visibilities the capabilities offer, in chip order.
+List<AiSessionVisibility> _offeredVisibilities(
+  AiSessionCapabilities capabilities,
+) {
+  return <AiSessionVisibility>[
+    if (capabilities.sessionsPrivate) AiSessionVisibility.private,
+    if (capabilities.sessionsShared) AiSessionVisibility.shared,
+  ];
+}
+
+/// [selected] when it is still offered, else the first offered value.
+///
+/// Returns [selected] unchanged when [offered] is EMPTY, because an
+/// empty list is the no-capability case and the caller renders
+/// [kAiSessionUnavailableMessage] instead of a Start button — there is
+/// nothing to clamp to, and inventing a value would be the opposite of
+/// failing closed. The caller must therefore still check for empty;
+/// this function deliberately does not decide that for it.
+T _clamp<T>(T selected, List<T> offered) {
+  if (offered.isEmpty || offered.contains(selected)) return selected;
+  return offered.first;
+}
+
+// ---------------------------------------------------------------------
 // Preparation
 // ---------------------------------------------------------------------
 
@@ -474,6 +587,8 @@ class _Preparation extends StatelessWidget {
   const _Preparation({
     required this.state,
     required this.capabilities,
+    required this.kinds,
+    required this.visibilities,
     required this.kind,
     required this.visibility,
     required this.includeWindow,
@@ -485,6 +600,17 @@ class _Preparation extends StatelessWidget {
 
   final AiSessionViewState state;
   final AiSessionCapabilities capabilities;
+
+  /// The offered lists, computed ONCE by the parent (which also clamps
+  /// [kind] and [visibility] against them) rather than recomputed here.
+  /// Two lists would be two places for the chips and the wire body to
+  /// drift apart, which is exactly the defect Finding 1 recorded.
+  final List<AiSessionKind> kinds;
+  final List<AiSessionVisibility> visibilities;
+
+  /// ALREADY CLAMPED to [kinds]/[visibilities] by the parent, so
+  /// `selected: kind == candidate` is true for exactly one chip
+  /// whenever the list is non-empty.
   final AiSessionKind kind;
   final AiSessionVisibility visibility;
   final bool includeWindow;
@@ -495,23 +621,15 @@ class _Preparation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // EVERY availability question is asked of the capability service,
-    // never of `feature_flags` directly — the RLS policy on that table
-    // hides every `ai_%` key from the client, so a direct read would
-    // return no rows and every flag would read false forever (PF2).
+    // The lists come from the parent, which built them with
+    // `_offeredKinds`/`_offeredVisibilities` and clamped `kind` and
+    // `visibility` against them. This widget therefore has nothing to
+    // reconcile — the reconciliation already happened upstream of both
+    // the chips and the wire body.
     //
-    // And each field is read INDEPENDENTLY: §12 requires subcapability
-    // independence, so no capability is inferred from another.
-    final kinds = <AiSessionKind>[
-      if (capabilities.sessionsPrivate || capabilities.sessionsShared)
-        AiSessionKind.ideas,
-      if (capabilities.sessionsNearby) AiSessionKind.nearby,
-    ];
-    final visibilities = <AiSessionVisibility>[
-      if (capabilities.sessionsPrivate) AiSessionVisibility.private,
-      if (capabilities.sessionsShared) AiSessionVisibility.shared,
-    ];
-
+    // The EMPTY check stays here: `_clamp` deliberately does not invent
+    // a value for an empty list, so this is where the no-capability
+    // case becomes the unavailable message instead of a Start button.
     if (kinds.isEmpty || visibilities.isEmpty) {
       return const Center(
         child: Padding(

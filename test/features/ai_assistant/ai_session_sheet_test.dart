@@ -42,6 +42,11 @@
 //    back to a valid approval.
 //  - An EMPTY transcript renders as an empty transcript, never as
 //    "this session has ended" — §7.2's silence requirement.
+// ignore: unnecessary_import -- the analyzer says flutter_test re-exports
+// dart:async's elements; the COMPILER disagrees and cannot resolve
+// `Completer` without this. Measured: removing it fails the file to load
+// with "Method not found: 'Completer'".
+import 'dart:async';
 import 'dart:io';
 
 import 'package:attune/features/ai_assistant/data/models/ai_session_model.dart';
@@ -276,6 +281,17 @@ Future<void> _pumpSheet(
   _FakeSessionGateway gateway, {
   AiSessionCapabilities capabilities = _allOn,
   AiSessionKind kind = AiSessionKind.ideas,
+  /// Overrides [capabilities] with a future the TEST completes, so the
+  /// "the provider resolves AFTER first build" case can be driven
+  /// explicitly. `FINDING 1`'s mid-session group needs it: the sheet's
+  /// first build necessarily sees `valueOrNull == null`, and nothing
+  /// else in this file could reach that frame on purpose.
+  Future<AiSessionCapabilities>? capabilitiesFuture,
+
+  /// Skips `pumpAndSettle`, so a test can inspect the frame BEFORE
+  /// [capabilitiesFuture] completes. `pumpAndSettle` would otherwise
+  /// run the microtask queue and resolve it.
+  bool settle = true,
 }) async {
   // A FRESH ProviderScope per pump, keyed so a second `_pumpSheet` in
   // one test tears the previous `.autoDispose` controller down instead
@@ -292,7 +308,9 @@ Future<void> _pumpSheet(
           AiSessionRepository(gateway),
         ),
         aiSessionCapabilitiesProvider.overrideWith(
-          (ref) => Future<AiSessionCapabilities>.value(capabilities),
+          (ref) =>
+              capabilitiesFuture ??
+              Future<AiSessionCapabilities>.value(capabilities),
         ),
       ],
       child: MaterialApp(
@@ -305,6 +323,10 @@ Future<void> _pumpSheet(
       ),
     ),
   );
+  if (!settle) {
+    await tester.pump();
+    return;
+  }
   await tester.pumpAndSettle();
 }
 
@@ -3123,6 +3145,278 @@ void main() {
   // DEFAULTED field is the disabled one, or a gateway that refuses the
   // FIRST call and answers the SECOND.
   // ===================================================================
+
+  group('FINDING 1: the sheet can never send a capability that is OFF', () {
+    /// `prepare` recorded rather than answered, so a test asserts the
+    /// exact body the sheet would send and nothing downstream runs.
+    _FakeSessionGateway recordingGateway() => _FakeSessionGateway({
+      'prepare': (_) => _prepareResponse(),
+      'review_context': (_) => _reviewResponse(),
+    });
+
+    testWidgets(
+      'PARTIAL SET, private OFF + shared ON: the one offered chip is '
+      'SELECTED and Start sends shared, never the disabled private',
+      (tester) async {
+        final gateway = recordingGateway();
+        await _pumpSheet(
+          tester,
+          gateway,
+          // THE DEFAULTED FIELD IS THE DISABLED ONE. `_visibility`
+          // initialized to `private`, and `private` is off — the exact
+          // staged-rollout order (shared before private) the review
+          // called plausible, since shared is the social half.
+          capabilities: const AiSessionCapabilities(
+            assist: true,
+            sessionsPrivate: false,
+            sessionsShared: true,
+            sessionsRecentWindow: false,
+            sessionsNearby: false,
+          ),
+        );
+
+        // The private chip is not drawn at all, and the shared one is
+        // SELECTED — before the fix it rendered unselected, which was
+        // the visible half of the defect.
+        expect(
+          find.descendant(
+            of: find.byType(ChoiceChip),
+            matching: find.text(kAiSessionPrivateLabel),
+          ),
+          findsNothing,
+        );
+        final shared = tester.widget<ChoiceChip>(
+          find.ancestor(
+            of: find.text(kAiSessionSharedLabel),
+            matching: find.byType(ChoiceChip),
+          ),
+        );
+        expect(
+          shared.selected,
+          isTrue,
+          reason: 'the only offered visibility must be the selected one; '
+              'an unselected sole option is the Finding 1 rendering',
+        );
+
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+
+        final prepare = gateway.bodies.firstWhere(
+          (b) => b['command'] == 'prepare',
+        );
+        // THE SPECIFIC VALUE. `isNot('private')` would also pass for a
+        // sheet that sent null or omitted the key, and
+        // `parsePrepareRequest` would answer INVALID_INPUT for those —
+        // a different failure, not this fix.
+        expect(prepare['visibility'], 'shared');
+      },
+    );
+
+    testWidgets(
+      'THE _kind INSTANCE: a caller asks for Nearby while sessionsNearby '
+      'is OFF — the sheet starts Ideas and NEVER sends nearby',
+      (tester) async {
+        // This is the direction the `_kind` exposure is actually
+        // reachable from. The OTHER direction — a capability set that
+        // offers no Ideas — turns out to be unreachable by
+        // construction: `_offeredKinds` offers `ideas` on exactly
+        // `sessionsPrivate || sessionsShared`, which is the same
+        // disjunction that makes `_offeredVisibilities` non-empty, so
+        // any set that can start anything also offers Ideas. Measured,
+        // not assumed: with `private:false shared:false nearby:true`
+        // the sheet renders the unavailable message and no chips at
+        // all, because a Nearby session still needs a visibility.
+        //
+        // So the live exposure is an ENTRY POINT passing a kind whose
+        // own flag is off. Both of today's callers pre-check
+        // (`_sessionKindFor` and chat's `ideas`), which is exactly why
+        // the review called `_kind`'s safety INCIDENTAL rather than
+        // enforced. This test enforces it in the sheet.
+        final gateway = recordingGateway();
+        await _pumpSheet(
+          tester,
+          gateway,
+          kind: AiSessionKind.nearby,
+          capabilities: const AiSessionCapabilities(
+            assist: true,
+            sessionsPrivate: true,
+            sessionsShared: false,
+            sessionsRecentWindow: false,
+            sessionsNearby: false,
+          ),
+        );
+
+        expect(
+          find.descendant(
+            of: find.byType(ChoiceChip),
+            matching: find.text(kAiSessionNearbyLabel),
+          ),
+          findsNothing,
+        );
+        final ideas = tester.widget<ChoiceChip>(
+          find.ancestor(
+            of: find.descendant(
+              of: find.byType(ChoiceChip),
+              matching: find.text(kAiSessionIdeasLabel),
+            ),
+            matching: find.byType(ChoiceChip),
+          ),
+        );
+        expect(
+          ideas.selected,
+          isTrue,
+          reason: 'before the clamp, _kind stayed `nearby` and NEITHER '
+              'chip was selected',
+        );
+        // The AppBar names the session that would actually start, not
+        // the `nearby` the caller asked for. `Nearby` appears NOWHERE.
+        expect(find.text(kAiSessionNearbyLabel), findsNothing);
+
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+
+        final prepare = gateway.bodies.firstWhere(
+          (b) => b['command'] == 'prepare',
+        );
+        // THE SPECIFIC VALUE: `ai_sessions_nearby_enabled` is off, so a
+        // `nearby` here is CHECK 0's FEATURE_DISABLED on every tap.
+        expect(prepare['kind'], 'ideas');
+        expect(prepare['visibility'], 'private');
+      },
+    );
+
+    testWidgets(
+      'PARTIAL SET, Nearby ON but BOTH visibilities OFF: nothing is '
+      'offered — a Nearby session still needs a visibility',
+      (tester) async {
+        // The configuration the `_kind` test above measured and then
+        // cited. Pinned here so a future `_offeredKinds` that offered
+        // `nearby` on its own flag alone — plausible, since nearby HAS
+        // its own flag — cannot render a Start button with no
+        // visibility to send.
+        final gateway = recordingGateway();
+        await _pumpSheet(
+          tester,
+          gateway,
+          kind: AiSessionKind.nearby,
+          capabilities: const AiSessionCapabilities(
+            assist: true,
+            sessionsPrivate: false,
+            sessionsShared: false,
+            sessionsRecentWindow: false,
+            sessionsNearby: true,
+          ),
+        );
+
+        expect(find.byType(ChoiceChip), findsNothing);
+        expect(find.text(kAiSessionStartLabel), findsNothing);
+        expect(find.text(kAiSessionUnavailableMessage), findsOneWidget);
+        expect(gateway.bodies, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'MID-SESSION RESOLUTION: the capability provider resolves AFTER '
+      'first build and the clamp still holds on the first frame that '
+      'can be tapped',
+      (tester) async {
+        final gateway = recordingGateway();
+        final completer = Completer<AiSessionCapabilities>();
+        await _pumpSheet(
+          tester,
+          gateway,
+          capabilitiesFuture: completer.future,
+          settle: false,
+        );
+
+        // FIRST BUILD: `valueOrNull` is null, so the sheet reads
+        // `unavailable` — every list empty, so no Start button exists
+        // to tap. This is the window in which a post-frame
+        // reconciliation would have left the field and the chips
+        // disagreeing.
+        expect(find.text(kAiSessionStartLabel), findsNothing);
+        expect(find.text(kAiSessionUnavailableMessage), findsOneWidget);
+
+        completer.complete(
+          const AiSessionCapabilities(
+            assist: true,
+            sessionsPrivate: false,
+            sessionsShared: true,
+            sessionsRecentWindow: false,
+            sessionsNearby: false,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // The VERY FIRST frame on which Start exists already has the
+        // clamped selection — there is no intermediate frame on which
+        // the sheet displays `shared` and would send `private`.
+        final shared = tester.widget<ChoiceChip>(
+          find.ancestor(
+            of: find.text(kAiSessionSharedLabel),
+            matching: find.byType(ChoiceChip),
+          ),
+        );
+        expect(shared.selected, isTrue);
+
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+        expect(
+          gateway.bodies.firstWhere((b) => b['command'] == 'prepare')['visibility'],
+          'shared',
+        );
+      },
+    );
+
+    testWidgets(
+      'a DELIBERATE tap survives: with both visibilities offered, '
+      'choosing shared is not clamped back to the default private',
+      (tester) async {
+        // ANTI-VACUITY for the clamp. A `_clamp` that always returned
+        // `offered.first` would pass all three tests above (their
+        // offered lists are singletons) and silently discard every user
+        // choice. This is the test that kills that mutant.
+        final gateway = recordingGateway();
+        await _pumpSheet(tester, gateway);
+
+        await tester.tap(find.text(kAiSessionSharedLabel));
+        await tester.pump();
+        await tester.tap(find.text(kAiSessionStartLabel));
+        await tester.pumpAndSettle();
+
+        expect(
+          gateway.bodies.firstWhere((b) => b['command'] == 'prepare')['visibility'],
+          'shared',
+        );
+      },
+    );
+
+    testWidgets(
+      'the recent-window toggle is gated on the CLAMPED visibility, so '
+      'private-OFF + shared-ON offers it without a tap',
+      (tester) async {
+        // The toggle's own condition is
+        // `visibility == shared && kind == ideas && recentWindow`. With
+        // the unclamped field it read `private` and the toggle was
+        // hidden even though a shared session was the only one
+        // startable — a second, quieter symptom of the same defect.
+        final gateway = recordingGateway();
+        await _pumpSheet(
+          tester,
+          gateway,
+          capabilities: const AiSessionCapabilities(
+            assist: true,
+            sessionsPrivate: false,
+            sessionsShared: true,
+            sessionsRecentWindow: true,
+            sessionsNearby: false,
+          ),
+        );
+
+        expect(find.text(kAiSessionIncludeWindowLabel), findsOneWidget);
+      },
+    );
+  });
 
   group('FINDING 2: the idempotency key is STABLE across a retry', () {
     testWidgets(
