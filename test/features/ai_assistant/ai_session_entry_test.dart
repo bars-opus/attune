@@ -25,6 +25,8 @@
 // before the route is" is the exact shape that crashed Task 8.
 library;
 
+import 'dart:io';
+
 import 'package:attune/features/ai_assistant/data/models/ai_session_model.dart';
 import 'package:attune/features/ai_assistant/data/repositories/ai_assistant_repository.dart';
 import 'package:attune/features/ai_assistant/data/repositories/ai_session_repository.dart';
@@ -35,9 +37,33 @@ import 'package:attune/features/ai_assistant/presentation/screens/ai_session_ent
 import 'package:attune/features/ai_assistant/presentation/screens/ai_session_sheet.dart';
 import 'package:attune/features/ai_assistant/presentation/screens/ask_attune_mode_sheet.dart';
 import 'package:attune/features/ai_assistant/presentation/screens/assist_sheet.dart';
+import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show User;
+
+User _testUser(String id) => User(
+  id: id,
+  appMetadata: const <String, dynamic>{},
+  userMetadata: const <String, dynamic>{},
+  aud: 'authenticated',
+  createdAt: DateTime.now().toIso8601String(),
+);
+
+/// A partner-sent plain-text message, so it is eligible for Ask Attune
+/// AND makes Understand available (spec §3: Understand requires
+/// `sender_id != auth.uid()`), which is what lets the
+/// "Understand is untouched" leg assert something real.
+Message _partnerMessage() => Message.optimistic(
+  id: 'msg-long-pressed',
+  clientMessageId: 'c-long-pressed',
+  relationshipId: 'rel-1',
+  senderId: 'partner',
+  content: 'dinner on friday?',
+  createdAt: DateTime.now(),
+);
 
 /// Only `assist` on, and every session capability off — so a test that
 /// passes cannot be passing because some OTHER flag was on. The §12
@@ -430,6 +456,286 @@ void main() {
             'a second open must be a FRESH session, not the previous '
             'one re-entered',
       );
+    });
+  });
+
+  // ===================================================================
+  // RULING 24's structural half: the opener must be the ONLY pusher
+  // ===================================================================
+
+  group('RULING 24 structurally: nothing else constructs the sheet', () {
+    test(
+      'ai_session_entry.dart holds the only AiSessionSheet( construction '
+      'in lib/, so no entry point can bypass the invariant',
+      () {
+        // The behavioural tests above prove the LOCK works. They cannot
+        // prove nobody walks around it: a future entry point that
+        // pushes `AiSessionSheet` directly would mount a second sheet
+        // with the flag untouched, and every test above would still
+        // pass. This is that guard.
+        //
+        // The grep-is-not-evidence trap has fired SIX times in this
+        // effort, every time because a hit was prose. So this reads the
+        // matching LINES and classifies each, rather than counting.
+        // A WORD BOUNDARY, not a substring. My first version matched
+        // `AiSessionSheet(` as a plain substring and therefore also
+        // matched `openAiSessionSheet(` — the OPENER's own name — so
+        // every caller of the opener was reported as a direct push.
+        // Caught by the test failing on first run, which is the right
+        // way round.
+        final construction = RegExp(r'(?<![A-Za-z0-9_])AiSessionSheet\(');
+        // ANTI-VACUITY for the pattern itself: it matches a real push
+        // and does NOT match the opener's name.
+        expect(construction.hasMatch('(_) => AiSessionSheet('), isTrue);
+        expect(construction.hasMatch('bool openAiSessionSheet({'), isFalse);
+
+        final hits = <String, List<String>>{};
+        for (final file in Directory('lib')
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((file) => file.path.endsWith('.dart'))) {
+          for (final line in file.readAsLinesSync()) {
+            if (!construction.hasMatch(line)) continue;
+            final trimmed = line.trim();
+            // Comments and the class's own declaration are not pushes.
+            if (trimmed.startsWith('//') ||
+                trimmed.startsWith('///') ||
+                trimmed.startsWith('*') ||
+                trimmed.contains('const AiSessionSheet({')) {
+              continue;
+            }
+            (hits[file.path] ??= <String>[]).add(trimmed);
+          }
+        }
+
+        // ANTI-VACUITY: the scan found the real construction, so a
+        // silently-empty scan cannot make this pass.
+        expect(
+          hits.keys,
+          contains(
+            'lib/features/ai_assistant/presentation/screens/'
+            'ai_session_entry.dart',
+          ),
+          reason:
+              'if the scan cannot even find the one legitimate push, it '
+              'is measuring nothing',
+        );
+
+        expect(
+          hits.keys.toList(),
+          <String>[
+            'lib/features/ai_assistant/presentation/screens/'
+                'ai_session_entry.dart',
+          ],
+          reason:
+              'RULING 24: openAiSessionSheet must be the only way in. A '
+              'direct push elsewhere would mount a second sheet sharing '
+              "Task 7's single controller instance, with the mounted "
+              'flag untouched — and every behavioural test in this file '
+              'would still pass. Found: $hits',
+        );
+      },
+    );
+
+    test('both entry points reference the opener in source', () {
+      // The complement to the guard above, which would also pass if
+      // NOTHING pushed the sheet — i.e. if a refactor unwired an entry
+      // point. Plan D has exactly two.
+      //
+      // **DISCLOSED LIMIT, measured not assumed.** This proves the call
+      // EXISTS IN SOURCE, not that it is REACHABLE. Mutation M16
+      // wrapped the long-press branch in `if (false && ...)` and this
+      // test still passed, because the text is still there inside the
+      // dead branch. The behavioural cover for that path is
+      // `the long-press "Get ideas" path reaches the session sheet`
+      // below; the composer path's is in
+      // `chat_screen_message_actions_test.dart`. This test is the
+      // cheap "did someone delete a wire" check, and is recorded as
+      // exactly that rather than as a reachability proof.
+      final callers = <String>[];
+      for (final file in Directory('lib')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((file) => file.path.endsWith('.dart'))) {
+        if (file.path.endsWith('ai_session_entry.dart')) continue;
+        for (final line in file.readAsLinesSync()) {
+          final trimmed = line.trim();
+          if (trimmed.startsWith('//') || trimmed.startsWith('///')) continue;
+          if (trimmed.contains('openAiSessionSheet(')) {
+            callers.add(file.path);
+            break;
+          }
+        }
+      }
+      expect(
+        callers..sort(),
+        <String>[
+          'lib/features/ai_assistant/presentation/screens/'
+              'ask_attune_mode_sheet.dart',
+          'lib/features/chat/presentation/screens/chat_screen.dart',
+        ],
+        reason:
+            'the composer button and the long-press "Get ideas" are the '
+            "plan's two entry points; losing one is as much a defect as "
+            'adding a third that bypasses the opener',
+      );
+    });
+  });
+
+  // ===================================================================
+  // The long-press entry point, driven end to end
+  // ===================================================================
+
+  group('the long-press "Get ideas" path', () {
+    /// `AskAttuneModeSheet` past its consent gate, with [capabilities].
+    Future<void> pumpModeSheet(
+      WidgetTester tester, {
+      required AiSessionCapabilities capabilities,
+    }) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          key: UniqueKey(),
+          overrides: [
+            aiSessionRepositoryProvider.overrideWithValue(
+              AiSessionRepository(_UnusedGateway()),
+            ),
+            aiAssistantRepositoryProvider.overrideWithValue(
+              AiAssistantRepository(_UnusedGateway()),
+            ),
+            aiSessionCapabilitiesProvider.overrideWith(
+              (ref) => Future<AiSessionCapabilities>.value(capabilities),
+            ),
+            currentUserProvider.overrideWithValue(_testUser('user-a')),
+            currentRelationshipIdProvider.overrideWith((ref) async => 'rel-1'),
+            aiConsentStatusProvider('rel-1').overrideWith(
+              (ref) async => const AiConsentStatus(
+                callerGranted: true,
+                bothGranted: true,
+                policyVersion: 'v1',
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            home: AskAttuneModeSheet(message: _partnerMessage()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'reaches the session sheet with the long-pressed message '
+      'pre-attached, when the capability allows it',
+      (tester) async {
+        // THE REACHABILITY PROOF the source scan cannot give (M16).
+        // Drives the real tiles: "Get ideas" -> the Ideas/Nearby picker
+        // -> the session sheet.
+        await pumpModeSheet(tester, capabilities: _ideasSession);
+
+        await tester.tap(find.byKey(const ValueKey('ask-attune-mode-assist')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('assist-kind-ideas')));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AiSessionSheet), findsOneWidget);
+        final sheet = tester.widget<AiSessionSheet>(
+          find.byType(AiSessionSheet),
+        );
+        expect(
+          sheet.targetMessageId,
+          'msg-long-pressed',
+          reason:
+              "this plan's Architecture note: the session is pre-seeded "
+              'with the selected message, and this is the only entry '
+              'point that HAS one',
+        );
+        expect(sheet.relationshipId, 'rel-1');
+        expect(sheet.initialKind, AiSessionKind.ideas);
+        // The single-turn sheet must NOT also be on the stack.
+        expect(find.byType(AssistSheet), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'falls back to the single-turn AssistSheet when the capability is '
+      'off — the regression leg',
+      (tester) async {
+        // THE REGRESSION PROOF for this entry point. Today, with every
+        // flag off, "Get ideas" -> Ideas opens single-turn Assist. An
+        // UNCONDITIONAL repoint (which the brief asked for) would have
+        // turned that into a FEATURE_DISABLED screen for every user,
+        // since checkEligibility CHECK 0 refuses a disabled capability.
+        await pumpModeSheet(
+          tester,
+          capabilities: AiSessionCapabilities.unavailable,
+        );
+
+        await tester.tap(find.byKey(const ValueKey('ask-attune-mode-assist')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('assist-kind-ideas')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byType(AiSessionSheet),
+          findsNothing,
+          reason:
+              'a session must not be offered against an off capability',
+        );
+        expect(
+          find.byType(AssistSheet),
+          findsOneWidget,
+          reason:
+              "today's single-turn path must still work — it is what "
+              'every environment gets until an operator flips the flags',
+        );
+      },
+    );
+
+    testWidgets(
+      'Nearby picks the Nearby SESSION only when sessionsNearby is on, '
+      'and single-turn Nearby otherwise',
+      (tester) async {
+        await pumpModeSheet(tester, capabilities: _nearbySession);
+        await tester.tap(find.byKey(const ValueKey('ask-attune-mode-assist')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('assist-kind-nearby')));
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<AiSessionSheet>(find.byType(AiSessionSheet))
+              .initialKind,
+          AiSessionKind.nearby,
+        );
+
+        // The other direction, in the same test so the two fixtures
+        // cannot drift apart: Ideas sessions on, Nearby off.
+        await pumpModeSheet(tester, capabilities: _ideasSession);
+        await tester.tap(find.byKey(const ValueKey('ask-attune-mode-assist')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('assist-kind-nearby')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byType(AiSessionSheet),
+          findsNothing,
+          reason:
+              '§12 forbids inferring sessionsNearby from '
+              'sessionsPrivate being on',
+        );
+        expect(find.byType(AssistSheet), findsOneWidget);
+      },
+    );
+
+    testWidgets('the Understand branch is untouched', (tester) async {
+      // Named explicitly because the dispatch asks what I did NOT
+      // change, and "I did not touch it" is better asserted than
+      // claimed. A partner-sent message makes Understand available.
+      await pumpModeSheet(tester, capabilities: _ideasSession);
+
+      expect(
+        find.byKey(const ValueKey('ask-attune-mode-understand')),
+        findsOneWidget,
+      );
+      expect(find.text('Possible ways to read this'), findsOneWidget);
     });
   });
 

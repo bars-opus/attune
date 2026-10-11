@@ -136,6 +136,25 @@ class _ConsentGatedModeChoice extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final consentAsync = ref.watch(aiConsentStatusProvider(relationshipId));
+    // WATCHED here, not `read` at tap time, and that is a bug fix
+    // rather than a style choice.
+    //
+    // `aiSessionCapabilitiesProvider` is a `FutureProvider`. Nothing in
+    // this screen watched it, so the first `container.read(...)` inside
+    // the tap handler STARTED the load and returned `AsyncLoading` —
+    // `.valueOrNull` was null, the per-kind gate read that as "no
+    // session" and fell back to single-turn Assist. MEASURED: a
+    // behavioural test of the long-press path failed with
+    // `caps=null`, every time, so with the capability ON the FIRST
+    // "Get ideas" of an app session would never have opened a session.
+    // Watching it here means the load is already in flight while the
+    // user is still reading the consent gate and picking a mode.
+    //
+    // Still fail-closed: a value that has not arrived by the time the
+    // user picks is `null`, which the gate reads as off. Watching
+    // changes WHEN the answer is known, never what an unknown means.
+    final capabilities =
+        ref.watch(aiSessionCapabilitiesProvider).valueOrNull;
 
     return consentAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -151,6 +170,7 @@ class _ConsentGatedModeChoice extends ConsumerWidget {
         return _ModeChoiceList(
           message: message,
           relationshipId: relationshipId,
+          capabilities: capabilities,
           waitingForPartner: !consent.bothGranted,
           understandAvailable: understandAvailable,
           colorScheme: colorScheme,
@@ -212,6 +232,7 @@ class _ModeChoiceList extends StatelessWidget {
   const _ModeChoiceList({
     required this.message,
     required this.relationshipId,
+    required this.capabilities,
     required this.waitingForPartner,
     required this.understandAvailable,
     required this.colorScheme,
@@ -226,6 +247,13 @@ class _ModeChoiceList extends StatelessWidget {
   /// that already resolved it rather than re-read here, so one value
   /// reaches both the consent gate above and the session below.
   final String relationshipId;
+
+  /// §12's capabilities, resolved by the ancestor that WATCHES them.
+  /// `null` means not yet loaded (or the service failed closed), which
+  /// the per-kind gate reads as "no session" — see
+  /// [_ConsentGatedModeChoice.build]'s note on why this is watched
+  /// rather than read at tap time.
+  final AiSessionCapabilities? capabilities;
   final bool waitingForPartner;
   final bool understandAvailable;
   final ColorScheme colorScheme;
@@ -273,6 +301,7 @@ class _ModeChoiceList extends StatelessWidget {
                       context,
                       message,
                       relationshipId: relationshipId,
+                      capabilities: capabilities,
                     ),
           ),
           const SizedBox(height: 12),
@@ -347,6 +376,7 @@ Future<void> _chooseAssistKindThenOpen(
   BuildContext context,
   Message message, {
   required String relationshipId,
+  required AiSessionCapabilities? capabilities,
 }) async {
   final kind = await showModalBottomSheet<AssistKind>(
     context: context,
@@ -376,20 +406,15 @@ Future<void> _chooseAssistKindThenOpen(
   );
   if (kind == null || !context.mounted) return;
 
-  // The capability read, per RULING 23's "never `feature_flags`
-  // directly". Resolved through the container rather than a `ref`
-  // because this is a plain function reached from a tap callback — the
-  // same one-shot-read-from-a-tap pattern `message_bubble.dart` already
-  // uses for `storyReadGatewayProvider`.
+  // [capabilities] is passed IN, already watched by the ancestor —
+  // never read here. A `container.read` of a `FutureProvider` nothing
+  // watches STARTS the load and hands back `AsyncLoading`, so the
+  // first tap of an app session always saw null. See
+  // `_ConsentGatedModeChoice.build`.
   //
-  // `.valueOrNull` and NOT `await ...future`: the provider is already
-  // resolved by the time a user has long-pressed, opened this sheet,
-  // passed the consent gate and picked a kind, and a null (still
-  // loading, which the service's fail-closed `load()` makes transient)
-  // reads as OFF -> today's single-turn path. Awaiting here would
-  // instead make an unreachable server DELAY the existing feature.
+  // The container is still needed, for RULING 24's flag and for the
+  // opener's own post-pop release.
   final container = ProviderScope.containerOf(context, listen: false);
-  final capabilities = container.read(aiSessionCapabilitiesProvider).valueOrNull;
   final sessionKind = _sessionKindFor(kind, capabilities);
 
   if (sessionKind != null) {
