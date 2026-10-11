@@ -646,26 +646,48 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a recognized command with no branch yet returns FEATURE_DISABLED, not a crash",
+  name: "EVERY ONE of the nine §4.1 commands now has a real branch -- none falls through",
   fn: async () => {
+    // REPLACES Task 1's "a recognized command with no branch yet
+    // returns FEATURE_DISABLED" test, and the replacement is the point:
+    // that test asserted the placeholder arm, and Task 5 removed the
+    // placeholder by giving the last six commands real branches. An
+    // assertion about a FEATURE_DISABLED placeholder would now pass
+    // only if a command had SILENTLY LOST its branch, which is the
+    // opposite of what it was written to protect.
+    //
+    // So this asserts the property that actually matters once every
+    // branch exists: no command in SESSION_COMMANDS reaches the
+    // switch's placeholder or its `default`. Each is sent with a
+    // DELIBERATELY EMPTY body beyond `command`, so each must be
+    // refused by ITS OWN bounded §4.1 schema -- INVALID_INPUT -- and
+    // never by the dispatcher.
     await resetFixtures();
     await grantDualConsent();
     const deps = await makeDeps();
-    // Tasks 3-5 fill these in. Until then a recognized command must
-    // return a typed envelope rather than fall through to a 500 -- and
-    // must NOT be INVALID_INPUT, which would be indistinguishable from
-    // an unknown command and would mislead a client into editing input.
-    //
-    // 'approve' rather than 'prepare': Task 2 gave 'prepare' and
-    // 'review_context' real branches, so they no longer exercise the
-    // unbuilt-command path.
-    const response = await processSessionCommand(
-      makeReq({ command: "approve", relationship_id: REL_C1 }),
-      ctx(USER_C1_A),
-      deps,
-    );
-    assertEquals(response.status, 403);
-    assertEquals((await response.json()).code, "FEATURE_DISABLED");
+
+    for (const command of SESSION_COMMANDS) {
+      const response = await processSessionCommand(
+        makeReq({ command }),
+        ctx(USER_C1_A),
+        deps,
+      );
+      const body = await response.json();
+      assertEquals(
+        body.code,
+        "INVALID_INPUT",
+        `${command} must be refused by its own bounded schema, not by the dispatcher`,
+      );
+      // FEATURE_DISABLED here would mean the placeholder arm is still
+      // reachable for this command, i.e. the branch was never wired.
+      assertNotEquals(
+        body.code,
+        "FEATURE_DISABLED",
+        `${command} still falls through to the unbuilt-command placeholder`,
+      );
+      assertEquals(response.status, 400);
+    }
+    assertEquals(SESSION_COMMANDS.size, 9);
   },
 });
 
@@ -4521,22 +4543,26 @@ Deno.test({
       "nothing may be committed when a proposal title is refused",
     );
 
-    // A RETRY IS SESSION_BUSY FOR THE LEASE'S DURATION. Asserted as
-    // the ACTUAL behaviour, with the reason, rather than worked around:
-    // after a pre-publish refusal the request row stays 'started' with
-    // a live 35-second lease, and admit_ai_session_generation's busy
-    // check refuses any new request for the session until
-    // reconcile_ai_session_leases settles it. There is NO RPC to settle
-    // a request as failed -- I queried pg_proc for every
-    // %ai_session% function and no fail/release/abandon RPC exists --
-    // so the edge function cannot close the lease itself. Reported as a
-    // plan gap in the task report rather than papered over with a new
-    // column, which the Global Constraints forbid.
+    // INVERTED BY TASK 5 / ITEM A2 (Ruling 18), WHICH IS WHY THIS LEG
+    // READS THE WAY IT DOES. Task 4 wrote this leg to PIN the gap it
+    // found and could not close: after a pre-publish refusal the
+    // request row stayed 'started' with a live 35-second lease, so
+    // admit_ai_session_generation's busy check refused every retry for
+    // up to 35 seconds. It asserted SESSION_BUSY and `['started']`
+    // precisely so the fix would make this test FAIL, and that failure
+    // would be the signal to invert it. 20260953200400 added
+    // settle_ai_session_request and the dispatch paths now call it, so
+    // the assertions are inverted here rather than deleted.
     //
-    // The same disposition applies to a validator rejection and a
-    // provider failure, which has one genuinely good consequence worth
-    // naming: a safety refusal is INDISTINGUISHABLE from a timeout in
-    // the request table, so the row itself discloses nothing.
+    // The request is TERMINAL immediately, so a retry admits.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state, terminal_code FROM public.ai_session_requests WHERE session_id = $1`,
+        [sessionId],
+      )).map((r) => `${r.state}/${r.terminal_code}`),
+      ["failed/REQUEST_FAILED"],
+      "Item A2: a pre-publish safety refusal settles the request immediately instead of leaving it 'started' until the lease expires",
+    );
     const retry = await processSessionCommand(
       makeReq({
         command: "generate",
@@ -4559,15 +4585,17 @@ Deno.test({
         }).call,
       },
     );
-    assertEquals(retry.status, 409);
-    assertEquals((await retry.json()).code, "SESSION_BUSY");
+    // NOT SESSION_BUSY any more: the retry is admitted and commits.
+    assertEquals(retry.status, 200, await retry.clone().text());
+    const retried = await retry.json();
+    assertEquals(retried.kind, "answer");
     assertEquals(
       (await serviceRoleQuery(
-        `SELECT state FROM public.ai_session_requests WHERE session_id = $1`,
+        `SELECT count(*)::int AS n FROM public.ai_session_turns WHERE session_id = $1`,
         [sessionId],
-      )).map((r) => r.state),
-      ["started"],
-      "the refused request stays 'started' until the lease expires -- the plan gap this test documents",
+      ))[0].n,
+      2,
+      "the retry after a settled refusal commits a real pair",
     );
 
     // ANTI-VACUITY, on a FRESH session so the lease above cannot be the

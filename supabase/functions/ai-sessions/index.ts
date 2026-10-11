@@ -849,7 +849,17 @@ async function handlePrepare(branch: BranchContext): Promise<Response> {
 /// submits the revision/digest pair it received. Keeping them separate
 /// is what makes the two partners' approvals independent acts.
 async function handleReviewContext(branch: BranchContext): Promise<Response> {
-  const allowed = new Set(["command", "session_id", "utc_offset_minutes"]);
+  // §4.1's bounded schema for this command, plus §4.3's optional window
+  // toggle (Item A1 / Ruling 17). `set_include_window` is OPTIONAL: when
+  // absent this command is purely read-only, exactly as it was before.
+  // See applyWindowToggle's header for why the toggle rides here rather
+  // than being a tenth command.
+  const allowed = new Set([
+    "command",
+    "session_id",
+    "utc_offset_minutes",
+    "set_include_window",
+  ]);
   for (const key of Object.keys(branch.body)) {
     if (!allowed.has(key)) {
       return errorResponse(sessionError("INVALID_INPUT"));
@@ -857,6 +867,10 @@ async function handleReviewContext(branch: BranchContext): Promise<Response> {
   }
   const sessionId = branch.body.session_id;
   const offset = branch.body.utc_offset_minutes;
+  const setIncludeWindow = branch.body.set_include_window;
+  if (setIncludeWindow !== undefined && typeof setIncludeWindow !== "boolean") {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
   if (!isCanonicalUuid(sessionId)) {
     return errorResponse(sessionError("INVALID_INPUT"));
   }
@@ -966,8 +980,53 @@ async function handleReviewContext(branch: BranchContext): Promise<Response> {
     (targetRows.data as Record<string, unknown>[] | null)?.[0] ?? null;
   const targetMessageId = (target?.source_message_id as string) ?? null;
 
+  // §4.3's WINDOW TOGGLE, if this call asked for one (Item A1 / Ruling
+  // 17). It runs HERE -- after the session, membership, state, expiry
+  // and the frozen target are all established, and BEFORE the digest is
+  // computed -- for two reasons:
+  //
+  //   * the toggle needs the frozen TARGET id, because §4.2 item 3
+  //     excludes the target from the window, and the target is read
+  //     from the stored row just above;
+  //   * the digest must be computed over the state the toggle LEFT
+  //     behind, not the state it found. The toggle bumps the revision
+  //     and clears approvals, so a digest computed before it would bind
+  //     a revision the client could never approve at.
+  //
+  // The session row is therefore RE-READ below for the revision and the
+  // window setting the toggle produced.
+  let effectiveIncludeWindow = includeWindow;
+  let effectiveRevision = row.revision as number;
+  if (setIncludeWindow !== undefined) {
+    const toggleError = await applyWindowToggle(
+      branch,
+      service,
+      sessionId,
+      relationshipId,
+      targetMessageId,
+      offset,
+      setIncludeWindow,
+    );
+    if (toggleError) return errorResponse(toggleError);
+    // RE-READ, never assumed: a no-change call bumps nothing, and the
+    // RPC is the authority on what the row now holds. Computing the
+    // digest from an assumed revision is how two partners end up
+    // approving different integers.
+    const after = await service
+      .from("ai_sessions")
+      .select("revision, include_window, kind, visibility")
+      .eq("id", sessionId)
+      .maybeSingle();
+    if (after.error) return errorResponse(sessionError("INTERNAL_ERROR"));
+    const afterRow = after.data as Record<string, unknown> | null;
+    if (!afterRow) return errorResponse(sessionError("UNAVAILABLE"));
+    effectiveRevision = afterRow.revision as number;
+    effectiveIncludeWindow = afterRow.include_window === true &&
+      afterRow.visibility === "shared" && afterRow.kind === "ideas";
+  }
+
   let window: WindowMessage[] = [];
-  if (includeWindow) {
+  if (effectiveIncludeWindow) {
     try {
       window = await selectSharedWindow(
         service,
@@ -1073,17 +1132,25 @@ async function handleReviewContext(branch: BranchContext): Promise<Response> {
     // `revision` is what an approval is submitted against (Plan B's
     // approve_ai_session_context takes p_revision and matches
     // ai_sessions.revision), so that is what the digest binds.
-    contextRevision: row.revision as number,
+    //
+    // THE EFFECTIVE revision, i.e. after any window toggle this call
+    // performed. A toggle bumps it, so binding the pre-toggle value
+    // would hand the client a digest it could only submit against a
+    // revision that no longer exists.
+    contextRevision: effectiveRevision,
   });
 
   // §4.3: "The client submits revision/digest." Both are returned so
   // the client can echo them to `approve` without recomputing either.
   return jsonResponse({
     session_id: sessionId,
-    revision: row.revision,
+    revision: effectiveRevision,
     policy_version: policy,
     kind,
     visibility,
+    // The STORED setting the digest was computed under, so a client can
+    // see whether its toggle took effect without a second read.
+    include_window: effectiveIncludeWindow,
     utc_offset_minutes: offset,
     civil_day_start_utc: civilDayStart,
     window: window.map((message) => ({
@@ -2489,6 +2556,53 @@ async function replayAdmittedRequest(
   });
 }
 
+/// SETTLES A DISPATCHED REQUEST AS TERMINAL, so a refusal does not leave
+/// the session SESSION_BUSY until its 35-second lease expires (Item A2 /
+/// Ruling 18; Task 4 measured the gap and found no fail/release/abandon
+/// RPC existed at all).
+///
+/// CALLED ON EVERY POST-DISPATCH FAILURE PATH, and the set is not
+/// negotiable -- Task 4 enumerated three families and they all land
+/// here:
+///
+///   * a PRE-PUBLISH SAFETY REFUSAL (pass 2, on any output field or any
+///     Nearby card string),
+///   * a §5.3 VALIDATOR REJECTION (validateSessionTurnOutput or
+///     validateNearbyCategoryOutput returning null),
+///   * a PROVIDER FAILURE (Gemini or Mapbox returning nothing).
+///
+/// THE RPC CANNOT DISTINGUISH THEM, by construction: it takes no reason
+/// parameter, so all three write the byte-identical row. That is why
+/// this helper takes no reason parameter either -- there is nothing to
+/// pass and nothing a future caller could pass wrongly. A `reason`
+/// argument here would be a disclosure channel one refactor away from
+/// the database.
+///
+/// IT NEVER CHANGES WHAT THE CALLER RETURNS. The result is deliberately
+/// ignored and no error can escape: a settle that failed must not turn
+/// a carefully neutral §8.1 refusal body into an INTERNAL_ERROR, which
+/// would make a safety refusal distinguishable from a provider failure
+/// by HTTP status -- the exact property §8.1 forbids. A failed settle
+/// just means the lease expires the old way, which is the behaviour
+/// before this existed.
+async function settleDispatchedRequest(
+  service: SupabaseClient,
+  actorId: string,
+  requestId: string,
+): Promise<void> {
+  try {
+    await service.rpc("settle_ai_session_request", {
+      // THE ACTOR COMES FROM THE VERIFIED USER, never the body. The RPC
+      // settles only the request's OWN actor's row, so a mismatch is a
+      // silent no-op rather than a cross-actor cancel.
+      p_actor_id: actorId,
+      p_request_id: requestId,
+    });
+  } catch {
+    // Deliberately swallowed -- see the header.
+  }
+}
+
 /// Ideas. ONE provider call, no location parameter at all.
 async function dispatchIdeas(
   service: SupabaseClient,
@@ -2506,7 +2620,13 @@ async function dispatchIdeas(
     userPrompt,
     maxOutputTokens: 2048,
   });
-  if (!parsed) return errorResponse(sessionError("PROVIDER_UNAVAILABLE"));
+  if (!parsed) {
+    // ITEM A2: settle the request so the session is not SESSION_BUSY for
+    // up to 35 seconds. Identical call, identical resulting row, as the
+    // safety and validator paths below.
+    await settleDispatchedRequest(service, branch.actorId, request.requestId);
+    return errorResponse(sessionError("PROVIDER_UNAVAILABLE"));
+  }
 
   // §5.3 / §8.2.5. quotedSources is derived from the SAME struct the
   // prompt was built from -- see collectQuotedSources.
@@ -2514,7 +2634,11 @@ async function dispatchIdeas(
     parsed,
     collectQuotedSources(promptInputs),
   );
-  if (!validated) return errorResponse(sessionError("RESULT_UNAVAILABLE"));
+  if (!validated) {
+    // ITEM A2.
+    await settleDispatchedRequest(service, branch.actorId, request.requestId);
+    return errorResponse(sessionError("RESULT_UNAVAILABLE"));
+  }
 
   // SAFETY PASS 2, on every output field, before anything is published.
   const outputVerdict = checkOutputSafety(validated);
@@ -2523,25 +2647,26 @@ async function dispatchIdeas(
     // committed, so there is no transcript pair and no revision bump --
     // the partner sees a silent non-post.
     //
-    // PLAN GAP, REPORTED NOT PAPERED OVER: the request row stays
-    // 'started' with a live 35-second lease, so the session is
-    // SESSION_BUSY until reconcile_ai_session_leases settles it, and
-    // the requester cannot retry for up to 35 seconds. Plan B exposes
-    // NO RPC to settle a request as failed -- I queried pg_proc for
-    // every %ai_session% function and there is no fail/release/abandon
-    // entry point -- so this function cannot close the lease itself.
-    // Adding one is a Plan B migration, not an edge-function change,
-    // and inventing a column here is exactly what the Global
-    // Constraints forbid. The §8.1 title test asserts the actual
-    // SESSION_BUSY behaviour so the gap is pinned rather than
-    // discovered later.
+    // ITEM A2 / RULING 18 CLOSES TASK 4'S REPORTED GAP. The request
+    // row used to stay 'started' with a live 35-second lease, so the
+    // session was SESSION_BUSY until reconcile_ai_session_leases
+    // settled it -- Plan B exposed no fail/release/abandon RPC at all.
+    // 20260953200400 adds one and it is called here.
     //
-    // ONE GENUINELY GOOD CONSEQUENCE, worth naming because it is part
-    // of the non-disclosure story: this is the IDENTICAL disposition a
-    // provider timeout, a validator rejection and a prohibited-pattern
-    // hit produce, so the request row itself cannot tell an operator --
-    // or anyone reading it -- that a SAFETY detector fired rather than
-    // the provider having failed.
+    // THE PROPERTY TASK 4 IDENTIFIED IS PRESERVED, AND NOW
+    // STRUCTURALLY RATHER THAN INCIDENTALLY: this is the IDENTICAL
+    // disposition a provider timeout and a validator rejection
+    // produce, because settle_ai_session_request TAKES NO REASON
+    // PARAMETER -- all three paths call it with the same two arguments
+    // and it writes the same row (state 'failed', terminal_code
+    // 'REQUEST_FAILED'). There is no value by which the request row
+    // could tell an operator, a support tool or a future read RPC that
+    // a SAFETY detector fired rather than the provider having failed.
+    //
+    // Settled BEFORE the response is built, and the settle's own
+    // outcome is ignored, so it cannot alter the refusal body or its
+    // status either (see settleDispatchedRequest's header).
+    await settleDispatchedRequest(service, branch.actorId, request.requestId);
     return safetyRefusalResponse(outputVerdict);
   }
 
@@ -2624,7 +2749,11 @@ async function dispatchNearby(
     // itself a bound on what can come back.
     maxOutputTokens: 100,
   });
-  if (!parsed) return errorResponse(sessionError("PROVIDER_UNAVAILABLE"));
+  if (!parsed) {
+    // ITEM A2.
+    await settleDispatchedRequest(service, branch.actorId, request.requestId);
+    return errorResponse(sessionError("PROVIDER_UNAVAILABLE"));
+  }
 
   // A redirect is a legal Nearby output too (§5.3), and it short-
   // circuits BEFORE Mapbox: no category, no search.
@@ -2634,10 +2763,16 @@ async function dispatchNearby(
       collectQuotedSources(promptInputs),
     );
     if (!validatedRedirect || validatedRedirect.kind !== "redirect") {
+      // ITEM A2.
+      await settleDispatchedRequest(service, branch.actorId, request.requestId);
       return errorResponse(sessionError("RESULT_UNAVAILABLE"));
     }
     const redirectVerdict = checkOutputSafety(validatedRedirect);
     if (!redirectVerdict.allowed) {
+      // ITEM A2 -- the same call, the same resulting row, as the
+      // provider-failure and validator paths. See dispatchIdeas'
+      // note on why that identity is the non-disclosure property.
+      await settleDispatchedRequest(service, branch.actorId, request.requestId);
       return safetyRefusalResponse(redirectVerdict);
     }
     return jsonResponse({
@@ -2654,7 +2789,12 @@ async function dispatchNearby(
   // crosses from the Gemini side to the Mapbox side, and §2 permits it
   // by name ("except through the fixed six-category allowlist").
   const categoryOutput = validateNearbyCategoryOutput(parsed);
-  if (!categoryOutput) return errorResponse(sessionError("RESULT_UNAVAILABLE"));
+  if (!categoryOutput) {
+    // ITEM A2. Note the settle happens AFTER the chokepoint refused, so
+    // no Mapbox call was made -- settling does not change that.
+    await settleDispatchedRequest(service, branch.actorId, request.requestId);
+    return errorResponse(sessionError("RESULT_UNAVAILABLE"));
+  }
 
   // --- Provider call 2: MAPBOX. Receives the category token and the
   // point. Its signature has no string parameter, so no prompt text,
@@ -2663,7 +2803,11 @@ async function dispatchNearby(
     latitude: location.latitude,
     longitude: location.longitude,
   });
-  if (places === null) return errorResponse(sessionError("PROVIDER_UNAVAILABLE"));
+  if (places === null) {
+    // ITEM A2.
+    await settleDispatchedRequest(service, branch.actorId, request.requestId);
+    return errorResponse(sessionError("PROVIDER_UNAVAILABLE"));
+  }
 
   // §5.3: "server-assembled text 1..2,000 plus zero to three source
   // cards ... Zero results is a deterministic no-results card." The
@@ -2684,7 +2828,13 @@ async function dispatchNearby(
     ]
   ) {
     const verdict = classifySessionContent(field);
-    if (!verdict.allowed) return safetyRefusalResponse(verdict);
+    if (!verdict.allowed) {
+      // ITEM A2. Nothing is staged on this path, so the settle is the
+      // only state change a refused Nearby generation makes -- and it
+      // is the same change a Mapbox failure makes.
+      await settleDispatchedRequest(service, branch.actorId, request.requestId);
+      return safetyRefusalResponse(verdict);
+    }
   }
 
   const stageResult = await service.rpc("stage_ai_session_nearby_result", {
@@ -2724,6 +2874,819 @@ function buildNearbySessionReplyText(
   return `Here are a few ${category} options nearby: ${
     places.map((place) => place.name).join(", ")
   }`;
+}
+
+
+// ---------------------------------------------------------------------------
+// Branch: 'approve' -- spec §3.2, §4.3. Rulings 13 + 22.
+//
+// ONE command, not two. §4.1 names "approve/start" as a pair and
+// SESSION_COMMANDS' own note records why they are one: approving IS
+// what activates (§3.2 "Private creator approves ... then activates"),
+// and splitting them would let a client approve and never activate,
+// leaving a shared session that both partners approved stuck in
+// `preparing` until its deadline.
+//
+// So this branch calls approve_ai_session_context and THEN
+// activate_ai_session, and reports which happened. For a PRIVATE
+// session the pair completes in one call; for a SHARED one the first
+// partner's call approves and activate reports APPROVAL_REQUIRED
+// (returned as `approved: true, activated: false`, not an error -- the
+// caller did exactly what it was asked to and is waiting for its
+// partner), and the second partner's call activates.
+//
+// WHAT THIS BRANCH ASSERTS ABOUT THE DIGEST, AND WHY IT IS NOT A
+// RECOMPUTATION (Ruling 22 sharpening Ruling 13).
+//
+// Ruling 13 required "Task 5's read/approve path must assert the
+// approved digest is computed over the stored rows". Task 4 then
+// MEASURED that full recomputation from the stored rows is impossible
+// today: prepare_ai_session stores left(content, 4000) while the digest
+// binds §4.2's 600-scalar-clipped snippets with the " [truncated]"
+// marker, and ai_session_sources carries neither civil_day_start_utc
+// nor utc_offset_minutes -- both of which buildDigestPreimage binds.
+// Ruling 22's instruction is therefore EXISTENCE/VERSION
+// REVALIDATION, not recompute-and-compare.
+//
+// That is what revalidateFrozenSourcesForApproval does, and it reads
+// THE FROZEN STORED ROWS and nothing else:
+//
+//   * loadFrozenSources reads ai_session_sources -- source_message_id,
+//     source_version, approved_clipped_text -- for this session.
+//   * frozenSourcesStillValid compares those ids and versions against
+//     public.messages' deleted_at and COALESCE(edited_at, created_at).
+//
+// NO WINDOW QUERY RUNS ON THIS PATH. selectSharedWindow is not called,
+// so nothing the civil day has gained or lost since prepare time can
+// change the answer -- which is exactly §4.2's "Persist source IDs,
+// versions and snapshot time, NOT NEW SELECTIONS on subsequent turns".
+// The same two functions `generate` uses, deliberately: a second
+// revalidation implementation is the thing that could disagree.
+//
+// It runs BEFORE approve_ai_session_context, not after: §4.3 says an
+// edit or tombstone makes the session "unavailable and terminate[s]
+// it", and storing an approval over a snapshot already known to have
+// moved would be recording consent to context that no longer exists.
+// ---------------------------------------------------------------------------
+
+/// §4.3's "revalidate membership, consent and source existence/version
+/// against the frozen snapshot", for the approval path.
+///
+/// Returns `null` on an internal failure, `false` when the frozen
+/// snapshot has moved, `true` when every frozen source is still present
+/// at the version that was frozen.
+async function frozenSnapshotStillApprovable(
+  service: SupabaseClient,
+  sessionId: string,
+  relationshipId: string,
+): Promise<boolean | null> {
+  // THE FROZEN STORED ROWS. Not a re-selection: the same
+  // loadFrozenSources `generate` calls, reading ai_session_sources.
+  const frozen = await loadFrozenSources(service, sessionId);
+  if (frozen === null) return null;
+  // A session with no sources at all (no target, window off) has
+  // nothing to revalidate and is approvable -- the digest over an
+  // empty source list is still a digest both partners must agree on,
+  // and review_context computes it the same way for both.
+  if (frozen.length === 0) return true;
+  return await frozenSourcesStillValid(service, relationshipId, frozen);
+}
+
+async function handleApprove(branch: BranchContext): Promise<Response> {
+  // §4.1: "All non-generation commands have separate bounded schemas."
+  const allowed = new Set([
+    "command",
+    "session_id",
+    "revision",
+    "digest",
+    "policy_version",
+  ]);
+  for (const key of Object.keys(branch.body)) {
+    if (!allowed.has(key)) {
+      return errorResponse(sessionError("INVALID_INPUT"));
+    }
+  }
+  const sessionId = branch.body.session_id;
+  const revision = branch.body.revision;
+  const digest = branch.body.digest;
+  const policyVersion = branch.body.policy_version;
+  if (!isCanonicalUuid(sessionId)) {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
+  if (
+    typeof revision !== "number" || !Number.isInteger(revision) || revision < 1
+  ) {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
+  // The digest is an opaque hex string the client echoes back from
+  // review_context. Bounded by SHAPE, not merely by length: a client
+  // that sends a truncated or re-cased digest must be refused here
+  // rather than storing a value activate_ai_session will later compare
+  // unequal, which would read to the user as "my partner changed the
+  // context".
+  if (typeof digest !== "string" || !/^[0-9a-f]{64}$/.test(digest)) {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
+  // §4.3 binds the policy version into the digest, and
+  // approve_ai_session_context stores it alongside. It is NOT defaulted
+  // to a constant here: the brief's own sketch passed p_policy_version:
+  // "v1" literally, which would record every approval against a
+  // version string the consent system does not own -- and after a
+  // policy bump, two partners approving at different times would store
+  // the same wrong constant and activate happily over stale consent.
+  // The server's own current version is read below instead.
+  if (policyVersion !== undefined && typeof policyVersion !== "string") {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
+
+  const service = branch.service();
+
+  // THE SESSION IS RESOLVED SERVER-SIDE. kind, visibility, window and
+  // the relationship all come from the ROW -- never from the body.
+  const session = await service
+    .from("ai_sessions")
+    .select(
+      "id, relationship_id, creator_id, kind, visibility, state, revision, include_window, preparation_deadline",
+    )
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (session.error) return errorResponse(sessionError("INTERNAL_ERROR"));
+  const row = session.data as Record<string, unknown> | null;
+  // §3.1: "Foreign, ended, expired and unauthorized session IDs return
+  // the same unavailable response."
+  if (!row) return errorResponse(sessionError("UNAVAILABLE"));
+
+  const relationshipId = row.relationship_id as string;
+  const kind = row.kind as string;
+  const visibility = row.visibility as string;
+  const includeWindow = row.include_window === true;
+
+  const eligibility = await checkEligibility(
+    service,
+    // THE ACTOR COMES FROM THE VERIFIED USER.
+    branch.actorId,
+    relationshipId,
+    capabilitiesForSession(kind, visibility, includeWindow),
+  );
+  if (!eligibility.ok) return errorResponse(eligibility.error);
+
+  // §5.1: "Server read-time expiry is authoritative even before
+  // cleanup."
+  if (row.state !== "preparing") {
+    // An ALREADY-ACTIVE session is reported as activated rather than
+    // refused: a client retrying its own approve after a dropped
+    // response must not be told its session is unavailable. Any other
+    // state is §3.1's indistinguishable response.
+    if (row.state === "active") {
+      return jsonResponse({ approved: true, activated: true, state: "active" });
+    }
+    return errorResponse(sessionError("UNAVAILABLE"));
+  }
+  const deadline = new Date(row.preparation_deadline as string);
+  if (!(deadline.getTime() > branch.now.getTime())) {
+    return errorResponse(sessionError("UNAVAILABLE"));
+  }
+
+  // RULINGS 13 + 22: ASSERT AGAINST THE FROZEN STORED ROWS, BEFORE
+  // STORING AN APPROVAL. Existence and version, from
+  // ai_session_sources, compared against public.messages -- no window
+  // query, no recomputation (see this section's header for why
+  // recomputation is impossible today and why §4.3 does not ask for
+  // it).
+  const snapshotValid = await frozenSnapshotStillApprovable(
+    service,
+    sessionId,
+    relationshipId,
+  );
+  if (snapshotValid === null) {
+    return errorResponse(sessionError("INTERNAL_ERROR"));
+  }
+  if (!snapshotValid) {
+    // §4.3: "Edits, tombstones or removal make the session unavailable
+    // and terminate it; do not use stale copies or substitute new
+    // messages." Identical disposition to `generate`'s own
+    // revalidation failure, deliberately -- the two paths must not
+    // disagree about what a moved snapshot means.
+    await service.rpc("end_ai_session", {
+      p_actor_id: branch.actorId,
+      p_session_id: sessionId,
+    });
+    return errorResponse(sessionError("CONTEXT_CHANGED"));
+  }
+
+  // The policy version the APPROVAL IS RECORDED AGAINST is the server's
+  // own current one, never a client literal. If the client supplied one
+  // it must MATCH -- a mismatch means the client reviewed under a
+  // policy that has since been superseded, which is a context change,
+  // not something to silently overwrite.
+  const currentPolicy = await service.rpc(
+    "ai_current_consent_policy_version",
+    {},
+  );
+  if (currentPolicy.error) {
+    return errorResponse(sessionError("INTERNAL_ERROR"));
+  }
+  const policyRow = currentPolicy.data?.[0] as
+    | Record<string, unknown>
+    | undefined;
+  const policy = policyRow?.ai_current_consent_policy_version;
+  if (typeof policy !== "string") {
+    return errorResponse(sessionError("INTERNAL_ERROR"));
+  }
+  if (policyVersion !== undefined && policyVersion !== policy) {
+    return errorResponse(sessionError("CONTEXT_CHANGED"));
+  }
+
+  const approved = await service.rpc("approve_ai_session_context", {
+    // THE ACTOR COMES FROM THE VERIFIED USER, never the body.
+    p_actor_id: branch.actorId,
+    p_session_id: sessionId,
+    p_revision: revision,
+    p_digest: digest,
+    p_policy_version: policy,
+  });
+  if (approved.error) {
+    const message = String(approved.error.message ?? "");
+    // The RPC's single refusal covers three cases at once ("Session not
+    // found, not preparing, or revision mismatch"). Membership and
+    // state were already established above, so reaching here with that
+    // message means the REVISION moved -- which is §10's
+    // CONTEXT_CHANGED ("no automatic retry or new context"), the code
+    // whose remedy is re-reviewing. A toggle (Item A1) is exactly what
+    // moves it.
+    if (/revision mismatch/i.test(message)) {
+      return errorResponse(sessionError("CONTEXT_CHANGED"));
+    }
+    if (/Not a current member/i.test(message)) {
+      return errorResponse(sessionError("UNAVAILABLE"));
+    }
+    return errorResponse(sessionError("UNAVAILABLE"));
+  }
+
+  // §4.1's "approve/start": activation is attempted in the same
+  // command. A shared session's FIRST approver legitimately cannot
+  // activate yet.
+  const activated = await service.rpc("activate_ai_session", {
+    p_actor_id: branch.actorId,
+    p_session_id: sessionId,
+    p_revision: revision,
+  });
+  if (activated.error) {
+    const message = String(activated.error.message ?? "");
+    if (/APPROVAL_REQUIRED/.test(message)) {
+      // NOT an error: this caller approved successfully and is waiting
+      // for its partner. §10's APPROVAL_REQUIRED is for a caller that
+      // tried to GENERATE without approval; reporting it here would
+      // tell a partner who did everything right that they failed.
+      return jsonResponse({
+        approved: true,
+        activated: false,
+        state: "preparing",
+      });
+    }
+    if (/CONTEXT_CHANGED/.test(message)) {
+      // The two approvers' digests differ -- §4.3's own invalidation
+      // case. The message deliberately does NOT say whose digest
+      // differed or what it was.
+      return errorResponse(sessionError("CONTEXT_CHANGED"));
+    }
+    if (/Revision mismatch/i.test(message)) {
+      return errorResponse(sessionError("CONTEXT_CHANGED"));
+    }
+    return errorResponse(sessionError("UNAVAILABLE"));
+  }
+  const activationRow =
+    (activated.data as Record<string, unknown>[] | null)?.[0];
+  return jsonResponse({
+    approved: true,
+    activated: activationRow?.activated === true,
+    state: activationRow?.state ?? "preparing",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Branch: 'review_context' companion -- the §4.3 WINDOW TOGGLE.
+//
+// Item A1's set_ai_session_include_window, wired in behind `approve`
+// and `review_context` as the spec requires: §4.3's window toggle is
+// part of the review-and-approve loop, not a command of its own (§4.1's
+// command list has nine entries and none of them is "toggle"). A client
+// sets the window while reviewing, re-reviews to get the new
+// revision/digest, then approves.
+//
+// Exposed as an OPTIONAL field on review_context rather than as a tenth
+// command, because the two acts are inseparable in the protocol: the
+// toggle invalidates approvals and bumps the revision, so the ONLY
+// useful thing to do after it is re-read the context -- which is what
+// review_context does. Making it a separate command would guarantee a
+// client that toggled and then approved against the stale revision it
+// still held.
+// ---------------------------------------------------------------------------
+
+/// Applies §4.3's window toggle, if this review_context call asked for
+/// one. Returns an error to surface, or null to continue reviewing.
+async function applyWindowToggle(
+  branch: BranchContext,
+  service: SupabaseClient,
+  sessionId: string,
+  relationshipId: string,
+  targetMessageId: string | null,
+  offset: number,
+  requested: boolean,
+): Promise<SessionError | null> {
+  // SELECTION STAYS IN TYPESCRIPT -- the same selectSharedWindow
+  // `prepare` uses, at the same one server instant. The RPC persists
+  // WHICH messages were selected and re-reads their text itself; it
+  // never receives text (Item A1's header, and prepare's).
+  let windowMessageIds: string[] = [];
+  if (requested) {
+    try {
+      const window = await selectSharedWindow(
+        service,
+        relationshipId,
+        // §4.2 item 3: the window excludes the selected target.
+        targetMessageId,
+        offset,
+        branch.now,
+      );
+      windowMessageIds = window.map((message) => message.messageId);
+    } catch {
+      return sessionError("INTERNAL_ERROR");
+    }
+  }
+
+  const toggled = await service.rpc("set_ai_session_include_window", {
+    // THE ACTOR COMES FROM THE VERIFIED USER, never the body.
+    p_actor_id: branch.actorId,
+    p_session_id: sessionId,
+    p_include_window: requested,
+    p_window_message_ids: requested ? windowMessageIds : null,
+  });
+  if (toggled.error) {
+    const message = String(toggled.error.message ?? "");
+    // An ACTIVE session refuses (Item A1's decision: a refusal, never a
+    // silent no-op, because §4.2 forbids new selections against a
+    // frozen snapshot). Mapped to §3.1's indistinguishable response, so
+    // the state-specific SQL message never reaches a client.
+    if (/not preparing/i.test(message)) {
+      return sessionError("UNAVAILABLE");
+    }
+    if (/Session unavailable/i.test(message)) {
+      return sessionError("UNAVAILABLE");
+    }
+    // 'A recent window requires a shared Ideas session', 'At most six
+    // window messages', 'Window messages supplied with
+    // p_include_window false', 'The selected target cannot also be a
+    // window message' -- all caller-shape refusals.
+    return sessionError("INVALID_INPUT");
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Branch: 'read' -- spec §4.1, §7.2.
+//
+// THE DELIBERATE SILENCE IS PRESERVED, AND IT IS THE WHOLE POINT.
+//
+// read_ai_session_turns and read_ai_session_staging both RETURN (zero
+// rows) rather than raising on every unauthorized outcome -- unknown
+// session, non-member, withdrawn consent, a shared session this actor
+// never approved, an expired staging row. 20260953100000's header calls
+// this out, and Contract 9 asserts the live body contains no RAISE
+// EXCEPTION at all, precisely so a "consistency" refactor cannot turn
+// the RPC into an existence oracle: a partner's zero rows and a
+// stranger's zero rows must be byte-identical.
+//
+// SO THIS BRANCH MUST NOT CONVERT ZERO ROWS INTO A DISTINGUISHABLE
+// ERROR. It returns HTTP 200 with an empty `turns` array for all of
+// them. An UNAVAILABLE here would hand back exactly the oracle the SQL
+// was written to deny -- "404 means no such session, 200-with-nothing
+// means it exists but you cannot see it" -- and would do it for the one
+// command whose whole job is reading.
+//
+// The eligibility gate is deliberately NOT run before the RPC either.
+// It raises distinguishable codes (FEATURE_DISABLED, UNAVAILABLE,
+// CONSENT_REQUIRED) and running it here would reintroduce the
+// distinction at the edge that the RPC removes in SQL. The RPC enforces
+// membership, consent, state, expiry and per-visibility authorization
+// itself -- that is what "narrow authorized read RPCs" in §7.2 means --
+// so the gate would add no enforcement, only a side channel.
+//
+// ONE EXCEPTION, and it is not an oracle: a TRANSPORT error (the RPC
+// could not be called at all) is INTERNAL_ERROR. That is a statement
+// about this server, not about the session, and it is reachable with
+// any session id including a nonexistent one.
+// ---------------------------------------------------------------------------
+async function handleRead(branch: BranchContext): Promise<Response> {
+  const allowed = new Set(["command", "session_id", "request_id"]);
+  for (const key of Object.keys(branch.body)) {
+    if (!allowed.has(key)) {
+      return errorResponse(sessionError("INVALID_INPUT"));
+    }
+  }
+  const sessionId = branch.body.session_id;
+  const requestId = branch.body.request_id;
+  if (!isCanonicalUuid(sessionId)) {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
+  // The staged Nearby result is read by REQUEST id, and only when the
+  // caller asks for one -- read_ai_session_staging is author-checked
+  // (§7.2: "own staged Nearby reachable ONLY through an author-checking
+  // RPC") and its silence is the same property.
+  if (requestId !== undefined && !isCanonicalUuid(requestId)) {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
+
+  const service = branch.service();
+
+  const turns = await service.rpc("read_ai_session_turns", {
+    // THE ACTOR COMES FROM THE VERIFIED USER, never the body. This is
+    // the ONLY authorization input the RPC gets, and it is why the RPC
+    // can be silent: it knows exactly who is asking.
+    p_actor_id: branch.actorId,
+    p_session_id: sessionId,
+  });
+  // A transport failure is about THIS SERVER, not about the session --
+  // see the header. Everything else, including "you may not see this",
+  // is zero rows and HTTP 200.
+  if (turns.error) return errorResponse(sessionError("INTERNAL_ERROR"));
+  const turnRows = (turns.data ?? []) as Record<string, unknown>[];
+
+  let staging: Record<string, unknown>[] = [];
+  if (typeof requestId === "string") {
+    const staged = await service.rpc("read_ai_session_staging", {
+      p_actor_id: branch.actorId,
+      p_request_id: requestId,
+    });
+    if (staged.error) return errorResponse(sessionError("INTERNAL_ERROR"));
+    staging = (staged.data ?? []) as Record<string, unknown>[];
+  }
+
+  // PROJECTED, not echoed. The RPC returns SETOF
+  // public.ai_session_turns, whose columns include session_id and
+  // request_id -- server bookkeeping a client has no use for and §2
+  // keeps out of responses where it can. What a client needs to render
+  // a transcript is the ordinal, who wrote it, its kind and its
+  // payload.
+  return jsonResponse({
+    turns: turnRows.map((turn) => ({
+      ordinal: turn.ordinal,
+      role: turn.role,
+      kind: turn.kind,
+      payload: turn.payload,
+      created_at: turn.created_at,
+    })),
+    // Absent rather than empty when no request_id was asked for, so a
+    // client can tell "I did not ask" from "I asked and there is
+    // nothing" -- a distinction about the CALLER'S OWN REQUEST, not
+    // about anyone's authorization.
+    staged: typeof requestId === "string"
+      ? staging.map((stagedRow) => ({
+        request_id: stagedRow.request_id,
+        reply_text: stagedRow.reply_text,
+        sources: stagedRow.sources,
+        expires_at: stagedRow.expires_at,
+      }))
+      : undefined,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Branch: 'publish_nearby' -- spec §5.3, §8.1, §8.2.2.
+//
+// TASK 4'S SAFETY ORDERING IS THE PRECEDENT AND IS NOT LOOSENED.
+//
+// §8.1 requires a deterministic check "BEFORE PUBLISHING ON EVERY
+// OUTPUT FIELD". `generate` already ran safety pass 2 over the
+// server-assembled reply text and every place name and address before
+// staging. This command is a SECOND, LATER request -- a different HTTP
+// call, possibly minutes later -- that turns a requester-only staged
+// result into a shared transcript pair. So the check runs AGAIN here,
+// on the stored staged fields, BEFORE publish_ai_session_nearby_result
+// commits anything.
+//
+// Re-running it is not belt-and-braces. Three reasons it is load-bearing:
+//
+//   * The safety corpus is VERSIONED (ai_session_safety.ts). A phrase
+//     added between the stage and the publish must stop the publish;
+//     otherwise the staging window is a two-minute hole in the corpus.
+//   * Publishing is the act that makes content visible TO THE PARTNER.
+//     §8.1's constraint is about what gets published, and the stage
+//     published nothing.
+//   * The rows are read back from the DATABASE here, not held in
+//     memory from the generate call, so this check is over what will
+//     actually be committed rather than over what was once validated.
+//
+// The check is BEFORE the RPC, never after: the RPC commits the
+// transcript pair, deletes the staging row and bumps the revision in
+// one transaction, so a check afterwards would be checking content the
+// partner can already see.
+//
+// share_ai_session_turn STAYS UNREACHABLE WITHOUT A COMMITTED TURN --
+// and for a Nearby result it stays unreachable entirely: the RPC's own
+// allowlist refuses any kind but 'ideas_answer' ("Allow-list, not a
+// deny-list ... 'nearby_result' has its own requester-only publish
+// path"). So this branch cannot be a back door into chat.
+// ---------------------------------------------------------------------------
+async function handlePublishNearby(branch: BranchContext): Promise<Response> {
+  const allowed = new Set(["command", "request_id"]);
+  for (const key of Object.keys(branch.body)) {
+    if (!allowed.has(key)) {
+      return errorResponse(sessionError("INVALID_INPUT"));
+    }
+  }
+  const requestId = branch.body.request_id;
+  if (!isCanonicalUuid(requestId)) {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
+
+  const service = branch.service();
+
+  // THE PRE-PUBLISH SAFETY PASS, over the STAGED fields, read back
+  // through the AUTHOR-CHECKED RPC (§7.2) rather than with a direct
+  // table read -- so an actor who is not the staging row's author
+  // cannot even cause the safety check to run over someone else's
+  // content, and the "no staged result" answer stays the RPC's silent
+  // one.
+  const staged = await service.rpc("read_ai_session_staging", {
+    // THE ACTOR COMES FROM THE VERIFIED USER, never the body.
+    p_actor_id: branch.actorId,
+    p_request_id: requestId,
+  });
+  if (staged.error) return errorResponse(sessionError("INTERNAL_ERROR"));
+  const stagedRow = (staged.data ?? [])[0] as
+    | Record<string, unknown>
+    | undefined;
+  if (!stagedRow) {
+    // §10: RESULT_UNAVAILABLE -> "expired/revoked result; never replay
+    // provider". Covers a staged row that expired, was already
+    // published, was discarded, or belongs to someone else -- ONE
+    // response for all four, which is the same indistinguishability
+    // §3.1 requires of session ids. Note this does NOT weaken the
+    // RPC's silence: the RPC still returned zero rows without saying
+    // which case it was, and this branch collapses every case to one
+    // code rather than branching on it.
+    return errorResponse(sessionError("RESULT_UNAVAILABLE"));
+  }
+
+  // §8.1's "every output field", and §5.3's "Output checks cover prose,
+  // proposals and SOURCE DISPLAY STRINGS": the reply text plus every
+  // card's name and address.
+  const stagedFields: string[] = [String(stagedRow.reply_text ?? "")];
+  const sources = stagedRow.sources;
+  if (Array.isArray(sources)) {
+    for (const source of sources) {
+      const card = source as Record<string, unknown>;
+      if (typeof card?.name === "string") stagedFields.push(card.name);
+      if (typeof card?.formatted_address === "string") {
+        stagedFields.push(card.formatted_address);
+      }
+    }
+  }
+  for (const field of stagedFields) {
+    const verdict = classifySessionContent(field);
+    if (!verdict.allowed) {
+      // NOTHING IS COMMITTED. The staged row is left alone (the
+      // requester may still discard it), no transcript pair exists, and
+      // ai_sessions.revision is NOT bumped -- so the partner sees
+      // exactly what they see when the requester simply never
+      // published: the same integer. Identical body and status to
+      // every other refusal, built from the same verdict-only helper,
+      // so which field tripped it is not observable.
+      return safetyRefusalResponse(verdict);
+    }
+  }
+
+  // Only now. The RPC takes the relationship advisory lock, the session
+  // row and the request row, re-checks membership and consent under
+  // them, commits the pair, deletes the staging row, marks the request
+  // committed and bumps the revision -- one transaction, after both
+  // safety passes.
+  const published = await service.rpc("publish_ai_session_nearby_result", {
+    p_actor_id: branch.actorId,
+    p_request_id: requestId,
+  });
+  if (published.error) {
+    const message = String(published.error.message ?? "");
+    if (/consent is not current/i.test(message)) {
+      return errorResponse(sessionError("CONSENT_REQUIRED"));
+    }
+    if (/Not a current member/i.test(message)) {
+      return errorResponse(sessionError("UNAVAILABLE"));
+    }
+    if (/Session unavailable/i.test(message)) {
+      return errorResponse(sessionError("UNAVAILABLE"));
+    }
+    // 'No staged result for this request', 'Staged result has expired',
+    // 'Only the requester may publish a staged Nearby result',
+    // 'Request not found' -- all RESULT_UNAVAILABLE, one response, for
+    // the same reason the zero-row case above is.
+    return errorResponse(sessionError("RESULT_UNAVAILABLE"));
+  }
+  const row = (published.data as Record<string, unknown>[] | null)?.[0];
+  if (!row) return errorResponse(sessionError("INTERNAL_ERROR"));
+  return jsonResponse({
+    committed: row.committed === true,
+    user_ordinal: row.user_ordinal,
+    attune_ordinal: row.attune_ordinal,
+    // Ruling 1's sanctioned invalidation mechanism: the client polls
+    // this integer, and so does the partner.
+    session_revision: row.session_revision,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Branch: 'discard_nearby' -- spec §8.2.2.
+//
+// The requester throwing away their own staged result. Terminal and
+// COUNTED, never a quota release: the RPC's own comment records why
+// (the row reached 'staged' only via claim_ai_session_dispatch, so the
+// write-once provider marker is set and the call was really made).
+// This branch neither adds nor relaxes that.
+// ---------------------------------------------------------------------------
+async function handleDiscardNearby(branch: BranchContext): Promise<Response> {
+  const allowed = new Set(["command", "request_id"]);
+  for (const key of Object.keys(branch.body)) {
+    if (!allowed.has(key)) {
+      return errorResponse(sessionError("INVALID_INPUT"));
+    }
+  }
+  const requestId = branch.body.request_id;
+  if (!isCanonicalUuid(requestId)) {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
+
+  const service = branch.service();
+  const discarded = await service.rpc("discard_ai_session_nearby_staging", {
+    // THE ACTOR COMES FROM THE VERIFIED USER, never the body.
+    p_actor_id: branch.actorId,
+    p_request_id: requestId,
+  });
+  if (discarded.error) {
+    const message = String(discarded.error.message ?? "");
+    if (/Only the requester may discard/i.test(message)) {
+      // RESULT_UNAVAILABLE, not a distinct "forbidden": a staged result
+      // belonging to someone else must be indistinguishable from one
+      // that never existed. The RPC is already silent for a missing
+      // row (idempotent no-op), so mapping the foreign-actor raise to
+      // the same code is what makes the two cases agree at the edge.
+      return errorResponse(sessionError("RESULT_UNAVAILABLE"));
+    }
+    return errorResponse(sessionError("INTERNAL_ERROR"));
+  }
+  // IDEMPOTENT. The RPC returns silently for a row that was already
+  // discarded, published or expired, and so does this: `discarded:
+  // true` means "there is no staged result for this request id now",
+  // which is the only thing the caller wanted. Reporting whether work
+  // was actually done would tell a caller whether a staged result
+  // existed, which for a foreign request id is the oracle the mapping
+  // above exists to close.
+  return jsonResponse({ discarded: true });
+}
+
+// ---------------------------------------------------------------------------
+// Branch: 'end' -- spec §5.4.
+//
+// end_ai_session purges the transcript, the sources, the approvals and
+// the staging rows SYNCHRONOUSLY in its own transaction, releases the
+// quota of every never-dispatched request it cancels, and bumps the
+// revision so the purge is observable. It is service_role only, it is
+// idempotent, and it records NO ending actor anywhere (§5.4: no
+// client-readable "ended_by" column exists, and none is added).
+// ---------------------------------------------------------------------------
+async function handleEnd(branch: BranchContext): Promise<Response> {
+  const allowed = new Set(["command", "session_id"]);
+  for (const key of Object.keys(branch.body)) {
+    if (!allowed.has(key)) {
+      return errorResponse(sessionError("INVALID_INPUT"));
+    }
+  }
+  const sessionId = branch.body.session_id;
+  if (!isCanonicalUuid(sessionId)) {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
+
+  const service = branch.service();
+  const ended = await service.rpc("end_ai_session", {
+    // THE ACTOR COMES FROM THE VERIFIED USER, never the body. The RPC
+    // authorizes from it: the creator only for a private session,
+    // either CURRENT member for a shared one.
+    p_actor_id: branch.actorId,
+    p_session_id: sessionId,
+  });
+  if (ended.error) {
+    const message = String(ended.error.message ?? "");
+    if (
+      /Only the creator may end/i.test(message) ||
+      /Not a member of this shared session/i.test(message)
+    ) {
+      // §3.1: a session the caller may not end is indistinguishable
+      // from one that does not exist. The RPC is already a silent
+      // no-op for an unknown or already-closed session, so collapsing
+      // both authorization raises to UNAVAILABLE is what makes the
+      // three cases agree.
+      return errorResponse(sessionError("UNAVAILABLE"));
+    }
+    return errorResponse(sessionError("INTERNAL_ERROR"));
+  }
+  // IDEMPOTENT, and deliberately says nothing about whether there was
+  // anything to end. `ended: true` means "this session is not running
+  // now". §5.4 also forbids disclosing WHO ended it, and nothing here
+  // could: the response has no actor field and the table has no
+  // column.
+  return jsonResponse({ ended: true });
+}
+
+// ---------------------------------------------------------------------------
+// Branch: 'share_answer' -- spec §5.3, §8.1, and Plan A's send path.
+//
+// Posts a COMMITTED Attune 'ideas_answer' turn into ordinary chat, with
+// attune_assist provenance, by delegating to share_ai_assist_draft
+// through share_ai_session_turn.
+//
+// WHY THERE IS NO SAFETY PASS HERE, stated rather than left to be
+// noticed: the only thing shareable is a turn that was ALREADY
+// committed, and a turn can only be committed by
+// commit_ai_session_ideas_turn, which `generate` reaches only after
+// safety pass 2 passed over every output field. The RPC's allowlist
+// (`kind != 'ideas_answer'` raises) is what makes that the only
+// reachable shape -- a 'redirect' cannot be posted at all (§8.1) and a
+// 'nearby_result' has its own requester-only publish path. So
+// share_ai_session_turn is unreachable without a committed turn, which
+// pass 2 gates, and re-checking content that is already in the
+// transcript would check the wrong thing at the wrong time.
+//
+// ERROR MAPPING DISCLOSES NOTHING ABOUT WHICH CHECK REFUSED. The RPC
+// and Plan A's send path together raise for: an unavailable session, a
+// non-creator on a private session, a non-member on a shared one, a
+// missing ordinal, a user-authored turn, a non-'ideas_answer' kind, and
+// 'Consent required' from the send path. Every one of those collapses
+// into §10's RESULT_UNAVAILABLE except consent -- which §10 gives its
+// own code precisely because "caller can open consent" is a refusal the
+// caller can ACT on, and withholding it would leave the user stuck with
+// no remedy. That is the one distinction §10 sanctions by name; it
+// discloses the CALLER'S OWN consent state, never a partner's
+// withdrawal history, and never which safety or authorization check
+// fired.
+// ---------------------------------------------------------------------------
+async function handleShareAnswer(branch: BranchContext): Promise<Response> {
+  const allowed = new Set(["command", "session_id", "ordinal"]);
+  for (const key of Object.keys(branch.body)) {
+    if (!allowed.has(key)) {
+      return errorResponse(sessionError("INVALID_INPUT"));
+    }
+  }
+  const sessionId = branch.body.session_id;
+  const ordinal = branch.body.ordinal;
+  if (!isCanonicalUuid(sessionId)) {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
+  // ai_session_turns' own CHECK is `ordinal BETWEEN 1 AND 20`, so the
+  // bound is enforced here rather than letting an out-of-range value
+  // reach the RPC and come back as a generic "Turn not found" -- which
+  // would make a client's own input error indistinguishable from a
+  // turn that does not exist.
+  if (
+    typeof ordinal !== "number" || !Number.isInteger(ordinal) ||
+    ordinal < 1 || ordinal > 20
+  ) {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
+
+  const service = branch.service();
+  const shared = await service.rpc("share_ai_session_turn", {
+    // THE ACTOR COMES FROM THE VERIFIED USER, never the body. This is
+    // the whole reason the RPC's grant moved to service_role (fix F2):
+    // it takes its actor as a parameter, so an `authenticated` grant
+    // let any client supply a victim's id. The actor here cannot be
+    // anything but requireUser's verified user.
+    p_actor_id: branch.actorId,
+    p_session_id: sessionId,
+    p_ordinal: ordinal,
+  });
+  if (shared.error) {
+    const message = String(shared.error.message ?? "");
+    // The ONE distinction §10 sanctions: the caller's own consent is
+    // actionable. Plan A's send path raises 'Consent required'.
+    if (/Consent required/i.test(message)) {
+      return errorResponse(sessionError("CONSENT_REQUIRED"));
+    }
+    // Everything else is ONE response. A caller cannot tell whether the
+    // session was closed, the ordinal was absent, the turn was
+    // user-authored, the kind was unshareable, or they were not a
+    // member -- which is §3.1's indistinguishability applied to a
+    // share, and §8.1's "a refusal must not signal a private detector
+    // result" applied to the kind allowlist.
+    return errorResponse(sessionError("RESULT_UNAVAILABLE"));
+  }
+  const row = (shared.data as Record<string, unknown>[] | null)?.[0];
+  if (!row) return errorResponse(sessionError("INTERNAL_ERROR"));
+  // The RPC returns the whole public.messages row. ONLY THE ID IS
+  // ECHOED: the message body is content the caller already has (it is
+  // the turn they just shared), and the row carries analysis flags,
+  // sort keys and provenance columns a client has no business reading
+  // back out of a share.
+  return jsonResponse({ message_id: row.id });
 }
 
 /// What requireUser(req) produced. There is no `client` field, unlike
@@ -2818,27 +3781,24 @@ export async function processSessionCommand(
     case "generate":
       return await handleGenerate(branch);
 
-    // Task 3 implements 'approve'.
-    // Task 5 implements 'read', 'publish_nearby', 'discard_nearby',
-    //                      'end' and 'share_answer'.
     case "approve":
+      return await handleApprove(branch);
+
     case "read":
+      return await handleRead(branch);
+
     case "publish_nearby":
+      return await handlePublishNearby(branch);
+
     case "discard_nearby":
+      return await handleDiscardNearby(branch);
+
     case "end":
+      return await handleEnd(branch);
+
     case "share_answer":
-      // A RECOGNIZED command with no branch yet is FEATURE_DISABLED, not
-      // INVALID_INPUT. §10: FEATURE_DISABLED means "safe return to chat,
-      // no new work" -- exactly the state of a capability whose §12 flag
-      // was never seeded (see checkEligibility's note). INVALID_INPUT
-      // would tell a correct client to edit a correct request, and would
-      // make a recognized command indistinguishable from a typo.
-      //
-      // `branch` is deliberately not consulted yet: no branch exists, so
-      // nothing may read the body or open a connection. Tasks 2-7
-      // replace each case above with a call taking `branch`.
-      void branch;
-      return errorResponse(sessionError("FEATURE_DISABLED"));
+      return await handleShareAnswer(branch);
+
     default:
       // Unreachable: validateCommandEnvelope already rejected anything
       // outside SESSION_COMMANDS. Kept so adding a command to that set
