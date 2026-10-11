@@ -10975,6 +10975,94 @@ Deno.test({
       );
       await endSession(sessionId, USER_C1_A);
     }
+
+    // --- THE OTHER DIRECTION OF PROVENANCE, and the leg that makes
+    // this test fail if validateNearbyCategoryOutput is weakened.
+    //
+    // ADDED BECAUSE A MUTATION SURVIVED, and the survival is recorded
+    // rather than tidied away: replacing the validator with a bare
+    // `record.category as NearbyCategory` (Task 4's G10 mutation) left
+    // all three T7 tests GREEN, because every case above hands Gemini
+    // an ALLOWLISTED token, so removing the gate changes nothing they
+    // observe. Provenance alone is not a gate -- a value can have come
+    // from Gemini and still be contraband.
+    //
+    // So this leg asserts the COMPLEMENT of provenance: a value that
+    // demonstrably DID come from the Gemini reply must still NOT reach
+    // Mapbox when it is outside the fixed six. The cases are real
+    // escapes a free-text category enables -- a search string that
+    // would become a Mapbox query, a specific named place, a §5.3
+    // sensitive category, a path traversal in the URL segment, and
+    // three near-misses (case, trailing space, empty) that a sloppy
+    // comparison would admit.
+    for (
+      const category of [
+        "best ramen near Osu",
+        "Quibblewick Patisserie",
+        "therapist",
+        "../../admin",
+        "RESTAURANT",
+        "restaurant ",
+        "",
+      ]
+    ) {
+      const sessionId = await activateSession(deps, {
+        kind: "nearby",
+        visibility: "private",
+      });
+      const gemini = spyGeminiWhole([{ category }]);
+      const mapbox = spyMapboxWhole([]);
+      const requestId = crypto.randomUUID();
+      const response = await processSessionCommand(
+        makeReq({
+          command: "generate",
+          session_id: sessionId,
+          request_id: requestId,
+          expected_revision: 1,
+          user_instruction: "somewhere to eat",
+          requester_location: FRESH_LOCATION(),
+        }),
+        ctx(USER_C1_A),
+        { ...deps, callGemini: gemini.call, searchMapbox: mapbox.call },
+      );
+      // ANTI-VACUITY: Gemini really was called and really did return
+      // this value, so "it did not reach Mapbox" is a statement about a
+      // value that existed on the Gemini side of the boundary.
+      assertEquals(
+        gemini.seen.length,
+        1,
+        `Gemini must have been called for ${JSON.stringify(category)}`,
+      );
+      // THE SPECIFIC code, not merely a non-200: RESULT_UNAVAILABLE is
+      // what §5.3's validator rejection maps to, and asserting it stops
+      // this leg passing because some unrelated guard fired first.
+      assertEquals(
+        response.status,
+        410,
+        `${JSON.stringify(category)} must be refused`,
+      );
+      assertEquals(
+        (await response.json()).code,
+        "RESULT_UNAVAILABLE",
+        `${JSON.stringify(category)} must be refused as RESULT_UNAVAILABLE`,
+      );
+      assertEquals(
+        mapbox.seen.length,
+        0,
+        `§2: MAPBOX MUST NOT HAVE BEEN CALLED for ${
+          JSON.stringify(category)
+        } -- the six-category allowlist is the ONLY value permitted to cross`,
+      );
+      assertEquals(
+        (await serviceRoleQuery(
+          `SELECT count(*)::int AS n FROM public.ai_session_staging WHERE request_id = $1`,
+          [requestId],
+        ))[0].n,
+        0,
+        "nothing may be staged when no category was allowlisted",
+      );
+      await endSession(sessionId, USER_C1_A);
+    }
     await resetCapabilities();
   },
 });
