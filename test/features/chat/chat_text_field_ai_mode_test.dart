@@ -139,6 +139,48 @@ void main() {
       expect(find.byIcon(Icons.sports_esports_outlined), findsNothing);
     });
 
+    testWidgets('the composer pill occupies the SAME rect it does on '
+        '131bbfa6', (tester) async {
+      // The strongest form of "byte-identical to today" this file can
+      // assert: not "an icon is present" but the laid-out geometry.
+      //
+      // These three rects were MEASURED by running this exact tree
+      // against `git show 131bbfa6:...chat_text_field.dart` and against
+      // the patched file, and they agreed to the pixel. They matter
+      // because this change adds an `AnimatedSize` as the composer
+      // Row's new FIRST child and alters `visibleTrailingIconSlots`,
+      // the width term feeding the line-count estimate that sets the
+      // pill's height -- either could have moved the pill for a caller
+      // that passes no AI parameter at all. Empty / one-line / wrapped
+      // because the height only varies in the third.
+      // A long single token would not wrap, so the wrapped case uses
+      // words.
+      final cases = <String, (String, Rect)>{
+        'empty': ('', const Rect.fromLTWH(68, 6, 664, 48)),
+        'one line': ('hi', const Rect.fromLTWH(12, 6, 720, 48)),
+        'wrapped': (
+          List.filled(20, 'word').join(' '),
+          const Rect.fromLTWH(12, 6, 720, 97),
+        ),
+      };
+
+      for (final entry in cases.entries) {
+        final (text, rect) = entry.value;
+        await pump(
+          tester,
+          includeAiMode: false,
+          controller: TextEditingController(text: text),
+        );
+        expect(
+          tester.getRect(find.byKey(const ValueKey('composer-pill'))),
+          rect,
+          reason:
+              'the pill moved for a caller that passes no AI parameter '
+              '(the "${entry.key}" case)',
+        );
+      }
+    });
+
     testWidgets('aiMode:false with a callback present is identical to '
         'passing nothing', (tester) async {
       // The state Task 9 will leave a chat composer in while the

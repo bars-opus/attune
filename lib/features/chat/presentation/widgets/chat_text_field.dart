@@ -1438,6 +1438,19 @@ class _ChatTextFieldState extends State<ChatTextField>
                 // drives the pill's height is measured against a width
                 // the text does not have. AI mode drops the games icon,
                 // so it drops this slot with it.
+                //
+                // `!widget.aiMode` here is an EQUIVALENT MUTANT and is
+                // disclosed as such rather than claimed as tested:
+                // deleting it changes no rendered output, so no test
+                // kills it. The games branch requires `!_hasText`, and
+                // `_estimatedComposerLines` returns 1 on empty text
+                // BEFORE consulting `maxWidth`, so the slot count
+                // cannot reach the geometry in the only state where
+                // this conjunct is live. Kept because the expression's
+                // contract is "agrees with what is rendered", and a
+                // future change decoupling the games icon from
+                // `_hasText` would make the disagreement load-bearing
+                // with no test to catch it.
                 final visibleTrailingIconSlots =
                     widget.showTranslator ||
                             (!_hasText && widget.showGames && !widget.aiMode)
