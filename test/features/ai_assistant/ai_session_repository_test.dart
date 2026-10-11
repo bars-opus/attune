@@ -2834,6 +2834,105 @@ void main() {
     );
 
     test(
+      'the parse is SHAPE-BLIND: `copy` and `offered` are read '
+      'independently, so no combination of them is refused',
+      () async {
+        // ==== THIS TEST EXISTS BECAUSE A MUTATION SURVIVED ====
+        //
+        // MUTATION M2 added a parse-time coupling — `if (rawCopy !=
+        // null && offered.isNotEmpty) throw` — and the suite stayed
+        // green at 115. It is a subtler violation than a
+        // distinguishing getter: it puts the oracle in the PARSE
+        // OUTCOME rather than in a member, so a body carrying both a
+        // `copy` and a non-empty `offered` would fail while either
+        // alone succeeded. That is a shape check, and a shape check is
+        // the detector signal however it is spelled.
+        //
+        // The value-equality test above could not catch it, because it
+        // deliberately holds `offered` equal (`[]` on both) in order to
+        // isolate `copy` as the only difference. So the two fields are
+        // crossed here INDEPENDENTLY: all four combinations must parse,
+        // and each must report exactly what it was given.
+        //
+        // The server does not currently emit the `copy` + non-empty
+        // `offered` corner — `safetyRefusalResponse` hardcodes
+        // `offered: []`. It is asserted anyway, and that is the point:
+        // this client must not encode "a copy implies no alternatives"
+        // as a rule it enforces, because that rule IS the inference
+        // §8.1 forbids. A server that later offered alternatives
+        // alongside refusal copy must not be unparseable here.
+        final gateway = _FakeAiSessionGateway();
+        final repository = AiSessionRepository(gateway);
+
+        final combinations = <String, Map<String, dynamic>>{
+          'copy + empty offered (the refusal shape as shipped)':
+              <String, dynamic>{
+            'kind': 'redirect',
+            'reason': 'unsafe_to_assist',
+            'copy': 'server copy',
+            'offered': <dynamic>[],
+            'show_safety_resources': true,
+          },
+          'copy + NON-empty offered': <String, dynamic>{
+            'kind': 'redirect',
+            'reason': 'unsafe_to_assist',
+            'copy': 'server copy',
+            'offered': <dynamic>['ideas', 'nearby'],
+            'show_safety_resources': true,
+          },
+          'no copy + empty offered': <String, dynamic>{
+            'kind': 'redirect',
+            'reason': 'unsafe_to_assist',
+            'offered': <dynamic>[],
+            'show_safety_resources': true,
+          },
+          'no copy + NON-empty offered (the ordinary shape as shipped)':
+              <String, dynamic>{
+            'kind': 'redirect',
+            'reason': 'unsafe_to_assist',
+            'offered': <dynamic>['ideas', 'nearby'],
+            'show_safety_resources': true,
+          },
+        };
+        // Denominator: 2 copy states x 2 offered states.
+        expect(combinations.length, 4);
+
+        for (final entry in combinations.entries) {
+          gateway.nextInvokeResult = entry.value;
+          final parsed = await repository.generate(
+            sessionId: _validUuid,
+            requestId: _validRequestId,
+            expectedRevision: 1,
+            userInstruction: 'x',
+          );
+          final redirect = parsed as AiSessionGeneratedRedirect;
+          // The SAME type for all four — no combination is special.
+          expect(
+            redirect.runtimeType,
+            AiSessionGeneratedRedirect,
+            reason: '${entry.key} produced a different type',
+          );
+          // `offered` reports what was sent, with no inference from
+          // `copy`: a parser that dropped or refused it on the
+          // copy-bearing shapes fails here.
+          expect(
+            redirect.offered,
+            (entry.value['offered'] as List).cast<String>(),
+            reason: '${entry.key}: offered must be read independently of copy',
+          );
+          // And `resolveCopy` honours the copy that was sent, with no
+          // inference from `offered`.
+          const generic = 'GENERIC';
+          expect(
+            redirect.resolveCopy(genericRedirectCopy: generic),
+            entry.value.containsKey('copy') ? 'server copy' : generic,
+            reason: '${entry.key}: copy must be read independently of offered',
+          );
+        }
+      },
+    );
+
+    test(
       'a redirect is never a transcript turn — RULING 7',
       () async {
         final gateway = _FakeAiSessionGateway();
