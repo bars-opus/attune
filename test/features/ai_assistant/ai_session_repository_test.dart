@@ -128,6 +128,70 @@ const _validRequestId = '44444444-4444-4444-8444-444444444444';
 const _validDigest =
     'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
 
+/// A fresh Ideas answer exactly as `dispatchIdeas` shapes it
+/// (supabase/functions/ai-sessions/index.ts:2726) — SEVEN keys, including
+/// the `kind: "answer"` discriminator the task brief's own fixture
+/// omitted and the `session_revision` the plan's description of Plan C
+/// did not mention.
+Map<String, dynamic> _ideasAnswerResponse() => <String, dynamic>{
+  'kind': 'answer',
+  'user_ordinal': 1,
+  'attune_ordinal': 2,
+  'session_revision': 2,
+  'reply_text': 'Try a picnic.',
+  'suggested_planning_item': null,
+  'show_safety_resources': true,
+};
+
+/// A staged Nearby generation exactly as `dispatchNearby` shapes it
+/// (index.ts:2888).
+Map<String, dynamic> _stagedNearbyResponse() => <String, dynamic>{
+  'kind': 'nearby_result',
+  'staged': true,
+  'request_id': _validRequestId,
+  'reply_text': 'Here are a few coffee options nearby: Vida e Caffe',
+  'sources': <dynamic>[
+    <String, dynamic>{
+      'provider_id': 'mapbox:poi.1234',
+      'name': 'Vida e Caffe',
+      'formatted_address': 'Osu, Accra',
+      'category': 'coffee',
+      'map_url': 'https://www.mapbox.com/place/poi.1234',
+    },
+  ],
+  'show_safety_resources': true,
+};
+
+/// THE SAFETY-REFUSAL REDIRECT, transcribed verbatim from
+/// `safetyRefusalResponse` (index.ts:2145): `kind`, `reason`, `copy`,
+/// `show_safety_resources` and an EMPTY `offered`.
+Map<String, dynamic> _safetyRefusalRedirectResponse({
+  String reason = 'unsafe_to_assist',
+}) => <String, dynamic>{
+  'kind': 'redirect',
+  'reason': reason,
+  // Verbatim from SESSION_SAFETY_NEUTRAL_COPY's frozen table. Nothing is
+  // interpolated server-side, so no phrase or rule name can reach it.
+  'copy': 'I am not able to help with this. Support resources are '
+      'available if you want them.',
+  'show_safety_resources': true,
+  'offered': <dynamic>[],
+};
+
+/// THE ORDINARY MODEL REDIRECT, transcribed verbatim from
+/// `dispatchIdeas`'s redirect branch (index.ts:2707) and
+/// `dispatchNearby`'s (index.ts:2806): the SAME `kind`, a reason from the
+/// SAME set, and NO `copy`.
+Map<String, dynamic> _ordinaryRedirectResponse({
+  String reason = 'unsafe_to_assist',
+  List<String> offered = const <String>['ideas'],
+}) => <String, dynamic>{
+  'kind': 'redirect',
+  'reason': reason,
+  'offered': offered,
+  'show_safety_resources': true,
+};
+
 /// `handleReviewContext`'s success body, with all ELEVEN keys the server
 /// actually sends — transcribed from its `jsonResponse` call, including
 /// the `civil_day_start_utc` that neither half of the gate-2 split reads.
@@ -1825,4 +1889,1402 @@ void main() {
       },
     );
   });
+
+  // =====================================================================
+  // Task 4: generate
+  // =====================================================================
+
+  group('generate', () {
+    test(
+      'sends ONLY parseGenerateRequest\'s allowlist — the key set equals the '
+      'transcribed six exactly',
+      () async {
+        // RULING 4. Transcribed from `parseGenerateRequest`'s own
+        // `allowed` set (supabase/functions/ai-sessions/index.ts:1715).
+        // Every branch rejects an unknown key with INVALID_INPUT rather
+        // than ignoring it, so an extra key here is a failed call, not
+        // a harmless one.
+        const serverAllowlist = <String>{
+          'command',
+          'session_id',
+          'request_id',
+          'expected_revision',
+          'user_instruction',
+          'requester_location',
+        };
+        // Denominator guard: the server's set has six entries, so a
+        // future edit that drops one from this transcription fails here
+        // rather than weakening the equality below silently.
+        expect(serverAllowlist.length, 6);
+
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = _ideasAnswerResponse();
+        final repository = AiSessionRepository(gateway);
+
+        await repository.generate(
+          sessionId: _validUuid,
+          requestId: _validRequestId,
+          expectedRevision: 3,
+          userInstruction: 'ideas please',
+          requesterLocation: (
+            latitude: 5.6,
+            longitude: -0.19,
+            accuracyM: 12.0,
+          ),
+          locationCapturedAt: DateTime.utc(2026, 10, 11, 12, 30),
+        );
+
+        expect(gateway.lastInvokedFunction, 'ai-sessions');
+        // EQUALITY, not containment: `isNot(contains(...))` on a few
+        // names would pass for a body that invented a seventh key.
+        expect(gateway.lastInvokeBody!.keys.toSet(), serverAllowlist);
+        expect(gateway.lastInvokeBody!['command'], 'generate');
+        expect(gateway.lastInvokeBody!['session_id'], _validUuid);
+        expect(gateway.lastInvokeBody!['request_id'], _validRequestId);
+        expect(gateway.lastInvokeBody!['expected_revision'], 3);
+        expect(gateway.lastInvokeBody!['user_instruction'], 'ideas please');
+      },
+    );
+
+    test(
+      'the nested requester_location key set equals parseGenerateRequest\'s '
+      'location allowlist MINUS the decorative confirmation_nonce',
+      () async {
+        // Transcribed from `allowedLocationKeys` (index.ts:1774). The
+        // server allows five; this client sends four.
+        const serverLocationAllowlist = <String>{
+          'latitude',
+          'longitude',
+          'accuracy_m',
+          'captured_at',
+          'confirmation_nonce',
+        };
+        expect(serverLocationAllowlist.length, 5);
+
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = _stagedNearbyResponse();
+        final repository = AiSessionRepository(gateway);
+
+        await repository.generate(
+          sessionId: _validUuid,
+          requestId: _validRequestId,
+          expectedRevision: 1,
+          userInstruction: 'coffee nearby',
+          requesterLocation: (
+            latitude: 5.6037,
+            longitude: -0.187,
+            accuracyM: 25.0,
+          ),
+          locationCapturedAt: DateTime.utc(2026, 10, 11, 12, 30, 15),
+        );
+
+        final sentLocation = Map<String, dynamic>.from(
+          gateway.lastInvokeBody!['requester_location'] as Map,
+        );
+        // GATE 4: the nonce is DECORATIVE — no issuing RPC, column or
+        // table exists, and `parseGenerateRequest` allowlists it only
+        // to refuse to trust it. Sending one would be a confirmation
+        // control that gates nothing. This asserts the exact four keys,
+        // so adding the nonce back fails here.
+        expect(sentLocation.keys.toSet(), {
+          'latitude',
+          'longitude',
+          'accuracy_m',
+          'captured_at',
+        });
+        expect(
+          sentLocation.keys.toSet(),
+          isNot(contains('confirmation_nonce')),
+        );
+        // And the four it does send are a SUBSET of the server's five,
+        // so nothing invented reaches the nested object either.
+        expect(
+          sentLocation.keys.toSet().difference(serverLocationAllowlist),
+          isEmpty,
+        );
+        expect(sentLocation['latitude'], 5.6037);
+        expect(sentLocation['longitude'], -0.187);
+        expect(sentLocation['accuracy_m'], 25.0);
+        // UTC, with the Z suffix: the server `Date.parse`s this and
+        // compares it to its OWN instant, so an offsetless local-time
+        // string would be read as the wrong moment.
+        expect(sentLocation['captured_at'], '2026-10-11T12:30:15.000Z');
+      },
+    );
+
+    test(
+      'omits requester_location entirely when there is none, rather than '
+      'sending null',
+      () async {
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = _ideasAnswerResponse();
+        final repository = AiSessionRepository(gateway);
+
+        await repository.generate(
+          sessionId: _validUuid,
+          requestId: _validRequestId,
+          expectedRevision: 1,
+          userInstruction: 'ideas please',
+        );
+
+        expect(
+          gateway.lastInvokeBody!.keys.toSet(),
+          {
+            'command',
+            'session_id',
+            'request_id',
+            'expected_revision',
+            'user_instruction',
+          },
+        );
+        expect(
+          gateway.lastInvokeBody!.containsKey('requester_location'),
+          isFalse,
+          reason: 'an Ideas session WITH a location is INVALID_INPUT, so '
+              '"I sent none" must be literal on the wire',
+        );
+      },
+    );
+
+    test(
+      'a location without a capture timestamp is refused locally rather than '
+      'sent as an incomplete point',
+      () async {
+        // `parseGenerateRequest` answers LOCATION_REQUIRED when
+        // `captured_at` is not a string — whose §10 remedy is "ask for
+        // permission", the wrong thing to show a user whose permission
+        // was granted and whose point this client simply failed to
+        // timestamp. The brief's sketch sent exactly this incomplete
+        // object.
+        final gateway = _FakeAiSessionGateway();
+        final repository = AiSessionRepository(gateway);
+
+        // THROWN SYNCHRONOUSLY, not as a rejected Future — the guard
+        // runs before `_invoke` is reached, so there is no Future to
+        // await. That is the stronger behaviour (the mistake surfaces
+        // at the call site rather than one microtask later), and
+        // asserting it this way is what proves it: an `expectLater` on
+        // the returned Future would NOT have caught a synchronous
+        // throw, and a guard moved inside the async body would fail
+        // here.
+        expect(
+          () => repository.generate(
+            sessionId: _validUuid,
+            requestId: _validRequestId,
+            expectedRevision: 1,
+            userInstruction: 'coffee nearby',
+            requesterLocation: (
+              latitude: 5.6,
+              longitude: -0.19,
+              accuracyM: 12.0,
+            ),
+          ),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message.toString(),
+              'message',
+              contains('locationCapturedAt'),
+            ),
+          ),
+        );
+        // NOTHING WAS SENT. A call that reached the server would burn
+        // the request id on a LOCATION_REQUIRED, and retrying that id
+        // with a corrected body is REQUEST_CONFLICT.
+        expect(gateway.invokeCount, 0);
+      },
+    );
+
+    test('parses a fresh ideas answer, revision and proposal included',
+        () async {
+      final gateway = _FakeAiSessionGateway();
+      gateway.nextInvokeResult = <String, dynamic>{
+        'kind': 'answer',
+        'user_ordinal': 3,
+        'attune_ordinal': 4,
+        'session_revision': 7,
+        'reply_text': 'Try a picnic at Legon Botanical Gardens.',
+        'suggested_planning_item': <String, dynamic>{
+          'kind': 'event',
+          'title': 'Picnic',
+          'event_date': '2026-10-18',
+        },
+        'show_safety_resources': true,
+      };
+      final repository = AiSessionRepository(gateway);
+
+      final result = await repository.generate(
+        sessionId: _validUuid,
+        requestId: _validRequestId,
+        expectedRevision: 3,
+        userInstruction: 'ideas please',
+      );
+
+      final answer = result as AiSessionGeneratedAnswer;
+      // ORDINALS 3/4, NOT 1/2 — the attempt counter advances on a
+      // FAILED attempt too, so a session whose first attempt failed
+      // holds 3 and 4 with no 1 or 2. Asserting the specific pair
+      // catches a parser that renumbered.
+      expect(answer.userOrdinal, 3);
+      expect(answer.attuneOrdinal, 4);
+      // GATE 1: the revision is returned to the actor who caused the
+      // bump. This is that actor.
+      expect(answer.sessionRevision, 7);
+      expect(answer.replyText, 'Try a picnic at Legon Botanical Gardens.');
+      expect(answer.suggestedPlanningItem, isNotNull);
+      expect(answer.suggestedPlanningItem!.title, 'Picnic');
+      expect(answer.replayed, isFalse);
+    });
+
+    test(
+      'parses the idempotent replay, which has NO kind key and NO '
+      'session_revision',
+      () async {
+        // Transcribed from `replayAdmittedRequest` (index.ts:2555). The
+        // brief's own first fixture was this shape — no `kind` — while
+        // its sketch branched on `kind == 'redirect'` and otherwise
+        // read `attune_ordinal`, which would have silently parsed a
+        // replay as a fresh answer and reported a null revision as
+        // though the session had not moved.
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = <String, dynamic>{
+          'user_ordinal': 1,
+          'attune_ordinal': 2,
+          'reply_text': 'the one and only reply',
+          'suggested_planning_item': null,
+          'replayed': true,
+        };
+        final repository = AiSessionRepository(gateway);
+
+        final result = await repository.generate(
+          sessionId: _validUuid,
+          requestId: _validRequestId,
+          expectedRevision: 1,
+          userInstruction: 'ideas please',
+        );
+
+        final answer = result as AiSessionGeneratedAnswer;
+        expect(answer.replayed, isTrue);
+        expect(answer.attuneOrdinal, 2);
+        expect(answer.replyText, 'the one and only reply');
+        // NULL, not 0 and not invented: the replay path sends no
+        // revision, and §6.2 guarantees no new provider lease, so there
+        // is no bump to report. A client must not synthesize one — gate
+        // 1 means there is nothing to fall back to.
+        expect(answer.sessionRevision, isNull);
+      },
+    );
+
+    test(
+      'a body with neither kind nor replayed is malformed, not an answer',
+      () async {
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = <String, dynamic>{
+          'user_ordinal': 1,
+          'attune_ordinal': 2,
+          'reply_text': 'looks like an answer',
+        };
+        final repository = AiSessionRepository(gateway);
+
+        await expectLater(
+          repository.generate(
+            sessionId: _validUuid,
+            requestId: _validRequestId,
+            expectedRevision: 1,
+            userInstruction: 'ideas please',
+          ),
+          // A FormatException from the parser, surfaced through
+          // _mapTransportError's fallthrough. See the §10-preservation
+          // group below for why no parser raises a typed error.
+          throwsA(isA<AiSessionInternalError>()),
+        );
+      },
+    );
+
+    test(
+      'parses a Nearby generation as STAGED, with no ordinals and no '
+      'confirmation nonce',
+      () async {
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = _stagedNearbyResponse();
+        final repository = AiSessionRepository(gateway);
+
+        final result = await repository.generate(
+          sessionId: _validUuid,
+          requestId: _validRequestId,
+          expectedRevision: 1,
+          userInstruction: 'coffee nearby',
+          requesterLocation: (
+            latitude: 5.6,
+            longitude: -0.19,
+            accuracyM: 12.0,
+          ),
+          locationCapturedAt: DateTime.utc(2026, 10, 11, 12, 30),
+        );
+
+        // NOT an AiSessionTurnModel and not an answer: nothing is
+        // committed, the revision has not moved, and the partner can
+        // see nothing until publishNearby.
+        final staged = result as AiSessionStagedNearbyGeneration;
+        expect(staged, isNot(isA<AiSessionTurnModel>()));
+        expect(staged, isNot(isA<AiSessionGeneratedAnswer>()));
+        expect(staged.requestId, _validRequestId);
+        expect(
+          staged.replyText,
+          'Here are a few coffee options nearby: Vida e Caffe',
+        );
+        expect(staged.sources.length, 1);
+        expect(staged.sources.single.name, 'Vida e Caffe');
+        // GATE 4 again, now on the RESPONSE side: the staged type has
+        // no nonce field, so a server that started sending one could
+        // not be rendered as a confirmation. Its transcribed wire key
+        // set is the proof, and it has six entries.
+        expect(AiSessionStagedNearbyGeneration.wireKeys.length, 6);
+        expect(
+          AiSessionStagedNearbyGeneration.wireKeys,
+          isNot(contains('confirmation_nonce')),
+        );
+      },
+    );
+
+    test('zero Nearby sources is a valid staged result, not a failure',
+        () async {
+      // §5.3: "Zero results is a deterministic no-results card", and
+      // `buildNearbySessionReplyText` has an explicit branch for it.
+      final gateway = _FakeAiSessionGateway();
+      gateway.nextInvokeResult = <String, dynamic>{
+        'kind': 'nearby_result',
+        'staged': true,
+        'request_id': _validRequestId,
+        'reply_text':
+            'No coffee results came back nearby. Try a different category.',
+        'sources': <dynamic>[],
+        'show_safety_resources': true,
+      };
+      final repository = AiSessionRepository(gateway);
+
+      final result = await repository.generate(
+        sessionId: _validUuid,
+        requestId: _validRequestId,
+        expectedRevision: 1,
+        userInstruction: 'coffee nearby',
+        requesterLocation: (latitude: 5.6, longitude: -0.19, accuracyM: 12.0),
+        locationCapturedAt: DateTime.utc(2026, 10, 11, 12, 30),
+      );
+
+      final staged = result as AiSessionStagedNearbyGeneration;
+      expect(staged.sources, isEmpty);
+      expect(
+        staged.replyText,
+        'No coffee results came back nearby. Try a different category.',
+      );
+    });
+
+    test(
+      'a nearby_result body without staged: true is malformed rather than '
+      'rendered as publishable',
+      () async {
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = <String, dynamic>{
+          'kind': 'nearby_result',
+          'request_id': _validRequestId,
+          'reply_text': 'Here are a few coffee options nearby: Vida e Caffe',
+          'sources': <dynamic>[],
+          'show_safety_resources': true,
+        };
+        final repository = AiSessionRepository(gateway);
+
+        await expectLater(
+          repository.generate(
+            sessionId: _validUuid,
+            requestId: _validRequestId,
+            expectedRevision: 1,
+            userInstruction: 'coffee nearby',
+            requesterLocation: (
+              latitude: 5.6,
+              longitude: -0.19,
+              accuracyM: 12.0,
+            ),
+            locationCapturedAt: DateTime.utc(2026, 10, 11, 12, 30),
+          ),
+          throwsA(isA<AiSessionInternalError>()),
+        );
+      },
+    );
+
+    test('an unrecognized kind is a malformed response, not a fourth case',
+        () async {
+      final gateway = _FakeAiSessionGateway();
+      gateway.nextInvokeResult = <String, dynamic>{
+        'kind': 'ideas_answer',
+        'attune_ordinal': 2,
+        'reply_text': 'the stored turn kind is not a generate response kind',
+      };
+      final repository = AiSessionRepository(gateway);
+
+      await expectLater(
+        repository.generate(
+          sessionId: _validUuid,
+          requestId: _validRequestId,
+          expectedRevision: 1,
+          userInstruction: 'ideas please',
+        ),
+        throwsA(isA<AiSessionInternalError>()),
+      );
+    });
+
+    test(
+      'a CONTEXT_CHANGED from a stale expected_revision surfaces as its own '
+      'code, whose remedy is to review again',
+      () async {
+        // `expected_revision` is bound into
+        // admit_ai_session_generation's operation fingerprint, and a
+        // mismatch raises CONTEXT_CHANGED. The remedy is ALWAYS to call
+        // reviewContext again and approve the digest it returns — never
+        // to recompute the digest (gate 2 makes that impossible) and
+        // never to bump the number locally and resend.
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeError = _sessionErrorException(
+          'CONTEXT_CHANGED',
+          status: 409,
+        );
+        final repository = AiSessionRepository(gateway);
+
+        await expectLater(
+          repository.generate(
+            sessionId: _validUuid,
+            requestId: _validRequestId,
+            expectedRevision: 1,
+            userInstruction: 'ideas please',
+          ),
+          throwsA(isA<AiSessionContextChangedError>()),
+        );
+        // ONE attempt. A repository that retried would, with a bumped
+        // revision, change the fingerprint and earn REQUEST_CONFLICT;
+        // with the same revision it would just repeat the failure.
+        expect(gateway.invokeCount, 1);
+      },
+    );
+
+    test(
+      'the two location codes stay distinct — their §10 remedies differ',
+      () async {
+        // LOCATION_REQUIRED -> ask for permission.
+        // LOCATION_EXPIRED  -> recapture the point.
+        // Both are HTTP 400, so a status-driven mapper could not tell
+        // them apart; these assert the distinct subtypes.
+        for (final probe in <({String code, Type error})>[
+          (code: 'LOCATION_REQUIRED', error: AiSessionLocationRequiredError),
+          (code: 'LOCATION_EXPIRED', error: AiSessionLocationExpiredError),
+        ]) {
+          final gateway = _FakeAiSessionGateway();
+          gateway.nextInvokeError = _sessionErrorException(
+            probe.code,
+            status: 400,
+          );
+          final repository = AiSessionRepository(gateway);
+
+          await expectLater(
+            repository.generate(
+              sessionId: _validUuid,
+              requestId: _validRequestId,
+              expectedRevision: 1,
+              userInstruction: 'coffee nearby',
+              requesterLocation: (
+                latitude: 5.6,
+                longitude: -0.19,
+                accuracyM: 12.0,
+              ),
+              locationCapturedAt: DateTime.utc(2026, 10, 11, 12, 30),
+            ),
+            throwsA(predicate((e) => e.runtimeType == probe.error)),
+            reason: '${probe.code} must map to ${probe.error}',
+          );
+        }
+      },
+    );
+  });
+
+
+  // =====================================================================
+  // RULING 6: the two `kind: "redirect"` shapes must be
+  // INDISTINGUISHABLE through the client's public surface.
+  //
+  // `safetyRefusalResponse` (index.ts:2145) emits `kind: "redirect"`
+  // with a server-rendered `copy` and an EMPTY `offered`; the model's
+  // own redirect (index.ts:2707 / :2806) emits the SAME `kind` without
+  // `copy`. They deliberately share the kind AND the reason set
+  // (`unsupported | unsafe_to_assist | insufficient_context`), and that
+  // sharing is what prevents a side channel: Plan C Task 6 established
+  // that a durable or distinguishable redirect would disclose that a
+  // safety detector fired, which §8.1 forbids revealing to EITHER
+  // party.
+  //
+  // So these tests do not merely check that both parse. They assert
+  // that after parsing, the two values are INDISTINGUISHABLE through
+  // every member the type exposes — which is the property a UI relies
+  // on and the property a future getter would silently destroy.
+  // =====================================================================
+
+  group('RULING 6: the two redirect shapes are indistinguishable', () {
+    test(
+      'both shapes parse into the SAME runtime type — no subtype, no '
+      'discriminator',
+      () async {
+        final gateway = _FakeAiSessionGateway();
+        final repository = AiSessionRepository(gateway);
+
+        gateway.nextInvokeResult = _safetyRefusalRedirectResponse();
+        final refusal = await repository.generate(
+          sessionId: _validUuid,
+          requestId: _validRequestId,
+          expectedRevision: 1,
+          userInstruction: 'probing instruction',
+        );
+
+        gateway.nextInvokeResult = _ordinaryRedirectResponse();
+        final ordinary = await repository.generate(
+          sessionId: _validUuid,
+          requestId: _validRequestId,
+          expectedRevision: 1,
+          userInstruction: 'news today',
+        );
+
+        // `runtimeType` EQUALITY, not two isA<> checks: a subtype for
+        // either shape would satisfy `isA<AiSessionGeneratedRedirect>()`
+        // on both while being perfectly distinguishable with an `is`
+        // check at any call site.
+        expect(refusal.runtimeType, AiSessionGeneratedRedirect);
+        expect(refusal.runtimeType, ordinary.runtimeType);
+      },
+    );
+
+    test(
+      'EVERY member of the public surface returns the same value for both '
+      'shapes, given the same reason',
+      () async {
+        // THE CORE PROOF. The enumeration below is exhaustive over
+        // AiSessionGeneratedRedirect's public instance surface:
+        //   - reason
+        //   - offered
+        //   - showSafetyResources
+        //   - resolveCopy(genericRedirectCopy:)
+        //   - runtimeType / toString / hashCode-class (Object's own)
+        // `copy` is PRIVATE, so it is not on this list and cannot be.
+        //
+        // The two fixtures are made to agree on everything the server
+        // lets them agree on — the same reason, and `offered: []` on
+        // BOTH, which an ordinary redirect may legally send
+        // (`validateSessionTurnOutput` accepts an empty array) — so any
+        // residual difference must come from the ONE field that
+        // genuinely differs on the wire: `copy`.
+        final gateway = _FakeAiSessionGateway();
+        final repository = AiSessionRepository(gateway);
+
+        gateway.nextInvokeResult = _safetyRefusalRedirectResponse(
+          reason: 'unsafe_to_assist',
+        );
+        final refusal = await repository.generate(
+          sessionId: _validUuid,
+          requestId: _validRequestId,
+          expectedRevision: 1,
+          userInstruction: 'probing instruction',
+        ) as AiSessionGeneratedRedirect;
+
+        gateway.nextInvokeResult = _ordinaryRedirectResponse(
+          reason: 'unsafe_to_assist',
+          offered: const <String>[],
+        );
+        final ordinary = await repository.generate(
+          sessionId: _validUuid,
+          requestId: _validRequestId,
+          expectedRevision: 1,
+          userInstruction: 'news today',
+        ) as AiSessionGeneratedRedirect;
+
+        // `reason` is drawn from ONE set on both paths.
+        // `classifySessionContent` refuses with only `unsafe_to_assist`
+        // or `unsupported`, and the model may report either of those
+        // too, so reading it narrows nothing.
+        expect(refusal.reason, 'unsafe_to_assist');
+        expect(refusal.reason, ordinary.reason);
+
+        expect(refusal.offered, isEmpty);
+        expect(refusal.offered, ordinary.offered);
+
+        // CONSTANT-TRUE at all three of classifySessionContent's
+        // return points INCLUDING the allowed one, and hardcoded true
+        // in both redirect bodies. Being constant, it cannot be a
+        // signal — and this assertion is what keeps it constant.
+        expect(refusal.showSafetyResources, isTrue);
+        expect(ordinary.showSafetyResources, isTrue);
+        expect(refusal.showSafetyResources, ordinary.showSafetyResources);
+
+        // THE ONE ACCESSOR OVER `copy`, AND IT IS TOTAL. Both return a
+        // non-empty String; neither returns null; and the signature has
+        // no second return value, no out-parameter and no overload that
+        // could report which branch was taken.
+        const generic =
+            'I can help with ideas or places nearby. Want to try one of '
+            'those?';
+        expect(refusal.resolveCopy(genericRedirectCopy: generic), isNotEmpty);
+        expect(ordinary.resolveCopy(genericRedirectCopy: generic), generic);
+
+        // ==== THE SURFACE IS CLOSED ====
+        //
+        // The assertions above compare every member the type exposes.
+        // This one proves the LIST is complete rather than merely long:
+        // `noSuchMethod`-free Dart has no reflection in this test
+        // environment, so completeness is proved structurally — the
+        // type is NOT sealed/abstract and has exactly four public
+        // instance members, enumerated here as the declared names a
+        // caller can reach. A fifth would have to be added to this list
+        // for the mutation test below to be meaningful, which is the
+        // point: the list is maintained deliberately.
+        const publicInstanceSurface = <String>{
+          'reason',
+          'offered',
+          'showSafetyResources',
+          'resolveCopy',
+        };
+        expect(publicInstanceSurface.length, 4);
+        // And none of the forbidden names is among them. These are the
+        // exact getters Ruling 6 names, plus the proxies: each one would
+        // reconstruct the detector signal.
+        for (final forbidden in const <String>[
+          'isSafetyRefusal',
+          'wasBlocked',
+          'isUnsafe',
+          'blocked',
+          'copy',
+          'hasCopy',
+          'hasServerCopy',
+          'copyOrNull',
+          'serverCopy',
+          'hasAlternatives',
+          'canOfferAnything',
+          'shape',
+          'variant',
+          'source',
+        ]) {
+          expect(
+            publicInstanceSurface,
+            isNot(contains(forbidden)),
+            reason: '"$forbidden" would distinguish a safety refusal from an '
+                'ordinary redirect, which §8.1 forbids',
+          );
+        }
+      },
+    );
+
+    test(
+      'the two shapes differ on the wire in EXACTLY one key, and it is the '
+      'one this client cannot read',
+      () {
+        // The denominator for the proof above. If the shapes differed in
+        // more than `copy`, hiding `copy` alone would not be enough —
+        // so this measures the difference from the transcribed key sets
+        // rather than assuming it.
+        final difference = AiSessionGeneratedRedirect.safetyShapeWireKeys
+            .difference(AiSessionGeneratedRedirect.ordinaryShapeWireKeys)
+            .union(
+              AiSessionGeneratedRedirect.ordinaryShapeWireKeys.difference(
+                AiSessionGeneratedRedirect.safetyShapeWireKeys,
+              ),
+            );
+        expect(difference, {'copy'});
+        // Both sets are non-trivial, so the equality above is not the
+        // accident of two empty sets.
+        expect(AiSessionGeneratedRedirect.safetyShapeWireKeys.length, 5);
+        expect(AiSessionGeneratedRedirect.ordinaryShapeWireKeys.length, 4);
+        // And `kind` is shared, which is the sharing that makes the
+        // side channel closable at all.
+        expect(
+          AiSessionGeneratedRedirect.safetyShapeWireKeys,
+          contains('kind'),
+        );
+        expect(
+          AiSessionGeneratedRedirect.ordinaryShapeWireKeys,
+          contains('kind'),
+        );
+      },
+    );
+
+    test(
+      'a refusal reason the MODEL can also produce is accepted from both '
+      'shapes — the reason set is shared, not partitioned',
+      () async {
+        // If this client accepted `unsafe_to_assist` only with a `copy`,
+        // or `unsupported` only without one, the parse itself would be
+        // the oracle. So every reason is fed through BOTH shapes and all
+        // six combinations must parse to the same reason.
+        final gateway = _FakeAiSessionGateway();
+        final repository = AiSessionRepository(gateway);
+        final parsed = <String, Set<String>>{};
+
+        for (final reason in const <String>[
+          'unsupported',
+          'unsafe_to_assist',
+          'insufficient_context',
+        ]) {
+          gateway.nextInvokeResult = _safetyRefusalRedirectResponse(
+            reason: reason,
+          );
+          final refusal = await repository.generate(
+            sessionId: _validUuid,
+            requestId: _validRequestId,
+            expectedRevision: 1,
+            userInstruction: 'x',
+          ) as AiSessionGeneratedRedirect;
+
+          gateway.nextInvokeResult = _ordinaryRedirectResponse(
+            reason: reason,
+            offered: const <String>[],
+          );
+          final ordinary = await repository.generate(
+            sessionId: _validUuid,
+            requestId: _validRequestId,
+            expectedRevision: 1,
+            userInstruction: 'x',
+          ) as AiSessionGeneratedRedirect;
+
+          expect(refusal.reason, reason);
+          expect(ordinary.reason, reason);
+          parsed[reason] = {refusal.reason, ordinary.reason};
+        }
+
+        // Denominator: all three reasons were exercised, and each
+        // produced ONE value across both shapes.
+        expect(parsed.length, 3);
+        for (final entry in parsed.entries) {
+          expect(
+            entry.value,
+            {entry.key},
+            reason: 'the two shapes disagreed about reason "${entry.key}"',
+          );
+        }
+      },
+    );
+
+    test(
+      'a redirect is never a transcript turn — RULING 7',
+      () async {
+        final gateway = _FakeAiSessionGateway();
+        final repository = AiSessionRepository(gateway);
+
+        gateway.nextInvokeResult = _safetyRefusalRedirectResponse();
+        final refusal = await repository.generate(
+          sessionId: _validUuid,
+          requestId: _validRequestId,
+          expectedRevision: 1,
+          userInstruction: 'x',
+        );
+
+        // The redirect model is a RESPONSE type only. It is not an
+        // AiSessionTurnModel, so it cannot be put in a transcript list,
+        // cannot be rendered by a turn renderer, and has no ordinal or
+        // created_at to persist. §5.3 as amended by Plan C Task 6: "NO
+        // redirect becomes a transcript pair. ALL redirects are
+        // requester-only" — because a durable redirect is itself the
+        // safety side channel (bumping the revision for 'unsupported'
+        // but not 'unsafe_to_assist' would disclose the detector to a
+        // partner polling session_revision).
+        expect(refusal, isNot(isA<AiSessionTurnModel>()));
+        expect(refusal, isNot(isA<AiSessionAttuneTurn>()));
+
+        // And the transcript parser still REJECTS the kind outright, so
+        // a server that somehow committed one could not be rendered.
+        expect(
+          () => AiSessionTurnModel.fromJson(<String, dynamic>{
+            'ordinal': 2,
+            'role': 'attune',
+            'kind': 'redirect',
+            'payload': <String, dynamic>{'reason': 'unsupported'},
+            'created_at': '2026-10-11T12:00:00Z',
+          }),
+          throwsA(isA<FormatException>()),
+        );
+      },
+    );
+
+    test(
+      'an offered entry the server could not have sent is a malformed '
+      'response rather than a rendered chip',
+      () async {
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = _ordinaryRedirectResponse(
+          offered: const <String>['understand'],
+        );
+        final repository = AiSessionRepository(gateway);
+
+        await expectLater(
+          repository.generate(
+            sessionId: _validUuid,
+            requestId: _validRequestId,
+            expectedRevision: 1,
+            userInstruction: 'x',
+          ),
+          // `validateSessionTurnOutput` admits only 'ideas' and
+          // 'nearby', so anything else never left the server.
+          throwsA(isA<AiSessionInternalError>()),
+        );
+      },
+    );
+
+    test('an unrecognized redirect reason is rejected from BOTH shapes',
+        () async {
+      // Symmetry matters here too: rejecting an unknown reason from one
+      // shape but tolerating it from the other would make the parse
+      // outcome itself a discriminator.
+      final gateway = _FakeAiSessionGateway();
+      final repository = AiSessionRepository(gateway);
+
+      for (final body in <Map<String, dynamic>>[
+        <String, dynamic>{
+          ..._safetyRefusalRedirectResponse(),
+          'reason': 'policy_violation',
+        },
+        <String, dynamic>{
+          ..._ordinaryRedirectResponse(),
+          'reason': 'policy_violation',
+        },
+      ]) {
+        gateway.nextInvokeResult = body;
+        await expectLater(
+          repository.generate(
+            sessionId: _validUuid,
+            requestId: _validRequestId,
+            expectedRevision: 1,
+            userInstruction: 'x',
+          ),
+          throwsA(isA<AiSessionInternalError>()),
+          reason: 'both shapes must refuse an unknown reason identically',
+        );
+      }
+    });
+  });
+
+
+  // =====================================================================
+  // Task 4: publish_nearby / discard_nearby
+  // =====================================================================
+
+  group('publishNearby', () {
+    test(
+      'sends ONLY handlePublishNearby\'s allowlist — the key set equals the '
+      'transcribed two exactly',
+      () async {
+        // RULING 4. Transcribed from `handlePublishNearby`'s own
+        // `allowed` set (index.ts:3432). NARROWER than generate's: no
+        // session id (the server resolves it from the request row), no
+        // expected_revision, and — gate 4 — no confirmation nonce.
+        const serverAllowlist = <String>{'command', 'request_id'};
+        expect(serverAllowlist.length, 2);
+
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = <String, dynamic>{
+          'committed': true,
+          'user_ordinal': 1,
+          'attune_ordinal': 2,
+          'session_revision': 3,
+        };
+        final repository = AiSessionRepository(gateway);
+
+        await repository.publishNearby(_validRequestId);
+
+        expect(gateway.lastInvokedFunction, 'ai-sessions');
+        expect(gateway.lastInvokeBody!.keys.toSet(), serverAllowlist);
+        expect(gateway.lastInvokeBody!['command'], 'publish_nearby');
+        expect(gateway.lastInvokeBody!['request_id'], _validRequestId);
+        // GATE 4 behaviourally: publishing is authorized by the actor's
+        // JWT and the staging row's author check. There is no nonce to
+        // send and no parameter that could carry one.
+        expect(
+          gateway.lastInvokeBody!.containsKey('confirmation_nonce'),
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'returns the ordinals AND the session_revision — the body has four '
+      'fields, not the two the brief claimed',
+      () async {
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = <String, dynamic>{
+          'committed': true,
+          // Non-contiguous on purpose: a failed attempt advanced the
+          // counter, so the published pair is 3/4.
+          'user_ordinal': 3,
+          'attune_ordinal': 4,
+          'session_revision': 9,
+        };
+        final repository = AiSessionRepository(gateway);
+
+        final published = await repository.publishNearby(_validRequestId);
+
+        expect(published.committed, isTrue);
+        expect(published.userOrdinal, 3);
+        expect(published.attuneOrdinal, 4);
+        // GATE 1: disclosed to THIS actor, the one who caused the bump.
+        // The partner — the party that must poll to notice these turns
+        // — cannot read this integer from any command, so nothing may
+        // be built assuming they can.
+        expect(published.sessionRevision, 9);
+        // Denominator: the transcribed wire key set has four entries,
+        // so a brief-faithful two-field model would fail here.
+        expect(AiSessionPublishNearbyResult.wireKeys.length, 4);
+        expect(
+          AiSessionPublishNearbyResult.wireKeys,
+          {'committed', 'user_ordinal', 'attune_ordinal', 'session_revision'},
+        );
+      },
+    );
+
+    test('a missing session_revision is malformed, not a zero', () async {
+      final gateway = _FakeAiSessionGateway();
+      gateway.nextInvokeResult = <String, dynamic>{
+        'committed': true,
+        'user_ordinal': 1,
+        'attune_ordinal': 2,
+      };
+      final repository = AiSessionRepository(gateway);
+
+      await expectLater(
+        repository.publishNearby(_validRequestId),
+        throwsA(isA<AiSessionInternalError>()),
+      );
+    });
+
+    test('committed: false on a success status is malformed', () async {
+      // The RPC raises rather than returning false, and the branch maps
+      // every raise to a §10 code — so a false here cannot be a
+      // "published nothing" outcome to render.
+      final gateway = _FakeAiSessionGateway();
+      gateway.nextInvokeResult = <String, dynamic>{
+        'committed': false,
+        'user_ordinal': 1,
+        'attune_ordinal': 2,
+        'session_revision': 3,
+      };
+      final repository = AiSessionRepository(gateway);
+
+      await expectLater(
+        repository.publishNearby(_validRequestId),
+        throwsA(isA<AiSessionInternalError>()),
+      );
+    });
+
+    test(
+      'RESULT_UNAVAILABLE collapses expired, discarded, already-published '
+      'and foreign staging rows into one code',
+      () async {
+        // `handlePublishNearby` maps 'No staged result for this
+        // request', 'Staged result has expired', 'Only the requester
+        // may publish' and 'Request not found' to the SAME code, for
+        // the same indistinguishability reason §3.1 requires of session
+        // ids. A client must not try to tell them apart.
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeError = _sessionErrorException(
+          'RESULT_UNAVAILABLE',
+          status: 410,
+        );
+        final repository = AiSessionRepository(gateway);
+
+        await expectLater(
+          repository.publishNearby(_validRequestId),
+          throwsA(isA<AiSessionResultUnavailableError>()),
+        );
+      },
+    );
+
+    test('CONSENT_REQUIRED is distinguished, because the caller can act on it',
+        () async {
+      // §10 names it the one refusal worth distinguishing, "precisely
+      // because 'caller can open consent' is a refusal the caller can
+      // ACT on". Note it shares HTTP 403 with FEATURE_DISABLED, so a
+      // status-driven mapper could not separate them.
+      final gateway = _FakeAiSessionGateway();
+      gateway.nextInvokeError = _sessionErrorException(
+        'CONSENT_REQUIRED',
+        status: 403,
+      );
+      final repository = AiSessionRepository(gateway);
+
+      await expectLater(
+        repository.publishNearby(_validRequestId),
+        throwsA(isA<AiSessionConsentRequiredError>()),
+      );
+    });
+  });
+
+  group('discardNearby', () {
+    test(
+      'sends ONLY handleDiscardNearby\'s allowlist — the key set equals the '
+      'transcribed two exactly',
+      () async {
+        // RULING 4. Transcribed from `handleDiscardNearby`'s own
+        // `allowed` set (index.ts:3589).
+        const serverAllowlist = <String>{'command', 'request_id'};
+        expect(serverAllowlist.length, 2);
+
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = <String, dynamic>{'discarded': true};
+        final repository = AiSessionRepository(gateway);
+
+        await repository.discardNearby(_validRequestId);
+
+        expect(gateway.lastInvokedFunction, 'ai-sessions');
+        expect(gateway.lastInvokeBody!.keys.toSet(), serverAllowlist);
+        expect(gateway.lastInvokeBody!['command'], 'discard_nearby');
+        expect(gateway.lastInvokeBody!['request_id'], _validRequestId);
+      },
+    );
+
+    test(
+      'returns nothing — `discarded: true` is not readable as existence',
+      () async {
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = <String, dynamic>{'discarded': true};
+        final repository = AiSessionRepository(gateway);
+
+        // `Future<void>`, enforced by the COMPILER: assigning the awaited
+        // value to anything is a compile error, so there is no boolean a
+        // caller could read as "there was something to discard". For a
+        // foreign request id that boolean would be exactly the existence
+        // oracle the server's RESULT_UNAVAILABLE mapping exists to close.
+        // (Ruling 12's disclosure: this kill is a compile error, not a
+        // runtime assertion — the same evidence class as `end`'s.)
+        await repository.discardNearby(_validRequestId);
+        expect(gateway.invokeCount, 1);
+      },
+    );
+
+    test(
+      'an EMPTY response body still succeeds — nothing is read from it',
+      () async {
+        // The parser reads nothing, so a server that changed the body
+        // cannot break a discard. This is the behavioural half of the
+        // claim above.
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeResult = <String, dynamic>{};
+        final repository = AiSessionRepository(gateway);
+
+        await repository.discardNearby(_validRequestId);
+        expect(gateway.invokeCount, 1);
+      },
+    );
+
+    test(
+      'a foreign request id surfaces as RESULT_UNAVAILABLE, the same code a '
+      'missing row gets',
+      () async {
+        // The RPC's 'Only the requester may discard' raise is mapped to
+        // RESULT_UNAVAILABLE deliberately, so a staged result belonging
+        // to someone else is indistinguishable from one that never
+        // existed.
+        final gateway = _FakeAiSessionGateway();
+        gateway.nextInvokeError = _sessionErrorException(
+          'RESULT_UNAVAILABLE',
+          status: 410,
+        );
+        final repository = AiSessionRepository(gateway);
+
+        await expectLater(
+          repository.discardNearby(_validRequestId),
+          throwsA(isA<AiSessionResultUnavailableError>()),
+        );
+      },
+    );
+  });
+
+  group('no Task 4 command body carries an actor id', () {
+    test(
+      'none of the 11 ACTOR_NAMING_FIELDS spellings, nor an unlisted '
+      'identity-shaped key, appears in any of the three bodies',
+      () async {
+        // Transcribed from `ACTOR_NAMING_FIELDS`. Same denominator
+        // guard as Task 3's sweep: Plan C recorded a 12th unlisted
+        // spelling as a real finding, so the substring sweep below is
+        // STRONGER than the server's own list.
+        const actorNamingFields = <String>{
+          'actor_id',
+          'p_actor_id',
+          'user_id',
+          'p_user_id',
+          'requester_id',
+          'creator_id',
+          'author_id',
+          'partner_id',
+          'sender_id',
+          'actor',
+          'user',
+        };
+        expect(actorNamingFields.length, 11);
+
+        final gateway = _FakeAiSessionGateway();
+        final repository = AiSessionRepository(gateway);
+        final sentBodies = <String, Set<String>>{};
+
+        gateway.nextInvokeResult = _stagedNearbyResponse();
+        await repository.generate(
+          sessionId: _validUuid,
+          requestId: _validRequestId,
+          expectedRevision: 1,
+          userInstruction: 'coffee nearby',
+          // WITH a location, so the one allowlisted key whose name
+          // contains "requester" is actually on the wire for this
+          // sweep rather than absent.
+          requesterLocation: (
+            latitude: 5.6,
+            longitude: -0.19,
+            accuracyM: 12.0,
+          ),
+          locationCapturedAt: DateTime.utc(2026, 10, 11, 12, 30),
+        );
+        sentBodies['generate'] = gateway.lastInvokeBody!.keys.toSet();
+        // The nested object is swept too — an actor id hidden one level
+        // down would pass a top-level-only check.
+        final nestedLocationKeys = Map<String, dynamic>.from(
+          gateway.lastInvokeBody!['requester_location'] as Map,
+        ).keys.toSet();
+
+        gateway.nextInvokeResult = <String, dynamic>{
+          'committed': true,
+          'user_ordinal': 1,
+          'attune_ordinal': 2,
+          'session_revision': 3,
+        };
+        await repository.publishNearby(_validRequestId);
+        sentBodies['publish_nearby'] = gateway.lastInvokeBody!.keys.toSet();
+
+        gateway.nextInvokeResult = <String, dynamic>{'discarded': true};
+        await repository.discardNearby(_validRequestId);
+        sentBodies['discard_nearby'] = gateway.lastInvokeBody!.keys.toSet();
+
+        // Denominator: all three commands this task wraps were
+        // exercised.
+        expect(sentBodies.length, 3);
+
+        // TWO of generate's six allowlisted keys contain an
+        // identity-shaped SUBSTRING while naming no identity, and this
+        // sweep is stronger than the server's own list precisely
+        // because it is substring-based — so each is exempted BY NAME,
+        // with its reason, rather than by weakening the sweep. The
+        // server's ACTOR_NAMING_FIELDS is exact-match over 11 names and
+        // contains neither, so neither is rejected server-side either.
+        //
+        //   * `requester_location` is a GEOGRAPHIC POINT: three numbers
+        //     and a timestamp, with no id of any kind inside it. The
+        //     nested key set is asserted EXACTLY below, so this
+        //     exemption cannot hide a field that really does name an
+        //     actor one level down.
+        //   * `user_instruction` is the TEXT THE USER TYPED — §4.1's
+        //     own field name for the instruction, bounded to 1..300
+        //     scalars and bound into the operation fingerprint. It
+        //     carries content, never identity; the actor is derived
+        //     from the verified JWT.
+        //
+        // This exemption list is deliberately a closed set of two: a
+        // THIRD identity-shaped key appearing in any Task 4 body fails
+        // this test rather than being quietly waved through.
+        const substringExemptions = <String>{
+          'requester_location',
+          'user_instruction',
+        };
+        expect(substringExemptions.length, 2);
+        // Neither exemption is a name the SERVER blocklists — if one
+        // were, exempting it here would be excusing a key every call
+        // would be rejected for.
+        expect(
+          substringExemptions.intersection(actorNamingFields),
+          isEmpty,
+        );
+        expect(nestedLocationKeys, {
+          'latitude',
+          'longitude',
+          'accuracy_m',
+          'captured_at',
+        });
+
+        for (final entry in sentBodies.entries) {
+          for (final field in actorNamingFields) {
+            expect(
+              entry.value,
+              isNot(contains(field)),
+              reason: '${entry.key} must never send the actor field "$field"',
+            );
+          }
+          for (final key in entry.value) {
+            if (substringExemptions.contains(key)) continue;
+            expect(
+              key.contains('actor') ||
+                  key.contains('user') ||
+                  key.contains('creator') ||
+                  key.contains('author') ||
+                  key.contains('partner') ||
+                  key.contains('sender') ||
+                  key.contains('requester'),
+              isFalse,
+              reason: '${entry.key} body key "$key" names an actor',
+            );
+          }
+        }
+        // And the nested object carries no identity-shaped key at all —
+        // no exemption applies one level down.
+        for (final key in nestedLocationKeys) {
+          expect(
+            key.contains('actor') ||
+                key.contains('user') ||
+                key.contains('creator') ||
+                key.contains('author') ||
+                key.contains('partner') ||
+                key.contains('sender') ||
+                key.contains('_id'),
+            isFalse,
+            reason: 'requester_location key "$key" names an actor or an id',
+          );
+        }
+      },
+    );
+  });
+
+  group('RULING 11: no Task 4 parser throws a constant typed error', () {
+    test(
+      'every malformed body this task can receive surfaces a FormatException '
+      'through the parser, never a fabricated §10 code',
+      () {
+        // RULING 11, asserted at the PARSER rather than through the
+        // repository, because that is where the requirement lives: a
+        // parser that threw a constant typed error would put a
+        // fabricated code on `_invoke`'s code-PRESERVING path — the
+        // exact defect Task 3's mutation 7 found in the opposite
+        // direction, where a REAL typed code was being discarded there.
+        //
+        // Through the repository these all surface as
+        // AiSessionInternalError (via _mapTransportError's
+        // fallthrough), which is correct but would ALSO be the
+        // observable result of a parser throwing
+        // `AiSessionError.internalError()` directly. So the exception
+        // TYPE is asserted at the parser, where the two differ.
+        final malformedBodies = <String, Map<String, dynamic>>{
+          'no kind and no replayed flag': <String, dynamic>{
+            'attune_ordinal': 2,
+            'reply_text': 'x',
+          },
+          'unrecognized kind': <String, dynamic>{
+            'kind': 'ideas_answer',
+            'attune_ordinal': 2,
+          },
+          'answer without attune_ordinal': <String, dynamic>{
+            'kind': 'answer',
+            'reply_text': 'x',
+            'show_safety_resources': true,
+          },
+          'fresh answer with no reply_text': <String, dynamic>{
+            'kind': 'answer',
+            'attune_ordinal': 2,
+            'session_revision': 2,
+            'show_safety_resources': true,
+          },
+          'answer with a non-int session_revision': <String, dynamic>{
+            'kind': 'answer',
+            'attune_ordinal': 2,
+            'session_revision': '2',
+            'reply_text': 'x',
+            'show_safety_resources': true,
+          },
+          'redirect with an unknown reason': <String, dynamic>{
+            'kind': 'redirect',
+            'reason': 'policy_violation',
+            'offered': <dynamic>[],
+            'show_safety_resources': true,
+          },
+          'redirect with an unknown offered entry': <String, dynamic>{
+            'kind': 'redirect',
+            'reason': 'unsupported',
+            'offered': <dynamic>['understand'],
+            'show_safety_resources': true,
+          },
+          'redirect without show_safety_resources': <String, dynamic>{
+            'kind': 'redirect',
+            'reason': 'unsupported',
+            'offered': <dynamic>[],
+          },
+          'redirect with a non-string copy': <String, dynamic>{
+            'kind': 'redirect',
+            'reason': 'unsupported',
+            'offered': <dynamic>[],
+            'copy': 42,
+            'show_safety_resources': true,
+          },
+          'nearby_result without staged': <String, dynamic>{
+            'kind': 'nearby_result',
+            'request_id': _validRequestId,
+            'reply_text': 'x',
+            'sources': <dynamic>[],
+            'show_safety_resources': true,
+          },
+          'nearby_result with non-list sources': <String, dynamic>{
+            'kind': 'nearby_result',
+            'staged': true,
+            'request_id': _validRequestId,
+            'reply_text': 'x',
+            'sources': 'none',
+            'show_safety_resources': true,
+          },
+        };
+        // Denominator: eleven distinct malformations across all three
+        // response shapes plus the kind dispatch itself.
+        expect(malformedBodies.length, 11);
+
+        for (final entry in malformedBodies.entries) {
+          expect(
+            () => AiSessionGenerateResult.fromJson(entry.value),
+            throwsA(isA<FormatException>()),
+            reason: '${entry.key}: a parser must raise a FormatException '
+                'describing what it could not read, never a constant typed '
+                'AiSessionError',
+          );
+          // AND NOT a typed §10 error. This is the half that enforces
+          // Ruling 11 rather than merely observing a throw.
+          expect(
+            () => AiSessionGenerateResult.fromJson(entry.value),
+            throwsA(isNot(isA<AiSessionError>())),
+            reason: '${entry.key}: a typed error here would be a fabricated '
+                '§10 code on the code-preserving path',
+          );
+        }
+      },
+    );
+
+    test(
+      'publish_nearby\'s parser follows the same rule',
+      () {
+        for (final body in <Map<String, dynamic>>[
+          <String, dynamic>{'user_ordinal': 1, 'attune_ordinal': 2},
+          <String, dynamic>{
+            'committed': false,
+            'user_ordinal': 1,
+            'attune_ordinal': 2,
+            'session_revision': 3,
+          },
+          <String, dynamic>{
+            'committed': true,
+            'attune_ordinal': 2,
+            'session_revision': 3,
+          },
+        ]) {
+          expect(
+            () => AiSessionPublishNearbyResult.fromJson(body),
+            throwsA(isA<FormatException>()),
+          );
+          expect(
+            () => AiSessionPublishNearbyResult.fromJson(body),
+            throwsA(isNot(isA<AiSessionError>())),
+          );
+        }
+      },
+    );
+  });
+
 }

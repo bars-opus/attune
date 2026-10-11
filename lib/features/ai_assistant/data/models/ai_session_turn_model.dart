@@ -467,3 +467,642 @@ class AiSessionTranscript {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// The `generate` command's RESPONSE types (spec §5.3, §8.1).
+//
+// NOT transcript turns. These are what `generate` hands back to ITS OWN
+// REQUESTER, and the distinction is load-bearing in two directions:
+//
+//   * A REDIRECT is never committed anywhere (§5.3 as amended by Plan C
+//     Task 6 / Item B: "NO redirect becomes a transcript pair. ALL
+//     redirects are requester-only"), so it has no ordinal, no
+//     created_at and no row — modelling it as an
+//     `AiSessionTurnModel` subtype would require inventing all three.
+//     See [AiSessionTurnKind]'s header for why a durable redirect is a
+//     safety side channel.
+//   * A NEARBY GENERATION is only STAGED. `dispatchNearby` calls
+//     `stage_ai_session_nearby_result` and returns
+//     `{kind: "nearby_result", staged: true, ...}`; the transcript pair
+//     does not exist until `publish_nearby` commits it. So it carries
+//     no ordinals either, and a client must not render it into a
+//     transcript.
+//
+// `generate` has FOUR success shapes on the wire, which is one more than
+// the plan's own description of it and two more than the task brief's.
+// Transcribed from the five `jsonResponse` call sites reachable from
+// `handleGenerate`:
+//
+//   1. IDEAS ANSWER (dispatchIdeas, index.ts:2726)
+//      {kind: "answer", user_ordinal, attune_ordinal, session_revision,
+//       reply_text, suggested_planning_item, show_safety_resources}
+//   2. ORDINARY REDIRECT (dispatchIdeas:2707, dispatchNearby:2806)
+//      {kind: "redirect", reason, offered, show_safety_resources}
+//   3. SAFETY REFUSAL (safetyRefusalResponse:2145, reached from five
+//      call sites across both dispatchers and the pre-dispatch pass)
+//      {kind: "redirect", reason, copy, show_safety_resources,
+//       offered: []}
+//   4. NEARBY STAGED (dispatchNearby:2888)
+//      {kind: "nearby_result", staged: true, request_id, reply_text,
+//       sources, show_safety_resources}
+//   5. IDEMPOTENT REPLAY (replayAdmittedRequest:2555) — and this one
+//      HAS NO `kind` KEY AT ALL:
+//      {user_ordinal, attune_ordinal, reply_text,
+//       suggested_planning_item, replayed: true}
+//
+// Shapes 2 and 3 are parsed by ONE type with NO branch between them.
+// See [AiSessionGeneratedRedirect], which is the most constrained type
+// in this file and whose header explains why.
+// ---------------------------------------------------------------------------
+
+/// What `generate` returns. Sealed, so a renderer must handle every
+/// reachable outcome and cannot fall through to a default.
+sealed class AiSessionGenerateResult {
+  const AiSessionGenerateResult();
+
+  /// Parses whichever of `generate`'s shapes arrived.
+  ///
+  /// ## The dispatch reads `kind`, and `kind` ALONE distinguishes the
+  /// three cases a caller can act on
+  ///
+  /// It must NOT be read as distinguishing a safety refusal from an
+  /// ordinary redirect: both send `kind: "redirect"`, and this factory
+  /// returns the SAME type for both with no record of which arrived.
+  ///
+  /// ## An ABSENT `kind` is the idempotent replay, not a malformed body
+  ///
+  /// `replayAdmittedRequest` omits `kind` entirely — it projects the
+  /// committed turn's stored payload rather than re-deriving the
+  /// generated shape — so "no kind, but `replayed: true`" is a legal
+  /// answer and the only one that means "your earlier request already
+  /// succeeded; here it is again, and no provider was called".
+  /// Anything else missing `kind` throws.
+  ///
+  /// Throws [FormatException] — never a typed [AiSessionError] — on any
+  /// shape it cannot read. That is deliberate and is a requirement, not
+  /// a preference: `AiSessionRepository._invoke` routes a parser
+  /// exception through `_mapTransportError`, whose entire job is to
+  /// PRESERVE a §10 code. A parser that threw a CONSTANT typed error
+  /// would put a fabricated code on that path, which is the defect
+  /// Task 3's mutation 7 found in the opposite direction. A parse
+  /// failure is not a §10 outcome; it is a malformed response, and
+  /// `_mapTransportError`'s fallthrough is what turns it into
+  /// [AiSessionInternalError].
+  factory AiSessionGenerateResult.fromJson(Map<String, dynamic> json) {
+    final kind = json['kind'];
+    if (kind == null) {
+      // The replay. `replayed` must be literally true: a body with
+      // neither `kind` nor `replayed` is malformed, and defaulting it
+      // to an answer would invent an outcome.
+      if (json['replayed'] != true) {
+        throw const FormatException(
+          'AiSessionGenerateResult.fromJson: body has no "kind" and is not '
+          'a replay (expected replayed: true)',
+        );
+      }
+      return AiSessionGeneratedAnswer._fromJson(json, replayed: true);
+    }
+    switch (kind) {
+      case 'answer':
+        return AiSessionGeneratedAnswer._fromJson(json, replayed: false);
+      case 'redirect':
+        return AiSessionGeneratedRedirect._fromJson(json);
+      case 'nearby_result':
+        return AiSessionStagedNearbyGeneration._fromJson(json);
+      default:
+        throw FormatException(
+          'AiSessionGenerateResult.fromJson: unrecognized kind "$kind"',
+        );
+    }
+  }
+}
+
+/// A committed Ideas answer — shape 1 — or its idempotent replay,
+/// shape 5.
+///
+/// ## One type for the fresh answer and the replay, with [replayed]
+/// carried rather than hidden
+///
+/// Both describe the same durable fact: a transcript pair exists at
+/// these ordinals with this reply. The difference a caller can act on
+/// is that a replay means NO NEW PROVIDER CALL HAPPENED and no quota
+/// moved (§6.2: "For an existing actor/request ID, return its
+/// state/result ... NEVER A NEW PROVIDER LEASE"), which is a fact about
+/// the caller's own retry and not about anyone's private state — unlike
+/// the redirect distinction, which is why this flag is exposed and that
+/// one is not.
+///
+/// ## [sessionRevision] is NULLABLE, and gate 1 is why
+///
+/// `dispatchIdeas` sends `session_revision` and the replay path does
+/// NOT. So a replay legitimately has none, and null means "this
+/// response did not carry one", never "the revision is zero". A client
+/// must not synthesize one: the revision is only ever returned to the
+/// actor who caused the bump, so there is nothing to fall back to.
+class AiSessionGeneratedAnswer extends AiSessionGenerateResult {
+  /// The user turn's ordinal, `2n-1`. **NULLABLE on the replay path**:
+  /// `replayAdmittedRequest` sends `userTurn?.ordinal ?? null`, so a
+  /// committed Attune turn whose user row could not be matched reports
+  /// null rather than failing.
+  final int? userOrdinal;
+
+  /// The Attune turn's ordinal, `2n`. Always present — both paths send
+  /// it, and `replayAdmittedRequest` returns SESSION_BUSY rather than a
+  /// body when no committed Attune turn exists.
+  ///
+  /// **MAY BE NON-CONTIGUOUS WITH ANY EARLIER TURN.** See
+  /// [AiSessionTurnModel.ordinal].
+  final int attuneOrdinal;
+
+  /// The session's post-commit revision, or null on a replay. See the
+  /// class header.
+  final int? sessionRevision;
+
+  /// **NULLABLE on the replay path only.** `dispatchIdeas` validated a
+  /// non-empty string before committing, but the replay projects
+  /// `payload.reply_text ?? null` from the stored row — and for a
+  /// replayed NEARBY request that payload is a nearby_result payload,
+  /// so a client must be ready for a null here rather than assume a
+  /// fresh answer's guarantees.
+  final String? replyText;
+
+  final SuggestedPlanningItem? suggestedPlanningItem;
+
+  /// True when the server answered from the already-committed turn
+  /// instead of generating. See the class header.
+  final bool replayed;
+
+  const AiSessionGeneratedAnswer({
+    required this.userOrdinal,
+    required this.attuneOrdinal,
+    required this.sessionRevision,
+    required this.replyText,
+    required this.suggestedPlanningItem,
+    required this.replayed,
+  });
+
+  factory AiSessionGeneratedAnswer._fromJson(
+    Map<String, dynamic> json, {
+    required bool replayed,
+  }) {
+    final attuneOrdinal = json['attune_ordinal'];
+    if (attuneOrdinal is! int) {
+      throw const FormatException(
+        'AiSessionGeneratedAnswer: missing/invalid attune_ordinal',
+      );
+    }
+    final userOrdinal = json['user_ordinal'];
+    if (userOrdinal != null && userOrdinal is! int) {
+      throw const FormatException(
+        'AiSessionGeneratedAnswer: invalid user_ordinal',
+      );
+    }
+    final sessionRevision = json['session_revision'];
+    if (sessionRevision != null && sessionRevision is! int) {
+      throw const FormatException(
+        'AiSessionGeneratedAnswer: invalid session_revision',
+      );
+    }
+    final replyText = json['reply_text'];
+    if (replyText != null && replyText is! String) {
+      throw const FormatException(
+        'AiSessionGeneratedAnswer: invalid reply_text',
+      );
+    }
+    // A FRESH answer always carries a validated non-empty reply_text
+    // (isAcceptableOutputText enforced 1..2000 scalars before the
+    // commit). A replay may not — see [replyText]. So the requirement
+    // is conditional on the path rather than dropped for both.
+    if (!replayed && (replyText == null || (replyText as String).isEmpty)) {
+      throw const FormatException(
+        'AiSessionGeneratedAnswer: a fresh answer must carry reply_text',
+      );
+    }
+    final rawItem = json['suggested_planning_item'];
+    SuggestedPlanningItem? suggestedItem;
+    if (rawItem != null) {
+      if (rawItem is! Map) {
+        throw const FormatException(
+          'AiSessionGeneratedAnswer: invalid suggested_planning_item',
+        );
+      }
+      suggestedItem = SuggestedPlanningItem.fromJson(
+        Map<String, dynamic>.from(rawItem),
+      );
+    }
+    return AiSessionGeneratedAnswer(
+      userOrdinal: userOrdinal as int?,
+      attuneOrdinal: attuneOrdinal,
+      sessionRevision: sessionRevision as int?,
+      replyText: replyText as String?,
+      suggestedPlanningItem: suggestedItem,
+      replayed: replayed,
+    );
+  }
+}
+
+/// A redirect from `generate` — **shapes 2 AND 3, through ONE type,
+/// with no branch between them and no member whose value differs.**
+///
+/// # READ THIS BEFORE ADDING ANY MEMBER
+///
+/// `generate` emits `kind: "redirect"` from two places that must be
+/// indistinguishable to a client:
+///
+///   * `safetyRefusalResponse` (index.ts:2145) — a deterministic safety
+///     detector fired. Carries a server-rendered `copy` and an EMPTY
+///     `offered`.
+///   * the model's own ordinary redirect (index.ts:2707 / :2806) — the
+///     request was out of scope. Carries NO `copy`.
+///
+/// They deliberately share the `kind` **and** the reason set
+/// (`unsupported | unsafe_to_assist | insufficient_context`). That
+/// sharing is the non-disclosure property, not an accident of
+/// implementation: Plan C Task 6 established that a redirect which was
+/// durable or distinguishable would disclose that a safety detector
+/// fired, and §8.1 forbids revealing which detector fired — to the
+/// partner AND to the requester, whose own probing is the attack the
+/// shared reason set defeats. The server goes further than it has to in
+/// order to keep them identical: the HTTP status is 200 on both, both
+/// settle the request row with the SAME reason-free RPC, and neither
+/// bumps `ai_sessions.revision`.
+///
+/// ## Therefore this type exposes NO distinguishing member
+///
+/// **Anything whose value differs between the two shapes reconstructs
+/// the detector signal client-side**, which is the exact disclosure
+/// §8.1 forbids, and would do it in the one place a probing requester
+/// can reach. Specifically, this type must never grow:
+///
+///   * `isSafetyRefusal`, `wasBlocked`, `isUnsafe`, `blocked` — the
+///     signal named outright;
+///   * a public `copy` getter, or anything equivalent to `copy != null`
+///     (`hasCopy`, `hasServerCopy`, `copyOrNull`) — present on one
+///     shape and absent on the other, so it IS the signal;
+///   * anything equivalent to `offered.isEmpty` as a proxy
+///     (`hasAlternatives`, `canOfferAnything`) — a refusal always sends
+///     `[]`, so emptiness is a strong oracle even though an ordinary
+///     redirect may also legally send `[]`;
+///   * a `shape`/`source`/`variant` discriminator of any kind.
+///
+/// [copy] is PRIVATE for that reason, and [resolveCopy] is the only way
+/// to reach it: it takes the generic copy a caller would otherwise have
+/// written and returns whichever string should be shown, so the call
+/// site renders correct text **without ever asking which shape it
+/// got**. A UI that calls it cannot tell, a UI that wants to tell has
+/// nothing to call, and the easy path is the safe one.
+///
+/// ## What IS safe to expose, and why
+///
+///   * [reason] — the SAME three-value set on both paths. A safety
+///     refusal reports `unsafe_to_assist` or `unsupported`
+///     (`classifySessionContent`'s only two refusing returns), and the
+///     model may report either of those too. So reading it narrows
+///     nothing: `unsupported` is the ordinary out-of-scope answer AND
+///     the fail-closed answer for content the corpus could not
+///     evaluate.
+///   * [offered] — a list on both paths. Rendering its entries is fine;
+///     branching on its emptiness is not. See above.
+///   * [showSafetyResources] — `classifySessionContent` sets it true at
+///     ALL THREE return points including the allowed one, and both
+///     redirect bodies hardcode `true`. It is a constant, so it is not
+///     a signal. It is carried rather than dropped because §8.1
+///     requires the link be offered, and a caller that needs to know
+///     whether to offer it should read a field rather than hardcode
+///     `true` and drift. **A caller must not treat its presence or its
+///     value as a signal either** — being constant, it cannot be one,
+///     and [AiSessionRepository] has a test that holds it constant.
+class AiSessionGeneratedRedirect extends AiSessionGenerateResult {
+  /// The exact key set the SAFETY shape sends, transcribed from
+  /// `safetyRefusalResponse`. Exposed only so a test can prove both
+  /// shapes parse and neither is distinguishable afterwards; nothing in
+  /// production reads it.
+  static const Set<String> safetyShapeWireKeys = {
+    'kind',
+    'reason',
+    'copy',
+    'show_safety_resources',
+    'offered',
+  };
+
+  /// The exact key set the ORDINARY shape sends, transcribed from
+  /// `dispatchIdeas`/`dispatchNearby`'s redirect branches. Its only
+  /// difference from [safetyShapeWireKeys] is `copy` — which is
+  /// precisely why `copy` is not readable from this type.
+  static const Set<String> ordinaryShapeWireKeys = {
+    'kind',
+    'reason',
+    'offered',
+    'show_safety_resources',
+  };
+
+  /// One of `unsupported`, `unsafe_to_assist`, `insufficient_context` —
+  /// the same set on both paths. See the class header.
+  final String reason;
+
+  /// The modes the server suggests instead, each `ideas` or `nearby`.
+  /// **Render the entries; never branch on the list being empty.**
+  final List<String> offered;
+
+  /// Constant-true on every path. See the class header; not a signal.
+  final bool showSafetyResources;
+
+  /// The server-rendered copy, when this body carried one.
+  ///
+  /// **PRIVATE, and it must stay private.** Its presence is exactly
+  /// what separates the two shapes, so a public accessor — or any
+  /// getter derived from it — would be the detector oracle this type
+  /// exists to prevent. Reachable only through [resolveCopy], which
+  /// cannot report whether it was null.
+  final String? _copy;
+
+  const AiSessionGeneratedRedirect({
+    required this.reason,
+    required this.offered,
+    required this.showSafetyResources,
+    required String? copy,
+  }) : _copy = copy;
+
+  /// The text to show the user: the server's own copy when this body
+  /// carried one, and [genericRedirectCopy] otherwise.
+  ///
+  /// **This is the whole public surface over [_copy], and it is a total
+  /// function.** It returns a non-null String for both shapes and
+  /// reveals nothing about which it received: a caller passes the copy
+  /// it would have rendered anyway and gets back the copy to render.
+  /// There is no overload, no flag and no second return value that
+  /// could leak the branch, and because [genericRedirectCopy] is
+  /// required rather than defaulted, a caller cannot accidentally
+  /// discover the server's copy by comparing against a known default.
+  ///
+  /// §5.3 requires the server's string be shown verbatim when present
+  /// ("server-rendered fixed copy from allowlisted reason") — nothing
+  /// is interpolated into it server-side, so nothing may be
+  /// interpolated into it here either.
+  String resolveCopy({required String genericRedirectCopy}) {
+    return _copy ?? genericRedirectCopy;
+  }
+
+  factory AiSessionGeneratedRedirect._fromJson(Map<String, dynamic> json) {
+    // ONE PARSE PATH FOR BOTH SHAPES. There is deliberately no
+    // `if (json.containsKey('copy'))` branch, no shape detection and
+    // no record of which arrived: `copy` is read with the same
+    // nullable lookup either way, so this factory COULD NOT report the
+    // difference even if a caller asked it to.
+    final reason = json['reason'];
+    if (reason is! String || reason.isEmpty) {
+      throw const FormatException(
+        'AiSessionGeneratedRedirect: missing/invalid reason',
+      );
+    }
+    // The three values `validateSessionTurnOutput` admits and
+    // `classifySessionContent` produces — ONE set shared by both
+    // shapes, which is the property that keeps the reason from being a
+    // signal. An unknown value is a malformed response rather than a
+    // fourth case to render.
+    if (reason != 'unsupported' &&
+        reason != 'unsafe_to_assist' &&
+        reason != 'insufficient_context') {
+      throw FormatException(
+        'AiSessionGeneratedRedirect: unrecognized reason "$reason"',
+      );
+    }
+    final rawOffered = json['offered'];
+    if (rawOffered is! List) {
+      throw const FormatException(
+        'AiSessionGeneratedRedirect: missing/invalid offered',
+      );
+    }
+    final offered = rawOffered.map((entry) {
+      if (entry is! String || (entry != 'ideas' && entry != 'nearby')) {
+        throw FormatException(
+          'AiSessionGeneratedRedirect: unrecognized offered entry "$entry"',
+        );
+      }
+      return entry;
+    }).toList(growable: false);
+    final rawCopy = json['copy'];
+    if (rawCopy != null && rawCopy is! String) {
+      throw const FormatException(
+        'AiSessionGeneratedRedirect: invalid copy',
+      );
+    }
+    final showSafetyResources = json['show_safety_resources'];
+    if (showSafetyResources is! bool) {
+      throw const FormatException(
+        'AiSessionGeneratedRedirect: missing/invalid show_safety_resources',
+      );
+    }
+    return AiSessionGeneratedRedirect(
+      reason: reason,
+      offered: offered,
+      showSafetyResources: showSafetyResources,
+      copy: rawCopy as String?,
+    );
+  }
+}
+
+/// A Nearby generation's STAGED result — shape 4.
+///
+/// **Nothing is committed and the partner can see nothing.** §5.3 / §2:
+/// the result "remain[s] requester-only staging until requester
+/// explicitly publishes that pair". So this type carries NO ordinals
+/// (none exist yet), NO `session_revision` (the revision has not moved)
+/// and is NOT an [AiSessionTurnModel]. The caller's next action is
+/// [AiSessionRepository.publishNearby] or
+/// [AiSessionRepository.discardNearby], keyed by [requestId].
+///
+/// **THERE IS NO CONFIRMATION NONCE HERE, AND THERE MUST NOT BE** — the
+/// same requirement [AiSessionStagedNearbyResult] records. The Nearby
+/// `confirmation_nonce` is DECORATIVE: `parseGenerateRequest`
+/// allowlists it inside `requester_location` and explicitly does NOT
+/// trust it ("no issuing RPC, no column and no table ... a nonce this
+/// function invents and immediately accepts would gate nothing while
+/// reading as implemented"). No response body echoes one, and
+/// `publish_nearby`'s allowlist is `{command, request_id}` — so
+/// publishing is authorized by the actor's JWT and the staging row's
+/// own author check, never by a nonce. A field here would present a
+/// confirmation control the server never issued.
+///
+/// Distinct from [AiSessionStagedNearbyResult], which is the same
+/// underlying row as `read` PROJECTS it, with `expires_at` and without
+/// `kind`/`staged`/`show_safety_resources`. They are not merged because
+/// their key sets differ: `generate` does not send `expires_at`, so a
+/// merged type would need it nullable and a caller could not tell a
+/// fresh stage's unknown expiry from a read's known one.
+class AiSessionStagedNearbyGeneration extends AiSessionGenerateResult {
+  /// The exact key set `dispatchNearby`'s staging response sends.
+  static const Set<String> wireKeys = {
+    'kind',
+    'staged',
+    'request_id',
+    'reply_text',
+    'sources',
+    'show_safety_resources',
+  };
+
+  /// The request id to pass to `publish_nearby`/`discard_nearby`. The
+  /// server echoes back the one the client sent.
+  final String requestId;
+
+  /// SERVER-ASSEMBLED, never model-written:
+  /// `buildNearbySessionReplyText` builds it from the category and the
+  /// place names, with a deterministic no-results branch.
+  final String replyText;
+
+  /// Zero to three cards. **Zero is valid** — §5.3's "Zero results is a
+  /// deterministic no-results card" — so an empty list is a real
+  /// outcome to render, not a failure.
+  final List<PlaceSourceModel> sources;
+
+  /// Constant-true. Not a signal; see [AiSessionGeneratedRedirect].
+  final bool showSafetyResources;
+
+  const AiSessionStagedNearbyGeneration({
+    required this.requestId,
+    required this.replyText,
+    required this.sources,
+    required this.showSafetyResources,
+  });
+
+  factory AiSessionStagedNearbyGeneration._fromJson(
+    Map<String, dynamic> json,
+  ) {
+    // `staged: true` is a literal the server always sends on this
+    // shape. Required rather than ignored: a `nearby_result` body
+    // WITHOUT it would mean the staging contract changed, and a client
+    // that rendered it as staged anyway could offer a publish button
+    // for a row that was already committed.
+    if (json['staged'] != true) {
+      throw const FormatException(
+        'AiSessionStagedNearbyGeneration: expected staged: true',
+      );
+    }
+    final requestId = json['request_id'];
+    if (requestId is! String || requestId.isEmpty) {
+      throw const FormatException(
+        'AiSessionStagedNearbyGeneration: missing/invalid request_id',
+      );
+    }
+    final replyText = json['reply_text'];
+    if (replyText is! String || replyText.isEmpty) {
+      throw const FormatException(
+        'AiSessionStagedNearbyGeneration: missing/invalid reply_text',
+      );
+    }
+    final rawSources = json['sources'];
+    if (rawSources is! List) {
+      throw const FormatException(
+        'AiSessionStagedNearbyGeneration: missing/invalid sources',
+      );
+    }
+    final showSafetyResources = json['show_safety_resources'];
+    if (showSafetyResources is! bool) {
+      throw const FormatException(
+        'AiSessionStagedNearbyGeneration: missing/invalid '
+        'show_safety_resources',
+      );
+    }
+    return AiSessionStagedNearbyGeneration(
+      requestId: requestId,
+      replyText: replyText,
+      // A malformed CARD propagates rather than being dropped — the
+      // same reasoning [AiSessionNearbyResultTurn] gives.
+      sources: rawSources
+          .map(
+            (source) => PlaceSourceModel.fromJson(
+              Map<String, dynamic>.from(source as Map),
+            ),
+          )
+          .toList(growable: false),
+      showSafetyResources: showSafetyResources,
+    );
+  }
+}
+
+/// `publish_nearby`'s success body (spec §5.3, §8.2.2).
+///
+/// Four fields, transcribed from `handlePublishNearby`'s own
+/// `jsonResponse`: `{committed, user_ordinal, attune_ordinal,
+/// session_revision}`. **The task brief claimed this command returns
+/// `{user_ordinal, attune_ordinal}` only and therefore that the client
+/// must `read` again to render the published pair; that is wrong on
+/// both counts** — the body carries the revision too, and the committed
+/// content is the staged content the caller already held.
+///
+/// ## [sessionRevision] reaches ONLY the actor who caused the bump
+///
+/// Gate 1. `publish_ai_session_nearby_result` bumps
+/// `ai_sessions.revision` in the same transaction that commits the
+/// pair, and this body is the only place that integer is disclosed —
+/// the PARTNER, who is the party that must poll to notice the new
+/// turns, cannot read it from any command. Nothing here may be built on
+/// the assumption that the partner can.
+class AiSessionPublishNearbyResult {
+  /// The exact key set `handlePublishNearby` returns.
+  static const Set<String> wireKeys = {
+    'committed',
+    'user_ordinal',
+    'attune_ordinal',
+    'session_revision',
+  };
+
+  /// `row.committed === true`. The RPC reports it true for a fresh
+  /// publish AND for an idempotent replay of one that already
+  /// succeeded, which is the point: a retry after a dropped response
+  /// must report success rather than `RESULT_UNAVAILABLE`.
+  final bool committed;
+
+  /// `2n-1` / `2n` for the published pair. **May be non-contiguous** —
+  /// see [AiSessionTurnModel.ordinal].
+  final int userOrdinal;
+  final int attuneOrdinal;
+
+  /// The post-publish revision. See the class header on gate 1.
+  final int sessionRevision;
+
+  const AiSessionPublishNearbyResult({
+    required this.committed,
+    required this.userOrdinal,
+    required this.attuneOrdinal,
+    required this.sessionRevision,
+  });
+
+  factory AiSessionPublishNearbyResult.fromJson(Map<String, dynamic> json) {
+    final committed = json['committed'];
+    if (committed is! bool) {
+      throw const FormatException(
+        'AiSessionPublishNearbyResult: missing/invalid committed',
+      );
+    }
+    // `committed: false` is not something the RPC can return on a
+    // success status — it raises instead, and the branch maps every
+    // raise to a §10 code. So a false here is a malformed response
+    // rather than a "published nothing" outcome to render.
+    if (!committed) {
+      throw const FormatException(
+        'AiSessionPublishNearbyResult: committed was false on a success '
+        'response',
+      );
+    }
+    final userOrdinal = json['user_ordinal'];
+    final attuneOrdinal = json['attune_ordinal'];
+    if (userOrdinal is! int || attuneOrdinal is! int) {
+      throw const FormatException(
+        'AiSessionPublishNearbyResult: missing/invalid ordinals',
+      );
+    }
+    final sessionRevision = json['session_revision'];
+    if (sessionRevision is! int) {
+      throw const FormatException(
+        'AiSessionPublishNearbyResult: missing/invalid session_revision',
+      );
+    }
+    return AiSessionPublishNearbyResult(
+      committed: committed,
+      userOrdinal: userOrdinal,
+      attuneOrdinal: attuneOrdinal,
+      sessionRevision: sessionRevision,
+    );
+  }
+}

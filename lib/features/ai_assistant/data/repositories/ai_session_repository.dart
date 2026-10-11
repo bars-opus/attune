@@ -437,8 +437,233 @@ class AiSessionRepository {
     );
   }
 
-  // Task 4 adds generate.
-  // Task 6 adds publishNearby/discardNearby.
+  /// `generate` (spec §4.1, §5.3, §8.1): runs one generation attempt.
+  ///
+  /// ## It returns ONE OF FOUR SHAPES, and the sealed result carries
+  /// three of them
+  ///
+  /// [AiSessionGenerateResult] is sealed on the outcome the caller can
+  /// act on: an [AiSessionGeneratedAnswer] (a committed Ideas pair, or
+  /// its idempotent replay), an [AiSessionGeneratedRedirect], or an
+  /// [AiSessionStagedNearbyGeneration] (requester-only staging — the
+  /// transcript pair does not exist until [publishNearby]). **The task
+  /// brief described only the first two and said the Nearby path was
+  /// unimplemented; it ships, at `dispatchNearby`, and it is a
+  /// different response shape rather than a turn.**
+  ///
+  /// ## THE TWO REDIRECT SHAPES ARE PARSED BY ONE TYPE, WITH NO BRANCH
+  ///
+  /// `safetyRefusalResponse` and the model's own redirect both send
+  /// `kind: "redirect"` and draw their `reason` from the same set.
+  /// Reconstructing which arrived — from a `copy != null` test, an
+  /// `offered.isEmpty` test, or any getter whose value differs — would
+  /// disclose that a safety detector fired, which §8.1 forbids. This
+  /// method therefore hands back [AiSessionGeneratedRedirect] for both
+  /// and keeps no record of which it was; see that type's header, which
+  /// is the longest in this feature for that reason.
+  ///
+  /// ## [expectedRevision] is the optimistic-concurrency fence
+  ///
+  /// It is the revision the caller last saw, and it is bound into
+  /// `admit_ai_session_generation`'s operation fingerprint. A mismatch
+  /// is [AiSessionContextChangedError], **whose remedy is always to
+  /// call [reviewContext] again and approve the digest it returns** —
+  /// never to recompute-and-retry, and never to bump the number
+  /// locally and send it again. A client cannot recompute the digest
+  /// (gate 2: the window's snippets are hashed as the live selection
+  /// produced them, not as any column stores them), so there is no
+  /// local path back to a valid approval. Retrying the same
+  /// [requestId] with a DIFFERENT revision is
+  /// [AiSessionRequestConflictError], because the fingerprint changed;
+  /// retrying with the same revision replays the original answer and
+  /// makes no provider call.
+  ///
+  /// ## [requesterLocation] is required for Nearby and FORBIDDEN for
+  /// Ideas
+  ///
+  /// `handleGenerate` enforces both directions: a Nearby session
+  /// without a point is `LOCATION_REQUIRED`, and an Ideas session WITH
+  /// one is `INVALID_INPUT` rather than a quietly ignored field,
+  /// because "a client that believes it sent a location must not be
+  /// told it worked". The session's kind lives on the server row, not
+  /// in this signature, so this method sends what it is given and lets
+  /// the server rule.
+  ///
+  /// [locationCapturedAt] is REQUIRED whenever [requesterLocation] is
+  /// supplied, and it is a separate parameter because the shared
+  /// [RequesterLocation] typedef — which `ai-assist` also uses — has no
+  /// field for it. `parseGenerateRequest` requires
+  /// `requester_location.captured_at` to be a string and answers
+  /// `LOCATION_REQUIRED` when it is absent, then compares it to the
+  /// server's own instant and answers `LOCATION_EXPIRED` beyond two
+  /// minutes. **The task brief's sketch sent only
+  /// `{latitude, longitude, accuracy_m}`, so every brief-faithful
+  /// Nearby generation would have failed `LOCATION_REQUIRED`** — the
+  /// same defect class as Task 1's missing `utc_offset_minutes`.
+  /// Extending the typedef instead was rejected as the broader change:
+  /// it is shared with `AiAssistantRepository.requestAssist` and
+  /// `assist_sheet.dart`, neither of which sends a timestamp.
+  ///
+  /// The two location codes are distinct and so are their remedies:
+  /// [AiSessionLocationRequiredError] means ask for permission,
+  /// [AiSessionLocationExpiredError] means recapture the point. Neither
+  /// may be retried with the same stale reading.
+  ///
+  /// **No confirmation nonce is sent.** `parseGenerateRequest`
+  /// allowlists `confirmation_nonce` inside `requester_location` and
+  /// explicitly does not trust it — gate 4: no RPC, column or table
+  /// issues one. Sending a value this client invented would be a
+  /// confirmation control that gates nothing, so the key is omitted
+  /// entirely and no parameter offers it.
+  Future<AiSessionGenerateResult> generate({
+    required String sessionId,
+    required String requestId,
+    required int expectedRevision,
+    required String userInstruction,
+    RequesterLocation? requesterLocation,
+    DateTime? locationCapturedAt,
+  }) {
+    if (requesterLocation != null && locationCapturedAt == null) {
+      // Refused locally rather than sent: the server answers
+      // LOCATION_REQUIRED for a missing `captured_at`, whose §10 remedy
+      // is "ask for permission" — which would be the wrong thing to
+      // show a user whose permission was already granted and whose
+      // point this client simply failed to timestamp. An ArgumentError
+      // (not an AiSessionError) because it is a programming mistake at
+      // this call site, not a server outcome.
+      throw ArgumentError(
+        'generate: locationCapturedAt is required when requesterLocation is '
+        'supplied — parseGenerateRequest answers LOCATION_REQUIRED without '
+        'requester_location.captured_at',
+      );
+    }
+    return _invoke(
+      command: 'generate',
+      // Exactly `parseGenerateRequest`'s allowlist: session_id,
+      // request_id, expected_revision, user_instruction,
+      // requester_location (plus the `command` _invoke injects).
+      //
+      // `requester_location` is OMITTED rather than sent as null when
+      // there is none. The server treats null and undefined alike here
+      // (`rawLocation !== null && rawLocation !== undefined`), so both
+      // work today — but omitting keeps "I sent no location" literal on
+      // the wire, the same choice `read` makes for `request_id`.
+      //
+      // NOT SENT, and each would be INVALID_INPUT: relationship_id,
+      // kind, visibility, utc_offset_minutes, policy_version, digest,
+      // and any actor-naming field. The relationship, kind and
+      // visibility all come from the session row the server looks up.
+      body: {
+        'session_id': sessionId,
+        'request_id': requestId,
+        'expected_revision': expectedRevision,
+        'user_instruction': userInstruction,
+        if (requesterLocation != null)
+          'requester_location': <String, dynamic>{
+            'latitude': requesterLocation.latitude,
+            'longitude': requesterLocation.longitude,
+            'accuracy_m': requesterLocation.accuracyM,
+            // §4.1's two-minute freshness window is measured against
+            // this, so it must be the instant the fix was TAKEN, not
+            // the instant of this call. UTC: `Date.parse` is applied
+            // server-side and compared to the server's own instant, so
+            // a local-time string without an offset would be read as
+            // the wrong moment.
+            'captured_at': locationCapturedAt!.toUtc().toIso8601String(),
+            // `confirmation_nonce` is deliberately absent — gate 4.
+          },
+      },
+      onResult: AiSessionGenerateResult.fromJson,
+    );
+  }
+
+  /// `publish_nearby` (spec §5.3, §8.2.2): turns the caller's own
+  /// staged Nearby result into a shared transcript pair.
+  ///
+  /// Takes ONLY the [requestId] — `handlePublishNearby`'s allowlist is
+  /// exactly `{command, request_id}`. No session id (the server
+  /// resolves it from the request row), no nonce (gate 4: none exists),
+  /// and no actor (the JWT).
+  ///
+  /// ## It returns the ordinals AND the revision
+  ///
+  /// `{committed, user_ordinal, attune_ordinal, session_revision}`.
+  /// **The brief asserted the body was `{user_ordinal, attune_ordinal}`
+  /// and concluded the caller must therefore `read` again to render the
+  /// published pair, then changed the return type to `Future<void>` on
+  /// that basis. Both steps are wrong**: the revision is in the body,
+  /// and the content that was just committed is the staged content the
+  /// caller already holds from [generate]. Returning
+  /// [AiSessionPublishNearbyResult] costs no round trip and is what
+  /// gate 1's poll needs.
+  ///
+  /// [AiSessionPublishNearbyResult.sessionRevision] is disclosed ONLY
+  /// to this actor — the partner, who must poll to notice the new
+  /// turns, cannot read it from any command (gate 1).
+  ///
+  /// ## Publishing is idempotent, and a safety refusal is not
+  ///
+  /// A retry of a publish that already succeeded returns its original
+  /// ordinals rather than `RESULT_UNAVAILABLE`, because the RPC answers
+  /// from its own `committed` branch before its consent gate. But the
+  /// branch also re-runs the deterministic safety pass over the STORED
+  /// staged fields first — the corpus is versioned, and the staging
+  /// window must not be a hole in it — and a refusal there returns the
+  /// SAME `kind: "redirect"` body `generate` would have, at HTTP 200,
+  /// committing nothing.
+  ///
+  /// **So a 200 from this command is not necessarily a publish.** That
+  /// body is a redirect, not an [AiSessionPublishNearbyResult], and it
+  /// has no `committed` key — so parsing it raises a [FormatException]
+  /// and surfaces as [AiSessionInternalError], which is the wrong thing
+  /// to show a user. Resolving it properly requires a UI decision about
+  /// what to render for a publish-time refusal, which belongs to the
+  /// sheet task; it is recorded here rather than papered over, and
+  /// nothing here reports which happened.
+  ///
+  /// Throws [AiSessionResultUnavailableError] when there is no staged
+  /// result to publish — expired, already discarded, or belonging to
+  /// someone else, all one code deliberately — or
+  /// [AiSessionConsentRequiredError] when consent moved since staging.
+  Future<AiSessionPublishNearbyResult> publishNearby(String requestId) {
+    return _invoke(
+      command: 'publish_nearby',
+      // Exactly `handlePublishNearby`'s allowlist.
+      body: {'request_id': requestId},
+      onResult: AiSessionPublishNearbyResult.fromJson,
+    );
+  }
+
+  /// `discard_nearby` (spec §8.2.2): throws away the caller's own
+  /// staged Nearby result.
+  ///
+  /// Takes ONLY the [requestId] — `handleDiscardNearby`'s allowlist is
+  /// exactly `{command, request_id}`.
+  ///
+  /// Returns nothing, deliberately, for the same reason [end] does. The
+  /// server answers `{discarded: true}` idempotently for a row it just
+  /// deleted, one already discarded, one already published, one that
+  /// expired AND one belonging to another actor — the RPC's
+  /// foreign-actor raise is mapped to `RESULT_UNAVAILABLE`, the same
+  /// code a missing row would get, precisely so the two agree. The
+  /// boolean means "there is no staged result for this request id now",
+  /// never "there was something to discard", and returning it would
+  /// invite a caller to read it as existence — which for a foreign
+  /// request id is the oracle that mapping exists to close.
+  ///
+  /// **Terminal and COUNTED.** Discarding does not release the quota
+  /// the generation consumed: the row only reached `staged` via
+  /// `claim_ai_session_dispatch`, so the provider call really happened.
+  /// A UI must not present discard as a free undo.
+  Future<void> discardNearby(String requestId) {
+    return _invoke(
+      command: 'discard_nearby',
+      // Exactly `handleDiscardNearby`'s allowlist.
+      body: {'request_id': requestId},
+      // The body is read but nothing is returned from it — see above.
+      onResult: (_) {},
+    );
+  }
 
   // ---------------------------------------------------------------------
   // Shared call helper
