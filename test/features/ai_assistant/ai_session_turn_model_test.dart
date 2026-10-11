@@ -327,7 +327,70 @@ void main() {
           isA<FormatException>().having(
             (e) => e.message,
             'message',
-            contains('redirect'),
+            // The message must name the KIND, not a missing payload
+            // field. Mutation 1 (adding a `redirect` enum case) first
+            // made this test fail on 'missing/invalid reply_text' --
+            // the right verdict for the wrong reason. Requiring both
+            // substrings means only a genuine kind-rejection passes.
+            allOf(contains('redirect'), contains('kind')),
+          ),
+        ),
+      );
+    });
+
+    test(
+      'a redirect is rejected even when its payload would satisfy '
+      'another branch',
+      () {
+        // The attributability case. A redirect payload that ALSO
+        // carries reply_text and sources cannot fail for a missing
+        // field, so this test can only pass if `kind` itself is
+        // refused. Without it, a model that accepted 'redirect' and
+        // fell through to the nearby_result branch would be caught only
+        // by the enum-length assertion -- one test, and one that a
+        // careless future edit could update in the same commit.
+        expect(
+          () => AiSessionTurnModel.fromJson({
+            'ordinal': 2,
+            'role': 'attune',
+            'kind': 'redirect',
+            'payload': {
+              'reason': 'unsupported',
+              'offered': ['ideas'],
+              'reply_text': 'a redirect that looks like an answer',
+              'sources': <dynamic>[],
+              'suggested_planning_item': null,
+            },
+            'created_at': '2026-09-27T10:00:01.000Z',
+          }),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains('redirect'), contains('kind')),
+            ),
+          ),
+        );
+      },
+    );
+
+    test('a redirect is rejected for a USER role too', () {
+      // No ordering accident: the role branch runs before the kind
+      // switch in some parsers. This pins that a redirect is refused
+      // whichever role carries it.
+      expect(
+        () => AiSessionTurnModel.fromJson({
+          'ordinal': 1,
+          'role': 'user',
+          'kind': 'redirect',
+          'payload': {'instruction': 'something'},
+          'created_at': '2026-09-27T10:00:00.000Z',
+        }),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('redirect'), contains('kind')),
           ),
         ),
       );
