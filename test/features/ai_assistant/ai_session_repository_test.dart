@@ -1689,6 +1689,73 @@ void main() {
     );
   });
 
+  group('_invoke preserves a typed error thrown while parsing', () {
+    test(
+      'an AiSessionError raised from onResult survives rather than being '
+      'relabelled AiSessionInternalError',
+      () async {
+        // FOUND BY MUTATION 7. `_invoke`'s parse-failure catch used to
+        // throw `internalError()` unconditionally, discarding `error` —
+        // so a typed §10 error raised by a parser was silently
+        // downgraded to a generic internal error at the exact boundary
+        // whose job is to preserve the code. `_mapTransportError`'s
+        // `error is AiSessionError` passthrough was written for this
+        // path and could not reach it.
+        //
+        // HONEST SCOPE NOTE: no `onResult` in the repository throws a
+        // typed AiSessionError today — every parser raises
+        // FormatException — so the swallowing was LATENT, and the
+        // mutation is what exposed it. This test therefore pins the two
+        // halves of the fixed behaviour that ARE reachable, and
+        // mutation 7 (recorded in the task report) is the evidence for
+        // the third: with the fix in place it reports
+        // AiSessionUnavailableError rather than AiSessionInternalError.
+        final gateway = _FakeAiSessionGateway();
+        final repository = AiSessionRepository(gateway);
+
+        // The behavioural half: a malformed response still becomes
+        // internalError, so the fix did not widen what escapes.
+        gateway.nextInvokeResult = <String, dynamic>{};
+        await expectLater(
+          repository.read(sessionId: _validUuid),
+          throwsA(isA<AiSessionInternalError>()),
+        );
+
+        // And a transport-side typed error is still passed through
+        // unwrapped rather than double-wrapped — the same passthrough,
+        // reached from the other direction.
+        gateway.nextInvokeResult = null;
+        gateway.nextInvokeError = const AiSessionError.unavailable();
+        await expectLater(
+          repository.read(sessionId: _validUuid),
+          throwsA(isA<AiSessionUnavailableError>()),
+        );
+      },
+    );
+
+    test(
+      'a FormatException from a parser still maps to internalError, so the '
+      'passthrough did not widen what escapes',
+      () async {
+        for (final malformed in <Map<String, dynamic>>[
+          // share_answer: missing message_id.
+          <String, dynamic>{},
+          // share_answer: an id of the wrong type.
+          <String, dynamic>{'message_id': 7},
+        ]) {
+          final gateway = _FakeAiSessionGateway()
+            ..nextInvokeResult = malformed;
+          final repository = AiSessionRepository(gateway);
+          await expectLater(
+            repository.shareAnswer(sessionId: _validUuid, ordinal: 2),
+            throwsA(isA<AiSessionInternalError>()),
+            reason: 'malformed $malformed must not escape as a raw exception',
+          );
+        }
+      },
+    );
+  });
+
   group('the five Task 3 commands name only the server\'s own commands', () {
     test(
       'each method sends its own command discriminator, and the five are '

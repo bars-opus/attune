@@ -471,8 +471,28 @@ class AiSessionRepository {
       return onResult(Map<String, dynamic>.from(data as Map));
     } catch (error) {
       // A malformed success-status response should never happen
-      // server-side, but the client must not crash on it.
-      throw const AiSessionError.internalError();
+      // server-side, but the client must not crash on it: a
+      // `FormatException`/`TypeError` from a parser becomes
+      // [AiSessionInternalError] via [_mapTransportError]'s fallthrough.
+      //
+      // ROUTED THROUGH [_mapTransportError] RATHER THAN THROWING
+      // `internalError()` DIRECTLY, so that its `error is AiSessionError`
+      // passthrough actually covers this path — which is the case that
+      // passthrough was written for ("so the parse-failure path above
+      // cannot double-wrap"), but which it could not reach while this
+      // catch discarded `error`.
+      //
+      // Found by Task 3's mutation 7: a mutation that made `read` throw
+      // `AiSessionError.unavailable()` for an empty transcript was
+      // correctly killed, but the failure reported
+      // `AiSessionInternalError` — the right verdict for the wrong
+      // reason, because the typed error was being swallowed and
+      // relabelled. No `onResult` in the repository throws a typed
+      // error today, so the defect is latent rather than live; it would
+      // have bitten the first one that did, and it would have done so by
+      // turning a specific §10 code into a generic internal error at the
+      // exact boundary whose whole job is to preserve the code.
+      throw _mapTransportError(error);
     }
   }
 
