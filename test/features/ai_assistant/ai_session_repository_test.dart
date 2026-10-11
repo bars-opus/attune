@@ -3618,4 +3618,109 @@ void main() {
     );
   });
 
+
+  group('the repository now wraps all nine commands', () {
+    test(
+      'every command in SESSION_COMMANDS is reachable, and none that is not '
+      'in it is sent',
+      () async {
+        // Transcribed from `SESSION_COMMANDS` (index.ts:163).
+        // `processSessionCommand` has exactly nine cases; there is no
+        // `start` — activation rides inside handleApprove.
+        //
+        // Task 4 is the last task to add a command, so this is the
+        // first point at which the client's coverage can be asserted as
+        // COMPLETE rather than partial. A tenth server command, or a
+        // client command the server does not have, fails here.
+        const serverCommands = <String>{
+          'prepare',
+          'review_context',
+          'approve',
+          'generate',
+          'read',
+          'publish_nearby',
+          'discard_nearby',
+          'end',
+          'share_answer',
+        };
+        expect(serverCommands.length, 9);
+
+        final gateway = _FakeAiSessionGateway();
+        final repository = AiSessionRepository(gateway);
+        final observed = <String>{};
+
+        gateway.nextInvokeResult = <String, dynamic>{
+          'session_id': _validUuid,
+          'revision': 1,
+          'created': true,
+        };
+        await repository.prepare(
+          idempotencyKey: _validUuid,
+          relationshipId: _validRelationshipId,
+          kind: 'ideas',
+          visibility: 'shared',
+          utcOffsetMinutes: 0,
+          targetMessageId: _validMessageId,
+        );
+        observed.add(gateway.lastInvokeBody!['command'] as String);
+
+        gateway.nextInvokeResult = _reviewContextResponse();
+        await repository.reviewContext(
+          sessionId: _validUuid,
+          utcOffsetMinutes: 0,
+        );
+        observed.add(gateway.lastInvokeBody!['command'] as String);
+
+        gateway.nextInvokeResult = <String, dynamic>{
+          'approved': true,
+          'activated': true,
+          'state': 'active',
+        };
+        await repository.approve(ticket: _ticket());
+        observed.add(gateway.lastInvokeBody!['command'] as String);
+
+        gateway.nextInvokeResult = _ideasAnswerResponse();
+        await repository.generate(
+          sessionId: _validUuid,
+          requestId: _validRequestId,
+          expectedRevision: 1,
+          userInstruction: 'ideas please',
+        );
+        observed.add(gateway.lastInvokeBody!['command'] as String);
+
+        gateway.nextInvokeResult = <String, dynamic>{'turns': <dynamic>[]};
+        await repository.read(sessionId: _validUuid);
+        observed.add(gateway.lastInvokeBody!['command'] as String);
+
+        gateway.nextInvokeResult = <String, dynamic>{
+          'committed': true,
+          'user_ordinal': 1,
+          'attune_ordinal': 2,
+          'session_revision': 3,
+        };
+        await repository.publishNearby(_validRequestId);
+        observed.add(gateway.lastInvokeBody!['command'] as String);
+
+        gateway.nextInvokeResult = <String, dynamic>{'discarded': true};
+        await repository.discardNearby(_validRequestId);
+        observed.add(gateway.lastInvokeBody!['command'] as String);
+
+        gateway.nextInvokeResult = <String, dynamic>{'ended': true};
+        await repository.end(_validUuid);
+        observed.add(gateway.lastInvokeBody!['command'] as String);
+
+        gateway.nextInvokeResult = <String, dynamic>{
+          'message_id': _validMessageId,
+        };
+        await repository.shareAnswer(sessionId: _validUuid, ordinal: 2);
+        observed.add(gateway.lastInvokeBody!['command'] as String);
+
+        // SET EQUALITY, both directions at once: nothing missing and
+        // nothing invented.
+        expect(observed, serverCommands);
+        expect(observed.length, 9);
+      },
+    );
+  });
+
 }
