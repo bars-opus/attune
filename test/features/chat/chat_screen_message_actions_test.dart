@@ -1,4 +1,12 @@
+import 'dart:async';
 import 'package:attune/features/ai_assistant/data/repositories/ai_assistant_repository.dart';
+import 'package:attune/features/ai_assistant/data/models/ai_session_model.dart';
+import 'package:attune/features/ai_assistant/data/repositories/ai_session_repository.dart';
+import 'package:attune/features/ai_assistant/data/services/ai_session_capabilities.dart';
+import 'package:attune/features/ai_assistant/presentation/providers/ai_session_provider.dart';
+import 'package:attune/features/ai_assistant/presentation/screens/ai_session_entry.dart';
+import 'package:attune/features/ai_assistant/presentation/screens/ai_session_sheet.dart';
+import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
 import 'package:attune/features/ai_assistant/presentation/providers/ai_assistant_providers.dart';
 import 'package:attune/features/ai_assistant/presentation/screens/ask_attune_mode_sheet.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
@@ -455,6 +463,23 @@ void main() {
         tester,
         repo,
         extraOverrides: [
+          // RULING 23 (Plan D Task 9): "Ask Attune" is now gated on
+          // §12's `ai_assist_enabled`, read through Task 5's capability
+          // service. Nothing gated it before — the base spec's own
+          // recorded finding — so this override is what makes the
+          // ENTRY POINT available, and the test asserts the entry point
+          // appears. Without it the capability fails closed and the
+          // tile is correctly absent, which is what the dedicated gate
+          // test below asserts instead.
+          aiSessionCapabilitiesProvider.overrideWith(
+            (ref) async => const AiSessionCapabilities(
+              assist: true,
+              sessionsPrivate: false,
+              sessionsShared: false,
+              sessionsRecentWindow: false,
+              sessionsNearby: false,
+            ),
+          ),
           // The mode sheet reads the relationship id and consent status
           // via these providers; point them at fixed values instead of
           // hitting Supabase — this test only asserts on the pushed
@@ -754,4 +779,320 @@ void main() {
 
     await tearDownChat(tester, container);
   });
+
+  // ===================================================================
+  // PLAN D TASK 9 — the two AI entry points, in the REAL ChatScreen
+  // ===================================================================
+  //
+  // These are at the screen level deliberately. `ai_session_entry_test`
+  // proves the opener and RULING 24 in isolation; what only a real
+  // ChatScreen can prove is that the WIRING resolves the capability
+  // from the right provider and that the default — capability OFF, as
+  // it ships — leaves this screen behaviourally identical to today.
+  //
+  // RULING 29: these do not stand in for the full suite. The full
+  // `flutter test` count is the verdict and is reported in the task
+  // report.
+
+  /// `assist` on, every SESSION capability off — so the Ask Attune
+  /// legs below cannot pass because some other flag was on, and §12's
+  /// subcapability independence is exercised rather than assumed.
+  Override assistOnlyOverride({required bool assist}) {
+    return aiSessionCapabilitiesProvider.overrideWith(
+      (ref) async => AiSessionCapabilities(
+        assist: assist,
+        sessionsPrivate: false,
+        sessionsShared: false,
+        sessionsRecentWindow: false,
+        sessionsNearby: false,
+      ),
+    );
+  }
+
+  group('the capability is OFF: this chat screen is exactly as it was', () {
+    testWidgets(
+      'no AI composer button is drawn, and the composer pill keeps the '
+      'rect it has with no capability provider overridden at all',
+      (tester) async {
+        // THE REGRESSION PROOF for the composer half. The harness
+        // (`buildChatContainer`) does NOT override
+        // aiSessionCapabilitiesProvider, so this is the literal
+        // production default: the service fails closed, `.assist` is
+        // false, `onAiButtonTap` is null, and ChatTextField's own
+        // contract makes a null callback hide the entry point.
+        final repo = FakeChatRepository(currentUserId: 'user-a');
+        final container = await pumpChat(tester, repo);
+
+        expect(
+          find.byIcon(Icons.auto_awesome),
+          findsNothing,
+          reason:
+              'the six capability flags are OFF in every environment and '
+              'flip only AFTER Plan D ships, so the composer must look '
+              'exactly as it does today',
+        );
+
+        // The pill must occupy the same rect, not merely exist — the
+        // shape Task 6 used, because an added-then-hidden satellite
+        // can still shift the row.
+        final pill = find.byKey(const ValueKey('composer-pill'));
+        expect(pill, findsOneWidget);
+        final rect = tester.getRect(pill);
+        // Anti-vacuity: a zero-size or offscreen pill would pass a bare
+        // "the rect is what it is" comparison against itself.
+        expect(rect.width, greaterThan(100));
+        expect(rect.height, greaterThan(20));
+
+        // And every control the composer draws today still draws.
+        expect(find.byType(ChatTextField), findsOneWidget);
+        final composer = tester.widget<ChatTextField>(
+          find.byType(ChatTextField),
+        );
+        expect(
+          composer.onAiButtonTap,
+          isNull,
+          reason: 'null is the gate: ChatTextField draws no AI satellite',
+        );
+        expect(
+          composer.aiMode,
+          isFalse,
+          reason:
+              'Task 9 never passes aiMode — entering AI mode is later '
+              'work, so the composer keeps every control it has',
+        );
+
+        await tearDownChat(tester, container);
+      },
+    );
+
+    testWidgets(
+      'an UNRESOLVED capability reads as OFF, not as permission',
+      (tester) async {
+        // ADDED AFTER A MUTATION (M8) SURVIVED. Replacing
+        // `.valueOrNull?.assist == true` with `?? true` passed every
+        // other test here, because every one of them resolves the
+        // provider before the long-press. In production the first chat
+        // open makes a real RPC round trip, so there IS a window where
+        // the value is null — and `?? true` offers Ask Attune during
+        // it. That is the wrong failure direction (§12: defaults off),
+        // and nothing else was measuring it.
+        //
+        // A never-completing override models the window honestly: a
+        // slow or unreachable server, which is exactly when the
+        // capability service fails closed.
+        final repo = FakeChatRepository(currentUserId: 'user-a');
+        repo.seedIncoming(
+          id: 'm-pending',
+          relationshipId: 'rel-1',
+          senderId: 'partner',
+          content: 'still loading?',
+          createdAt: DateTime.now(),
+        );
+        final container = await pumpChat(
+          tester,
+          repo,
+          extraOverrides: [
+            aiSessionCapabilitiesProvider.overrideWith(
+              (ref) => Completer<AiSessionCapabilities>().future,
+            ),
+          ],
+        );
+
+        // The composer half.
+        expect(
+          find.byIcon(Icons.auto_awesome),
+          findsNothing,
+          reason:
+              'a loading capability must not draw the AI entry point',
+        );
+
+        await tester.longPress(find.text('still loading?'));
+        await tester.pump(const Duration(milliseconds: 400));
+
+        // Anti-vacuity: the menu is open, so "no Ask Attune" is a
+        // finding rather than an artefact of a failed long-press.
+        expect(find.text('Copy'), findsOneWidget);
+        expect(
+          find.text('Ask Attune'),
+          findsNothing,
+          reason:
+              'an unknown capability is NOT permission — a `?? true` '
+              'here would offer the entry point for the whole duration '
+              'of the first round trip',
+        );
+
+        await tester.tapAt(const Offset(400, 1350));
+        await tester.pump(const Duration(milliseconds: 400));
+        await tearDownChat(tester, container);
+      },
+    );
+
+    testWidgets('Ask Attune is absent when ai_assist_enabled is off', (
+      tester,
+    ) async {
+      // RULING 23's own leg. This is the ONE behavioural change Task 9
+      // makes with the flags as they ship — and it CLOSES the base
+      // spec's recorded gap ("Ask Attune is wired live with no feature
+      // flag guarding it") rather than opening one.
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      repo.seedIncoming(
+        id: 'm-gated',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'dinner on friday?',
+        createdAt: DateTime.now(),
+      );
+      final container = await pumpChat(
+        tester,
+        repo,
+        extraOverrides: [assistOnlyOverride(assist: false)],
+      );
+
+      await tester.longPress(find.text('dinner on friday?'));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // The menu DID open — this is not "no menu", it is "no Ask
+      // Attune". Without these the test would pass on a broken
+      // long-press.
+      expect(find.text('Copy'), findsOneWidget);
+      expect(find.text('Info'), findsOneWidget);
+      expect(
+        find.text('Ask Attune'),
+        findsNothing,
+        reason:
+            'RULING 23: §12 ai_assist_enabled now gates this entry '
+            'point, read through Task 5 capability RPC and never '
+            'feature_flags',
+      );
+
+      await tester.tapAt(const Offset(400, 1350));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tearDownChat(tester, container);
+    });
+  });
+
+  group('the capability is ON: the entry points appear', () {
+    testWidgets('Ask Attune returns when ai_assist_enabled is on', (
+      tester,
+    ) async {
+      // The other direction of the same gate. Without this leg, a gate
+      // hardcoded to `false` would pass every test above.
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      repo.seedIncoming(
+        id: 'm-ungated',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'dinner on saturday?',
+        createdAt: DateTime.now(),
+      );
+      final container = await pumpChat(
+        tester,
+        repo,
+        extraOverrides: [assistOnlyOverride(assist: true)],
+      );
+
+      await tester.longPress(find.text('dinner on saturday?'));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        find.text('Ask Attune'),
+        findsOneWidget,
+        reason:
+            'assist alone must be enough: §12 subcapability '
+            'independence means the Ask Attune tile must NOT require '
+            'any session flag',
+      );
+
+      await tester.tapAt(const Offset(400, 1350));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tearDownChat(tester, container);
+    });
+
+    testWidgets(
+      'the composer AI button appears and opens exactly one '
+      'AiSessionSheet (RULING 24 through the real screen)',
+      (tester) async {
+        final repo = FakeChatRepository(currentUserId: 'user-a');
+        final container = await pumpChat(
+          tester,
+          repo,
+          extraOverrides: [
+            aiSessionCapabilitiesProvider.overrideWith(
+              (ref) async => const AiSessionCapabilities(
+                assist: true,
+                sessionsPrivate: true,
+                sessionsShared: false,
+                sessionsRecentWindow: false,
+                sessionsNearby: false,
+              ),
+            ),
+            // The sheet must not reach the network when it mounts.
+            aiSessionRepositoryProvider.overrideWithValue(
+              AiSessionRepository(_SilentSessionGateway()),
+            ),
+          ],
+        );
+
+        final aiButton = find.byIcon(Icons.auto_awesome);
+        expect(
+          aiButton,
+          findsOneWidget,
+          reason:
+              'with .assist on, onAiButtonTap is non-null and '
+              'ChatTextField draws the satellite',
+        );
+
+        await tester.tap(aiButton);
+        await tester.pumpAndSettle();
+        expect(find.byType(AiSessionSheet), findsOneWidget);
+
+        // RULING 24 end to end: the sheet covers the composer, so a
+        // second tap cannot be delivered by a user — this asserts the
+        // invariant at the level a user can reach, by calling the
+        // opener again against the SAME container.
+        expect(
+          openAiSessionSheet(
+            container: container,
+            navigator: tester.state<NavigatorState>(
+              find.byType(Navigator).last,
+            ),
+            relationshipId: 'rel-1',
+            initialKind: AiSessionKind.ideas,
+            utcOffsetMinutes: 0,
+            onShared: (_) {},
+          ),
+          isFalse,
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(AiSessionSheet), findsOneWidget);
+
+        // Leave the sheet before teardown so the chat screen unmounts
+        // the way the other tests in this file expect.
+        Navigator.of(
+          tester.element(find.byType(AiSessionSheet)),
+        ).pop();
+        await tester.pumpAndSettle();
+        await tearDownChat(tester, container);
+      },
+    );
+  });
+}
+
+/// Answers every session command with a shape the sheet can render
+/// without a network. The entry-point tests only need the sheet to
+/// MOUNT; `ai_session_sheet_test.dart` owns what it does next.
+class _SilentSessionGateway implements AiAssistantGateway {
+  @override
+  Future<dynamic> invokeFunction(
+    String functionName, {
+    Map<String, dynamic>? body,
+  }) async => <String, Object?>{};
+
+  @override
+  Future<dynamic> rpc(String function, {Map<String, dynamic>? params}) async =>
+      null;
+
+  @override
+  Future<Map<String, dynamic>?> selectPlanningLink(String messageId) async =>
+      null;
 }

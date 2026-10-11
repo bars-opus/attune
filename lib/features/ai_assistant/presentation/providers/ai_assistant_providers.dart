@@ -28,6 +28,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../data/models/assist_draft_model.dart';
 import '../../data/models/understand_result_model.dart';
 import '../../data/repositories/ai_assistant_repository.dart';
+import '../../data/services/ai_session_capabilities.dart';
 import '../../data/services/raw_location_service.dart';
 
 final _supabaseClientProvider = Provider<SupabaseClient>((ref) {
@@ -37,6 +38,45 @@ final _supabaseClientProvider = Provider<SupabaseClient>((ref) {
 final aiAssistantRepositoryProvider = Provider<AiAssistantRepository>((ref) {
   final supabase = ref.read(_supabaseClientProvider);
   return AiAssistantRepository(SupabaseAiAssistantGateway(supabase));
+});
+
+/// Spec §12's five client-visible capability flags, in ONE round trip
+/// (Plan D Task 5).
+///
+/// NOT five separate providers, which is what Task 5's brief asked for.
+/// Five providers reading `feature_flags` directly would each have read
+/// nothing — see `ai_session_capabilities.dart`'s header for the
+/// measurement (PF2) and the reasoning. Five providers over the ONE
+/// RPC would also issue five identical round trips to render one sheet,
+/// and could disagree with each other mid-flight if an operator flipped
+/// a flag between them, which is exactly the inconsistency §12's
+/// subcapability independence must not be confused with.
+///
+/// A call site reads the field it needs — `.assist`, `.sessionsNearby`
+/// — and must never infer one capability from another.
+///
+/// NOT autoDispose, and that is deliberate rather than inherited: these
+/// are server rollout flags, not per-sheet state, so there is nothing
+/// here a second invocation could observe a first one's result through
+/// (the §1 concern driving `assistDraftProvider.autoDispose`). Caching
+/// for the app session is the point. An operator flip reaches a running
+/// client on `ref.invalidate` or next launch; §12's kill path is the
+/// SERVER refusing with `FEATURE_DISABLED`, never this cache expiring.
+final aiSessionCapabilitiesServiceProvider =
+    Provider<AiSessionCapabilitiesService>((ref) {
+      return AiSessionCapabilitiesService.forClient(
+        ref.read(_supabaseClientProvider),
+      );
+    });
+
+/// The loaded capabilities. Fails closed to
+/// [AiSessionCapabilities.unavailable] rather than erroring, so a
+/// widget cannot render an entry point out of an `AsyncError` branch it
+/// forgot to handle — there is no error branch to forget.
+final aiSessionCapabilitiesProvider = FutureProvider<AiSessionCapabilities>((
+  ref,
+) {
+  return ref.read(aiSessionCapabilitiesServiceProvider).load();
 });
 
 /// The Nearby-only raw position reader (Task 5). A plain `Provider`,
