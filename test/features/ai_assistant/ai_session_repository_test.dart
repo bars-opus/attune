@@ -12,6 +12,8 @@
 // `FunctionException` on a non-2xx response. A stand-in would have let
 // `_mapTransportError`'s `error is FunctionException` check fall through
 // to internalError() while every test still passed.
+import 'dart:io';
+
 import 'package:attune/features/ai_assistant/data/models/ai_session_model.dart';
 import 'package:attune/features/ai_assistant/data/models/ai_session_turn_model.dart';
 import 'package:attune/features/ai_assistant/data/repositories/ai_assistant_repository.dart';
@@ -2529,50 +2531,216 @@ void main() {
         expect(refusal.resolveCopy(genericRedirectCopy: generic), isNotEmpty);
         expect(ordinary.resolveCopy(genericRedirectCopy: generic), generic);
 
-        // ==== THE SURFACE IS CLOSED ====
+        // The value-equality assertions above are only as strong as the
+        // SURFACE being closed, and a hand-maintained list of member
+        // names cannot prove that — see the structural test below,
+        // which was added because a mutation proved this exact point.
+      },
+    );
+
+    test(
+      'the type has NO public member beyond the four — proved from the '
+      'declarations, so a NEW one fails without anyone naming it',
+      () {
+        // ==== THIS TEST EXISTS BECAUSE A MUTATION SURVIVED ====
         //
-        // The assertions above compare every member the type exposes.
-        // This one proves the LIST is complete rather than merely long:
-        // `noSuchMethod`-free Dart has no reflection in this test
-        // environment, so completeness is proved structurally — the
-        // type is NOT sealed/abstract and has exactly four public
-        // instance members, enumerated here as the declared names a
-        // caller can reach. A fifth would have to be added to this list
-        // for the mutation test below to be meaningful, which is the
-        // point: the list is maintained deliberately.
-        const publicInstanceSurface = <String>{
+        // The value-equality test above compares every member the type
+        // exposes, and a first version of this group also asserted a
+        // hand-written SET of the four member names. MUTATION M1b
+        // defeated it: adding `bool get isSafetyRefusal => _copy !=
+        // null` to the model and NOT touching the test suite left all
+        // 114 tests green. A name list can only catch a mutation whose
+        // author also updates the list, which is not the failure mode
+        // Ruling 6 is defending against — the realistic one is an
+        // implementer adding a convenience getter and running the
+        // suite.
+        //
+        // So completeness is proved STRUCTURALLY instead, from the
+        // class's own declarations. `flutter_test` has no reflection,
+        // so the declarations are read from source — the same technique
+        // test/features/games/community_entry_test.dart and
+        // test/core/android_manifest_test.dart already use in this
+        // repository.
+        //
+        // WHAT THIS CATCHES THAT NOTHING ELSE DOES: any new public
+        // getter, field or method on AiSessionGeneratedRedirect,
+        // whether or not the author knew about Ruling 6, whether or not
+        // they updated any list, and whatever they called it. A new
+        // member whose value differs between the two shapes IS the
+        // detector oracle §8.1 forbids, so the safe default is to fail
+        // on ANY new public member and make the author justify it here.
+        final source = File(
+          'lib/features/ai_assistant/data/models/ai_session_turn_model.dart',
+        ).readAsStringSync();
+
+        // Isolate the class body. The next `\nclass `/`\n/// ` at
+        // column zero after the declaration ends it; taking the slice
+        // up to the next top-level `class` declaration is enough here
+        // because the file declares types sequentially.
+        const declaration = 'class AiSessionGeneratedRedirect '
+            'extends AiSessionGenerateResult {';
+        final start = source.indexOf(declaration);
+        expect(
+          start,
+          isNonNegative,
+          reason: 'the class declaration moved or was renamed — this test '
+              'must be re-pointed rather than deleted',
+        );
+        final afterStart = start + declaration.length;
+        final nextTopLevel = source.indexOf('\nclass ', afterStart);
+        expect(
+          nextTopLevel,
+          isNonNegative,
+          reason: 'expected another top-level class after this one',
+        );
+        final body = source.substring(afterStart, nextTopLevel);
+        // Sanity: the slice really is this class's body and not an
+        // empty or runaway string. A vacuous slice would make every
+        // assertion below pass trivially.
+        expect(body, contains('resolveCopy'));
+        expect(body, contains('final String? _copy;'));
+        expect(body.length, lessThan(source.length));
+
+        // Every member declaration in the body, with comments and
+        // strings stripped so the doc comment that NAMES the forbidden
+        // getters (and the `reason:` strings elsewhere) cannot be
+        // mistaken for a declaration. That trap has fired three times
+        // in this effort and is recorded in the ledger as a ruling.
+        final stripped = body
+            .replaceAll(RegExp(r'^\s*///.*$', multiLine: true), '')
+            .replaceAll(RegExp(r'^\s*//.*$', multiLine: true), '')
+            .replaceAll(RegExp(r"'(?:[^'\\]|\\.)*'"), "''");
+        // The stripper WORKS — proved on a name that appears ONLY in
+        // comments in this class and nowhere in its code, so the
+        // assertion stays meaningful even when a mutation adds a real
+        // declaration elsewhere. (An earlier version of this check used
+        // `isSafetyRefusal`, which mutation M1b then added as a genuine
+        // getter — making this sanity check fail and STEAL the kill
+        // from the closed-surface assertion below. Right verdict, wrong
+        // reason; the same family as Task 3's M7.)
+        expect(
+          body,
+          contains('safetyRefusalResponse'),
+          reason: 'the probe name should be present in the slice BEFORE '
+              'stripping — it appears only inside a doc comment here',
+        );
+        expect(
+          stripped,
+          isNot(contains('safetyRefusalResponse')),
+          reason: 'comment stripping failed, so every assertion below would '
+              'be reading prose as code — the trap this effort has recorded '
+              'three times',
+        );
+
+        // Member declarations only, which means excluding the bodies of
+        // the methods — a statement inside a body also sits at two-space
+        // indentation once it closes, so scanning the whole class would
+        // report locals and keywords as members. Dart offers no parser
+        // here, so the scan is narrowed to the lines that DECLARE
+        // something: a line at exactly two spaces of indentation whose
+        // text ends the declaration with `;`, `{`, `=>` or `(`.
+        //
+        // The conservative direction is deliberate. This test's job is
+        // to FAIL when a new public member appears, so a scan that over-
+        // reports is noisy but safe, while one that under-reports is
+        // the vacuous test this whole exercise exists to avoid. The
+        // `declaredNames` sanity assertions below are what prove it is
+        // not under-reporting.
+        final memberLines = stripped
+            .split('\n')
+            // Exactly two spaces: a member, not a statement nested
+            // inside a body (four or more) and not a top-level line.
+            .where((line) => RegExp(r'^  [A-Za-z_@]').hasMatch(line))
+            .toList();
+
+        final declaredNames = <String>{};
+        for (final line in memberLines) {
+          // The declared name is the last identifier before the first
+          // `(`, `=`, `;` or `{` on the line — true for a field
+          // (`final String reason;`), a getter (`bool get x =>`), a
+          // method (`String resolveCopy({`) and a constructor alike.
+          final match = RegExp(
+            r'^  (?:static |const |final |factory |late |covariant )*'
+            r'(?:[\w<>?,\s\[\]]*\s)?(?:get\s+)?([A-Za-z_]\w*)\s*[({=;]',
+          ).firstMatch(line);
+          if (match != null) declaredNames.add(match.group(1)!);
+        }
+        // Dart keywords and control flow that can begin a two-space
+        // line in a formatted body. Removed by NAME rather than by
+        // loosening the scan, and the set is small and closed.
+        declaredNames.removeAll(const <String>{
+          'if',
+          'for',
+          'while',
+          'switch',
+          'return',
+          'throw',
+          'assert',
+          'try',
+          'else',
+          'do',
+        });
+
+        // The regex found something — otherwise the absence assertions
+        // below would be vacuous, which is this codebase's most
+        // frequent finding family.
+        expect(
+          declaredNames,
+          contains('resolveCopy'),
+          reason: 'the declaration scan found no members, so every '
+              'assertion below would be vacuous',
+        );
+        expect(declaredNames, contains('reason'));
+        expect(declaredNames, contains('offered'));
+        expect(declaredNames, contains('showSafetyResources'));
+
+        // THE CLOSED-SURFACE ASSERTION. Everything declared must be one
+        // of: the four public members, the PRIVATE `_copy`, the two
+        // transcribed wire-key sets (test-only constants), or the
+        // constructor/factory. A member not on this list is new, and a
+        // new public member on this type is the side channel.
+        const permitted = <String>{
+          // The four public instance members.
           'reason',
           'offered',
           'showSafetyResources',
           'resolveCopy',
+          // Private: its presence is the one wire difference, which is
+          // exactly why it is not public.
+          '_copy',
+          // Test-only transcriptions of the two wire shapes.
+          'safetyShapeWireKeys',
+          'ordinaryShapeWireKeys',
+          // The constructor and the private factory.
+          'AiSessionGeneratedRedirect',
         };
-        expect(publicInstanceSurface.length, 4);
-        // And none of the forbidden names is among them. These are the
-        // exact getters Ruling 6 names, plus the proxies: each one would
-        // reconstruct the detector signal.
-        for (final forbidden in const <String>[
-          'isSafetyRefusal',
-          'wasBlocked',
-          'isUnsafe',
-          'blocked',
-          'copy',
-          'hasCopy',
-          'hasServerCopy',
-          'copyOrNull',
-          'serverCopy',
-          'hasAlternatives',
-          'canOfferAnything',
-          'shape',
-          'variant',
-          'source',
-        ]) {
-          expect(
-            publicInstanceSurface,
-            isNot(contains(forbidden)),
-            reason: '"$forbidden" would distinguish a safety refusal from an '
-                'ordinary redirect, which §8.1 forbids',
-          );
-        }
+        final unexpected = declaredNames.difference(permitted);
+        expect(
+          unexpected,
+          isEmpty,
+          reason: 'AiSessionGeneratedRedirect gained the member(s) '
+              '$unexpected. RULING 6: this type must expose NOTHING whose '
+              'value differs between a safety refusal and an ordinary '
+              'redirect — `copy != null`, `offered.isEmpty` and anything '
+              'derived from them reconstruct the fact that a safety '
+              'detector fired, which §8.1 forbids disclosing. If the new '
+              'member is genuinely identical across both shapes, add it to '
+              '`permitted` AND assert its equality in the test above.',
+        );
+
+        // And no PUBLIC declaration may mention `_copy` outside
+        // `resolveCopy`'s own body — a getter forwarding to it would be
+        // on the permitted list only by accident of naming.
+        final copyReferences = RegExp(r'_copy').allMatches(stripped).length;
+        expect(
+          copyReferences,
+          3,
+          reason: 'expected `_copy` exactly three times — its declaration, '
+              'the constructor initializer that sets it, and its ONE read '
+              'inside resolveCopy. A fourth reference means something else '
+              'reaches it, and anything that reaches it can leak which '
+              'redirect shape arrived.',
+        );
       },
     );
 
