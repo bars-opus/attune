@@ -7027,6 +7027,232 @@ Deno.test({
 
 Deno.test({
   name:
+    "ITEM A1: re-enabling an ALREADY-ON window with a DIFFERENT selection DOES invalidate -- the boolean alone is not the comparison",
+  fn: async () => {
+    // FOUND BY MUTATION M5: narrowing the no-change check to compare
+    // only `include_window = v_include_window` was caught only
+    // INCIDENTALLY, by an unrelated test whose second toggle happened
+    // to be treated as a no-op. Nothing asserted the property itself,
+    // so this test exists because of that mutation.
+    //
+    // THE PROPERTY: §4.3 ties invalidation to a CHANGE OF CONTEXT, and
+    // the window's content is the id SET, not the boolean. A window
+    // left ON while the day gains a message is a different snapshot,
+    // and approvals taken over the old one must not survive it.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_recent_window_enabled",
+    );
+    const deps = await makeDeps();
+    await insertPartnerMessage("the first partner line");
+
+    const { sessionId } = await prepareSharedForToggle(deps);
+    // Turn the window ON over ONE message.
+    const first = await processSessionCommand(
+      makeReq({
+        command: "review_context",
+        session_id: sessionId,
+        utc_offset_minutes: 0,
+        set_include_window: true,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    const firstBody = await first.json();
+    assertEquals(first.status, 200, JSON.stringify(firstBody));
+    assertEquals(firstBody.revision, 2);
+    assertEquals((firstBody.window as unknown[]).length, 1);
+
+    // Both partners approve THAT snapshot, stored through the RPC so
+    // the session stays `preparing` (see the M3/command note in the
+    // invalidation test).
+    for (const approver of [USER_C1_A, USER_C1_B]) {
+      await serviceRoleQuery(
+        `SELECT public.approve_ai_session_context($1, $2, $3, $4, $5)`,
+        [
+          approver,
+          sessionId,
+          firstBody.revision,
+          firstBody.digest,
+          firstBody.policy_version,
+        ],
+      );
+    }
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_approvals WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      2,
+      "PRECONDITION: two approvals exist over the ONE-message window",
+    );
+
+    // THE DAY GAINS A MESSAGE. The window stays ON -- the boolean does
+    // not move -- but the SELECTION is now different.
+    await insertPartnerMessage("a second partner line, added later");
+
+    const second = await processSessionCommand(
+      makeReq({
+        command: "review_context",
+        session_id: sessionId,
+        utc_offset_minutes: 0,
+        // The SAME value as before. A boolean-only comparison reads
+        // this as "no change".
+        set_include_window: true,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    const secondBody = await second.json();
+    assertEquals(second.status, 200, JSON.stringify(secondBody));
+
+    // THE DECISIVE ASSERTIONS: the selection changed, so this IS a
+    // change -- revision bumped, approvals cleared, two window rows.
+    assertEquals(
+      secondBody.revision,
+      3,
+      "a DIFFERENT selection under an unchanged boolean must still increment the revision",
+    );
+    assertEquals((secondBody.window as unknown[]).length, 2);
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_approvals WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+      "approvals taken over the OLD selection must not survive a new one",
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_sources
+           WHERE session_id = $1 AND source_role = 'window'`,
+        [sessionId],
+      ))[0].n,
+      2,
+      "the stored snapshot must be rewritten to the new selection",
+    );
+    // The digest MOVED, so the two snapshots are genuinely different
+    // and not merely renumbered.
+    assertNotEquals(secondBody.digest, firstBody.digest);
+
+    // And the stale approval is UNUSABLE, not merely absent.
+    let staleError = "";
+    try {
+      await serviceRoleQuery(
+        `SELECT * FROM public.activate_ai_session($1, $2, $3)`,
+        [USER_C1_A, sessionId, firstBody.revision],
+      );
+    } catch (e) {
+      staleError = String(e);
+    }
+    assert(
+      /Revision mismatch/i.test(staleError),
+      `activating at the pre-change revision must be refused; got: ${staleError}`,
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "ITEM A1 / §4.2 item 3: toggling on a session WITH A TARGET excludes the target from the window",
+  fn: async () => {
+    // FOUND BY MUTATION M29: passing `null` instead of the frozen
+    // target into the toggle's selectSharedWindow call SURVIVED the
+    // entire suite, because no test toggled a session that HAS a
+    // target. §4.2 item 3 excludes the selected target from the
+    // window, and the consequence of losing that is not subtle: the
+    // RPC's own `The selected target cannot also be a window message`
+    // check raises, so the WHOLE TOGGLE FAILS and the user cannot
+    // enable the window at all on any session where they picked a
+    // message -- which is the common case.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_recent_window_enabled",
+    );
+    const deps = await makeDeps();
+    // The TARGET is a same-civil-day message, so a window selection
+    // would pick it up unless it is excluded -- which is what makes
+    // this test discriminate. A target from another day would be
+    // excluded by the day filter instead and the test would be vacuous.
+    const targetId = await insertPartnerMessage("the message the user selected");
+    const otherId = await insertPartnerMessage("an ordinary line from the same day");
+
+    const { sessionId } = await prepareSharedForToggle(deps, {
+      targetMessageId: targetId,
+    });
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT source_message_id FROM public.ai_session_sources
+           WHERE session_id = $1 AND source_role = 'target'`,
+        [sessionId],
+      )).map((r) => r.source_message_id),
+      [targetId],
+      "PRECONDITION: the session really carries a frozen target",
+    );
+    // PRECONDITION: a live window selection that does NOT exclude the
+    // target would return BOTH messages -- so the exclusion is doing
+    // real work here and is not a no-op on this fixture.
+    const unexcluded = await selectSharedWindow(
+      (await makeServiceRoleClient()) as never,
+      REL_C1,
+      null,
+      0,
+      new Date(),
+    );
+    assertEquals(
+      unexcluded.length,
+      2,
+      "PRECONDITION: without the exclusion the selection returns the target too, so M29 is a real difference",
+    );
+
+    const toggled = await processSessionCommand(
+      makeReq({
+        command: "review_context",
+        session_id: sessionId,
+        utc_offset_minutes: 0,
+        set_include_window: true,
+      }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    const body = await toggled.json();
+    // THE TOGGLE SUCCEEDS. Under M29 it does not: the RPC refuses the
+    // target-in-window collision and the edge maps it to
+    // INVALID_INPUT.
+    assertEquals(toggled.status, 200, JSON.stringify(body));
+    assertEquals(body.include_window, true);
+
+    // THE WINDOW HOLDS THE OTHER MESSAGE ONLY -- the target is in the
+    // snapshot once, as the target, and never as a window row.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT source_message_id FROM public.ai_session_sources
+           WHERE session_id = $1 AND source_role = 'window'`,
+        [sessionId],
+      )).map((r) => r.source_message_id),
+      [otherId],
+      "§4.2 item 3: the window excludes the selected target",
+    );
+    assertEquals((body.window as unknown[]).length, 1);
+    assertEquals(
+      (body.target as Record<string, unknown>).content,
+      "the message the user selected",
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
     "ITEM A1: toggling on an ACTIVE session is REFUSED, never a silent no-op, and changes nothing",
   fn: async () => {
     // The decision recorded in 20260953200300's header: §4.2 forbids
@@ -7053,6 +7279,40 @@ Deno.test({
     assertEquals(before.state, "active");
     assertEquals(before.include_window, false);
 
+    // THE RPC IS PROBED DIRECTLY, AND THAT IS NOT A SHORTCUT -- IT IS
+    // WHAT THIS TEST IS FOR. FOUND BY MUTATION M3: replacing the RPC's
+    // `RAISE 'Session is not preparing'` with a silent no-op SURVIVED
+    // when this test went through review_context, because
+    // review_context has its OWN `state !== 'preparing'` guard that
+    // fires FIRST and returns UNAVAILABLE either way. The test passed
+    // without the toggle ever being reached -- the exact
+    // "caught for the wrong reason" failure Tasks 3 and 4 each found in
+    // themselves.
+    //
+    // The active-state DECISION (a refusal, never a silent no-op) is a
+    // property of the RPC, so it is asserted against the RPC. The edge
+    // mapping is asserted separately, below.
+    let activeError = "";
+    try {
+      await serviceRoleQuery(
+        `SELECT * FROM public.set_ai_session_include_window($1, $2, true, NULL)`,
+        [USER_C1_A, sessionId],
+      );
+    } catch (e) {
+      activeError = String(e);
+    }
+    assert(
+      /Session is not preparing/i.test(activeError),
+      `the RPC must REFUSE on an active session with the specific message, never no-op; got: ${
+        activeError || "(no error -- it silently no-opped)"
+      }`,
+    );
+
+    // AND the edge maps it to §3.1's indistinguishable response, so the
+    // state-specific SQL message never reaches a client. (This leg
+    // passes via review_context's own state guard too, which is fine:
+    // the property asserted here is the CLIENT-VISIBLE code, and the
+    // RPC-level decision is the leg above.)
     const refused = await processSessionCommand(
       makeReq({
         command: "review_context",
@@ -7063,16 +7323,14 @@ Deno.test({
       ctx(USER_C1_A),
       deps,
     );
-    // THE SPECIFIC CODE. §3.1's indistinguishable response -- the
-    // state-specific SQL message must not reach the client.
     assertEquals(refused.status, 404);
-    assertEquals((await refused.json()).code, "UNAVAILABLE");
+    const refusedBody = await refused.json();
+    assertEquals(refusedBody.code, "UNAVAILABLE");
+    // No raw SQL text reaches the client.
+    assertEquals(Object.keys(refusedBody), ["code"]);
 
     // NOTHING CHANGED: not the setting, not the revision, not the
-    // sources. A silent no-op would also leave these unchanged, which
-    // is why the status assertion above is the one that discriminates
-    // -- and why this leg exists too: a REFUSAL that still wrote
-    // something would be worse than either.
+    // sources -- after BOTH attempts above.
     const after = (await serviceRoleQuery(
       `SELECT revision, include_window FROM public.ai_sessions WHERE id = $1`,
       [sessionId],
@@ -7462,6 +7720,232 @@ Deno.test({
         [reservedRequest],
       ))[0].outcome,
       "cancelled",
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "ITEM A2: a settle NEVER overwrites a TERMINAL request -- a committed publish cannot be marked failed",
+  fn: async () => {
+    // FOUND BY MUTATION M11: deleting the settleable-state allowlist
+    // SURVIVED the entire suite. Nothing asserted it, and the
+    // consequence is not cosmetic -- a settle arriving after a
+    // successful commit or publish (a late retry, a racing reconciler
+    // run) would rewrite a 'committed' request to
+    // 'failed'/'REQUEST_FAILED' while the transcript pair stays in the
+    // table. The request row would then contradict the content it
+    // produced, and mark_ai_assistant_usage_outcome would be asked to
+    // move an already-terminal ledger row.
+    //
+    // The allowlist is written as a POSITIVE list of the two settleable
+    // states rather than a deny-list of terminal ones, so a state added
+    // to ai_session_requests' CHECK in future fails closed here.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_private_enabled");
+    const deps = await makeDeps();
+    const sessionId = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "private",
+    });
+
+    // A request that SUCCEEDED.
+    const requestId = crypto.randomUUID();
+    const generated = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: requestId,
+        expected_revision: 1,
+        user_instruction: "weekend plans",
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: spyGemini({
+          kind: "answer",
+          reply_text: "Try a slow morning and a walk by the water.",
+          suggested_planning_item: null,
+        }).call,
+      },
+    );
+    assertEquals(generated.status, 200, await generated.clone().text());
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state FROM public.ai_session_requests WHERE id = $1`,
+        [requestId],
+      ))[0].state,
+      "committed",
+      "PRECONDITION: the request is COMMITTED and its pair is in the transcript",
+    );
+    const usageBefore = (await serviceRoleQuery(
+      `SELECT outcome FROM public.ai_assistant_usage WHERE request_id = $1`,
+      [requestId],
+    ))[0].outcome;
+    assertEquals(usageBefore, "succeeded");
+
+    // A settle arrives anyway -- a late retry, or a racing path.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT settled FROM public.settle_ai_session_request($1, $2)`,
+        [USER_C1_A, requestId],
+      ))[0].settled,
+      false,
+      "settling a COMMITTED request must report settled=false",
+    );
+
+    // NOTHING WAS OVERWRITTEN: the SPECIFIC state and the SPECIFIC
+    // ledger outcome, not merely "no error".
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state, terminal_code FROM public.ai_session_requests WHERE id = $1`,
+        [requestId],
+      )).map((r) => `${r.state}/${r.terminal_code}`),
+      ["committed/null"],
+      "a committed request must not be rewritten to failed/REQUEST_FAILED",
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT outcome FROM public.ai_assistant_usage WHERE request_id = $1`,
+        [requestId],
+      ))[0].outcome,
+      "succeeded",
+      "a committed request's ledger outcome must stay 'succeeded'",
+    );
+    // The transcript the request produced is still there, so the row
+    // and the content do not contradict each other.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_turns WHERE request_id = $1`,
+        [requestId],
+      ))[0].n,
+      2,
+    );
+
+    // A SECOND SETTLE OF AN ALREADY-SETTLED REQUEST is likewise a
+    // no-op -- the 'failed' state is terminal too, and the reconciler
+    // may legitimately reach a row this function already handled.
+    const failedRequest = crypto.randomUUID();
+    const admitted = await serviceRoleQuery(
+      `SELECT outcome, worker_token FROM public.admit_ai_session_generation($1, $2, $3, $4, $5)`,
+      [USER_C1_A, failedRequest, sessionId, 2, "fp-double-settle"],
+    );
+    assertEquals(admitted[0].outcome, "admitted");
+    await serviceRoleQuery(
+      `SELECT public.claim_ai_session_dispatch($1, $2)`,
+      [admitted[0].worker_token, failedRequest],
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT settled FROM public.settle_ai_session_request($1, $2)`,
+        [USER_C1_A, failedRequest],
+      ))[0].settled,
+      true,
+      "ANTI-VACUITY: a 'started' request IS settleable, so the refusals above are about terminality",
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT settled FROM public.settle_ai_session_request($1, $2)`,
+        [USER_C1_A, failedRequest],
+      ))[0].settled,
+      false,
+      "a second settle of the same request is an idempotent no-op",
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
+    "ITEM A2: only the request's OWN actor may settle it -- a PARTNER cannot cancel an in-flight generation",
+  fn: async () => {
+    // FOUND BY MUTATION M10: deleting the settle RPC's actor check
+    // SURVIVED the entire suite. Nothing asserted it, so a partner
+    // could have settled the creator's in-flight request -- a smaller
+    // cousin of the partner-weaponizable quota DoS this plan's F1 was,
+    // and the reason settling is narrower than end_ai_session (where
+    // either member of a SHARED session may act). Settling is the
+    // WORKER reporting its own attempt, not a lifecycle act.
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities("ai_sessions_shared_enabled");
+    const deps = await makeDeps();
+    // A SHARED session, so the partner is a genuine member of the
+    // relationship -- the outsider case would be refused by membership
+    // and would prove nothing about the actor check.
+    const sessionId = await activateSession(deps, {
+      kind: "ideas",
+      visibility: "shared",
+    });
+
+    // The CREATOR admits a request and claims its dispatch, leaving it
+    // 'started' with a live lease -- exactly the in-flight state.
+    const requestId = crypto.randomUUID();
+    const admitted = await serviceRoleQuery(
+      `SELECT outcome, worker_token FROM public.admit_ai_session_generation($1, $2, $3, $4, $5)`,
+      [USER_C1_A, requestId, sessionId, 1, "fp-inflight"],
+    );
+    assertEquals(admitted[0].outcome, "admitted");
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT public.claim_ai_session_dispatch($1, $2) AS claimed`,
+        [admitted[0].worker_token, requestId],
+      ))[0].claimed,
+      true,
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state FROM public.ai_session_requests WHERE id = $1`,
+        [requestId],
+      ))[0].state,
+      "started",
+      "PRECONDITION: the creator's request is in flight",
+    );
+
+    // THE PARTNER tries to settle it. A member of the relationship, a
+    // member of this shared session -- and still not the request's
+    // actor.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT settled FROM public.settle_ai_session_request($1, $2)`,
+        [USER_C1_B, requestId],
+      ))[0].settled,
+      false,
+      "a PARTNER must not be able to settle the creator's request",
+    );
+    // AND NOTHING CHANGED -- the specific state, not merely "no error".
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state, terminal_code FROM public.ai_session_requests WHERE id = $1`,
+        [requestId],
+      )).map((r) => `${r.state}/${r.terminal_code}`),
+      ["started/null"],
+      "the partner's settle must leave the in-flight request untouched",
+    );
+
+    // ANTI-VACUITY: the request's OWN actor CAN settle it, so `settled:
+    // false` above is about the actor and not about the RPC refusing
+    // every call.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT settled FROM public.settle_ai_session_request($1, $2)`,
+        [USER_C1_A, requestId],
+      ))[0].settled,
+      true,
+      "ANTI-VACUITY: the request's own actor settles it",
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT state, terminal_code FROM public.ai_session_requests WHERE id = $1`,
+        [requestId],
+      )).map((r) => `${r.state}/${r.terminal_code}`),
+      ["failed/REQUEST_FAILED"],
     );
 
     await endSession(sessionId, USER_C1_A);
@@ -9087,9 +9571,104 @@ Deno.test({
       }
     }
 
-    // 2. THE OUTSIDER CANNOT READ, SHARE OR END, however it names
-    //    itself. Without a body-sourced actor there is no field to try,
-    //    which is the point -- so this asserts the OUTCOME instead.
+    // 2. THE DECISIVE LEG, AND IT EXISTS BECAUSE OF MUTATION M30.
+    //
+    //    M30 made share_answer read its actor from a body field named
+    //    `on_behalf_of` -- a name the ACTOR_NAMING_FIELDS allowlist
+    //    does not list -- and it SURVIVED the entire suite, because
+    //    leg 1 above only probes the ELEVEN LISTED NAMES. The allowlist
+    //    is belt-and-braces by design (index.ts says so); the PRIMARY
+    //    defence is that no branch reads an identity out of the body at
+    //    all. Leg 1 cannot test the primary defence, because a
+    //    body-sourced actor under an unlisted name is invisible to it.
+    //
+    //    So this leg asserts the PROPERTY rather than the mechanism: an
+    //    OUTSIDER sending a body that names a real member -- under
+    //    every plausible spelling, listed or not -- still cannot read,
+    //    share or end. A branch that honoured ANY body-sourced actor
+    //    fails here regardless of what the field is called.
+    const smuggleNames = [
+      "on_behalf_of",
+      "as_user",
+      "impersonate",
+      "subject",
+      "member",
+      "owner",
+      "principal",
+      "sub",
+      "uid",
+      "account_id",
+      "member_id",
+      "creator",
+      "requester",
+      "author",
+    ];
+    for (const name of smuggleNames) {
+      // READ: must stay silent and return nothing.
+      const smuggledRead = await processSessionCommand(
+        makeReq({ command: "read", session_id: sessionId, [name]: USER_C1_A }),
+        ctx(USER_OUTSIDER),
+        deps,
+      );
+      const readBody = await smuggledRead.json();
+      // Either the branch rejected the unknown field (its bounded §4.1
+      // schema) or it ignored it -- but it must NEVER have returned
+      // the member's turns to an outsider.
+      assertEquals(
+        readBody.turns ?? [],
+        [],
+        `read must not honour a body-sourced actor named ${name}`,
+      );
+
+      // SHARE: must post nothing.
+      const smuggledShare = await processSessionCommand(
+        makeReq({
+          command: "share_answer",
+          session_id: sessionId,
+          ordinal: 2,
+          [name]: USER_C1_A,
+        }),
+        ctx(USER_OUTSIDER),
+        deps,
+      );
+      assertNotEquals(
+        smuggledShare.status,
+        200,
+        `share_answer must not honour a body-sourced actor named ${name}`,
+      );
+      assertEquals(
+        (await serviceRoleQuery(
+          `SELECT count(*)::int AS n FROM public.ai_session_publications WHERE session_id = $1`,
+          [sessionId],
+        ))[0].n,
+        0,
+        `no message may be posted via a body-sourced actor named ${name}`,
+      );
+
+      // END: must not close the session.
+      const smuggledEnd = await processSessionCommand(
+        makeReq({ command: "end", session_id: sessionId, [name]: USER_C1_A }),
+        ctx(USER_OUTSIDER),
+        deps,
+      );
+      assertNotEquals(
+        smuggledEnd.status,
+        200,
+        `end must not honour a body-sourced actor named ${name}`,
+      );
+      assertEquals(
+        (await serviceRoleQuery(
+          `SELECT state FROM public.ai_sessions WHERE id = $1`,
+          [sessionId],
+        ))[0].state,
+        "active",
+        `the session must survive a body-sourced actor named ${name}`,
+      );
+    }
+
+    // 3. THE OUTSIDER CANNOT READ, SHARE OR END with a clean body
+    //    either -- the baseline the smuggling legs above are measured
+    //    against.
     const outsiderRead = await processSessionCommand(
       makeReq({ command: "read", session_id: sessionId }),
       ctx(USER_OUTSIDER),
@@ -9127,7 +9706,7 @@ Deno.test({
       "an outsider's end must not close the session",
     );
 
-    // 3. The APPROVAL stored by a real member records the VERIFIED
+    // 4. The APPROVAL stored by a real member records the VERIFIED
     //    user, and nothing else.
     const toggleSession = await (async () => {
       await endSession(sessionId, USER_C1_A);
