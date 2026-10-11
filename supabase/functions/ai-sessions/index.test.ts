@@ -11069,6 +11069,279 @@ Deno.test({
 
 Deno.test({
   name:
+    "T7-D: SHARED Nearby and STAGED DISCARD hold the same isolation -- §11 item 8's two uncovered scenarios, across publish and discard in one shared session",
+  fn: async () => {
+    await resetFixtures();
+    await grantDualConsent();
+    await enableCapabilities(
+      "ai_sessions_shared_enabled",
+      "ai_sessions_nearby_enabled",
+    );
+    const deps = await makeDeps();
+
+    // WHY THIS TEST EXISTS. §11 item 8 names FIVE scenarios the
+    // provider spies must cover: "private and shared Nearby, staged
+    // discard, explicit publication and Start together". Every
+    // isolation test in this file -- Task 4's four and T7-A/B/C above --
+    // uses `visibility: "private"`, and none exercises a DISCARD. Shared
+    // Nearby appears in the suite only in lifecycle, publish and
+    // authorization tests, which assert who can see what, not what
+    // crossed the provider boundary. So two of item 8's five named
+    // scenarios had no isolation spy at all.
+    //
+    // Shared Nearby is the riskier of the two: it is the one
+    // configuration where a SECOND PARTY exists who must never see the
+    // staged result (§2: "requester-only staging until requester
+    // explicitly publishes"), so a leak here has a second victim. And
+    // discard is where a "clean up the context we no longer need"
+    // refactor would plausibly touch history assembly.
+    const sessionId = await activateSession(deps, {
+      kind: "nearby",
+      visibility: "shared",
+    });
+
+    const DISCARDED_NAME = "Plimsollgate Roastery";
+    const PUBLISHED_NAME = "Marrowfield Garden Cafe";
+
+    // --- LEG 1: a shared-session Nearby generation that is DISCARDED.
+    const discardedRequestId = crypto.randomUUID();
+    const discardPlaces = [{
+      provider_id: "mbx_plm_11",
+      name: DISCARDED_NAME,
+      formatted_address: "3 Windlass Steps, Airport City",
+      category: "cafe",
+      map_url: "https://www.mapbox.com/search/mbx_plm_11",
+    }];
+    const firstGemini = spyGeminiWhole([{ category: "cafe" }]);
+    const firstMapbox = spyMapboxWhole(discardPlaces);
+    const staged = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: discardedRequestId,
+        expected_revision: 1,
+        user_instruction: "coffee for the two of us",
+        requester_location: FRESH_LOCATION(),
+      }),
+      ctx(USER_C1_A),
+      { ...deps, callGemini: firstGemini.call, searchMapbox: firstMapbox.call },
+    );
+    assertEquals(staged.status, 200, await staged.clone().text());
+    assertEquals(
+      firstGemini.seen.length,
+      1,
+      "the shared Nearby Gemini call must have run",
+    );
+    assertEquals(
+      firstMapbox.seen.length,
+      1,
+      "the shared Nearby Mapbox call must have run",
+    );
+    // PRECONDITION: staged, and therefore in the database where a
+    // history loader that read staging WOULD find it.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_staging WHERE request_id = $1`,
+        [discardedRequestId],
+      ))[0].n,
+      1,
+      "precondition: the shared Nearby result is STAGED",
+    );
+    // §2's shared-Nearby row: requester-only until published. Asserted
+    // because this is the configuration where a second party exists.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_turns WHERE session_id = $1`,
+        [sessionId],
+      ))[0].n,
+      0,
+      "§2: a STAGED shared Nearby result is NOT yet a partner-visible turn",
+    );
+
+    const discarded = await processSessionCommand(
+      makeReq({ command: "discard_nearby", request_id: discardedRequestId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(discarded.status, 200, await discarded.clone().text());
+    assertEquals((await discarded.json()).discarded, true);
+
+    // --- LEG 2: a second shared-session Nearby generation, PUBLISHED.
+    const publishedRequestId = crypto.randomUUID();
+    const publishPlaces = [{
+      provider_id: "mbx_mrw_22",
+      name: PUBLISHED_NAME,
+      formatted_address: "8 Catkin Rise, Cantonments",
+      category: "park",
+      map_url: "https://www.mapbox.com/search/mbx_mrw_22",
+    }];
+    const secondGemini = spyGeminiWhole([{ category: "park" }]);
+    const secondMapbox = spyMapboxWhole(publishPlaces);
+    const second = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: publishedRequestId,
+        expected_revision: (await serviceRoleQuery(
+          `SELECT revision FROM public.ai_sessions WHERE id = $1`,
+          [sessionId],
+        ))[0].revision,
+        user_instruction: "somewhere green instead",
+        requester_location: FRESH_LOCATION(),
+      }),
+      ctx(USER_C1_A),
+      {
+        ...deps,
+        callGemini: secondGemini.call,
+        searchMapbox: secondMapbox.call,
+      },
+    );
+    assertEquals(second.status, 200, await second.clone().text());
+    assertEquals(secondGemini.seen.length, 1);
+
+    // THE DISCARD-SPECIFIC CLAIM: the discarded result's text must not
+    // appear in the NEXT call's payload. A discarded row is deleted, so
+    // the obvious leak is gone -- but the request row, the usage row and
+    // the attempt counter all survive the discard, and a refactor that
+    // rebuilt context from "this session's requests" rather than its
+    // TURNS would reintroduce it. Derived from the Mapbox spy's own
+    // return value, so the set cannot drift from what crossed.
+    const discardedForbidden = dropAllowlistTokens(
+      scalarsOf(discardPlaces).filter((s) => s.length >= 4),
+    );
+    assertEquals(
+      discardedForbidden.length,
+      4,
+      `exactly the four non-allowlist scalars, got ${discardedForbidden.length}: ${
+        discardedForbidden.join("|")
+      }`,
+    );
+    const secondPayload = JSON.stringify(secondGemini.seen[0]);
+    for (const scalar of discardedForbidden) {
+      assertEquals(
+        secondPayload.includes(scalar),
+        false,
+        `§2: a DISCARDED Nearby result's text reached a later Gemini payload: ${
+          JSON.stringify(scalar)
+        }`,
+      );
+    }
+
+    // --- PUBLISH it, making a partner-visible nearby_result turn in a
+    // SHARED session -- item 8's "explicit publication".
+    const publishResponse = await processSessionCommand(
+      makeReq({ command: "publish_nearby", request_id: publishedRequestId }),
+      ctx(USER_C1_A),
+      deps,
+    );
+    assertEquals(
+      publishResponse.status,
+      200,
+      await publishResponse.clone().text(),
+    );
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.ai_session_turns
+           WHERE session_id = $1 AND kind = 'nearby_result'`,
+        [sessionId],
+      ))[0].n,
+      2,
+      "precondition: publication created the partner-visible nearby pair",
+    );
+
+    // --- LEG 3: a THIRD generation, by the PARTNER this time, after
+    // publication. The partner is a different actor reading the same
+    // session, which is the path a per-actor history cache would get
+    // wrong, and read_ai_session_turns returns the published pair to
+    // BOTH parties -- so the kind filter is what must exclude it here.
+    const thirdGemini = spyGeminiWhole([{ category: "museum" }]);
+    const third = await processSessionCommand(
+      makeReq({
+        command: "generate",
+        session_id: sessionId,
+        request_id: crypto.randomUUID(),
+        expected_revision: (await serviceRoleQuery(
+          `SELECT revision FROM public.ai_sessions WHERE id = $1`,
+          [sessionId],
+        ))[0].revision,
+        user_instruction: "something indoors for a rainy day",
+        requester_location: FRESH_LOCATION(),
+      }),
+      ctx(USER_C1_B),
+      {
+        ...deps,
+        callGemini: thirdGemini.call,
+        searchMapbox: spyMapboxWhole([]).call,
+      },
+    );
+    assertEquals(third.status, 200, await third.clone().text());
+    assertEquals(
+      thirdGemini.seen.length,
+      1,
+      "the PARTNER's Gemini call must have run",
+    );
+
+    // PRECONDITION with a real denominator: the RPC the history loader
+    // reads DOES return the published nearby pair TO THE PARTNER, so the
+    // filter is the only thing standing between it and this prompt.
+    assertEquals(
+      (await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.read_ai_session_turns($1, $2)
+           WHERE kind = 'nearby_result'`,
+        [USER_C1_B, sessionId],
+      ))[0].n,
+      2,
+      "precondition: the partner's own read DOES return the published nearby pair",
+    );
+
+    // THE PROPERTY, over BOTH runs' Mapbox output, against the
+    // partner's payload: neither the discarded nor the published place
+    // text may appear.
+    const allForbidden = dropAllowlistTokens(
+      scalarsOf([...discardPlaces, ...publishPlaces]).filter((s) =>
+        s.length >= 4
+      ),
+    );
+    assertEquals(
+      allForbidden.length,
+      8,
+      `exactly eight non-allowlist scalars across both runs, got ${allForbidden.length}: ${
+        allForbidden.join("|")
+      }`,
+    );
+    const thirdPayload = JSON.stringify(thirdGemini.seen[0]);
+    for (const scalar of allForbidden) {
+      assertEquals(
+        thirdPayload.includes(scalar),
+        false,
+        `§2: Mapbox text reached the PARTNER's later Gemini payload in a SHARED session: ${
+          JSON.stringify(scalar)
+        }`,
+      );
+    }
+    // And the history block is EXACTLY empty -- the exact value, so a
+    // filter that kept the published pair but stripped its names fails.
+    const historyBlock = String(thirdGemini.seen[0].userPrompt).match(
+      /which are also untrusted\):\n(\[.*?\])\n/s,
+    );
+    assertEquals(
+      historyBlock !== null,
+      true,
+      `precondition: the SESSION_HISTORY block must be locatable in:\n${thirdPayload}`,
+    );
+    assertEquals(
+      JSON.parse(historyBlock![1]),
+      [],
+      "no nearby_result pair -- discarded or published -- may become model history",
+    );
+
+    await endSession(sessionId, USER_C1_A);
+    await resetCapabilities();
+  },
+});
+
+Deno.test({
+  name:
     "teardown: this suite leaves every capability flag OFF, as the migration seeded them",
   fn: async () => {
     // Not decoration. ai_capability_flag_contracts.sql asserts the
