@@ -534,3 +534,107 @@ class AiSessionApprovalResult {
     );
   }
 }
+
+/// The lifecycle state a POLL can observe, which is a strictly wider set
+/// than the one [AiSessionState] models.
+///
+/// ## WHY THIS IS A SECOND ENUM AND NOT A THIRD CASE ON [AiSessionState]
+///
+/// [AiSessionState] is deliberately approve-only: its `parse` THROWS for
+/// anything but `preparing`/`active`, with the message "every other
+/// state is an UNAVAILABLE error, never a 200 body". That contract is
+/// correct for `approve` and must not be loosened — adding `closed` to
+/// it would make a closed session a legal approval response, which §3.1
+/// forbids.
+///
+/// But `read_state` genuinely CAN report `closed`, and that is the whole
+/// point of polling it: `end_ai_session` sets `state = 'closed'` and
+/// bumps the revision in the same statement, with its own comment saying
+/// why — "advance `revision` so a revision-polling client can observe
+/// the purge (F6)". So the poll needs a type that can hold `closed`
+/// without either throwing or pretending a closed session is active.
+/// Widening [AiSessionState] to serve the poll would have broken
+/// `approve`; this is the narrower change.
+enum AiSessionPolledState {
+  preparing('preparing'),
+  active('active'),
+  closed('closed');
+
+  const AiSessionPolledState(this.wireValue);
+
+  final String wireValue;
+
+  static AiSessionPolledState parse(Object? value) =>
+      AiSessionPolledState.values
+          .where((candidate) => candidate.wireValue == value)
+          .firstOrNull ??
+      (throw FormatException(
+        'AiSessionPolledState: "$value" is not an ai_sessions.state '
+        '(only "preparing", "active" or "closed")',
+      ));
+}
+
+/// The `read_state` command's whole response: `{revision, state}`.
+///
+/// ## WHAT IS ABSENT HERE IS THE SECURITY PROPERTY (RULING 6)
+///
+/// This type has exactly TWO fields, and the migration
+/// (20260953200600) argues each omission individually rather than
+/// leaving it implied. The one that matters most: **`attempt_count` and
+/// `last_admitted_at` are NOT here, because they MOVE ON A SAFETY
+/// REFUSAL WHEN THE REVISION DOES NOT.** A refusal is admitted before
+/// it is refused, so either field would let a partner polling this
+/// surface see "something was attempted and nothing committed" — a
+/// refusal with the serial numbers filed off, and precisely the
+/// disclosure the edge function names in its own words at the
+/// `generate` redirect branch ("bumping the revision for 'unsupported'
+/// but not 'unsafe_to_assist' discloses the detector to a partner
+/// polling session_revision — §8.1 forbids exactly that").
+///
+/// So no field may be added to this class without re-arguing Ruling 6.
+/// `revision` and `state` are both unmoved by a refusal, which is what
+/// makes polling them safe, and a contract test asserts that directly
+/// with a precondition proving the refusal happened.
+///
+/// ## AN ABSENT STATE IS NOT "ENDED"
+///
+/// `read_ai_session_state` is SILENT (zero rows) for every unauthorized
+/// outcome — unknown session, non-member, withdrawn consent, expired, a
+/// shared session this actor never approved — byte-identically, for the
+/// same §7.2 reason `read` returns an empty transcript rather than an
+/// error. The repository therefore reports a null for "no answer", and
+/// **null must never be read as "the session ended"**: a session that
+/// really ended reports `closed` EXPLICITLY, and that is the only
+/// evidence of ending this surface offers.
+class AiSessionStateSnapshot {
+  /// `ai_sessions.revision` — the §6.2 optimistic-concurrency token, and
+  /// the value the poll compares against the one it already holds.
+  final int revision;
+
+  /// The session's lifecycle state. `closed` is a real answer, not an
+  /// error: it is how a poll learns the partner ended the session.
+  final AiSessionPolledState state;
+
+  const AiSessionStateSnapshot({
+    required this.revision,
+    required this.state,
+  });
+
+  factory AiSessionStateSnapshot.fromJson(Map<String, dynamic> json) {
+    final revision = json['revision'];
+    if (revision is! int) {
+      throw const FormatException(
+        'AiSessionStateSnapshot.fromJson: missing/invalid revision',
+      );
+    }
+    if (!json.containsKey('state')) {
+      throw const FormatException(
+        'AiSessionStateSnapshot.fromJson: missing state',
+      );
+    }
+    return AiSessionStateSnapshot(
+      revision: revision,
+      state: AiSessionPolledState.parse(json['state']),
+    );
+  }
+}

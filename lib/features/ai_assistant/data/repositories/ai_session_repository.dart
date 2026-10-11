@@ -268,9 +268,9 @@ class AiSessionRepository {
   ///
   /// ## There is no `start` command and none is needed
   ///
-  /// `processSessionCommand` has exactly nine cases and none is
-  /// `start`: activation rides inside `handleApprove`, which calls
-  /// `activate_ai_session` itself.
+  /// `processSessionCommand` has exactly ten cases (nine until Plan D
+  /// Task 8 added `read_state`) and none is `start`: activation rides
+  /// inside `handleApprove`, which calls `activate_ai_session` itself.
   ///
   /// ## A first approver's `activated: false` is a SUCCESS
   ///
@@ -363,6 +363,86 @@ class AiSessionRepository {
         if (requestId != null) 'request_id': requestId,
       },
       onResult: AiSessionTranscript.fromJson,
+    );
+  }
+
+  /// `read_state` (spec §4.3, §6.1 as amended, §6.2, §7.2): the
+  /// session's current `revision` and lifecycle `state`, and **nothing
+  /// else** — the surface the client POLLS.
+  ///
+  /// ## WHY A POLL AT ALL, AND WHY THIS COMMAND EXISTS
+  ///
+  /// §6.1 was amended for Plan D: polling `session_revision` is the
+  /// sanctioned invalidation mechanism, **Realtime Broadcast is
+  /// explicitly out of scope**, and direct Postgres Changes publication
+  /// of the transcript/staging/source tables stays forbidden. (The
+  /// measurement behind that: the `realtime` schema holds ZERO policies
+  /// of this database's 158, so there is no private-channel
+  /// authorization to subscribe through; and the client uses
+  /// `.onPostgresChanges` at 14 sites against 2 `.onBroadcast`, neither
+  /// in an AI surface.)
+  ///
+  /// But before this command, **the one party that needs to poll could
+  /// not read the value.** `session_revision` reached only the actor who
+  /// CAUSED the bump — `generate`'s and `publish_nearby`'s success
+  /// bodies — while [read] returns `{turns, staged?}` with no revision
+  /// at all, because `read_ai_session_turns` is declared `RETURNS SETOF
+  /// public.ai_session_turns`. A partner, who by definition did not make
+  /// the call that moved the revision, had nothing to compare. Migration
+  /// `20260953200600` adds the gated RPC and carries the full argument
+  /// for why it is a new RPC rather than an extra field on `read`: that
+  /// function's gate refuses `state != 'active'`, so a revision attached
+  /// to THAT response would be absent during exactly the
+  /// `preparing -> active` wait a waiting partner polls for.
+  ///
+  /// ## RULING 6: WHAT THIS RETURNS IS CHOSEN BY WHAT MUST NOT MOVE
+  ///
+  /// Task 4 verified `ai_sessions.revision` is **not** bumped on a
+  /// safety refusal — that is what makes polling it safe rather than a
+  /// disclosure. A refusal settles the REQUEST row and returns; it never
+  /// reaches `commit_ai_session_ideas_turn`, so the bump never runs and
+  /// the session stays `active`. **Both** reported fields are therefore
+  /// unmoved by a refusal.
+  ///
+  /// `attempt_count` and `last_admitted_at` are deliberately NOT
+  /// reported and must not be added: a refusal is ADMITTED before it is
+  /// refused, so either would move on a refusal when the revision did
+  /// not — reintroducing exactly the disclosure Ruling 6 prevents. The
+  /// edge function names this hazard in its own words at `generate`'s
+  /// redirect branch.
+  ///
+  /// A consequence, stated so it is not mistaken for a gap: a polling
+  /// partner **cannot** distinguish "my partner's generation was
+  /// refused" from "my partner has not generated yet". That is not a
+  /// limitation; it IS Ruling 6.
+  ///
+  /// ## NULL MEANS "NO ANSWER", NEVER "ENDED"
+  ///
+  /// The RPC is silent (zero rows) for an unknown session, a non-member,
+  /// withdrawn consent, an expired session and a shared session this
+  /// actor never approved — byte-identically, for the same §7.2 reason
+  /// [read] answers an empty transcript rather than an error. The server
+  /// reports that as `{revision: null, state: null}` and this method
+  /// returns **null**. A caller must never read that as "the session
+  /// ended": a session that really ended reports
+  /// [AiSessionPolledState.closed] EXPLICITLY, and that is the only
+  /// evidence of ending this surface offers. (`end_ai_session` sets
+  /// `state = 'closed'` and bumps the revision in one statement,
+  /// commented "advance `revision` so a revision-polling client can
+  /// observe the purge".)
+  Future<AiSessionStateSnapshot?> readState(String sessionId) {
+    return _invoke(
+      command: 'read_state',
+      // Exactly `handleReadState`'s allowlist: the session id alone. No
+      // request_id — this command reports NOTHING about any request, by
+      // construction (see the Ruling 6 note above).
+      body: {'session_id': sessionId},
+      onResult: (data) => data['state'] == null
+          // SILENCE. Not an error, not an empty snapshot, and not a
+          // throw: a null here is "I got no answer", which the caller
+          // treats as "keep polling, conclude nothing".
+          ? null
+          : AiSessionStateSnapshot.fromJson(data),
     );
   }
 

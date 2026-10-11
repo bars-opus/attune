@@ -154,7 +154,54 @@ class _AiSessionSheetState extends ConsumerState<AiSessionSheet> {
   bool _includeWindow = false;
 
   @override
+  void initState() {
+    super.initState();
+    // THE POLL'S START, driven by the PHASE rather than by a command's
+    // return value (spec §6.1 as amended).
+    //
+    // It arms when the sheet first reaches a phase where a change this
+    // actor did not cause can happen behind their back, and only then:
+    //
+    //   * `waitingForPartner` — this actor approved first and holds a
+    //     200 `{activated: false}`. The partner's later approval is
+    //     reported to the PARTNER; nothing tells this actor, so without
+    //     the poll this wait never ends on its own.
+    //   * `active` — a partner's committed turn, and a partner's `end`,
+    //     both bump the revision.
+    //
+    // NOT armed in `choosing` or `reviewing`: there is no session id
+    // yet in the first, and in the second this actor holds its own
+    // `review_context` response and has nothing to wait on.
+    //
+    // `listenManual` rather than a `ref.listen` in `build`: this is a
+    // side effect on a transition, and `build` must stay free of them.
+    // The subscription is closed in `dispose` below.
+    _phaseSubscription = ref.listenManual<AiSessionViewState>(
+      aiSessionControllerProvider,
+      (previous, next) {
+        if (next.phase == AiSessionPhase.waitingForPartner ||
+            next.phase == AiSessionPhase.active) {
+          _controller.startPolling();
+        } else if (next.phase == AiSessionPhase.ended) {
+          // Belt-and-braces: the controller already stops itself when
+          // the poll OBSERVES `closed`, but this covers the path where
+          // THIS actor called `end` and the phase moved without a tick.
+          _controller.stopPolling();
+        }
+      },
+    );
+  }
+
+  ProviderSubscription<AiSessionViewState>? _phaseSubscription;
+
+  @override
   void dispose() {
+    // STOP 1 OF 4: the sheet is closing, so the poll must not outlive
+    // it. Called before the subscription is closed so the controller is
+    // still reachable. The controller's own `ref.onDispose` is the
+    // backstop for the autoDispose teardown; this is the explicit close.
+    _controller.stopPolling();
+    _phaseSubscription?.close();
     _instructionController.dispose();
     super.dispose();
   }

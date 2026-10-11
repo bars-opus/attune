@@ -35,6 +35,8 @@
 // `.autoDispose` plus the sheet owning the only reference.
 library;
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'
     show Supabase, SupabaseClient;
@@ -245,6 +247,18 @@ class AiSessionViewState {
 class AiSessionController extends AutoDisposeNotifier<AiSessionViewState> {
   @override
   AiSessionViewState build() {
+    // STOP 2 OF 4 FOR THE POLL, registered here because `Notifier` has
+    // NO `dispose` TO OVERRIDE — `ref.onDispose` is Riverpod's teardown
+    // hook, and writing `@override void dispose()` compiles to nothing
+    // useful (it is not an inherited member, which the analyzer reports
+    // as `override_on_non_overriding_member` / `undefined_super_member`;
+    // measured, not assumed). Without this, an `.autoDispose` controller
+    // whose sheet closed leaves a live periodic timer calling
+    // `_pollTick` on a disposed notifier — and writing to `state` after
+    // disposal throws, so the leak is noisy rather than silent.
+    //
+    // Registered in `build` so it is re-armed if the provider is rebuilt.
+    ref.onDispose(stopPolling);
     // Idle until prepare() is called — a fresh sheet open is a fresh
     // instance, so nothing here carries over from a previous session.
     return const AiSessionViewState();
@@ -603,6 +617,207 @@ class AiSessionController extends AutoDisposeNotifier<AiSessionViewState> {
   void dismissRedirect() {
     state = state.copyWith(clearRedirect: true);
   }
+
+  // =====================================================================
+  // THE POLL (spec §6.1 as amended, §6.2, §7.2)
+  //
+  // ## WHAT THIS REPLACES, AND WHY THERE IS NO SUBSCRIPTION
+  //
+  // Task 8's brief specified a Realtime Broadcast subscription on an
+  // `ai_session_hint:<user id>` private channel. **That channel does not
+  // exist and will never be built.** Plan C's Task 6 never created it;
+  // the §6.1 decision was ruled the other way and the spec amended:
+  // POLLING `session_revision` IS THE SANCTIONED INVALIDATION
+  // MECHANISM, Realtime Broadcast is explicitly out of scope, and direct
+  // Postgres Changes publication of the transcript, staging and source
+  // tables remains forbidden. Re-verified rather than taken on trust:
+  // the `realtime` schema holds ZERO policies of this database's 158, so
+  // there is no private-channel authorization to subscribe through at
+  // all, and `RealtimeChannelConfig(private: true)` would be asking the
+  // server to authorize against a policy set that is empty.
+  //
+  // ## WHY A POLL IS NEEDED: THE PARTNER HAS NO RESPONSE TO READ
+  //
+  // Every revision disclosure before this task went to the actor who
+  // CAUSED the bump. The partner never makes that call, so the partner
+  // never learns. Two concrete waits depend on this poll:
+  //
+  //   * `waitingForPartner` -> `active`. This actor approved first and
+  //     got `{approved: true, activated: false, state: "preparing"}` —
+  //     a 200 success. When the OTHER partner approves, the server
+  //     activates the session and tells THEM. Nothing tells this actor.
+  //   * a partner's committed turn, and a partner's `end`. Both bump the
+  //     revision (`end_ai_session`'s own comment: "advance `revision` so
+  //     a revision-polling client can observe the purge").
+  //
+  // ## RULING 6 IS WHY THE POLL READS A REVISION AND NOT A STATUS
+  //
+  // The polled values are chosen by what must NOT move. A safety refusal
+  // does not bump the revision (Task 4) and leaves the session `active`,
+  // so neither polled field moves on a refusal — which is what makes
+  // polling safe rather than a disclosure. `attempt_count` and
+  // `last_admitted_at` DO move on a refusal (a refusal is admitted
+  // before it is refused) and are therefore not on the wire at all; see
+  // `AiSessionStateSnapshot` and migration 20260953200600.
+  //
+  // So this poll CANNOT tell the user "your partner's request was
+  // refused", and must not be extended to. That is Ruling 6 working, not
+  // a missing feature.
+
+  /// How often the poll asks. Five seconds, which is §6.1's own stated
+  /// rate for the superseded hint mechanism — kept because the rate was
+  /// never the part that changed, only the transport.
+  static const Duration pollInterval = Duration(seconds: 5);
+
+  Timer? _pollTimer;
+
+  /// True while a poll tick is in flight, so ticks cannot overlap.
+  bool _polling = false;
+
+  /// Visible for tests: whether the poll is currently armed.
+  bool get isPolling => _pollTimer != null;
+
+  /// Starts the poll, if it is not already running and there is a
+  /// session to poll.
+  ///
+  /// ## LIFECYCLE: ONE SHEET, ONE POLL, STOPPED BY FOUR THINGS
+  ///
+  /// RULING 24 (ruled while Task 7 reported) is that Task 9 must not
+  /// allow two sheets open at once, and the controller is keyed by THE
+  /// SHEET rather than by session id. This poll is built on that and
+  /// does not assume otherwise: it lives on the single sheet-scoped
+  /// controller, there is exactly ONE [_pollTimer] field, and nothing
+  /// here is keyed by session id or could run for two sessions at once.
+  /// A second concurrent session per user is not a state this code can
+  /// represent, which is the correct shape given Ruling 24.
+  ///
+  /// It STOPS on all four of:
+  ///   1. [stopPolling], called by the sheet when it closes;
+  ///   2. the `.autoDispose` teardown — registered as `ref.onDispose`
+  ///      in [build], NOT as a `dispose()` override, which `Notifier`
+  ///      does not offer; so a sheet that is garbage-collected cannot
+  ///      leave a timer calling a disposed notifier (the leak this kind
+  ///      of code usually ships with);
+  ///   3. reaching a terminal phase — [AiSessionPhase.ended], set when
+  ///      the poll observes `closed` or when this actor calls `end`;
+  ///   4. an authorization change that makes the poll pointless:
+  ///      consent withdrawn or membership lost both make the RPC silent,
+  ///      and silence alone does NOT stop the poll (see below) — but an
+  ///      explicit `closed` does.
+  ///
+  /// **Silence does not stop it, deliberately.** The RPC answers zero
+  /// rows for an unknown session, a non-member, withdrawn consent, an
+  /// expired session and a never-approved shared session —
+  /// byte-identically (§7.2). An empty answer is therefore NOT evidence
+  /// the session is gone, exactly as an empty `read` is not, so a null
+  /// snapshot leaves the phase alone and the poll running. Only an
+  /// EXPLICIT `closed` ends it.
+  void startPolling() {
+    if (_pollTimer != null) return;
+    if (state.sessionId == null) return;
+    _pollTimer = Timer.periodic(pollInterval, (_) => _pollTick());
+  }
+
+  /// Stops the poll. Idempotent, so a sheet may call it on every close
+  /// path without checking.
+  void stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  /// One tick.
+  ///
+  /// NOT routed through [_run]. That helper sets `busy`, which drives
+  /// the sheet's in-flight affordances — a background poll must not make
+  /// the UI look like the user's own command is running, and must not
+  /// clear the error slot a real command just wrote. A tick also must
+  /// not surface its own transport failure as a user-visible error: a
+  /// dropped poll is invisible by design and the next tick retries.
+  Future<void> _pollTick() async {
+    final sessionId = state.sessionId;
+    if (sessionId == null) return;
+    // Non-overlapping: a slow round trip must not let ticks pile up and
+    // apply out of order.
+    if (_polling) return;
+    _polling = true;
+    try {
+      final snapshot = await _repository.readState(sessionId);
+      if (snapshot == null) {
+        // §7.2 SILENCE. Not evidence of anything. The phase is NOT
+        // moved, no error is set and the poll keeps running.
+        return;
+      }
+      await _applyPolledState(snapshot);
+    } catch (_) {
+      // A failed tick is swallowed on purpose — see the method header.
+    } finally {
+      _polling = false;
+    }
+  }
+
+  /// Applies one polled snapshot.
+  ///
+  /// ## RULING 9 LIVES HERE, AND THIS IS THE DANGEROUS PLACE FOR IT
+  ///
+  /// `staged`'s null-vs-empty distinction is where a refreshing poll
+  /// would lose it: `null` means "I did not ask", `[]` means "asked, no
+  /// cards", and Task 7 found that without an explicit clear flag the
+  /// field can only ever move one way. So the refresh this method issues
+  /// goes through [_read] with **no `requestId`**, and [_read] assigns
+  /// `transcript.staged` THROUGH together with
+  /// `clearStagedResults: transcript.staged == null` — which is what
+  /// actually WRITES the null back rather than merely failing to
+  /// overwrite it.
+  ///
+  /// That is the correct behaviour and not an accident of reuse: a poll
+  /// did not ask about any request, so after a poll-driven refresh
+  /// `stagedResults` MUST read as "I did not ask". A poll that preserved
+  /// a stale non-null `stagedResults` would leave the sheet offering
+  /// Publish/Discard for a staging row no read has confirmed, which is
+  /// the exact failure Ruling 9 exists to prevent.
+  ///
+  /// `pendingStage` is a different field and is deliberately NOT touched:
+  /// it is this actor's own un-published generation, known only from its
+  /// own `generate` response, and a poll has no authority over it.
+  Future<void> _applyPolledState(AiSessionStateSnapshot snapshot) async {
+    // CLOSED IS THE ONE TERMINAL ANSWER, and it is explicit. This is the
+    // only way this poll concludes a session ended — never from silence.
+    if (snapshot.state == AiSessionPolledState.closed) {
+      stopPolling();
+      state = state.copyWith(phase: AiSessionPhase.ended);
+      return;
+    }
+
+    // The partner approved and the server activated: the wait is over.
+    // Read from the SERVER'S state rather than inferred from anything
+    // local, the same discipline `approve` follows.
+    if (snapshot.state == AiSessionPolledState.active &&
+        state.phase == AiSessionPhase.waitingForPartner) {
+      state = state.copyWith(
+        phase: AiSessionPhase.active,
+        revision: snapshot.revision,
+      );
+      await _read();
+      return;
+    }
+
+    final known = state.revision;
+    // COMPARED, NEVER DERIVED. The revision is only ever assigned from a
+    // server response, and the comparison is a plain inequality — the
+    // client never increments, predicts or recomputes it. `!=` rather
+    // than `>`: a revision that moved at all means this actor's view is
+    // stale, and a client that only believed INCREASES would silently
+    // ignore a server it disagreed with.
+    if (known != null && snapshot.revision != known) {
+      state = state.copyWith(revision: snapshot.revision);
+      // Re-read the transcript. The CONTENT comes from the authorized
+      // `read` path, never from the poll: this surface carries no turn
+      // text, and §6.1's amendment keeps content off the invalidation
+      // channel entirely.
+      await _read();
+    }
+  }
+
 }
 
 final aiSessionControllerProvider =

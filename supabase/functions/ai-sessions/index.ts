@@ -166,6 +166,10 @@ export const SESSION_COMMANDS: ReadonlySet<string> = new Set([
   "approve",
   "generate",
   "read",
+  // The §6.1-as-amended polled surface: revision + state, no content.
+  // See handleReadState for why it is a separate command rather than a
+  // field on `read`.
+  "read_state",
   "publish_nearby",
   "discard_nearby",
   "end",
@@ -3392,6 +3396,82 @@ async function handleRead(branch: BranchContext): Promise<Response> {
 }
 
 // ---------------------------------------------------------------------------
+// Branch: 'read_state' -- spec §4.3, §6.1 (as amended), §6.2, §7.2.
+//
+// THE POLLED SURFACE. §6.1 was amended for Plan D: polling
+// `session_revision` is the sanctioned invalidation mechanism and
+// Realtime Broadcast is out of scope, so this is what the client polls.
+// Migration 20260953200600 carries the full argument for why a new
+// gated RPC rather than an extra field on `read` -- in short, because
+// read_ai_session_turns' gate refuses `state != 'active'`, so a
+// revision bolted onto THAT response would be absent during exactly the
+// preparing -> active wait the poll exists to observe.
+//
+// RULING 6 GOVERNS THE RESPONSE SHAPE. It returns `revision` and
+// `state` and NOTHING ELSE. Both are unmoved by a safety refusal (a
+// refusal settles the REQUEST row and returns; it never reaches
+// commit_ai_session_ideas_turn, so the `revision = revision + 1` bump
+// never runs and the session stays `active`). `attempt_count` and
+// `last_admitted_at` are NOT reported and must never be added: a
+// refusal is ADMITTED before it is refused, so either field would move
+// on a refusal when the revision did not -- which is the disclosure
+// this branch's own sibling comment at handleGenerate's redirect names
+// ("bumping the revision for 'unsupported' but not 'unsafe_to_assist'
+// discloses the detector to a partner polling session_revision -- §8.1
+// forbids exactly that").
+//
+// SILENT, EXACTLY LIKE handleRead, AND FOR THE SAME REASON. The RPC
+// returns zero rows for an unknown session, a non-member, withdrawn
+// consent, an expired session and a shared session this actor never
+// approved -- byte-identically. This branch converts NONE of them into
+// a distinguishable error: it answers HTTP 200 with `{state: null}`.
+// An UNAVAILABLE here would be the existence oracle §7.2 and
+// read_ai_session_turns' header exist to deny, and it would be worse on
+// a POLLED surface than on a one-shot read, because a poll probes
+// repeatedly and for free.
+//
+// The eligibility gate is deliberately NOT run first, the same choice
+// handleRead makes: it raises distinguishable codes (FEATURE_DISABLED,
+// UNAVAILABLE, CONSENT_REQUIRED) and running it here would reintroduce
+// at the edge the distinction the RPC removes in SQL. The RPC enforces
+// membership, consent, expiry and per-visibility authorization itself.
+//
+// ONE EXCEPTION, and it is not an oracle: a TRANSPORT error (the RPC
+// could not be called at all) is INTERNAL_ERROR -- a statement about
+// this server, reachable with any session id including a fake one.
+// ---------------------------------------------------------------------------
+async function handleReadState(branch: BranchContext): Promise<Response> {
+  const allowed = new Set(["command", "session_id"]);
+  for (const key of Object.keys(branch.body)) {
+    if (!allowed.has(key)) {
+      return errorResponse(sessionError("INVALID_INPUT"));
+    }
+  }
+  const sessionId = branch.body.session_id;
+  if (!isCanonicalUuid(sessionId)) {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
+
+  const state = await branch.service().rpc("read_ai_session_state", {
+    // THE ACTOR COMES FROM THE VERIFIED USER, never the body -- the
+    // only authorization input the RPC gets, and why it can be silent.
+    p_actor_id: branch.actorId,
+    p_session_id: sessionId,
+  });
+  if (state.error) return errorResponse(sessionError("INTERNAL_ERROR"));
+
+  const row = (state.data as Record<string, unknown>[] | null)?.[0];
+  // NULLS, NOT AN ERROR AND NOT AN OMITTED KEY. Both keys are always
+  // present so the client parses one shape and reads `state: null` as
+  // "no answer" -- never as "the session ended", which is reported
+  // EXPLICITLY as `closed` and only ever that way.
+  return jsonResponse({
+    revision: row === undefined ? null : row.revision,
+    state: row === undefined ? null : row.state,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Branch: 'publish_nearby' -- spec §5.3, §8.1, §8.2.2.
 //
 // TASK 4'S SAFETY ORDERING IS THE PRECEDENT AND IS NOT LOOSENED.
@@ -3867,6 +3947,9 @@ export async function processSessionCommand(
 
     case "read":
       return await handleRead(branch);
+
+    case "read_state":
+      return await handleReadState(branch);
 
     case "publish_nearby":
       return await handlePublishNearby(branch);
