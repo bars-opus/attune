@@ -109,3 +109,8 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- block_dating_user(text,uuid), which a blanket grant would make false.
 --
 -- So function privileges are left exactly as the migrations leave them.
+
+-- Planning v2 (P1): no client privileges on any v2 table; every read and
+-- write is a SECURITY DEFINER RPC. Without this the blanket grant above
+-- would hand authenticated full DML on them locally.
+\i supabase/migrations/20261012200010_planning_v2_table_grants.sql
