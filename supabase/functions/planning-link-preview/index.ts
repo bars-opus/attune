@@ -10,6 +10,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0
 import { HttpError, jsonResponse, serviceRoleClient } from "../_shared/attune_auth.ts";
 import { userScopedClient } from "../_shared/user_scoped_client.ts";
 import { guardedFetch, PreviewError } from "./guard.ts";
+import { imageDimensions, MAX_PREVIEW_PIXELS } from "./image_size.ts";
 import { parsePreview } from "./og.ts";
 
 const HTML_MAX_BYTES = 512 * 1024;
@@ -67,6 +68,9 @@ async function loadPreview(service: SupabaseClient, url: string): Promise<Cached
 /// JPEG copy in this couple's folder (never shared across couples).
 async function storeImage(service: SupabaseClient, target: Target, imageUrl: string): Promise<string> {
   const res = await guardedFetch(imageUrl, { maxBytes: IMAGE_MAX_BYTES, accept: "image" });
+  // A 2 MB file can declare a canvas that exhausts memory when decoded.
+  const size = imageDimensions(res.body);
+  if (!size || size.width * size.height > MAX_PREVIEW_PIXELS) throw new PreviewError("image_too_big");
   const decoded = await decode(res.body);
   let image = (decoded instanceof GIF ? decoded[0] : decoded) as Image;
   if (Math.max(image.width, image.height) > IMAGE_LONG_EDGE) {
