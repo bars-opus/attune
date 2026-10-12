@@ -196,3 +196,92 @@ class PlanningNewDot extends StatelessWidget {
         ),
       );
 }
+
+/// One labelled field in a dialog. Null when cancelled; blank counts as
+/// cancelled unless [allowEmpty].
+Future<String?> askPlanningText(
+  BuildContext context, {
+  required String title,
+  required String label,
+  String initial = '',
+  int maxLength = 80,
+  String action = 'Save',
+  TextInputType? keyboardType,
+  String? hint,
+  bool allowEmpty = false,
+}) =>
+    showDialog<String>(
+      context: context,
+      builder: (_) => _PlanningTextDialog(
+          title: title, label: label, initial: initial, maxLength: maxLength, action: action,
+          keyboardType: keyboardType, hint: hint),
+    ).then((v) => v == null || (v.isEmpty && !allowEmpty) ? null : v);
+
+/// Owns its controller, so it lives exactly as long as the dialog's route
+/// (including the closing animation).
+class _PlanningTextDialog extends StatefulWidget {
+  const _PlanningTextDialog({
+    required this.title,
+    required this.label,
+    required this.initial,
+    required this.maxLength,
+    required this.action,
+    required this.keyboardType,
+    required this.hint,
+  });
+  final String title;
+  final String label;
+  final String initial;
+  final int maxLength;
+  final String action;
+  final TextInputType? keyboardType;
+  final String? hint;
+
+  @override
+  State<_PlanningTextDialog> createState() => _PlanningTextDialogState();
+}
+
+class _PlanningTextDialogState extends State<_PlanningTextDialog> {
+  late final _c = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text(widget.title),
+        content: TextField(
+          controller: _c,
+          autofocus: true,
+          keyboardType: widget.keyboardType,
+          decoration: InputDecoration(labelText: widget.label, hintText: widget.hint),
+          inputFormatters: [CodePointLengthFormatter(widget.maxLength)],
+          onSubmitted: (v) => Navigator.pop(context, v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, _c.text.trim()), child: Text(widget.action)),
+        ],
+      );
+}
+
+/// "villa.example/ubud" -> "https://villa.example/ubud". Null unless the
+/// result is an http(s) address with a dotted host (the server re-checks).
+String? normalizePlanningUrl(String input) {
+  final t = input.trim();
+  if (t.isEmpty || t.length > 2048 || t.contains(RegExp(r'\s'))) return null;
+  final withScheme = RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*:').hasMatch(t) ? t : 'https://$t';
+  final u = Uri.tryParse(withScheme);
+  if (u == null || (u.scheme != 'http' && u.scheme != 'https') || !u.host.contains('.')) return null;
+  return withScheme;
+}
+
+String planningMemberName(List<PlanningMember> members, String? id) {
+  for (final m in members) {
+    if (m.id == id) return m.displayName.isEmpty ? 'Partner' : m.displayName;
+  }
+  return 'Someone';
+}

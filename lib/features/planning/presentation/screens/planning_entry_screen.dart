@@ -9,13 +9,21 @@ import '../../data/planning_models.dart';
 import '../../domain/code_point_limit.dart';
 import '../planning_providers.dart';
 import '../planning_ui.dart';
+import '../../data/planning_error.dart';
+import '../../domain/planning_money.dart';
 import '../widgets/block_tool_tray.dart';
 import 'planning_text_editor_screen.dart';
+import '../widgets/budget_block_view.dart';
 import '../widgets/checklist_block_view.dart';
 import '../widgets/date_block_view.dart';
+import '../widgets/expenses_block_view.dart';
+import '../widgets/link_block_view.dart';
+import '../widgets/photo_block_view.dart';
+import '../widgets/place_block_view.dart';
+import '../widgets/table_block_view.dart';
 import '../widgets/text_block_view.dart';
 
-enum _EntryMenu { rename, done, reopen, next }
+enum _EntryMenu { rename, done, reopen, next, splitOn, splitOff }
 
 enum _BlockMenu { up, down, delete }
 
@@ -133,6 +141,10 @@ class _EntryBody extends ConsumerWidget {
         await _guard(context, () => ctl.setStatus('done'));
       case _EntryMenu.reopen:
         await _guard(context, () => ctl.setStatus('active'));
+      case _EntryMenu.splitOn:
+        await _guard(context, () => ctl.setSplit(true));
+      case _EntryMenu.splitOff:
+        await _guard(context, () => ctl.setSplit(false));
       case _EntryMenu.next:
         await _guard(context, () async {
           final copy = await ref.read(planningRepositoryProvider)
@@ -156,6 +168,42 @@ class _EntryBody extends ConsumerWidget {
     ));
   }
 
+  /// Link and Place ask for their content first; the rest start empty.
+  Future<void> _addBlock(BuildContext context, WidgetRef ref, PlanningBlockType type) async {
+    final ctl = ref.read(planningEntryProvider(_args).notifier);
+    Map<String, dynamic>? payload;
+    if (type == PlanningBlockType.link) {
+      final raw = await askPlanningText(context,
+          title: 'Add a link', label: 'Web address', hint: 'airbnb.com/rooms/…', action: 'Add', maxLength: 2048,
+          keyboardType: TextInputType.url);
+      if (raw == null || !context.mounted) return;
+      final url = normalizePlanningUrl(raw);
+      if (url == null) return showPlanningError(context, const PlanningInvalidInput('url'));
+      payload = {'url': url};
+    } else if (type == PlanningBlockType.place) {
+      final place = await showPlanningPlacePicker(context);
+      if (place == null || !context.mounted) return;
+      payload = place.toJson();
+    }
+    await _guard(context, () => ctl.addBlock(type, payload: payload));
+  }
+
+  Widget _blockBody(PlanningEntryDetail d, PlanningBlock b) => switch (b.type) {
+        PlanningBlockType.text => TextBlockView(args: _args, block: b),
+        PlanningBlockType.checklist => ChecklistBlockView(args: _args, block: b, members: d.members),
+        PlanningBlockType.date => DateBlockView(args: _args, block: b),
+        PlanningBlockType.table => TableBlockView(args: _args, block: b, currency: d.entry.currency),
+        PlanningBlockType.photo => PhotoBlockView(args: _args, block: b),
+        PlanningBlockType.link => LinkBlockView(args: _args, block: b),
+        PlanningBlockType.place => PlaceBlockView(args: _args, block: b),
+        PlanningBlockType.expenses => ExpensesBlockView(args: _args, block: b, detail: d),
+        PlanningBlockType.budget => BudgetBlockView(args: _args, block: b, defaultCurrency: d.entry.currency),
+        PlanningBlockType.unsupported => const Padding(
+            padding: EdgeInsets.symmetric(vertical: Spacing.sm),
+            child: Text('This block needs a newer version of Attune.'),
+          ),
+      };
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(planningEntryProvider(_args));
@@ -174,6 +222,10 @@ class _EntryBody extends ConsumerWidget {
                 if (!d.entry.isTemplate && d.entry.status != 'active')
                   const PopupMenuItem(value: _EntryMenu.reopen, child: Text('Reopen')),
                 if (!d.entry.isTemplate) const PopupMenuItem(value: _EntryMenu.next, child: Text('Start next one')),
+                if (!d.entry.isTemplate && d.entry.split == null)
+                  const PopupMenuItem(value: _EntryMenu.splitOn, child: Text('Split costs')),
+                if (!d.entry.isTemplate && d.entry.split != null)
+                  const PopupMenuItem(value: _EntryMenu.splitOff, child: Text('Stop splitting costs')),
               ],
             ),
         ],
@@ -185,9 +237,7 @@ class _EntryBody extends ConsumerWidget {
               label: 'Add block',
               onPressed: () async {
                 final type = await showBlockToolTray(context);
-                if (type != null && context.mounted) {
-                  await _guard(context, () => ref.read(planningEntryProvider(_args).notifier).addBlock(type));
-                }
+                if (type != null && context.mounted) await _addBlock(context, ref, type);
               },
             )
           : null,
@@ -207,12 +257,7 @@ class _EntryBody extends ConsumerWidget {
                 () => ref.read(planningEntryProvider(_args).notifier).moveBlock(d.blocks[from].id, to > from ? to - 1 : to)),
             itemBuilder: (context, i) {
               final b = d.blocks[i];
-              final name = b.title ?? switch (b.type) {
-                PlanningBlockType.text => 'Text',
-                PlanningBlockType.checklist => 'Checklist',
-                PlanningBlockType.date => 'Date',
-                PlanningBlockType.unsupported => 'Block',
-              };
+              final name = b.title ?? planningBlockLabel(b.type);
               final ctl = ref.read(planningEntryProvider(_args).notifier);
               return ReorderableDelayedDragStartListener(
                 key: ValueKey('block-${b.id}'),
@@ -232,17 +277,7 @@ class _EntryBody extends ConsumerWidget {
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(Spacing.md, Spacing.sm, 0, Spacing.sm),
                       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Expanded(
-                          child: switch (b.type) {
-                            PlanningBlockType.text => TextBlockView(args: _args, block: b),
-                            PlanningBlockType.checklist => ChecklistBlockView(args: _args, block: b, members: d.members),
-                            PlanningBlockType.date => DateBlockView(args: _args, block: b),
-                            PlanningBlockType.unsupported => const Padding(
-                                padding: EdgeInsets.symmetric(vertical: Spacing.sm),
-                                child: Text('This block needs a newer version of Attune.'),
-                              ),
-                          },
-                        ),
+                        Expanded(child: _blockBody(d, b)),
                         PopupMenuButton<_BlockMenu>(
                           tooltip: 'Options for $name',
                           onSelected: (m) => switch (m) {
@@ -294,6 +329,7 @@ class _Hero extends ConsumerWidget {
           ),
         Text(detail.entry.title, style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: Spacing.sm),
+        if (detail.entry.split case final split?) _SplitCard(detail: detail, split: split, args: args),
         Wrap(spacing: Spacing.sm, runSpacing: Spacing.xs, children: [
           if (date != null)
             Chip(avatar: const Icon(Icons.event_rounded, size: 18), label: Text(formatPlanningRange(date.dateStart, date.dateEnd))),
@@ -328,6 +364,57 @@ class _Hero extends ConsumerWidget {
                   ),
           ),
         ]),
+      ]),
+    );
+  }
+}
+
+/// Who evens out with whom, per currency, inside this plan only (spec D6).
+class _SplitCard extends ConsumerWidget {
+  const _SplitCard({required this.detail, required this.split, required this.args});
+  final PlanningEntryDetail detail;
+  final PlanningSplit split;
+  final PlanningEntryArgs args;
+
+  Future<void> _settle(BuildContext context, WidgetRef ref) async {
+    final ok = await planningConfirm(context,
+        title: 'Settle up?',
+        message: 'Marks everything so far as paid back. New expenses start a fresh balance.',
+        confirmText: 'Settle');
+    if (!ok || !context.mounted) return;
+    try {
+      await ref.read(planningEntryProvider(args).notifier).settleSplit();
+    } catch (e) {
+      if (context.mounted) showPlanningError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: Spacing.smMd),
+      padding: Spacing.allSm,
+      decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadiusTokens.smAll),
+      child: Row(children: [
+        Icon(Icons.balance_rounded, color: scheme.onSecondaryContainer),
+        const SizedBox(width: Spacing.sm),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (split.isEven)
+              Text('All even', style: theme.textTheme.titleSmall?.copyWith(color: scheme.onSecondaryContainer))
+            else
+              for (final b in split.balances)
+                Text(
+                  '${planningMemberName(detail.members, b.owedBy)} owes '
+                  '${planningMemberName(detail.members, b.owedTo)} ${formatPlanningMoney(b.minor, b.currency)}',
+                  style: theme.textTheme.titleSmall?.copyWith(color: scheme.onSecondaryContainer),
+                ),
+          ]),
+        ),
+        if (!split.isEven) TextButton(onPressed: () => _settle(context, ref), child: const Text('Mark settled')),
       ]),
     );
   }

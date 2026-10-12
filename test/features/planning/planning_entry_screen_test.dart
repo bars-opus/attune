@@ -164,7 +164,7 @@ void main() {
   });
 
   testWidgets('a block type from a newer server renders a placeholder', (tester) async {
-    await tester.pumpWidget(planningTestApp(_gateway(extraType: 'budget'), _screen));
+    await tester.pumpWidget(planningTestApp(_gateway(extraType: 'hologram'), _screen));
     await tester.pumpAndSettle();
     expect(find.text('This block needs a newer version of Attune.'), findsOneWidget);
   });
