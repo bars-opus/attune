@@ -1123,9 +1123,220 @@ EOF
 
 ---
 
-## Remaining tasks: Stages 2–7
+## Stage 2 addendum: two constraints discovered in the field code
 
-Tasks 5–14 are the field rewrite and are written in the next pass at the same granularity as Tasks 0–4 — full test code, full implementation, exact commands and expected output. Their scope and boundaries are fixed:
+Read these before Task 5. Both were found by reading `paint_ball_field.dart`
+after Stage 1 shipped, and both override a Global Constraint above.
+
+**1. The 150–320ms motion band does NOT bind the travelling figure.**
+`paint_ball_field.dart:657` runs the reposition animation at **620ms**, and
+tests 16 and 17 pump exactly `310ms` (`paint_ball_field_test.dart:490,543`) to
+sample its midpoint. **Preserve 620ms verbatim.** The band governs a *settle* —
+one object arriving at one place. This is a documented three-beat journey (back
+out of cover → across → forward into the new cover) whose point is that
+repositioning reads as travel; the code comment notes a cross-faded triangle
+"would read as two triangles." Three beats inside 320ms is ~100ms each, below
+the threshold at which an eye can follow a path. An implementer who "fixes" the
+620 to comply breaks two tests, one of them device-reported.
+
+**2. The aimed cover slides aside, and that slide is the Fire confirmation.**
+`_coverRow` moves the aimed shield from `18.w` to `30.w` and lifts its opacity
+to `1.0` against `0.45` (enabled) / `0.35` (disabled). The comment states why:
+*"With no Fire button, the aimed cover IS the confirmation that a target is
+chosen, so it has to be obvious at a glance rather than a subtle tint."*
+
+§2.3's bay-of-darkness has nowhere to slide and no opacity ladder, so **the
+neon bay must carry an explicit AIMED state that is unmistakable at a glance.**
+Task 7 specifies it as: the bay's outline jumps from `structureAlphaRest` to
+`structureAlphaActive`, gains a halo pass, and its mouth *opens* — the two legs
+part horizontally — so the shot has a visible path through. Opening the gate is
+the neon equivalent of sliding the shield aside, and it keeps the "you can see
+the path for the shot" property the original was built for.
+
+---
+
+## Task 5: Field keys — the typed test seam
+
+§3.6.1 mandates this before any painter is renamed: stable `Key`s and public
+painter fields, so the rewritten tests never again identify a painter by its
+private type name or read a field through `as dynamic`.
+
+**Files:**
+- Create: `lib/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart`
+- Test: `test/features/games/paint_ball_field_keys_test.dart`
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: `PaintBallFieldKeys` with these static members, used by Tasks 6–8 and by the rewritten field tests:
+  - `static Key figure(int position, {required bool isOpponent})`
+  - `static Key bay(int position, {required bool isOpponent})`
+  - `static Key projectile({required bool isMine})`
+  - `static const Key ground`
+  - `static const Key paint`
+  - `static const Key divider`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/features/games/paint_ball_field_keys_test.dart`:
+
+```dart
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  test('a key is distinct per position and per side', () {
+    // The whole point of the seam: a test asking for "my middle figure"
+    // must not match the opponent's. The old tests counted painters by
+    // type name, which could not tell the two rows apart at all -- they
+    // asserted on totals and inferred the rest.
+    final keys = <Key>{
+      for (var position = 0; position < 3; position++) ...[
+        PaintBallFieldKeys.figure(position, isOpponent: false),
+        PaintBallFieldKeys.figure(position, isOpponent: true),
+        PaintBallFieldKeys.bay(position, isOpponent: false),
+        PaintBallFieldKeys.bay(position, isOpponent: true),
+      ],
+    };
+
+    expect(
+      keys,
+      hasLength(12),
+      reason: '3 positions x 2 sides x 2 kinds, all distinct',
+    );
+  });
+
+  test('the same arguments always give an equal key', () {
+    // ValueKey equality is what lets a test written once keep finding
+    // the same widget across rebuilds.
+    expect(
+      PaintBallFieldKeys.figure(1, isOpponent: false),
+      PaintBallFieldKeys.figure(1, isOpponent: false),
+    );
+    expect(
+      PaintBallFieldKeys.bay(2, isOpponent: true),
+      PaintBallFieldKeys.bay(2, isOpponent: true),
+    );
+    expect(
+      PaintBallFieldKeys.projectile(isMine: true),
+      PaintBallFieldKeys.projectile(isMine: true),
+    );
+  });
+
+  test('the two projectiles are distinguishable', () {
+    // A replay puts both shots in the air at once (spec §2.6). The test
+    // that pins this counted painters by name and could only assert
+    // "two exist"; keys let it assert WHOSE.
+    expect(
+      PaintBallFieldKeys.projectile(isMine: true),
+      isNot(PaintBallFieldKeys.projectile(isMine: false)),
+    );
+  });
+
+  test('the singleton keys are distinct from each other', () {
+    expect(
+      {
+        PaintBallFieldKeys.ground,
+        PaintBallFieldKeys.paint,
+        PaintBallFieldKeys.divider,
+      },
+      hasLength(3),
+    );
+  });
+
+  test('a key survives a round trip through a widget', () {
+    // Guards against a key type that compares equal but cannot be found
+    // by find.byKey -- the failure would be invisible until a test that
+    // depends on it silently found nothing.
+    const key = PaintBallFieldKeys.ground;
+    expect(const SizedBox(key: key).key, key);
+  });
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `flutter test test/features/games/paint_ball_field_keys_test.dart`
+Expected: FAIL — `Target of URI doesn't exist` for `field/paint_ball_field_keys.dart`.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `lib/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart`:
+
+```dart
+import 'package:flutter/widgets.dart';
+
+/// Stable handles onto the field's parts, for tests.
+///
+/// Spec §3.6.1. The field's 25 tests used to find painters by
+/// `runtimeType.toString().contains('Triangle')` and read their state
+/// through `(painter as dynamic).splats`. Both work and both are traps:
+/// renaming a private painter breaks a dozen assertions with no
+/// behaviour change, and worse, a name filter that matches nothing
+/// yields an empty collection, so `expect(count, 0)` and
+/// `for (x in matches)` keep passing while asserting nothing at all.
+/// Two of the field's tests were in exactly that state.
+///
+/// So the parts carry keys and the painters expose public fields. A test
+/// that asks for a named thing either finds it or fails.
+///
+/// Keyed per position AND per side, because the old filters could not
+/// tell the two rows apart -- they counted totals across the whole
+/// field and inferred whose was whose.
+class PaintBallFieldKeys {
+  const PaintBallFieldKeys._();
+
+  /// A player's figure in its cover.
+  static Key figure(int position, {required bool isOpponent}) =>
+      ValueKey('paintball.figure.${isOpponent ? 'theirs' : 'mine'}.$position');
+
+  /// One cover bay.
+  static Key bay(int position, {required bool isOpponent}) =>
+      ValueKey('paintball.bay.${isOpponent ? 'theirs' : 'mine'}.$position');
+
+  /// A paintball in flight. Both sides' shots are airborne together
+  /// during a replay (§2.6), so each needs its own handle.
+  static Key projectile({required bool isMine}) =>
+      ValueKey('paintball.projectile.${isMine ? 'mine' : 'theirs'}');
+
+  static const Key ground = ValueKey('paintball.ground');
+  static const Key paint = ValueKey('paintball.paint');
+  static const Key divider = ValueKey('paintball.divider');
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `flutter test test/features/games/paint_ball_field_keys_test.dart`
+Expected: PASS, 5 tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart test/features/games/paint_ball_field_keys_test.dart
+git commit -m "$(cat <<'EOF'
+feat(paintball): give the field's parts handles a test can trust
+
+The field's tests find painters by runtimeType name substring and read
+their state through `as dynamic`. Both work, and both are traps: a
+rename breaks a dozen assertions with no behaviour change, and a name
+filter that matches nothing yields an empty collection -- so
+`expect(count, 0)` and `for (x in matches)` keep passing while asserting
+nothing. Two of the field's own tests were already in that state.
+
+Keyed per position AND per side, because the name filters could not tell
+the two rows apart; they counted totals and inferred whose was whose.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+## Remaining tasks: Stages 3–7
+
+Tasks 6–14 cover the rest. Tasks 6, 7 and 8 complete Stage 2 and are written in the pass that follows Task 5; Tasks 9–14 follow the Stage 2 checkpoint. Their scope and boundaries are fixed:
 
 | Task | Stage | Deliverable |
 |---|---|---|
