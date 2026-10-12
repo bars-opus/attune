@@ -1,4 +1,5 @@
 import 'package:attune/core/widgets/feedback/error_state.dart';
+import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/features/planning/presentation/screens/planning_home_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
 import 'package:flutter/material.dart';
@@ -30,6 +31,18 @@ void main() {
     expect(find.bySemanticsLabel('New from your partner'), findsOneWidget);
     await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
     semantics.dispose();
+  });
+
+  testWidgets('category rows are the app\'s InfoRowWidget', (tester) async {
+    await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1')));
+    await tester.pumpAndSettle();
+    for (final label in ['Goals', 'Trips', 'Hidden (1)', 'New category']) {
+      expect(find.ancestor(of: find.text(label), matching: find.byType(InfoRowWidget)), findsOneWidget, reason: label);
+    }
+    expect(find.byType(ListTile), findsNothing);
+    await tester.tap(find.text('New category'));
+    await tester.pumpAndSettle();
+    expect(find.ancestor(of: find.text('Blank category'), matching: find.byType(InfoRowWidget)), findsOneWidget);
   });
 
   testWidgets('hidden categories appear under the Hidden row', (tester) async {

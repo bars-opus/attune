@@ -1,5 +1,6 @@
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/app_tabs.dart';
+import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
 import 'package:attune/home/widgets/tabs_with_content.dart';
 import 'package:flutter/material.dart';
@@ -175,14 +176,16 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
             footer: Column(
               children: [
                 if (hidden.isNotEmpty) ...[
-                  ListTile(
-                    minTileHeight: 56,
-                    leading: Icon(
-                      _showHidden
-                          ? Icons.expand_less_rounded
-                          : Icons.expand_more_rounded,
-                    ),
-                    title: Text('Hidden (${hidden.length})'),
+                  InfoRowWidget(
+                    padding: _rowPadding,
+                    icon:
+                        _showHidden
+                            ? Icons.expand_less_rounded
+                            : Icons.expand_more_rounded,
+                    title: 'Hidden (${hidden.length})',
+                    subtitle: '',
+                    showDivider: false,
+                    disableTrailing: true,
                     onTap: () => setState(() => _showHidden = !_showHidden),
                   ),
                   if (_showHidden)
@@ -198,10 +201,13 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
                             ),
                       ),
                 ],
-                ListTile(
-                  minTileHeight: 56,
-                  leading: const Icon(Icons.add_rounded),
-                  title: const Text('New category'),
+                InfoRowWidget(
+                  padding: _rowPadding,
+                  icon: Icons.add_rounded,
+                  title: 'New category',
+                  subtitle: '',
+                  showDivider: false,
+                  disableTrailing: true,
                   onTap: _create,
                 ),
                 const SizedBox(height: Spacing.xl),
@@ -237,14 +243,14 @@ class _CategoryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final tone = planningTone(context, category.color);
     final n = category.entryCount;
-    return ListTile(
-      minTileHeight: 64,
-      leading: CircleAvatar(
-        backgroundColor: tone.container,
-        child: Icon(planningIcon(category.icon), color: tone.onContainer),
-      ),
-      title: Text(category.name),
-      subtitle: Text(n == 1 ? '1 plan' : '$n plans'),
+    return InfoRowWidget(
+      padding: _rowPadding,
+      icon: planningIcon(category.icon),
+      iconColor: tone.onContainer,
+      backgroundColor: tone.container,
+      title: category.name,
+      subtitle: n == 1 ? '1 plan' : '$n plans',
+      showDivider: false,
       onTap: onOpen,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -296,6 +302,9 @@ class _CategoryTile extends StatelessWidget {
 
 const _blankCategory = '';
 
+/// Category rows are the app's InfoRowWidget; this is their list inset.
+const _rowPadding = EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.sm);
+
 /// "+ New category": start blank, or from one of the server's gallery ideas.
 class _NewCategoryChooser extends ConsumerWidget {
   const _NewCategoryChooser();
@@ -312,10 +321,13 @@ class _NewCategoryChooser extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(Spacing.md, 0, Spacing.md, Spacing.sm),
             child: Text('New category', style: theme.textTheme.titleLarge),
           ),
-          ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.add_rounded)),
-            title: const Text('Blank category'),
-            subtitle: const Text('Name it and build its template yourself'),
+          InfoRowWidget(
+            padding: _rowPadding,
+            icon: Icons.add_rounded,
+            title: 'Blank category',
+            subtitle: 'Name it and build its template yourself',
+            showDivider: false,
+            showTrailingArrow: true,
             onTap: () => Navigator.pop(context, _blankCategory),
           ),
           Padding(
@@ -325,17 +337,22 @@ class _NewCategoryChooser extends ConsumerWidget {
           ...gallery.when(
             loading: () => [const Padding(padding: Spacing.allMd, child: LinearProgressIndicator())],
             error: (_, __) => [
-              const ListTile(title: Text("Ideas couldn't load. You can still start a blank category.")),
+              const Padding(
+                padding: _rowPadding,
+                child: Text("Ideas couldn't load. You can still start a blank category."),
+              ),
             ],
             data: (ideas) => [
               for (final g in ideas)
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: planningTone(context, g.color).container,
-                    child: Icon(planningIcon(g.icon), color: planningTone(context, g.color).onContainer),
-                  ),
-                  title: Text(g.name),
-                  subtitle: Text(g.description),
+                InfoRowWidget(
+                  padding: _rowPadding,
+                  icon: planningIcon(g.icon),
+                  iconColor: planningTone(context, g.color).onContainer,
+                  backgroundColor: planningTone(context, g.color).container,
+                  title: g.name,
+                  subtitle: g.description,
+                  showDivider: false,
+                  showTrailingArrow: true,
                   onTap: () => Navigator.pop(context, g.key),
                 ),
             ],
