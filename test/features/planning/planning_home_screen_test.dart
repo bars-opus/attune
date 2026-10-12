@@ -90,6 +90,17 @@ void main() {
     expect(find.text('Events'), findsOneWidget);
   });
 
+  testWidgets('the Planning v2 preview button is absent in normal builds', (tester) async {
+    final repository = PlanningRepository(_FakeGateway({
+      'list_planning_goals': (_) async => <dynamic>[],
+      'list_planning_tasks': (_) async => <dynamic>[],
+      'list_planning_events': (_) async => <dynamic>[],
+    }));
+    await tester.pumpWidget(_wrap(const PlanningHomeScreen(relationshipId: 'r1'), repository));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Planning v2 preview'), findsNothing);
+  });
+
   group('two tabs: Planning and Calendar', () {
     testWidgets(
       'both tab labels are shown, and the Planning tab (the original '

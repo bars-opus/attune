@@ -20,6 +20,8 @@ import 'create_planning_goal_screen.dart';
 import 'create_planning_task_screen.dart';
 import 'create_planning_event_screen.dart';
 import 'planning_notes_screen.dart';
+import '../../v2/presentation/planning_v2_ui.dart' show planningV2Route;
+import '../../v2/presentation/screens/planning_v2_home_screen.dart';
 
 /// Two tabs: the original sections list (Goals/Tasks/Events, each with
 /// its own "+", plus a Notes row opening `PlanningNotesScreen`) and the
@@ -32,6 +34,12 @@ import 'planning_notes_screen.dart';
 /// coordination here — but with `showOwnAppBar: false`, since this
 /// screen's own AppBar is already above the tab bar and two would
 /// stack. The standalone `/couples-calendar` route keeps its bar.
+/// Planning v2 is preview-only in P1 (plan ruling R9). A compile-time
+/// constant: in builds without `--dart-define=PLANNING_V2_PREVIEW=true`
+/// the button below is tree-shaken out and v1 is byte-for-byte unchanged
+/// in behaviour.
+const bool _planningV2Preview = bool.fromEnvironment('PLANNING_V2_PREVIEW');
+
 class PlanningHomeScreen extends ConsumerWidget {
   const PlanningHomeScreen({super.key, required this.relationshipId});
   final String relationshipId;
@@ -65,6 +73,16 @@ class PlanningHomeScreen extends ConsumerWidget {
             color: colorScheme.onSurface.withValues(alpha: 0.8),
           ),
         ),
+        actions: [
+          if (_planningV2Preview)
+            IconButton(
+              tooltip: 'Planning v2 preview',
+              icon: const Icon(Icons.auto_awesome_rounded),
+              onPressed: () => Navigator.of(context).push(
+                planningV2Route(PlanningV2HomeScreen(relationshipId: relationshipId)),
+              ),
+            ),
+        ],
       ),
       body: TabsWithContent(
         tabs: tabs,

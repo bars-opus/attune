@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:attune/features/planning/v2/data/planning_v2_error.dart';
 import 'package:attune/features/planning/v2/domain/planning_outbox.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 CheckItemOp _tick(String id, {bool checked = true}) => CheckItemOp(
     opId: 'op-$id', relationshipId: 'r1', entryId: 'e1', itemId: id, checked: checked);
@@ -112,5 +113,30 @@ void main() {
   test('a corrupt stored queue is discarded, not fatal', () async {
     store.raw = [{'kind': 'nonsense'}];
     expect(await make().pending(), isEmpty);
+  });
+
+  group('SharedPreferencesOutboxStore (the store real phones use)', () {
+    test('round-trips queued ops across store instances', () async {
+      SharedPreferences.setMockInitialValues({});
+      final op = _tick('i1');
+      await SharedPreferencesOutboxStore().write([op.toJson()]);
+      final read = await SharedPreferencesOutboxStore().read();
+      expect(OutboxOp.fromJson(read.single)!.opId, 'op-i1');
+    });
+
+    test('empty storage reads as an empty queue', () async {
+      SharedPreferences.setMockInitialValues({});
+      expect(await SharedPreferencesOutboxStore().read(), isEmpty);
+    });
+
+    test('corrupt stored JSON reads as empty instead of throwing', () async {
+      SharedPreferences.setMockInitialValues({'planning_v2_outbox_v1': '{not json'});
+      expect(await SharedPreferencesOutboxStore().read(), isEmpty);
+    });
+  });
+
+  test('an op with a wrongly typed field is discarded, not fatal', () {
+    expect(OutboxOp.fromJson({'kind': 'check', 'op_id': 7, 'relationship_id': 'r', 'entry_id': 'e',
+        'item_id': 'i', 'checked': true}), isNull);
   });
 }
