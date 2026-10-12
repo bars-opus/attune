@@ -322,14 +322,36 @@ logic, that is the signal it has become the thing this split was meant to avoid.
 ### 3.3 What does not move
 
 Screens, provider, service, models and analytics are untouched.
-**`PaintBallField`'s public constructor signature is frozen**, so
-`paint_ball_battle_screen.dart` and `paint_ball_knockout_screen.dart` compile
-unchanged.
+**`PaintBallField`'s public constructor signature is frozen**, so its callers
+compile unchanged. This keeps the blast radius inside the widget layer, which
+is the deliberate regression guard: no shared files, no routing, no providers.
 
-`kPaintBallPositions` currently lives in `paint_ball_field.dart` and is imported
-by `paint_ball_provider.dart`. The split must keep it exported from the same
-import path, so the provider is not touched. Moving it is out of scope. This keeps the blast radius inside the widget layer, which is the
-deliberate regression guard: no shared files, no routing, no providers.
+**Correction to an earlier draft of this section.** It named two importers and
+one shared constant. The real public surface of `paint_ball_field.dart` is
+wider, and all of it must stay reachable from that same import path or files
+this work promised not to touch will break:
+
+| Public symbol | Consumed by |
+|---|---|
+| `PaintBallField` | `paint_ball_battle_screen.dart`, `paint_ball_lobby_screen.dart`, `paint_ball_knockout_screen.dart` |
+| `kPaintBallPositions` | `paint_ball_provider.dart:14` (an explicit `show` import) |
+| `kPaintBallCoverWidth`, `kPaintBallTargetScale` | the field's own row layout |
+| `PaintBallPalette` (`.field`, `.mine`, `.theirs`, `.player`, `.divider`) | `paint_ball_history_screen.dart`, `paint_ball_lives_display.dart` |
+| `PaintSplat` | `paint_ball_battle_screen.dart`, `paint_ball_screens_test.dart` |
+| `paintBallPositionName()` | the field's semantic labels |
+
+Six files import this one, not two. Moving any of these symbols is out of
+scope; the split keeps them exported from
+`paint_ball/presentation/widgets/paint_ball_field.dart`.
+
+Two consequences worth stating. `PaintBallPalette.player` is the neutral yellow
+§2.2 removes from the field — but `paint_ball_history_screen.dart` also reads
+it, so the constant stays (possibly deprecated) even after the field stops
+using it; deleting it would break a screen this work does not touch. And the
+semantic labels `'<Name> target'` / `'<Name> cover'` from `paintBallPositionName`
+are the **genuinely stable test hooks**: they are accessibility contracts rather
+than implementation details, which is why §3.6.1's rewrite should prefer them
+over painter type names wherever a test can use them.
 
 ### 3.4 Data flow
 
