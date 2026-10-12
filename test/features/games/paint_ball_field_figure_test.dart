@@ -4,6 +4,7 @@ import 'package:attune/features/games/paint_ball/presentation/widgets/field/pain
 import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart'
     show kPaintBallCoverWidth, kPaintBallPositions;
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Records drawn paths so the figure's geometry can be asserted without a
@@ -128,7 +129,13 @@ void main() {
       bool reduceMotion = false,
       bool isAiming = false,
       VoidCallback? onTap,
-    }) => MaterialApp(
+    }) => ScreenUtilInit(
+      // The app wraps everything in ScreenUtilInit at 375x812, and the
+      // field's sizes are scaled, so a test without one hits
+      // LateInitializationError on the first `.w`. The legacy field test
+      // has always wrapped this way; these component tests should too.
+      designSize: const Size(375, 812),
+      builder: (context, _) => MaterialApp(
       home: MediaQuery(
         data: MediaQueryData(disableAnimations: reduceMotion),
         child: Scaffold(
@@ -152,6 +159,7 @@ void main() {
             ),
           ),
         ),
+      ),
       ),
     );
 
@@ -334,7 +342,11 @@ void main() {
       tester,
     ) async {
       // The opponent's row shelters under the far dome, so it positions
-      // from the top edge with a 46pt inset, not from the bottom.
+      // from the top edge, not from the bottom.
+      //
+      // The inset is 46.h rather than a raw 46: the field scales with
+      // ScreenUtil like the rest of the app, so pinning the design-unit
+      // constant would fail on every device that is not 375pt wide.
       await tester.pumpWidget(host(position: 1, isOpponent: true));
       await tester.pump();
 
@@ -342,7 +354,11 @@ void main() {
       expect(find.byKey(key), findsOneWidget);
 
       final positioned = tester.widget<Positioned>(find.byKey(key));
-      expect(positioned.top, 46);
+      expect(
+        positioned.top,
+        closeTo(46.h, 0.01),
+        reason: 'the opponent sits in from the top, in scaled units',
+      );
       expect(positioned.bottom, isNull);
     });
 

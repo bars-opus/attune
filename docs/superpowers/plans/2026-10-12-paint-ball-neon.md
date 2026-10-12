@@ -3841,9 +3841,679 @@ EOF
 
 ---
 
+## Stage 2 addendum: three things discovered after Task 10
+
+Read these before Task 11. All three were found by reading the repo after the
+component tasks landed, and all three are Task 11's responsibility because
+composition is the first point at which they are observable.
+
+**3. The new field ignores the app's responsive scaling.**
+`lib/core/utils/screen_util_config.dart` sets an app-wide 375×812 design size,
+and the old field uses `.w`/`.h`/`.r` in 19 places. The six new `field/` files
+use it in **zero**. So on a 430pt phone the new field would render at
+iPhone-13 dimensions while every surrounding surface scales.
+
+It is invisible to the component tests because each pins an explicit width and
+`.w` is the identity function with no `ScreenUtilInit` in the tree.
+
+**Task 11 restores it**, with one trap: `figureCentreX` takes `rowWidth` and
+`coverWidth` and **both must be in the same units**. `cover_row.dart` passes
+`constraints.maxWidth` (real pixels) alongside `kPaintBallCoverWidth`
+(unscaled). Scaling one without the other reintroduces the device-reported
+centring bug that old test 18 exists to catch. Task 11 therefore re-runs the
+centring assertion under a real `ScreenUtilInit` at several widths.
+
+**4. The old `_SplatPainter` still ships.** Task 10 fixed the 17pt paint drift
+in a new file, but the old painter is still what the field uses, so the bug is
+live until composition. **Task 11 must delete it**, not add the new layer
+beside it.
+
+**5. The paint rows are at `0.80`/`0.20` of height, unverified against the
+covers.** Task 10's fix corrected X only. Nothing has checked those fractions
+against where `cover_row` actually places its covers. Task 11 owns this,
+because it is the first place both exist together.
+
+---
+
+## Task 11: Compose the field
+
+Reduce `paint_ball_field.dart` to composition and layout, consuming the six
+`field/` parts. Restore ScreenUtil scaling. Delete the four private painters and
+two private widgets it replaces.
+
+**Files:**
+- Modify: `lib/features/games/paint_ball/presentation/widgets/paint_ball_field.dart` (958 lines → ~200)
+- Modify: `lib/features/games/paint_ball/presentation/widgets/field/cover_row.dart` (ScreenUtil)
+- Modify: `lib/features/games/paint_ball/presentation/widgets/field/field_figure.dart` (ScreenUtil)
+- Modify: `lib/features/games/paint_ball/presentation/widgets/field/field_paint.dart` (ScreenUtil)
+- Test: `test/features/games/paint_ball_field_composition_test.dart` (new)
+
+**Interfaces:**
+- Consumes: `FieldGround`, `FieldRowLabel`, `fieldRowLabelText`, `CoverRow`, `FieldPaint`, `PaintBallFieldKeys`, `PaintBallNeonPalette`, `figureCentreX`.
+- Produces: `PaintBallField` with its **signature unchanged** — all 15 parameters, same names, same types, same defaults. Plus the five public symbols still exported from the same path: `kPaintBallPositions`, `kPaintBallCoverWidth`, `kPaintBallTargetScale`, `PaintBallPalette`, `PaintSplat`, `paintBallPositionName`.
+
+**What is deleted:** `_FieldLabel`, `_ShieldRow`, `_ShieldPainter`, `_TravellingPlayer`, `_TravellingPlayerState`, `_TrianglePainter`, `_SplatPainter`. `_ProjectilePainter` is **kept for now** — the replay is Stage 4's work and Task 11 must not change flight behaviour.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/features/games/paint_ball_field_composition_test.dart`:
+
+```dart
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/cover_row.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_figure.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_ground.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_paint.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+/// The real app wraps everything in ScreenUtilInit at 375x812, so the
+/// field must be measured inside one. Without it `.w` is the identity
+/// function and a scaling bug is invisible -- which is exactly how the
+/// six component test files missed it.
+Widget _host(Widget child, {Size design = const Size(375, 812)}) =>
+    ScreenUtilInit(
+      designSize: design,
+      builder: (context, _) => MaterialApp(home: Scaffold(body: child)),
+    );
+
+void main() {
+  testWidgets('the field is built from its parts, not its own painters', (
+    tester,
+  ) async {
+    // The point of the split: one file composes, six files draw. If the
+    // field grew its own painters again this would start failing.
+    await tester.pumpWidget(
+      _host(
+        const PaintBallField(
+          splats: [],
+          myPosition: 1,
+          selectedShot: null,
+          revealedPartnerPosition: null,
+          isMyTurn: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(FieldGround), findsOneWidget);
+    expect(find.byType(FieldPaint), findsOneWidget);
+    expect(
+      find.byType(CoverRow),
+      findsNWidgets(2),
+      reason: 'two rows: yours and theirs',
+    );
+    expect(find.byKey(PaintBallFieldKeys.ground), findsOneWidget);
+  });
+
+  testWidgets('your row is the near one, whichever player you are', (
+    tester,
+  ) async {
+    // The field never flips. "Mine is bottom, theirs is top" is learned
+    // once rather than worked out each turn.
+    await tester.pumpWidget(
+      _host(
+        const PaintBallField(
+          splats: [],
+          myPosition: 1,
+          selectedShot: null,
+          revealedPartnerPosition: 0,
+          isMyTurn: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final mine = tester.getCenter(
+      find.byKey(PaintBallFieldKeys.bay(1, isOpponent: false)),
+    );
+    final theirs = tester.getCenter(
+      find.byKey(PaintBallFieldKeys.bay(1, isOpponent: true)),
+    );
+
+    expect(
+      mine.dy,
+      greaterThan(theirs.dy),
+      reason: 'yours is nearer the bottom of the screen',
+    );
+  });
+
+  group('the figure sits on its cover at real device widths', () {
+    // DEVICE-REPORTED REGRESSION (old test 18), re-run under a real
+    // ScreenUtilInit. The component test pinned raw pixels; this one
+    // proves the SCALED units agree, which is the thing that actually
+    // ships. If rowWidth is scaled and coverWidth is not -- or the
+    // reverse -- the figure drifts off its cover exactly as it did on
+    // the device that reported it.
+    for (final width in [360.0, 375.0, 390.0, 430.0]) {
+      testWidgets('at ${width.toInt()}pt', (tester) async {
+        tester.view.physicalSize = Size(width, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        for (var position = 0; position < kPaintBallPositions; position++) {
+          await tester.pumpWidget(
+            _host(
+              PaintBallField(
+                splats: const [],
+                myPosition: position,
+                selectedShot: null,
+                revealedPartnerPosition: null,
+                isMyTurn: true,
+                onSelectShot: (_) {},
+                onSelectHide: (_) {},
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          final figure = tester.getRect(
+            find.byKey(
+              PaintBallFieldKeys.figure(position, isOpponent: false),
+            ),
+          );
+          final bay = tester.getRect(
+            find.byKey(PaintBallFieldKeys.bay(position, isOpponent: false)),
+          );
+
+          expect(
+            (figure.center.dx - bay.center.dx).abs(),
+            lessThan(1.0),
+            reason:
+                'at ${width.toInt()}pt the figure at position $position '
+                'sits ${(figure.center.dx - bay.center.dx).abs().toStringAsFixed(1)}pt '
+                'off the centre of its cover',
+          );
+        }
+      });
+    }
+  });
+
+  testWidgets('paint lands on the row it belongs to', (tester) async {
+    // Addendum #5: the paint rows are fractions of the field's HEIGHT,
+    // and nothing had checked them against where the covers actually
+    // sit. A splat on your half must be nearer your row than theirs.
+    await tester.pumpWidget(
+      _host(
+        const PaintBallField(
+          splats: [
+            PaintSplat(position: 1, isMine: true, hit: true, round: 1),
+          ],
+          myPosition: 1,
+          selectedShot: null,
+          revealedPartnerPosition: null,
+          isMyTurn: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final layer = tester.widget<FieldPaint>(find.byType(FieldPaint));
+    expect(layer.splats, hasLength(1), reason: 'a positive control');
+
+    final paintBox = tester.getRect(find.byType(FieldPaint));
+    final myBay = tester.getRect(
+      find.byKey(PaintBallFieldKeys.bay(1, isOpponent: false)),
+    );
+
+    final centre = splatCentre(
+      splat: layer.splats.first,
+      size: paintBox.size,
+      rowWidth: paintBox.width,
+    );
+
+    expect(
+      (centre.dx - (myBay.center.dx - paintBox.left)).abs(),
+      lessThan(2.0),
+      reason: 'paint lands on the column of the cover it hit',
+    );
+    expect(
+      centre.dy,
+      greaterThan(paintBox.height / 2),
+      reason: 'your paint is on your half of the field',
+    );
+  });
+
+  testWidgets('the public surface six other files import still exists', (
+    tester,
+  ) async {
+    // paint_ball_provider.dart does `show kPaintBallPositions`, and the
+    // history, knockout, battle, lobby screens and lives display all
+    // import from this path. The split must not move any of them.
+    expect(kPaintBallPositions, 3);
+    expect(kPaintBallCoverWidth, greaterThan(0));
+    expect(kPaintBallTargetScale, greaterThan(1));
+    expect(paintBallPositionName(1), 'Middle');
+    expect(PaintBallPalette.mine, isA<Color>());
+    expect(
+      PaintBallPalette.player,
+      isA<Color>(),
+      reason: 'history, knockout and battle screens still read this',
+    );
+    expect(
+      const PaintSplat(position: 0, isMine: true, hit: false, round: 1)
+          .position,
+      0,
+    );
+  });
+
+  testWidgets('reduce motion is taken from the platform, not a default', (
+    tester,
+  ) async {
+    // The component widgets take `reduceMotion` as a plain bool, so the
+    // composing field is the only place it can be read from the OS. If
+    // it defaulted to false here, every accessibility guarantee below
+    // would be silently off.
+    await tester.pumpWidget(
+      ScreenUtilInit(
+        designSize: const Size(375, 812),
+        builder:
+            (context, _) => MaterialApp(
+              home: MediaQuery(
+                data: const MediaQueryData(disableAnimations: true),
+                child: const Scaffold(
+                  body: PaintBallField(
+                    splats: [],
+                    myPosition: 0,
+                    selectedShot: null,
+                    revealedPartnerPosition: null,
+                    isMyTurn: true,
+                  ),
+                ),
+              ),
+            ),
+      ),
+    );
+    await tester.pump();
+
+    final rows = tester.widgetList<CoverRow>(find.byType(CoverRow));
+    expect(rows, hasLength(2), reason: 'a positive control');
+    for (final row in rows) {
+      expect(
+        row.reduceMotion,
+        isTrue,
+        reason: 'the field must read disableAnimations, not assume false',
+      );
+    }
+  });
+
+  testWidgets('a field with nothing chosen still renders', (tester) async {
+    // Old test 2. The opening move, before anyone has acted.
+    await tester.pumpWidget(
+      _host(
+        const PaintBallField(
+          splats: [],
+          myPosition: null,
+          selectedShot: null,
+          revealedPartnerPosition: null,
+          isMyTurn: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(FieldFigure), findsNothing);
+  });
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `flutter test test/features/games/paint_ball_field_composition_test.dart`
+Expected: FAIL — the field still builds its own `_ShieldRow`, so `find.byType(CoverRow)` finds nothing.
+
+- [ ] **Step 3: Rewrite the field**
+
+Replace everything in `paint_ball_field.dart` from `class PaintBallField` to the end of the file, **keeping lines 1–80 (the constants, `PaintBallPalette`, `PaintSplat`) exactly as they are**, with:
+
+```dart
+class PaintBallField extends StatelessWidget {
+  const PaintBallField({
+    super.key,
+    required this.splats,
+    required this.myPosition,
+    required this.selectedShot,
+    required this.revealedPartnerPosition,
+    required this.isMyTurn,
+    this.shotProgress,
+    this.onSelectShot,
+    this.onSelectHide,
+    this.onFire,
+    this.replayProgress,
+    this.theirRevealedShot,
+    this.isReplaying = false,
+    this.partnerName,
+    this.theirStreak = 1,
+  });
+
+  final List<PaintSplat> splats;
+  final int? myPosition;
+  final int? selectedShot;
+  final int? revealedPartnerPosition;
+  final bool isMyTurn;
+
+  /// 0 to 1 while a shot travels, null otherwise.
+  final double? shotProgress;
+
+  final ValueChanged<int>? onSelectShot;
+
+  /// Tapping your own cover moves you there. Null disables repositioning.
+  final ValueChanged<int>? onSelectHide;
+
+  /// Tapping your own figure fires, once a target is chosen.
+  final VoidCallback? onFire;
+
+  /// 0 to 1 while a resolved round replays. During a replay BOTH sides
+  /// emerge, aim and fire, so it drives more than the shot alone.
+  final double? replayProgress;
+
+  /// Where the opponent shot during the replay.
+  final int? theirRevealedShot;
+
+  final bool isReplaying;
+
+  /// Whose cover the far row is. Named rather than "THEIR COVER"
+  /// because the person across the field is someone specific.
+  final String? partnerName;
+
+  /// Rounds running they have held the same cover.
+  final int theirStreak;
+
+  @override
+  Widget build(BuildContext context) {
+    // Read here and passed down. The component widgets take a plain
+    // bool, so this is the only place the OS setting can enter -- and
+    // defaulting it to false would turn every reduce-motion guarantee
+    // below it silently off.
+    final reduceMotion = reduceMotionOf(context);
+
+    return AspectRatio(
+      aspectRatio: 1.05,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          final height = constraints.maxHeight;
+
+          // The replay's beats. Emerging and aiming are given room to
+          // read before anything is fired: the point of the replay is
+          // seeing the two decisions meet, and a shot that left before
+          // the aim landed would skip the part worth watching.
+          final replay = replayProgress;
+          final emerged = replay == null || replay > NeonTokens.beatEmerge;
+          final aimed = replay == null || replay > NeonTokens.beatAim;
+          final firing = replay != null && replay > NeonTokens.beatFire;
+          final flightProgress =
+              firing
+                  ? ((replay - NeonTokens.beatFire) /
+                          (NeonTokens.beatFlightEnd - NeonTokens.beatFire))
+                      .clamp(0.0, 1.0)
+                  : null;
+
+          // Both rows' geometry comes from the one formula the figures
+          // and paint already use, so a projectile cannot leave from
+          // somewhere its shooter is not standing.
+          double columnX(int? position, {required bool isOpponent}) {
+            if (position == null) return width / 2;
+            return figureCentreX(
+              rowWidth: width,
+              coverWidth:
+                  kPaintBallCoverWidth.w *
+                  (isOpponent ? kPaintBallTargetScale : 1),
+              column: position.toDouble(),
+            );
+          }
+
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(BorderRadiusTokens.lg.r),
+            child: FieldGround(
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // Paint sits under everything, so a splat reads as
+                  // landing ON the field rather than floating over the
+                  // pieces.
+                  Positioned.fill(
+                    child: FieldPaint(
+                      splats: splats,
+                      mineColor: PaintBallPalette.mine,
+                      theirsColor: PaintBallPalette.theirs,
+                    ),
+                  ),
+
+                  Positioned(
+                    top: height * 0.035,
+                    left: 0,
+                    right: 0,
+                    child: FieldRowLabel(
+                      label: fieldRowLabelText(
+                        partnerName: partnerName,
+                        isReplaying: isReplaying,
+                        theirStreak: theirStreak,
+                      ),
+                      color: PaintBallPalette.theirs,
+                    ),
+                  ),
+
+                  Positioned(
+                    top: height * 0.105,
+                    left: 0,
+                    right: 0,
+                    child: CoverRow(
+                      isOpponent: true,
+                      hiddenAt: revealedPartnerPosition,
+                      aimedAt: selectedShot,
+                      aimingAt: aimed ? theirRevealedShot : null,
+                      emerged: emerged,
+                      enabled: isMyTurn && onSelectShot != null,
+                      ownerColor: PaintBallPalette.theirs,
+                      reduceMotion: reduceMotion,
+                      onTap: onSelectShot,
+                    ),
+                  ),
+
+                  Positioned(
+                    bottom: height * 0.035,
+                    left: 0,
+                    right: 0,
+                    child: const FieldRowLabel(
+                      label: 'YOUR COVER',
+                      color: PaintBallPalette.mine,
+                    ),
+                  ),
+
+                  Positioned(
+                    bottom: height * 0.105,
+                    left: 0,
+                    right: 0,
+                    child: CoverRow(
+                      isOpponent: false,
+                      hiddenAt: myPosition,
+                      aimedAt: null,
+                      // Your own figure leans toward whatever you are
+                      // aiming at, so the aim is visible on the field
+                      // rather than only in a control strip.
+                      aimingAt: aimed ? selectedShot : null,
+                      emerged: emerged,
+                      enabled: isMyTurn && onSelectHide != null,
+                      ownerColor: PaintBallPalette.mine,
+                      reduceMotion: reduceMotion,
+                      onTap: onSelectHide,
+                      onTapFigure: onFire,
+                    ),
+                  ),
+
+                  // The replay's two paintballs, in flight at once.
+                  // Both players fired without seeing the other, so the
+                  // shots cross rather than take turns -- watching them
+                  // pass is the moment the round becomes a duel rather
+                  // than two separate moves.
+                  if (flightProgress != null)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          key: PaintBallFieldKeys.projectile(isMine: true),
+                          painter: _ProjectilePainter(
+                            progress: flightProgress,
+                            from: Offset(
+                              columnX(myPosition, isOpponent: false),
+                              height * 0.80,
+                            ),
+                            to: Offset(
+                              columnX(selectedShot, isOpponent: true),
+                              height * 0.20,
+                            ),
+                            color: PaintBallPalette.mine,
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (flightProgress != null && theirRevealedShot != null)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          key: PaintBallFieldKeys.projectile(isMine: false),
+                          painter: _ProjectilePainter(
+                            progress: flightProgress,
+                            from: Offset(
+                              columnX(
+                                revealedPartnerPosition,
+                                isOpponent: true,
+                              ),
+                              height * 0.20,
+                            ),
+                            to: Offset(
+                              columnX(theirRevealedShot, isOpponent: false),
+                              height * 0.80,
+                            ),
+                            color: PaintBallPalette.theirs,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // A single shot outside a replay.
+                  if (shotProgress != null)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          key: PaintBallFieldKeys.projectile(isMine: true),
+                          painter: _ProjectilePainter(
+                            progress: shotProgress!,
+                            from: Offset(
+                              columnX(myPosition, isOpponent: false),
+                              height * 0.80,
+                            ),
+                            to: Offset(
+                              columnX(selectedShot, isOpponent: true),
+                              height * 0.20,
+                            ),
+                            color: PaintBallPalette.mine,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+```
+
+Then **delete** `_FieldLabel`, `_ShieldRow`, `_ShieldPainter`, `_TravellingPlayer`, `_TravellingPlayerState`, `_TrianglePainter` and `_SplatPainter` entirely. **Keep `_ProjectilePainter`** — the replay is Stage 4's work and this task must not change flight behaviour.
+
+Fix the imports at the top of the file: it needs `field/cover_row.dart`,
+`field/field_ground.dart`, `field/field_paint.dart`, `field/field_figure.dart`
+(for `figureCentreX`), `field/paint_ball_field_keys.dart`,
+`core/ui/neon/neon_tokens.dart`, `core/ui/motion/reduce_motion.dart`, and
+`flutter_screenutil`. Drop any import the deleted code was the only user of.
+
+- [ ] **Step 4: Restore ScreenUtil scaling in the three component files**
+
+In `cover_row.dart`: `92` → `92.h` (both occurrences), and
+`kPaintBallCoverWidth` → `kPaintBallCoverWidth.w` in the `coverWidth`
+calculation. Add `import 'package:flutter_screenutil/flutter_screenutil.dart';`.
+
+In `field_figure.dart`: the `Size(22, 20)` → `Size(22.w, 20.h)`, the `- 11` →
+`- 11.w`, the insets `46.0`/`34.0` → `46.h`/`34.h`, the step-out `14.0` →
+`14.h`. **Do NOT scale inside `figureCentreX`** — it receives already-scaled
+values from its caller, and scaling twice is the bug this addendum warns about.
+
+In `field_paint.dart`: `kPaintBallCoverWidth` → `kPaintBallCoverWidth.w` in
+both `splatCentre` and the scatter width, and the radii `26.0`/`16.0` →
+`26.r`/`16.r`.
+
+- [ ] **Step 5: Run the composition test**
+
+Run: `flutter test test/features/games/paint_ball_field_composition_test.dart`
+Expected: PASS, 10 tests (7 top-level plus the 4-width group counts as 4, minus… count what you get and report it).
+
+- [ ] **Step 6: Run the component tests, which may now need their widths adjusted**
+
+Run: `flutter test test/features/games/paint_ball_cover_row_test.dart test/features/games/paint_ball_field_figure_test.dart test/features/games/paint_ball_field_paint_test.dart`
+
+These pin raw pixel widths and now go through `.w`. **If one fails, do not
+weaken it** — wrap its host in `ScreenUtilInit(designSize: Size(375, 812), ...)`
+so the scaling is explicit, and report which ones needed it. A failure here is
+real information: it means the scaling changed a measurement that a test was
+pinning.
+
+- [ ] **Step 7: Run the whole games suite**
+
+Run: `flutter test test/features/games/`
+Expected: all pass. Report the total.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add lib/features/games/paint_ball/presentation/widgets/ test/features/games/
+git commit -m "$(cat <<'EOF'
+refactor(paintball): the field composes its parts, and scales like the app
+
+958 lines become about 200. The field now places six components and owns
+nothing but layout; _FieldLabel, _ShieldRow, _ShieldPainter,
+_TravellingPlayer, _TrianglePainter and _SplatPainter are gone.
+
+Deleting _SplatPainter is what finally lands Task 10's fix. The new
+paint layer corrected a 17pt drift between where paint fell and the
+cover it hit, but the old painter was still the one the field used, so
+the bug stayed live until this commit.
+
+ScreenUtil scaling is restored across the field. The app wraps
+everything in a 375x812 ScreenUtilInit and the old field used .w/.h/.r
+in 19 places; the six new files used it in none, so the field would have
+rendered at iPhone-13 size on every other device while its surroundings
+scaled. Invisible to the component tests, because each pins an explicit
+width and .w is the identity function with no ScreenUtilInit in the tree.
+
+The trap worth naming: figureCentreX needs rowWidth and coverWidth in
+the SAME units, so it stays unscaled and takes scaled values from its
+callers. Scaling inside it as well would double-apply and reintroduce
+the device-reported centring bug. The composition test re-runs that
+assertion under a real ScreenUtilInit at four widths, which is the
+version that actually ships.
+
+Projectiles now take their column from figureCentreX too, so a shot
+cannot leave from somewhere its shooter is not standing -- the same
+divergence the paint had. _ProjectilePainter itself is untouched; the
+replay is Stage 4's work.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
 ## Remaining tasks: Stages 3–7
 
-Tasks 11–14 cover the rest. Task 11 completes Stage 2 (the field composition plus the 25-test rewrite against the Task 0 map) and is written in the pass that follows Task 10; Tasks 12–14 follow the Stage 2 checkpoint. Their scope and boundaries are fixed:
+Tasks 12–14 cover the rest. Task 12 rewrites the 25 legacy field tests against the Task 0 map and completes Stage 2; Tasks 13–14 follow the Stage 2 checkpoint. Their scope and boundaries are fixed:
 
 | Task | Stage | Deliverable |
 |---|---|---|

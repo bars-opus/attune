@@ -5,6 +5,7 @@ import 'package:attune/features/games/paint_ball/presentation/widgets/field/pain
 import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart'
     show PaintSplat, kPaintBallCoverWidth, kPaintBallPositions;
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Records draw calls so geometry is assertable without a golden.
@@ -318,14 +319,22 @@ void main() {
       // type NAME -- so after a rename the loop ran zero times and the
       // test passed having asserted nothing.
       await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: FieldPaint(
-              splats: [],
-              mineColor: mine,
-              theirsColor: theirs,
-            ),
-          ),
+        ScreenUtilInit(
+          // The widget layer scales, so it needs an init in the tree.
+          // The pure splatCentre/FieldPaintPainter tests above
+          // deliberately do not -- that is why coverWidth is a
+          // parameter rather than a `.w` call inside them.
+          designSize: const Size(375, 812),
+          builder:
+              (context, _) => const MaterialApp(
+                home: Scaffold(
+                  body: FieldPaint(
+                    splats: [],
+                    mineColor: mine,
+                    theirsColor: theirs,
+                  ),
+                ),
+              ),
         ),
       );
       await tester.pump();

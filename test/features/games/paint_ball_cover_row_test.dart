@@ -5,6 +5,7 @@ import 'package:attune/features/games/paint_ball/presentation/widgets/field/pain
 import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart'
     show kPaintBallPositions;
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -16,11 +17,22 @@ void main() {
     bool emerged = true,
     ValueChanged<int>? onTap,
     VoidCallback? onTapFigure,
-  }) => MaterialApp(
+  }) => ScreenUtilInit(
+    // The app wraps everything in ScreenUtilInit at 375x812 and the
+    // field's sizes are scaled, so a test without one throws
+    // LateInitializationError on the first `.w`. The legacy field test
+    // has always wrapped this way.
+    designSize: const Size(375, 812),
+    builder: (context, _) => MaterialApp(
     home: Scaffold(
       body: SizedBox(
-        width: 390,
-        height: 120,
+        // Scaled, like the cover width the row computes. A raw 390 here
+        // against a scaled coverWidth is mixed units: three 158pt covers
+        // cannot fit a 390pt row, the gap goes negative and the figure
+        // drifts off its cover -- which is exactly the device-reported
+        // bug the centring test exists to catch.
+        width: 390.w,
+        height: 120.h,
         child: CoverRow(
           isOpponent: isOpponent,
           hiddenAt: hiddenAt,
@@ -33,6 +45,7 @@ void main() {
           onTapFigure: onTapFigure,
         ),
       ),
+    ),
     ),
   );
 
@@ -241,9 +254,20 @@ void main() {
     // that drops the scale drifts only on that side.
     for (final isOpponent in [false, true]) {
       for (final width in [360.0, 390.0, 430.0]) {
+        // The view IS the width under test, so ScreenUtil's design size
+        // matches it and `.w` is 1:1. That keeps rowWidth and coverWidth
+        // in the same units -- mixing them is the bug this test catches,
+        // and a scaled coverWidth against a raw rowWidth drifts the
+        // figure 28pt off its cover.
+        tester.view.physicalSize = Size(width, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
         for (final position in [0, 2]) {
           await tester.pumpWidget(
-            MaterialApp(
+            ScreenUtilInit(
+              designSize: Size(width, 900),
+              builder: (context, _) => MaterialApp(
               home: Scaffold(
                 body: SizedBox(
                   width: width,
@@ -258,6 +282,7 @@ void main() {
                     onTap: (_) {},
                   ),
                 ),
+              ),
               ),
             ),
           );

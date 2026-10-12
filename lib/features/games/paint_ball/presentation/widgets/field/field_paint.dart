@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:attune/core/ui/neon/neon_quality.dart';
 import 'package:attune/core/ui/neon/neon_tokens.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../paint_ball_field.dart'
     show PaintSplat, kPaintBallCoverWidth, kPaintBallPositions;
@@ -33,7 +34,14 @@ Offset splatCentre({
   required PaintSplat splat,
   required Size size,
   required double rowWidth,
+  double? coverWidth,
 }) {
+  // Taken as a parameter rather than read from ScreenUtil, because this
+  // function is PURE and its unit tests have no ScreenUtilInit in the
+  // tree -- `.w` throws LateInitializationError there. The widget layer
+  // scales and passes it down; the default keeps the unscaled value for
+  // callers that are already working in design units.
+  final cover = coverWidth ?? kPaintBallCoverWidth;
   // PaintSplat.position is a bare int off the wire with no validation,
   // so a stale or malformed round can carry 3 or -1. Clamping keeps a
   // bad row on the field instead of drawing off it.
@@ -41,7 +49,7 @@ Offset splatCentre({
 
   final centreX = figureCentreX(
     rowWidth: rowWidth,
-    coverWidth: kPaintBallCoverWidth,
+    coverWidth: cover,
     column: position.toDouble(),
   );
 
@@ -54,7 +62,7 @@ Offset splatCentre({
   // landed, and a hit nudged off-centre would read as a near miss.
   final rng = math.Random(splat.round * 31 + position * 7);
   final offsetX =
-      splat.hit ? 0.0 : (rng.nextDouble() - 0.5) * kPaintBallCoverWidth * 0.8;
+      splat.hit ? 0.0 : (rng.nextDouble() - 0.5) * cover * 0.8;
   final offsetY = (rng.nextDouble() - 0.5) * 18;
 
   return Offset(
@@ -92,6 +100,7 @@ class FieldPaint extends StatelessWidget {
             theirsColor: theirsColor,
             quality: neonQualityOf(context),
             rowWidth: constraints.maxWidth,
+            coverWidth: kPaintBallCoverWidth.w,
           ),
         );
       },
@@ -107,6 +116,7 @@ class FieldPaintPainter extends CustomPainter {
     required this.theirsColor,
     required this.quality,
     required this.rowWidth,
+    this.coverWidth = kPaintBallCoverWidth,
   });
 
   final List<PaintSplat> splats;
@@ -114,6 +124,14 @@ class FieldPaintPainter extends CustomPainter {
   final Color theirsColor;
   final NeonQuality quality;
   final double rowWidth;
+
+  /// Scaled by the widget layer, so the painter and [splatCentre] agree
+  /// with the covers the figures stand on.
+  ///
+  /// Defaults to the unscaled design value rather than being required,
+  /// so a unit test can construct this painter without a ScreenUtilInit
+  /// in the tree -- `.w` throws LateInitializationError there.
+  final double coverWidth;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -140,10 +158,15 @@ class FieldPaintPainter extends CustomPainter {
         splat: splat,
         size: size,
         rowWidth: rowWidth,
+        coverWidth: coverWidth,
       );
       final rng = math.Random(splat.round * 31 + splat.position * 7);
 
-      _drawSplat(canvas, centre, splat.hit ? 26.0 : 16.0, paint, rng);
+      // Derived from coverWidth, which the widget layer already scaled,
+      // rather than calling `.r` here: the painter must stay usable in a
+      // unit test, and ScreenUtil throws with no init in the tree.
+      final radius = coverWidth * (splat.hit ? 0.351 : 0.216);
+      _drawSplat(canvas, centre, radius, paint, rng);
     }
   }
 
@@ -198,6 +221,7 @@ class FieldPaintPainter extends CustomPainter {
   bool shouldRepaint(FieldPaintPainter old) =>
       old.quality != quality ||
       old.rowWidth != rowWidth ||
+      old.coverWidth != coverWidth ||
       old.mineColor != mineColor ||
       old.theirsColor != theirsColor ||
       old.splats.length != splats.length ||

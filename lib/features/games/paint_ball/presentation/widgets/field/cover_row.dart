@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../paint_ball_field.dart'
     show
@@ -61,7 +62,7 @@ class CoverRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final coverWidth =
-        kPaintBallCoverWidth * (isOpponent ? kPaintBallTargetScale : 1);
+        kPaintBallCoverWidth.w * (isOpponent ? kPaintBallTargetScale : 1);
     final isAiming = aimingAt != null && hiddenAt != null && emerged;
 
     // Per-column lean, in turns. Small deliberately: the tilt says which
@@ -75,7 +76,7 @@ class CoverRow extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         return SizedBox(
-          height: 92,
+          height: 92.h,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -104,7 +105,7 @@ class CoverRow extends StatelessWidget {
                       behavior: HitTestBehavior.opaque,
                       child: SizedBox(
                         width: coverWidth,
-                        height: 92,
+                        height: 92.h,
                         child: CoverBay(
                           position: index,
                           isOpponent: isOpponent,

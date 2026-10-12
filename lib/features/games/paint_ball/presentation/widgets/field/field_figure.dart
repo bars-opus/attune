@@ -2,6 +2,7 @@ import 'package:attune/core/ui/neon/glow_stroke.dart';
 import 'package:attune/core/ui/neon/neon_quality.dart';
 import 'package:attune/core/ui/neon/neon_tokens.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../paint_ball_field.dart' show kPaintBallPositions;
 import 'paint_ball_field_keys.dart';
@@ -173,14 +174,14 @@ class _FieldFigureState extends State<FieldFigure>
               coverWidth: widget.coverWidth,
               column: column,
             ) -
-            11;
+            11.w;
 
         // Both rows shelter under their own dome and the domes face each
         // other, so "tucked in" is measured from opposite edges. A
         // single inset would have put the opponent outside their arch
         // entirely, standing on top of the cover instead of behind it.
-        final baseInset = widget.isOpponent ? 46.0 : 34.0;
-        final stepOut = 14.0 * depth;
+        final baseInset = widget.isOpponent ? 46.h : 34.h;
+        final stepOut = 14.h * depth;
 
         return Positioned(
           key: PaintBallFieldKeys.figure(
@@ -206,7 +207,7 @@ class _FieldFigureState extends State<FieldFigure>
                 curve: Curves.easeOut,
                 turns: widget.isAiming ? widget.tilt : 0,
                 child: CustomPaint(
-                  size: const Size(22, 20),
+                  size: Size(22.w, 20.h),
                   painter: FieldFigurePainter(
                     color: widget.ownerColor,
                     pointsUp: !widget.isOpponent,
