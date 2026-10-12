@@ -2,6 +2,7 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/buttons/app_button.dart';
 import 'package:flutter/material.dart';
 
+import '../../domain/code_point_limit.dart';
 import '../planning_v2_ui.dart';
 
 typedef CategoryDraft = ({String name, String icon, String color});
@@ -48,7 +49,8 @@ class _CategoryEditorState extends State<_CategoryEditor> {
         TextField(
           controller: _name,
           autofocus: true,
-          maxLength: 40,
+          inputFormatters: [CodePointLengthFormatter(40)],
+          buildCounter: codePointCounter(_name, 40),
           textCapitalization: TextCapitalization.sentences,
           decoration: const InputDecoration(labelText: 'Name', hintText: 'Moving house'),
           onChanged: (_) => setState(() {}),

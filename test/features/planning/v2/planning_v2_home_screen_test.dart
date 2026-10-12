@@ -96,4 +96,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('category name counts code points like the server: 21 flags stop at 20 (final review I3)', (tester) async {
+    await tester.pumpWidget(planningV2TestApp(_gateway(), const PlanningV2HomeScreen(relationshipId: 'r1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New category'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '🇬🇭' * 21);
+    await tester.pump();
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '🇬🇭' * 20);
+    expect(find.text('40/40'), findsOneWidget);
+  });
 }

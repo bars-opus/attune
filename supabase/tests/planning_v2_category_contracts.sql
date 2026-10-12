@@ -197,6 +197,22 @@ BEGIN
     RAISE EXCEPTION 'EXPLOIT: category RPC grants wrong';
   END IF;
 
+  -- Contract 16 (Review Focus 5, final review I3): names are limited in CODE
+  -- POINTS — the unit the Flutter client now counts — using a REAL combining
+  -- mark (e + U+0301) and multi-code-point flags, not precomposed letters.
+  UPDATE public.relationships SET status = 'active' WHERE id = v_rel;
+  DELETE FROM public.planning_categories WHERE relationship_id = v_rel AND seed_key IS NULL;
+  v_cat := public.create_planning_category(gen_random_uuid(), v_rel,
+             repeat('e' || chr(769), 20), 'star', 'teal');               -- 40 code points
+  IF char_length(v_cat ->> 'name') <> 40 THEN RAISE EXCEPTION 'EXPLOIT: combining marks mangled'; END IF;
+  v_cat := public.create_planning_category(gen_random_uuid(), v_rel,
+             repeat(chr(127468) || chr(127469), 20), 'star', 'teal');    -- 20 flags = 40 code points
+  BEGIN
+    PERFORM public.create_planning_category(gen_random_uuid(), v_rel,
+              repeat(chr(127468) || chr(127469), 21), 'star', 'teal');   -- 21 flags = 42 code points
+    RAISE EXCEPTION 'EXPLOIT: 42 code points accepted as a 40-character name';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM <> 'planning:invalid_input' THEN RAISE; END IF; END;
+
   RAISE NOTICE 'planning_v2_category_contracts: PASS';
 END $$;
 ROLLBACK;

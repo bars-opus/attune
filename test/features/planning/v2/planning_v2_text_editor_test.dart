@@ -145,4 +145,15 @@ void main() {
   });
 
   test('PlanningBlock import is used', () => expect(PlanningBlockType.text.name, 'text'));
+
+  testWidgets('text over the 16 KB payload cap is refused in the editor with a specific message (final review I3)', (tester) async {
+    final g = _gateway();
+    await _openEditor(tester, g);
+    _controller(tester).document.insert(0, 'ж' * 8200); // 2 bytes each: under 10k chars, over 16 KB
+    await tester.pump();
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    expect(find.text('That text is too long to save. Split it into two blocks.'), findsOneWidget);
+    expect(g.callsTo('update_planning_block'), isEmpty);
+  });
 }

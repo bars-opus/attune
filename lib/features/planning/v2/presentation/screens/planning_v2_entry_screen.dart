@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../data/planning_v2_models.dart';
+import '../../domain/code_point_limit.dart';
 import '../planning_v2_providers.dart';
 import '../planning_v2_ui.dart';
 import '../widgets/block_tool_tray.dart';
@@ -38,7 +39,12 @@ class PlanningV2EntryScreen extends ConsumerWidget {
       context: context,
       builder: (d) => AlertDialog(
         title: const Text('Rename'),
-        content: TextField(controller: c, autofocus: true, maxLength: 120),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          inputFormatters: [CodePointLengthFormatter(120)],
+          buildCounter: codePointCounter(c, 120),
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(d, c.text.trim()), child: const Text('Save')),

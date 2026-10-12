@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../data/planning_v2_error.dart';
+import '../domain/code_point_limit.dart';
 
 /// Must equal `planning_v2_icons()` / `planning_v2_colors()` in migration
 /// 20261012200100 (a test parses the SQL and compares).
@@ -105,6 +106,12 @@ Future<bool> planningV2Confirm(
   );
   return confirmed;
 }
+
+/// A "used/max" counter in code points, for fields limited by
+/// [CodePointLengthFormatter] (Flutter's built-in counter counts graphemes).
+InputCounterWidgetBuilder codePointCounter(TextEditingController controller, int max) =>
+    (context, {required currentLength, required isFocused, maxLength}) =>
+        Text('${codePointLength(controller.text)}/$max', style: Theme.of(context).textTheme.bodySmall);
 
 String formatPlanningRange(DateTime? start, DateTime? end) {
   if (start == null) return 'Pick a date';

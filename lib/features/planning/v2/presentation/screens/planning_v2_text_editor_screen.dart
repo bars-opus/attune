@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -60,8 +61,12 @@ class PlanningV2TextEditorScreenState extends ConsumerState<PlanningV2TextEditor
 
   Future<void> _save() async {
     final clean = sanitizeDelta(_controller.document.toDelta().toJson());
-    if (deltaPlainText(clean.ops).runes.length > PlanningV2Limits.textPlainChars) {
-      _snack('That text is too long. Split it into two blocks.');
+    // Two server limits apply: 10,000 characters of text AND a 16 KB payload.
+    // Non-Latin text and emoji reach the byte cap first (final review I3).
+    final bytes = utf8.encode(jsonEncode({'delta': clean.ops})).length;
+    if (deltaPlainText(clean.ops).runes.length > PlanningV2Limits.textPlainChars ||
+        bytes > PlanningV2Limits.payloadBytes) {
+      _snack('That text is too long to save. Split it into two blocks.');
       return;
     }
     if (clean.changed) _snack('Some formatting is not supported here and was removed.');

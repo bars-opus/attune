@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/planning_v2_error.dart';
 import '../../data/planning_v2_models.dart';
+import '../../domain/code_point_limit.dart';
 import '../planning_v2_providers.dart';
 import '../planning_v2_ui.dart';
 
@@ -160,7 +161,7 @@ class _ChecklistBlockViewState extends ConsumerState<ChecklistBlockView> {
       TextField(
         controller: _add,
         focusNode: _addFocus,
-        maxLength: 500,
+        inputFormatters: [CodePointLengthFormatter(500)],
         textInputAction: TextInputAction.done,
         decoration: const InputDecoration(
           hintText: 'Add item', prefixIcon: Icon(Icons.add_rounded), counterText: '', border: InputBorder.none),
@@ -209,11 +210,17 @@ class _ItemEditorState extends State<_ItemEditor> {
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           TextField(
             controller: _text,
-            maxLength: 500,
+            inputFormatters: [CodePointLengthFormatter(500)],
+            buildCounter: codePointCounter(_text, 500),
             decoration: const InputDecoration(labelText: 'Item'),
             onChanged: (_) => setState(() {}),
           ),
-          TextField(controller: _section, maxLength: 40, decoration: const InputDecoration(labelText: 'Section (optional)')),
+          TextField(
+            controller: _section,
+            inputFormatters: [CodePointLengthFormatter(40)],
+            buildCounter: codePointCounter(_section, 40),
+            decoration: const InputDecoration(labelText: 'Section (optional)'),
+          ),
           const SizedBox(height: Spacing.sm),
           Text("Who's on it", style: Theme.of(context).textTheme.labelLarge),
           const SizedBox(height: Spacing.xs),

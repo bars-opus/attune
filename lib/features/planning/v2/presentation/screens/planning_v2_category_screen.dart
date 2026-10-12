@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../data/planning_v2_models.dart';
+import '../../domain/code_point_limit.dart';
 import '../planning_v2_providers.dart';
 import '../planning_v2_ui.dart';
 import '../widgets/category_editor_sheet.dart';
@@ -260,7 +261,8 @@ class _NewEntrySheetState extends State<_NewEntrySheet> {
           TextField(
             controller: _title,
             autofocus: true,
-            maxLength: 120,
+            inputFormatters: [CodePointLengthFormatter(120)],
+            buildCounter: codePointCounter(_title, 120),
             textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(labelText: 'Title'),
             onChanged: (_) => setState(() {}),
