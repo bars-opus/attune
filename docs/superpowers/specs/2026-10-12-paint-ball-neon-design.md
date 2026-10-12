@@ -345,9 +345,15 @@ scope; the split keeps them exported from
 `paint_ball/presentation/widgets/paint_ball_field.dart`.
 
 Two consequences worth stating. `PaintBallPalette.player` is the neutral yellow
-§2.2 removes from the field — but `paint_ball_history_screen.dart` also reads
-it, so the constant stays (possibly deprecated) even after the field stops
-using it; deleting it would break a screen this work does not touch. And the
+§2.2 removes — and it is read in **three screens this work does not touch**
+(`paint_ball_knockout_screen.dart:403`, `paint_ball_battle_screen.dart:426,433`,
+`paint_ball_history_screen.dart:168`) as well as four times inside the field.
+So §2.2 is hereby scoped precisely: **the yellow stops colouring the field's
+figures, which take their owner's hue instead. The constant itself stays, and
+the three screens keep using it as an accent.** Removing it outright would
+break screens outside this work's blast radius, and a figure-colour decision
+was never authority over a knockout screen's iconography. Harmonising those
+screens is a later, separate change. And the
 semantic labels `'<Name> target'` / `'<Name> cover'` from `paintBallPositionName`
 are the **genuinely stable test hooks**: they are accessibility contracts rather
 than implementation details, which is why §3.6.1's rewrite should prefer them
