@@ -260,7 +260,7 @@ class PaintBallField extends StatelessWidget {
                       child: IgnorePointer(
                         child: CustomPaint(
                           key: PaintBallFieldKeys.projectile(isMine: true),
-                          painter: _ProjectilePainter(
+                          painter: ProjectilePainter(
                             progress: flightProgress,
                             from: Offset(
                               columnX(myPosition, isOpponent: false),
@@ -280,7 +280,7 @@ class PaintBallField extends StatelessWidget {
                       child: IgnorePointer(
                         child: CustomPaint(
                           key: PaintBallFieldKeys.projectile(isMine: false),
-                          painter: _ProjectilePainter(
+                          painter: ProjectilePainter(
                             progress: flightProgress,
                             from: Offset(
                               columnX(
@@ -305,7 +305,7 @@ class PaintBallField extends StatelessWidget {
                       child: IgnorePointer(
                         child: CustomPaint(
                           key: PaintBallFieldKeys.projectile(isMine: true),
-                          painter: _ProjectilePainter(
+                          painter: ProjectilePainter(
                             progress: shotProgress!,
                             from: Offset(
                               columnX(myPosition, isOpponent: false),
@@ -338,8 +338,15 @@ String paintBallPositionName(int position) => switch (position) {
 };
 
 /// The paintball in flight, with a short trail behind it.
-class _ProjectilePainter extends CustomPainter {
-  _ProjectilePainter({
+/// The paintball in flight.
+///
+/// Public, with public fields, so a test reads `progress` directly
+/// rather than through `as dynamic` on a privately-named painter -- the
+/// trap spec §3.6.1 exists to close. Kept in this file for now: the
+/// replay is Stage 4's work and moving it would change flight behaviour
+/// in a commit that is only meant to compose.
+class ProjectilePainter extends CustomPainter {
+  ProjectilePainter({
     required this.progress,
     required this.from,
     required this.to,
@@ -395,6 +402,6 @@ class _ProjectilePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_ProjectilePainter old) => old.progress != progress;
+  bool shouldRepaint(ProjectilePainter old) => old.progress != progress;
 }
 
