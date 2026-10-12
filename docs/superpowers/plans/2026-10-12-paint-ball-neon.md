@@ -188,6 +188,7 @@ EOF
 
 **Files:**
 - Create: `lib/core/ui/neon/neon_tokens.dart`
+- Test: `test/core/ui/neon/neon_tokens_test.dart`
 
 **Interfaces:**
 - Consumes: nothing.
