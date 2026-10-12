@@ -1673,7 +1673,6 @@ Create `test/features/games/paint_ball_cover_bay_test.dart`:
 
 ```dart
 import 'dart:math';
-import 'dart:ui';
 
 import 'package:attune/core/ui/neon/neon_quality.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/field/cover_bay.dart';
@@ -1900,8 +1899,6 @@ Expected: FAIL — `field/cover_bay.dart` does not resolve.
 Create `lib/features/games/paint_ball/presentation/widgets/field/cover_bay.dart`:
 
 ```dart
-import 'dart:ui';
-
 import 'package:attune/core/ui/neon/glow_stroke.dart';
 import 'package:attune/core/ui/neon/neon_quality.dart';
 import 'package:attune/core/ui/neon/neon_tokens.dart';

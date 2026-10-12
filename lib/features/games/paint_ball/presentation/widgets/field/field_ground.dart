@@ -69,6 +69,12 @@ class FieldGround extends StatelessWidget {
       key: PaintBallFieldKeys.ground,
       child: LightWell(
         child: Stack(
+          // The divider must span the FIELD, not whatever the child
+          // happens to measure. Without this the Stack sizes to its
+          // children, so an unconstrained or small child collapses it
+          // and the divider is painted at that child's width -- or, at
+          // zero size, not painted at all.
+          fit: StackFit.expand,
           children: [
             Positioned(
               top: 0,

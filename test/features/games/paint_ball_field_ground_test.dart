@@ -87,6 +87,44 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('the divider spans the field, not its sibling child', (
+    tester,
+  ) async {
+    // Caught in review: the Stack had no fit, so it sized to its
+    // children. A zero-size child collapsed it and the divider painted
+    // at 0x0 -- hitting its own `size.isEmpty` early return and drawing
+    // NOTHING, while a test that only asserted the key was present
+    // stayed green. With a Text child it was 14x20: the centre line of
+    // the field, sized by a word.
+    //
+    // Asserting the geometry rather than the key is the lesson: a keyed
+    // widget existing says nothing about whether it drew.
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: FieldGround(child: SizedBox()))),
+    );
+    await tester.pump();
+
+    final collapsed = tester.getSize(find.byKey(PaintBallFieldKeys.divider));
+
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: FieldGround(child: Text('x')))),
+    );
+    await tester.pump();
+
+    final withChild = tester.getSize(find.byKey(PaintBallFieldKeys.divider));
+
+    expect(
+      collapsed.width,
+      greaterThan(100),
+      reason: 'a zero-size child must not collapse the field',
+    );
+    expect(
+      withChild,
+      collapsed,
+      reason: 'the divider is sized by the field, never by its sibling',
+    );
+  });
+
   testWidgets('the divider is drawn and keyed', (tester) async {
     // The centre line is what makes the field two halves facing each
     // other rather than one strip of six covers.
