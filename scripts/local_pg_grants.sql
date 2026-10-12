@@ -114,3 +114,6 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- write is a SECURITY DEFINER RPC. Without this the blanket grant above
 -- would hand authenticated full DML on them locally.
 \i supabase/migrations/20261012200010_planning_v2_table_grants.sql
+
+-- Planning v2 (P1): starter-template definitions are server-only.
+\i supabase/migrations/20261012200210_planning_v2_starter_template_grants.sql
