@@ -59,7 +59,6 @@ class FieldFigure extends StatefulWidget {
     required this.isOpponent,
     required this.rowWidth,
     required this.coverWidth,
-    required this.rowHeight,
     required this.ownerColor,
     required this.isAiming,
     required this.tilt,
@@ -75,8 +74,6 @@ class FieldFigure extends StatefulWidget {
   /// divided three ways (see [figureCentreX]).
   final double rowWidth;
   final double coverWidth;
-
-  final double rowHeight;
 
   /// §2.2: a figure wears its owner's colour.
   final Color ownerColor;
@@ -99,13 +96,17 @@ class FieldFigure extends StatefulWidget {
 class _FieldFigureState extends State<FieldFigure>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  late int _from;
+  late double _fromColumn;
   late int _to;
+  // Where the figure is drawn this frame. A retarget resumes from here,
+  // not from the target it was heading to.
+  late double _liveColumn;
 
   @override
   void initState() {
     super.initState();
-    _from = widget.position;
+    _fromColumn = widget.position.toDouble();
+    _liveColumn = _fromColumn;
     _to = widget.position;
     _controller = AnimationController(
       vsync: this,
@@ -118,7 +119,13 @@ class _FieldFigureState extends State<FieldFigure>
   void didUpdateWidget(FieldFigure old) {
     super.didUpdateWidget(old);
     if (old.position != widget.position) {
-      _from = old.position;
+      // Resume from where the figure actually IS, not from the target it
+      // was heading to. Using old.position made an interrupted journey
+      // snap forward to the abandoned target and then travel backwards
+      // -- a measured 116pt teleport, in the widget built to prevent
+      // exactly that.
+      _fromColumn =
+          _controller.value < 1 ? _liveColumn : old.position.toDouble();
       _to = widget.position;
       if (widget.reduceMotion) {
         _controller.value = 1;
@@ -149,7 +156,8 @@ class _FieldFigureState extends State<FieldFigure>
         final lateral = Curves.easeInOut.transform(
           ((t - 0.25) / 0.5).clamp(0.0, 1.0),
         );
-        final column = _from + (_to - _from) * lateral;
+        final column = _fromColumn + (_to - _fromColumn) * lateral;
+        _liveColumn = column;
 
         // Depth: 0 is tucked in cover, 1 is stepped out. It rises for
         // the crossing and falls again on arrival -- and stays out while

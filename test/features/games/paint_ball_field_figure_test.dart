@@ -1,9 +1,26 @@
+import 'package:attune/core/ui/neon/neon_quality.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_figure.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart'
     show kPaintBallCoverWidth, kPaintBallPositions;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+/// Records drawn paths so the figure's geometry can be asserted without a
+/// golden. Same idiom as the cover-bay test.
+class _RecordingCanvas implements Canvas {
+  final paths = <Path>[];
+  final paints = <Paint>[];
+
+  @override
+  void drawPath(Path path, Paint paint) {
+    paths.add(path);
+    paints.add(paint);
+  }
+
+  @override
+  noSuchMethod(Invocation invocation) => null;
+}
 
 void main() {
   group('the centring formula', () {
@@ -110,6 +127,7 @@ void main() {
       bool isOpponent = false,
       bool reduceMotion = false,
       bool isAiming = false,
+      VoidCallback? onTap,
     }) => MaterialApp(
       home: MediaQuery(
         data: MediaQueryData(disableAnimations: reduceMotion),
@@ -124,11 +142,11 @@ void main() {
                   isOpponent: isOpponent,
                   rowWidth: 390,
                   coverWidth: kPaintBallCoverWidth,
-                  rowHeight: 92,
                   ownerColor: const Color(0xFF5EEAD4),
                   isAiming: isAiming,
                   tilt: 0,
                   reduceMotion: reduceMotion,
+                  onTap: onTap,
                 ),
               ],
             ),
@@ -189,6 +207,35 @@ void main() {
       expect(
         find.byWidgetPredicate((widget) => widget is FieldFigure),
         findsOneWidget,
+      );
+    });
+
+    testWidgets('a journey interrupted mid-flight does not teleport', (
+      tester,
+    ) async {
+      // Measured before the fix: retargeting at t=0.5 snapped the figure
+      // 116pt forward to the abandoned target, then walked it backwards.
+      await tester.pumpWidget(host(position: 0));
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(host(position: 2));
+      await tester.pump(const Duration(milliseconds: 310));
+      final midJourney = tester
+          .getCenter(find.byKey(PaintBallFieldKeys.figure(2, isOpponent: false)))
+          .dx;
+
+      await tester.pumpWidget(host(position: 1));
+      await tester.pump(const Duration(milliseconds: 1));
+      final afterRetarget = tester
+          .getCenter(find.byKey(PaintBallFieldKeys.figure(1, isOpponent: false)))
+          .dx;
+
+      expect(
+        (afterRetarget - midJourney).abs(),
+        lessThan(8),
+        reason:
+            'a retarget continues from where the figure is; it must not '
+            'jump to the target it was abandoning',
       );
     });
 
@@ -264,7 +311,71 @@ void main() {
       );
     });
 
-    testWidgets('a figure that is not the fire control ignores taps', (
+    testWidgets('an aiming figure steps out of cover', (tester) async {
+      // An aiming player is deliberately exposed, so it stands above its
+      // cover rather than tucked in. Your row is at the bottom: stepped
+      // out means a smaller dy.
+      await tester.pumpWidget(host(position: 0));
+      await tester.pumpAndSettle();
+      final tuckedIn = tester
+          .getCenter(find.byKey(PaintBallFieldKeys.figure(0, isOpponent: false)))
+          .dy;
+
+      await tester.pumpWidget(host(position: 0, isAiming: true));
+      await tester.pumpAndSettle();
+      final aiming = tester
+          .getCenter(find.byKey(PaintBallFieldKeys.figure(0, isOpponent: false)))
+          .dy;
+
+      expect(aiming, lessThan(tuckedIn));
+    });
+
+    testWidgets('the opponent figure is keyed to its side and sits from top', (
+      tester,
+    ) async {
+      // The opponent's row shelters under the far dome, so it positions
+      // from the top edge with a 46pt inset, not from the bottom.
+      await tester.pumpWidget(host(position: 1, isOpponent: true));
+      await tester.pump();
+
+      final key = PaintBallFieldKeys.figure(1, isOpponent: true);
+      expect(find.byKey(key), findsOneWidget);
+
+      final positioned = tester.widget<Positioned>(find.byKey(key));
+      expect(positioned.top, 46);
+      expect(positioned.bottom, isNull);
+    });
+
+    testWidgets('the two rows point opposite ways', (tester) async {
+      // Confirmed at widget level: the player's row points up, the
+      // opponent's points down, so the two rows face each other.
+      await tester.pumpWidget(host(position: 1));
+      await tester.pump();
+      final mine = tester
+          .widget<CustomPaint>(
+            find.descendant(
+              of: find.byKey(PaintBallFieldKeys.figure(1, isOpponent: false)),
+              matching: find.byType(CustomPaint),
+            ),
+          )
+          .painter as FieldFigurePainter;
+
+      await tester.pumpWidget(host(position: 1, isOpponent: true));
+      await tester.pump();
+      final theirs = tester
+          .widget<CustomPaint>(
+            find.descendant(
+              of: find.byKey(PaintBallFieldKeys.figure(1, isOpponent: true)),
+              matching: find.byType(CustomPaint),
+            ),
+          )
+          .painter as FieldFigurePainter;
+
+      expect(mine.pointsUp, isTrue);
+      expect(theirs.pointsUp, isFalse);
+    });
+
+    testWidgets('a figure that is not the fire control is transparent to taps', (
       tester,
     ) async {
       // It stands over a cover that is itself a tap target. Intercepting
@@ -280,12 +391,93 @@ void main() {
 
       expect(figure.onTap, isNull);
       expect(
-        find.descendant(
-          of: find.byKey(PaintBallFieldKeys.figure(1, isOpponent: false)),
-          matching: find.byType(IgnorePointer),
-        ),
-        findsOneWidget,
+        tester
+            .widget<IgnorePointer>(
+              find.descendant(
+                of: find.byKey(PaintBallFieldKeys.figure(1, isOpponent: false)),
+                matching: find.byType(IgnorePointer),
+              ),
+            )
+            .ignoring,
+        isTrue,
+        reason: 'it must be transparent to taps, or it steals the cover '
+            'beneath it and silently costs a hiding place',
       );
+    });
+
+    testWidgets('the fire control receives taps and fires its callback', (
+      tester,
+    ) async {
+      var taps = 0;
+      await tester.pumpWidget(host(position: 1, onTap: () => taps++));
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<IgnorePointer>(
+              find.descendant(
+                of: find.byKey(PaintBallFieldKeys.figure(1, isOpponent: false)),
+                matching: find.byType(IgnorePointer),
+              ),
+            )
+            .ignoring,
+        isFalse,
+      );
+
+      await tester.tap(find.byKey(PaintBallFieldKeys.figure(1, isOpponent: false)));
+      expect(taps, 1);
+    });
+  });
+
+  group('the figure painter', () {
+    const figureSize = Size(22, 20);
+    const owner = Color(0xFF5EEAD4);
+
+    FieldFigurePainter painterFor({
+      bool pointsUp = true,
+      NeonQuality quality = NeonQuality.glow,
+    }) => FieldFigurePainter(
+      color: owner,
+      pointsUp: pointsUp,
+      quality: quality,
+    );
+
+    test('the fill is drawn in the owner colour', () {
+      // §2.2: the figure wears its owner's hue. The first path drawn is
+      // the solid fill; its colour must be the owner's, ignoring alpha.
+      final canvas = _RecordingCanvas();
+      painterFor().paint(canvas, figureSize);
+
+      expect(canvas.paths, isNotEmpty, reason: 'a positive control');
+      expect(
+        canvas.paints.first.color.toARGB32() & 0xFFFFFF,
+        owner.toARGB32() & 0xFFFFFF,
+      );
+      expect(canvas.paints.first.color.a, greaterThan(0));
+    });
+
+    test('an upward figure has its apex at the top, a downward one at the base', () {
+      // Point (2, 18) lies inside the upward triangle (its base is wide
+      // there) and outside the downward one (its apex is at the bottom,
+      // so the top-left corner is empty).
+      final up = _RecordingCanvas();
+      painterFor().paint(up, figureSize);
+      final down = _RecordingCanvas();
+      painterFor(pointsUp: false).paint(down, figureSize);
+
+      expect(up.paths.first.contains(const Offset(2, 18)), isTrue);
+      expect(down.paths.first.contains(const Offset(2, 18)), isFalse);
+    });
+
+    test('the plain tier draws strictly fewer paths than glow', () {
+      // §6.10: degrading drops the halo passes. If plain drew as many
+      // paths as glow, the saving would be fiction.
+      final glow = _RecordingCanvas();
+      painterFor().paint(glow, figureSize);
+      final plain = _RecordingCanvas();
+      painterFor(quality: NeonQuality.plain).paint(plain, figureSize);
+
+      expect(plain.paths.length, lessThan(glow.paths.length));
     });
   });
 }
