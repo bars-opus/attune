@@ -340,7 +340,7 @@ Notification bodies use `plain_text` and titles only, length-capped.
 | Task linked to exactly one Event | Item in that Event entry's checklist |
 | Task linked to ≥ 2 Events, or none | Stays in "Our to-dos" |
 | Event | Everyday entry (id = event id) · Date block · Text block (note) |
-| Note | Everyday entry (id = note id) · Text block (plain text → single-insert Delta) |
+| Note | **Notes** entry (id = note id) · Text block (plain text → single-insert Delta). Amended 2026-10-12: v1 notes go to the Notes starter, not Everyday (§15). |
 | Soft-deleted v1 rows | Migrated as soft-deleted (retention clock starts at the original `deleted_at`) |
 
 ### 9.2 Contracts preserved
@@ -512,3 +512,14 @@ Event times and durations; external calendar sync; currency conversion; recurren
 8. After P2, Timeline, the Conversations summary and AI-created items behave identically for migrated data.
 9. Date poll and countdown pushes are delivered once per rule.
 10. No screen shows a per-partner money total outside an entry with split enabled.
+
+## 15. Amendment (2026-10-12): Notes and pins
+
+Approved in conversation after P1 merged. Implemented on `feat/planning-notes-pins` with migration `20261012200600_planning_v2_notes_and_pins.sql`.
+
+- **Notes starter:** a seventh starter category (`seed_key = 'notes'`, rank 0), always first on the home screen. Like the other starters it can be renamed or hidden but not deleted. Its template is one empty text block: a blank sheet. The Notes category has no template UI (no "Edit template" / "Reset template"). **+ New note** skips the template choice, creates the note titled "New note", and opens the editor at once. On the first save, a note still titled "New note" takes its first non-empty line as its title.
+- **Seeding fix (final review M2):** a starter missing for a couple is placed relative to that couple's existing categories. One ranked before all of their starters goes to the top; otherwise it goes after the last category. Couples seeded before Notes existed get it at the top.
+- **Pins:** `planning_entries.pinned_at`, shared by both partners, at most 20 per category (`pinned_per_category` in `planning_limits()`), counted under the category row lock. `list_planning_entries` returns pinned plans in a separate `pinned` group on the first page only (by `pinned_at DESC`, within the requested status group) and never in the keyset-paged `entries`. Templates cannot be pinned.
+- **Swipe gestures, consistent across Planning:** swiping **right deletes** (with Undo) for plans, blocks and checklist items. Swiping **left** on a plan pins or unpins it and leaves it on screen. Long-press and screen-reader custom actions offer Pin/Delete too.
+- **Undo for a deleted plan:** `restore_planning_entry` restores the plan and exactly the blocks and items that delete removed (matched on its `deleted_at`). It never restores ones deleted earlier on their own, and it refuses to restore into a deleted category.
+

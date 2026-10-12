@@ -35,4 +35,17 @@ void main() {
   test('planningYmd pads', () {
     expect(planningYmd(DateTime(2026, 1, 5)), '2026-01-05');
   });
+
+  test('a list page carries its pinned group; entries know when they are pinned', () {
+    Map<String, dynamic> s(String id, bool pinned) => {
+          'id': id, 'title': 'T', 'status': 'active', 'last_activity_at': '2026-10-12T09:00:00Z',
+          'pinned': pinned, 'date_start': null, 'date_end': null, 'checklist_done': 0, 'checklist_total': 0,
+        };
+    final page = PlanningEntriesPage.fromJson({'entries': [s('a', false)], 'pinned': [s('p', true)], 'next_cursor': null});
+    expect(page.pinned.single.pinned, isTrue);
+    expect(page.entries.single.pinned, isFalse);
+    expect(PlanningEntriesPage.fromJson({'entries': [], 'next_cursor': null}).pinned, isEmpty,
+        reason: 'a later page has no pinned group');
+    expect(PlanningEntryDetail.fromJson(fakeEntryDetailJson(pinnedAt: '2026-10-12T09:00:00Z')).entry.isPinned, isTrue);
+  });
 }

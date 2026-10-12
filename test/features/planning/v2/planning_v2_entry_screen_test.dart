@@ -80,13 +80,13 @@ void main() {
     expect(find.text('Eggs'), findsOneWidget);
   });
 
-  testWidgets('swipe deletes a block with Undo that restores it', (tester) async {
+  testWidgets('swipe RIGHT deletes a block with Undo that restores it', (tester) async {
     final g = _gateway();
     g.handlers['delete_planning_block'] = (_) => {'deleted': true};
     g.handlers['restore_planning_block'] = (_) => fakeBlockJson(id: 'b2', type: 'date', payload: {'title': 'Shop day'}, dateStart: '2026-10-17');
     await tester.pumpWidget(planningV2TestApp(g, _screen));
     await tester.pumpAndSettle();
-    await tester.drag(find.byKey(const ValueKey('block-b2')), const Offset(-600, 0));
+    await tester.drag(find.byKey(const ValueKey('block-b2')), const Offset(600, 0)); // right = delete everywhere
     await tester.pumpAndSettle();
     expect(find.text('Shop day'), findsNothing);
     await tester.tap(find.text('Undo'));
@@ -186,5 +186,18 @@ void main() {
     await tester.tap(find.byTooltip('Dismiss'));
     await tester.pumpAndSettle();
     expect(find.text("1 change couldn't be saved"), findsNothing);
+  });
+
+  testWidgets('swipe RIGHT deletes a checklist item; a left swipe does nothing', (tester) async {
+    final g = _gateway();
+    g.handlers['delete_planning_block_item'] = (_) => {'deleted': true};
+    await tester.pumpWidget(planningV2TestApp(g, _screen));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byKey(const ValueKey('item-i1')), const Offset(-600, 0));
+    await tester.pumpAndSettle();
+    expect(g.callsTo('delete_planning_block_item'), isEmpty);
+    await tester.drag(find.byKey(const ValueKey('item-i1')), const Offset(600, 0));
+    await tester.pumpAndSettle();
+    expect(g.callsTo('delete_planning_block_item').single, {'p_id': 'i1'});
   });
 }

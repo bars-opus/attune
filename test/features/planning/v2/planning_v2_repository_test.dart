@@ -162,4 +162,15 @@ void main() {
       expect(PlanningV2Repository.rpcNames.intersection(v1), isEmpty);
     });
   });
+
+  test('pinEntry and restoreEntry call their RPCs with the exact params', () async {
+    gateway.handlers['pin_planning_entry'] = (_) => {'entry': fakeEntryDetailJson(pinnedAt: '2026-10-12T09:00:00Z')['entry']};
+    gateway.handlers['restore_planning_entry'] = (_) => {'entry': fakeEntryDetailJson()['entry']};
+    final pinned = await repo.pinEntry('e1', pinned: true);
+    await repo.restoreEntry('e1');
+    expect(gateway.calls.map((c) => c.$1), ['pin_planning_entry', 'restore_planning_entry']);
+    expect(gateway.calls.first.$2, {'p_id': 'e1', 'p_pinned': true});
+    expect(gateway.calls.last.$2, {'p_id': 'e1'});
+    expect(pinned.isPinned, isTrue);
+  });
 }

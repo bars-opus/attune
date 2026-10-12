@@ -1,15 +1,16 @@
 import 'package:attune/features/planning/v2/data/planning_v2_models.dart';
 import 'package:attune/features/planning/v2/presentation/screens/planning_v2_category_screen.dart';
 import 'package:attune/features/planning/v2/presentation/screens/planning_v2_entry_screen.dart';
+import 'package:attune/features/planning/v2/presentation/screens/planning_v2_text_editor_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_planning_gateway.dart';
 import 'support/planning_v2_test_app.dart';
 
-Map<String, dynamic> _summary(String id, {String? date, int done = 0, int total = 0}) => {
+Map<String, dynamic> _summary(String id, {String? date, int done = 0, int total = 0, bool pinned = false}) => {
       'id': id, 'title': 'Trip $id', 'status': 'active', 'last_activity_at': '2026-10-12T09:00:00Z',
-      'date_start': date, 'date_end': null, 'checklist_done': done, 'checklist_total': total,
+      'pinned': pinned, 'date_start': date, 'date_end': null, 'checklist_done': done, 'checklist_total': total,
     };
 
 FakePlanningGateway _gateway({List<Map<String, dynamic>>? open}) => FakePlanningGateway({
@@ -100,5 +101,110 @@ void main() {
     await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
     expect(g.callsTo('delete_planning_category'), hasLength(1));
+  });
+
+  group('swipe actions on plans', () {
+    FakePlanningGateway swipeGateway() {
+      var pinned = false;
+      var deleted = false;
+      final g = _gateway();
+      g.handlers['list_planning_entries'] = (p) => p['p_group'] == 'open'
+          ? {
+              'entries': [if (!pinned && !deleted) _summary('1'), _summary('2')],
+              'pinned': [if (pinned && !deleted) _summary('1', pinned: true)],
+              'next_cursor': null,
+            }
+          : {'entries': [], 'pinned': [], 'next_cursor': null};
+      g.handlers['pin_planning_entry'] = (p) {
+        pinned = p['p_pinned'] as bool;
+        return {'entry': {...fakeEntryDetailJson(id: '1')['entry'] as Map, 'pinned_at': pinned ? '2026-10-12T09:00:00Z' : null}};
+      };
+      g.handlers['delete_planning_entry'] = (_) {
+        deleted = true;
+        return {'deleted': true};
+      };
+      g.handlers['restore_planning_entry'] = (_) {
+        deleted = false;
+        return {'entry': fakeEntryDetailJson(id: '1')['entry']};
+      };
+      return g;
+    }
+
+    testWidgets('swipe RIGHT deletes the plan, with Undo', (tester) async {
+      final g = swipeGateway();
+      await tester.pumpWidget(planningV2TestApp(g, PlanningV2CategoryScreen(relationshipId: 'r1', category: _cat())));
+      await tester.pumpAndSettle();
+      await tester.drag(find.byKey(const ValueKey('entry-1')), const Offset(600, 0));
+      await tester.pumpAndSettle();
+      expect(g.callsTo('delete_planning_entry').single, {'p_id': '1'});
+      expect(find.text('Trip 1'), findsNothing);
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(g.callsTo('restore_planning_entry'), hasLength(1));
+      expect(find.text('Trip 1'), findsOneWidget);
+    });
+
+    testWidgets('swipe LEFT pins the plan into the Pinned group, and again unpins it', (tester) async {
+      final g = swipeGateway();
+      await tester.pumpWidget(planningV2TestApp(g, PlanningV2CategoryScreen(relationshipId: 'r1', category: _cat())));
+      await tester.pumpAndSettle();
+      await tester.drag(find.byKey(const ValueKey('entry-1')), const Offset(-600, 0));
+      await tester.pumpAndSettle();
+      expect(g.callsTo('pin_planning_entry').single, {'p_id': '1', 'p_pinned': true});
+      expect(find.text('Pinned'), findsOneWidget);
+      expect(find.text('Trip 1'), findsOneWidget, reason: 'pinning keeps the plan on screen');
+      expect(g.callsTo('delete_planning_entry'), isEmpty);
+      await tester.drag(find.byKey(const ValueKey('entry-1')), const Offset(-600, 0));
+      await tester.pumpAndSettle();
+      expect(g.callsTo('pin_planning_entry').last, {'p_id': '1', 'p_pinned': false});
+      expect(find.text('Pinned'), findsNothing);
+    });
+
+    testWidgets('long-press offers Pin and Delete without swiping (accessibility)', (tester) async {
+      final g = swipeGateway();
+      await tester.pumpWidget(planningV2TestApp(g, PlanningV2CategoryScreen(relationshipId: 'r1', category: _cat())));
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text('Trip 1'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pin'), findsOneWidget);
+      expect(find.text('Delete'), findsOneWidget);
+      await tester.tap(find.text('Pin'));
+      await tester.pumpAndSettle();
+      expect(g.callsTo('pin_planning_entry').single['p_pinned'], isTrue);
+    });
+  });
+
+  group('Notes', () {
+    PlanningCategory notes() => PlanningCategory.fromJson(
+        fakeCategoryJson(id: 'c1', seedKey: 'notes', name: 'Notes', icon: 'note', color: 'indigo'));
+
+    testWidgets('+ creates a note and opens the editor directly — no template choice', (tester) async {
+      final g = _gateway();
+      g.handlers['create_planning_entry'] = (p) => fakeEntryDetailJson(
+          id: p['p_id'] as String, title: 'New note', seedKey: 'notes', categoryName: 'Notes', blocks: [
+            fakeBlockJson(id: 'b1', type: 'text', plainText: '', payload: {
+              'delta': [{'insert': '\n'}]
+            }),
+          ]);
+      g.handlers['get_planning_entry'] = (p) => g.handlers['create_planning_entry']!(p);
+      await tester.pumpWidget(planningV2TestApp(g, PlanningV2CategoryScreen(relationshipId: 'r1', category: notes())));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New note'));
+      await tester.pumpAndSettle();
+      expect(find.text('Use template'), findsNothing);
+      final call = g.callsTo('create_planning_entry').single;
+      expect(call['p_title'], 'New note');
+      expect(call['p_use_template'], isTrue, reason: 'the Notes template is the blank sheet');
+      expect(find.byType(PlanningV2TextEditorScreen), findsOneWidget);
+    });
+
+    testWidgets('Notes has no template menu items', (tester) async {
+      await tester.pumpWidget(planningV2TestApp(_gateway(), PlanningV2CategoryScreen(relationshipId: 'r1', category: notes())));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Category options'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit template'), findsNothing);
+      expect(find.text('Reset template'), findsNothing);
+    });
   });
 }

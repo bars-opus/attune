@@ -13,7 +13,7 @@ import '../domain/code_point_limit.dart';
 /// 20261012200100 (a test parses the SQL and compares).
 const List<String> planningV2IconKeys = [
   'flag', 'plane', 'heart', 'home', 'cart', 'sun', 'star', 'gift', 'book',
-  'dumbbell', 'utensils', 'baby', 'ring', 'box', 'music', 'paw',
+  'dumbbell', 'utensils', 'baby', 'ring', 'box', 'music', 'paw', 'note',
 ];
 const List<String> planningV2ColorKeys = ['rose', 'amber', 'teal', 'indigo', 'green', 'slate', 'violet', 'orange'];
 
@@ -23,7 +23,7 @@ const Map<String, IconData> _icons = {
   'star': Icons.star_rounded, 'gift': Icons.card_giftcard_rounded, 'book': Icons.menu_book_rounded,
   'dumbbell': Icons.fitness_center_rounded, 'utensils': Icons.restaurant_rounded,
   'baby': Icons.child_friendly_rounded, 'ring': Icons.diamond_rounded, 'box': Icons.inventory_2_rounded,
-  'music': Icons.music_note_rounded, 'paw': Icons.pets_rounded,
+  'music': Icons.music_note_rounded, 'paw': Icons.pets_rounded, 'note': Icons.sticky_note_2_rounded,
 };
 
 IconData planningV2Icon(String key) => _icons[key] ?? Icons.folder_rounded;
@@ -69,6 +69,10 @@ Map<String, Color> planningV2HighlightPalette(Brightness b) =>
 Color planningV2TextTone(String token, Brightness b) => _scheme(token, b).primary;
 
 const planningV2RouteName = 'planning_v2';
+
+/// Title a new note starts with; replaced by the note's first line on its
+/// first save (Notes category only).
+const planningV2NewNoteTitle = 'New note';
 
 /// Every v2 screen is pushed with this name so an `inactive` failure can
 /// pop the whole v2 stack in one call (spec §9: fail closed and leave).

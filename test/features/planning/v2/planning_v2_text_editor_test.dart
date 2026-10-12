@@ -156,4 +156,34 @@ void main() {
     expect(find.text('That text is too long to save. Split it into two blocks.'), findsOneWidget);
     expect(g.callsTo('update_planning_block'), isEmpty);
   });
+
+  testWidgets('a new note takes its title from its first line on save', (tester) async {
+    final g = FakePlanningGateway({
+      'get_planning_entry': (_) => fakeEntryDetailJson(title: 'New note', seedKey: 'notes', categoryName: 'Notes',
+          blocks: [_textBlock(text: '')]),
+      'update_planning_block': (_) => _textBlock(text: 'Groceries for Sunday\nmilk', version: 2),
+      'update_planning_entry': (p) => {
+            'entry': {...fakeEntryDetailJson(seedKey: 'notes')['entry'] as Map, 'title': p['p_title']}
+          },
+    });
+    await _openEditor(tester, g);
+    _controller(tester).document.insert(0, 'Groceries for Sunday\nmilk');
+    await tester.pump();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(g.callsTo('update_planning_entry').single['p_title'], 'Groceries for Sunday');
+  });
+
+  testWidgets('a note the user already titled keeps its title', (tester) async {
+    final g = FakePlanningGateway({
+      'get_planning_entry': (_) => fakeEntryDetailJson(title: 'Our list', seedKey: 'notes', blocks: [_textBlock(text: '')]),
+      'update_planning_block': (_) => _textBlock(text: 'Groceries', version: 2),
+    });
+    await _openEditor(tester, g);
+    _controller(tester).document.insert(0, 'Groceries');
+    await tester.pump();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(g.callsTo('update_planning_entry'), isEmpty);
+  });
 }

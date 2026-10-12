@@ -10,6 +10,7 @@ import '../../domain/code_point_limit.dart';
 import '../planning_v2_providers.dart';
 import '../planning_v2_ui.dart';
 import '../widgets/block_tool_tray.dart';
+import 'planning_v2_text_editor_screen.dart';
 import '../widgets/checklist_block_view.dart';
 import '../widgets/date_block_view.dart';
 import '../widgets/text_block_view.dart';
@@ -18,8 +19,55 @@ enum _EntryMenu { rename, done, reopen, next }
 
 enum _BlockMenu { up, down, delete }
 
-class PlanningV2EntryScreen extends ConsumerWidget {
-  const PlanningV2EntryScreen({super.key, required this.relationshipId, required this.entryId});
+/// One plan. With [openEditor] (a new note), the first text block opens in
+/// the editor as soon as the plan has loaded, so writing starts at once.
+class PlanningV2EntryScreen extends ConsumerStatefulWidget {
+  const PlanningV2EntryScreen({
+    super.key,
+    required this.relationshipId,
+    required this.entryId,
+    this.openEditor = false,
+  });
+  final String relationshipId;
+  final String entryId;
+  final bool openEditor;
+
+  @override
+  ConsumerState<PlanningV2EntryScreen> createState() => _PlanningV2EntryScreenState();
+}
+
+class _PlanningV2EntryScreenState extends ConsumerState<PlanningV2EntryScreen> {
+  bool _editorOpened = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.openEditor) return;
+    ref.listenManual<AsyncValue<PlanningEntryDetail>>(
+      planningV2EntryProvider((relationshipId: widget.relationshipId, entryId: widget.entryId)),
+      (_, next) {
+        final detail = next.valueOrNull;
+        if (_editorOpened || detail == null) return;
+        final text = detail.blocks.where((b) => b.type == PlanningBlockType.text).firstOrNull;
+        if (text == null) return;
+        _editorOpened = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).push(planningV2Route(PlanningV2TextEditorScreen(
+              args: (relationshipId: widget.relationshipId, entryId: widget.entryId), block: text)));
+        });
+      },
+      fireImmediately: true,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      _EntryBody(relationshipId: widget.relationshipId, entryId: widget.entryId);
+}
+
+class _EntryBody extends ConsumerWidget {
+  const _EntryBody({required this.relationshipId, required this.entryId});
   final String relationshipId;
   final String entryId;
 
@@ -149,10 +197,10 @@ class PlanningV2EntryScreen extends ConsumerWidget {
                 index: i,
                 child: Dismissible(
                   key: ValueKey('dismiss-${b.id}'),
-                  direction: DismissDirection.endToStart,
+                  direction: DismissDirection.startToEnd, // swipe right = delete, as everywhere in Planning
                   onDismissed: (_) => _deleteBlock(context, ref, d, b),
                   background: Container(
-                    alignment: Alignment.centerRight,
+                    alignment: Alignment.centerLeft,
                     padding: Spacing.horizontalMd,
                     color: Theme.of(context).colorScheme.errorContainer,
                     child: const Icon(Icons.delete_outline_rounded),

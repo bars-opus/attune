@@ -74,17 +74,36 @@ class PlanningEntriesState {
     required this.entries,
     required this.cursorAt,
     required this.cursorId,
+    this.pinned = const [],
     this.loadingMore = false,
     this.loadMoreFailed = false,
   });
 
   final List<PlanningEntrySummary> entries;
+
+  /// Pinned plans, shown above [entries]; never also inside [entries].
+  final List<PlanningEntrySummary> pinned;
   final DateTime? cursorAt;
   final String? cursorId;
   final bool loadingMore;
   final bool loadMoreFailed;
 
   bool get hasMore => cursorId != null;
+
+  PlanningEntriesState copyWith({
+    List<PlanningEntrySummary>? entries,
+    List<PlanningEntrySummary>? pinned,
+    bool loadingMore = false,
+    bool loadMoreFailed = false,
+  }) =>
+      PlanningEntriesState(
+        entries: entries ?? this.entries,
+        pinned: pinned ?? this.pinned,
+        cursorAt: cursorAt,
+        cursorId: cursorId,
+        loadingMore: loadingMore,
+        loadMoreFailed: loadMoreFailed,
+      );
 }
 
 /// Own pager rather than v1's PlanningKeysetPager: v1's refresh() resets
@@ -93,27 +112,72 @@ class PlanningEntriesState {
 /// previous value while reloading).
 class PlanningEntriesController
     extends AutoDisposeFamilyAsyncNotifier<PlanningEntriesState, PlanningEntriesArgs> {
+  PlanningV2Repository get _repo => ref.read(planningV2RepositoryProvider);
+
   @override
   Future<PlanningEntriesState> build(PlanningEntriesArgs arg) async {
     _refetchOnSignal(ref, arg.relationshipId, replayOutbox: true);
-    final page = await ref.read(planningV2RepositoryProvider).listEntries(arg.categoryId, group: arg.group);
-    return PlanningEntriesState(entries: page.entries, cursorAt: page.nextCursorAt, cursorId: page.nextCursorId);
+    final page = await _repo.listEntries(arg.categoryId, group: arg.group);
+    return PlanningEntriesState(
+        entries: page.entries, pinned: page.pinned, cursorAt: page.nextCursorAt, cursorId: page.nextCursorId);
   }
 
   Future<void> loadMore() async {
     final s = state.valueOrNull;
     if (s == null || s.loadingMore || !s.hasMore) return;
-    state = AsyncData(PlanningEntriesState(
-        entries: s.entries, cursorAt: s.cursorAt, cursorId: s.cursorId, loadingMore: true));
+    state = AsyncData(s.copyWith(loadingMore: true));
     try {
-      final page = await ref.read(planningV2RepositoryProvider).listEntries(
-          arg.categoryId, group: arg.group, cursorAt: s.cursorAt, cursorId: s.cursorId);
+      final page = await _repo.listEntries(arg.categoryId, group: arg.group, cursorAt: s.cursorAt, cursorId: s.cursorId);
       state = AsyncData(PlanningEntriesState(
-          entries: [...s.entries, ...page.entries], cursorAt: page.nextCursorAt, cursorId: page.nextCursorId));
+          entries: [...s.entries, ...page.entries], pinned: s.pinned,
+          cursorAt: page.nextCursorAt, cursorId: page.nextCursorId));
     } on PlanningV2Error {
-      state = AsyncData(PlanningEntriesState(
-          entries: s.entries, cursorAt: s.cursorAt, cursorId: s.cursorId, loadMoreFailed: true));
+      state = AsyncData(s.copyWith(loadMoreFailed: true));
     }
+  }
+
+  /// Optimistic: the plan moves between the pinned group and the list at
+  /// once, and moves back if the server refuses (e.g. the 20-pin limit).
+  Future<void> togglePin(PlanningEntrySummary entry) async {
+    final before = state.valueOrNull;
+    if (before == null) return;
+    final pin = !entry.pinned;
+    final moved = entry.copyWith(pinned: pin);
+    state = AsyncData(pin
+        ? before.copyWith(
+            pinned: [moved, ...before.pinned],
+            entries: [for (final e in before.entries) if (e.id != entry.id) e])
+        : before.copyWith(
+            pinned: [for (final e in before.pinned) if (e.id != entry.id) e],
+            entries: [moved, ...before.entries]));
+    try {
+      await _repo.pinEntry(entry.id, pinned: pin);
+    } on PlanningV2Error {
+      state = AsyncData(before);
+      rethrow;
+    }
+  }
+
+  /// Optimistic delete; the caller offers Undo through [restore].
+  Future<void> delete(PlanningEntrySummary entry) async {
+    final before = state.valueOrNull;
+    if (before == null) return;
+    state = AsyncData(before.copyWith(
+        pinned: [for (final e in before.pinned) if (e.id != entry.id) e],
+        entries: [for (final e in before.entries) if (e.id != entry.id) e]));
+    try {
+      await _repo.deleteEntry(entry.id);
+    } on PlanningV2Error {
+      state = AsyncData(before);
+      rethrow;
+    }
+  }
+
+  /// Undo for [delete]: the server restores the plan; the list refetches so
+  /// it reappears in its true place (pinned or by activity).
+  Future<void> restore(String entryId) async {
+    await _repo.restoreEntry(entryId);
+    ref.invalidateSelf();
   }
 }
 

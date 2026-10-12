@@ -86,9 +86,9 @@ class _ChecklistBlockViewState extends ConsumerState<ChecklistBlockView> {
     final scheme = Theme.of(context).colorScheme;
     return Dismissible(
       key: ValueKey('item-${item.id}'),
-      direction: DismissDirection.endToStart,
+      direction: DismissDirection.startToEnd, // swipe right = delete, as everywhere in Planning
       background: Container(
-        alignment: Alignment.centerRight,
+        alignment: Alignment.centerLeft,
         padding: Spacing.horizontalMd,
         color: scheme.errorContainer,
         child: Icon(Icons.delete_outline_rounded, color: scheme.onErrorContainer),

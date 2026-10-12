@@ -63,11 +63,14 @@ Map<String, dynamic> fakeEntryDetailJson({
   String title = 'Saturday shop',
   bool isTemplate = false,
   List<Map<String, dynamic>> blocks = const [],
+  String seedKey = 'groceries',
+  String categoryName = 'Groceries',
+  String? pinnedAt,
 }) =>
     {
       'entry': {
-        'id': id, 'category_id': 'c1', 'category_name': 'Groceries',
-        'category_seed_key': 'groceries', 'is_template': isTemplate, 'title': title,
+        'id': id, 'category_id': 'c1', 'category_name': categoryName,
+        'category_seed_key': seedKey, 'is_template': isTemplate, 'title': title, 'pinned_at': pinnedAt,
         'status': 'active', 'currency': 'GHS', 'cover_path': null,
         'last_activity_at': '2026-10-12T09:00:00Z',
         'created_at': '2026-10-12T09:00:00Z', 'updated_at': '2026-10-12T09:00:00Z',

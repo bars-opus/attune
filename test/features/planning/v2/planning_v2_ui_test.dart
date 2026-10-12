@@ -1,15 +1,13 @@
-import 'dart:io';
-
 import 'package:attune/features/planning/v2/presentation/planning_v2_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_planning_gateway.dart';
+import 'support/sql_definitions.dart';
 import 'support/planning_v2_test_app.dart';
 
 List<String> _sqlArray(String fn) {
-  final sql = File('supabase/migrations/20261012200100_planning_v2_helpers.sql').readAsStringSync();
-  final body = RegExp('FUNCTION public.$fn\\(\\)[\\s\\S]*?ARRAY\\[([\\s\\S]*?)\\]').firstMatch(sql)!.group(1)!;
+  final body = RegExp(r'ARRAY\[([\s\S]*?)\]').firstMatch(newestSqlFunctionBody(fn))!.group(1)!;
   return RegExp(r"'([a-z]+)'").allMatches(body).map((m) => m.group(1)!).toList();
 }
 

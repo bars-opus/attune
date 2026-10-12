@@ -5,10 +5,12 @@ import 'package:attune/core/widgets/buttons/app_button.dart';
 import 'package:attune/core/widgets/buttons/app_fab.dart';
 import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../data/planning_v2_error.dart';
 import '../../data/planning_v2_models.dart';
 import '../../domain/code_point_limit.dart';
 import '../planning_v2_providers.dart';
@@ -49,8 +51,24 @@ class _PlanningV2CategoryScreenState extends ConsumerState<PlanningV2CategoryScr
     unawaited(ref.read(planningV2RepositoryProvider).markCategorySeen(_category.id).catchError((_) {}));
   }
 
-  void _openEntry(String entryId) => Navigator.of(context).push(
-      planningV2Route(PlanningV2EntryScreen(relationshipId: widget.relationshipId, entryId: entryId)));
+  bool get _isNotes => _category.seedKey == 'notes';
+
+  void _openEntry(String entryId, {bool openEditor = false}) => Navigator.of(context).push(planningV2Route(
+      PlanningV2EntryScreen(relationshipId: widget.relationshipId, entryId: entryId, openEditor: openEditor)));
+
+  /// Notes skip the template choice: a blank sheet opens straight into the
+  /// editor, and its title comes from the first line on save.
+  Future<void> _newNote() async {
+    try {
+      final detail = await ref.read(planningV2RepositoryProvider).createEntry(
+          id: const Uuid().v4(), categoryId: _category.id, title: planningV2NewNoteTitle,
+          useTemplate: true, currency: _deviceCurrency());
+      ref.invalidate(planningV2EntriesProvider(_open));
+      if (mounted) _openEntry(detail.entry.id, openEditor: true);
+    } catch (e) {
+      if (mounted) showPlanningV2Error(context, e);
+    }
+  }
 
   Future<void> _newEntry() async {
     final draft = await showModalBottomSheet<({String title, bool useTemplate})>(
@@ -121,11 +139,12 @@ class _PlanningV2CategoryScreenState extends ConsumerState<PlanningV2CategoryScr
             tooltip: 'Category options',
             onSelected: _menu,
             itemBuilder: (_) => [
-              if (_category.templateEntryId != null)
+              if (_category.templateEntryId != null && !_isNotes)
                 const PopupMenuItem(value: _Menu.editTemplate, child: Text('Edit template')),
               const PopupMenuItem(value: _Menu.edit, child: Text('Rename or restyle')),
               PopupMenuItem(value: _Menu.hide, child: Text(_category.hidden ? 'Show on Planning' : 'Hide')),
-              if (_category.isStarter) const PopupMenuItem(value: _Menu.reset, child: Text('Reset template')),
+              if (_category.isStarter && !_isNotes)
+                const PopupMenuItem(value: _Menu.reset, child: Text('Reset template')),
               if (!_category.isStarter) const PopupMenuItem(value: _Menu.delete, child: Text('Delete category')),
             ],
           ),
@@ -133,9 +152,9 @@ class _PlanningV2CategoryScreenState extends ConsumerState<PlanningV2CategoryScr
       ),
       floatingActionButton: AppFab(
         heroTag: 'planning-v2-new-plan',
-        onPressed: _newEntry,
+        onPressed: _isNotes ? _newNote : _newEntry,
         icon: Icons.add_rounded,
-        label: 'New plan',
+        label: _isNotes ? 'New note' : 'New plan',
       ),
       body: open.when(
         skipLoadingOnReload: true,
@@ -153,14 +172,14 @@ class _PlanningV2CategoryScreenState extends ConsumerState<PlanningV2CategoryScr
             child: ListView(
               padding: const EdgeInsets.only(bottom: Spacing.xxl * 2),
               children: [
-                if (s.entries.isEmpty)
+                if (s.entries.isEmpty && s.pinned.isEmpty)
                   PlanningV2EmptyState(
                     icon: planningV2Icon(_category.icon),
-                    message: 'No plans here yet',
-                    actionLabel: 'Start one',
-                    onAction: _newEntry,
+                    message: _isNotes ? 'No notes yet' : 'No plans here yet',
+                    actionLabel: _isNotes ? 'Write one' : 'Start one',
+                    onAction: _isNotes ? _newNote : _newEntry,
                   ),
-                for (final e in s.entries) _EntryTile(entry: e, onTap: () => _openEntry(e.id)),
+                ..._entryTiles(s, _open, _openEntry),
                 if (s.loadingMore) const Padding(padding: Spacing.allMd, child: Center(child: CircularProgressIndicator())),
                 if (s.loadMoreFailed)
                   TextButton(
@@ -194,40 +213,178 @@ class _ClosedEntries extends ConsumerWidget {
         loading: () => const Padding(padding: Spacing.allMd, child: Center(child: CircularProgressIndicator())),
         error: (e, _) => PlanningV2ErrorState(error: e, onRetry: () => ref.invalidate(planningV2EntriesProvider(args))),
         data: (s) => Column(children: [
-          if (s.entries.isEmpty) const Padding(padding: Spacing.allMd, child: Text('Nothing finished yet')),
-          for (final e in s.entries) _EntryTile(entry: e, onTap: () => onOpen(e.id)),
+          if (s.entries.isEmpty && s.pinned.isEmpty)
+            const Padding(padding: Spacing.allMd, child: Text('Nothing finished yet')),
+          ..._entryTiles(s, args, onOpen),
         ]),
       );
 }
 
-class _EntryTile extends StatelessWidget {
-  const _EntryTile({required this.entry, required this.onTap});
-  final PlanningEntrySummary entry;
-  final VoidCallback onTap;
+/// Pinned plans first under a "Pinned" header, then the rest.
+List<Widget> _entryTiles(PlanningEntriesState s, PlanningEntriesArgs args, void Function(String) onOpen) => [
+      if (s.pinned.isNotEmpty) const _PinnedHeader(),
+      for (final e in s.pinned) _EntryTile(entry: e, args: args, onTap: () => onOpen(e.id)),
+      for (final e in s.entries) _EntryTile(entry: e, args: args, onTap: () => onOpen(e.id)),
+    ];
+
+class _PinnedHeader extends StatelessWidget {
+  const _PinnedHeader();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(Spacing.md, Spacing.sm, Spacing.md, Spacing.xs),
+        child: Row(children: [
+          Icon(Icons.push_pin_rounded, size: 16, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: Spacing.xs),
+          Text('Pinned', style: Theme.of(context).textTheme.labelLarge),
+        ]),
+      );
+}
+
+enum _EntryAction { pin, delete }
+
+/// One plan in a category. Swipe RIGHT deletes (with Undo); swipe LEFT pins
+/// or unpins and leaves the plan on screen. Long-press and screen-reader
+/// actions offer the same two choices, since swipes are neither
+/// discoverable nor available to assistive technology.
+class _EntryTile extends ConsumerWidget {
+  const _EntryTile({required this.entry, required this.args, required this.onTap});
+  final PlanningEntrySummary entry;
+  final PlanningEntriesArgs args;
+  final VoidCallback onTap;
+
+  String get _pinLabel => entry.pinned ? 'Unpin' : 'Pin';
+
+  Future<void> _togglePin(BuildContext context, WidgetRef ref) async {
+    final ctl = ref.read(planningV2EntriesProvider(args).notifier);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ctl.togglePin(entry);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(planningV2ErrorMessage(mapPlanningV2Error(e)))));
+    }
+  }
+
+  Future<void> _delete(BuildContext context, WidgetRef ref) async {
+    final ctl = ref.read(planningV2EntriesProvider(args).notifier);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ctl.delete(entry);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(planningV2ErrorMessage(mapPlanningV2Error(e)))));
+      return;
+    }
+    messenger.showSnackBar(SnackBar(
+      content: Text('Deleted ${entry.title}'),
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () async {
+          try {
+            await ctl.restore(entry.id);
+          } catch (e) {
+            messenger.showSnackBar(SnackBar(content: Text(planningV2ErrorMessage(mapPlanningV2Error(e)))));
+          }
+        },
+      ),
+    ));
+  }
+
+  Future<void> _menu(BuildContext context, WidgetRef ref) async {
+    final action = await showModalBottomSheet<_EntryAction>(
+      context: context,
+      showDragHandle: true,
+      builder: (c) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: Icon(entry.pinned ? Icons.push_pin_outlined : Icons.push_pin_rounded),
+            title: Text(_pinLabel),
+            onTap: () => Navigator.pop(c, _EntryAction.pin),
+          ),
+          ListTile(
+            leading: Icon(Icons.delete_outline_rounded, color: Theme.of(c).colorScheme.error),
+            title: const Text('Delete'),
+            onTap: () => Navigator.pop(c, _EntryAction.delete),
+          ),
+        ]),
+      ),
+    );
+    if (!context.mounted || action == null) return;
+    switch (action) {
+      case _EntryAction.pin:
+        await _togglePin(context, ref);
+      case _EntryAction.delete:
+        await _delete(context, ref);
+    }
+  }
+
+  Widget _swipeBackground(BuildContext context, {required bool delete}) {
+    final scheme = Theme.of(context).colorScheme;
+    final bg = delete ? scheme.errorContainer : scheme.primaryContainer;
+    final fg = delete ? scheme.onErrorContainer : scheme.onPrimaryContainer;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(Spacing.md, 0, Spacing.md, Spacing.sm),
+      padding: Spacing.horizontalMd,
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadiusTokens.mdAll),
+      alignment: delete ? Alignment.centerLeft : Alignment.centerRight,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(delete ? Icons.delete_outline_rounded : (entry.pinned ? Icons.push_pin_outlined : Icons.push_pin_rounded),
+            color: fg),
+        const SizedBox(width: Spacing.xs),
+        Text(delete ? 'Delete' : _pinLabel, style: TextStyle(color: fg)),
+      ]),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final parts = [
       if (entry.dateStart != null) formatPlanningRange(entry.dateStart, entry.dateEnd),
       if (entry.checklistTotal > 0) '${entry.checklistDone} of ${entry.checklistTotal} done',
     ];
     final text = Theme.of(context).textTheme;
-    return CardInkWell(
-      onTap: onTap,
-      margin: const EdgeInsets.fromLTRB(Spacing.md, 0, Spacing.md, Spacing.sm),
-      padding: Spacing.allMd,
-      child: Row(children: [
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(entry.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: text.titleMedium),
-            if (parts.isNotEmpty) ...[
-              const SizedBox(height: Spacing.xs),
-              Text(parts.join(' · '), style: text.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            ],
-          ]),
+    return Dismissible(
+      key: ValueKey('entry-${entry.id}'),
+      background: _swipeBackground(context, delete: true), // swipe right
+      secondaryBackground: _swipeBackground(context, delete: false), // swipe left
+      confirmDismiss: (direction) async {
+        if (direction == DismissDirection.endToStart) {
+          await _togglePin(context, ref);
+          return false; // pinning keeps the plan on screen
+        }
+        return true;
+      },
+      onDismissed: (_) => _delete(context, ref),
+      child: Semantics(
+        customSemanticsActions: {
+          CustomSemanticsAction(label: _pinLabel): () => _togglePin(context, ref),
+          const CustomSemanticsAction(label: 'Delete'): () => _delete(context, ref),
+        },
+        child: GestureDetector(
+          onLongPress: () => _menu(context, ref),
+          child: CardInkWell(
+            onTap: onTap,
+            margin: const EdgeInsets.fromLTRB(Spacing.md, 0, Spacing.md, Spacing.sm),
+            padding: Spacing.allMd,
+            child: Row(children: [
+              if (entry.pinned) ...[
+                Icon(Icons.push_pin_rounded, size: 18, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: Spacing.sm),
+              ],
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(entry.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: text.titleMedium),
+                  if (parts.isNotEmpty) ...[
+                    const SizedBox(height: Spacing.xs),
+                    Text(parts.join(' · '),
+                        style: text.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  ],
+                ]),
+              ),
+              const Icon(Icons.chevron_right_rounded),
+            ]),
+          ),
         ),
-        const Icon(Icons.chevron_right_rounded),
-      ]),
+      ),
     );
   }
 }

@@ -215,4 +215,66 @@ void main() {
       expect(store2.raw, isEmpty);
     });
   });
+
+  group('entries list: pin, delete, undo', () {
+    Map<String, dynamic> s(String id, {bool pinned = false}) => {
+          'id': id, 'title': 'T$id', 'status': 'active', 'last_activity_at': '2026-10-12T09:00:00Z',
+          'pinned': pinned, 'date_start': null, 'date_end': null, 'checklist_done': 0, 'checklist_total': 0,
+        };
+    const a = (relationshipId: 'r1', categoryId: 'c1', group: 'open');
+
+    Future<PlanningEntriesController> entries() async {
+      c.listen(planningV2EntriesProvider(a), (_, __) {});
+      await c.read(planningV2EntriesProvider(a).future);
+      return c.read(planningV2EntriesProvider(a).notifier);
+    }
+
+    PlanningEntriesState st() => c.read(planningV2EntriesProvider(a)).requireValue;
+
+    test('pin moves a plan into the pinned group at once; unpin moves it back', () async {
+      gateway.handlers['list_planning_entries'] = (_) => {'entries': [s('1'), s('2')], 'pinned': [], 'next_cursor': null};
+      gateway.handlers['pin_planning_entry'] = (p) => {
+            'entry': {...fakeEntryDetailJson(id: p['p_id'] as String)['entry'] as Map,
+                      'pinned_at': (p['p_pinned'] as bool) ? '2026-10-12T09:00:00Z' : null}
+          };
+      final ctl = await entries();
+      await ctl.togglePin(st().entries.first);
+      expect(st().pinned.map((e) => e.id), ['1']);
+      expect(st().entries.map((e) => e.id), ['2']);
+      expect(gateway.callsTo('pin_planning_entry').last, {'p_id': '1', 'p_pinned': true});
+      await ctl.togglePin(st().pinned.first);
+      expect(st().pinned, isEmpty);
+      expect(st().entries.map((e) => e.id).toSet(), {'1', '2'});
+    });
+
+    test('a refused pin (limit) puts the plan back where it was', () async {
+      gateway.handlers['list_planning_entries'] = (_) => {'entries': [s('1')], 'pinned': [], 'next_cursor': null};
+      gateway.handlers['pin_planning_entry'] = (_) => throw const PostgrestException(
+          message: 'planning:limit_reached', code: 'P0001', hint: '{"limit":"pinned_per_category"}');
+      final ctl = await entries();
+      await expectLater(ctl.togglePin(st().entries.first), throwsA(isA<PlanningV2LimitReached>()));
+      expect(st().pinned, isEmpty);
+      expect(st().entries.map((e) => e.id), ['1']);
+    });
+
+    test('delete removes the plan at once; undo restores it', () async {
+      var deleted = false;
+      gateway.handlers['list_planning_entries'] =
+          (_) => {'entries': [if (!deleted) s('1'), s('2')], 'pinned': [], 'next_cursor': null};
+      gateway.handlers['delete_planning_entry'] = (_) {
+        deleted = true;
+        return {'deleted': true};
+      };
+      gateway.handlers['restore_planning_entry'] = (_) {
+        deleted = false;
+        return {'entry': fakeEntryDetailJson(id: '1')['entry']};
+      };
+      final ctl = await entries();
+      await ctl.delete(st().entries.first);
+      expect(st().entries.map((e) => e.id), ['2']);
+      await ctl.restore('1');
+      await c.read(planningV2EntriesProvider(a).future);
+      expect(st().entries.map((e) => e.id), ['1', '2']);
+    });
+  });
 }

@@ -218,6 +218,7 @@ class PlanningEntry {
     required this.status,
     required this.currency,
     required this.lastActivityAt,
+    this.pinnedAt,
   });
 
   final String id;
@@ -229,6 +230,9 @@ class PlanningEntry {
   final String status;
   final String currency;
   final DateTime lastActivityAt;
+  final DateTime? pinnedAt;
+
+  bool get isPinned => pinnedAt != null;
 
   factory PlanningEntry.fromJson(Map<String, dynamic> j) => PlanningEntry(
         id: j['id'] as String,
@@ -240,6 +244,7 @@ class PlanningEntry {
         status: j['status'] as String,
         currency: j['currency'] as String,
         lastActivityAt: DateTime.parse(j['last_activity_at'] as String),
+        pinnedAt: _ts(j['pinned_at']),
       );
 }
 
@@ -283,6 +288,7 @@ class PlanningEntrySummary {
     required this.dateEnd,
     required this.checklistDone,
     required this.checklistTotal,
+    this.pinned = false,
   });
 
   final String id;
@@ -293,6 +299,12 @@ class PlanningEntrySummary {
   final DateTime? dateEnd;
   final int checklistDone;
   final int checklistTotal;
+  final bool pinned;
+
+  PlanningEntrySummary copyWith({required bool pinned}) => PlanningEntrySummary(
+        id: id, title: title, status: status, lastActivityAt: lastActivityAt, dateStart: dateStart,
+        dateEnd: dateEnd, checklistDone: checklistDone, checklistTotal: checklistTotal, pinned: pinned,
+      );
 
   factory PlanningEntrySummary.fromJson(Map<String, dynamic> j) => PlanningEntrySummary(
         id: j['id'] as String,
@@ -303,13 +315,22 @@ class PlanningEntrySummary {
         dateEnd: _date(j['date_end']),
         checklistDone: (j['checklist_done'] as num).toInt(),
         checklistTotal: (j['checklist_total'] as num).toInt(),
+        pinned: (j['pinned'] as bool?) ?? false,
       );
 }
 
 class PlanningEntriesPage {
-  const PlanningEntriesPage({required this.entries, required this.nextCursorAt, required this.nextCursorId});
+  const PlanningEntriesPage({
+    required this.entries,
+    required this.nextCursorAt,
+    required this.nextCursorId,
+    this.pinned = const [],
+  });
 
   final List<PlanningEntrySummary> entries;
+
+  /// Pinned plans: on the first page only, never repeated in [entries].
+  final List<PlanningEntrySummary> pinned;
   final DateTime? nextCursorAt;
   final String? nextCursorId;
 
@@ -324,6 +345,10 @@ class PlanningEntriesPage {
       ],
       nextCursorAt: cursor is Map ? DateTime.parse(cursor['at'] as String) : null,
       nextCursorId: cursor is Map ? cursor['id'] as String : null,
+      pinned: [
+        for (final e in (j['pinned'] as List? ?? const []))
+          PlanningEntrySummary.fromJson(Map<String, dynamic>.from(e as Map))
+      ],
     );
   }
 }

@@ -17,15 +17,21 @@ class CodePointLengthFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
     if (codePointLength(newValue.text) <= max) return newValue;
-    final kept = StringBuffer();
-    var used = 0;
-    for (final g in newValue.text.characters) {
-      final n = codePointLength(g);
-      if (used + n > max) break;
-      kept.write(g);
-      used += n;
-    }
-    final text = kept.toString();
+    final text = truncateCodePoints(newValue.text, max);
     return TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
   }
+}
+
+/// [s] cut to at most [max] code points, only between whole graphemes.
+String truncateCodePoints(String s, int max) {
+  if (codePointLength(s) <= max) return s;
+  final kept = StringBuffer();
+  var used = 0;
+  for (final g in s.characters) {
+    final n = codePointLength(g);
+    if (used + n > max) break;
+    kept.write(g);
+    used += n;
+  }
+  return kept.toString();
 }

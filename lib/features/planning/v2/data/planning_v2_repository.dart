@@ -20,7 +20,8 @@ class PlanningV2Repository {
     'update_planning_block', 'delete_planning_block', 'restore_planning_block',
     'move_planning_block', 'add_planning_block_item', 'update_planning_block_item',
     'set_planning_block_item_checked', 'delete_planning_block_item',
-    'restore_planning_block_item', 'move_planning_block_item',
+    'restore_planning_block_item', 'move_planning_block_item', 'pin_planning_entry',
+    'restore_planning_entry',
   };
 
   Future<Map<String, dynamic>> _call(String fn, Map<String, dynamic> params) async {
@@ -116,6 +117,18 @@ class PlanningV2Repository {
   }
 
   Future<void> deleteEntry(String id) => _call('delete_planning_entry', {'p_id': id});
+
+  /// Shared by both partners; at most 20 pinned plans per category.
+  Future<PlanningEntry> pinEntry(String id, {required bool pinned}) async {
+    final r = await _call('pin_planning_entry', {'p_id': id, 'p_pinned': pinned});
+    return PlanningEntry.fromJson(Map<String, dynamic>.from(r['entry'] as Map));
+  }
+
+  /// Undo for a delete: restores the plan and exactly what that delete removed.
+  Future<PlanningEntry> restoreEntry(String id) async {
+    final r = await _call('restore_planning_entry', {'p_id': id});
+    return PlanningEntry.fromJson(Map<String, dynamic>.from(r['entry'] as Map));
+  }
 
   Future<PlanningEntryDetail> getEntry(String id) async =>
       PlanningEntryDetail.fromJson(await _call('get_planning_entry', {'p_id': id}));

@@ -10,6 +10,7 @@ import 'package:attune/app/theme/design_tokens.dart';
 
 import '../../data/planning_v2_models.dart';
 import '../../domain/delta_sanitizer.dart';
+import '../../domain/code_point_limit.dart';
 import '../../domain/planning_v2_limits.dart';
 import '../planning_v2_providers.dart';
 import '../planning_v2_ui.dart';
@@ -77,7 +78,9 @@ class PlanningV2TextEditorScreenState extends ConsumerState<PlanningV2TextEditor
           .saveText(widget.block.id, _baseVersion, clean.ops);
       if (!mounted) return;
       switch (result) {
-        case TextSaved():
+        case TextSaved(:final block):
+          await _titleNewNote(block);
+          if (!mounted) return;
           _dirty = false;
           Navigator.of(context).pop();
         case TextGone():
@@ -92,6 +95,23 @@ class PlanningV2TextEditorScreenState extends ConsumerState<PlanningV2TextEditor
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// A note still called "New note" takes its first non-empty line as its
+  /// title. A failed rename never blocks the save; the default title stays.
+  Future<void> _titleNewNote(PlanningBlock saved) async {
+    final entry = ref.read(planningV2EntryProvider(widget.args)).valueOrNull?.entry;
+    if (entry == null || entry.categorySeedKey != 'notes' || entry.title != planningV2NewNoteTitle) return;
+    final firstLine = (saved.plainText ?? '')
+        .split('\n')
+        .map((l) => l.trim())
+        .firstWhere((l) => l.isNotEmpty, orElse: () => '');
+    if (firstLine.isEmpty) return;
+    try {
+      await ref
+          .read(planningV2EntryProvider(widget.args).notifier)
+          .rename(truncateCodePoints(firstLine, PlanningV2Limits.titleChars));
+    } catch (_) {}
   }
 
   Future<void> _resolve(PlanningBlock theirs, List<Map<String, dynamic>> mine) async {
