@@ -148,11 +148,11 @@ BEGIN
     RAISE EXCEPTION 'EXPLOIT: blank item accepted';
   EXCEPTION WHEN raise_exception THEN IF SQLERRM <> 'planning:invalid_input' THEN RAISE; END IF; END;
 
-  -- Contract 12: block validation: P1 types accepted, P3/P4 types refused.
+  -- Contract 12: block validation: known types accepted, unknown types refused.
   PERFORM public.planning_v2_validate_block('checklist', '{"title":"Packing"}', NULL, NULL);
   PERFORM public.planning_v2_validate_block('date', '{}', '2026-11-01', '2026-11-05');
-  BEGIN PERFORM public.planning_v2_validate_block('budget', '{}', NULL, NULL);
-    RAISE EXCEPTION 'EXPLOIT: P3 block type accepted in P1';
+  BEGIN PERFORM public.planning_v2_validate_block('spreadsheet', '{}', NULL, NULL);
+    RAISE EXCEPTION 'EXPLOIT: unknown block type accepted';
   EXCEPTION WHEN raise_exception THEN IF SQLERRM <> 'planning:invalid_input' THEN RAISE; END IF; END;
   BEGIN PERFORM public.planning_v2_validate_block('checklist', '{"title":"x","extra":1}', NULL, NULL);
     RAISE EXCEPTION 'EXPLOIT: unknown payload key accepted';

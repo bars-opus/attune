@@ -115,3 +115,6 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 
 -- Planning v2 (P1): starter-template definitions are server-only.
 \i supabase/migrations/20261012200210_planning_v2_starter_template_grants.sql
+
+-- Planning P3: the expense audit and the link-preview cache are server-only.
+\i supabase/migrations/20261012200810_planning_rich_blocks_grants.sql

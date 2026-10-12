@@ -51,9 +51,9 @@ BEGIN
   BEGIN PERFORM public.add_planning_block(v_list, v_entry, 'date', '{}', NULL, NULL, NULL); RAISE EXCEPTION 'EXPLOIT: id reuse';
   EXCEPTION WHEN raise_exception THEN IF SQLERRM <> 'planning:invalid_input' THEN RAISE; END IF; END;
 
-  -- Contract 3: P3/P4 block types are refused in P1.
-  BEGIN PERFORM public.add_planning_block(gen_random_uuid(), v_entry, 'budget', '{}', NULL, NULL, NULL);
-    RAISE EXCEPTION 'EXPLOIT: budget block added in P1';
+  -- Contract 3: an unknown block type is refused.
+  BEGIN PERFORM public.add_planning_block(gen_random_uuid(), v_entry, 'spreadsheet', '{}', NULL, NULL, NULL);
+    RAISE EXCEPTION 'EXPLOIT: unknown block type added';
   EXCEPTION WHEN raise_exception THEN IF SQLERRM <> 'planning:invalid_input' THEN RAISE; END IF; END;
 
   -- Contract 4: version check — a stale save returns the current block in HINT.
