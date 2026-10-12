@@ -49,7 +49,7 @@ class AddToPlanningResult {
 /// The seam `AiAssistantRepository` calls through, so tests can fake it
 /// instead of the real, heavily-generic `SupabaseClient` function-
 /// invoke/RPC builders — the same reasoning
-/// `lib/features/planning/data/repositories/planning_repository.dart`'s
+/// `lib/features/planning/data/planning_repository.dart`'s
 /// own `PlanningRpcGateway` gives for doing this rather than mocking
 /// `SupabaseClient` directly. Extended with `invokeFunction` alongside
 /// `rpc`, since this repository — unlike Planning's, which is RPC-only

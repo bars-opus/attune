@@ -1,756 +1,121 @@
-import 'dart:async';
-
-import 'package:attune/features/planning/data/repositories/planning_repository.dart';
-import 'package:attune/features/planning/presentation/providers/planning_providers.dart';
+import 'package:attune/core/widgets/feedback/error_state.dart';
 import 'package:attune/features/planning/presentation/screens/planning_home_screen.dart';
-import 'package:attune/features/reminders/data/models/reminder_model.dart';
-import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
-import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart'
-    as timeline_providers;
 import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../chat/support/chat_test_harness.dart';
+import 'support/fake_planning_gateway.dart';
+import 'support/planning_test_app.dart';
 
-class _FakeGateway implements PlanningRpcGateway {
-  final Map<String, dynamic Function(Map<String, dynamic>?)> handlers;
-  _FakeGateway(this.handlers);
-
-  @override
-  Future<dynamic> rpc(String function, {Map<String, dynamic>? params}) async {
-    final handler = handlers[function];
-    if (handler == null) {
-      throw StateError('No fake handler registered for $function');
-    }
-    return handler(params);
-  }
-}
-
-/// Overrides RemindersListNotifier's build() — the real one reaches
-/// Supabase.instance.client synchronously, which throws with no app-level
-/// Supabase.initialize() in this test host (same constraint
-/// pulse_tab_test.dart documents for TimelineScreen's own reminders read;
-/// the Calendar tab below embeds that same TimelineScreen).
-class _FakeRemindersListNotifier extends RemindersListNotifier {
-  @override
-  Future<List<ReminderModel>> build() async => const [];
-}
-
-// planningGoalsProvider/planningTasksProvider/planningEventsProvider all
-// internally `ref.listen` planningChangeSignalProvider, which synchronously
-// reaches Supabase.instance.client to open a Realtime channel — there is no
-// Supabase.initialize() in this test host (see pulse_tab_test.dart's own
-// note on remindersListProvider for the identical constraint), so that
-// signal provider must be overridden to a harmless empty stream rather than
-// left to hit the real ambient client.
-//
-// The Calendar tab is the real TimelineScreen now (not a Planning-only
-// calendar), so its own providers need the same harmless overrides
-// pulse_tab_test.dart uses to reach it without a live Supabase client.
-Widget _wrap(Widget child, PlanningRepository repository) {
-  return ProviderScope(
-    overrides: [
-      planningRepositoryProvider.overrideWithValue(repository),
-      planningChangeSignalProvider.overrideWith(
-        (ref, relationshipId) => const Stream<void>.empty(),
-      ),
-      timeline_providers.currentUserIdProvider.overrideWithValue(null),
-      timeline_providers.currentRelationshipIdProvider.overrideWith(
-        (ref) async => 'r1',
-      ),
-      timeline_providers.timelineEventsProvider.overrideWith(
-        (ref, month) async => [],
-      ),
-      remindersListProvider.overrideWith(_FakeRemindersListNotifier.new),
-    ],
-    child: withScreenUtil(MaterialApp(home: child)),
-  );
-}
+FakePlanningGateway _gateway() => FakePlanningGateway({
+      'get_planning_home': (_) => {
+            'categories': [
+              fakeCategoryJson(id: 'c1', seedKey: 'goals', name: 'Goals', icon: 'flag', color: 'rose', entryCount: 2, hasNew: true),
+              fakeCategoryJson(id: 'c2', seedKey: 'trips', name: 'Trips', icon: 'plane', color: 'teal'),
+              fakeCategoryJson(id: 'c3', name: 'Wedding', icon: 'ring', color: 'violet', hidden: true),
+            ]
+          },
+    });
 
 void main() {
-  testWidgets('shows the three sections and an empty state per section', (
-    tester,
-  ) async {
-    final repository = PlanningRepository(_FakeGateway({
-      'list_planning_goals': (_) async => <dynamic>[],
-      'list_planning_tasks': (_) async => <dynamic>[],
-      'list_planning_events': (_) async => <dynamic>[],
-    }));
-
-    await tester.pumpWidget(_wrap(
-      const PlanningHomeScreen(relationshipId: 'r1'), repository,
-    ));
+  testWidgets('shows visible categories in order with counts and a labelled new dot', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1')));
     await tester.pumpAndSettle();
-
     expect(find.text('Goals'), findsOneWidget);
-    expect(find.text('Tasks'), findsOneWidget);
-    expect(find.text('Events'), findsOneWidget);
+    expect(find.text('2 plans'), findsOneWidget);
+    expect(find.text('Trips'), findsOneWidget);
+    expect(find.text('Wedding'), findsNothing, reason: 'hidden until expanded');
+    expect(find.bySemanticsLabel('New from your partner'), findsOneWidget);
+    await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+    semantics.dispose();
   });
 
-  testWidgets('the Planning v2 preview button is absent in normal builds', (tester) async {
-    final repository = PlanningRepository(_FakeGateway({
-      'list_planning_goals': (_) async => <dynamic>[],
-      'list_planning_tasks': (_) async => <dynamic>[],
-      'list_planning_events': (_) async => <dynamic>[],
-    }));
-    await tester.pumpWidget(_wrap(const PlanningHomeScreen(relationshipId: 'r1'), repository));
+  testWidgets('hidden categories appear under the Hidden row', (tester) async {
+    await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1')));
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Planning v2 preview'), findsNothing);
-  });
-
-  group('two tabs: Planning and Calendar', () {
-    testWidgets(
-      'both tab labels are shown, and the Planning tab (the original '
-      'sections list) is selected by default',
-      (tester) async {
-        final repository = PlanningRepository(_FakeGateway({
-          'list_planning_goals': (_) async => <dynamic>[],
-          'list_planning_tasks': (_) async => <dynamic>[],
-          'list_planning_events': (_) async => <dynamic>[],
-        }));
-
-        await tester.pumpWidget(_wrap(
-          const PlanningHomeScreen(relationshipId: 'r1'), repository,
-        ));
-        await tester.pumpAndSettle();
-
-        expect(find.text('Planning'), findsWidgets);
-        expect(find.text('Calendar'), findsOneWidget);
-        // The list tab's own content (Goals/Tasks/Events sections) is
-        // visible without switching tabs.
-        expect(find.text('Goals'), findsOneWidget);
-        expect(find.text('Tasks'), findsOneWidget);
-        expect(find.text('Events'), findsOneWidget);
-      },
-    );
-
-    testWidgets(
-      'switching to the Calendar tab shows the real TimelineScreen '
-      '(the same calendar Pulse uses), not a second Planning-only '
-      'calendar implementation',
-      (tester) async {
-        final calendarCallParams = <Map<String, dynamic>?>[];
-        final repository = PlanningRepository(_FakeGateway({
-          'list_planning_goals': (_) async => <dynamic>[],
-          'list_planning_tasks': (_) async => <dynamic>[],
-          'list_planning_events': (_) async => <dynamic>[],
-          'list_planning_calendar_entries': (params) async {
-            calendarCallParams.add(params);
-            return <dynamic>[];
-          },
-        }));
-
-        await tester.pumpWidget(_wrap(
-          const PlanningHomeScreen(relationshipId: 'r1'), repository,
-        ));
-        await tester.pumpAndSettle();
-
-        // TimelineScreen (and the calendar RPC it triggers) must not
-        // build while the Planning tab is the only one built (TabBarView
-        // is lazy) — asserted before the switch so the later, post-switch
-        // call is unambiguous.
-        expect(find.byType(TimelineScreen), findsNothing);
-        expect(calendarCallParams, isEmpty);
-
-        await tester.tap(find.text('Calendar'));
-        await tester.pumpAndSettle();
-
-        expect(find.byType(TimelineScreen), findsOneWidget);
-        expect(calendarCallParams, hasLength(1));
-        expect(calendarCallParams.single!['p_relationship_id'], 'r1');
-        // TimelineScreen's own calendar strip: weekday header letters
-        // plus its month grid.
-        expect(find.text('M'), findsWidgets);
-        expect(find.byType(GridView), findsOneWidget);
-      },
-    );
-
-    testWidgets(
-      'the Calendar tab suppresses TimelineScreen\'s own AppBar (this '
-      'screen already supplies one, and two would stack) without '
-      'suppressing the Family action the standalone route depends on',
-      (tester) async {
-        final repository = PlanningRepository(_FakeGateway({
-          'list_planning_goals': (_) async => <dynamic>[],
-          'list_planning_tasks': (_) async => <dynamic>[],
-          'list_planning_events': (_) async => <dynamic>[],
-          'list_planning_calendar_entries': (_) async => <dynamic>[],
-        }));
-
-        await tester.pumpWidget(_wrap(
-          const PlanningHomeScreen(relationshipId: 'r1'), repository,
-        ));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Calendar'));
-        await tester.pumpAndSettle();
-
-        // Exactly one AppBar on screen — this screen's own. If
-        // TimelineScreen rendered its bar here too there would be two.
-        expect(find.byType(AppBar), findsOneWidget);
-        expect(find.byTooltip('Family'), findsNothing);
-      },
-    );
-
-    testWidgets(
-      'the standalone TimelineScreen keeps its own AppBar and the Family '
-      'action — the only entry point to the Family screen, so suppressing '
-      'it for the Planning tab must not suppress it here',
-      (tester) async {
-        final repository = PlanningRepository(_FakeGateway({
-          'list_planning_calendar_entries': (_) async => <dynamic>[],
-        }));
-
-        await tester.pumpWidget(_wrap(
-          const TimelineScreen(showAppBar: true), repository,
-        ));
-        await tester.pumpAndSettle();
-
-        expect(find.byType(AppBar), findsOneWidget);
-        expect(find.byTooltip('Family'), findsOneWidget);
-      },
-    );
-  });
-
-  testWidgets('renders a Goal and a Task once loaded', (tester) async {
-    final repository = PlanningRepository(_FakeGateway({
-      'list_planning_goals': (_) async => [{
-        'id': 'g1', 'title': 'Save for the trip', 'note': null,
-        'completed_at': null, 'updated_at': '2026-09-14T09:00:00Z',
-        'child_count': 2, 'completed_child_count': 0,
-      }],
-      'list_planning_tasks': (_) async => [{
-        'id': 't1', 'relationship_id': 'r1', 'created_by': 'u1',
-        'item_kind': 'task', 'parent_goal_id': null, 'title': 'Water the plants',
-        'note': null, 'assigned_to': null, 'due_date': null,
-        'completed_at': null, 'celebrated_at': null,
-        'created_at': '2026-09-14T09:00:00Z', 'updated_at': '2026-09-14T09:00:00Z',
-        'deleted_at': null,
-      }],
-      'list_planning_events': (_) async => <dynamic>[],
-    }));
-
-    await tester.pumpWidget(_wrap(
-      const PlanningHomeScreen(relationshipId: 'r1'), repository,
-    ));
+    await tester.tap(find.text('Hidden (1)'));
     await tester.pumpAndSettle();
-
-    expect(find.text('Save for the trip'), findsOneWidget);
-    expect(find.text('Water the plants'), findsOneWidget);
+    expect(find.text('Wedding'), findsOneWidget);
   });
 
-  testWidgets(
-    'deleting the sole remaining child of a goal offers the two-choice '
-    'prompt rather than a generic error (spec §6.2)',
-    (tester) async {
-      var deleteAttempted = false;
-      final repository = PlanningRepository(_FakeGateway({
-        'list_planning_goals': (_) async => [{
-          'id': 'g1', 'title': 'Solo goal', 'note': null,
-          'completed_at': null, 'updated_at': '2026-09-14T09:00:00Z',
-          'child_count': 1, 'completed_child_count': 0,
-        }],
-        'list_planning_goal_tasks': (_) async => [{
-          'id': 'c1', 'relationship_id': 'r1', 'created_by': 'u1',
-          'item_kind': 'task', 'parent_goal_id': 'g1', 'title': 'Only task',
-          'note': null, 'assigned_to': null, 'due_date': null,
-          'completed_at': null, 'celebrated_at': null,
-          'created_at': '2026-09-14T09:00:00Z', 'updated_at': '2026-09-14T09:00:00Z',
-          'deleted_at': null,
-        }],
-        'list_planning_tasks': (_) async => <dynamic>[],
-        'list_planning_events': (_) async => <dynamic>[],
-        'delete_planning_item': (_) {
-          deleteAttempted = true;
-          throw PostgrestException(
-            message: 'Delete the goal instead, or add another task first',
-            code: 'P0001',
-          );
-        },
-      }));
-
-      await tester.pumpWidget(_wrap(
-        const PlanningHomeScreen(relationshipId: 'r1'), repository,
-      ));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Solo goal'));
-      await tester.pumpAndSettle();
-      await tester.longPress(find.text('Only task'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Delete'));
-      await tester.pumpAndSettle();
-
-      expect(deleteAttempted, isTrue);
-      expect(
-        find.textContaining('Delete the goal instead'),
-        findsOneWidget,
-        reason: 'the validation message must reach the user, not a generic error',
-      );
-      expect(find.text('Delete this goal instead'), findsOneWidget);
-    },
-  );
-
-  group('top-level task toggle: optimistic mutation ordering', () {
-    // Real mutation tests of the ordering the plan's Global Constraint
-    // requires: apply locally -> call RPC -> on success, replace with the
-    // RPC's OWN authoritative row (never the client's guess) -> on
-    // failure, roll back to the PRE-mutation snapshot, not to whatever the
-    // provider's state happens to be when the failure arrives.
-
-    testWidgets(
-      'checking the box flips the UI immediately, before the RPC resolves',
-      (tester) async {
-        final rpcGate = Completer<void>();
-        // Stateful fake: list_planning_tasks reflects whatever
-        // set_planning_task_completion last wrote, the same way a real
-        // backend would — a test fixture that always serves the original
-        // row regardless of mutations would let a bug where the
-        // optimistic value gets silently discarded on refresh hide behind
-        // a fixture that happens to agree with the (wrong) discarded
-        // state.
-        var completedAt = null as String?;
-        var dueDate = null as String?;
-        // Stateful fake: list_planning_tasks reflects whatever
-        // set_planning_task_completion last wrote, the same way a real
-        // backend would — including the due_date the RPC's own response
-        // carries, so a subsequent provider refresh agrees with the
-        // authoritative row rather than serving stale pre-mutation data
-        // that would silently overwrite it.
-        final repository = PlanningRepository(_FakeGateway({
-          'list_planning_goals': (_) async => <dynamic>[],
-          'list_planning_tasks': (_) async => [{
-            'id': 't1', 'relationship_id': 'r1', 'created_by': 'u1',
-            'item_kind': 'task', 'parent_goal_id': null, 'title': 'Water the plants',
-            'note': null, 'assigned_to': null, 'due_date': dueDate,
-            'completed_at': completedAt, 'celebrated_at': null,
-            'created_at': '2026-09-14T09:00:00Z', 'updated_at': '2026-09-14T09:00:00Z',
-            'deleted_at': null,
-          }],
-          'list_planning_events': (_) async => <dynamic>[],
-          // The RPC's returned due_date is DIFFERENT from what the client
-          // had — standing in for the same reason completed_at is
-          // server-generated (a due_date shifted by a server-side rule,
-          // say). If the widget kept rendering its own client-guessed
-          // optimistic row instead of swapping in this authoritative one,
-          // this due_date would never appear.
-          'set_planning_task_completion': (_) async {
-            await rpcGate.future; // held open until the test releases it
-            completedAt = '2026-09-14T09:30:00Z';
-            dueDate = '2026-09-20';
-            return {
-              'id': 't1', 'relationship_id': 'r1', 'created_by': 'u1',
-              'item_kind': 'task', 'parent_goal_id': null, 'title': 'Water the plants',
-              'note': null, 'assigned_to': null, 'due_date': dueDate,
-              'completed_at': completedAt, 'celebrated_at': null,
-              'created_at': '2026-09-14T09:00:00Z', 'updated_at': '2026-09-14T09:30:00Z',
-              'deleted_at': null,
-            };
-          },
-        }));
-
-        await tester.pumpWidget(_wrap(
-          const PlanningHomeScreen(relationshipId: 'r1'), repository,
-        ));
-        await tester.pumpAndSettle();
-
-        final checkboxFinder = find.byType(Checkbox);
-        expect(tester.widget<Checkbox>(checkboxFinder).value, isFalse);
-
-        await tester.tap(checkboxFinder);
-        await tester.pump(); // Checkbox's own tap-driven rebuild
-        await tester.pump(); // our own setState from the optimistic apply
-
-        // The RPC has NOT resolved yet (rpcGate still held), yet the
-        // checkbox already shows checked — proof the local state was
-        // applied before the RPC call completed, not after.
-        expect(tester.widget<Checkbox>(checkboxFinder).value, isTrue);
-
-        rpcGate.complete();
-        await tester.pumpAndSettle();
-
-        // After success, still checked — now backed by the RPC's own
-        // authoritative row.
-        expect(tester.widget<Checkbox>(checkboxFinder).value, isTrue);
-        // And the row shows the due date that ONLY the RPC's returned
-        // row carries — proof the widget swapped in the authoritative
-        // response rather than continuing to render its own
-        // client-constructed optimistic guess.
-        expect(find.textContaining('Sep 20'), findsOneWidget);
-      },
-    );
-
-    testWidgets(
-      'on RPC failure, the checkbox rolls back to the exact pre-mutation '
-      'state, not to a stale generic default',
-      (tester) async {
-        final rpcGate = Completer<void>();
-        final repository = PlanningRepository(_FakeGateway({
-          'list_planning_goals': (_) async => <dynamic>[],
-          'list_planning_tasks': (_) async => [{
-            'id': 't1', 'relationship_id': 'r1', 'created_by': 'u1',
-            'item_kind': 'task', 'parent_goal_id': null, 'title': 'Water the plants',
-            'note': 'keep this exact note', 'assigned_to': null, 'due_date': null,
-            'completed_at': null, 'celebrated_at': null,
-            'created_at': '2026-09-14T09:00:00Z', 'updated_at': '2026-09-14T09:00:00Z',
-            'deleted_at': null,
-          }],
-          'list_planning_events': (_) async => <dynamic>[],
-          'set_planning_task_completion': (_) async {
-            await rpcGate.future; // held open until the test releases it
-            throw PostgrestException(message: 'Network hiccup', code: '08000');
-          },
-        }));
-
-        await tester.pumpWidget(_wrap(
-          const PlanningHomeScreen(relationshipId: 'r1'), repository,
-        ));
-        await tester.pumpAndSettle();
-
-        final checkboxFinder = find.byType(Checkbox);
-        expect(tester.widget<Checkbox>(checkboxFinder).value, isFalse);
-
-        await tester.tap(checkboxFinder);
-        await tester.pump(); // Checkbox's own tap-driven rebuild
-        await tester.pump(); // our own setState from the optimistic apply
-        expect(
-          tester.widget<Checkbox>(checkboxFinder).value,
-          isTrue,
-          reason: 'the RPC has not resolved yet (rpcGate still held) — the '
-              'optimistic apply must already be visible',
-        );
-
-        rpcGate.complete();
-        await tester.pumpAndSettle(); // RPC throws, rollback happens
-
-        // Rolled back to the pre-mutation (unchecked) state.
-        expect(tester.widget<Checkbox>(checkboxFinder).value, isFalse);
-        // A generic error, since PlanningNetworkError has no specific
-        // message of its own.
-        expect(find.text('Could not reach the server. Try again.'), findsOneWidget);
-      },
-    );
-
-    testWidgets(
-      'rollback restores the captured pre-mutation snapshot even when a '
-      'concurrent refresh has already changed the provider state '
-      '(never clobbers a partner\'s concurrent edit with a stale rollback)',
-      (tester) async {
-        // Simulates: user toggles the box, the RPC is in flight and about
-        // to fail, but a concurrent Realtime-triggered refresh lands FIRST
-        // and changes the task's title (as a partner's edit would) before
-        // the failure arrives. The rollback must still restore exactly the
-        // ORIGINAL pre-mutation row this mutation captured — proving the
-        // rollback target is a captured snapshot, not "whatever the
-        // provider holds now".
-        var listCallCount = 0;
-        final rpcGate = Completer<void>();
-        final repository = PlanningRepository(_FakeGateway({
-          'list_planning_goals': (_) async => <dynamic>[],
-          'list_planning_tasks': (_) async {
-            listCallCount++;
-            // First load: original title. Any subsequent load (the
-            // concurrent refresh fired mid-mutation): a different title,
-            // standing in for a partner's concurrent edit.
-            final title = listCallCount == 1 ? 'Water the plants' : 'Partner renamed this';
-            return [{
-              'id': 't1', 'relationship_id': 'r1', 'created_by': 'u1',
-              'item_kind': 'task', 'parent_goal_id': null, 'title': title,
-              'note': null, 'assigned_to': null, 'due_date': null,
-              'completed_at': null, 'celebrated_at': null,
-              'created_at': '2026-09-14T09:00:00Z', 'updated_at': '2026-09-14T09:00:00Z',
-              'deleted_at': null,
-            }];
-          },
-          'list_planning_events': (_) async => <dynamic>[],
-          'set_planning_task_completion': (_) async {
-            await rpcGate.future;
-            throw PostgrestException(message: 'Network hiccup', code: '08000');
-          },
-        }));
-
-        await tester.pumpWidget(_wrap(
-          const PlanningHomeScreen(relationshipId: 'r1'), repository,
-        ));
-        await tester.pumpAndSettle();
-        expect(find.text('Water the plants'), findsOneWidget);
-
-        await tester.tap(find.byType(Checkbox));
-        await tester.pump(); // optimistic apply in flight
-
-        // Concurrent refresh lands while the mutation's own RPC is still
-        // pending — same widget tree, same task id, different title.
-        // (Exercises the provider's refresh() directly, standing in for a
-        // Realtime-triggered refresh from a partner's edit.)
-        final container = ProviderScope.containerOf(
-          tester.element(find.byType(PlanningHomeScreen)),
-        );
-        await container.read(planningTasksProvider('r1').notifier).refresh();
-        await tester.pump();
-
-        rpcGate.complete();
-        await tester.pumpAndSettle();
-
-        // The rollback must restore the ORIGINAL captured pre-mutation
-        // task (title "Water the plants"), not silently keep or clobber
-        // the concurrently-refreshed "Partner renamed this" with some
-        // other stale value.
-        expect(find.text('Water the plants'), findsOneWidget);
-        expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isFalse);
-      },
-    );
-
-    testWidgets(
-      'the RPC\'s own authoritative row is shown even before the '
-      'follow-up provider refresh network round-trip lands (closes the '
-      'gap between RPC success and refresh completing)',
-      (tester) async {
-        final rpcGate = Completer<void>();
-        final refreshGate = Completer<void>();
-        var listCallCount = 0;
-        final repository = PlanningRepository(_FakeGateway({
-          'list_planning_goals': (_) async => <dynamic>[],
-          'list_planning_tasks': (_) async {
-            listCallCount++;
-            // First call (initial load) resolves immediately; every
-            // subsequent call (the post-mutation refresh) is held open
-            // by refreshGate, standing in for a slow network refresh
-            // that has not landed yet when the RPC itself already has.
-            if (listCallCount == 1) {
-              return [{
-                'id': 't1', 'relationship_id': 'r1', 'created_by': 'u1',
-                'item_kind': 'task', 'parent_goal_id': null, 'title': 'Water the plants',
-                'note': null, 'assigned_to': null, 'due_date': null,
-                'completed_at': null, 'celebrated_at': null,
-                'created_at': '2026-09-14T09:00:00Z', 'updated_at': '2026-09-14T09:00:00Z',
-                'deleted_at': null,
-              }];
-            }
-            await refreshGate.future;
-            return [{
-              'id': 't1', 'relationship_id': 'r1', 'created_by': 'u1',
-              'item_kind': 'task', 'parent_goal_id': null, 'title': 'Water the plants',
-              'note': null, 'assigned_to': null, 'due_date': '2026-09-20',
-              'completed_at': '2026-09-14T09:30:00Z', 'celebrated_at': null,
-              'created_at': '2026-09-14T09:00:00Z', 'updated_at': '2026-09-14T09:30:00Z',
-              'deleted_at': null,
-            }];
-          },
-          'list_planning_events': (_) async => <dynamic>[],
-          'set_planning_task_completion': (_) async {
-            await rpcGate.future;
-            return {
-              'id': 't1', 'relationship_id': 'r1', 'created_by': 'u1',
-              'item_kind': 'task', 'parent_goal_id': null, 'title': 'Water the plants',
-              'note': null, 'assigned_to': null, 'due_date': '2026-09-20',
-              'completed_at': '2026-09-14T09:30:00Z', 'celebrated_at': null,
-              'created_at': '2026-09-14T09:00:00Z', 'updated_at': '2026-09-14T09:30:00Z',
-              'deleted_at': null,
-            };
-          },
-        }));
-
-        await tester.pumpWidget(_wrap(
-          const PlanningHomeScreen(relationshipId: 'r1'), repository,
-        ));
-        await tester.pumpAndSettle();
-
-        final checkboxFinder = find.byType(Checkbox);
-        await tester.tap(checkboxFinder);
-        await tester.pump();
-        await tester.pump();
-
-        rpcGate.complete(); // the mutation's own RPC succeeds now
-        await tester.pump();
-        await tester.pump();
-
-        // The follow-up refresh() call is now in flight (refreshGate
-        // not yet released) — its own PlanningKeysetPager sets its
-        // provider to AsyncValue.loading() the instant refresh() is
-        // called, so the Tasks section legitimately shows a spinner
-        // rather than the row for this window; that is current,
-        // intended behaviour, not the thing under test here. What
-        // matters is that the row comes back correctly once the refresh
-        // actually lands, backed by the RPC's OWN authoritative values
-        // (not whatever stale guess the widget held before).
-        refreshGate.complete();
-        await tester.pumpAndSettle();
-        expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
-        expect(find.textContaining('Sep 20'), findsOneWidget);
-      },
-    );
+  testWidgets('creating a category sends trimmed name and chosen icon and colour', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final g = _gateway();
+    g.handlers['create_planning_category'] = (p) => fakeCategoryJson(id: p['p_id'] as String, name: 'Moving');
+    await tester.pumpWidget(planningTestApp(g, const PlanningHomeScreen(relationshipId: 'r1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New category'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '  Moving  ');
+    await tester.pump(); // enterText does not pump; Save enables on rebuild
+    await tester.tap(find.bySemanticsLabel('Icon box'));
+    await tester.tap(find.bySemanticsLabel('Colour orange'));
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    final call = g.callsTo('create_planning_category').single;
+    expect(call['p_name'], 'Moving');
+    expect(call['p_icon'], 'box');
+    expect(call['p_color'], 'orange');
+    expect(call['p_relationship_id'], 'r1');
+    expect(g.callsTo('get_planning_home'), hasLength(2), reason: 'refetched after create');
+    semantics.dispose(); // must be disposed inside the test body
   });
 
-  group('adding a task to an existing goal', () {
-    Map<String, dynamic> goalRow({
-      String id = 'g1',
-      String title = 'Plan the wedding',
-      int childCount = 1,
-      int completedChildCount = 0,
-    }) => {
-      'id': id,
-      'title': title,
-      'note': null,
-      'completed_at': null,
-      'updated_at': '2026-09-14T09:00:00Z',
-      'child_count': childCount,
-      'completed_child_count': completedChildCount,
+  testWidgets('a load error shows an actionable message and Retry', (tester) async {
+    var fail = true;
+    final g = _gateway();
+    final ok = g.handlers['get_planning_home']!;
+    g.handlers['get_planning_home'] = (p) {
+      if (fail) throw Exception('offline');
+      return ok(p);
     };
+    await tester.pumpWidget(planningTestApp(g, const PlanningHomeScreen(relationshipId: 'r1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Could not reach Attune. Check your connection and try again.'), findsOneWidget);
+    expect(find.byType(ErrorStateWidget), findsOneWidget, reason: 'the app\'s shared error state, not a Planning one-off');
+    fail = false;
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+    expect(find.text('Goals'), findsOneWidget);
+  });
 
-    Map<String, dynamic> taskRow({
-      required String id,
-      required String goalId,
-      required String title,
-    }) => {
-      'id': id, 'relationship_id': 'r1', 'created_by': 'u1',
-      'item_kind': 'task', 'parent_goal_id': goalId, 'title': title,
-      'note': null, 'assigned_to': null, 'due_date': null,
-      'completed_at': null, 'celebrated_at': null,
-      'created_at': '2026-09-14T09:00:00Z', 'updated_at': '2026-09-14T09:00:00Z',
-      'deleted_at': null,
-    };
+  testWidgets('an ended relationship shows the closed message, not Retry', (tester) async {
+    final g = FakePlanningGateway({
+      'get_planning_home': (_) => throw const PostgrestException(message: 'planning:inactive', code: 'P0001'),
+    });
+    await tester.pumpWidget(planningTestApp(g, const PlanningHomeScreen(relationshipId: 'r1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Planning is closed for this relationship.'), findsOneWidget);
+    expect(find.text('Retry'), findsNothing);
+  });
 
-    testWidgets(
-      'the "Add task" affordance calls add_planning_goal_task with the '
-      "expanded goal's own id and the typed title, then refreshes the "
-      "goal's task list and the Goals section",
-      (tester) async {
-        var goalTasks = [taskRow(id: 't1', goalId: 'g1', title: 'Book a venue')];
-        var listGoalTasksCalls = 0;
-        var listGoalsCalls = 0;
-        final addTaskParamsSeen = <Map<String, dynamic>?>[];
+  testWidgets('renders in dark mode without errors', (tester) async {
+    await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1'),
+        themeMode: ThemeMode.dark));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
 
-        final repository = PlanningRepository(_FakeGateway({
-          'list_planning_goals': (_) async {
-            listGoalsCalls++;
-            return [goalRow(childCount: goalTasks.length)];
-          },
-          'list_planning_tasks': (_) async => <dynamic>[],
-          'list_planning_events': (_) async => <dynamic>[],
-          'list_planning_goal_tasks': (_) async {
-            listGoalTasksCalls++;
-            return goalTasks;
-          },
-          'add_planning_goal_task': (params) async {
-            addTaskParamsSeen.add(params);
-            final newTask = taskRow(
-              id: params!['p_task_id'] as String,
-              goalId: params['p_goal_id'] as String,
-              title: params['p_title'] as String,
-            );
-            goalTasks = [...goalTasks, newTask];
-            return newTask;
-          },
-        }));
+  testWidgets('category name counts code points like the server: 21 flags stop at 20 (final review I3)', (tester) async {
+    await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New category'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '🇬🇭' * 21);
+    await tester.pump();
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '🇬🇭' * 20);
+    expect(find.text('40/40'), findsOneWidget);
+  });
 
-        await tester.pumpWidget(_wrap(
-          const PlanningHomeScreen(relationshipId: 'r1'), repository,
-        ));
-        await tester.pumpAndSettle();
-
-        // Expand the goal to reveal its task list and the "Add task"
-        // affordance.
-        await tester.tap(find.text('Plan the wedding'));
-        await tester.pumpAndSettle();
-        expect(find.text('Book a venue'), findsOneWidget);
-        expect(find.text('Add task'), findsOneWidget);
-
-        final listGoalTasksCallsBeforeAdd = listGoalTasksCalls;
-        final listGoalsCallsBeforeAdd = listGoalsCalls;
-
-        await tester.tap(find.text('Add task'));
-        await tester.pumpAndSettle();
-        await tester.enterText(find.byType(TextField), 'Hire a caterer');
-        await tester.tap(find.text('Add'));
-        await tester.pumpAndSettle();
-
-        expect(addTaskParamsSeen, hasLength(1));
-        expect(addTaskParamsSeen.single!['p_goal_id'], 'g1');
-        expect(addTaskParamsSeen.single!['p_title'], 'Hire a caterer');
-
-        // The goal's own task list and the Goals section (whose row
-        // shows "N of M done") were both refreshed, not left showing
-        // pre-mutation data.
-        expect(listGoalTasksCalls, greaterThan(listGoalTasksCallsBeforeAdd));
-        expect(listGoalsCalls, greaterThan(listGoalsCallsBeforeAdd));
-        expect(find.text('Hire a caterer'), findsOneWidget);
-      },
-    );
-
-    testWidgets(
-      'cancelling the "Add task" dialog calls add_planning_goal_task '
-      'zero times',
-      (tester) async {
-        var addTaskCalls = 0;
-        final repository = PlanningRepository(_FakeGateway({
-          'list_planning_goals': (_) async => [goalRow()],
-          'list_planning_tasks': (_) async => <dynamic>[],
-          'list_planning_events': (_) async => <dynamic>[],
-          'list_planning_goal_tasks': (_) async =>
-              [taskRow(id: 't1', goalId: 'g1', title: 'Book a venue')],
-          'add_planning_goal_task': (params) async {
-            addTaskCalls++;
-            return taskRow(id: 'new', goalId: 'g1', title: 'x');
-          },
-        }));
-
-        await tester.pumpWidget(_wrap(
-          const PlanningHomeScreen(relationshipId: 'r1'), repository,
-        ));
-        await tester.pumpAndSettle();
-
-        await tester.tap(find.text('Plan the wedding'));
-        await tester.pumpAndSettle();
-
-        await tester.tap(find.text('Add task'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Cancel'));
-        await tester.pumpAndSettle();
-
-        expect(addTaskCalls, 0);
-      },
-    );
-
-    testWidgets(
-      'a validation error from add_planning_goal_task (e.g. the '
-      '100-task cap) shows the RPC\'s own message rather than a '
-      'generic error',
-      (tester) async {
-        final repository = PlanningRepository(_FakeGateway({
-          'list_planning_goals': (_) async => [goalRow()],
-          'list_planning_tasks': (_) async => <dynamic>[],
-          'list_planning_events': (_) async => <dynamic>[],
-          'list_planning_goal_tasks': (_) async =>
-              [taskRow(id: 't1', goalId: 'g1', title: 'Book a venue')],
-          'add_planning_goal_task': (params) async {
-            throw PostgrestException(
-              message: 'A Goal may have at most 100 tasks',
-              code: 'P0001',
-            );
-          },
-        }));
-
-        await tester.pumpWidget(_wrap(
-          const PlanningHomeScreen(relationshipId: 'r1'), repository,
-        ));
-        await tester.pumpAndSettle();
-
-        await tester.tap(find.text('Plan the wedding'));
-        await tester.pumpAndSettle();
-
-        await tester.tap(find.text('Add task'));
-        await tester.pumpAndSettle();
-        await tester.enterText(find.byType(TextField), 'One task too many');
-        await tester.tap(find.text('Add'));
-        await tester.pumpAndSettle();
-
-        expect(
-          find.text('A Goal may have at most 100 tasks'),
-          findsOneWidget,
-        );
-      },
-    );
+  testWidgets('Planning keeps its Calendar tab, which shows the shared calendar', (tester) async {
+    await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Goals'), findsOneWidget, reason: 'the Planning tab shows the categories first');
+    await tester.tap(find.text('Calendar'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TimelineScreen), findsOneWidget);
   });
 }
+

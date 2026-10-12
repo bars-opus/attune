@@ -14,9 +14,9 @@
 library;
 
 import 'package:attune/features/auth/providers/auth_provider.dart';
-import 'package:attune/features/planning/v2/data/planning_v2_models.dart';
-import 'package:attune/features/planning/v2/presentation/planning_v2_ui.dart';
-import 'package:attune/features/planning/v2/presentation/screens/planning_v2_entry_screen.dart';
+import 'package:attune/features/planning/data/planning_models.dart';
+import 'package:attune/features/planning/presentation/planning_ui.dart';
+import 'package:attune/features/planning/presentation/screens/planning_entry_screen.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
@@ -341,8 +341,8 @@ class _ScheduledTile extends StatelessWidget {
       final navigator = Navigator.of(context);
       navigator.pop(); // close the day sheet first
       navigator.push(
-        planningV2Route(
-          PlanningV2EntryScreen(
+        planningRoute(
+          PlanningEntryScreen(
             relationshipId: relationshipId!,
             entryId: entryId,
           ),

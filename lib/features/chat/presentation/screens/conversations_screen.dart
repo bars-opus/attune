@@ -6,12 +6,10 @@ import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/providers/chat_ui_providers.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/reflection_journal/presentation/providers/reflection_journal_providers.dart';
-import 'package:attune/features/planning/presentation/providers/planning_providers.dart'
+import 'package:attune/features/planning/data/planning_models.dart';
+import 'package:attune/features/planning/presentation/planning_providers.dart'
     as planning_providers;
-import 'package:attune/features/planning/v2/data/planning_v2_models.dart';
-import 'package:attune/features/planning/v2/presentation/planning_v2_providers.dart'
-    show planningV2SummaryProvider;
-import 'package:attune/features/planning/v2/presentation/planning_v2_ui.dart'
+import 'package:attune/features/planning/presentation/planning_ui.dart'
     show planningSummaryLine;
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
@@ -403,7 +401,7 @@ class _PlanningSummaryRow extends ConsumerWidget {
 
     final summaryAsync = relationshipId == null
         ? const AsyncValue<PlanningSummary?>.data(null)
-        : ref.watch(planningV2SummaryProvider(relationshipId));
+        : ref.watch(planning_providers.planningSummaryProvider(relationshipId));
 
     // Retains its last successful value during a refresh rather than
     // flashing to a loading state — matching this card's other rows'

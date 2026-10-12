@@ -1,9 +1,9 @@
 // lib/features/timeline/presentation/widgets/planning_day_section.dart
 import 'package:flutter/material.dart';
 
-import '../../../planning/v2/data/planning_v2_models.dart';
-import '../../../planning/v2/presentation/planning_v2_ui.dart';
-import '../../../planning/v2/presentation/screens/planning_v2_entry_screen.dart';
+import '../../../planning/data/planning_models.dart';
+import '../../../planning/presentation/planning_ui.dart';
+import '../../../planning/presentation/screens/planning_entry_screen.dart';
 
 /// Planning's own rendering for the Timeline screen's selected-day area
 /// — never coerced into TimelineEventModel (that would need fake
@@ -36,8 +36,8 @@ class PlanningDaySection extends StatelessWidget {
                   : null,
             ),
             trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => Navigator.of(context).push(planningV2Route(
-                PlanningV2EntryScreen(relationshipId: relationshipId, entryId: entry.entryId))),
+            onTap: () => Navigator.of(context).push(planningRoute(
+                PlanningEntryScreen(relationshipId: relationshipId, entryId: entry.entryId))),
           ),
       ],
     );

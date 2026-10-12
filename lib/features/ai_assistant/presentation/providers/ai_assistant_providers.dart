@@ -295,7 +295,7 @@ final understandResultProvider =
 /// watches this to show "Add to Planning" vs. "Added to Planning".
 /// `.autoDispose.family`, keyed by message id, matching Planning's own
 /// established Realtime-refresh provider shape
-/// (`lib/features/planning/presentation/providers/planning_providers.dart`)
+/// (`lib/features/planning/presentation/planning_providers.dart`)
 /// rather than polling: a fresh watch re-fetches, and nothing here is
 /// long-lived across bubbles for different messages. Callers that just
 /// performed a successful `addToPlanning` call should

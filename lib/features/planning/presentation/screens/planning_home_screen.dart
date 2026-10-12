@@ -1,632 +1,266 @@
-// lib/features/planning/presentation/screens/planning_home_screen.dart
 import 'package:attune/app/theme/design_tokens.dart';
-import 'package:attune/core/widgets/app_divider.dart';
 import 'package:attune/core/widgets/app_tabs.dart';
-import 'package:attune/core/widgets/buttons/app_icon_button.dart';
 import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
 import 'package:attune/home/widgets/tabs_with_content.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:gap/gap.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../data/repositories/planning_error.dart';
-import '../../data/models/planning_goal_model.dart';
-import '../../data/models/planning_task_model.dart';
-import '../providers/planning_providers.dart';
-import '../widgets/planning_goal_row.dart';
-import '../widgets/planning_task_row.dart';
-import 'create_planning_goal_screen.dart';
-import 'create_planning_task_screen.dart';
-import 'create_planning_event_screen.dart';
-import 'planning_notes_screen.dart';
-import '../../v2/presentation/planning_v2_ui.dart' show planningV2Route;
-import '../../v2/presentation/screens/planning_v2_home_screen.dart';
+import '../../data/planning_models.dart';
+import '../planning_providers.dart';
+import '../planning_ui.dart';
+import '../widgets/category_editor_sheet.dart';
+import 'planning_category_screen.dart';
 
-/// Two tabs: the original sections list (Goals/Tasks/Events, each with
-/// its own "+", plus a Notes row opening `PlanningNotesScreen`) and the
-/// real `TimelineScreen` — same calendar the Pulse tab shows, not a
-/// second calendar implementation, so tasks/events set here appear on
-/// exactly the calendar the rest of the app already uses. Built with
-/// `showAppBar: true` since this tab has no `NestedScrollView` ancestor
-/// (unlike PulseTab's embedding, which supplies one) — TimelineScreen
-/// then owns its own Scaffold/CustomScrollView and needs no header
-/// coordination here — but with `showOwnAppBar: false`, since this
-/// screen's own AppBar is already above the tab bar and two would
-/// stack. The standalone `/couples-calendar` route keeps its bar.
-/// Planning v2 is preview-only in P1 (plan ruling R9). A compile-time
-/// constant: in builds without `--dart-define=PLANNING_V2_PREVIEW=true`
-/// the button below is tree-shaken out and v1 is byte-for-byte unchanged
-/// in behaviour.
-const bool _planningV2Preview = bool.fromEnvironment('PLANNING_V2_PREVIEW');
-
-class PlanningHomeScreen extends ConsumerWidget {
+class PlanningHomeScreen extends ConsumerStatefulWidget {
   const PlanningHomeScreen({super.key, required this.relationshipId});
   final String relationshipId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+  ConsumerState<PlanningHomeScreen> createState() => _PlanningHomeScreenState();
+}
 
-    final tabs = [
-      AppTabItem(
-        label: 'Planning',
-        icon: Icons.checklist_rounded,
-        content: _PlanningListTab(relationshipId: relationshipId),
-      ),
-      AppTabItem(
-        label: 'Calendar',
-        icon: Icons.calendar_month_rounded,
-        content: const TimelineScreen(showAppBar: true, showOwnAppBar: false),
-      ),
-    ];
+class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
+  bool _showHidden = false;
 
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: true,
-        backgroundColor: Colors.transparent,
-        title: Text(
-          'Planning',
-          style: textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: colorScheme.onSurface.withValues(alpha: 0.8),
+  void _refresh() =>
+      ref.invalidate(planningHomeProvider(widget.relationshipId));
+
+  Future<void> _run(Future<void> Function() action) async {
+    try {
+      await action();
+    } catch (e) {
+      if (mounted) showPlanningError(context, e);
+    } finally {
+      _refresh();
+    }
+  }
+
+  Future<void> _create() async {
+    final draft = await showCategoryEditorSheet(context);
+    if (draft == null || !mounted) return;
+    await _run(
+      () => ref
+          .read(planningRepositoryProvider)
+          .createCategory(
+            id: const Uuid().v4(),
+            relationshipId: widget.relationshipId,
+            name: draft.name,
+            icon: draft.icon,
+            color: draft.color,
           ),
-        ),
-        actions: [
-          if (_planningV2Preview)
-            IconButton(
-              tooltip: 'Planning v2 preview',
-              icon: const Icon(Icons.auto_awesome_rounded),
-              onPressed: () => Navigator.of(context).push(
-                planningV2Route(PlanningV2HomeScreen(relationshipId: relationshipId)),
-              ),
-            ),
-        ],
+    );
+  }
+
+  Future<void> _move(List<PlanningCategory> visible, int from, int to) async {
+    final list = [...visible];
+    final moving = list.removeAt(from);
+    list.insert(to, moving);
+    await _run(
+      () => ref
+          .read(planningRepositoryProvider)
+          .moveCategory(moving.id, afterId: to == 0 ? null : list[to - 1].id),
+    );
+  }
+
+  void _open(PlanningCategory c) => Navigator.of(context).push(
+    planningRoute(
+      PlanningCategoryScreen(
+        relationshipId: widget.relationshipId,
+        category: c,
       ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    // Two tabs, as Planning always had: the categories, and the shared
+    // calendar (the same TimelineScreen Pulse shows). TimelineScreen's own
+    // app bar is off because this screen's bar already sits above the tabs.
+    return Scaffold(
+      appBar: AppBar(title: const Text('Planning')),
       body: TabsWithContent(
-        tabs: tabs,
+        tabs: [
+          AppTabItem(
+            label: 'Planning',
+            icon: Icons.checklist_rounded,
+            content: _categories(context),
+          ),
+          const AppTabItem(
+            label: 'Calendar',
+            icon: Icons.calendar_month_rounded,
+            content: TimelineScreen(showAppBar: true, showOwnAppBar: false),
+          ),
+        ],
         initialIndex: 0,
         scrollable: false,
         showContent: true,
       ),
     );
   }
-}
 
-class _PlanningListTab extends ConsumerWidget {
-  const _PlanningListTab({required this.relationshipId});
-  final String relationshipId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return RefreshIndicator(
-      onRefresh: () async {
-        await Future.wait([
-          ref.read(planningGoalsProvider(relationshipId).notifier).refresh(),
-          ref.read(planningTasksProvider(relationshipId).notifier).refresh(),
-          ref.read(planningEventsProvider(
-            PlanningEventsKey(relationshipId: relationshipId, upcoming: true),
-          ).notifier).refresh(),
-        ]);
-      },
-      child: ListView(
-        padding: EdgeInsets.all(Spacing.md),
-        children: [
-          _SectionHeader(
-            title: 'Goals',
-            onAdd: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => CreatePlanningGoalScreen(relationshipId: relationshipId),
-            )),
-          ),
-          _GoalsSection(relationshipId: relationshipId),
-          Gap(Spacing.md),
-          const AppDivider(),
-          Gap(Spacing.md),
-          _SectionHeader(
-            title: 'Tasks',
-            onAdd: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => CreatePlanningTaskScreen(relationshipId: relationshipId),
-            )),
-          ),
-          _TasksSection(relationshipId: relationshipId),
-          Gap(Spacing.md),
-          const AppDivider(),
-          Gap(Spacing.md),
-          _SectionHeader(
-            title: 'Events',
-            onAdd: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => CreatePlanningEventScreen(relationshipId: relationshipId),
-            )),
-          ),
-          _EventsSection(relationshipId: relationshipId),
-          Gap(Spacing.md),
-          const AppDivider(),
-          Gap(Spacing.md),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.sticky_note_2_outlined),
-            title: const Text('Notes'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => PlanningNotesScreen(relationshipId: relationshipId),
-            )),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title, required this.onAdd});
-  final String title;
-  final VoidCallback onAdd;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleMedium),
-        AppIconButton(icon: Icons.add, onPressed: onAdd, size: 36, iconSize: 20),
-      ],
-    );
-  }
-}
-
-class _GoalsSection extends ConsumerWidget {
-  const _GoalsSection({required this.relationshipId});
-  final String relationshipId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final goalsAsync = ref.watch(planningGoalsProvider(relationshipId));
-    return goalsAsync.when(
-      loading: () => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 16),
-        child: Center(child: CircularProgressIndicator()),
-      ),
-      error: (error, _) => _SectionError(
-        message: 'Could not load goals.',
-        onRetry: () => ref.read(planningGoalsProvider(relationshipId).notifier).refresh(),
-      ),
-      data: (goals) {
-        if (goals.isEmpty) {
-          return const _EmptySectionText('No goals yet.');
-        }
-        // Incomplete first (spec §6.2).
-        final sorted = [...goals]
-          ..sort((a, b) {
-            if (a.isComplete != b.isComplete) {
-              return a.isComplete ? 1 : -1;
-            }
-            return b.updatedAt.compareTo(a.updatedAt);
-          });
-        return Column(
-          children: [
-            for (final goal in sorted)
-              _ExpandableGoal(relationshipId: relationshipId, goal: goal),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _ExpandableGoal extends ConsumerStatefulWidget {
-  const _ExpandableGoal({required this.relationshipId, required this.goal});
-  final String relationshipId;
-  final PlanningGoalModel goal;
-
-  @override
-  ConsumerState<_ExpandableGoal> createState() => _ExpandableGoalState();
-}
-
-class _ExpandableGoalState extends ConsumerState<_ExpandableGoal> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        PlanningGoalRow(
-          goal: widget.goal,
-          onTap: () => setState(() => _expanded = !_expanded),
-        ),
-        if (_expanded)
-          Padding(
-            padding: EdgeInsets.only(left: Spacing.lg),
-            child: Consumer(
-              builder: (context, ref, _) {
-                final tasksAsync = ref.watch(planningGoalTasksProvider(widget.goal.id));
-                return tasksAsync.when(
-                  loading: () => const SizedBox(
-                    height: 32,
-                    child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+  Widget _categories(BuildContext context) {
+    final async = ref.watch(planningHomeProvider(widget.relationshipId));
+    return async.when(
+      skipLoadingOnReload: true,
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => PlanningErrorState(error: e, onRetry: _refresh),
+      data: (cats) {
+        final visible = [
+          for (final c in cats)
+            if (!c.hidden) c,
+        ];
+        final hidden = [
+          for (final c in cats)
+            if (c.hidden) c,
+        ];
+        return RefreshIndicator(
+          onRefresh:
+              () => ref.refresh(
+                planningHomeProvider(widget.relationshipId).future,
+              ),
+          child: ReorderableListView.builder(
+            buildDefaultDragHandles: false,
+            padding: const EdgeInsets.symmetric(vertical: Spacing.sm),
+            itemCount: visible.length,
+            onReorder:
+                (from, to) => _move(visible, from, to > from ? to - 1 : to),
+            itemBuilder:
+                (context, i) => ReorderableDelayedDragStartListener(
+                  key: ValueKey(visible[i].id),
+                  index: i,
+                  child: _CategoryTile(
+                    category: visible[i],
+                    onOpen: () => _open(visible[i]),
+                    onMoveUp: i == 0 ? null : () => _move(visible, i, i - 1),
+                    onMoveDown:
+                        i == visible.length - 1
+                            ? null
+                            : () => _move(visible, i, i + 1),
+                    onHide:
+                        () => _run(
+                          () => ref
+                              .read(planningRepositoryProvider)
+                              .setCategoryHidden(visible[i].id, hidden: true),
+                        ),
                   ),
-                  error: (_, __) => const _SectionError(message: 'Could not load tasks.'),
-                  data: (tasks) => Column(
-                    children: [
-                      for (final task in tasks)
-                        PlanningTaskRow(
-                          task: task,
-                          onToggleComplete: (isComplete) => _toggleTask(task, isComplete),
-                          onTap: () => _confirmDelete(task),
-                        ),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: _addTask,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add task'),
-                        ),
+                ),
+            footer: Column(
+              children: [
+                if (hidden.isNotEmpty) ...[
+                  ListTile(
+                    minTileHeight: 56,
+                    leading: Icon(
+                      _showHidden
+                          ? Icons.expand_less_rounded
+                          : Icons.expand_more_rounded,
+                    ),
+                    title: Text('Hidden (${hidden.length})'),
+                    onTap: () => setState(() => _showHidden = !_showHidden),
+                  ),
+                  if (_showHidden)
+                    for (final c in hidden)
+                      _CategoryTile(
+                        category: c,
+                        onOpen: () => _open(c),
+                        onUnhide:
+                            () => _run(
+                              () => ref
+                                  .read(planningRepositoryProvider)
+                                  .setCategoryHidden(c.id, hidden: false),
+                            ),
                       ),
-                    ],
-                  ),
-                );
-              },
+                ],
+                ListTile(
+                  minTileHeight: 56,
+                  leading: const Icon(Icons.add_rounded),
+                  title: const Text('New category'),
+                  onTap: _create,
+                ),
+                const SizedBox(height: Spacing.xl),
+              ],
             ),
           ),
-      ],
-    );
-  }
-
-  Future<void> _toggleTask(PlanningTaskModel task, bool isComplete) async {
-    final repository = ref.read(planningRepositoryProvider);
-    try {
-      await repository.setTaskCompletion(taskId: task.id, isComplete: isComplete);
-      ref.invalidate(planningGoalTasksProvider(widget.goal.id));
-      ref.read(planningGoalsProvider(widget.relationshipId).notifier).refresh();
-    } on PlanningError catch (error) {
-      if (!mounted) return;
-      _showError(error);
-    }
-  }
-
-  Future<void> _addTask() async {
-    final controller = TextEditingController();
-    final title = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Add task'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Task'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-    // Deferred to the next frame rather than disposed synchronously
-    // here: `showDialog`'s Future resolves the instant `Navigator.pop`
-    // runs, but the dialog's own exit (fade-out) transition still
-    // paints this TextField for a frame or more afterward — disposing
-    // the controller immediately raced that transition and threw
-    // "A TextEditingController was used after being disposed."
-    WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
-    if (title == null || title.isEmpty || !mounted) return;
-
-    final repository = ref.read(planningRepositoryProvider);
-    try {
-      await repository.addGoalTask(
-        taskId: const Uuid().v4(),
-        goalId: widget.goal.id,
-        title: title,
-      );
-      ref.invalidate(planningGoalTasksProvider(widget.goal.id));
-      ref.read(planningGoalsProvider(widget.relationshipId).notifier).refresh();
-    } on PlanningError catch (error) {
-      if (!mounted) return;
-      _showError(error);
-    }
-  }
-
-  Future<void> _confirmDelete(PlanningTaskModel task) async {
-    // Long-press to delete, matching this project's existing message
-    // long-press-to-act convention rather than inventing a swipe
-    // gesture for this one list.
-    final shouldDelete = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        content: Text('Delete "${task.title}"?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
-        ],
-      ),
-    );
-    if (shouldDelete != true || !mounted) return;
-
-    final repository = ref.read(planningRepositoryProvider);
-    try {
-      await repository.deleteItem(id: task.id);
-      ref.invalidate(planningGoalTasksProvider(widget.goal.id));
-      ref.read(planningGoalsProvider(widget.relationshipId).notifier).refresh();
-    } on PlanningError catch (error) {
-      if (!mounted) return;
-      // The sole-child-delete rejection surfaces here as a
-      // PlanningValidationError. Rather than a generic error toast,
-      // spec §6.2 requires the two-choice prompt: delete the goal
-      // instead, or add another task first.
-      if (error is PlanningValidationError &&
-          error.message.contains('Delete the goal instead')) {
-        await _offerDeleteGoalInstead(error.message);
-        return;
-      }
-      _showError(error);
-    }
-  }
-
-  Future<void> _offerDeleteGoalInstead(String message) async {
-    if (!mounted) return;
-    final choice = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'cancel'),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'delete_goal'),
-            child: const Text('Delete this goal instead'),
-          ),
-        ],
-      ),
-    );
-    if (choice != 'delete_goal' || !mounted) return;
-
-    final repository = ref.read(planningRepositoryProvider);
-    try {
-      await repository.deleteItem(id: widget.goal.id);
-      ref.read(planningGoalsProvider(widget.relationshipId).notifier).refresh();
-    } on PlanningError catch (error) {
-      if (!mounted) return;
-      _showError(error);
-    }
-  }
-
-  void _showError(PlanningError error) {
-    final message = switch (error) {
-      PlanningValidationError(message: final m) => m,
-      PlanningUnauthorizedError() => 'Planning is no longer available.',
-      PlanningNotFoundError() => 'That item is no longer there.',
-      PlanningNetworkError() => 'Could not reach the server. Try again.',
-    };
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-  }
-}
-
-class _TasksSection extends ConsumerWidget {
-  const _TasksSection({required this.relationshipId});
-  final String relationshipId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final tasksAsync = ref.watch(planningTasksProvider(relationshipId));
-    return tasksAsync.when(
-      loading: () => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 16),
-        child: Center(child: CircularProgressIndicator()),
-      ),
-      error: (error, _) => _SectionError(
-        message: 'Could not load tasks.',
-        onRetry: () => ref.read(planningTasksProvider(relationshipId).notifier).refresh(),
-      ),
-      data: (tasks) {
-        if (tasks.isEmpty) return const _EmptySectionText('No tasks yet.');
-        return Column(
-          children: [
-            for (final task in tasks)
-              _TopLevelTaskRow(relationshipId: relationshipId, task: task),
-          ],
         );
       },
     );
   }
 }
 
-/// A top-level Task row's own toggle handler, following the identical
-/// optimistic-mutation ordering as `_ExpandableGoalState._toggleTask`
-/// above: this provider's list is a `PlanningKeysetPager`, which has no
-/// per-item optimistic-update method of its own (only whole-page
-/// `refresh()`/`loadMore()`), so the optimism happens at THIS widget's
-/// level — apply the flipped-completion value to local state
-/// immediately, call the RPC, then on success replace with the RPC's
-/// authoritative row (its `completed_at` is server-generated, never
-/// the client's guess) via a full provider refresh, or on failure roll
-/// back to the exact pre-mutation task captured before this call
-/// started (never to "whatever refresh() has now" — a concurrent
-/// partner edit may have already changed that).
-class _TopLevelTaskRow extends ConsumerStatefulWidget {
-  const _TopLevelTaskRow({required this.relationshipId, required this.task});
-  final String relationshipId;
-  final PlanningTaskModel task;
+enum _CategoryAction { open, up, down, hide, unhide }
 
-  @override
-  ConsumerState<_TopLevelTaskRow> createState() => _TopLevelTaskRowState();
-}
+class _CategoryTile extends StatelessWidget {
+  const _CategoryTile({
+    required this.category,
+    required this.onOpen,
+    this.onMoveUp,
+    this.onMoveDown,
+    this.onHide,
+    this.onUnhide,
+  });
 
-class _TopLevelTaskRowState extends ConsumerState<_TopLevelTaskRow> {
-  // The optimistic local override, if a mutation is in flight or its
-  // result hasn't yet round-tripped through a provider refresh. Null
-  // means "trust the provider's own state" (the common case).
-  PlanningTaskModel? _optimisticTask;
-
-  // The last task instance this widget was actually rebuilt with FROM
-  // THE PROVIDER (i.e. widget.task, not our own optimistic override).
-  // Used to tell "the provider gave us a genuinely new row" (a real
-  // refresh landed — drop the override and trust it) apart from "we
-  // are rebuilding for some unrelated reason while widget.task hasn't
-  // changed at all" (e.g. our own setState from the optimistic apply
-  // itself, which must NOT wipe the override it just set).
-  late PlanningTaskModel _lastProviderTask;
-
-  @override
-  void initState() {
-    super.initState();
-    _lastProviderTask = widget.task;
-  }
-
-  @override
-  void didUpdateWidget(_TopLevelTaskRow oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Only clear the optimistic override when the INCOMING widget.task
-    // is not the same object the last provider-driven build saw — that
-    // is what "a fresh provider refresh actually landed" looks like.
-    // Comparing widget.task to oldWidget.task instead would also be
-    // true on this very setState's own rebuild (since neither side of
-    // that comparison is ever our optimistic value — the parent always
-    // passes the provider's task straight through), wiping the
-    // override the instant it's set.
-    if (!identical(widget.task, _lastProviderTask)) {
-      _lastProviderTask = widget.task;
-      _optimisticTask = null;
-    }
-  }
+  final PlanningCategory category;
+  final VoidCallback onOpen;
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
+  final VoidCallback? onHide;
+  final VoidCallback? onUnhide;
 
   @override
   Widget build(BuildContext context) {
-    final task = _optimisticTask ?? widget.task;
-    return PlanningTaskRow(
-      task: task,
-      onToggleComplete: (isComplete) => _toggleTask(task, isComplete),
-    );
-  }
-
-  Future<void> _toggleTask(PlanningTaskModel preMutationTask, bool isComplete) async {
-    // 1. Apply the mutation locally, right away.
-    setState(() {
-      _optimisticTask = PlanningTaskModel(
-        id: preMutationTask.id,
-        relationshipId: preMutationTask.relationshipId,
-        createdBy: preMutationTask.createdBy,
-        parentGoalId: preMutationTask.parentGoalId,
-        title: preMutationTask.title,
-        note: preMutationTask.note,
-        assignedTo: preMutationTask.assignedTo,
-        dueDate: preMutationTask.dueDate,
-        // Client-guessed only for the optimistic frame — never treated
-        // as authoritative. The real value comes from the RPC below.
-        completedAt: isComplete ? DateTime.now() : null,
-        createdAt: preMutationTask.createdAt,
-        updatedAt: preMutationTask.updatedAt,
-      );
-    });
-
-    final repository = ref.read(planningRepositoryProvider);
-    try {
-      // 2. Call the RPC.
-      final authoritative = await repository.setTaskCompletion(
-        taskId: preMutationTask.id,
-        isComplete: isComplete,
-      );
-      if (!mounted) return;
-      // 3. Success: replace the optimistic guess with the RPC's own
-      // returned row (its completed_at is server-generated) and let
-      // the provider's own refresh bring the list back in sync.
-      setState(() => _optimisticTask = authoritative);
-      ref.read(planningTasksProvider(widget.relationshipId).notifier).refresh();
-    } on PlanningError catch (error) {
-      if (!mounted) return;
-      // 4. Failure: roll back to the PRE-mutation state captured at
-      // the top of this method — not to whatever the provider's
-      // current state happens to be now, which a concurrent partner
-      // edit may have already changed.
-      setState(() => _optimisticTask = preMutationTask);
-      _showError(error);
-    }
-  }
-
-  void _showError(PlanningError error) {
-    final message = switch (error) {
-      PlanningValidationError(message: final m) => m,
-      PlanningUnauthorizedError() => 'Planning is no longer available.',
-      PlanningNotFoundError() => 'That item is no longer there.',
-      PlanningNetworkError() => 'Could not reach the server. Try again.',
-    };
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-  }
-}
-
-class _EventsSection extends ConsumerWidget {
-  const _EventsSection({required this.relationshipId});
-  final String relationshipId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final key = PlanningEventsKey(relationshipId: relationshipId, upcoming: true);
-    final eventsAsync = ref.watch(planningEventsProvider(key));
-    return eventsAsync.when(
-      loading: () => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 16),
-        child: Center(child: CircularProgressIndicator()),
+    final tone = planningTone(context, category.color);
+    final n = category.entryCount;
+    return ListTile(
+      minTileHeight: 64,
+      leading: CircleAvatar(
+        backgroundColor: tone.container,
+        child: Icon(planningIcon(category.icon), color: tone.onContainer),
       ),
-      error: (error, _) => _SectionError(
-        message: 'Could not load events.',
-        onRetry: () => ref.read(planningEventsProvider(key).notifier).refresh(),
-      ),
-      data: (events) {
-        if (events.isEmpty) return const _EmptySectionText('No upcoming events.');
-        return Column(
-          children: [
-            for (final event in events)
-              ListTile(
-                leading: const Icon(Icons.event_outlined),
-                title: Text(event.title),
-                dense: true,
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _EmptySectionText extends StatelessWidget {
-  const _EmptySectionText(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Text(
-        text,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-}
-
-class _SectionError extends StatelessWidget {
-  const _SectionError({required this.message, this.onRetry});
-  final String message;
-  final VoidCallback? onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
+      title: Text(category.name),
+      subtitle: Text(n == 1 ? '1 plan' : '$n plans'),
+      onTap: onOpen,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(child: Text(message)),
-          if (onRetry != null)
-            TextButton(onPressed: onRetry, child: const Text('Retry')),
+          if (category.hasNew) const PlanningNewDot(),
+          PopupMenuButton<_CategoryAction>(
+            tooltip: 'More for ${category.name}',
+            onSelected:
+                (a) => switch (a) {
+                  _CategoryAction.open => onOpen(),
+                  _CategoryAction.up => onMoveUp?.call(),
+                  _CategoryAction.down => onMoveDown?.call(),
+                  _CategoryAction.hide => onHide?.call(),
+                  _CategoryAction.unhide => onUnhide?.call(),
+                },
+            itemBuilder:
+                (_) => [
+                  const PopupMenuItem(
+                    value: _CategoryAction.open,
+                    child: Text('Open'),
+                  ),
+                  if (onMoveUp != null)
+                    const PopupMenuItem(
+                      value: _CategoryAction.up,
+                      child: Text('Move up'),
+                    ),
+                  if (onMoveDown != null)
+                    const PopupMenuItem(
+                      value: _CategoryAction.down,
+                      child: Text('Move down'),
+                    ),
+                  if (onHide != null)
+                    const PopupMenuItem(
+                      value: _CategoryAction.hide,
+                      child: Text('Hide'),
+                    ),
+                  if (onUnhide != null)
+                    const PopupMenuItem(
+                      value: _CategoryAction.unhide,
+                      child: Text('Show again'),
+                    ),
+                ],
+          ),
         ],
       ),
     );

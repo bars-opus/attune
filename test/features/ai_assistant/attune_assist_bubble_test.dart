@@ -16,11 +16,11 @@ import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:attune/features/planning/v2/presentation/screens/planning_v2_entry_screen.dart';
+import 'package:attune/features/planning/presentation/screens/planning_entry_screen.dart';
 
 import '../chat/support/chat_test_harness.dart' show withScreenUtil;
-import '../planning/v2/support/fake_planning_gateway.dart';
-import '../planning/v2/support/planning_v2_test_app.dart';
+import '../planning/support/fake_planning_gateway.dart';
+import '../planning/support/planning_test_app.dart';
 
 class _FakeAiAssistantGateway implements AiAssistantGateway {
   Object? nextSelectPlanningLinkError;
@@ -273,14 +273,14 @@ void main() {
         await tester.pumpWidget(ProviderScope(
           overrides: [
             aiAssistantRepositoryProvider.overrideWithValue(AiAssistantRepository(gateway)),
-            ...planningV2Overrides(planning),
+            ...planningOverrides(planning),
           ],
           child: withScreenUtil(MaterialApp(home: Scaffold(body: AttuneAssistBubble(message: message)))),
         ));
         await tester.pumpAndSettle();
         await tester.tap(find.textContaining('Added to Planning'));
         await tester.pumpAndSettle();
-        expect(find.byType(PlanningV2EntryScreen), findsOneWidget);
+        expect(find.byType(PlanningEntryScreen), findsOneWidget);
         expect(planning.callsTo('get_planning_entry').single, {'p_id': 'entry-9'});
       },
     );

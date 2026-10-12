@@ -6,7 +6,7 @@
 /// server code (see `AssistantError.fromCode` below). A raw string
 /// code or a generic "something went wrong" must never reach the UI:
 /// the UI branches on WHICH of these subtypes it got, the same
-/// reasoning `PlanningError` (lib/features/planning/data/repositories/
+/// reasoning `PlanningError` (lib/features/planning/data/
 /// planning_error.dart) already gives for its own sealed shape.
 sealed class AssistantError implements Exception {
   const AssistantError();

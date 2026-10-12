@@ -1,8 +1,8 @@
 // lib/features/timeline/presentation/screens/timeline_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/planning/v2/data/planning_v2_models.dart';
-import 'package:attune/features/planning/v2/presentation/planning_v2_providers.dart'
+import 'package:attune/features/planning/data/planning_models.dart';
+import 'package:attune/features/planning/presentation/planning_providers.dart'
     as planning_providers;
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart'
@@ -135,7 +135,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
         relationshipIdAsync.valueOrNull == null
             ? const AsyncValue<List<PlanningCalendarEntry>>.data([])
             : ref.watch(
-              planning_providers.planningV2CalendarEntriesProvider((
+              planning_providers.planningCalendarEntriesProvider((
                 relationshipId: relationshipIdAsync.valueOrNull!,
                 start: DateTime(_focusedMonth.year, _focusedMonth.month, 1),
                 end: DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0),

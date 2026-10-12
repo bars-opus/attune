@@ -1,13 +1,13 @@
-import 'package:attune/features/planning/v2/data/planning_v2_models.dart';
-import 'package:attune/features/planning/v2/presentation/screens/planning_v2_entry_screen.dart';
+import 'package:attune/features/planning/data/planning_models.dart';
+import 'package:attune/features/planning/presentation/screens/planning_entry_screen.dart';
 import 'package:attune/features/timeline/presentation/widgets/calendar_strip.dart';
 import 'package:attune/features/timeline/presentation/widgets/planning_day_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../planning/v2/support/fake_planning_gateway.dart';
-import '../planning/v2/support/planning_v2_test_app.dart';
+import '../planning/support/fake_planning_gateway.dart';
+import '../planning/support/planning_test_app.dart';
 
 PlanningCalendarEntry _item({bool complete = false}) => PlanningCalendarEntry(
       kind: PlanningCalendarKind.item, entryId: 'e1', itemId: 'i1',
@@ -81,11 +81,11 @@ void main() {
 
   testWidgets('tapping a calendar row opens its plan', (tester) async {
     final g = FakePlanningGateway({'get_planning_entry': (p) => fakeEntryDetailJson(id: p['p_id'] as String)});
-    await tester.pumpWidget(planningV2TestApp(
+    await tester.pumpWidget(planningTestApp(
         g, Scaffold(body: PlanningDaySection(relationshipId: 'r1', entries: [_item()]))));
     await tester.tap(find.text('Water the plants'));
     await tester.pumpAndSettle();
-    expect(find.byType(PlanningV2EntryScreen), findsOneWidget);
+    expect(find.byType(PlanningEntryScreen), findsOneWidget);
     expect(g.callsTo('get_planning_entry').single, {'p_id': 'e1'});
   });
 

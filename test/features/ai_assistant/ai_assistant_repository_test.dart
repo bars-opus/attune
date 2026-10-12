@@ -7,7 +7,7 @@
 // own gateway interface instead) — so this repository takes an
 // injected gateway interface, and these tests fake THAT, not
 // SupabaseClient itself. See
-// lib/features/planning/data/repositories/planning_repository.dart
+// lib/features/planning/data/planning_repository.dart
 // and its test file for the established pattern this matches.
 import 'package:attune/features/ai_assistant/data/models/assist_draft_model.dart';
 import 'package:attune/features/ai_assistant/data/models/understand_result_model.dart';

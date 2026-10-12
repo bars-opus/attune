@@ -1,270 +1,345 @@
-// Provider tests focus on the two concurrency properties Stories'
-// _KeysetPager was built to fix, plus the .family key-equality trap
-// that shipped a real leak there — not on RPC correctness, which
-// Plan A's own SQL contracts already prove.
 import 'dart:async';
+import 'dart:convert';
 
-import 'package:attune/features/planning/data/models/planning_task_model.dart';
-import 'package:attune/features/planning/data/repositories/planning_repository.dart';
-import 'package:attune/features/planning/presentation/providers/planning_providers.dart';
+import 'package:attune/features/planning/data/planning_error.dart';
+import 'package:attune/features/planning/data/planning_models.dart';
+import 'package:attune/features/planning/domain/planning_outbox.dart';
+import 'package:attune/features/planning/presentation/planning_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-PlanningTaskModel _task(String id) => PlanningTaskModel.fromRow({
-  'id': id, 'relationship_id': 'r1', 'created_by': 'u1',
-  'item_kind': 'task', 'parent_goal_id': null, 'title': 'task $id',
-  'note': null, 'assigned_to': null, 'due_date': null,
-  'completed_at': null, 'celebrated_at': null,
-  'created_at': '2026-09-14T09:00:00Z', 'updated_at': '2026-09-14T09:00:00Z',
-  'deleted_at': null,
-});
+import 'support/fake_planning_gateway.dart';
+import 'support/planning_test_app.dart';
 
-/// A fake at the level that actually exists: Task 1's own
-/// `PlanningRpcGateway` seam, matching how `planning_repository_test.dart`
-/// injects fakes — not a re-imagined narrower interface. Each entry in
-/// [responses] is invoked once per call to `rpc`, in order (clamped to
-/// the last entry once exhausted), letting a test control exactly which
-/// call resolves when.
-class _SlowRpcGateway implements PlanningRpcGateway {
-  final List<Future<dynamic> Function()> responses;
-  int _callIndex = 0;
-  _SlowRpcGateway(this.responses);
+const args = (relationshipId: 'r1', entryId: 'e1');
 
-  @override
-  Future<dynamic> rpc(String function, {Map<String, dynamic>? params}) {
-    final next = responses[_callIndex.clamp(0, responses.length - 1)];
-    _callIndex++;
-    return next();
-  }
-}
-
-List<Map<String, dynamic>> _rowsFor(List<PlanningTaskModel> tasks) => [
-  for (final t in tasks)
-    {
-      'id': t.id, 'relationship_id': 'r1', 'created_by': 'u1',
-      'item_kind': 'task', 'parent_goal_id': null, 'title': t.title,
-      'note': null, 'assigned_to': null, 'due_date': null,
-      'completed_at': null, 'celebrated_at': null,
-      'created_at': '2026-09-14T09:00:00Z',
-      'updated_at': '2026-09-14T09:00:00Z',
-      'deleted_at': null,
-    },
-];
-
-/// A minimal `PlanningKeysetPager` subclass used ONLY by the white-box
-/// test below, to drive `fetchFirstPage()` directly against a queue of
-/// completers without going through `PlanningRepository` at all — this
-/// test isn't about any repository call shape, only about
-/// `PlanningKeysetPager.refresh()`'s own internal epoch bookkeeping.
-class _TestPager extends PlanningKeysetPager<PlanningTaskModel> {
-  final List<Future<List<PlanningTaskModel>> Function()> firstPageFetches;
-  int _callIndex = 0;
-  _TestPager(this.firstPageFetches);
-
-  @override
-  Future<List<PlanningTaskModel>> fetchFirstPage() {
-    final next = firstPageFetches[_callIndex.clamp(
-      0,
-      firstPageFetches.length - 1,
-    )];
-    _callIndex++;
-    return next();
-  }
-
-  @override
-  Future<List<PlanningTaskModel>> fetchNextPage(
-    List<PlanningTaskModel> current,
-  ) => throw UnimplementedError('not exercised by this test');
-}
+FakePlanningGateway _gatewayWithEntry() => FakePlanningGateway({
+      'get_planning_entry': (_) => fakeEntryDetailJson(blocks: [
+            fakeBlockJson(id: 'b1', items: [fakeItemJson(id: 'i1', text: 'Tomatoes')]),
+            fakeBlockJson(id: 'b2', type: 'date', sortKey: 'k'),
+          ]),
+    });
 
 void main() {
-  test(
-    "refresh()'s own epoch != _epoch check discards a fetch whose epoch "
-    'was invalidated while it was in flight — the branch an independent '
-    "reviewer found had zero test coverage, distinct from loadMore()'s "
-    'already-covered guard above.\n'
-    'refresh()-vs-refresh() cannot exercise this branch through the '
-    'public API: the synchronous `_refreshing` check (before '
-    "refresh()'s first await) plus the strictly-serial do-while loop "
-    'mean no sequence of ordinary refresh() calls can ever have two '
-    "fetches in flight at once — coalescing always fully serializes "
-    'them first (verified empirically with 2 and 3 stacked calls in '
-    'every completion order before writing this test). So this test '
-    'uses PlanningKeysetPager.debugBumpEpochForTest() — a '
-    '@visibleForTesting escape hatch that advances the epoch exactly '
-    'as a future concurrency bug could, without going through '
-    'refresh() — to simulate the one effect that would ever make this '
-    "guard's own branch matter, and prove the branch still discards "
-    'correctly.',
-    () async {
-      final initialFetch = Completer<List<PlanningTaskModel>>();
-      final staleFetch = Completer<List<PlanningTaskModel>>();
+  late FakePlanningGateway gateway;
+  late MemoryOutboxStore store;
+  late ProviderContainer c;
 
-      final pager = _TestPager([
-        () => initialFetch.future,
-        () => staleFetch.future,
+  Future<PlanningEntryController> ready() async {
+    await c.read(planningEntryProvider(args).future);
+    return c.read(planningEntryProvider(args).notifier);
+  }
+
+  PlanningEntryDetail current() => c.read(planningEntryProvider(args)).requireValue;
+
+  setUp(() {
+    gateway = _gatewayWithEntry();
+    store = MemoryOutboxStore();
+    c = ProviderContainer(overrides: planningOverrides(gateway, store: store));
+    addTearDown(c.dispose);
+    // keep autoDispose providers alive for the test
+    c.listen(planningEntryProvider(args), (_, __) {});
+  });
+
+  test('tick is optimistic, then replaced by the server row', () async {
+    final ctl = await ready();
+    gateway.handlers['set_planning_block_item_checked'] =
+        (_) => fakeItemJson(id: 'i1', text: 'Tomatoes', checkedAt: '2026-10-12T09:00:00Z', version: 2);
+    final f = ctl.setChecked('b1', current().blocks.first.items.first, true);
+    expect(current().blocks.first.items.first.isChecked, isTrue, reason: 'optimistic');
+    expect(await f, TickOutcome.synced);
+    expect(current().blocks.first.items.first.version, 2);
+  });
+
+  test('offline tick is queued, stays ticked, and survives a refetch', () async {
+    final ctl = await ready();
+    gateway.handlers['set_planning_block_item_checked'] =
+        (_) => throw Exception('SocketException: offline');
+    expect(await ctl.setChecked('b1', current().blocks.first.items.first, true), TickOutcome.queued);
+    expect(store.raw, hasLength(1));
+    c.invalidate(planningEntryProvider(args));
+    await c.read(planningEntryProvider(args).future);
+    expect(current().blocks.first.items.first.isChecked, isTrue,
+        reason: 'pending outbox ops are overlaid on fetched data');
+  });
+
+  test('a permanent tick failure reverts just that item and rethrows', () async {
+    final ctl = await ready();
+    gateway.handlers['set_planning_block_item_checked'] =
+        (_) => throw const PostgrestException(message: 'planning:not_found', code: 'P0001');
+    await expectLater(ctl.setChecked('b1', current().blocks.first.items.first, true),
+        throwsA(isA<PlanningNotFound>()));
+    expect(current().blocks.first.items.first.isChecked, isFalse);
+    expect(store.raw, isEmpty);
+  });
+
+  test('addItem appends after the last item and replaces with the server row', () async {
+    final ctl = await ready();
+    gateway.handlers['add_planning_block_item'] =
+        (p) => fakeItemJson(id: p['p_id'] as String, text: 'Milk', sortKey: 'k');
+    await ctl.addItem('b1', 'Milk');
+    expect(gateway.callsTo('add_planning_block_item').single['p_after_id'], 'i1');
+    expect(current().blocks.first.items.map((i) => i.text), ['Tomatoes', 'Milk']);
+  });
+
+  test('delete block is optimistic and restore puts it back in place', () async {
+    final ctl = await ready();
+    gateway.handlers['delete_planning_block'] = (_) => {'deleted': true};
+    gateway.handlers['restore_planning_block'] =
+        (_) => fakeBlockJson(id: 'b1', items: [fakeItemJson(id: 'i1', text: 'Tomatoes')]);
+    await ctl.deleteBlock('b1');
+    expect(current().blocks.map((b) => b.id), ['b2']);
+    await ctl.restoreBlock('b1', index: 0);
+    expect(current().blocks.map((b) => b.id), ['b1', 'b2']);
+  });
+
+  test('moveBlock sends the id it now follows', () async {
+    final ctl = await ready();
+    gateway.handlers['move_planning_block'] = (_) => fakeBlockJson(id: 'b1', sortKey: 'z');
+    await ctl.moveBlock('b1', 1);
+    expect(current().blocks.map((b) => b.id), ['b2', 'b1']);
+    expect(gateway.callsTo('move_planning_block').single['p_after_id'], 'b2');
+  });
+
+  test('saveText: conflict returns theirs; not_found removes the block', () async {
+    final ctl = await ready();
+    gateway.handlers['update_planning_block'] = (_) => throw PostgrestException(
+          message: 'planning:stale_version',
+          code: 'P0001',
+          hint: jsonEncode({
+            'current': fakeBlockJson(id: 'b1', type: 'text', plainText: 'Kofi', version: 5, payload: {
+              'delta': [{'insert': 'Kofi\n'}]
+            }),
+          }),
+        );
+    final r = await ctl.saveText('b1', 1, const [{'insert': 'Ama\n'}]);
+    expect(r, isA<TextConflict>());
+    expect((r as TextConflict).theirs.version, 5);
+
+    gateway.handlers['update_planning_block'] =
+        (_) => throw const PostgrestException(message: 'planning:not_found', code: 'P0001');
+    expect(await ctl.saveText('b1', 5, const [{'insert': 'Ama\n'}]), isA<TextGone>());
+    expect(current().blocks.map((b) => b.id), ['b2']);
+  });
+
+  test('entries pager: second page appends; hasMore false at the end', () async {
+    var page = 0;
+    gateway.handlers['list_planning_entries'] = (p) {
+      page++;
+      return {
+        'entries': [
+          {'id': 'e$page', 'title': 'T$page', 'status': 'active', 'last_activity_at': '2026-10-12T09:00:00Z',
+           'date_start': null, 'date_end': null, 'checklist_done': 0, 'checklist_total': 0}
+        ],
+        'next_cursor': page == 1 ? {'at': '2026-10-12T09:00:00Z', 'id': 'e1'} : null,
+      };
+    };
+    const a = (relationshipId: 'r1', categoryId: 'c1', group: 'open');
+    c.listen(planningEntriesProvider(a), (_, __) {});
+    await c.read(planningEntriesProvider(a).future);
+    await c.read(planningEntriesProvider(a).notifier).loadMore();
+    final s = c.read(planningEntriesProvider(a)).requireValue;
+    expect(s.entries.map((e) => e.id), ['e1', 'e2']);
+    expect(s.hasMore, isFalse);
+    expect(gateway.callsTo('list_planning_entries').last['p_cursor_id'], 'e1');
+  });
+
+  group('outbox ordering (final review I2)', () {
+    test('offline tick, then online untick: the untick queues behind the tick and wins', () async {
+      final ctl = await ready();
+      gateway.handlers['set_planning_block_item_checked'] = (_) => throw Exception('offline');
+      final item = current().blocks.first.items.first;
+      expect(await ctl.setChecked('b1', item, true), TickOutcome.queued);
+
+      final applied = <bool>[];
+      gateway.handlers['set_planning_block_item_checked'] = (p) {
+        applied.add(p['p_checked'] as bool);
+        return fakeItemJson(id: 'i1', text: 'Tomatoes', checkedAt: (p['p_checked'] as bool) ? '2026-10-12T09:00:00Z' : null);
+      };
+      expect(await ctl.setChecked('b1', current().blocks.first.items.first, false), TickOutcome.queued,
+          reason: 'never jump ahead of an older queued op for the same entry');
+      await c.read(planningOutboxProvider).replay();
+      expect(applied, [true, false], reason: 'server sees the user\'s actions in the order they made them');
+      expect(store.raw, isEmpty);
+      c.invalidate(planningEntryProvider(args));
+      await c.read(planningEntryProvider(args).future);
+    });
+
+    test('offline add, then online tick of that item: tick waits for the add, no false "removed"', () async {
+      final ctl = await ready();
+      gateway.handlers['add_planning_block_item'] = (_) => throw Exception('offline');
+      expect(await ctl.addItem('b1', 'Bread'), TickOutcome.queued);
+      final bread = current().blocks.first.items.last;
+
+      final order = <String>[];
+      gateway.handlers['add_planning_block_item'] = (p) {
+        order.add('add');
+        return fakeItemJson(id: p['p_id'] as String, text: 'Bread');
+      };
+      gateway.handlers['set_planning_block_item_checked'] = (p) {
+        order.add('tick');
+        return fakeItemJson(id: p['p_id'] as String, text: 'Bread', checkedAt: '2026-10-12T09:00:00Z');
+      };
+      expect(await ctl.setChecked('b1', bread, true), TickOutcome.queued);
+      await c.read(planningOutboxProvider).replay();
+      expect(order, ['add', 'tick']);
+      expect(current().blocks.first.items.last.isChecked, isTrue);
+    });
+
+    test('a change signal on the HOME screen replays queued ops (sync after reconnect)', () async {
+      final signal = StreamController<void>.broadcast();
+      addTearDown(signal.close);
+      final store2 = MemoryOutboxStore()
+        ..raw = [
+          {'kind': 'check', 'op_id': 'op-1', 'relationship_id': 'r1', 'entry_id': 'e1', 'item_id': 'i1', 'checked': true}
+        ];
+      final g2 = FakePlanningGateway({
+        'get_planning_home': (_) => {'categories': []},
+        'set_planning_block_item_checked': (p) => fakeItemJson(id: 'i1', checkedAt: '2026-10-12T09:00:00Z'),
+      });
+      final c2 = ProviderContainer(overrides: [
+        ...planningOverrides(g2, store: store2),
+        planningChangeSignalProvider.overrideWith((ref, id) => signal.stream),
       ]);
-      addTearDown(pager.dispose);
+      addTearDown(c2.dispose);
+      c2.listen(planningHomeProvider('r1'), (_, __) {});
+      await c2.read(planningHomeProvider('r1').future);
+      signal.add(null);
+      // Only the signal may trigger the replay: the test never calls replay().
+      for (var i = 0; i < 50 && store2.raw.isNotEmpty; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(g2.callsTo('set_planning_block_item_checked'), hasLength(1));
+      expect(store2.raw, isEmpty);
+    });
+  });
 
-      // Let the constructor's own unawaited initial refresh() settle
-      // first, so the epoch bump below belongs to the SECOND fetch
-      // this test drives explicitly.
-      initialFetch.complete([_task('initial')]);
-      await Future<void>.delayed(Duration.zero);
+  group('entries list: pin, delete, undo', () {
+    Map<String, dynamic> s(String id, {bool pinned = false}) => {
+          'id': id, 'title': 'T$id', 'status': 'active', 'last_activity_at': '2026-10-12T09:00:00Z',
+          'pinned': pinned, 'date_start': null, 'date_end': null, 'checklist_done': 0, 'checklist_total': 0,
+        };
+    const a = (relationshipId: 'r1', categoryId: 'c1', group: 'open');
 
-      // Start a refresh(); its do-while loop bumps _epoch and is now
-      // suspended awaiting staleFetch. Simulate a concurrency bug that
-      // lets _epoch advance again WHILE this fetch is still pending —
-      // something no real call sequence can do today (see this test's
-      // description), but exactly what refresh()'s own guard exists to
-      // protect against if the loop's serialization invariant is ever
-      // broken.
-      final refreshFuture = pager.refresh();
-      await Future<void>.delayed(Duration.zero);
-      pager.debugBumpEpochForTest();
+    Future<PlanningEntriesController> entries() async {
+      c.listen(planningEntriesProvider(a), (_, __) {});
+      await c.read(planningEntriesProvider(a).future);
+      return c.read(planningEntriesProvider(a).notifier);
+    }
 
-      staleFetch.complete([_task('stale-should-be-discarded')]);
-      await refreshFuture;
-      await Future<void>.delayed(Duration.zero);
+    PlanningEntriesState st() => c.read(planningEntriesProvider(a)).requireValue;
 
-      expect(
-        pager.state.value?.map((t) => t.id),
-        isNot(contains('stale-should-be-discarded')),
-        reason:
-            "refresh()'s own epoch check must discard a fetch whose "
-            "epoch no longer matches _epoch, exactly like loadMore()'s "
-            'already-tested guard does',
-      );
-      // The discarded fetch leaves the pager on whatever it last set
-      // synchronously before awaiting (AsyncValue.loading) rather than
-      // reverting to the pre-refresh "initial" state or advancing to
-      // the stale result — either of those would also mean the guard
-      // let stale data through in some form.
-      expect(pager.state, isA<AsyncLoading<List<PlanningTaskModel>>>());
-    },
-  );
+    test('pin moves a plan into the pinned group at once; unpin moves it back', () async {
+      gateway.handlers['list_planning_entries'] = (_) => {'entries': [s('1'), s('2')], 'pinned': [], 'next_cursor': null};
+      gateway.handlers['pin_planning_entry'] = (p) => {
+            'entry': {...fakeEntryDetailJson(id: p['p_id'] as String)['entry'] as Map,
+                      'pinned_at': (p['p_pinned'] as bool) ? '2026-10-12T09:00:00Z' : null}
+          };
+      final ctl = await entries();
+      await ctl.togglePin(st().entries.first);
+      expect(st().pinned.map((e) => e.id), ['1']);
+      expect(st().entries.map((e) => e.id), ['2']);
+      expect(gateway.callsTo('pin_planning_entry').last, {'p_id': '1', 'p_pinned': true});
+      await ctl.togglePin(st().pinned.first);
+      expect(st().pinned, isEmpty);
+      expect(st().entries.map((e) => e.id).toSet(), {'1', '2'});
+    });
 
-  test(
-    'a late fetch from a superseded loadMore does not overwrite a newer '
-    'refresh — the epoch guard Stories shipped without, twice '
-    '(Stories F2: "Worse during loadMore: ... a signal landing mid-'
-    'loadMore produced two interleaved walks")',
-    () async {
-      final initialLoad = Completer<dynamic>();
-      final loadMoreCompleter = Completer<dynamic>();
-      final refreshCompleter = Completer<dynamic>();
+    test('a refused pin (limit) puts the plan back where it was', () async {
+      gateway.handlers['list_planning_entries'] = (_) => {'entries': [s('1')], 'pinned': [], 'next_cursor': null};
+      gateway.handlers['pin_planning_entry'] = (_) => throw const PostgrestException(
+          message: 'planning:limit_reached', code: 'P0001', hint: '{"limit":"pinned_per_category"}');
+      final ctl = await entries();
+      await expectLater(ctl.togglePin(st().entries.first), throwsA(isA<PlanningLimitReached>()));
+      expect(st().pinned, isEmpty);
+      expect(st().entries.map((e) => e.id), ['1']);
+    });
 
-      final container = ProviderContainer(
-        overrides: [
-          planningRepositoryProvider.overrideWithValue(
-            PlanningRepository(
-              _SlowRpcGateway([
-                () => initialLoad.future,
-                () => loadMoreCompleter.future,
-                () => refreshCompleter.future,
-              ]),
-            ),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
+    // Review I2: list edits must apply to the CURRENT list, not a snapshot
+    // taken before an in-flight page load or another action.
+    test('deleting a plan while the next page loads does not bring it back', () async {
+      final page2 = Completer<Map<String, dynamic>>();
+      var call = 0;
+      gateway.handlers['list_planning_entries'] = (_) => ++call == 1
+          ? {'entries': [s('1'), s('2')], 'pinned': [], 'next_cursor': {'at': '2026-10-12T09:00:00Z', 'id': '2'}}
+          : page2.future;
+      gateway.handlers['delete_planning_entry'] = (_) => {'deleted': true};
+      final ctl = await entries();
+      final loading = ctl.loadMore();
+      await ctl.delete(st().entries.first);
+      page2.complete({'entries': [s('3')], 'pinned': [], 'next_cursor': null});
+      await loading;
+      expect(st().entries.map((e) => e.id), ['2', '3']);
+    });
 
-      // Reading .notifier triggers PlanningKeysetPager's constructor,
-      // which kicks off its own initial refresh() (unawaited) — that
-      // consumes the FIRST fake response. Resolve it out of the way
-      // before driving the loadMore()/refresh() race this test
-      // actually cares about, so the response list lines up with call
-      // order.
-      // .autoDispose tears the notifier down once nothing is listening
-      // to it — keep a listener alive for the duration of this test,
-      // the same as a screen's own `ref.watch` would.
-      container.listen(planningTasksProvider('r1'), (_, __) {});
-      final notifier = container.read(planningTasksProvider('r1').notifier);
-      initialLoad.complete(_rowsFor([_task('from-initial-load')]));
-      await Future<void>.delayed(Duration.zero);
+    test('pinning while the next page loads does not fetch that page twice', () async {
+      final page2 = Completer<Map<String, dynamic>>();
+      var call = 0;
+      gateway.handlers['list_planning_entries'] = (_) => ++call == 1
+          ? {'entries': [s('1'), s('2')], 'pinned': [], 'next_cursor': {'at': '2026-10-12T09:00:00Z', 'id': '2'}}
+          : page2.future;
+      gateway.handlers['pin_planning_entry'] = (p) => {
+            'entry': {...fakeEntryDetailJson(id: p['p_id'] as String)['entry'] as Map, 'pinned_at': '2026-10-12T09:00:00Z'}
+          };
+      final ctl = await entries();
+      final loading = ctl.loadMore();
+      await ctl.togglePin(st().entries.first);
+      expect(st().loadingMore, isTrue, reason: 'an unrelated action must not clear the in-flight flag');
+      await ctl.loadMore(); // e.g. the scroll listener firing again
+      expect(gateway.callsTo('list_planning_entries'), hasLength(2));
+      page2.complete({'entries': [s('3')], 'pinned': [], 'next_cursor': null});
+      await loading;
+      expect(st().entries.map((e) => e.id), ['2', '3']);
+      expect(st().pinned.map((e) => e.id), ['1']);
+    });
 
-      // loadMore() captures _epoch WITHOUT bumping it, so it must be
-      // supersedable by a refresh() that starts (and finishes) while
-      // it's still in flight — even though loadMore's own fetch
-      // resolves AFTER the refresh's.
-      final loadMoreFuture = notifier.loadMore();
-      final refreshFuture = notifier.refresh();
+    test('a plan unpinned before the next page loads is listed once, not twice', () async {
+      var call = 0;
+      gateway.handlers['list_planning_entries'] = (_) => ++call == 1
+          ? {'entries': [s('1')], 'pinned': [s('old', pinned: true)], 'next_cursor': {'at': '2026-10-12T09:00:00Z', 'id': '1'}}
+          : {'entries': [s('old'), s('2')], 'pinned': [], 'next_cursor': null};
+      gateway.handlers['pin_planning_entry'] = (p) => {'entry': fakeEntryDetailJson(id: p['p_id'] as String)['entry']};
+      final ctl = await entries();
+      await ctl.togglePin(st().pinned.single);
+      await ctl.loadMore();
+      expect(st().entries.where((e) => e.id == 'old'), hasLength(1));
+      expect(st().entries.map((e) => e.id).toSet(), {'1', 'old', '2'});
+    });
 
-      refreshCompleter.complete(_rowsFor([_task('from-refresh')]));
-      await refreshFuture;
-      loadMoreCompleter.complete(_rowsFor([_task('from-stale-load-more')]));
-      await loadMoreFuture;
-      await Future<void>.delayed(Duration.zero);
+    test('a refused pin puts back only that plan, not a delete made meanwhile', () async {
+      final pinReply = Completer<Map<String, dynamic>>();
+      gateway.handlers['list_planning_entries'] = (_) => {'entries': [s('A'), s('B')], 'pinned': [], 'next_cursor': null};
+      gateway.handlers['pin_planning_entry'] = (_) => pinReply.future;
+      gateway.handlers['delete_planning_entry'] = (_) => {'deleted': true};
+      final ctl = await entries();
+      final pinning = ctl.togglePin(st().entries.first);
+      await ctl.delete(st().entries.firstWhere((e) => e.id == 'B'));
+      pinReply.completeError(const PostgrestException(
+          message: 'planning:limit_reached', code: 'P0001', hint: '{"limit":"pinned_per_category"}'));
+      await expectLater(pinning, throwsA(isA<PlanningLimitReached>()));
+      expect(st().entries.map((e) => e.id), ['A'], reason: 'B was really deleted');
+      expect(st().pinned, isEmpty);
+    });
 
-      final state = container.read(planningTasksProvider('r1'));
-      expect(
-        state.value?.map((t) => t.id),
-        ['from-refresh'],
-        reason:
-            'the stale loadMore must not have appended onto or replaced '
-            "the newer refresh's result",
-      );
-    },
-  );
-
-  test(
-    'disposing the provider while a refresh is in flight does not throw '
-    'when that refresh later completes',
-    () async {
-      final initialLoad = Completer<dynamic>();
-      final completer = Completer<dynamic>();
-      final container = ProviderContainer(
-        overrides: [
-          planningRepositoryProvider.overrideWithValue(
-            PlanningRepository(
-              _SlowRpcGateway([
-                () => initialLoad.future,
-                () => completer.future,
-              ]),
-            ),
-          ),
-        ],
-      );
-
-      // Resolve the constructor's own initial refresh() first, same
-      // reasoning as the test above.
-      final notifier = container.read(planningTasksProvider('r1').notifier);
-      initialLoad.complete(_rowsFor([_task('from-initial-load')]));
-      await Future<void>.delayed(Duration.zero);
-
-      unawaited(notifier.refresh());
-      container.dispose(); // dispose WHILE the refresh is still pending
-
-      completer.complete(_rowsFor([_task('t1')]));
-      // Must not throw "Bad state: Tried to use ... after `dispose`".
-      await Future<void>.delayed(Duration.zero);
-    },
-  );
-
-  test(
-    'a calendar-range .family key compares equal for two DateTimes built '
-    'a moment apart — the exact leak Stories shipped (fix round 1, '
-    'finding 6) must not recur here',
-    () {
-      final keyA = PlanningCalendarRangeKey(
-        relationshipId: 'r1',
-        startDate: DateTime(2026, 6, 1, 10, 0, 0),
-        endDate: DateTime(2026, 6, 30, 10, 0, 1), // one second later
-      );
-      final keyB = PlanningCalendarRangeKey(
-        relationshipId: 'r1',
-        startDate: DateTime(2026, 6, 1, 15, 30, 0), // different time, same DAY
-        endDate: DateTime(2026, 6, 30, 9, 0, 0),
-      );
-      expect(
-        keyA,
-        keyB,
-        reason:
-            'two ranges naming the same calendar days must compare equal '
-            'regardless of time-of-day, or every rebuild mints a new '
-            '.family instance and leaks a Realtime subscription',
-      );
-      expect(keyA.hashCode, keyB.hashCode);
-    },
-  );
+    test('delete removes the plan at once; undo restores it', () async {
+      var deleted = false;
+      gateway.handlers['list_planning_entries'] =
+          (_) => {'entries': [if (!deleted) s('1'), s('2')], 'pinned': [], 'next_cursor': null};
+      gateway.handlers['delete_planning_entry'] = (_) {
+        deleted = true;
+        return {'deleted': true};
+      };
+      gateway.handlers['restore_planning_entry'] = (_) {
+        deleted = false;
+        return {'entry': fakeEntryDetailJson(id: '1')['entry']};
+      };
+      final ctl = await entries();
+      await ctl.delete(st().entries.first);
+      expect(st().entries.map((e) => e.id), ['2']);
+      await ctl.restore('1');
+      await c.read(planningEntriesProvider(a).future);
+      expect(st().entries.map((e) => e.id), ['1', '2']);
+    });
+  });
 }

@@ -1,164 +1,202 @@
-// Repository-level tests exercise error MAPPING, not live RPC behavior
-// (Plan A's own SQL contract tests already prove the RPCs correct).
-// A fake SupabaseClient stand-in is not practical for `.rpc()` calls
-// against the real generic PostgREST builder (the same reasoning
-// story_repository_test.dart gives for faking its own gateway
-// interface instead) — so this repository takes an injected gateway
-// interface, and these tests fake THAT, not SupabaseClient itself.
-import 'package:attune/features/planning/data/repositories/planning_error.dart';
-import 'package:attune/features/planning/data/repositories/planning_repository.dart';
+import 'package:attune/features/planning/data/planning_error.dart';
+import 'package:attune/features/planning/data/planning_models.dart';
+import 'package:attune/features/planning/data/planning_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class _FakeRpcGateway implements PlanningRpcGateway {
-  Object? nextError;
-  dynamic nextResult;
-  String? lastCalledFunction;
-  Map<String, dynamic>? lastCalledParams;
+import 'support/fake_planning_gateway.dart';
 
-  @override
-  Future<dynamic> rpc(String function, {Map<String, dynamic>? params}) async {
-    lastCalledFunction = function;
-    lastCalledParams = params;
-    if (nextError != null) throw nextError!;
-    return nextResult;
-  }
-}
+PostgrestException _planning(String code, [String hint = '{}']) =>
+    PostgrestException(message: 'planning:$code', code: 'P0001', hint: hint);
 
 void main() {
-  late _FakeRpcGateway gateway;
-  late PlanningRepository repository;
+  late FakePlanningGateway gateway;
+  late PlanningRepository repo;
 
   setUp(() {
-    gateway = _FakeRpcGateway();
-    repository = PlanningRepository(gateway);
+    gateway = FakePlanningGateway();
+    repo = PlanningRepository(gateway);
   });
 
-  test('createTask calls create_planning_task with the exact param names', () async {
-    gateway.nextResult = {
-      'id': 't1', 'relationship_id': 'r1', 'created_by': 'u1',
-      'item_kind': 'task', 'parent_goal_id': null, 'title': 'Book the venue',
-      'note': null, 'assigned_to': null, 'due_date': null,
-      'completed_at': null, 'celebrated_at': null,
-      'created_at': '2026-09-14T09:00:00Z', 'updated_at': '2026-09-14T09:00:00Z',
-      'deleted_at': null,
-    };
-    await repository.createTask(
-      id: 't1', relationshipId: 'r1', title: 'Book the venue',
-    );
-    expect(gateway.lastCalledFunction, 'create_planning_task');
-    expect(gateway.lastCalledParams, containsPair('p_id', 't1'));
-    expect(gateway.lastCalledParams, containsPair('p_relationship_id', 'r1'));
-    expect(gateway.lastCalledParams, containsPair('p_title', 'Book the venue'));
-  });
-
-  test('a PostgrestException with code 42501 maps to PlanningError.unauthorized', () async {
-    gateway.nextError = PostgrestException(message: 'permission denied', code: '42501');
-    await expectLater(
-      repository.createTask(id: 't1', relationshipId: 'r1', title: 'x'),
-      throwsA(isA<PlanningError>().having(
-        (e) => e, 'error', isA<PlanningUnauthorizedError>(),
-      )),
-    );
-  });
-
-  test('"Planning unavailable" and "Not authenticated" P0001 messages also map to unauthorized, not validation', () async {
-    for (final message in ['Planning unavailable', 'Not authenticated']) {
-      gateway.nextError = PostgrestException(message: message, code: 'P0001');
-      await expectLater(
-        repository.deleteItem(id: 't1'),
-        throwsA(isA<PlanningError>().having(
-          (e) => e, 'error', isA<PlanningUnauthorizedError>(),
-        )),
-        reason: 'message "$message" must map to unauthorized',
-      );
+  group('error mapping', () {
+    Future<PlanningError> errorFor(Object thrown) async {
+      gateway.handlers['get_planning_entry'] = (_) => throw thrown;
+      try {
+        await repo.getEntry('e1');
+      } on PlanningError catch (e) {
+        return e;
+      }
+      fail('expected a PlanningError');
     }
+
+    test('not_found', () async {
+      expect(await errorFor(_planning('not_found')), isA<PlanningNotFound>());
+    });
+    test('inactive is unauthorized(inactive: true)', () async {
+      final e = await errorFor(_planning('inactive'));
+      expect(e, isA<PlanningUnauthorized>());
+      expect((e as PlanningUnauthorized).inactive, isTrue);
+    });
+    test('unauthenticated is unauthorized(inactive: false)', () async {
+      final e = await errorFor(_planning('unauthenticated'));
+      expect((e as PlanningUnauthorized).inactive, isFalse);
+    });
+    test('stale_version carries the current row from HINT', () async {
+      final e = await errorFor(_planning('stale_version',
+          '{"current":{"id":"b1","version":3}}'));
+      expect((e as PlanningStaleVersion).current['version'], 3);
+    });
+    test('limit_reached names the limit', () async {
+      final e = await errorFor(_planning('limit_reached', '{"limit":"items_per_block"}'));
+      expect((e as PlanningLimitReached).limit, 'items_per_block');
+    });
+    test('invalid_input names the field', () async {
+      final e = await errorFor(_planning('invalid_input', '{"field":"title"}'));
+      expect((e as PlanningInvalidInput).field, 'title');
+    });
+    test('malformed HINT does not crash mapping', () async {
+      final e = await errorFor(_planning('limit_reached', 'not json'));
+      expect((e as PlanningLimitReached).limit, 'unknown');
+    });
+    test('42501 is unauthorized', () async {
+      final e = await errorFor(const PostgrestException(message: 'denied', code: '42501'));
+      expect(e, isA<PlanningUnauthorized>());
+    });
+    test('integrity violations are permanent invalid input, not network', () async {
+      final e = await errorFor(const PostgrestException(message: 'check', code: '23514'));
+      expect(e, isA<PlanningInvalidInput>());
+      expect(e.isPermanent, isTrue);
+    });
+    test('anything else is network and retryable', () async {
+      final e = await errorFor(Exception('socket closed'));
+      expect(e, isA<PlanningNetwork>());
+      expect(e.isPermanent, isFalse);
+    });
+    test('every error has a non-empty, internals-free message', () {
+      const all = <PlanningError>[
+        PlanningUnauthorized(inactive: true), PlanningUnauthorized(inactive: false),
+        PlanningNotFound(), PlanningStaleVersion({}),
+        PlanningLimitReached('blocks_per_entry'), PlanningLimitReached('pinned_per_category'),
+        PlanningLimitReached('zzz'),
+        PlanningInvalidInput('title'), PlanningInvalidInput('zzz'), PlanningNetwork('x'),
+      ];
+      for (final e in all) {
+        final m = planningErrorMessage(e);
+        expect(m, isNotEmpty);
+        expect(m, isNot(contains('planning:')));
+        expect(m, isNot(contains('_')));
+      }
+    });
   });
 
-  test('the sole-child-delete rejection maps to PlanningError.validation, not a generic error', () async {
-    gateway.nextError = PostgrestException(
-      message: 'Delete the goal instead, or add another task first',
-      code: 'P0001',
-    );
-    await expectLater(
-      repository.deleteItem(id: 't1'),
-      throwsA(isA<PlanningError>().having(
-        (e) => e, 'error', isA<PlanningValidationError>().having(
-          (e) => e.message, 'message', contains('Delete the goal instead'),
-        ),
-      )),
-    );
+  group('RPC names and parameters', () {
+    test('getHome', () async {
+      gateway.handlers['get_planning_home'] = (_) => {
+            'categories': [fakeCategoryJson(id: 'c1', seedKey: 'groceries', hasNew: true)]
+          };
+      final cats = await repo.getHome('r1');
+      expect(gateway.calls.single.$2, {'p_relationship_id': 'r1'});
+      expect(cats.single.hasNew, isTrue);
+      expect(cats.single.isStarter, isTrue);
+    });
+
+    test('listEntries passes group, cursor and limit', () async {
+      gateway.handlers['list_planning_entries'] = (_) => {
+            'entries': [
+              {'id': 'e1', 'title': 'A', 'status': 'active',
+               'last_activity_at': '2026-10-12T09:00:00Z', 'date_start': '2026-11-01',
+               'date_end': null, 'checklist_done': 1, 'checklist_total': 4}
+            ],
+            'next_cursor': {'at': '2026-10-12T09:00:00Z', 'id': 'e1'},
+          };
+      final page = await repo.listEntries('c1',
+          group: 'closed', cursorAt: DateTime.utc(2026, 10, 13), cursorId: 'e9', limit: 30);
+      expect(gateway.calls.single.$2, {
+        'p_category_id': 'c1', 'p_group': 'closed',
+        'p_cursor_at': '2026-10-13T00:00:00.000Z', 'p_cursor_id': 'e9', 'p_limit': 30,
+      });
+      expect(page.hasMore, isTrue);
+      expect(page.entries.single.checklistTotal, 4);
+      expect(page.entries.single.dateStart, DateTime(2026, 11, 1));
+    });
+
+    test('createEntry', () async {
+      gateway.handlers['create_planning_entry'] = (_) => fakeEntryDetailJson();
+      await repo.createEntry(id: 'e1', categoryId: 'c1', title: 'Run', useTemplate: true, currency: 'GHS');
+      expect(gateway.calls.single.$2, {
+        'p_id': 'e1', 'p_category_id': 'c1', 'p_title': 'Run',
+        'p_use_template': true, 'p_currency': 'GHS',
+      });
+    });
+
+    test('addBlock sends wire type and ymd dates', () async {
+      gateway.handlers['add_planning_block'] = (_) => fakeBlockJson(id: 'b1', type: 'date', dateStart: '2026-11-01');
+      await repo.addBlock(id: 'b1', entryId: 'e1', type: PlanningBlockType.date,
+          payload: const {}, dateStart: DateTime(2026, 11, 1), afterId: 'b0');
+      expect(gateway.calls.single.$2, {
+        'p_id': 'b1', 'p_entry_id': 'e1', 'p_block_type': 'date', 'p_payload': <String, dynamic>{},
+        'p_date_start': '2026-11-01', 'p_date_end': null, 'p_after_id': 'b0',
+      });
+    });
+
+    test('updateBlock sends version', () async {
+      gateway.handlers['update_planning_block'] = (_) => fakeBlockJson(id: 'b1', version: 4);
+      final b = await repo.updateBlock(id: 'b1', version: 3, payload: const {'title': 'x'});
+      expect(gateway.calls.single.$2['p_version'], 3);
+      expect(b.version, 4);
+    });
+
+    test('setItemChecked sends op id', () async {
+      gateway.handlers['set_planning_block_item_checked'] = (_) => fakeItemJson(id: 'i1', checkedAt: '2026-10-12T09:00:00Z');
+      final item = await repo.setItemChecked(id: 'i1', checked: true, opId: 'op1');
+      expect(gateway.calls.single.$2, {'p_id': 'i1', 'p_checked': true, 'p_op_id': 'op1'});
+      expect(item.isChecked, isTrue);
+    });
   });
 
-  test('a network-shaped failure maps to PlanningError.network, not unauthorized', () async {
-    gateway.nextError = const SocketExceptionStub();
-    await expectLater(
-      repository.createTask(id: 't1', relationshipId: 'r1', title: 'x'),
-      throwsA(isA<PlanningError>().having(
-        (e) => e, 'error', isA<PlanningNetworkError>(),
-      )),
-    );
+  test('pinEntry and restoreEntry call their RPCs with the exact params', () async {
+    gateway.handlers['pin_planning_entry'] = (_) => {'entry': fakeEntryDetailJson(pinnedAt: '2026-10-12T09:00:00Z')['entry']};
+    gateway.handlers['restore_planning_entry'] = (_) => {'entry': fakeEntryDetailJson()['entry']};
+    final pinned = await repo.pinEntry('e1', pinned: true);
+    await repo.restoreEntry('e1');
+    expect(gateway.calls.map((c) => c.$1), ['pin_planning_entry', 'restore_planning_entry']);
+    expect(gateway.calls.first.$2, {'p_id': 'e1', 'p_pinned': true});
+    expect(gateway.calls.last.$2, {'p_id': 'e1'});
+    expect(pinned.isPinned, isTrue);
   });
 
-  test('listTasks passes all four of the RPC cursor parameters by exact name', () async {
-    gateway.nextResult = <dynamic>[];
-    final afterDueDate = DateTime.utc(2026, 12, 1);
-    final afterUpdatedAt = DateTime.utc(2026, 9, 14, 9);
-    await repository.listTasks(
-      relationshipId: 'r1',
-      afterDueDate: afterDueDate,
-      afterUpdatedAt: afterUpdatedAt,
-      afterId: 't1',
-    );
-    expect(gateway.lastCalledFunction, 'list_planning_tasks');
-    // The RPC's cursor is a 4-branch OR-chain keyed on
-    // (completed_at IS NOT NULL, due_date, updated_at, id) — a caller
-    // that only forwards updated_at/id (the naive last-row values for
-    // a single-key sort) silently breaks pagination the moment two
-    // rows tie on updated_at across a due_date/completion boundary.
-    // This asserts every one of the four names the RPC signature
-    // declares is actually sent, not just the two that happen to work
-    // by accident on an untied fixture.
-    expect(gateway.lastCalledParams, containsPair('p_relationship_id', 'r1'));
-    expect(gateway.lastCalledParams, containsPair('p_after_due_date', '2026-12-01'));
-    expect(
-      gateway.lastCalledParams,
-      containsPair('p_after_updated_at', afterUpdatedAt.toIso8601String()),
-    );
-    expect(gateway.lastCalledParams, containsPair('p_after_id', 't1'));
+  test('the pin limit has its own message, not "make it shorter" (review m2)', () {
+    expect(planningErrorMessage(const PlanningLimitReached('pinned_per_category')),
+        'You can pin up to 20 plans here. Unpin one to pin this.');
   });
 
-  test('deleteItem calls delete_planning_item with p_id and returns the bool result', () async {
-    gateway.nextResult = true;
-    final result = await repository.deleteItem(id: 't1');
-    expect(result, isTrue);
-    expect(gateway.lastCalledFunction, 'delete_planning_item');
-    expect(gateway.lastCalledParams, {'p_id': 't1'});
-  });
+  group('feeds (calendar, summary)', () {
+    test('listCalendarEntries sends the range as dates and parses rows', () async {
+      gateway.handlers['list_planning_calendar_entries'] = (_) => [
+            {'entry_kind': 'date', 'entry_id': 'e1', 'item_id': null, 'entry_date': '2026-11-28',
+             'title': 'Bali', 'is_complete': false},
+            {'entry_kind': 'item', 'entry_id': 'e2', 'item_id': 'i1', 'entry_date': '2026-11-05',
+             'title': 'Milk', 'is_complete': true},
+          ];
+      final rows = await repo.listCalendarEntries('r1', start: DateTime(2026, 11, 1), end: DateTime(2026, 11, 30));
+      expect(gateway.calls.single.$2,
+          {'p_relationship_id': 'r1', 'p_start_date': '2026-11-01', 'p_end_date': '2026-11-30'});
+      expect(rows.first.kind, PlanningCalendarKind.date);
+      expect(rows.last.itemId, 'i1');
+      expect(rows.last.isComplete, isTrue);
+      expect(rows.last.date, DateTime(2026, 11, 5));
+    });
 
-  test('getSummary returns null on an empty result set rather than throwing', () async {
-    gateway.nextResult = <dynamic>[];
-    final summary = await repository.getSummary(
-      relationshipId: 'r1',
-      today: DateTime.utc(2026, 9, 14),
-    );
-    expect(summary, isNull);
+    test('getSummary is null when nothing is planned, and parses a row otherwise', () async {
+      gateway.handlers['get_planning_summary'] = (_) => [];
+      expect(await repo.getSummary('r1', today: DateTime(2026, 11, 10)), isNull);
+      expect(gateway.calls.single.$2, {'p_relationship_id': 'r1', 'p_today': '2026-11-10'});
+      gateway.handlers['get_planning_summary'] =
+          (_) => [{'kind': 'overdue', 'entry_id': 'e2', 'title': 'Eggs', 'context_date': '2026-11-08'}];
+      final s = await repo.getSummary('r1', today: DateTime(2026, 11, 10));
+      expect(s!.kind, PlanningSummaryKind.overdue);
+      expect(s.entryId, 'e2');
+      expect(s.contextDate, DateTime(2026, 11, 8));
+    });
   });
-
-  test('getSummary parses the single row the RPC returns', () async {
-    gateway.nextResult = [
-      {'kind': 'overdue_task', 'id': 't1', 'title': 'Book the venue', 'context_date': '2026-09-01'},
-    ];
-    final summary = await repository.getSummary(
-      relationshipId: 'r1',
-      today: DateTime.utc(2026, 9, 14),
-    );
-    expect(summary, isNotNull);
-    expect(summary!.kind, 'overdue_task');
-    expect(summary.contextDate, DateTime.utc(2026, 9, 1));
-  });
-}
-
-class SocketExceptionStub implements Exception {
-  const SocketExceptionStub();
 }

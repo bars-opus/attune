@@ -15,8 +15,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../chat/domain/entities/message.dart';
-import '../../../planning/v2/presentation/planning_v2_ui.dart' show planningV2Route;
-import '../../../planning/v2/presentation/screens/planning_v2_entry_screen.dart';
+import '../../../planning/presentation/planning_ui.dart' show planningRoute;
+import '../../../planning/presentation/screens/planning_entry_screen.dart';
 import '../../data/models/assist_draft_model.dart';
 import '../../data/models/place_source_model.dart';
 import '../providers/ai_assistant_providers.dart';
@@ -236,8 +236,8 @@ class _AddToPlanningAffordance extends ConsumerWidget {
           final color = Theme.of(context).colorScheme.onSecondaryContainer;
           // Opens the plan the suggestion became (spec §16).
           return InkWell(
-            onTap: () => Navigator.of(context).push(planningV2Route(
-                PlanningV2EntryScreen(relationshipId: message.relationshipId, entryId: link.entryId))),
+            onTap: () => Navigator.of(context).push(planningRoute(
+                PlanningEntryScreen(relationshipId: message.relationshipId, entryId: link.entryId))),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: Row(
