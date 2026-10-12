@@ -1,16 +1,18 @@
 // lib/features/timeline/presentation/widgets/planning_day_section.dart
 import 'package:flutter/material.dart';
 
-import '../../../planning/data/models/planning_calendar_entry_model.dart';
+import '../../../planning/v2/data/planning_v2_models.dart';
+import '../../../planning/v2/presentation/planning_v2_ui.dart';
+import '../../../planning/v2/presentation/screens/planning_v2_entry_screen.dart';
 
 /// Planning's own rendering for the Timeline screen's selected-day area
-/// — never coerced into TimelineEventModel (spec §7's explicit rule:
-/// that would need fake loggedBy/eventType/moodScore/occurredAt
-/// values). Sits BESIDE the existing moments/reminders rendering for
-/// that day, not merged into either.
+/// — never coerced into TimelineEventModel (that would need fake
+/// loggedBy/eventType/moodScore/occurredAt values). Sits BESIDE the
+/// existing moments/reminders rendering for that day. A tap opens the plan.
 class PlanningDaySection extends StatelessWidget {
-  const PlanningDaySection({super.key, required this.entries});
-  final List<PlanningCalendarEntryModel> entries;
+  const PlanningDaySection({super.key, required this.relationshipId, required this.entries});
+  final String relationshipId;
+  final List<PlanningCalendarEntry> entries;
 
   @override
   Widget build(BuildContext context) {
@@ -24,20 +26,18 @@ class PlanningDaySection extends StatelessWidget {
           ListTile(
             dense: true,
             leading: Icon(
-              entry.kind == PlanningCalendarEntryKind.event
-                  ? Icons.event_outlined
-                  : Icons.check_box_outlined,
+              entry.kind == PlanningCalendarKind.date ? Icons.event_outlined : Icons.check_box_outlined,
               color: colorScheme.onSurfaceVariant,
             ),
             title: Text(
               entry.title,
               style: entry.isComplete
-                  ? TextStyle(
-                      decoration: TextDecoration.lineThrough,
-                      color: colorScheme.onSurfaceVariant,
-                    )
+                  ? TextStyle(decoration: TextDecoration.lineThrough, color: colorScheme.onSurfaceVariant)
                   : null,
             ),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(planningV2Route(
+                PlanningV2EntryScreen(relationshipId: relationshipId, entryId: entry.entryId))),
           ),
       ],
     );

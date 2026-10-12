@@ -21,7 +21,7 @@ class PlanningV2Repository {
     'move_planning_block', 'add_planning_block_item', 'update_planning_block_item',
     'set_planning_block_item_checked', 'delete_planning_block_item',
     'restore_planning_block_item', 'move_planning_block_item', 'pin_planning_entry',
-    'restore_planning_entry',
+    'restore_planning_entry', 'list_planning_calendar_entries', 'get_planning_summary',
   };
 
   Future<Map<String, dynamic>> _call(String fn, Map<String, dynamic> params) async {
@@ -32,6 +32,37 @@ class PlanningV2Repository {
     } catch (e) {
       throw mapPlanningV2Error(e);
     }
+  }
+
+  /// For RPCs that return a set of rows (`RETURNS TABLE`).
+  Future<List<Map<String, dynamic>>> _callRows(String fn, Map<String, dynamic> params) async {
+    assert(rpcNames.contains(fn), '$fn missing from rpcNames');
+    try {
+      final result = await _gateway.rpc(fn, params: params);
+      return [for (final r in (result as List? ?? const [])) Map<String, dynamic>.from(r as Map)];
+    } catch (e) {
+      throw mapPlanningV2Error(e);
+    }
+  }
+
+  // ---- feeds ----
+
+  /// The shared calendar for [start]..[end] (at most 42 days).
+  Future<List<PlanningCalendarEntry>> listCalendarEntries(String relationshipId,
+      {required DateTime start, required DateTime end}) async => [
+        for (final r in await _callRows('list_planning_calendar_entries', {
+          'p_relationship_id': relationshipId,
+          'p_start_date': planningYmd(start),
+          'p_end_date': planningYmd(end),
+        }))
+          PlanningCalendarEntry.fromJson(r)
+      ];
+
+  /// The Conversations card's line, or null when nothing is planned yet.
+  Future<PlanningSummary?> getSummary(String relationshipId, {required DateTime today}) async {
+    final rows = await _callRows(
+        'get_planning_summary', {'p_relationship_id': relationshipId, 'p_today': planningYmd(today)});
+    return rows.isEmpty ? null : PlanningSummary.fromJson(rows.first);
   }
 
   // ---- categories ----

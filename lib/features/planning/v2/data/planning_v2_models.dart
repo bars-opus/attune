@@ -352,3 +352,58 @@ class PlanningEntriesPage {
     );
   }
 }
+
+/// One row of the shared calendar: a plan's date (on each day of its
+/// range) or a dated to-do. [entryId] is the plan to open on tap.
+enum PlanningCalendarKind { date, item }
+
+class PlanningCalendarEntry {
+  const PlanningCalendarEntry({
+    required this.kind,
+    required this.entryId,
+    required this.itemId,
+    required this.date,
+    required this.title,
+    required this.isComplete,
+  });
+
+  final PlanningCalendarKind kind;
+  final String entryId;
+  final String? itemId;
+  final DateTime date;
+  final String title;
+  final bool isComplete;
+
+  factory PlanningCalendarEntry.fromJson(Map<String, dynamic> j) => PlanningCalendarEntry(
+        kind: j['entry_kind'] == 'date' ? PlanningCalendarKind.date : PlanningCalendarKind.item,
+        entryId: j['entry_id'] as String,
+        itemId: j['item_id'] as String?,
+        date: DateTime.parse(j['entry_date'] as String),
+        title: j['title'] as String,
+        isComplete: (j['is_complete'] as bool?) ?? false,
+      );
+}
+
+/// The one line the Conversations card shows about Planning.
+enum PlanningSummaryKind { overdue, upcoming, recent }
+
+class PlanningSummary {
+  const PlanningSummary({required this.kind, required this.entryId, required this.title, required this.contextDate});
+
+  final PlanningSummaryKind kind;
+  final String entryId;
+  final String title;
+  final DateTime? contextDate;
+
+  factory PlanningSummary.fromJson(Map<String, dynamic> j) => PlanningSummary(
+        kind: switch (j['kind']) {
+          'overdue' => PlanningSummaryKind.overdue,
+          'upcoming' => PlanningSummaryKind.upcoming,
+          _ => PlanningSummaryKind.recent,
+        },
+        entryId: j['entry_id'] as String,
+        title: j['title'] as String,
+        contextDate: _date(j['context_date']),
+      );
+}
+

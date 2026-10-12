@@ -179,4 +179,34 @@ void main() {
     expect(planningV2ErrorMessage(const PlanningV2LimitReached('pinned_per_category')),
         'You can pin up to 20 plans here. Unpin one to pin this.');
   });
+
+  group('feeds (calendar, summary)', () {
+    test('listCalendarEntries sends the range as dates and parses rows', () async {
+      gateway.handlers['list_planning_calendar_entries'] = (_) => [
+            {'entry_kind': 'date', 'entry_id': 'e1', 'item_id': null, 'entry_date': '2026-11-28',
+             'title': 'Bali', 'is_complete': false},
+            {'entry_kind': 'item', 'entry_id': 'e2', 'item_id': 'i1', 'entry_date': '2026-11-05',
+             'title': 'Milk', 'is_complete': true},
+          ];
+      final rows = await repo.listCalendarEntries('r1', start: DateTime(2026, 11, 1), end: DateTime(2026, 11, 30));
+      expect(gateway.calls.single.$2,
+          {'p_relationship_id': 'r1', 'p_start_date': '2026-11-01', 'p_end_date': '2026-11-30'});
+      expect(rows.first.kind, PlanningCalendarKind.date);
+      expect(rows.last.itemId, 'i1');
+      expect(rows.last.isComplete, isTrue);
+      expect(rows.last.date, DateTime(2026, 11, 5));
+    });
+
+    test('getSummary is null when nothing is planned, and parses a row otherwise', () async {
+      gateway.handlers['get_planning_summary'] = (_) => [];
+      expect(await repo.getSummary('r1', today: DateTime(2026, 11, 10)), isNull);
+      expect(gateway.calls.single.$2, {'p_relationship_id': 'r1', 'p_today': '2026-11-10'});
+      gateway.handlers['get_planning_summary'] =
+          (_) => [{'kind': 'overdue', 'entry_id': 'e2', 'title': 'Eggs', 'context_date': '2026-11-08'}];
+      final s = await repo.getSummary('r1', today: DateTime(2026, 11, 10));
+      expect(s!.kind, PlanningSummaryKind.overdue);
+      expect(s.entryId, 'e2');
+      expect(s.contextDate, DateTime(2026, 11, 8));
+    });
+  });
 }

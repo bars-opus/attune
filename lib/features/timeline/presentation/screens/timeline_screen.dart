@@ -1,8 +1,8 @@
 // lib/features/timeline/presentation/screens/timeline_screen.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/planning/data/models/planning_calendar_entry_model.dart';
-import 'package:attune/features/planning/presentation/providers/planning_providers.dart'
+import 'package:attune/features/planning/v2/data/planning_v2_models.dart';
+import 'package:attune/features/planning/v2/presentation/planning_v2_providers.dart'
     as planning_providers;
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart'
@@ -107,10 +107,10 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
-  Map<DateTime, List<PlanningCalendarEntryModel>> _planningEntriesByDate(
-    List<PlanningCalendarEntryModel> entries,
+  Map<DateTime, List<PlanningCalendarEntry>> _planningEntriesByDate(
+    List<PlanningCalendarEntry> entries,
   ) {
-    final Map<DateTime, List<PlanningCalendarEntryModel>> grouped = {};
+    final Map<DateTime, List<PlanningCalendarEntry>> grouped = {};
     for (final entry in entries) {
       final date = DateTime(entry.date.year, entry.date.month, entry.date.day);
       grouped.putIfAbsent(date, () => []).add(entry);
@@ -131,17 +131,16 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
     // SizedBox.shrink() and never show a dot, so fetching entries for
     // those dates would fetch data that's never displayed. This also
     // keeps every range comfortably under the 42-day cap (Plan A).
-    final planningEntriesAsync = relationshipIdAsync.valueOrNull == null
-        ? const AsyncValue<List<PlanningCalendarEntryModel>>.data([])
-        : ref.watch(
-            planning_providers.planningCalendarEntriesProvider(
-              planning_providers.PlanningCalendarRangeKey(
+    final planningEntriesAsync =
+        relationshipIdAsync.valueOrNull == null
+            ? const AsyncValue<List<PlanningCalendarEntry>>.data([])
+            : ref.watch(
+              planning_providers.planningV2CalendarEntriesProvider((
                 relationshipId: relationshipIdAsync.valueOrNull!,
-                startDate: DateTime(_focusedMonth.year, _focusedMonth.month, 1),
-                endDate: DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0),
-              ),
-            ),
-          );
+                start: DateTime(_focusedMonth.year, _focusedMonth.month, 1),
+                end: DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0),
+              )),
+            );
 
     return relationshipIdAsync.when(
       data: (relationshipId) {
@@ -285,11 +284,13 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                             _openDaySheet(
                               date: date,
                               events: eventsByDate[date] ?? const [],
-                              reminders: _remindersByDate(
+                              reminders:
+                                  _remindersByDate(
                                     remindersAsync.valueOrNull ?? const [],
                                   )[date] ??
                                   const [],
-                              planningEntries: _planningEntriesByDate(
+                              planningEntries:
+                                  _planningEntriesByDate(
                                     planningEntriesAsync.valueOrNull ??
                                         const [],
                                   )[date] ??
@@ -349,11 +350,11 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                 if (_selectedDate != null)
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: Spacing.md.w,
-                      ),
+                      padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
                       child: PlanningDaySection(
-                        entries: planningEntriesAsync.valueOrNull
+                        relationshipId: relationshipId,
+                        entries:
+                            planningEntriesAsync.valueOrNull
                                 ?.where(
                                   (e) =>
                                       _isSameDay(e.date, _selectedDate!) &&

@@ -14,7 +14,9 @@
 library;
 
 import 'package:attune/features/auth/providers/auth_provider.dart';
-import 'package:attune/features/planning/data/models/planning_calendar_entry_model.dart';
+import 'package:attune/features/planning/v2/data/planning_v2_models.dart';
+import 'package:attune/features/planning/v2/presentation/planning_v2_ui.dart';
+import 'package:attune/features/planning/v2/presentation/screens/planning_v2_entry_screen.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
@@ -39,13 +41,14 @@ Future<void> showCalendarDaySheet({
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (_) => CalendarDaySheet(
-      relationshipId: relationshipId,
-      date: date,
-      events: events,
-      reminders: reminders,
-      planningEntries: planningEntries,
-    ),
+    builder:
+        (_) => CalendarDaySheet(
+          relationshipId: relationshipId,
+          date: date,
+          events: events,
+          reminders: reminders,
+          planningEntries: planningEntries,
+        ),
   );
 }
 
@@ -101,7 +104,7 @@ class CalendarDaySheet extends ConsumerWidget {
                 Text('Scheduled', style: textTheme.labelLarge),
                 const SizedBox(height: 8),
                 for (final entry in [...reminders, ...planningEntries])
-                  _ScheduledTile(entry: entry),
+                  _ScheduledTile(entry: entry, relationshipId: relationshipId),
               ],
               if (events.isEmpty &&
                   reminders.isEmpty &&
@@ -149,10 +152,11 @@ class _StoriesSection extends ConsumerWidget {
     Navigator.of(context).pop();
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => StoryReelScreen.forDay(
-          relationshipId: relationshipId,
-          occurredOn: date,
-        ),
+        builder:
+            (_) => StoryReelScreen.forDay(
+              relationshipId: relationshipId,
+              occurredOn: date,
+            ),
       ),
     );
   }
@@ -178,12 +182,12 @@ class _StoriesSection extends ConsumerWidget {
 
     // My own ring first when I posted that day, mirroring
     // StoryRingsRow's mine-then-partner order.
-    final authorIds = byAuthor.keys.toList()
-      ..sort((x, y) {
-        if (x == myId) return -1;
-        if (y == myId) return 1;
-        return x.compareTo(y);
-      });
+    final authorIds =
+        byAuthor.keys.toList()..sort((x, y) {
+          if (x == myId) return -1;
+          if (y == myId) return 1;
+          return x.compareTo(y);
+        });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -243,18 +247,16 @@ class _AuthorDayRing extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final newest = items.last;
-    final thumbnailUrl = ref
-        .watch(storyMediaSignedUrlProvider(newest.thumbnailKey))
-        .valueOrNull;
+    final thumbnailUrl =
+        ref.watch(storyMediaSignedUrlProvider(newest.thumbnailKey)).valueOrNull;
 
     // `hasBeenViewed` on MY OWN story means "my partner saw it", not
     // "I saw it" (StoryItem's own doc comment), so it says nothing
     // about whether I have seen mine — every segment of my own ring
     // renders bright, exactly as StoryRingsRow does for the same
     // reason. For the partner's ring it means what it says.
-    final unviewedCount = isMine
-        ? items.length
-        : items.where((i) => !i.hasBeenViewed).length;
+    final unviewedCount =
+        isMine ? items.length : items.where((i) => !i.hasBeenViewed).length;
 
     return StoryRing(
       isMine: isMine,
@@ -268,11 +270,12 @@ class _AuthorDayRing extends ConsumerWidget {
       // viewed. StoryRing only draws the badge when isMine, and
       // leaving onTapPlus null makes it inert rather than silently
       // posting to the wrong date.
-      semanticLabel: isMine
-          ? 'Your stories from this day, ${items.length} '
-                '${items.length == 1 ? 'item' : 'items'}'
-          : 'Your partner\'s stories from this day, ${items.length} '
-                '${items.length == 1 ? 'item' : 'items'}',
+      semanticLabel:
+          isMine
+              ? 'Your stories from this day, ${items.length} '
+                  '${items.length == 1 ? 'item' : 'items'}'
+              : 'Your partner\'s stories from this day, ${items.length} '
+                  '${items.length == 1 ? 'item' : 'items'}',
     );
   }
 }
@@ -327,9 +330,27 @@ class _EventTile extends StatelessWidget {
 }
 
 class _ScheduledTile extends StatelessWidget {
-  const _ScheduledTile({required this.entry});
+  const _ScheduledTile({required this.entry, required this.relationshipId});
 
   final Object entry;
+  final String? relationshipId;
+
+  /// A Planning row opens its plan; reminders keep their existing behaviour.
+  VoidCallback? _onTap(BuildContext context) => switch (entry) {
+    PlanningCalendarEntry(:final entryId) when relationshipId != null => () {
+      final navigator = Navigator.of(context);
+      navigator.pop(); // close the day sheet first
+      navigator.push(
+        planningV2Route(
+          PlanningV2EntryScreen(
+            relationshipId: relationshipId!,
+            entryId: entryId,
+          ),
+        ),
+      );
+    },
+    _ => null,
+  };
 
   /// The two concrete types that reach here — a reminder and a Planning
   /// calendar entry — both carry a real `String title`. They arrive as
@@ -339,7 +360,7 @@ class _ScheduledTile extends StatelessWidget {
   /// instead of silently rendering a generic label forever.
   String get _title => switch (entry) {
     ReminderModel(:final title) => title,
-    PlanningCalendarEntryModel(:final title) => title,
+    PlanningCalendarEntry(:final title) => title,
     _ => 'Scheduled item',
   };
 
@@ -348,21 +369,24 @@ class _ScheduledTile extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: colorScheme.secondary, width: 1.5),
+    return InkWell(
+      onTap: _onTap(context),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: colorScheme.secondary, width: 1.5),
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(child: Text(_title, style: textTheme.bodyMedium)),
-        ],
+            const SizedBox(width: 12),
+            Expanded(child: Text(_title, style: textTheme.bodyMedium)),
+          ],
+        ),
       ),
     );
   }

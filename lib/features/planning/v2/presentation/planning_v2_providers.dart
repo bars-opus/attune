@@ -65,6 +65,24 @@ final planningV2HomeProvider =
   return ref.watch(planningV2RepositoryProvider).getHome(relationshipId);
 });
 
+// ---- feeds ----------------------------------------------------------------
+
+typedef PlanningCalendarRangeArgs = ({String relationshipId, DateTime start, DateTime end});
+
+/// The calendar's Planning rows for a range; refetches on the change signal.
+final planningV2CalendarEntriesProvider =
+    FutureProvider.autoDispose.family<List<PlanningCalendarEntry>, PlanningCalendarRangeArgs>((ref, a) {
+  _refetchOnSignal(ref, a.relationshipId);
+  return ref.watch(planningV2RepositoryProvider).listCalendarEntries(a.relationshipId, start: a.start, end: a.end);
+});
+
+/// The Conversations card's Planning line; refetches on the change signal.
+final planningV2SummaryProvider = FutureProvider.autoDispose.family<PlanningSummary?, String>((ref, relationshipId) {
+  _refetchOnSignal(ref, relationshipId);
+  final now = DateTime.now();
+  return ref.watch(planningV2RepositoryProvider).getSummary(relationshipId, today: DateTime(now.year, now.month, now.day));
+});
+
 // ---- entries list --------------------------------------------------------
 
 typedef PlanningEntriesArgs = ({String relationshipId, String categoryId, String group});
