@@ -257,6 +257,72 @@ void main() {
       expect(st().entries.map((e) => e.id), ['1']);
     });
 
+    // Review I2: list edits must apply to the CURRENT list, not a snapshot
+    // taken before an in-flight page load or another action.
+    test('deleting a plan while the next page loads does not bring it back', () async {
+      final page2 = Completer<Map<String, dynamic>>();
+      var call = 0;
+      gateway.handlers['list_planning_entries'] = (_) => ++call == 1
+          ? {'entries': [s('1'), s('2')], 'pinned': [], 'next_cursor': {'at': '2026-10-12T09:00:00Z', 'id': '2'}}
+          : page2.future;
+      gateway.handlers['delete_planning_entry'] = (_) => {'deleted': true};
+      final ctl = await entries();
+      final loading = ctl.loadMore();
+      await ctl.delete(st().entries.first);
+      page2.complete({'entries': [s('3')], 'pinned': [], 'next_cursor': null});
+      await loading;
+      expect(st().entries.map((e) => e.id), ['2', '3']);
+    });
+
+    test('pinning while the next page loads does not fetch that page twice', () async {
+      final page2 = Completer<Map<String, dynamic>>();
+      var call = 0;
+      gateway.handlers['list_planning_entries'] = (_) => ++call == 1
+          ? {'entries': [s('1'), s('2')], 'pinned': [], 'next_cursor': {'at': '2026-10-12T09:00:00Z', 'id': '2'}}
+          : page2.future;
+      gateway.handlers['pin_planning_entry'] = (p) => {
+            'entry': {...fakeEntryDetailJson(id: p['p_id'] as String)['entry'] as Map, 'pinned_at': '2026-10-12T09:00:00Z'}
+          };
+      final ctl = await entries();
+      final loading = ctl.loadMore();
+      await ctl.togglePin(st().entries.first);
+      expect(st().loadingMore, isTrue, reason: 'an unrelated action must not clear the in-flight flag');
+      await ctl.loadMore(); // e.g. the scroll listener firing again
+      expect(gateway.callsTo('list_planning_entries'), hasLength(2));
+      page2.complete({'entries': [s('3')], 'pinned': [], 'next_cursor': null});
+      await loading;
+      expect(st().entries.map((e) => e.id), ['2', '3']);
+      expect(st().pinned.map((e) => e.id), ['1']);
+    });
+
+    test('a plan unpinned before the next page loads is listed once, not twice', () async {
+      var call = 0;
+      gateway.handlers['list_planning_entries'] = (_) => ++call == 1
+          ? {'entries': [s('1')], 'pinned': [s('old', pinned: true)], 'next_cursor': {'at': '2026-10-12T09:00:00Z', 'id': '1'}}
+          : {'entries': [s('old'), s('2')], 'pinned': [], 'next_cursor': null};
+      gateway.handlers['pin_planning_entry'] = (p) => {'entry': fakeEntryDetailJson(id: p['p_id'] as String)['entry']};
+      final ctl = await entries();
+      await ctl.togglePin(st().pinned.single);
+      await ctl.loadMore();
+      expect(st().entries.where((e) => e.id == 'old'), hasLength(1));
+      expect(st().entries.map((e) => e.id).toSet(), {'1', 'old', '2'});
+    });
+
+    test('a refused pin puts back only that plan, not a delete made meanwhile', () async {
+      final pinReply = Completer<Map<String, dynamic>>();
+      gateway.handlers['list_planning_entries'] = (_) => {'entries': [s('A'), s('B')], 'pinned': [], 'next_cursor': null};
+      gateway.handlers['pin_planning_entry'] = (_) => pinReply.future;
+      gateway.handlers['delete_planning_entry'] = (_) => {'deleted': true};
+      final ctl = await entries();
+      final pinning = ctl.togglePin(st().entries.first);
+      await ctl.delete(st().entries.firstWhere((e) => e.id == 'B'));
+      pinReply.completeError(const PostgrestException(
+          message: 'planning:limit_reached', code: 'P0001', hint: '{"limit":"pinned_per_category"}'));
+      await expectLater(pinning, throwsA(isA<PlanningV2LimitReached>()));
+      expect(st().entries.map((e) => e.id), ['A'], reason: 'B was really deleted');
+      expect(st().pinned, isEmpty);
+    });
+
     test('delete removes the plan at once; undo restores it', () async {
       var deleted = false;
       gateway.handlers['list_planning_entries'] =
