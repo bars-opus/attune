@@ -122,76 +122,36 @@ BEGIN
     END;
   END;
 
-  -- Contract 8: ai_assist_planning_links requires exactly one of
-  -- planning_item_id/planning_event_id (num_nonnulls = 1). Both ids
-  -- used here must satisfy the composite FKs into planning_items/
-  -- planning_events for this same relationship, or a random UUID
-  -- would fail on the FK before ever reaching the num_nonnulls check
-  -- -- masking whether that check is doing anything at all.
-  DECLARE
-    v_c8_item_id uuid := gen_random_uuid();
-    v_c8_event_id uuid := gen_random_uuid();
+  -- Contract 8: ai_assist_planning_links always points at a plan
+  -- (planning_entry_id NOT NULL, spec §16). A link with no plan is refused.
   BEGIN
-    INSERT INTO public.planning_items
-      (id, relationship_id, item_kind, title)
-    VALUES (v_c8_item_id, v_rel, 'task', 'fixture for contract 8');
-    INSERT INTO public.planning_events
-      (id, relationship_id, title, event_date)
-    VALUES (v_c8_event_id, v_rel, 'fixture for contract 8', current_date);
-
-    BEGIN
-      INSERT INTO public.ai_assist_planning_links
-        (message_id, relationship_id, planning_item_id, planning_event_id)
-      VALUES (v_msg_id, v_rel, v_c8_item_id, v_c8_event_id);
-      RAISE EXCEPTION 'EXPLOIT: a planning link with both item and event ids was accepted';
-    EXCEPTION WHEN OTHERS THEN
-      IF SQLERRM LIKE 'EXPLOIT:%' THEN RAISE; END IF;
-    END;
+    INSERT INTO public.ai_assist_planning_links (message_id, relationship_id, planning_entry_id)
+    VALUES (v_msg_id, v_rel, NULL);
+    RAISE EXCEPTION 'EXPLOIT: a planning link without a plan was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE 'EXPLOIT:%' THEN RAISE; END IF;
   END;
 
   -- Contract 9: RLS -- a non-member of rel cannot read
-  -- ai_assist_planning_links rows for it.
+  -- ai_assist_planning_links rows for it. The link needs a real plan of
+  -- this couple for its composite FK, created as a member.
   DECLARE
     v_link_msg_id uuid := gen_random_uuid();
-    v_planning_item_id uuid;
+    v_plan uuid := gen_random_uuid();
   BEGIN
-    -- Needs a real planning_items row for the composite FK, and it MUST
-    -- belong to v_rel specifically -- the composite FK is
-    -- (planning_item_id, relationship_id), so picking up an unrelated
-    -- row from a different relationship (e.g. one created by another
-    -- SQL test file that ran earlier against the same shared database,
-    -- such as Task 7's ai_assist_planning_conversion_contracts.sql)
-    -- fails this INSERT with a foreign-key violation rather than the
-    -- RLS check this contract is actually testing. Confirmed by an
-    -- actual cross-file collision the first time Task 7's conversion
-    -- test populated planning_items before this file ran in the same
-    -- alphabetical suite pass.
-    SELECT id INTO v_planning_item_id FROM public.planning_items
-    WHERE relationship_id = v_rel LIMIT 1;
-    IF v_planning_item_id IS NULL THEN
-      -- create_planning_task is SECURITY DEFINER and requires
-      -- auth.uid() to resolve to an active member of the relationship
-      -- (it calls planning_is_active_member(p_relationship_id,
-      -- auth.uid())) -- so the caller's JWT claim must be set to a
-      -- real member of v_rel BEFORE this call, not after. Without this,
-      -- the call raises "Not authenticated" because auth.uid() reads
-      -- the request.jwt.claims GUC regardless of which database role
-      -- issued the call.
-      PERFORM set_config('request.jwt.claims', format('{"sub":"%s"}', v_user_a), true);
-      PERFORM public.create_planning_task(gen_random_uuid(), v_rel,
-        'fixture for ai_assist_planning_links RLS test', NULL, NULL, NULL);
-      PERFORM set_config('request.jwt.claims', NULL, true);
-      SELECT id INTO v_planning_item_id FROM public.planning_items
-      WHERE relationship_id = v_rel LIMIT 1;
-    END IF;
+    PERFORM set_config('request.jwt.claims', format('{"sub":"%s"}', v_user_a), true);
+    PERFORM public.get_planning_home(v_rel);
+    PERFORM public.create_planning_entry(v_plan,
+      (SELECT id FROM public.planning_categories WHERE relationship_id = v_rel AND seed_key = 'everyday'),
+      'fixture for ai_assist_planning_links RLS test', false, 'USD');
+    PERFORM set_config('request.jwt.claims', NULL, true);
     INSERT INTO public.messages (id, relationship_id, sender_id,
       client_message_id, content, source, message_origin, assistant_payload)
     VALUES (v_link_msg_id, v_rel, v_user_a, gen_random_uuid(), 'ai reply',
       'native', 'attune_assist',
       '{"schema_version":1,"suggested_planning_item":null,"sources":[]}'::jsonb);
-    INSERT INTO public.ai_assist_planning_links
-      (message_id, relationship_id, planning_item_id)
-    VALUES (v_link_msg_id, v_rel, v_planning_item_id);
+    INSERT INTO public.ai_assist_planning_links (message_id, relationship_id, planning_entry_id)
+    VALUES (v_link_msg_id, v_rel, v_plan);
   END;
 
   SET LOCAL ROLE authenticated;

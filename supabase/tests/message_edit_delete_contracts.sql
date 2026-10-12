@@ -133,9 +133,9 @@ BEGIN
   PERFORM set_config('request.jwt.claims', format('{"sub":"%s"}', v_user_b), true);
   SELECT * INTO v_row FROM public.create_planning_from_assist_message(v_converted_msg, NULL, NULL);
   PERFORM set_config('request.jwt.claims', NULL, true);
-  v_item_id := v_row.planning_item_id;
+  v_item_id := v_row.planning_entry_id;
   IF v_item_id IS NULL THEN
-    RAISE EXCEPTION 'SETUP FAILURE: expected a planning_items row from conversion';
+    RAISE EXCEPTION 'SETUP FAILURE: expected a plan from conversion';
   END IF;
 
   SELECT count(*) INTO v_link_count FROM public.ai_assist_planning_links
@@ -148,12 +148,12 @@ BEGIN
   PERFORM public.delete_message(v_converted_msg);
   PERFORM set_config('request.jwt.claims', NULL, true);
 
-  SELECT deleted_at INTO v_item_deleted_at FROM public.planning_items WHERE id = v_item_id;
+  SELECT deleted_at INTO v_item_deleted_at FROM public.planning_entries WHERE id = v_item_id;
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'EXPLOIT: planning_items row was hard-deleted when its Assist message was deleted';
+    RAISE EXCEPTION 'EXPLOIT: the plan was hard-deleted when its Assist message was deleted';
   END IF;
   IF v_item_deleted_at IS NOT NULL THEN
-    RAISE EXCEPTION 'EXPLOIT: planning_items row was soft-deleted when its Assist message was deleted';
+    RAISE EXCEPTION 'EXPLOIT: the plan was soft-deleted when its Assist message was deleted';
   END IF;
 
   SELECT count(*) INTO v_link_count FROM public.ai_assist_planning_links
@@ -189,9 +189,9 @@ BEGIN
   IF v_link_count IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'EXPLOIT: retried delete resurrected or duplicated a link row';
   END IF;
-  SELECT deleted_at INTO v_item_deleted_at FROM public.planning_items WHERE id = v_item_id;
+  SELECT deleted_at INTO v_item_deleted_at FROM public.planning_entries WHERE id = v_item_id;
   IF NOT FOUND OR v_item_deleted_at IS NOT NULL THEN
-    RAISE EXCEPTION 'EXPLOIT: retried delete affected the planning_items row';
+    RAISE EXCEPTION 'EXPLOIT: retried delete affected the plan';
   END IF;
 
   -- Also retry the delete on the non-converted Assist message from
