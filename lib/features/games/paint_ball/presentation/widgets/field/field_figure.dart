@@ -174,7 +174,7 @@ class _FieldFigureState extends State<FieldFigure>
               coverWidth: widget.coverWidth,
               column: column,
             ) -
-            11.w;
+            8.w;
 
         // Both rows shelter under their own dome and the domes face each
         // other, so "tucked in" is measured from opposite edges. A
@@ -207,7 +207,7 @@ class _FieldFigureState extends State<FieldFigure>
                 curve: Curves.easeOut,
                 turns: widget.isAiming ? widget.tilt : 0,
                 child: CustomPaint(
-                  size: Size(22.w, 20.h),
+                  size: Size(16.w, 20.h),
                   painter: FieldFigurePainter(
                     color: widget.ownerColor,
                     pointsUp: !widget.isOpponent,

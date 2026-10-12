@@ -101,8 +101,8 @@ class FieldPaint extends StatelessWidget {
             quality: neonQualityOf(context),
             rowWidth: constraints.maxWidth,
             coverWidth: kPaintBallCoverWidth.w,
-            hitRadius: 26.r,
-            missRadius: 16.r,
+            hitRadius: 15.r,
+            missRadius: 10.r,
           ),
         );
       },
@@ -119,8 +119,8 @@ class FieldPaintPainter extends CustomPainter {
     required this.quality,
     required this.rowWidth,
     this.coverWidth = kPaintBallCoverWidth,
-    this.hitRadius = 26,
-    this.missRadius = 16,
+    this.hitRadius = 15,
+    this.missRadius = 10,
   });
 
   final List<PaintSplat> splats;
@@ -158,9 +158,11 @@ class FieldPaintPainter extends CustomPainter {
       final colour = splat.isMine ? mineColor : theirsColor;
       final paint =
           Paint()
-            ..color = colour.withValues(
-              alpha: (0.18 + 0.32 * age) * NeonTokens.actorAlpha,
-            )
+            // Translucent on purpose. The first golden showed paint as
+            // opaque blobs smothering the bay they landed on -- paint is
+            // a RECORD of the round, and it must not outrank the cover
+            // it marks (§2.1: structure stays legible).
+            ..color = colour.withValues(alpha: 0.14 + 0.20 * age)
             ..style = PaintingStyle.fill;
 
       final centre = splatCentre(
