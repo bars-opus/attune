@@ -1,4 +1,5 @@
 import 'package:attune/features/games/paint_ball/presentation/widgets/field/cover_bay.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/cover_row.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_figure.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_paint.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart';
@@ -311,20 +312,44 @@ void main() {
     );
     await tester.pump();
 
-    for (final widget in tester.widgetList<AnimatedAlign>(
-      find.byType(AnimatedAlign),
-    )) {
-      expect(widget.duration, Duration.zero);
+    // This test used to loop over AnimatedAlign, AnimatedSlide and
+    // AnimatedOpacity asserting each had a zero duration. The rebuilt
+    // field contains NONE of those three widget types, so all three
+    // loops iterated nothing and the test asserted nothing at all --
+    // while its name promised the strongest accessibility guarantee in
+    // the file. Caught in review by grepping the field for the types the
+    // test was looking for.
+    //
+    // It now asserts the two things reduce motion actually has to do
+    // here, each with a positive control so neither can go quiet again.
+
+    // 1. The rows receive the OS setting rather than a default. The
+    //    components take a plain bool, so the field is the only place it
+    //    can enter; if it defaulted to false everything below is off.
+    final rows = tester.widgetList<CoverRow>(find.byType(CoverRow));
+    expect(rows, hasLength(2), reason: 'a positive control');
+    for (final row in rows) {
+      expect(
+        row.reduceMotion,
+        isTrue,
+        reason: 'the field must read disableAnimations, not assume false',
+      );
     }
-    for (final widget in tester.widgetList<AnimatedSlide>(
-      find.byType(AnimatedSlide),
-    )) {
-      expect(widget.duration, Duration.zero);
-    }
-    for (final widget in tester.widgetList<AnimatedOpacity>(
-      find.byType(AnimatedOpacity),
-    )) {
-      expect(widget.duration, Duration.zero);
+
+    // 2. The one animated widget the field still has is instant.
+    final rotations = tester.widgetList<AnimatedRotation>(
+      find.byType(AnimatedRotation),
+    );
+    expect(
+      rotations,
+      isNotEmpty,
+      reason:
+          'a positive control: if the figure ever stops using '
+          'AnimatedRotation this loop would silently assert nothing, '
+          'which is exactly how this test broke before',
+    );
+    for (final rotation in rotations) {
+      expect(rotation.duration, Duration.zero);
     }
   });
 
@@ -606,9 +631,14 @@ void main() {
     // than by eye, since the two are mirror images and easy to confuse.
     //
     // `CoverBayPainter.facing` replaces the old `_ShieldPainter.opensDown`
-    // at IDENTICAL polarity: true is the viewer's own row. It is read as
-    // a typed field rather than through `as dynamic`, so a rename is a
-    // compile error instead of a silently empty filter.
+    // and is its INVERSE: the old call site was `opensDown: isOpponent`,
+    // the new one is `facing: !isOpponent`. The drawn geometry is
+    // unchanged -- old `opensDown == false` and new `facing == true` both
+    // put the shoulder at `radius` and the foot at the full height -- so
+    // the field is not visually flipped by the rename.
+    //
+    // Read as a typed field rather than through `as dynamic`, so a rename
+    // is now a compile error instead of a silently empty filter.
     await tester.pumpWidget(
       _wrap(
         PaintBallField(
@@ -648,6 +678,38 @@ void main() {
       kPaintBallPositions,
       reason: 'exactly one row of cover faces the other',
     );
+
+    // And specifically WHICH row. The count above passes even if the two
+    // rows swapped, which is precisely the bug reported from the device
+    // -- so the count alone does not guard it.
+    for (var position = 0; position < kPaintBallPositions; position++) {
+      expect(
+        (tester
+                    .widget<CustomPaint>(
+                      find.byKey(
+                        PaintBallFieldKeys.bay(position, isOpponent: false),
+                      ),
+                    )
+                    .painter!
+                as CoverBayPainter)
+            .facing,
+        isTrue,
+        reason: 'your own cover $position faces the line',
+      );
+      expect(
+        (tester
+                    .widget<CustomPaint>(
+                      find.byKey(
+                        PaintBallFieldKeys.bay(position, isOpponent: true),
+                      ),
+                    )
+                    .painter!
+                as CoverBayPainter)
+            .facing,
+        isFalse,
+        reason: 'and theirs is mirrored against it',
+      );
+    }
   });
 
   testWidgets('the far row is named for the partner', (tester) async {
