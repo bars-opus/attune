@@ -31,7 +31,7 @@ BEGIN
       "payload_bytes":16384,"table_columns":12,"table_rows":50,"photos_per_block":10,
       "image_bytes":10485760,"text_plain_chars":10000,"entries_page_default":30,
       "entries_page_max":100,"title_chars":120,"category_name_chars":40,
-      "item_text_chars":500,"section_chars":40}'::jsonb THEN
+      "item_text_chars":500,"section_chars":40,"pinned_per_category":20}'::jsonb THEN
     RAISE EXCEPTION 'EXPLOIT: planning_limits drifted from spec';
   END IF;
 

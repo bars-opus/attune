@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Planning v2 concurrency (P1 Task 5). Review Focus 1 + spec acceptance 3.
 #  Case 1: both partners open Planning for the first time simultaneously
-#          -> exactly 6 categories and 6 templates.
+#          -> exactly 7 categories and 7 templates.
 #  Case 2: both partners tick DIFFERENT items of one checklist at the same
 #          moment -> both ticks persist.
 #  Case 3: both partners save the SAME text block from version 1
@@ -11,6 +11,8 @@
 #  Case 5: one partner deletes a custom category while the other taps
 #          "Start next one" on an entry in it -> no deadlock; the copy is
 #          refused (not_found) rather than created in a deleted category.
+#  Case 6: both partners take the 20th pin of a category at the same moment
+#          -> exactly one succeeds, the other gets planning:limit_reached.
 # Uses fixed UUIDs: run `bash scripts/local_pg_setup.sh --no-tests` first.
 set -euo pipefail
 export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
@@ -51,7 +53,7 @@ wait $P1 || { echo "FAIL case 1: partner A's first open errored"; exit 1; }
 wait $P2 || { echo "FAIL case 1: partner B's first open errored"; exit 1; }
 CATS=$(psql -q -d "$DB" -t -A -c "SELECT count(*) FROM public.planning_categories WHERE relationship_id='$REL'")
 TPLS=$(psql -q -d "$DB" -t -A -c "SELECT count(*) FROM public.planning_entries WHERE relationship_id='$REL' AND is_template")
-[ "$CATS" = "6" ] && [ "$TPLS" = "6" ] || { echo "FAIL case 1: $CATS categories, $TPLS templates"; exit 1; }
+[ "$CATS" = "7" ] && [ "$TPLS" = "7" ] || { echo "FAIL case 1: $CATS categories, $TPLS templates"; exit 1; }
 
 # Setup for cases 2 and 3
 as_user "$A" "
@@ -122,5 +124,21 @@ wait
 if grep -q "deadlock detected" "$OUT/c5a" "$OUT/c5b"; then echo "FAIL case 5: deadlock"; cat "$OUT/c5a" "$OUT/c5b"; exit 1; fi
 LIVE_IN_DELETED=$(psql -q -d "$DB" -t -A -c "SELECT count(*) FROM public.planning_entries e JOIN public.planning_categories c ON c.id = e.category_id WHERE c.id = '$CAT2' AND c.deleted_at IS NOT NULL AND e.deleted_at IS NULL")
 [ "$LIVE_IN_DELETED" = "0" ] || { echo "FAIL case 5: $LIVE_IN_DELETED live entry in a deleted category"; exit 1; }
+
+# Case 6: 19 pins exist; both partners pin a different entry concurrently.
+CAT3="2f000000-0000-0000-0000-00000000ca03"
+as_user "$A" "
+SELECT public.create_planning_category('$CAT3', '$REL', 'Pins', 'star', 'teal') IS NOT NULL;
+SELECT count(public.create_planning_entry(gen_random_uuid(), '$CAT3', 'P' || g, false, 'GHS')) FROM generate_series(1, 21) g;
+SELECT count(public.pin_planning_entry(id, true)) FROM (
+  SELECT id FROM public.planning_entries WHERE category_id = '$CAT3' AND NOT is_template ORDER BY id LIMIT 19) x;" >/dev/null
+P20=$(psql -q -d "$DB" -t -A -c "SELECT id FROM public.planning_entries WHERE category_id='$CAT3' AND NOT is_template AND pinned_at IS NULL ORDER BY id LIMIT 1")
+P21=$(psql -q -d "$DB" -t -A -c "SELECT id FROM public.planning_entries WHERE category_id='$CAT3' AND NOT is_template AND pinned_at IS NULL ORDER BY id DESC LIMIT 1")
+( as_user "$A" "SELECT public.pin_planning_entry('$P20', true) IS NOT NULL;" >"$OUT/c6a" 2>&1 || true ) &
+( as_user "$B" "SELECT public.pin_planning_entry('$P21', true) IS NOT NULL;" >"$OUT/c6b" 2>&1 || true ) &
+wait
+PINS=$(psql -q -d "$DB" -t -A -c "SELECT count(*) FROM public.planning_entries WHERE category_id='$CAT3' AND pinned_at IS NOT NULL AND deleted_at IS NULL")
+LIMITED=$(cat "$OUT/c6a" "$OUT/c6b" | grep -c "planning:limit_reached" || true)
+[ "$PINS" = "20" ] && [ "$LIMITED" = "1" ] || { echo "FAIL case 6: $PINS pins, $LIMITED refused"; cat "$OUT/c6a" "$OUT/c6b"; exit 1; }
 
 echo "planning_v2_concurrency: PASS"
