@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/planning_error.dart';
+import '../data/planning_media.dart';
 import '../data/planning_models.dart';
 import '../data/planning_repository.dart';
 import '../domain/planning_outbox.dart';
@@ -95,6 +97,20 @@ final planningChangeSignalProvider = StreamProvider.autoDispose
 final planningRepositoryProvider = Provider<PlanningRepository>(
   (ref) => PlanningRepository(SupabasePlanningRpcGateway(Supabase.instance.client)),
 );
+
+final planningMediaGatewayProvider = Provider<PlanningMediaGateway>(
+  (ref) => SupabasePlanningMediaGateway(Supabase.instance.client),
+);
+
+/// A signed URL per stored path, kept for most of its one-hour life so
+/// scrolling a plan does not re-sign every photo.
+final planningSignedUrlProvider = FutureProvider.autoDispose.family<String, String>((ref, path) async {
+  final url = await ref.watch(planningMediaGatewayProvider).signedUrl(path);
+  final link = ref.keepAlive();
+  final timer = Timer(const Duration(minutes: 50), link.close);
+  ref.onDispose(timer.cancel);
+  return url;
+});
 
 final planningCurrentUserIdProvider =
     Provider<String?>((ref) => Supabase.instance.client.auth.currentUser?.id);
@@ -490,6 +506,7 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
       _set(before);
       rethrow;
     }
+    if (_isExpenses(blockId)) await _refreshComputed();
   }
 
   Future<void> restoreItem(String blockId, String itemId, {required int index}) async {
@@ -499,28 +516,133 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
       list.insert(index.clamp(0, list.length), restored);
       return list;
     }));
+    if (_isExpenses(blockId)) await _refreshComputed();
   }
 
   // ---- blocks ----
+
+  PlanningMediaGateway get _media => ref.read(planningMediaGatewayProvider);
 
   static Map<String, dynamic> _defaultPayload(PlanningBlockType type) => switch (type) {
         PlanningBlockType.text => {
             'delta': [{'insert': '\n'}]
           },
+        PlanningBlockType.table => {
+            'columns': [
+              {'key': 'c0', 'label': 'Item', 'type': 'text'},
+              {'key': 'c1', 'label': 'Notes', 'type': 'text'},
+            ]
+          },
         _ => <String, dynamic>{},
       };
 
-  Future<PlanningBlock> addBlock(PlanningBlockType type) async {
+  /// Link and Place need their [payload] (url / name) from the caller.
+  Future<PlanningBlock> addBlock(PlanningBlockType type, {Map<String, dynamic>? payload}) async {
     final blocks = _current.blocks;
     final block = await _repo.addBlock(
       id: _uuid.v4(),
       entryId: arg.entryId,
       type: type,
-      payload: _defaultPayload(type),
+      payload: payload ?? _defaultPayload(type),
       afterId: blocks.isEmpty ? null : blocks.last.id,
     );
     _set(_withBlocks(_current, [..._current.blocks, block]));
+    if (type == PlanningBlockType.link) _askForPreview(block.id);
     return block;
+  }
+
+  void _askForPreview(String blockId) =>
+      unawaited(_media.requestLinkPreview(blockId).then((_) {}, onError: (Object _) {}));
+
+  /// Title, table columns, link url/label, place. Stale: adopt theirs and
+  /// rethrow so the UI can say so.
+  Future<void> updateBlockPayload(PlanningBlock block, Map<String, dynamic> payload) async {
+    try {
+      final saved = await _repo.updateBlock(
+          id: block.id, version: block.version, payload: payload, dateStart: block.dateStart, dateEnd: block.dateEnd);
+      _set(_withBlock(_current, saved));
+      if (block.type == PlanningBlockType.link && payload['url'] != block.linkUrl) _askForPreview(block.id);
+    } on PlanningStaleVersion catch (e) {
+      _set(_withBlock(_current, PlanningBlock.fromJson(e.current)));
+      rethrow;
+    }
+  }
+
+  Future<void> setBudgetTarget(PlanningBlock block, int? targetMinor, String? currency) async {
+    try {
+      final saved = await _repo.updateBlockTarget(
+          id: block.id, version: block.version, targetMinor: targetMinor, currency: currency);
+      _set(_withBlock(_current, saved));
+    } on PlanningStaleVersion catch (e) {
+      _set(_withBlock(_current, PlanningBlock.fromJson(e.current)));
+      rethrow;
+    }
+  }
+
+  /// Re-reads the plan so server-computed figures (budget spent, split
+  /// balances) follow an expense change.
+  Future<void> _refreshComputed() async {
+    final fresh = await _repo.getEntry(arg.entryId);
+    final pending = [for (final op in await _outbox.pending()) if (op.entryId == arg.entryId) op];
+    if (_alive) _set(_overlay(fresh, pending));
+  }
+
+  bool _isExpenses(String blockId) =>
+      _current.blocks.any((b) => b.id == blockId && b.type == PlanningBlockType.expenses);
+
+  /// Table rows and expense lines. Creates when [existing] is null.
+  Future<PlanningItem> saveRichItem(String blockId,
+      {PlanningItem? existing, required Map<String, dynamic> fields}) async {
+    final block = _current.blocks.firstWhere((b) => b.id == blockId);
+    try {
+      final saved = await _repo.saveRichItem(
+        id: existing?.id ?? _uuid.v4(),
+        blockId: blockId,
+        version: existing?.version,
+        fields: fields,
+        afterId: existing == null && block.items.isNotEmpty ? block.items.last.id : null,
+      );
+      _set(existing == null
+          ? _withBlockItems(_current, blockId, (items) => [...items, saved])
+          : _withItem(_current, blockId, saved));
+      if (block.type == PlanningBlockType.expenses) await _refreshComputed();
+      return saved;
+    } on PlanningStaleVersion catch (e) {
+      _set(_withItem(_current, blockId, PlanningItem.fromJson(e.current)));
+      rethrow;
+    } on PlanningNotFound {
+      if (existing != null) {
+        _set(_withBlockItems(_current, blockId, (items) => [for (final i in items) if (i.id != existing.id) i]));
+      }
+      rethrow;
+    }
+  }
+
+  // ---- photos ----
+
+  /// [jpeg] is already prepared (re-encoded, EXIF stripped) by the caller.
+  Future<void> addPhoto(String blockId, Uint8List jpeg) async {
+    final path = '${arg.relationshipId}/${arg.entryId}/${_uuid.v4()}.jpg';
+    await _media.uploadJpeg(path, jpeg);
+    final saved = await _repo.addPhoto(blockId, path);
+    _set(_withBlock(_current, saved));
+  }
+
+  Future<void> removePhoto(String blockId, String path) async {
+    final saved = await _repo.removePhoto(blockId, path);
+    _set(_withBlock(_current, saved));
+  }
+
+  // ---- split ----
+
+  Future<void> setSplit(bool enabled) async {
+    final e = await _repo.setEntrySplit(arg.entryId, enabled: enabled);
+    _set(_current.copyWith(entry: e));
+  }
+
+  Future<void> settleSplit() async {
+    final e = await _repo.settleSplit(arg.entryId);
+    _set(_current.copyWith(entry: e));
   }
 
   Future<void> deleteBlock(String blockId) async {

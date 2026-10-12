@@ -20,9 +20,9 @@ void main() {
   });
 
   test('a block type from a newer server parses as unsupported, not a crash', () {
-    final b = PlanningBlock.fromJson(fakeBlockJson(id: 'b9', type: 'budget'));
+    final b = PlanningBlock.fromJson(fakeBlockJson(id: 'b9', type: 'hologram'));
     expect(b.type, PlanningBlockType.unsupported);
-    expect(b.rawType, 'budget');
+    expect(b.rawType, 'hologram');
   });
 
   test('unicode titles round-trip unchanged (Review Focus 5)', () {

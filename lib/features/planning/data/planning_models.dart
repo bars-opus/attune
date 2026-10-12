@@ -2,21 +2,135 @@
 /// the app's model style. JSON shapes: migrations 20261012200200..0400.
 library;
 
-enum PlanningBlockType { text, checklist, date, unsupported }
+enum PlanningBlockType { text, checklist, date, table, photo, link, place, expenses, budget, unsupported }
 
 PlanningBlockType planningBlockTypeFromWire(String wire) => switch (wire) {
       'text' => PlanningBlockType.text,
       'checklist' => PlanningBlockType.checklist,
       'date' => PlanningBlockType.date,
+      'table' => PlanningBlockType.table,
+      'photo' => PlanningBlockType.photo,
+      'link' => PlanningBlockType.link,
+      'place' => PlanningBlockType.place,
+      'expenses' => PlanningBlockType.expenses,
+      'budget' => PlanningBlockType.budget,
       _ => PlanningBlockType.unsupported,
     };
 
 String planningBlockTypeToWire(PlanningBlockType type) => switch (type) {
-      PlanningBlockType.text => 'text',
-      PlanningBlockType.checklist => 'checklist',
-      PlanningBlockType.date => 'date',
       PlanningBlockType.unsupported => throw ArgumentError('unsupported has no wire form'),
+      _ => type.name,
     };
+
+/// A table column's value type; cells are validated per type by the server.
+enum PlanningColumnType { text, number, money, date, check }
+
+class PlanningTableColumn {
+  const PlanningTableColumn({required this.key, required this.label, required this.type});
+
+  final String key;
+  final String label;
+  final PlanningColumnType type;
+
+  factory PlanningTableColumn.fromJson(Map<String, dynamic> j) => PlanningTableColumn(
+        key: j['key'] as String,
+        label: (j['label'] as String?) ?? '',
+        type: PlanningColumnType.values.firstWhere((t) => t.name == j['type'], orElse: () => PlanningColumnType.text),
+      );
+
+  Map<String, dynamic> toJson() => {'key': key, 'label': label, 'type': type.name};
+}
+
+/// Written only by the planning-link-preview function.
+class PlanningLinkPreview {
+  const PlanningLinkPreview({required this.status, this.title, this.description, this.host, this.imagePath});
+
+  final String status;
+  final String? title;
+  final String? description;
+  final String? host;
+  final String? imagePath;
+
+  bool get isOk => status == 'ok';
+
+  factory PlanningLinkPreview.fromJson(Map<String, dynamic> j) => PlanningLinkPreview(
+        status: (j['status'] as String?) ?? 'failed',
+        title: j['title'] as String?,
+        description: j['description'] as String?,
+        host: j['host'] as String?,
+        imagePath: j['image_path'] as String?,
+      );
+}
+
+class PlanningPlace {
+  const PlanningPlace({required this.name, this.address, this.lat, this.lng});
+
+  final String name;
+  final String? address;
+  final double? lat;
+  final double? lng;
+
+  /// False when Mapbox was unreachable and the name was typed by hand.
+  bool get hasCoordinates => lat != null && lng != null;
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        if (address != null && address!.isNotEmpty) 'address': address,
+        if (lat != null) 'lat': lat,
+        if (lng != null) 'lng': lng,
+      };
+}
+
+/// What a Budget block has spent, computed by the server from the plan's
+/// expense lines: in the budget's currency, plus any other currencies.
+class PlanningBudgetComputed {
+  const PlanningBudgetComputed({required this.spentMinor, required this.otherCurrencies});
+
+  final int spentMinor;
+  final List<(String, int)> otherCurrencies;
+
+  factory PlanningBudgetComputed.fromJson(Map<String, dynamic> j) => PlanningBudgetComputed(
+        spentMinor: (j['spent_minor'] as num?)?.toInt() ?? 0,
+        otherCurrencies: [
+          for (final o in (j['other_currencies'] as List? ?? const []))
+            ((o as Map)['currency'] as String, (o['minor'] as num).toInt())
+        ],
+      );
+}
+
+/// "To even out" inside one plan with split on. Never summed across plans.
+class PlanningBalance {
+  const PlanningBalance({required this.currency, required this.minor, required this.owedTo, required this.owedBy});
+
+  final String currency;
+  final int minor;
+  final String owedTo;
+  final String owedBy;
+
+  factory PlanningBalance.fromJson(Map<String, dynamic> j) => PlanningBalance(
+        currency: j['currency'] as String,
+        minor: (j['minor'] as num).toInt(),
+        owedTo: j['owed_to'] as String,
+        owedBy: j['owed_by'] as String,
+      );
+}
+
+class PlanningSplit {
+  const PlanningSplit({required this.settledAt, required this.balances});
+
+  final DateTime? settledAt;
+  final List<PlanningBalance> balances;
+
+  bool get isEven => balances.isEmpty;
+
+  factory PlanningSplit.fromJson(Map<String, dynamic> j) => PlanningSplit(
+        settledAt: _ts(j['settled_at']),
+        balances: [
+          for (final b in (j['balances'] as List? ?? const []))
+            PlanningBalance.fromJson(Map<String, dynamic>.from(b as Map))
+        ],
+      );
+}
 
 String planningYmd(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -101,6 +215,13 @@ class PlanningItem {
     required this.assignedTo,
     required this.dueDate,
     required this.version,
+    this.amountMinor,
+    this.currency,
+    this.paidBy,
+    this.splitShareMinor,
+    this.cells = const {},
+    this.dateStart,
+    this.dateEnd,
   });
 
   final String id;
@@ -112,6 +233,21 @@ class PlanningItem {
   final String? assignedTo;
   final DateTime? dueDate;
   final int version;
+
+  /// Expense line fields (integer minor units + ISO code).
+  final int? amountMinor;
+  final String? currency;
+  final String? paidBy;
+
+  /// The other partner's share in minor units; null means an equal split.
+  final int? splitShareMinor;
+
+  /// Table row cells keyed by column key.
+  final Map<String, dynamic> cells;
+
+  /// Date poll option range (P4).
+  final DateTime? dateStart;
+  final DateTime? dateEnd;
 
   bool get isChecked => checkedAt != null;
 
@@ -125,6 +261,13 @@ class PlanningItem {
         assignedTo: j['assigned_to'] as String?,
         dueDate: _date(j['due_date']),
         version: (j['version'] as num).toInt(),
+        amountMinor: (j['amount_minor'] as num?)?.toInt(),
+        currency: j['currency'] as String?,
+        paidBy: j['paid_by'] as String?,
+        splitShareMinor: (j['split_share_minor'] as num?)?.toInt(),
+        cells: j['cells'] is Map ? Map<String, dynamic>.from(j['cells'] as Map) : const {},
+        dateStart: _date(j['date_start']),
+        dateEnd: _date(j['date_end']),
       );
 
   PlanningItem copyWith({
@@ -147,6 +290,13 @@ class PlanningItem {
         assignedTo: clearAssignee ? null : (assignedTo ?? this.assignedTo),
         dueDate: dueDate,
         version: version ?? this.version,
+        amountMinor: amountMinor,
+        currency: currency,
+        paidBy: paidBy,
+        splitShareMinor: splitShareMinor,
+        cells: cells,
+        dateStart: dateStart,
+        dateEnd: dateEnd,
       );
 }
 
@@ -162,6 +312,9 @@ class PlanningBlock {
     required this.dateEnd,
     required this.version,
     required this.items,
+    this.targetMinor,
+    this.targetCurrency,
+    this.computed = const {},
   });
 
   final String id;
@@ -175,7 +328,39 @@ class PlanningBlock {
   final int version;
   final List<PlanningItem> items;
 
+  /// Budget (and P4 Progress) target, in typed columns.
+  final int? targetMinor;
+  final String? targetCurrency;
+
+  /// Server-computed figures (budget spent); empty for other types.
+  final Map<String, dynamic> computed;
+
   String? get title => payload['title'] as String?;
+
+  List<PlanningTableColumn> get columns => [
+        for (final c in (payload['columns'] as List? ?? const []))
+          PlanningTableColumn.fromJson(Map<String, dynamic>.from(c as Map))
+      ];
+
+  List<String> get photoPaths => [for (final p in (payload['paths'] as List? ?? const [])) p as String];
+
+  String? get linkUrl => payload['url'] as String?;
+  String? get linkLabel => payload['label'] as String?;
+  PlanningLinkPreview? get linkPreview => payload['preview'] is Map
+      ? PlanningLinkPreview.fromJson(Map<String, dynamic>.from(payload['preview'] as Map))
+      : null;
+
+  PlanningPlace? get place => type == PlanningBlockType.place && payload['name'] is String
+      ? PlanningPlace(
+          name: payload['name'] as String,
+          address: payload['address'] as String?,
+          lat: (payload['lat'] as num?)?.toDouble(),
+          lng: (payload['lng'] as num?)?.toDouble(),
+        )
+      : null;
+
+  PlanningBudgetComputed? get budget =>
+      type == PlanningBlockType.budget ? PlanningBudgetComputed.fromJson(computed) : null;
 
   /// Quill Delta ops for a text block; a single newline when empty.
   List<Map<String, dynamic>> get delta {
@@ -198,12 +383,16 @@ class PlanningBlock {
           for (final i in (j['items'] as List? ?? const []))
             PlanningItem.fromJson(Map<String, dynamic>.from(i as Map))
         ],
+        targetMinor: (j['target_minor'] as num?)?.toInt(),
+        targetCurrency: j['target_currency'] as String?,
+        computed: j['computed'] is Map ? Map<String, dynamic>.from(j['computed'] as Map) : const {},
       );
 
   PlanningBlock copyWith({List<PlanningItem>? items, int? version}) => PlanningBlock(
         id: id, type: type, rawType: rawType, sortKey: sortKey, payload: payload,
         plainText: plainText, dateStart: dateStart, dateEnd: dateEnd,
         version: version ?? this.version, items: items ?? this.items,
+        targetMinor: targetMinor, targetCurrency: targetCurrency, computed: computed,
       );
 }
 
@@ -219,6 +408,7 @@ class PlanningEntry {
     required this.currency,
     required this.lastActivityAt,
     this.pinnedAt,
+    this.split,
   });
 
   final String id;
@@ -231,6 +421,9 @@ class PlanningEntry {
   final String currency;
   final DateTime lastActivityAt;
   final DateTime? pinnedAt;
+
+  /// Null when split is off for this plan.
+  final PlanningSplit? split;
 
   bool get isPinned => pinnedAt != null;
 
@@ -245,6 +438,7 @@ class PlanningEntry {
         currency: j['currency'] as String,
         lastActivityAt: DateTime.parse(j['last_activity_at'] as String),
         pinnedAt: _ts(j['pinned_at']),
+        split: j['split'] is Map ? PlanningSplit.fromJson(Map<String, dynamic>.from(j['split'] as Map)) : null,
       );
 }
 

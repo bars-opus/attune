@@ -20,9 +20,11 @@ List<Override> planningOverrides(
   FakePlanningGateway gateway, {
   MemoryOutboxStore? store,
   String userId = 'u-a',
+  FakePlanningMediaGateway? media,
 }) =>
     [
       planningRepositoryProvider.overrideWithValue(PlanningRepository(gateway)),
+      planningMediaGatewayProvider.overrideWithValue(media ?? FakePlanningMediaGateway()),
       planningChangeSignalProvider.overrideWith((ref, relationshipId) => const Stream<void>.empty()),
       planningOutboxStoreProvider.overrideWithValue(store ?? MemoryOutboxStore()),
       planningOutboxSleepProvider.overrideWithValue((_) async {}),

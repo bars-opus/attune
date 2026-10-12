@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+
+import 'package:attune/features/planning/data/planning_media.dart';
 import 'package:attune/features/planning/data/planning_repository.dart';
 
 typedef RpcHandler = dynamic Function(Map<String, dynamic> params);
@@ -97,3 +100,18 @@ Map<String, dynamic> fakeCategoryJson({
       'sort_key': 'V', 'hidden': hidden, 'template_entry_id': 't-$id',
       'entry_count': entryCount, 'has_new': hasNew,
     };
+
+/// Records uploads and preview requests instead of touching Storage.
+class FakePlanningMediaGateway implements PlanningMediaGateway {
+  final List<(String, Uint8List)> uploads = [];
+  final List<String> previewRequests = [];
+
+  @override
+  Future<void> uploadJpeg(String path, Uint8List bytes) async => uploads.add((path, bytes));
+
+  @override
+  Future<String> signedUrl(String path) async => 'https://storage.test/$path';
+
+  @override
+  Future<void> requestLinkPreview(String blockId) async => previewRequests.add(blockId);
+}

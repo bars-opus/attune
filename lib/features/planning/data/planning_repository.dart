@@ -37,6 +37,8 @@ class PlanningRepository {
     'set_planning_block_item_checked', 'delete_planning_block_item',
     'restore_planning_block_item', 'move_planning_block_item', 'pin_planning_entry',
     'restore_planning_entry', 'list_planning_calendar_entries', 'get_planning_summary',
+    'save_planning_rich_item', 'update_planning_block_target', 'set_planning_entry_split',
+    'settle_planning_split', 'add_planning_photo', 'remove_planning_photo',
   };
 
   Future<Map<String, dynamic>> _call(String fn, Map<String, dynamic> params) async {
@@ -265,4 +267,49 @@ class PlanningRepository {
 
   Future<PlanningItem> moveItem(String id, {required String? afterId}) async =>
       PlanningItem.fromJson(await _call('move_planning_block_item', {'p_id': id, 'p_after_id': afterId}));
+
+  // ---- rich items (table rows, expense lines) ----
+
+  /// Creates when [version] is null (idempotent by [id]); otherwise updates
+  /// the row read at [version].
+  Future<PlanningItem> saveRichItem({
+    required String id,
+    required String blockId,
+    int? version,
+    required Map<String, dynamic> fields,
+    String? afterId,
+  }) async =>
+      PlanningItem.fromJson(await _call('save_planning_rich_item', {
+        'p_id': id, 'p_block_id': blockId, 'p_version': version, 'p_fields': fields, 'p_after_id': afterId,
+      }));
+
+  Future<PlanningBlock> updateBlockTarget({
+    required String id,
+    required int version,
+    required int? targetMinor,
+    required String? currency,
+  }) async =>
+      PlanningBlock.fromJson(await _call('update_planning_block_target',
+          {'p_id': id, 'p_version': version, 'p_target_minor': targetMinor, 'p_currency': currency}));
+
+  // ---- split ----
+
+  Future<PlanningEntry> setEntrySplit(String entryId, {required bool enabled}) async {
+    final r = await _call('set_planning_entry_split', {'p_entry_id': entryId, 'p_enabled': enabled});
+    return PlanningEntry.fromJson(Map<String, dynamic>.from(r['entry'] as Map));
+  }
+
+  Future<PlanningEntry> settleSplit(String entryId) async {
+    final r = await _call('settle_planning_split', {'p_entry_id': entryId});
+    return PlanningEntry.fromJson(Map<String, dynamic>.from(r['entry'] as Map));
+  }
+
+  // ---- photos ----
+
+  /// [path] must already be uploaded to planning-media (PlanningMediaGateway).
+  Future<PlanningBlock> addPhoto(String blockId, String path) async =>
+      PlanningBlock.fromJson(await _call('add_planning_photo', {'p_block_id': blockId, 'p_path': path}));
+
+  Future<PlanningBlock> removePhoto(String blockId, String path) async =>
+      PlanningBlock.fromJson(await _call('remove_planning_photo', {'p_block_id': blockId, 'p_path': path}));
 }
