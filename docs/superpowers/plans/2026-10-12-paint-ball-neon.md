@@ -1642,9 +1642,519 @@ EOF
 
 ---
 
+## Task 7: The cover bay — §2.3's keystone, behind a swap seam
+
+The design's biggest visual bet: cover rendered as **an absence of light** rather
+than a drawn object. Behind `PaintBallCoverStyle` so replacing it is a new class,
+not surgery (spec §2.3, which marks it explicitly provisional).
+
+Carries the **Stage 2 addendum #2** requirement: the aimed bay must be
+unmistakable at a glance, because with no Fire button the aimed cover *is* the
+confirmation that a target is chosen. The bay's mouth opens — its legs part —
+which is the neon equivalent of the old shield sliding aside.
+
+**Files:**
+- Create: `lib/features/games/paint_ball/presentation/widgets/field/cover_bay.dart`
+- Test: `test/features/games/paint_ball_cover_bay_test.dart`
+
+**Interfaces:**
+- Consumes: `NeonTokens`, `GlowStrokeSpec`/`paintGlowPath`, `NeonQuality`, `PaintBallFieldKeys`, `PaintBallNeonPalette` (from Task 6).
+- Produces:
+  - `enum CoverBayState { rest, aimed, occupied }`
+  - `abstract class PaintBallCoverStyle` — one method, `void paint(Canvas canvas, Size size, CoverBayPaintContext context)`.
+  - `class CoverBayPaintContext` — public final fields `state`, `facing`, `ownerColor`, `quality`.
+  - `class DarknessCoverStyle implements PaintBallCoverStyle` — the §2.3 implementation.
+  - `class CoverBayPainter extends CustomPainter` — public final fields `state`, `facing`, `ownerColor`, `quality`, `style`. **`facing` is the public replacement for the old `_ShieldPainter.opensDown`, with identical polarity: `true` means this is the viewer's own row (legs below the dome).**
+  - `class CoverBay extends StatelessWidget` — `const CoverBay({required int position, required bool isOpponent, required CoverBayState state, required Color ownerColor, PaintBallCoverStyle? style})`.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/features/games/paint_ball_cover_bay_test.dart`:
+
+```dart
+import 'dart:math';
+import 'dart:ui';
+
+import 'package:attune/core/ui/neon/neon_quality.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/cover_bay.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+/// Records drawn paths so bay geometry can be asserted without a golden.
+class _RecordingCanvas implements Canvas {
+  final paths = <Path>[];
+  final paints = <Paint>[];
+
+  @override
+  void drawPath(Path path, Paint paint) {
+    paths.add(path);
+    paints.add(paint);
+  }
+
+  @override
+  noSuchMethod(Invocation invocation) => null;
+}
+
+CoverBayPaintContext _context({
+  CoverBayState state = CoverBayState.rest,
+  bool facing = true,
+  NeonQuality quality = NeonQuality.glow,
+}) => CoverBayPaintContext(
+  state: state,
+  facing: facing,
+  ownerColor: const Color(0xFF5EEAD4),
+  quality: quality,
+);
+
+void main() {
+  const style = DarknessCoverStyle();
+  const size = Size(74, 62);
+
+  test('a bay at rest is drawn, dim', () {
+    // Structure is tier 2 of §2.1: present, not shouting. It must still
+    // be VISIBLE -- a player has to see where the three hiding places
+    // are before choosing one.
+    final canvas = _RecordingCanvas();
+    style.paint(canvas, size, _context());
+
+    expect(canvas.paints, isNotEmpty, reason: 'a positive control');
+    for (final paint in canvas.paints) {
+      expect(paint.color.a, greaterThan(0));
+    }
+  });
+
+  test('an aimed bay is unmistakably brighter than one at rest', () {
+    // Stage 2 addendum #2. With no Fire button, the aimed cover IS the
+    // confirmation that a target is chosen, so the difference cannot be
+    // a subtle tint. The old renderer slid the whole shield aside and
+    // doubled its opacity; a bay that only brightened slightly would
+    // lose the game's only commit affordance.
+    final rest = _RecordingCanvas();
+    final aimed = _RecordingCanvas();
+    style.paint(rest, size, _context());
+    style.paint(aimed, size, _context(state: CoverBayState.aimed));
+
+    double peak(_RecordingCanvas canvas) =>
+        canvas.paints.map((paint) => paint.color.a).reduce(max);
+
+    expect(rest.paints, isNotEmpty);
+    expect(aimed.paints, isNotEmpty);
+    expect(
+      peak(aimed),
+      greaterThan(peak(rest) * 1.5),
+      reason: 'aimed must read as committed at a glance, not as a tint',
+    );
+  });
+
+  test('an aimed bay opens its mouth wider than one at rest', () {
+    // The neon equivalent of the shield sliding aside: the legs part, so
+    // the shot has a visible path through. "You can see the path for the
+    // shot" is the property the original slide was built for.
+    final rest = _RecordingCanvas();
+    final aimed = _RecordingCanvas();
+    style.paint(rest, size, _context());
+    style.paint(aimed, size, _context(state: CoverBayState.aimed));
+
+    expect(rest.paths, isNotEmpty);
+    expect(aimed.paths, isNotEmpty);
+    expect(
+      aimed.paths.first.getBounds().width,
+      greaterThan(rest.paths.first.getBounds().width),
+      reason: 'an opened gate is wider than a closed one',
+    );
+  });
+
+  test('the two rows face opposite ways', () {
+    // DEVICE-REPORTED REGRESSION (old test 19). Both rows once domed the
+    // same way, so the opponent's cover looked like it sheltered someone
+    // standing off the top of the board rather than facing you across
+    // the line. `facing` replaces the old painter's `opensDown` with the
+    // same polarity: true is the viewer's own row, legs below the dome.
+    final mine = _RecordingCanvas();
+    final theirs = _RecordingCanvas();
+    style.paint(mine, size, _context(facing: true));
+    style.paint(theirs, size, _context(facing: false));
+
+    expect(mine.paths, isNotEmpty);
+    expect(theirs.paths, isNotEmpty);
+
+    // The arch's crown sits at opposite ends of the box. Comparing the
+    // vertical centroid of the bounds is enough to tell them apart, and
+    // unlike an eyeball check it cannot be fooled by a mirror image.
+    final mineCentre = mine.paths.first.getBounds().center.dy;
+    final theirsCentre = theirs.paths.first.getBounds().center.dy;
+    expect(
+      mineCentre,
+      isNot(closeTo(theirsCentre, 0.5)),
+      reason: 'exactly one row faces the other',
+    );
+  });
+
+  test('the painter exposes facing publicly rather than via dynamic', () {
+    // Spec §3.6.1: the old test read `(painter as dynamic).opensDown`,
+    // so a rename broke it with no behaviour change. This is the typed
+    // replacement.
+    final painter = CoverBayPainter(
+      state: CoverBayState.rest,
+      facing: false,
+      ownerColor: const Color(0xFF5EEAD4),
+      quality: NeonQuality.glow,
+      style: style,
+    );
+
+    expect(painter.facing, isFalse);
+    expect(painter.state, CoverBayState.rest);
+  });
+
+  test('a zero-sized bay does not throw', () {
+    // Reachable during a route transition, when a collapsed parent hands
+    // down a zero box.
+    final canvas = _RecordingCanvas();
+    expect(
+      () => style.paint(canvas, Size.zero, _context()),
+      returnsNormally,
+    );
+  });
+
+  test('the plain tier still draws the bay', () {
+    // Degrading drops halo passes, never the outline. A bay nobody can
+    // see is three invisible hiding places -- unplayable on exactly the
+    // hardware the tiering exists to serve.
+    final canvas = _RecordingCanvas();
+    style.paint(canvas, size, _context(quality: NeonQuality.plain));
+
+    expect(canvas.paints, isNotEmpty);
+  });
+
+  testWidgets('a bay carries its position-and-side key', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: CoverBay(
+            position: 1,
+            isOpponent: true,
+            state: CoverBayState.rest,
+            ownerColor: Color(0xFFFF4D6A),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(PaintBallFieldKeys.bay(1, isOpponent: true)),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(PaintBallFieldKeys.bay(1, isOpponent: false)),
+      findsNothing,
+      reason: 'the key must distinguish the two rows',
+    );
+  });
+
+  testWidgets('a custom style replaces the darkness without surgery', (
+    tester,
+  ) async {
+    // §2.3 is explicitly provisional: cover-as-darkness is a bet, and
+    // swapping it must be a new class rather than an edit to the field.
+    // This proves the seam actually works.
+    var painted = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CoverBay(
+            position: 0,
+            isOpponent: false,
+            state: CoverBayState.rest,
+            ownerColor: const Color(0xFF5EEAD4),
+            style: _ProbeStyle(() => painted = true),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(painted, isTrue, reason: 'the injected style was used');
+  });
+}
+
+class _ProbeStyle implements PaintBallCoverStyle {
+  _ProbeStyle(this.onPaint);
+
+  final VoidCallback onPaint;
+
+  @override
+  void paint(Canvas canvas, Size size, CoverBayPaintContext context) =>
+      onPaint();
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `flutter test test/features/games/paint_ball_cover_bay_test.dart`
+Expected: FAIL — `field/cover_bay.dart` does not resolve.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `lib/features/games/paint_ball/presentation/widgets/field/cover_bay.dart`:
+
+```dart
+import 'dart:ui';
+
+import 'package:attune/core/ui/neon/glow_stroke.dart';
+import 'package:attune/core/ui/neon/neon_quality.dart';
+import 'package:attune/core/ui/neon/neon_tokens.dart';
+import 'package:flutter/material.dart';
+
+import 'field_ground.dart' show PaintBallNeonPalette;
+import 'paint_ball_field_keys.dart';
+
+/// What a bay is doing right now.
+enum CoverBayState {
+  /// One of three hiding places, not chosen.
+  rest,
+
+  /// The bay this player is shooting at. With no Fire button this state
+  /// IS the confirmation that a target is chosen, so it has to read at a
+  /// glance (Stage 2 addendum #2).
+  aimed,
+
+  /// Somebody is behind it. Only ever true for a position the viewer is
+  /// allowed to know.
+  occupied,
+}
+
+/// Everything a cover style needs to draw one bay.
+///
+/// A value object with public fields rather than positional arguments,
+/// so adding a state later does not change every style's signature.
+class CoverBayPaintContext {
+  const CoverBayPaintContext({
+    required this.state,
+    required this.facing,
+    required this.ownerColor,
+    required this.quality,
+  });
+
+  final CoverBayState state;
+
+  /// True when this is the VIEWER's own row: the arch domes upward with
+  /// its legs planted below.
+  ///
+  /// Replaces `_ShieldPainter.opensDown` with the same polarity. A
+  /// device-reported bug had both rows doming the same way, which made
+  /// the opponent's cover look like it sheltered someone standing off
+  /// the top of the board rather than facing you across the line.
+  final bool facing;
+
+  final Color ownerColor;
+  final NeonQuality quality;
+}
+
+/// How cover is drawn.
+///
+/// Spec §2.3 renders cover as an ABSENCE of light -- a bay of darkness
+/// rather than a drawn object -- because the game turns on hidden
+/// information and hiding should look like hiding. That is the design's
+/// biggest visual bet, and the spec marks it provisional.
+///
+/// So it lives behind this interface. Trying a solid or illustrated
+/// cover later means writing a new class and passing it in, not
+/// operating on the field.
+abstract class PaintBallCoverStyle {
+  const PaintBallCoverStyle();
+
+  void paint(Canvas canvas, Size size, CoverBayPaintContext context);
+}
+
+/// §2.3: cover as a bay of darkness, outlined in dim light.
+class DarknessCoverStyle implements PaintBallCoverStyle {
+  const DarknessCoverStyle();
+
+  @override
+  void paint(Canvas canvas, Size size, CoverBayPaintContext context) {
+    // A collapsed parent hands down a zero box during a route
+    // transition, and an arc of radius 0 is a division waiting to
+    // happen.
+    if (size.isEmpty) return;
+
+    final isAimed = context.state == CoverBayState.aimed;
+
+    // The mouth OPENS when aimed: the legs part, so the shot has a
+    // visible path through. This is the neon equivalent of the old
+    // shield sliding aside, and it exists for the same reason -- a shot
+    // should be something you can see a path for, not an abstract
+    // selection.
+    final mouth = size.width * (isAimed ? 0.34 : 0.14);
+    final legInset = (size.width - mouth) / 2;
+
+    final radius = legInset.clamp(1.0, size.width / 2);
+    final shoulderY = context.facing ? radius : size.height - radius;
+    final footY = context.facing ? size.height : 0.0;
+
+    // Legs and dome as one path, open at the base -- cover you stand
+    // behind, not a box you are inside.
+    final path =
+        Path()
+          ..moveTo(legInset, footY)
+          ..lineTo(legInset, shoulderY)
+          ..arcToPoint(
+            Offset(legInset + mouth, shoulderY),
+            radius: Radius.circular(radius),
+            clockwise: context.facing,
+          )
+          ..lineTo(legInset + mouth, footY);
+
+    final alpha =
+        isAimed
+            ? NeonTokens.structureAlphaActive
+            : NeonTokens.structureAlphaRest;
+
+    // An aimed bay takes the owner's hue; a resting one stays neutral,
+    // so colour keeps meaning ownership and nothing else (§2.2).
+    paintGlowPath(
+      canvas,
+      path,
+      GlowStrokeSpec(
+        color: isAimed ? context.ownerColor : PaintBallNeonPalette.structure,
+        alpha: alpha,
+        widthScale: isAimed ? 2.0 : 1.0,
+      ),
+      // One extra pass when aimed, so it gains presence rather than just
+      // opacity -- and still none at all on the plain tier.
+      isAimed && context.quality != NeonQuality.plain
+          ? context.quality.haloPasses + 1
+          : context.quality.haloPasses,
+    );
+  }
+}
+
+/// Paints one bay through its style.
+///
+/// Public, with public fields, so a test asserts on `facing` directly
+/// instead of reaching through `as dynamic` (spec §3.6.1).
+class CoverBayPainter extends CustomPainter {
+  CoverBayPainter({
+    required this.state,
+    required this.facing,
+    required this.ownerColor,
+    required this.quality,
+    required this.style,
+  });
+
+  final CoverBayState state;
+  final bool facing;
+  final Color ownerColor;
+  final NeonQuality quality;
+  final PaintBallCoverStyle style;
+
+  @override
+  void paint(Canvas canvas, Size size) => style.paint(
+    canvas,
+    size,
+    CoverBayPaintContext(
+      state: state,
+      facing: facing,
+      ownerColor: ownerColor,
+      quality: quality,
+    ),
+  );
+
+  @override
+  bool shouldRepaint(CoverBayPainter old) =>
+      old.state != state ||
+      old.facing != facing ||
+      old.ownerColor != ownerColor ||
+      old.quality != quality ||
+      old.style != style;
+}
+
+/// One of the three hiding places.
+class CoverBay extends StatelessWidget {
+  const CoverBay({
+    super.key,
+    required this.position,
+    required this.isOpponent,
+    required this.state,
+    required this.ownerColor,
+    this.style,
+  });
+
+  final int position;
+  final bool isOpponent;
+  final CoverBayState state;
+  final Color ownerColor;
+
+  /// Overrides the §2.3 darkness, for trying a different cover without
+  /// touching the field.
+  final PaintBallCoverStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      key: PaintBallFieldKeys.bay(position, isOpponent: isOpponent),
+      painter: CoverBayPainter(
+        state: state,
+        // The viewer's own row is always the near one, whichever player
+        // is looking: a field that flipped would make "mine" and
+        // "theirs" something to work out each turn.
+        facing: !isOpponent,
+        ownerColor: ownerColor,
+        quality: neonQualityOf(context),
+        style: style ?? const DarknessCoverStyle(),
+      ),
+    );
+  }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `flutter test test/features/games/paint_ball_cover_bay_test.dart`
+Expected: PASS, 9 tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/features/games/paint_ball/presentation/widgets/field/cover_bay.dart test/features/games/paint_ball_cover_bay_test.dart
+git commit -m "$(cat <<'EOF'
+feat(paintball): cover as a bay of darkness, behind a swap seam
+
+§2.3's keystone: a hiding place is an absence of light rather than a
+drawn object. The game turns on hidden information, so hiding should
+look like hiding -- and three bays of darkness cost nothing to draw,
+which is most of why this direction was reachable at all.
+
+It is also the design's biggest bet, so it ships behind
+PaintBallCoverStyle. Trying a solid or illustrated cover later is a new
+class passed in, not surgery on the field, and a test injects a probe
+style to prove the seam actually works rather than merely existing.
+
+The aimed state opens the bay's MOUTH. Reading the old renderer turned
+up something the design had missed: the aimed shield slid aside and
+doubled its opacity because, as its comment says, "with no Fire button,
+the aimed cover IS the confirmation that a target is chosen." A bay that
+only brightened would have quietly removed the game's commit
+affordance. So the legs part instead, and a test pins that aimed is more
+than 1.5x brighter at peak -- committed at a glance, not a tint.
+
+`facing` is the public, typed replacement for the old painter's
+`opensDown`, same polarity. It carries a device-reported regression: both
+rows once domed the same way, making the opponent's cover look like it
+sheltered someone standing off the top of the board. The test compares
+the arches' vertical centroids, which a mirror image cannot fool.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
 ## Remaining tasks: Stages 3–7
 
-Tasks 7–14 cover the rest. Tasks 7 and 8 complete Stage 2 and are written in the pass that follows Task 6; Tasks 9–14 follow the Stage 2 checkpoint. Their scope and boundaries are fixed:
+Tasks 8–14 cover the rest. Task 8 completes Stage 2 and is written in the pass that follows Task 7; Tasks 9–14 follow the Stage 2 checkpoint. Their scope and boundaries are fixed:
 
 | Task | Stage | Deliverable |
 |---|---|---|
