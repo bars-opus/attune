@@ -159,28 +159,32 @@ void main() {
       expect(mineAt.dy, greaterThan(theirsAt.dy));
     });
 
-    test('an out-of-range position stays on the field', () {
-      // Review Focus #5. PaintSplat.position is a bare int with no
-      // validation, so a stale or malformed round could carry 3 or -1.
-      // It must clamp rather than draw off-field or produce a NaN.
-      for (final position in [-1, 3, 99]) {
-        final centre = splatCentre(
-          splat: PaintSplat(
-            position: position,
-            isMine: true,
-            hit: true,
-            round: 1,
-          ),
-          size: const Size(390, 400),
-          rowWidth: 390,
-        );
+    test('an out-of-range position lands on the nearest valid cover', () {
+      // Review Focus #5. PaintSplat.position is a bare int off the wire
+      // with no validation, so a stale or malformed round could carry 3
+      // or -1.
+      //
+      // Asserting "stays on the field" was not enough: splatCentre also
+      // clamps the returned dx, and that clamp rescues a bad position on
+      // its own -- so the test passed even with the position clamp
+      // deleted. This pins the clamp that actually matters.
+      Offset at(int position) => splatCentre(
+        splat: PaintSplat(
+          position: position,
+          isMine: true,
+          hit: true,
+          round: 1,
+        ),
+        size: const Size(390, 400),
+        rowWidth: 390,
+      );
 
-        expect(centre.dx.isFinite, isTrue, reason: 'position $position');
-        expect(
-          centre.dx,
-          inInclusiveRange(0, 390),
-          reason: 'position $position must stay on the field',
-        );
+      expect(at(3).dx, closeTo(at(2).dx, 0.001), reason: '3 clamps to 2');
+      expect(at(99).dx, closeTo(at(2).dx, 0.001), reason: '99 clamps to 2');
+      expect(at(-1).dx, closeTo(at(0).dx, 0.001), reason: '-1 clamps to 0');
+
+      for (final position in [-1, 3, 99]) {
+        expect(at(position).dx.isFinite, isTrue, reason: 'position $position');
       }
     });
   });
@@ -207,8 +211,8 @@ void main() {
 
     test('a non-empty list does draw — the positive control', () {
       // Without this, the test above could pass because the painter is
-      // broken rather than because the list is empty. That exact
-      // vacuous shape has been found four times in this codebase.
+      // broken rather than because the list is empty. that exact
+      // vacuous shape has been found seven times in this codebase.
       final canvas = _RecordingCanvas();
       FieldPaintPainter(
         splats: const [
@@ -247,9 +251,47 @@ void main() {
       expect(canvas.paths, isNotEmpty);
       expect(
         canvas.paths.length,
-        lessThanOrEqualTo(kFieldPaintVisible),
-        reason: 'the cap holds however long the match runs',
+        kFieldPaintVisible,
+        reason: 'exactly the cap, not merely at most it -- a cap of 1 would '
+            'satisfy an upper bound while hiding most of the match',
       );
+    });
+
+    test('the plain tier skips the flecks, which is the saving', () {
+      // The tiering exists to honour a launch gate on low-end hardware,
+      // and three extra circles per splat twelve splats deep is exactly
+      // the cost it is about. Without this test, deleting the flecks
+      // outright would leave every other test green.
+      const splats = [
+        PaintSplat(position: 1, isMine: true, hit: true, round: 1),
+      ];
+
+      _RecordingCanvas render(NeonQuality quality) {
+        final canvas = _RecordingCanvas();
+        FieldPaintPainter(
+          splats: splats,
+          mineColor: mine,
+          theirsColor: theirs,
+          quality: quality,
+          rowWidth: 390,
+        ).paint(canvas, const Size(390, 400));
+        return canvas;
+      }
+
+      final glow = render(NeonQuality.glow);
+      final plain = render(NeonQuality.plain);
+
+      expect(
+        glow.circles,
+        hasLength(3),
+        reason: 'a positive control: three flecks per splat on glow',
+      );
+      expect(plain.circles, isEmpty, reason: 'plain draws no flecks');
+
+      // The blob itself survives on both -- degrading drops decoration,
+      // never the paint.
+      expect(plain.paths, hasLength(glow.paths.length));
+      expect(plain.paths, isNotEmpty);
     });
 
     test('a zero-sized field does not throw', () {
