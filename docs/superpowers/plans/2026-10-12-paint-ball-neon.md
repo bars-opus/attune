@@ -2149,9 +2149,649 @@ EOF
 
 ---
 
+## Task 8: The travelling figure
+
+A player as a luminous mark that journeys between covers. Carries two things
+that must be preserved **verbatim**: the 620ms three-beat timing (addendum #1)
+and the cover-centring formula, which is the fix for a device-reported bug.
+
+**Files:**
+- Create: `lib/features/games/paint_ball/presentation/widgets/field/field_figure.dart`
+- Test: `test/features/games/paint_ball_field_figure_test.dart`
+
+**Interfaces:**
+- Consumes: `NeonTokens`, `GlowStrokeSpec`/`paintGlowPath`, `neonQualityOf`, `PaintBallFieldKeys`, `kPaintBallPositions` (from `paint_ball_field.dart`).
+- Produces:
+  - `double figureCentreX({required double rowWidth, required double coverWidth, required double column})` — the centring formula, extracted as a pure function so the device-reported bug is unit-testable without pumping a field at three widths.
+  - `class FieldFigure extends StatefulWidget` — `const FieldFigure({required int position, required bool isOpponent, required double rowWidth, required double coverWidth, required double rowHeight, required Color ownerColor, required bool isAiming, required double tilt, required bool reduceMotion, VoidCallback? onTap})`.
+  - `const Duration kFigureTravelDuration = Duration(milliseconds: 620);`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/features/games/paint_ball_field_figure_test.dart`:
+
+```dart
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_figure.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart'
+    show kPaintBallCoverWidth, kPaintBallPositions;
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  group('the centring formula', () {
+    test('a figure sits on its cover at every width', () {
+      // DEVICE-REPORTED REGRESSION (old test 18). The figure positioned
+      // itself on notional slots (rowWidth / 3) while the covers are a
+      // FIXED width laid out by spaceEvenly with four equal gaps. Those
+      // two agree only when the row happens to be exactly three covers
+      // wide; at any other width the figure drifted off its cover, worst
+      // at the outer ones.
+      //
+      // Extracted as a pure function precisely so this is checkable
+      // without pumping a field at three widths and reading back
+      // rectangles.
+      for (final rowWidth in [320.0, 360.0, 390.0, 430.0, 600.0]) {
+        const coverWidth = 74.0;
+        final gap =
+            (rowWidth - kPaintBallPositions * coverWidth) /
+            (kPaintBallPositions + 1);
+
+        for (var position = 0; position < kPaintBallPositions; position++) {
+          final expected =
+              gap * (position + 1) + coverWidth * (position + 0.5);
+
+          expect(
+            figureCentreX(
+              rowWidth: rowWidth,
+              coverWidth: coverWidth,
+              column: position.toDouble(),
+            ),
+            closeTo(expected, 0.001),
+            reason:
+                'at width $rowWidth position $position must land on its '
+                'cover centre, not on a notional slot centre',
+          );
+        }
+      }
+    });
+
+    test('a slot-centre formula would have failed this', () {
+      // Pins WHY the formula is what it is. If someone simplifies it
+      // back to rowWidth/3 maths, this test says what breaks.
+      const rowWidth = 430.0;
+      const coverWidth = 74.0;
+      const position = 2.0;
+
+      final slotCentre =
+          rowWidth / kPaintBallPositions * position +
+          rowWidth / kPaintBallPositions / 2;
+
+      expect(
+        figureCentreX(
+          rowWidth: rowWidth,
+          coverWidth: coverWidth,
+          column: position,
+        ),
+        isNot(closeTo(slotCentre, 1.0)),
+        reason: 'the two formulas genuinely disagree at this width',
+      );
+    });
+
+    test('a fractional column interpolates, for the crossing', () {
+      // Mid-journey the figure is between two columns. The formula has
+      // to accept 1.5 and land halfway, or the travel would jump.
+      const rowWidth = 390.0;
+      const coverWidth = 74.0;
+
+      final one = figureCentreX(
+        rowWidth: rowWidth,
+        coverWidth: coverWidth,
+        column: 1,
+      );
+      final two = figureCentreX(
+        rowWidth: rowWidth,
+        coverWidth: coverWidth,
+        column: 2,
+      );
+      final half = figureCentreX(
+        rowWidth: rowWidth,
+        coverWidth: coverWidth,
+        column: 1.5,
+      );
+
+      expect(half, closeTo((one + two) / 2, 0.001));
+    });
+
+    test('a row narrower than its covers does not produce a NaN', () {
+      // Defensive: a negative gap is arithmetically fine, but an
+      // infinite or NaN result would throw inside Positioned. Reachable
+      // on a very small screen or mid-animation layout.
+      final x = figureCentreX(
+        rowWidth: 100,
+        coverWidth: 74,
+        column: 2,
+      );
+
+      expect(x.isFinite, isTrue);
+    });
+  });
+
+  group('the figure widget', () {
+    Widget host({
+      required int position,
+      bool isOpponent = false,
+      bool reduceMotion = false,
+      bool isAiming = false,
+    }) => MaterialApp(
+      home: MediaQuery(
+        data: MediaQueryData(disableAnimations: reduceMotion),
+        child: Scaffold(
+          body: SizedBox(
+            width: 390,
+            height: 120,
+            child: Stack(
+              children: [
+                FieldFigure(
+                  position: position,
+                  isOpponent: isOpponent,
+                  rowWidth: 390,
+                  coverWidth: kPaintBallCoverWidth,
+                  rowHeight: 92,
+                  ownerColor: const Color(0xFF5EEAD4),
+                  isAiming: isAiming,
+                  tilt: 0,
+                  reduceMotion: reduceMotion,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('a figure carries its position-and-side key', (tester) async {
+      await tester.pumpWidget(host(position: 1));
+      await tester.pump();
+
+      expect(
+        find.byKey(PaintBallFieldKeys.figure(1, isOpponent: false)),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(PaintBallFieldKeys.figure(1, isOpponent: true)),
+        findsNothing,
+        reason: 'the key must distinguish the two rows',
+      );
+    });
+
+    testWidgets('repositioning travels rather than teleporting', (
+      tester,
+    ) async {
+      // Old test 16. Moving cover is a journey: the figure leaves,
+      // crosses, and enters the new cover as ONE body. A cross-fade
+      // between two covers would read as two figures, and taking cover
+      // would feel like being reassigned rather than moving.
+      await tester.pumpWidget(host(position: 0));
+      await tester.pumpAndSettle();
+
+      Offset centre() => tester.getCenter(
+        find.byKey(PaintBallFieldKeys.figure(2, isOpponent: false)),
+      );
+
+      final start = tester
+          .getCenter(find.byKey(PaintBallFieldKeys.figure(0, isOpponent: false)))
+          .dx;
+
+      await tester.pumpWidget(host(position: 2));
+      await tester.pump(const Duration(milliseconds: 310));
+      final middle = centre().dx;
+
+      await tester.pumpAndSettle();
+      final end = centre().dx;
+
+      expect(middle, greaterThan(start), reason: 'it has set off');
+      expect(
+        middle,
+        lessThan(end),
+        reason: 'it has not arrived yet -- it is travelling',
+      );
+
+      // Exactly one figure throughout: the same body moving, never a
+      // second one fading in.
+      expect(
+        find.byWidgetPredicate((widget) => widget is FieldFigure),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the journey is long enough to be followed', (tester) async {
+      // Stage 2 addendum #1: 620ms, deliberately outside the plan's
+      // 150-320ms band. That band governs a SETTLE -- one object
+      // arriving at one place. This is three sequential beats (back out
+      // of cover, across, forward in), and three beats inside 320ms is
+      // ~100ms each, below the point at which an eye can follow a path.
+      //
+      // Pinned as a constant so an implementer "fixing" it to comply
+      // with the band breaks a test rather than the game's feel.
+      expect(kFigureTravelDuration.inMilliseconds, 620);
+    });
+
+    testWidgets('reduce motion arrives immediately', (tester) async {
+      await tester.pumpWidget(host(position: 0, reduceMotion: true));
+      await tester.pumpAndSettle();
+
+      final start = tester
+          .getCenter(find.byKey(PaintBallFieldKeys.figure(0, isOpponent: false)))
+          .dx;
+
+      await tester.pumpWidget(host(position: 2, reduceMotion: true));
+      await tester.pump();
+
+      final after = tester
+          .getCenter(find.byKey(PaintBallFieldKeys.figure(2, isOpponent: false)))
+          .dx;
+
+      expect(
+        after,
+        greaterThan(start),
+        reason: 'it moved',
+      );
+
+      // And it is ALREADY there -- no further frames needed.
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .getCenter(
+              find.byKey(PaintBallFieldKeys.figure(2, isOpponent: false)),
+            )
+            .dx,
+        closeTo(after, 0.001),
+        reason: 'reduce motion jumps to the end state, it does not animate',
+      );
+    });
+
+    testWidgets('a travelling figure steps clear of cover', (tester) async {
+      // Old test 17. Sliding sideways while still tucked in would read
+      // as passing through the wall, so the crossing happens stepped
+      // out. Your row is at the bottom, so stepping out moves UP the
+      // screen -- a smaller dy.
+      await tester.pumpWidget(host(position: 0));
+      await tester.pumpAndSettle();
+
+      final atRest = tester
+          .getCenter(find.byKey(PaintBallFieldKeys.figure(0, isOpponent: false)))
+          .dy;
+
+      await tester.pumpWidget(host(position: 2));
+      await tester.pump(const Duration(milliseconds: 310));
+
+      final crossing = tester
+          .getCenter(find.byKey(PaintBallFieldKeys.figure(2, isOpponent: false)))
+          .dy;
+
+      expect(
+        crossing,
+        lessThan(atRest),
+        reason: 'the crossing happens clear of cover, not through it',
+      );
+    });
+
+    testWidgets('a figure that is not the fire control ignores taps', (
+      tester,
+    ) async {
+      // It stands over a cover that is itself a tap target. Intercepting
+      // taps when it is not the fire control would make that cover
+      // unreachable -- silently costing the player one of their three
+      // hiding places.
+      await tester.pumpWidget(host(position: 1));
+      await tester.pump();
+
+      final figure = tester.widget<FieldFigure>(
+        find.byWidgetPredicate((widget) => widget is FieldFigure),
+      );
+
+      expect(figure.onTap, isNull);
+      expect(
+        find.descendant(
+          of: find.byKey(PaintBallFieldKeys.figure(1, isOpponent: false)),
+          matching: find.byType(IgnorePointer),
+        ),
+        findsOneWidget,
+      );
+    });
+  });
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `flutter test test/features/games/paint_ball_field_figure_test.dart`
+Expected: FAIL — `field/field_figure.dart` does not resolve.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `lib/features/games/paint_ball/presentation/widgets/field/field_figure.dart`:
+
+```dart
+import 'package:attune/core/ui/neon/glow_stroke.dart';
+import 'package:attune/core/ui/neon/neon_quality.dart';
+import 'package:attune/core/ui/neon/neon_tokens.dart';
+import 'package:flutter/material.dart';
+
+import '../paint_ball_field.dart' show kPaintBallPositions;
+import 'paint_ball_field_keys.dart';
+
+/// How long a figure takes to change cover.
+///
+/// Deliberately outside the 150-320ms band the rest of this work obeys.
+/// That band governs a SETTLE -- one object arriving at one place. This
+/// is three sequential beats (step back out of cover, cross, step
+/// forward into the new one), and three beats inside 320ms is about
+/// 100ms each, below the point at which an eye can follow a path at all.
+///
+/// Pinned by a test so that "fixing" it to comply with the band breaks
+/// something visible rather than quietly removing the journey.
+const Duration kFigureTravelDuration = Duration(milliseconds: 620);
+
+/// Where a figure's centre sits for a given column.
+///
+/// A pure function because this formula is the fix for a bug reported
+/// from a device, and the alternative way to test it is pumping a field
+/// at several widths and reading back rectangles.
+///
+/// The covers are a FIXED width laid out by spaceEvenly, which produces
+/// four equal gaps around three covers. So a cover's centre is
+/// `gap*(i+1) + coverWidth*(i+0.5)` -- which equals a notional slot
+/// centre (`rowWidth/3`) only when the row happens to be exactly three
+/// covers wide. Slot maths drifted the figure off its cover at every
+/// other width, worst at the outer two.
+///
+/// Accepts a fractional [column] so the crossing interpolates.
+double figureCentreX({
+  required double rowWidth,
+  required double coverWidth,
+  required double column,
+}) {
+  final gap =
+      (rowWidth - kPaintBallPositions * coverWidth) /
+      (kPaintBallPositions + 1);
+  return gap * (column + 1) + coverWidth * (column + 0.5);
+}
+
+/// A player, as a luminous mark that travels between covers.
+///
+/// Spec §2.1 tier 3: actors are the only bright things on the field, and
+/// §2.2 gives them their OWNER's hue rather than a third neutral colour,
+/// so that colour keeps meaning ownership and nothing else.
+///
+/// It lives above the row rather than inside a cover, because a child
+/// cannot travel outside its parent's box -- which is exactly what a
+/// journey between covers requires.
+class FieldFigure extends StatefulWidget {
+  const FieldFigure({
+    super.key,
+    required this.position,
+    required this.isOpponent,
+    required this.rowWidth,
+    required this.coverWidth,
+    required this.rowHeight,
+    required this.ownerColor,
+    required this.isAiming,
+    required this.tilt,
+    required this.reduceMotion,
+    this.onTap,
+  });
+
+  final int position;
+  final bool isOpponent;
+
+  /// The full row and one cover inside it. Both are needed: the covers
+  /// are a fixed width with even gaps, so their spacing is not the row
+  /// divided three ways (see [figureCentreX]).
+  final double rowWidth;
+  final double coverWidth;
+
+  final double rowHeight;
+
+  /// §2.2: a figure wears its owner's colour.
+  final Color ownerColor;
+
+  final bool isAiming;
+
+  /// Lean toward whatever is being aimed at, in turns, so an aim is
+  /// visible on the field rather than only in a control strip.
+  final double tilt;
+
+  final bool reduceMotion;
+
+  /// Set only when this figure IS the fire control.
+  final VoidCallback? onTap;
+
+  @override
+  State<FieldFigure> createState() => _FieldFigureState();
+}
+
+class _FieldFigureState extends State<FieldFigure>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late int _from;
+  late int _to;
+
+  @override
+  void initState() {
+    super.initState();
+    _from = widget.position;
+    _to = widget.position;
+    _controller = AnimationController(
+      vsync: this,
+      duration: kFigureTravelDuration,
+      value: 1,
+    );
+  }
+
+  @override
+  void didUpdateWidget(FieldFigure old) {
+    super.didUpdateWidget(old);
+    if (old.position != widget.position) {
+      _from = old.position;
+      _to = widget.position;
+      if (widget.reduceMotion) {
+        _controller.value = 1;
+      } else {
+        _controller.forward(from: 0);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final quality = neonQualityOf(context);
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final t = _controller.value;
+
+        // The lateral move happens in the MIDDLE of the journey, so the
+        // figure is clear of cover while it crosses. Sliding sideways
+        // while still tucked in would read as passing through the wall.
+        final lateral = Curves.easeInOut.transform(
+          ((t - 0.25) / 0.5).clamp(0.0, 1.0),
+        );
+        final column = _from + (_to - _from) * lateral;
+
+        // Depth: 0 is tucked in cover, 1 is stepped out. It rises for
+        // the crossing and falls again on arrival -- and stays out while
+        // aiming, since an aiming player is deliberately exposed.
+        final travelling = t < 1;
+        final depth =
+            travelling
+                ? Curves.easeInOut.transform(1 - (2 * t - 1).abs())
+                : (widget.isAiming ? 1.0 : 0.0);
+
+        final x = figureCentreX(
+              rowWidth: widget.rowWidth,
+              coverWidth: widget.coverWidth,
+              column: column,
+            ) -
+            11;
+
+        // Both rows shelter under their own dome and the domes face each
+        // other, so "tucked in" is measured from opposite edges. A
+        // single inset would have put the opponent outside their arch
+        // entirely, standing on top of the cover instead of behind it.
+        final baseInset = widget.isOpponent ? 46.0 : 34.0;
+        final stepOut = 14.0 * depth;
+
+        return Positioned(
+          key: PaintBallFieldKeys.figure(
+            widget.position,
+            isOpponent: widget.isOpponent,
+          ),
+          left: x,
+          top: widget.isOpponent ? baseInset + stepOut : null,
+          bottom: widget.isOpponent ? null : baseInset + stepOut,
+          child: IgnorePointer(
+            // Transparent to taps unless it is the fire control: it
+            // stands over a cover that is itself a tap target, and
+            // intercepting would make that cover unreachable, silently
+            // costing the player one of three hiding places.
+            ignoring: widget.onTap == null,
+            child: GestureDetector(
+              onTap: widget.onTap,
+              behavior: HitTestBehavior.opaque,
+              child: AnimatedRotation(
+                duration: Duration(
+                  milliseconds: widget.reduceMotion ? 0 : 260,
+                ),
+                curve: Curves.easeOut,
+                turns: widget.isAiming ? widget.tilt : 0,
+                child: CustomPaint(
+                  size: const Size(22, 20),
+                  painter: FieldFigurePainter(
+                    color: widget.ownerColor,
+                    pointsUp: !widget.isOpponent,
+                    quality: quality,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The figure itself: a lit arrowhead.
+///
+/// Public, with public fields, so a test never needs `as dynamic`
+/// (spec §3.6.1). An arrowhead rather than a body because it has to say
+/// which way the player is facing at 20 logical pixels, and because
+/// §2.1 allows no illustration to lean on.
+class FieldFigurePainter extends CustomPainter {
+  FieldFigurePainter({
+    required this.color,
+    required this.pointsUp,
+    required this.quality,
+  });
+
+  final Color color;
+  final bool pointsUp;
+  final NeonQuality quality;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+
+    final path = Path();
+    if (pointsUp) {
+      path
+        ..moveTo(size.width / 2, 0)
+        ..lineTo(size.width, size.height)
+        ..lineTo(0, size.height);
+    } else {
+      path
+        ..moveTo(size.width / 2, size.height)
+        ..lineTo(size.width, 0)
+        ..lineTo(0, 0);
+    }
+    path.close();
+
+    // Filled, then outlined in its own glow: an actor is the brightest
+    // thing on the field (§2.1 tier 3), and a stroke-only mark at this
+    // size reads as structure rather than as a person.
+    canvas.drawPath(
+      path,
+      Paint()..color = color.withValues(alpha: NeonTokens.actorAlpha),
+    );
+
+    paintGlowPath(
+      canvas,
+      path,
+      GlowStrokeSpec(color: color, alpha: NeonTokens.actorAlpha),
+      quality.haloPasses,
+    );
+  }
+
+  @override
+  bool shouldRepaint(FieldFigurePainter old) =>
+      old.color != color ||
+      old.pointsUp != pointsUp ||
+      old.quality != quality;
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `flutter test test/features/games/paint_ball_field_figure_test.dart`
+Expected: PASS, 10 tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/features/games/paint_ball/presentation/widgets/field/field_figure.dart test/features/games/paint_ball_field_figure_test.dart
+git commit -m "$(cat <<'EOF'
+feat(paintball): the figure as a lit mark that journeys between covers
+
+The centring formula comes out as a pure function, because it is the fix
+for a bug reported from a device and the alternative way to test it is
+pumping a field at several widths and reading back rectangles. The
+covers are a fixed width laid out by spaceEvenly -- four equal gaps
+around three covers -- so a cover's centre is gap*(i+1) +
+coverWidth*(i+0.5), which equals a notional rowWidth/3 slot centre ONLY
+when the row is exactly three covers wide. Slot maths drifted the figure
+off its cover everywhere else, worst at the outer two. A second test
+pins that the two formulas genuinely disagree, so simplifying it back
+breaks something loud.
+
+620ms is pinned by a test. It sits outside the 150-320ms band this work
+otherwise obeys, and that is deliberate: the band governs a settle, one
+object arriving once, while this is three sequential beats. Three beats
+inside 320ms is ~100ms each, below the point an eye can follow a path.
+Without the test, an implementer tidying toward the band would quietly
+delete the journey.
+
+§2.2 gives the figure its owner's hue rather than the old neutral
+yellow, so colour keeps meaning ownership and nothing else.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
 ## Remaining tasks: Stages 3–7
 
-Tasks 8–14 cover the rest. Task 8 completes Stage 2 and is written in the pass that follows Task 7; Tasks 9–14 follow the Stage 2 checkpoint. Their scope and boundaries are fixed:
+Tasks 9–14 cover the rest. Tasks 9 and 10 complete Stage 2 (the cover row, then the field composition plus the 25-test rewrite) and are written in the pass that follows Task 8; Tasks 11–14 follow the Stage 2 checkpoint. Their scope and boundaries are fixed:
 
 | Task | Stage | Deliverable |
 |---|---|---|
