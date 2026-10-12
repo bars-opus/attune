@@ -395,6 +395,11 @@ BEGIN
   IF v_row.seed_key IS NOT NULL THEN
     PERFORM public.planning_v2_fail('invalid_input', '{"field":"starter"}');
   END IF;
+  -- Lock order is category -> entry -> block -> item. Every block and item
+  -- RPC locks its ENTRY first, so take the entries here before touching any
+  -- block or item row; updating items/blocks first deadlocked against a
+  -- partner's concurrent save (final review I1).
+  PERFORM 1 FROM public.planning_entries WHERE category_id = p_id ORDER BY id FOR UPDATE;
   SELECT count(*) INTO v_n FROM public.planning_entries
   WHERE category_id = p_id AND NOT is_template AND deleted_at IS NULL;
   UPDATE public.planning_block_items SET deleted_at = v_now

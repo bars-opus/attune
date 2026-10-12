@@ -94,19 +94,27 @@ $$;
 CREATE OR REPLACE FUNCTION public.duplicate_planning_entry(p_source_id uuid, p_new_id uuid, p_title text)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
-  v_rel   uuid;
-  v_actor uuid;
-  v_src   public.planning_entries;
-  v_row   public.planning_entries;
-  v_title text := btrim(p_title);
+  v_rel    uuid;
+  v_actor  uuid;
+  v_cat_id uuid;
+  v_src    public.planning_entries;
+  v_row    public.planning_entries;
+  v_title  text := btrim(p_title);
 BEGIN
-  SELECT relationship_id INTO v_rel FROM public.planning_entries WHERE id = p_source_id AND deleted_at IS NULL;
+  SELECT relationship_id, category_id INTO v_rel, v_cat_id
+  FROM public.planning_entries WHERE id = p_source_id AND deleted_at IS NULL;
   IF NOT FOUND THEN PERFORM public.planning_v2_fail('not_found'); END IF;
   v_actor := public.planning_v2_actor(v_rel);
+  -- Category before entry (the declared lock order). Locking the entry
+  -- first deadlocked against delete_planning_category (final review I1),
+  -- and a deleted category must refuse the copy, not receive it.
+  PERFORM 1 FROM public.planning_categories WHERE id = v_cat_id FOR SHARE;
+  IF NOT EXISTS (SELECT 1 FROM public.planning_categories WHERE id = v_cat_id AND deleted_at IS NULL) THEN
+    PERFORM public.planning_v2_fail('not_found');
+  END IF;
   SELECT * INTO v_src FROM public.planning_entries WHERE id = p_source_id FOR SHARE;
   IF v_src.deleted_at IS NOT NULL THEN PERFORM public.planning_v2_fail('not_found'); END IF;
   IF v_src.is_template THEN PERFORM public.planning_v2_fail('invalid_input', '{"field":"template"}'); END IF;
-  PERFORM 1 FROM public.planning_categories WHERE id = v_src.category_id AND deleted_at IS NULL FOR SHARE;
 
   SELECT * INTO v_row FROM public.planning_entries WHERE id = p_new_id;
   IF FOUND THEN

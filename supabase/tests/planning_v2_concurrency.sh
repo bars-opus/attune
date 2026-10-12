@@ -6,6 +6,11 @@
 #          moment -> both ticks persist.
 #  Case 3: both partners save the SAME text block from version 1
 #          -> exactly one succeeds, the other gets planning:stale_version.
+#  Case 4: one partner deletes a custom category while the other saves a
+#          block inside it -> no deadlock (final review I1).
+#  Case 5: one partner deletes a custom category while the other taps
+#          "Start next one" on an entry in it -> no deadlock; the copy is
+#          refused (not_found) rather than created in a deleted category.
 # Uses fixed UUIDs: run `bash scripts/local_pg_setup.sh --no-tests` first.
 set -euo pipefail
 export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
@@ -72,5 +77,50 @@ wait
 STALE=$(cat "$OUT/a" "$OUT/b" | grep -c "planning:stale_version" || true)
 VERSION=$(psql -q -d "$DB" -t -A -c "SELECT version FROM public.planning_blocks WHERE id='$TEXT'")
 [ "$STALE" = "1" ] && [ "$VERSION" = "2" ] || { echo "FAIL case 3: stale=$STALE version=$VERSION"; cat "$OUT/a" "$OUT/b"; exit 1; }
+
+# Cases 4 and 5 (final review I1). Each RPC's FIRST lock is taken by hand
+# and held, so the interleaving that deadlocked is forced every run instead
+# of depending on timing: the waiting RPC then re-takes that same lock (a
+# no-op) and continues exactly as it would in production.
+CAT="2f000000-0000-0000-0000-00000000ca01"
+E2="2f000000-0000-0000-0000-00000000e002"
+B3="2f000000-0000-0000-0000-00000000b003"
+as_user "$A" "
+SELECT public.create_planning_category('$CAT', '$REL', 'Moving', 'box', 'orange') IS NOT NULL;
+SELECT public.create_planning_entry('$E2', '$CAT', 'Boxes', false, 'GHS') IS NOT NULL;
+SELECT public.add_planning_block('$B3', '$E2', 'text', '{\"delta\":[{\"insert\":\"v1\\n\"}]}', NULL, NULL, NULL) IS NOT NULL;" >/dev/null
+
+held() { # $1 user, $2 lock statement, $3 rpc; takes the lock, waits, then runs the rpc
+  psql -q -d "$DB" -t -A <<SQL
+BEGIN;
+SELECT set_config('request.jwt.claims', '{"sub":"$1"}', true);
+$2
+SELECT pg_sleep(1);
+$3
+COMMIT;
+SQL
+}
+
+# Case 4: B already holds the entry (update_planning_block's first lock); A deletes the category.
+( held "$B" "SELECT 1 FROM public.planning_entries WHERE id='$E2' FOR UPDATE;" \
+    "SELECT public.update_planning_block('$B3', 1, '{\"delta\":[{\"insert\":\"B\\n\"}]}', NULL, NULL) IS NOT NULL;" >"$OUT/c4b" 2>&1 || true ) &
+( sleep 0.3; as_user "$A" "SELECT public.delete_planning_category('$CAT') IS NOT NULL;" >"$OUT/c4a" 2>&1 || true ) &
+wait
+if grep -q "deadlock detected" "$OUT/c4a" "$OUT/c4b"; then echo "FAIL case 4: deadlock"; cat "$OUT/c4a" "$OUT/c4b"; exit 1; fi
+
+# Case 5: A already holds the category (delete_planning_category's first lock); B duplicates an entry in it.
+E3="2f000000-0000-0000-0000-00000000e003"
+E4="2f000000-0000-0000-0000-00000000e004"
+CAT2="2f000000-0000-0000-0000-00000000ca02"
+as_user "$A" "
+SELECT public.create_planning_category('$CAT2', '$REL', 'Wedding', 'ring', 'rose') IS NOT NULL;
+SELECT public.create_planning_entry('$E3', '$CAT2', 'Venue', false, 'GHS') IS NOT NULL;" >/dev/null
+( held "$A" "SELECT 1 FROM public.planning_categories WHERE id='$CAT2' FOR UPDATE;" \
+    "SELECT public.delete_planning_category('$CAT2') IS NOT NULL;" >"$OUT/c5a" 2>&1 || true ) &
+( sleep 0.3; as_user "$B" "SELECT public.duplicate_planning_entry('$E3', '$E4', 'Venue again') IS NOT NULL;" >"$OUT/c5b" 2>&1 || true ) &
+wait
+if grep -q "deadlock detected" "$OUT/c5a" "$OUT/c5b"; then echo "FAIL case 5: deadlock"; cat "$OUT/c5a" "$OUT/c5b"; exit 1; fi
+LIVE_IN_DELETED=$(psql -q -d "$DB" -t -A -c "SELECT count(*) FROM public.planning_entries e JOIN public.planning_categories c ON c.id = e.category_id WHERE c.id = '$CAT2' AND c.deleted_at IS NOT NULL AND e.deleted_at IS NULL")
+[ "$LIVE_IN_DELETED" = "0" ] || { echo "FAIL case 5: $LIVE_IN_DELETED live entry in a deleted category"; exit 1; }
 
 echo "planning_v2_concurrency: PASS"
