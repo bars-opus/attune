@@ -2789,9 +2789,446 @@ EOF
 
 ---
 
+## Task 9: The cover row
+
+One side's three bays plus its figure. Owns the **semantic labels**, which the
+§3.3 correction identified as the only test hooks a renderer rewrite cannot
+invalidate — they are accessibility contracts, not implementation details.
+
+**Files:**
+- Create: `lib/features/games/paint_ball/presentation/widgets/field/cover_row.dart`
+- Test: `test/features/games/paint_ball_cover_row_test.dart`
+
+**Interfaces:**
+- Consumes: `CoverBay`, `CoverBayState`, `PaintBallCoverStyle`, `FieldFigure`, `figureCentreX`, `PaintBallFieldKeys`, `kPaintBallPositions`, `kPaintBallCoverWidth`, `kPaintBallTargetScale`, `paintBallPositionName`.
+- Produces: `class CoverRow extends StatelessWidget` — `const CoverRow({required bool isOpponent, required int? hiddenAt, required int? aimedAt, required bool enabled, required Color ownerColor, required bool reduceMotion, int? aimingAt, ValueChanged<int>? onTap, VoidCallback? onTapFigure, bool emerged = true, PaintBallCoverStyle? coverStyle})`.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/features/games/paint_ball_cover_row_test.dart`:
+
+```dart
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/cover_bay.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/cover_row.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_figure.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart'
+    show kPaintBallPositions;
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  Widget host({
+    bool isOpponent = false,
+    int? hiddenAt,
+    int? aimedAt,
+    bool enabled = true,
+    ValueChanged<int>? onTap,
+    VoidCallback? onTapFigure,
+  }) => MaterialApp(
+    home: Scaffold(
+      body: SizedBox(
+        width: 390,
+        height: 120,
+        child: CoverRow(
+          isOpponent: isOpponent,
+          hiddenAt: hiddenAt,
+          aimedAt: aimedAt,
+          enabled: enabled,
+          ownerColor: const Color(0xFF5EEAD4),
+          reduceMotion: false,
+          onTap: onTap,
+          onTapFigure: onTapFigure,
+        ),
+      ),
+    ),
+  );
+
+  testWidgets('every position is labelled for a screen reader', (
+    tester,
+  ) async {
+    // Old tests 3 and 10. Named by POSITION rather than index: a
+    // screen-reader user hears "Middle target", which is the thing on
+    // the board, not "cover 2", which is an implementation detail.
+    //
+    // These labels are also the only hooks a renderer rewrite cannot
+    // invalidate -- they are an accessibility contract, so they outlive
+    // every painter rename.
+    await tester.pumpWidget(host(isOpponent: true));
+    await tester.pump();
+
+    expect(find.bySemanticsLabel('Left target'), findsOneWidget);
+    expect(find.bySemanticsLabel('Middle target'), findsOneWidget);
+    expect(find.bySemanticsLabel('Right target'), findsOneWidget);
+  });
+
+  testWidgets('your own row is cover, theirs is a target', (tester) async {
+    // The asymmetry in the words matters: you hide behind cover, you
+    // shoot at a target. One row cannot be mistaken for the other by a
+    // screen reader any more than by an eye.
+    await tester.pumpWidget(host());
+    await tester.pump();
+
+    expect(find.bySemanticsLabel('Middle cover'), findsOneWidget);
+    expect(find.bySemanticsLabel('Middle target'), findsNothing);
+  });
+
+  testWidgets('a tap reports which position was chosen', (tester) async {
+    final taps = <int>[];
+    await tester.pumpWidget(host(isOpponent: true, onTap: taps.add));
+    await tester.pump();
+
+    for (var i = 0; i < kPaintBallPositions; i++) {
+      await tester.tap(
+        find.bySemanticsLabel('${['Left', 'Middle', 'Right'][i]} target'),
+      );
+    }
+    await tester.pump();
+
+    expect(taps, [0, 1, 2]);
+  });
+
+  testWidgets('nothing is selectable when the row is disabled', (
+    tester,
+  ) async {
+    // Old test 5. A player must not be able to move out of turn.
+    var tapped = false;
+    await tester.pumpWidget(
+      host(isOpponent: true, enabled: false, onTap: (_) => tapped = true),
+    );
+    await tester.pump();
+
+    for (final target in find.byType(GestureDetector).evaluate()) {
+      await tester.tap(find.byWidget(target.widget), warnIfMissed: false);
+    }
+    await tester.pump();
+
+    expect(tapped, isFalse);
+  });
+
+  testWidgets('exactly three bays are drawn, all keyed to this side', (
+    tester,
+  ) async {
+    await tester.pumpWidget(host(isOpponent: true));
+    await tester.pump();
+
+    for (var i = 0; i < kPaintBallPositions; i++) {
+      expect(
+        find.byKey(PaintBallFieldKeys.bay(i, isOpponent: true)),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(PaintBallFieldKeys.bay(i, isOpponent: false)),
+        findsNothing,
+        reason: 'a row must not render the other side’s bays',
+      );
+    }
+  });
+
+  testWidgets('only the aimed bay is in the aimed state', (tester) async {
+    // With no Fire button the aimed cover IS the confirmation that a
+    // target is chosen, so exactly one may claim it. Two aimed bays
+    // would make the commit ambiguous.
+    await tester.pumpWidget(host(isOpponent: true, aimedAt: 2));
+    await tester.pump();
+
+    final states = <int, CoverBayState>{};
+    for (var i = 0; i < kPaintBallPositions; i++) {
+      final paint = tester.widget<CustomPaint>(
+        find.descendant(
+          of: find.byKey(PaintBallFieldKeys.bay(i, isOpponent: true)),
+          matching: find.byType(CustomPaint),
+          matchRoot: true,
+        ),
+      );
+      states[i] = (paint.painter! as CoverBayPainter).state;
+    }
+
+    expect(states[2], CoverBayState.aimed);
+    expect(states[0], isNot(CoverBayState.aimed));
+    expect(states[1], isNot(CoverBayState.aimed));
+  });
+
+  testWidgets('a hidden occupant puts exactly one figure on the row', (
+    tester,
+  ) async {
+    // Old tests 6 and 7. You can see where YOU are hiding; their
+    // position appears only after a round resolves. One figure, not one
+    // per cover.
+    await tester.pumpWidget(host(hiddenAt: 1));
+    await tester.pump();
+
+    expect(
+      find.byKey(PaintBallFieldKeys.figure(1, isOpponent: false)),
+      findsOneWidget,
+    );
+    expect(find.byType(FieldFigure), findsOneWidget);
+  });
+
+  testWidgets('no occupant means no figure at all', (tester) async {
+    // The hidden information the whole game turns on. If their figure
+    // were drawn before the reveal, the guess would stop being a guess.
+    await tester.pumpWidget(host(isOpponent: true));
+    await tester.pump();
+
+    expect(find.byType(FieldFigure), findsNothing);
+  });
+
+  testWidgets('the figure stands on the centre of its own cover', (
+    tester,
+  ) async {
+    // DEVICE-REPORTED REGRESSION (old test 18), now checked through the
+    // composition rather than the formula alone -- the formula is unit
+    // tested in its own task, but a correct formula wired to the wrong
+    // cover width would still drift.
+    for (final width in [360.0, 390.0, 430.0]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: width,
+              height: 120,
+              child: CoverRow(
+                isOpponent: false,
+                hiddenAt: 2,
+                aimedAt: null,
+                enabled: true,
+                ownerColor: const Color(0xFF5EEAD4),
+                reduceMotion: true,
+                onTap: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final figure = tester.getRect(
+        find.byKey(PaintBallFieldKeys.figure(2, isOpponent: false)),
+      );
+      final bay = tester.getRect(
+        find.byKey(PaintBallFieldKeys.bay(2, isOpponent: false)),
+      );
+
+      expect(
+        (figure.center.dx - bay.center.dx).abs(),
+        lessThan(1.0),
+        reason:
+            'at width $width the figure sits '
+            '${(figure.center.dx - bay.center.dx).abs().toStringAsFixed(1)}pt '
+            'off the centre of its cover',
+      );
+    }
+  });
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `flutter test test/features/games/paint_ball_cover_row_test.dart`
+Expected: FAIL — `field/cover_row.dart` does not resolve.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `lib/features/games/paint_ball/presentation/widgets/field/cover_row.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+
+import '../paint_ball_field.dart'
+    show
+        kPaintBallCoverWidth,
+        kPaintBallPositions,
+        kPaintBallTargetScale,
+        paintBallPositionName;
+import 'cover_bay.dart';
+import 'field_figure.dart';
+
+/// One side of the field: three bays, and the figure sheltering in one.
+///
+/// The figure sits ABOVE the bays rather than inside one, because a
+/// child cannot travel outside its parent's box and changing cover is a
+/// journey across the whole row (see [FieldFigure]).
+class CoverRow extends StatelessWidget {
+  const CoverRow({
+    super.key,
+    required this.isOpponent,
+    required this.hiddenAt,
+    required this.aimedAt,
+    required this.enabled,
+    required this.ownerColor,
+    required this.reduceMotion,
+    this.aimingAt,
+    this.onTap,
+    this.onTapFigure,
+    this.emerged = true,
+    this.coverStyle,
+  });
+
+  final bool isOpponent;
+
+  /// Where this row's occupant is, when the viewer may know. Always set
+  /// for your own row; for theirs only after a round resolves.
+  final int? hiddenAt;
+
+  /// The bay being aimed at. Exactly one, or none.
+  final int? aimedAt;
+
+  final bool enabled;
+  final Color ownerColor;
+  final bool reduceMotion;
+
+  /// Where this row's occupant is pointing, which leans the figure.
+  final int? aimingAt;
+
+  final ValueChanged<int>? onTap;
+
+  /// Set only when the figure is the fire control.
+  final VoidCallback? onTapFigure;
+
+  /// False during the replay's first beat, while both players are still
+  /// behind cover and about to step out.
+  final bool emerged;
+
+  /// Overrides §2.3's bay-of-darkness. See [PaintBallCoverStyle].
+  final PaintBallCoverStyle? coverStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    final coverWidth =
+        kPaintBallCoverWidth * (isOpponent ? kPaintBallTargetScale : 1);
+    final isAiming = aimingAt != null && hiddenAt != null && emerged;
+
+    // Per-column lean, in turns. Small deliberately: the tilt says which
+    // cover is being aimed at, and a figure rotated far enough to lose
+    // its pointing silhouette stops communicating that at all.
+    final tilt =
+        isAiming
+            ? (aimingAt! - hiddenAt!) * (isOpponent ? -0.045 : 0.045)
+            : 0.0;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SizedBox(
+          height: 92,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: List.generate(kPaintBallPositions, (index) {
+                  return Semantics(
+                    // container: true so each becomes its own node.
+                    // Without it a screen reader announces one
+                    // undifferentiated strip instead of three targets.
+                    container: true,
+                    button: enabled,
+                    // Named by position, not index: a screen-reader user
+                    // hears "Middle target" -- the thing on the board --
+                    // rather than "cover 2".
+                    //
+                    // Your row is COVER, theirs is a TARGET. You hide
+                    // behind one and shoot at the other, so the words
+                    // differ as much as the rows do.
+                    label:
+                        isOpponent
+                            ? '${paintBallPositionName(index)} target'
+                            : '${paintBallPositionName(index)} cover',
+                    child: GestureDetector(
+                      onTap: enabled ? () => onTap?.call(index) : null,
+                      behavior: HitTestBehavior.opaque,
+                      child: SizedBox(
+                        width: coverWidth,
+                        height: 92,
+                        child: CoverBay(
+                          position: index,
+                          isOpponent: isOpponent,
+                          state: _stateFor(index),
+                          ownerColor: ownerColor,
+                          style: coverStyle,
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              if (hiddenAt != null && emerged)
+                FieldFigure(
+                  position: hiddenAt!,
+                  isOpponent: isOpponent,
+                  rowWidth: constraints.maxWidth,
+                  coverWidth: coverWidth,
+                  rowHeight: 92,
+                  ownerColor: ownerColor,
+                  isAiming: isAiming,
+                  tilt: tilt,
+                  reduceMotion: reduceMotion,
+                  onTap: onTapFigure,
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Aimed outranks occupied: with no Fire button, the aimed bay is the
+  /// only confirmation that a target is chosen, so it must never be
+  /// outvoted by the fact that somebody is standing there.
+  CoverBayState _stateFor(int index) {
+    if (aimedAt == index) return CoverBayState.aimed;
+    if (hiddenAt == index) return CoverBayState.occupied;
+    return CoverBayState.rest;
+  }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `flutter test test/features/games/paint_ball_cover_row_test.dart`
+Expected: PASS, 9 tests.
+
+- [ ] **Step 5: Run the games suite to confirm nothing regressed**
+
+Run: `flutter test test/features/games/`
+Expected: all pass. This task adds files only.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add lib/features/games/paint_ball/presentation/widgets/field/cover_row.dart test/features/games/paint_ball_cover_row_test.dart
+git commit -m "$(cat <<'EOF'
+feat(paintball): one side of the field, bays plus its occupant
+
+The semantic labels come across unchanged, and that is the point: they
+are an accessibility contract rather than an implementation detail, so
+they are the only test hooks a renderer rewrite cannot invalidate. Your
+row is COVER and theirs is a TARGET -- you hide behind one and shoot at
+the other, so the words differ as much as the rows do, and a screen
+reader can no more confuse them than an eye can.
+
+Aimed outranks occupied in the bay's state. With no Fire button the
+aimed bay is the only confirmation that a target is chosen, so the fact
+that somebody is standing there must never outvote it.
+
+The figure sits above the bays rather than inside one, because changing
+cover is a journey across the whole row and a child cannot travel
+outside its parent's box.
+
+The device-reported centring bug is re-checked here through the
+composition, not just the formula: a correct formula wired to the wrong
+cover width would still drift, and the opponent's covers are scaled.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
 ## Remaining tasks: Stages 3–7
 
-Tasks 9–14 cover the rest. Tasks 9 and 10 complete Stage 2 (the cover row, then the field composition plus the 25-test rewrite) and are written in the pass that follows Task 8; Tasks 11–14 follow the Stage 2 checkpoint. Their scope and boundaries are fixed:
+Tasks 10–14 cover the rest. Task 10 completes Stage 2 (the field composition plus the 25-test rewrite against the Task 0 map) and is written in the pass that follows Task 9; Tasks 11–14 follow the Stage 2 checkpoint. Their scope and boundaries are fixed:
 
 | Task | Stage | Deliverable |
 |---|---|---|
