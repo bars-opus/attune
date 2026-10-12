@@ -6,6 +6,7 @@ import 'package:attune/features/planning/v2/presentation/planning_v2_providers.d
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../chat/support/chat_test_harness.dart' show withScreenUtil;
 import 'fake_planning_gateway.dart';
 
 List<Override> planningV2Overrides(
@@ -29,10 +30,12 @@ Widget planningV2TestApp(
 }) =>
     ProviderScope(
       overrides: planningV2Overrides(gateway, store: store),
-      child: MaterialApp(
+      // The app's shared widgets (ErrorStateWidget, CardInkWell, AppButton...)
+      // size with flutter_screenutil, exactly as in the app.
+      child: withScreenUtil(MaterialApp(
         theme: ThemeData(useMaterial3: true),
         darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
         themeMode: themeMode,
         home: home,
-      ),
+      )),
     );
