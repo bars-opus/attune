@@ -82,7 +82,7 @@ class PlanningV2TextEditorScreenState extends ConsumerState<PlanningV2TextEditor
           await _titleNewNote(block);
           if (!mounted) return;
           _dirty = false;
-          Navigator.of(context).pop();
+          Navigator.of(context).pop(true); // saved
         case TextGone():
           _dirty = false;
           _snack('Your partner removed this block.');

@@ -58,7 +58,11 @@ class _PlanningV2CategoryScreenState extends ConsumerState<PlanningV2CategoryScr
 
   /// Notes skip the template choice: a blank sheet opens straight into the
   /// editor, and its title comes from the first line on save.
+  bool _creatingNote = false;
+
   Future<void> _newNote() async {
+    if (_creatingNote) return; // a double-tap must not make two notes
+    _creatingNote = true;
     try {
       final detail = await ref.read(planningV2RepositoryProvider).createEntry(
           id: const Uuid().v4(), categoryId: _category.id, title: planningV2NewNoteTitle,
@@ -67,6 +71,8 @@ class _PlanningV2CategoryScreenState extends ConsumerState<PlanningV2CategoryScr
       if (mounted) _openEntry(detail.entry.id, openEditor: true);
     } catch (e) {
       if (mounted) showPlanningV2Error(context, e);
+    } finally {
+      _creatingNote = false;
     }
   }
 

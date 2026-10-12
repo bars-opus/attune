@@ -98,6 +98,7 @@ String planningV2ErrorMessage(PlanningV2Error error) => switch (error) {
       PlanningV2LimitReached(limit: 'items_per_block') => 'This list is full. Start a new list to add more.',
       PlanningV2LimitReached(limit: 'categories') => 'You have the most categories allowed. Hide or delete one first.',
       PlanningV2LimitReached(limit: 'text_plain_chars') => 'That text is too long. Split it into two blocks.',
+      PlanningV2LimitReached(limit: 'pinned_per_category') => 'You can pin up to 20 plans here. Unpin one to pin this.',
       PlanningV2LimitReached() => 'That is over the limit. Make it shorter and try again.',
       PlanningV2InvalidInput(field: 'title') => 'Give it a title (up to 120 characters).',
       PlanningV2InvalidInput(field: 'name') => 'Give it a name (up to 40 characters).',

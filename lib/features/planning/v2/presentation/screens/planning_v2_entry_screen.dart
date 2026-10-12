@@ -51,14 +51,36 @@ class _PlanningV2EntryScreenState extends ConsumerState<PlanningV2EntryScreen> {
         final text = detail.blocks.where((b) => b.type == PlanningBlockType.text).firstOrNull;
         if (text == null) return;
         _editorOpened = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
           if (!mounted) return;
-          Navigator.of(context).push(planningV2Route(PlanningV2TextEditorScreen(
+          final saved = await Navigator.of(context).push<bool>(planningV2Route(PlanningV2TextEditorScreen(
               args: (relationshipId: widget.relationshipId, entryId: widget.entryId), block: text)));
+          if (saved != true && mounted) await _discardIfUntouched();
         });
       },
       fireImmediately: true,
     );
+  }
+
+  /// A new note closed without writing anything is removed, so backing out
+  /// never leaves empty "New note" plans behind (review m1). Anything
+  /// typed, renamed or added keeps the note.
+  Future<void> _discardIfUntouched() async {
+    final args = (relationshipId: widget.relationshipId, entryId: widget.entryId);
+    final detail = ref.read(planningV2EntryProvider(args)).valueOrNull;
+    if (detail == null) return;
+    final untouched = detail.entry.categorySeedKey == 'notes' &&
+        detail.entry.title == planningV2NewNoteTitle &&
+        detail.blocks.every((b) => b.type == PlanningBlockType.text && (b.plainText ?? '').trim().isEmpty);
+    if (!untouched) return;
+    try {
+      await ref.read(planningV2RepositoryProvider).deleteEntry(widget.entryId);
+    } catch (_) {
+      return; // keep the empty note rather than show an error for a non-action
+    }
+    ref.invalidate(planningV2EntriesProvider(
+        (relationshipId: widget.relationshipId, categoryId: detail.entry.categoryId, group: 'open')));
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override

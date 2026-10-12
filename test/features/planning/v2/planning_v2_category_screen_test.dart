@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:attune/features/planning/v2/data/planning_v2_models.dart';
 import 'package:attune/features/planning/v2/presentation/screens/planning_v2_category_screen.dart';
 import 'package:attune/features/planning/v2/presentation/screens/planning_v2_entry_screen.dart';
@@ -196,6 +198,52 @@ void main() {
       expect(call['p_title'], 'New note');
       expect(call['p_use_template'], isTrue, reason: 'the Notes template is the blank sheet');
       expect(find.byType(PlanningV2TextEditorScreen), findsOneWidget);
+    });
+
+    FakePlanningGateway noteGateway() {
+      final g = _gateway();
+      g.handlers['create_planning_entry'] = (p) => fakeEntryDetailJson(
+          id: p['p_id'] as String, title: 'New note', seedKey: 'notes', categoryName: 'Notes', blocks: [
+            fakeBlockJson(id: 'b1', type: 'text', plainText: '', payload: {
+              'delta': [{'insert': '\n'}]
+            }),
+          ]);
+      g.handlers['get_planning_entry'] = (p) => g.handlers['create_planning_entry']!(p);
+      g.handlers['delete_planning_entry'] = (_) => {'deleted': true};
+      return g;
+    }
+
+    testWidgets('backing out of a new note without writing leaves no empty note behind (review m1)', (tester) async {
+      final g = noteGateway();
+      await tester.pumpWidget(planningV2TestApp(g, PlanningV2CategoryScreen(relationshipId: 'r1', category: notes())));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New note'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PlanningV2TextEditorScreen), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      final created = g.callsTo('create_planning_entry').single['p_id'];
+      expect(g.callsTo('delete_planning_entry').single, {'p_id': created});
+      expect(find.byType(PlanningV2EntryScreen), findsNothing, reason: 'straight back to the Notes list');
+    });
+
+    testWidgets('double-tapping New note creates one note (review m1)', (tester) async {
+      final g = noteGateway();
+      final slow = Completer<void>();
+      final create = g.handlers['create_planning_entry']!;
+      g.handlers['create_planning_entry'] = (p) async {
+        await slow.future; // the first create is still in flight when the second tap lands
+        return create(p);
+      };
+      await tester.pumpWidget(planningV2TestApp(g, PlanningV2CategoryScreen(relationshipId: 'r1', category: notes())));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New note'));
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(find.text('New note'));
+      await tester.pump(const Duration(milliseconds: 100));
+      slow.complete();
+      await tester.pumpAndSettle();
+      expect(g.callsTo('create_planning_entry'), hasLength(1));
     });
 
     testWidgets('Notes has no template menu items', (tester) async {

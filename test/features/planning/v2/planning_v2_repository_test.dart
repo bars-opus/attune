@@ -76,7 +76,8 @@ void main() {
       const all = <PlanningV2Error>[
         PlanningV2Unauthorized(inactive: true), PlanningV2Unauthorized(inactive: false),
         PlanningV2NotFound(), PlanningV2StaleVersion({}),
-        PlanningV2LimitReached('blocks_per_entry'), PlanningV2LimitReached('zzz'),
+        PlanningV2LimitReached('blocks_per_entry'), PlanningV2LimitReached('pinned_per_category'),
+        PlanningV2LimitReached('zzz'),
         PlanningV2InvalidInput('title'), PlanningV2InvalidInput('zzz'), PlanningV2Network('x'),
       ];
       for (final e in all) {
@@ -172,5 +173,10 @@ void main() {
     expect(gateway.calls.first.$2, {'p_id': 'e1', 'p_pinned': true});
     expect(gateway.calls.last.$2, {'p_id': 'e1'});
     expect(pinned.isPinned, isTrue);
+  });
+
+  test('the pin limit has its own message, not "make it shorter" (review m2)', () {
+    expect(planningV2ErrorMessage(const PlanningV2LimitReached('pinned_per_category')),
+        'You can pin up to 20 plans here. Unpin one to pin this.');
   });
 }
