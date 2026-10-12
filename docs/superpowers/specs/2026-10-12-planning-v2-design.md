@@ -523,3 +523,26 @@ Approved in conversation after P1 merged. Implemented on `feat/planning-notes-pi
 - **Swipe gestures, consistent across Planning:** swiping **right deletes** (with Undo) for plans, blocks and checklist items. Swiping **left** on a plan pins or unpins it and leaves it on screen. Long-press and screen-reader custom actions offer Pin/Delete too.
 - **Undo for a deleted plan:** `restore_planning_entry` restores the plan and exactly the blocks and items that delete removed (matched on its `deleted_at`). It never restores ones deleted earlier on their own, and it refuses to restore into a deleted category.
 
+## 16. Amendment (2026-10-12): P2 replaces v1 outright
+
+Decided by the user after P1 and Notes & pins merged: the app is in development, the user is its only tester, and there is no v1 data worth keeping. This supersedes §9's data copy, compatibility shim and preview stage.
+
+- **No data copy and no compatibility layer.** The v1 tables (`planning_items`, `planning_events`, `planning_event_tasks`, `planning_notes`) and every v1 RPC are dropped. `planning_change_signals` and `bump_planning_signal` stay, because v2 uses them.
+- **No flag or gate.** The `PLANNING_V2_PREVIEW` define and the v1 screens are deleted. The `/planning` route opens the new Planning home, which keeps the Planning / Calendar tabs.
+- **No "v2" naming in the app.** `lib/features/planning/v2/*` becomes `lib/features/planning/*`, and Dart identifiers drop the `V2` (`PlanningV2Repository` becomes `PlanningRepository`, and so on). SQL helper names (`planning_v2_*`) are internal and keep their names.
+- **Ask Attune → Planning.**
+  - `ai_assist_planning_links` points at one v2 plan (`planning_entry_id`, FK to `planning_entries`). Existing link rows point at v1 data, so they are deleted.
+  - `create_planning_from_assist_message(p_message_id, p_edited_title, p_edited_date)` keeps its checks: auth, Attune-Assist origin, active membership, idempotency via the link. It returns `TABLE (planning_entry_id uuid)`:
+    - a suggested **task** becomes an Everyday plan titled with the task, holding a "To do" checklist whose single item carries the date as its due date;
+    - a suggested **event** becomes an Everyday plan with a Date block.
+  - Either way, "Add to Planning" can open the plan.
+- **Calendar feed.**
+  - `list_planning_calendar_entries(p_relationship_id, p_start_date, p_end_date)` keeps its 42-day bound. It becomes SECURITY DEFINER with the v2 membership check, since v2 tables have no client grants.
+  - It returns `entry_kind` (`date` | `item`), `entry_id` (the plan to open), `item_id`, `entry_date`, `title` and `is_complete`.
+  - Date blocks appear on every day of their range inside the window; dated checklist items appear on their due date.
+- **Conversations summary.** `get_planning_summary(p_relationship_id, p_today)` returns `kind` (`overdue` | `upcoming` | `recent`), `entry_id`, `title` and `context_date`. The order of preference is:
+  1. the oldest overdue unticked item;
+  2. otherwise the soonest upcoming dated item or date;
+  3. otherwise the most recently active plan;
+  4. otherwise no row, and the card reads "Start planning together".
+
