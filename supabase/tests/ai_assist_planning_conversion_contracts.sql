@@ -118,6 +118,24 @@ BEGIN
     RAISE EXCEPTION 'EXPLOIT: edited date not used as the to-do due date';
   END IF;
 
+  -- Contract 8 (review minor 1): if the plan a suggestion became was deleted,
+  -- adding it again makes a fresh plan (and relinks), instead of returning
+  -- the dead one forever.
+  SELECT planning_entry_id INTO v_entry FROM public.ai_assist_planning_links WHERE message_id = v_task_msg;
+  PERFORM public.delete_planning_entry(v_entry);
+  -- the chat bubble reads the link to choose "Added" vs "Add": it must go with the plan
+  IF EXISTS (SELECT 1 FROM public.ai_assist_planning_links WHERE message_id = v_task_msg) THEN
+    RAISE EXCEPTION 'EXPLOIT: the link outlived its deleted plan, so the bubble still says Added';
+  END IF;
+  SELECT planning_entry_id INTO v_again FROM public.create_planning_from_assist_message(v_task_msg, NULL, NULL);
+  IF v_again = v_entry THEN RAISE EXCEPTION 'EXPLOIT: re-adding returned the deleted plan'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.planning_entries WHERE id = v_again AND deleted_at IS NULL) THEN
+    RAISE EXCEPTION 'EXPLOIT: re-adding did not create a live plan';
+  END IF;
+  IF (SELECT planning_entry_id FROM public.ai_assist_planning_links WHERE message_id = v_task_msg) <> v_again THEN
+    RAISE EXCEPTION 'EXPLOIT: the link still points at the deleted plan';
+  END IF;
+
   RAISE NOTICE 'ai_assist_planning_conversion_contracts: PASS';
 END $$;
 ROLLBACK;

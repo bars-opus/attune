@@ -18,6 +18,23 @@ ALTER TABLE public.ai_assist_planning_links ADD CONSTRAINT ai_assist_planning_li
   FOREIGN KEY (planning_entry_id, relationship_id)
   REFERENCES public.planning_entries(id, relationship_id) ON DELETE CASCADE;
 
+-- A link lives only as long as its plan: when a plan is deleted, its
+-- links go too, so the chat bubble shows "Add to Planning" again instead
+-- of an "Added" that leads to a deleted plan (P2 review minor 1).
+CREATE FUNCTION public.planning_drop_assist_links_on_delete()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF NEW.deleted_at IS NOT NULL AND OLD.deleted_at IS NULL THEN
+    DELETE FROM public.ai_assist_planning_links WHERE planning_entry_id = NEW.id;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.planning_drop_assist_links_on_delete() FROM PUBLIC, anon, authenticated;
+CREATE TRIGGER planning_entries_drop_assist_links
+  AFTER UPDATE OF deleted_at ON public.planning_entries
+  FOR EACH ROW EXECUTE FUNCTION public.planning_drop_assist_links_on_delete();
+
 DROP FUNCTION public.create_planning_from_assist_message(uuid, text, date);
 
 -- Turns an Attune Assist suggestion into a plan in Everyday, once per
@@ -57,10 +74,17 @@ BEGIN
   END IF;
 
   -- The message row lock above serializes concurrent conversions of it.
+  -- An existing link counts only while its plan is live: if the couple
+  -- deleted that plan, the link is dropped and a fresh plan is made, so
+  -- "Added to Planning" never leads to a dead plan (P2 review minor 1).
   SELECT * INTO v_link FROM public.ai_assist_planning_links WHERE message_id = p_message_id;
   IF v_link.message_id IS NOT NULL THEN
-    RETURN QUERY SELECT v_link.planning_entry_id;
-    RETURN;
+    IF EXISTS (SELECT 1 FROM public.planning_entries
+               WHERE id = v_link.planning_entry_id AND deleted_at IS NULL) THEN
+      RETURN QUERY SELECT v_link.planning_entry_id;
+      RETURN;
+    END IF;
+    DELETE FROM public.ai_assist_planning_links WHERE message_id = p_message_id;
   END IF;
 
   v_proposal := v_message.assistant_payload -> 'suggested_planning_item';
