@@ -1,3 +1,4 @@
+import 'package:attune/features/planning/v2/data/planning_v2_models.dart';
 import 'package:attune/features/planning/v2/presentation/planning_v2_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,4 +58,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(result, isTrue);
   });
+
+  test('the Conversations line for each Planning summary', () {
+    expect(planningSummaryLine(null), 'Start planning together');
+    expect(planningSummaryLine(PlanningSummary(kind: PlanningSummaryKind.overdue, entryId: 'e',
+        title: 'Eggs', contextDate: DateTime(2026, 11, 8))), 'Eggs was due Nov 8');
+    expect(planningSummaryLine(PlanningSummary(kind: PlanningSummaryKind.upcoming, entryId: 'e',
+        title: 'Bali', contextDate: DateTime(2026, 11, 28))), 'Bali · Nov 28');
+    expect(planningSummaryLine(const PlanningSummary(kind: PlanningSummaryKind.recent, entryId: 'e',
+        title: 'Saturday shop', contextDate: null)), 'Saturday shop');
+  });
 }
+

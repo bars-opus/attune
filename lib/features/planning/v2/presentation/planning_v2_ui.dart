@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../data/planning_v2_error.dart';
+import '../data/planning_v2_models.dart';
 import '../domain/code_point_limit.dart';
 
 /// Must equal `planning_v2_icons()` / `planning_v2_colors()` in migration
@@ -116,6 +117,16 @@ Future<bool> planningV2Confirm(
 InputCounterWidgetBuilder codePointCounter(TextEditingController controller, int max) =>
     (context, {required currentLength, required isFocused, maxLength}) =>
         Text('${codePointLength(controller.text)}/$max', style: Theme.of(context).textTheme.bodySmall);
+
+/// The single Planning line on the Conversations card.
+String planningSummaryLine(PlanningSummary? summary) => switch (summary) {
+      null => 'Start planning together',
+      PlanningSummary(kind: PlanningSummaryKind.overdue, :final title, :final contextDate) =>
+        contextDate == null ? '$title was due' : '$title was due ${DateFormat.MMMd().format(contextDate)}',
+      PlanningSummary(kind: PlanningSummaryKind.upcoming, :final title, :final contextDate) =>
+        contextDate == null ? title : '$title · ${DateFormat.MMMd().format(contextDate)}',
+      PlanningSummary(:final title) => title,
+    };
 
 String formatPlanningRange(DateTime? start, DateTime? end) {
   if (start == null) return 'Pick a date';
