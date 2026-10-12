@@ -13,6 +13,7 @@ void main() {
     int? hiddenAt,
     int? aimedAt,
     bool enabled = true,
+    bool emerged = true,
     ValueChanged<int>? onTap,
     VoidCallback? onTapFigure,
   }) => MaterialApp(
@@ -25,6 +26,7 @@ void main() {
           hiddenAt: hiddenAt,
           aimedAt: aimedAt,
           enabled: enabled,
+          emerged: emerged,
           ownerColor: const Color(0xFF5EEAD4),
           reduceMotion: false,
           onTap: onTap,
@@ -88,12 +90,38 @@ void main() {
     );
     await tester.pump();
 
-    for (final target in find.byType(GestureDetector).evaluate()) {
+    final detectors = find.byType(GestureDetector);
+    expect(
+      detectors.evaluate().length,
+      greaterThanOrEqualTo(kPaintBallPositions),
+      reason:
+          'a positive control: without this the taps below could be '
+          'tapping nothing at all',
+    );
+
+    for (final target in detectors.evaluate()) {
       await tester.tap(find.byWidget(target.widget), warnIfMissed: false);
     }
     await tester.pump();
 
     expect(tapped, isFalse);
+  });
+
+  testWidgets('the same row is selectable when enabled', (tester) async {
+    // Mirror of the disabled case: proves the difference is the enabled
+    // flag, not a null callback or a finder that matches nothing.
+    final taps = <int>[];
+    await tester.pumpWidget(
+      host(isOpponent: true, enabled: true, onTap: taps.add),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(PaintBallFieldKeys.bay(1, isOpponent: true)),
+    );
+    await tester.pump();
+
+    expect(taps, [1]);
   });
 
   testWidgets('exactly three bays are drawn, all keyed to this side', (
@@ -135,8 +163,29 @@ void main() {
     }
 
     expect(states[2], CoverBayState.aimed);
-    expect(states[0], isNot(CoverBayState.aimed));
-    expect(states[1], isNot(CoverBayState.aimed));
+    expect(states[0], CoverBayState.rest);
+    expect(states[1], CoverBayState.rest);
+  });
+
+  testWidgets('a bay that is both aimed at and occupied reads as aimed', (
+    tester,
+  ) async {
+    // With no Fire button the aimed bay is the player's only
+    // confirmation that a target is chosen, so "somebody is standing
+    // here" must not outvote it. Without this case, swapping the first
+    // two branches of _stateFor passes every other test.
+    await tester.pumpWidget(host(isOpponent: true, hiddenAt: 2, aimedAt: 2));
+    await tester.pump();
+
+    final paint = tester.widget<CustomPaint>(
+      find.descendant(
+        of: find.byKey(PaintBallFieldKeys.bay(2, isOpponent: true)),
+        matching: find.byType(CustomPaint),
+        matchRoot: true,
+      ),
+    );
+
+    expect((paint.painter! as CoverBayPainter).state, CoverBayState.aimed);
   });
 
   testWidgets('a hidden occupant puts exactly one figure on the row', (
@@ -155,6 +204,23 @@ void main() {
     expect(find.byType(FieldFigure), findsOneWidget);
   });
 
+  testWidgets('a figure is absent until it has emerged', (tester) async {
+    // During the replay's first beat both players are still behind
+    // cover. The figure is omitted rather than hidden, which means its
+    // travel state unmounts -- so emerging is a pop-in, not a step-out.
+    // Pinned as the current behaviour so the replay task inherits a
+    // fact rather than a surprise.
+    await tester.pumpWidget(host(hiddenAt: 1, emerged: false));
+    await tester.pump();
+
+    expect(find.byType(FieldFigure), findsNothing);
+
+    await tester.pumpWidget(host(hiddenAt: 1));
+    await tester.pump();
+
+    expect(find.byType(FieldFigure), findsOneWidget);
+  });
+
   testWidgets('no occupant means no figure at all', (tester) async {
     // The hidden information the whole game turns on. If their figure
     // were drawn before the reveal, the guess would stop being a guess.
@@ -170,44 +236,53 @@ void main() {
     // DEVICE-REPORTED REGRESSION (old test 18), now checked through the
     // composition rather than the formula alone -- the formula is unit
     // tested in its own task, but a correct formula wired to the wrong
-    // cover width would still drift.
-    for (final width in [360.0, 390.0, 430.0]) {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SizedBox(
-              width: width,
-              height: 120,
-              child: CoverRow(
-                isOpponent: false,
-                hiddenAt: 2,
-                aimedAt: null,
-                enabled: true,
-                ownerColor: const Color(0xFF5EEAD4),
-                reduceMotion: true,
-                onTap: (_) {},
+    // cover width would still drift. Both sides are checked: the
+    // opponent's covers are scaled by kPaintBallTargetScale, so a row
+    // that drops the scale drifts only on that side.
+    for (final isOpponent in [false, true]) {
+      for (final width in [360.0, 390.0, 430.0]) {
+        for (final position in [0, 2]) {
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: SizedBox(
+                  width: width,
+                  height: 120,
+                  child: CoverRow(
+                    isOpponent: isOpponent,
+                    hiddenAt: position,
+                    aimedAt: null,
+                    enabled: true,
+                    ownerColor: const Color(0xFF5EEAD4),
+                    reduceMotion: true,
+                    onTap: (_) {},
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
+          );
+          await tester.pumpAndSettle();
 
-      final figure = tester.getRect(
-        find.byKey(PaintBallFieldKeys.figure(2, isOpponent: false)),
-      );
-      final bay = tester.getRect(
-        find.byKey(PaintBallFieldKeys.bay(2, isOpponent: false)),
-      );
+          final figure = tester.getRect(
+            find.byKey(
+              PaintBallFieldKeys.figure(position, isOpponent: isOpponent),
+            ),
+          );
+          final bay = tester.getRect(
+            find.byKey(PaintBallFieldKeys.bay(position, isOpponent: isOpponent)),
+          );
 
-      expect(
-        (figure.center.dx - bay.center.dx).abs(),
-        lessThan(1.0),
-        reason:
-            'at width $width the figure sits '
-            '${(figure.center.dx - bay.center.dx).abs().toStringAsFixed(1)}pt '
-            'off the centre of its cover',
-      );
+          expect(
+            (figure.center.dx - bay.center.dx).abs(),
+            lessThan(1.0),
+            reason:
+                '${isOpponent ? 'opponent' : 'own'} row at width $width, '
+                'position $position: the figure sits '
+                '${(figure.center.dx - bay.center.dx).abs().toStringAsFixed(1)}pt '
+                'off the centre of its cover',
+          );
+        }
+      }
     }
   });
 }
