@@ -1,0 +1,213 @@
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/cover_bay.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/cover_row.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_figure.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart'
+    show kPaintBallPositions;
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  Widget host({
+    bool isOpponent = false,
+    int? hiddenAt,
+    int? aimedAt,
+    bool enabled = true,
+    ValueChanged<int>? onTap,
+    VoidCallback? onTapFigure,
+  }) => MaterialApp(
+    home: Scaffold(
+      body: SizedBox(
+        width: 390,
+        height: 120,
+        child: CoverRow(
+          isOpponent: isOpponent,
+          hiddenAt: hiddenAt,
+          aimedAt: aimedAt,
+          enabled: enabled,
+          ownerColor: const Color(0xFF5EEAD4),
+          reduceMotion: false,
+          onTap: onTap,
+          onTapFigure: onTapFigure,
+        ),
+      ),
+    ),
+  );
+
+  testWidgets('every position is labelled for a screen reader', (
+    tester,
+  ) async {
+    // Old tests 3 and 10. Named by POSITION rather than index: a
+    // screen-reader user hears "Middle target", which is the thing on
+    // the board, not "cover 2", which is an implementation detail.
+    //
+    // These labels are also the only hooks a renderer rewrite cannot
+    // invalidate -- they are an accessibility contract, so they outlive
+    // every painter rename.
+    await tester.pumpWidget(host(isOpponent: true));
+    await tester.pump();
+
+    expect(find.bySemanticsLabel('Left target'), findsOneWidget);
+    expect(find.bySemanticsLabel('Middle target'), findsOneWidget);
+    expect(find.bySemanticsLabel('Right target'), findsOneWidget);
+  });
+
+  testWidgets('your own row is cover, theirs is a target', (tester) async {
+    // The asymmetry in the words matters: you hide behind cover, you
+    // shoot at a target. One row cannot be mistaken for the other by a
+    // screen reader any more than by an eye.
+    await tester.pumpWidget(host());
+    await tester.pump();
+
+    expect(find.bySemanticsLabel('Middle cover'), findsOneWidget);
+    expect(find.bySemanticsLabel('Middle target'), findsNothing);
+  });
+
+  testWidgets('a tap reports which position was chosen', (tester) async {
+    final taps = <int>[];
+    await tester.pumpWidget(host(isOpponent: true, onTap: taps.add));
+    await tester.pump();
+
+    for (var i = 0; i < kPaintBallPositions; i++) {
+      await tester.tap(
+        find.bySemanticsLabel('${['Left', 'Middle', 'Right'][i]} target'),
+      );
+    }
+    await tester.pump();
+
+    expect(taps, [0, 1, 2]);
+  });
+
+  testWidgets('nothing is selectable when the row is disabled', (
+    tester,
+  ) async {
+    // Old test 5. A player must not be able to move out of turn.
+    var tapped = false;
+    await tester.pumpWidget(
+      host(isOpponent: true, enabled: false, onTap: (_) => tapped = true),
+    );
+    await tester.pump();
+
+    for (final target in find.byType(GestureDetector).evaluate()) {
+      await tester.tap(find.byWidget(target.widget), warnIfMissed: false);
+    }
+    await tester.pump();
+
+    expect(tapped, isFalse);
+  });
+
+  testWidgets('exactly three bays are drawn, all keyed to this side', (
+    tester,
+  ) async {
+    await tester.pumpWidget(host(isOpponent: true));
+    await tester.pump();
+
+    for (var i = 0; i < kPaintBallPositions; i++) {
+      expect(
+        find.byKey(PaintBallFieldKeys.bay(i, isOpponent: true)),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(PaintBallFieldKeys.bay(i, isOpponent: false)),
+        findsNothing,
+        reason: 'a row must not render the other side’s bays',
+      );
+    }
+  });
+
+  testWidgets('only the aimed bay is in the aimed state', (tester) async {
+    // With no Fire button the aimed cover IS the confirmation that a
+    // target is chosen, so exactly one may claim it. Two aimed bays
+    // would make the commit ambiguous.
+    await tester.pumpWidget(host(isOpponent: true, aimedAt: 2));
+    await tester.pump();
+
+    final states = <int, CoverBayState>{};
+    for (var i = 0; i < kPaintBallPositions; i++) {
+      final paint = tester.widget<CustomPaint>(
+        find.descendant(
+          of: find.byKey(PaintBallFieldKeys.bay(i, isOpponent: true)),
+          matching: find.byType(CustomPaint),
+          matchRoot: true,
+        ),
+      );
+      states[i] = (paint.painter! as CoverBayPainter).state;
+    }
+
+    expect(states[2], CoverBayState.aimed);
+    expect(states[0], isNot(CoverBayState.aimed));
+    expect(states[1], isNot(CoverBayState.aimed));
+  });
+
+  testWidgets('a hidden occupant puts exactly one figure on the row', (
+    tester,
+  ) async {
+    // Old tests 6 and 7. You can see where YOU are hiding; their
+    // position appears only after a round resolves. One figure, not one
+    // per cover.
+    await tester.pumpWidget(host(hiddenAt: 1));
+    await tester.pump();
+
+    expect(
+      find.byKey(PaintBallFieldKeys.figure(1, isOpponent: false)),
+      findsOneWidget,
+    );
+    expect(find.byType(FieldFigure), findsOneWidget);
+  });
+
+  testWidgets('no occupant means no figure at all', (tester) async {
+    // The hidden information the whole game turns on. If their figure
+    // were drawn before the reveal, the guess would stop being a guess.
+    await tester.pumpWidget(host(isOpponent: true));
+    await tester.pump();
+
+    expect(find.byType(FieldFigure), findsNothing);
+  });
+
+  testWidgets('the figure stands on the centre of its own cover', (
+    tester,
+  ) async {
+    // DEVICE-REPORTED REGRESSION (old test 18), now checked through the
+    // composition rather than the formula alone -- the formula is unit
+    // tested in its own task, but a correct formula wired to the wrong
+    // cover width would still drift.
+    for (final width in [360.0, 390.0, 430.0]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: width,
+              height: 120,
+              child: CoverRow(
+                isOpponent: false,
+                hiddenAt: 2,
+                aimedAt: null,
+                enabled: true,
+                ownerColor: const Color(0xFF5EEAD4),
+                reduceMotion: true,
+                onTap: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final figure = tester.getRect(
+        find.byKey(PaintBallFieldKeys.figure(2, isOpponent: false)),
+      );
+      final bay = tester.getRect(
+        find.byKey(PaintBallFieldKeys.bay(2, isOpponent: false)),
+      );
+
+      expect(
+        (figure.center.dx - bay.center.dx).abs(),
+        lessThan(1.0),
+        reason:
+            'at width $width the figure sits '
+            '${(figure.center.dx - bay.center.dx).abs().toStringAsFixed(1)}pt '
+            'off the centre of its cover',
+      );
+    }
+  });
+}
