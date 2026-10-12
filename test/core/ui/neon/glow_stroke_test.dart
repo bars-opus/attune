@@ -59,6 +59,11 @@ void main() {
     final core = canvas.drawnPaths.last;
     final halos = canvas.drawnPaths.take(canvas.drawnPaths.length - 1);
 
+    expect(
+      halos,
+      hasLength(2),
+      reason: 'rich draws two halo passes -- a positive control for the loop',
+    );
     for (final halo in halos) {
       expect(
         halo.color.a,
@@ -112,9 +117,20 @@ void main() {
       ),
       returnsNormally,
     );
+    expect(
+      canvas.drawnPaths,
+      hasLength(2),
+      reason: 'glow draws one halo and one core -- a positive control, '
+          'without which the alpha assertions below run zero times',
+    );
     for (final paint in canvas.drawnPaths) {
       expect(paint.color.a, lessThanOrEqualTo(1.0));
     }
+    expect(
+      canvas.drawnPaths.last.color.a,
+      1.0,
+      reason: 'the core takes the clamped value, not 1.4',
+    );
   });
 
   test('the pass count helper agrees with the enum', () {

@@ -4,6 +4,14 @@ import 'package:attune/core/ui/neon/neon_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Every BoxDecoration painted anywhere under the test's root, so the
+/// assertions read what was actually drawn rather than constructor args.
+List<BoxDecoration> _paintedDecorations(WidgetTester tester) => tester
+    .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+    .map((widget) => widget.decoration)
+    .whereType<BoxDecoration>()
+    .toList();
+
 void main() {
   testWidgets('the ground is painted even with nothing on it', (tester) async {
     // The field's ground is tier 1 of §2.1: it receives light and emits
@@ -18,6 +26,23 @@ void main() {
     final well = tester.widget<LightWell>(find.byType(LightWell));
     expect(well.tint, isNull);
     expect(tester.takeException(), isNull);
+
+    final decorations = _paintedDecorations(tester);
+    expect(
+      decorations,
+      isNotEmpty,
+      reason: 'a positive control: without this the rest asserts nothing',
+    );
+    expect(
+      decorations.any((d) => d.color == NeonTokens.groundColor),
+      isTrue,
+      reason: 'the ground must be painted with groundColor',
+    );
+    expect(
+      decorations.any((d) => d.gradient != null),
+      isTrue,
+      reason: 'the default tier draws the light well falloff',
+    );
   });
 
   testWidgets('a child renders over the ground, not under it', (tester) async {
@@ -52,6 +77,23 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.byType(LightWell), findsOneWidget);
+
+    final decorations = _paintedDecorations(tester);
+    expect(
+      decorations,
+      isNotEmpty,
+      reason: 'a positive control: without this the rest asserts nothing',
+    );
+    expect(
+      decorations.any((d) => d.color == NeonTokens.groundColor),
+      isTrue,
+      reason: 'the plain tier must still paint the ground itself',
+    );
+    expect(
+      decorations.every((d) => d.gradient == null),
+      isTrue,
+      reason: 'plain drops the falloff -- that is what makes it cheaper',
+    );
   });
 
   testWidgets('a zero-sized well does not throw', (tester) async {

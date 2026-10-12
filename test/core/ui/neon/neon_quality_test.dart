@@ -20,6 +20,16 @@ void main() {
     );
   });
 
+  test('the exact pass counts the painter branches on', () {
+    // glow_stroke's `isOuter = pass == 2` depends on rich being exactly
+    // 2. Raising rich to 3 without touching that branch would draw a
+    // duplicate inner pass instead of a wider outer one -- a visual
+    // regression with no test to catch it, since ordering alone still
+    // holds.
+    expect(NeonQuality.glow.haloPasses, 1);
+    expect(NeonQuality.rich.haloPasses, 2);
+  });
+
   test('plain draws no halo at all', () {
     // Spec §3.1: under plain, halo passes collapse to a single stroke.
     // The outline must still be VISIBLE -- the game has to remain
