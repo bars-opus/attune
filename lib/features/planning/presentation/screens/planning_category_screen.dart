@@ -357,9 +357,11 @@ class _EntryTile extends ConsumerWidget {
           await _togglePin(context, ref);
           return false; // pinning keeps the plan on screen
         }
-        return true;
+        // The delete takes the plan off the list itself (and puts it back if
+        // it fails), so the swipe never leaves a dismissed widget behind.
+        await _delete(context, ref);
+        return false;
       },
-      onDismissed: (_) => _delete(context, ref),
       child: Semantics(
         customSemanticsActions: {
           CustomSemanticsAction(label: _pinLabel): () => _togglePin(context, ref),

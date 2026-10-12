@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/chat/domain/services/chat_image_preparer.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -10,6 +12,16 @@ import '../planning_providers.dart';
 import '../planning_ui.dart';
 
 const _maxPhotos = 10;
+
+/// Picks a photo and re-encodes it to a JPEG with EXIF and GPS removed;
+/// null when the person cancels. A provider so tests can stand in for the
+/// camera and gallery.
+final planningPhotoPickerProvider = Provider<Future<Uint8List?> Function(ImageSource)>((ref) => (source) async {
+      final picked = await ImagePicker().pickImage(source: source);
+      if (picked == null) return null;
+      final prepared = await const ChatImagePreparer().prepare(picked.path);
+      return prepared.file.readAsBytes();
+    });
 
 /// Up to 10 photos, private to the couple. Each is re-encoded to JPEG on
 /// the device (EXIF and GPS stripped) before it is uploaded.
@@ -26,6 +38,9 @@ class _PhotoBlockViewState extends ConsumerState<PhotoBlockView> {
   bool _busy = false;
 
   Future<void> _add() async {
+    // Taken up front: the picker and re-encode can outlast this screen.
+    final ctl = ref.read(planningEntryProvider(widget.args).notifier);
+    final pick = ref.read(planningPhotoPickerProvider);
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       showDragHandle: true,
@@ -45,13 +60,11 @@ class _PhotoBlockViewState extends ConsumerState<PhotoBlockView> {
       ),
     );
     if (source == null || !mounted) return;
-    final picked = await ImagePicker().pickImage(source: source);
-    if (picked == null || !mounted) return;
     setState(() => _busy = true);
     try {
-      final prepared = await const ChatImagePreparer().prepare(picked.path);
-      final bytes = await prepared.file.readAsBytes();
-      await ref.read(planningEntryProvider(widget.args).notifier).addPhoto(widget.block.id, bytes);
+      final bytes = await pick(source);
+      if (bytes == null) return;
+      await ctl.addPhoto(widget.block.id, bytes);
     } on ChatImageRejected {
       if (mounted) {
         ScaffoldMessenger.of(context)

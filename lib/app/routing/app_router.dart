@@ -60,7 +60,7 @@ import 'package:attune/features/reminders/presentation/screens/family_members_sc
 import 'package:attune/features/timeline/presentation/screens/log_moment_details_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/log_moment_type_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
-import 'package:attune/features/planning/presentation/planning_ui.dart' show planningRouteName;
+import 'package:attune/features/planning/presentation/planning_ui.dart' show PlanningUnavailableScreen, planningRouteName;
 import 'package:attune/features/planning/presentation/screens/planning_entry_screen.dart';
 import 'package:attune/features/planning/presentation/screens/planning_home_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_entry_screen.dart';
@@ -634,9 +634,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         builder: (context, state) {
           final relationshipId = state.extra as String?;
           if (relationshipId == null) {
-            return const Scaffold(
-              body: Center(child: Text('Planning unavailable.')),
-            );
+            return const PlanningUnavailableScreen();
           }
           return PlanningHomeScreen(relationshipId: relationshipId);
         },
@@ -649,7 +647,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         builder: (context, state) {
           final target = state.extra as ({String relationshipId, String entryId})?;
           if (target == null) {
-            return const Scaffold(body: Center(child: Text('Planning unavailable.')));
+            return const PlanningUnavailableScreen();
           }
           return PlanningEntryScreen(relationshipId: target.relationshipId, entryId: target.entryId);
         },

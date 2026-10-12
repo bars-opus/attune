@@ -33,7 +33,12 @@ class DatePollBlockView extends ConsumerWidget {
   Future<void> _delete(BuildContext context, WidgetRef ref, PlanningItem option) async {
     final ctl = ref.read(planningEntryProvider(args).notifier);
     final index = block.items.indexOf(option);
-    await _guard(context, () => ctl.deleteItem(block.id, option.id));
+    try {
+      await ctl.deleteItem(block.id, option.id);
+    } catch (e) {
+      if (context.mounted) showPlanningError(context, e);
+      return; // nothing was removed, so there is nothing to undo
+    }
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: const Text('Dates removed'),
@@ -61,7 +66,12 @@ class DatePollBlockView extends ConsumerWidget {
             color: scheme.errorContainer,
             child: Icon(Icons.delete_outline_rounded, color: scheme.onErrorContainer),
           ),
-          onDismissed: (_) => _delete(context, ref, option),
+          // The delete takes the row away itself (and puts it back if it fails),
+          // so the swipe never leaves a dismissed widget in the tree.
+          confirmDismiss: (_) async {
+            await _delete(context, ref, option);
+            return false;
+          },
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

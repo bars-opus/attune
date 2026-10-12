@@ -151,7 +151,12 @@ class TableBlockView extends ConsumerWidget {
                   color: scheme.errorContainer,
                   child: Icon(Icons.delete_outline_rounded, color: scheme.onErrorContainer),
                 ),
-                onDismissed: (_) => _delete(context, ref, row),
+                // The delete takes the row away itself (and puts it back if it fails),
+                // so the swipe never leaves a dismissed widget in the tree.
+                confirmDismiss: (_) async {
+                  await _delete(context, ref, row);
+                  return false;
+                },
                 child: InkWell(
                   onTap: () => _editRow(context, ref, row),
                   child: ConstrainedBox(

@@ -97,7 +97,12 @@ class ExpensesBlockView extends ConsumerWidget {
             color: scheme.errorContainer,
             child: Icon(Icons.delete_outline_rounded, color: scheme.onErrorContainer),
           ),
-          onDismissed: (_) => _delete(context, ref, item),
+          // The delete takes the row away itself (and puts it back if it fails),
+          // so the swipe never leaves a dismissed widget in the tree.
+          confirmDismiss: (_) async {
+            await _delete(context, ref, item);
+            return false;
+          },
           child: InkWell(
             onTap: () => _edit(context, ref, item),
             child: Padding(

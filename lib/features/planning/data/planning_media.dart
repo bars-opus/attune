@@ -22,7 +22,8 @@ class SupabasePlanningMediaGateway implements PlanningMediaGateway {
 
   final SupabaseClient _supabase;
   static const bucket = 'planning-media';
-  static const signedUrlTtl = Duration(hours: 1);
+  /// Spec §3.9: photo links expire after 10 minutes.
+  static const signedUrlTtl = Duration(minutes: 10);
 
   @override
   Future<void> uploadJpeg(String path, Uint8List bytes) => _supabase.storage

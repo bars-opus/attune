@@ -103,12 +103,16 @@ final planningMediaGatewayProvider = Provider<PlanningMediaGateway>(
   (ref) => SupabasePlanningMediaGateway(Supabase.instance.client),
 );
 
-/// A signed URL per stored path, kept for most of its one-hour life so
-/// scrolling a plan does not re-sign every photo.
+/// How long a signed photo URL is reused: re-signed two minutes before its
+/// 10-minute life ends, so an image never loads from an expired link.
+const planningSignedUrlReuse = Duration(minutes: 8);
+
+/// A signed URL per stored path, reused for most of its life so scrolling a
+/// plan does not re-sign every photo.
 final planningSignedUrlProvider = FutureProvider.autoDispose.family<String, String>((ref, path) async {
   final url = await ref.watch(planningMediaGatewayProvider).signedUrl(path);
   final link = ref.keepAlive();
-  final timer = Timer(const Duration(minutes: 50), link.close);
+  final timer = Timer(planningSignedUrlReuse, link.close);
   ref.onDispose(timer.cancel);
   return url;
 });
@@ -580,7 +584,7 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
     try {
       final saved = await _repo.updateBlock(
           id: block.id, version: block.version, payload: payload, dateStart: block.dateStart, dateEnd: block.dateEnd);
-      _set(_withBlock(_current, saved));
+      if (_alive && state.hasValue) _set(_withBlock(_current, saved));
       if (block.type == PlanningBlockType.link && payload['url'] != block.linkUrl) _askForPreview(block.id);
     } on PlanningStaleVersion catch (e) {
       _set(_withBlock(_current, PlanningBlock.fromJson(e.current)));
@@ -608,10 +612,19 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
     if (_alive) _set(_overlay(fresh, pending));
   }
 
-  /// Checklist ticks move checklist-mode Progress; re-read it in the background.
+  /// Checklist ticks move checklist-mode Progress; re-read it in the
+  /// background. Only the server-computed figures are taken from the
+  /// re-read: items keep their on-screen state, so a tick made while the
+  /// re-read was in flight never flickers back.
   void _refreshProgress() {
     if (!state.hasValue || !_current.blocks.any((b) => b.type == PlanningBlockType.progress)) return;
-    unawaited(_refreshComputed().then((_) {}, onError: (Object _) {}));
+    unawaited(_repo.getEntry(arg.entryId).then((fresh) {
+      if (!_alive || !state.hasValue) return;
+      final computed = {for (final b in fresh.blocks) b.id: b.computed};
+      _set(_withBlocks(_current, [
+        for (final b in _current.blocks) computed.containsKey(b.id) ? b.copyWith(computed: computed[b.id]) : b
+      ]));
+    }, onError: (Object _) {}));
   }
 
   /// After a save that already succeeded: a failed re-read must not make
@@ -664,12 +677,12 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
     final path = '${arg.relationshipId}/${arg.entryId}/${_uuid.v4()}.jpg';
     await _media.uploadJpeg(path, jpeg);
     final saved = await _repo.addPhoto(blockId, path);
-    _set(_withBlock(_current, saved));
+    if (_alive && state.hasValue) _set(_withBlock(_current, saved));
   }
 
   Future<void> removePhoto(String blockId, String path) async {
     final saved = await _repo.removePhoto(blockId, path);
-    _set(_withBlock(_current, saved));
+    if (_alive && state.hasValue) _set(_withBlock(_current, saved));
   }
 
   // ---- date poll ----
@@ -681,7 +694,7 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
     _set(_withItem(_current, blockId, option.withVotes(votes)));
     try {
       final saved = await _repo.votePoll(option.id, vote: works);
-      _set(_withBlock(_current, saved));
+      if (_alive && state.hasValue) _set(_withBlock(_current, saved));
     } on PlanningError {
       if (state.hasValue) _set(_withItem(_current, blockId, option));
       rethrow;
@@ -697,6 +710,7 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
   /// change with it, so the plan is re-read.
   Future<void> lockPoll(String blockId, String optionId) async {
     final saved = await _repo.lockPoll(blockId, optionId);
+    if (!_alive || !state.hasValue) return;
     _set(_withBlock(_current, saved));
     await _refreshComputedQuietly();
   }
@@ -705,12 +719,12 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
 
   Future<void> setSplit(bool enabled) async {
     final e = await _repo.setEntrySplit(arg.entryId, enabled: enabled);
-    _set(_current.copyWith(entry: e));
+    if (_alive && state.hasValue) _set(_current.copyWith(entry: e));
   }
 
   Future<void> settleSplit() async {
     final e = await _repo.settleSplit(arg.entryId);
-    _set(_current.copyWith(entry: e));
+    if (_alive && state.hasValue) _set(_current.copyWith(entry: e));
   }
 
   Future<void> deleteBlock(String blockId) async {

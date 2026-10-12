@@ -489,11 +489,11 @@ class PlanningBlock {
         computed: j['computed'] is Map ? Map<String, dynamic>.from(j['computed'] as Map) : const {},
       );
 
-  PlanningBlock copyWith({List<PlanningItem>? items, int? version}) => PlanningBlock(
+  PlanningBlock copyWith({List<PlanningItem>? items, int? version, Map<String, dynamic>? computed}) => PlanningBlock(
         id: id, type: type, rawType: rawType, sortKey: sortKey, payload: payload,
         plainText: plainText, dateStart: dateStart, dateEnd: dateEnd,
         version: version ?? this.version, items: items ?? this.items,
-        targetMinor: targetMinor, targetCurrency: targetCurrency, computed: computed,
+        targetMinor: targetMinor, targetCurrency: targetCurrency, computed: computed ?? this.computed,
       );
 }
 

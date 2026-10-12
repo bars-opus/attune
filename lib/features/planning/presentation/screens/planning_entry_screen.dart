@@ -304,7 +304,12 @@ class _EntryBody extends ConsumerWidget {
                 child: Dismissible(
                   key: ValueKey('dismiss-${b.id}'),
                   direction: DismissDirection.startToEnd, // swipe right = delete, as everywhere in Planning
-                  onDismissed: (_) => _deleteBlock(context, ref, d, b),
+                  // The delete takes the row away itself (and puts it back if it fails),
+                  // so the swipe never leaves a dismissed widget in the tree.
+                  confirmDismiss: (_) async {
+                    await _deleteBlock(context, ref, d, b);
+                    return false;
+                  },
                   background: Container(
                     alignment: Alignment.centerLeft,
                     padding: Spacing.horizontalMd,

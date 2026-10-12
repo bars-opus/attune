@@ -4,6 +4,7 @@ import 'package:attune/core/widgets/feedback/confirmation_dialog.dart';
 import 'package:attune/core/widgets/feedback/empty_state.dart';
 import 'package:attune/core/widgets/feedback/error_state.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../data/planning_error.dart';
@@ -293,4 +294,27 @@ String planningMemberName(List<PlanningMember> members, String? id) {
   final entry = data?['entry_id'];
   if (rel is! String || entry is! String || rel.isEmpty || entry.isEmpty) return null;
   return (relationshipId: rel, entryId: entry);
+}
+
+/// Shown when a Planning route opens without its plan (e.g. after the app
+/// was restored without the push's data). Always offers a way back.
+class PlanningUnavailableScreen extends StatelessWidget {
+  const PlanningUnavailableScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Planning')),
+        body: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('Planning unavailable.'),
+            const SizedBox(height: Spacing.sm),
+            TextButton(
+              onPressed: () async {
+                if (!await Navigator.of(context).maybePop() && context.mounted) GoRouter.maybeOf(context)?.go('/home');
+              },
+              child: const Text('Go back'),
+            ),
+          ]),
+        ),
+      );
 }
