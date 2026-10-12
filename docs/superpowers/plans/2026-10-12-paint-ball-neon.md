@@ -1334,9 +1334,317 @@ EOF
 
 ---
 
+## Task 6: Field ground — light well, divider, row labels
+
+**Files:**
+- Create: `lib/features/games/paint_ball/presentation/widgets/field/field_ground.dart`
+- Test: `test/features/games/paint_ball_field_ground_test.dart`
+
+**Interfaces:**
+- Consumes: `LightWell`, `NeonTokens`, `GlowStrokeSpec`/`paintGlowPath`, `neonQualityOf`, `PaintBallFieldKeys`, `PaintBallPalette`.
+- Produces:
+  - `class FieldGround extends StatelessWidget` — `const FieldGround({required Widget child})`. The ground plus its divider; keyed `PaintBallFieldKeys.ground`.
+  - `class FieldRowLabel extends StatelessWidget` — `const FieldRowLabel({required String label, required Color color})`.
+  - `String fieldRowLabelText({required String? partnerName, required bool isReplaying, required int theirStreak})` — the far row's words. Pure function, so its branches are unit-testable without a widget.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/features/games/paint_ball_field_ground_test.dart`:
+
+```dart
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_ground.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  group('the far row’s words', () {
+    test('a known partner is named rather than called an opponent', () {
+      // "THEIR COVER" turns the person you are playing into an
+      // opponent. This app is about that specific person, so the board
+      // says who.
+      expect(
+        fieldRowLabelText(
+          partnerName: 'Ama',
+          isReplaying: false,
+          theirStreak: 1,
+        ),
+        'AMA',
+      );
+    });
+
+    test('an unknown partner falls back rather than showing a gap', () {
+      // The name loads asynchronously. Until it arrives the board must
+      // still read as a board.
+      expect(
+        fieldRowLabelText(
+          partnerName: null,
+          isReplaying: false,
+          theirStreak: 1,
+        ),
+        'THEIR COVER',
+      );
+    });
+
+    test('a streak is called out, but only while the replay is on screen', () {
+      expect(
+        fieldRowLabelText(
+          partnerName: 'Ama',
+          isReplaying: true,
+          theirStreak: 3,
+        ),
+        'SAME SPOT x3',
+      );
+    });
+
+    test('a streak is not kept on the board between rounds', () {
+      // It is a remark on what you just watched, not a readout. Left
+      // up, it would be the same free clue as a paint trail.
+      expect(
+        fieldRowLabelText(
+          partnerName: 'Ama',
+          isReplaying: false,
+          theirStreak: 3,
+        ),
+        'AMA',
+      );
+    });
+
+    test('a streak of one or zero is never announced', () {
+      // Review Focus #4. The label shows only from two upward: every
+      // round is trivially a streak of one, and "SAME SPOT x1" would
+      // call out holding a position the player only just took.
+      for (final streak in [0, 1]) {
+        expect(
+          fieldRowLabelText(
+            partnerName: 'Ama',
+            isReplaying: true,
+            theirStreak: streak,
+          ),
+          'AMA',
+          reason: 'a streak of $streak is not a streak',
+        );
+      }
+    });
+  });
+
+  testWidgets('the ground paints itself and carries its key', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: FieldGround(child: Text('on the field'))),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(PaintBallFieldKeys.ground), findsOneWidget);
+    expect(find.text('on the field'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the divider is drawn and keyed', (tester) async {
+    // The centre line is what makes the field two halves facing each
+    // other rather than one strip of six covers.
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: FieldGround(child: SizedBox())),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(PaintBallFieldKeys.divider), findsOneWidget);
+  });
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `flutter test test/features/games/paint_ball_field_ground_test.dart`
+Expected: FAIL — the URI for `field/field_ground.dart` does not resolve (reported as `Target of URI doesn't exist`, `Undefined name`, or `Method not found`; any of these is the same failure).
+
+- [ ] **Step 3: Write the implementation**
+
+Create `lib/features/games/paint_ball/presentation/widgets/field/field_ground.dart`:
+
+```dart
+import 'package:attune/core/ui/neon/glow_stroke.dart';
+import 'package:attune/core/ui/neon/light_well.dart';
+import 'package:attune/core/ui/neon/neon_quality.dart';
+import 'package:attune/core/ui/neon/neon_tokens.dart';
+import 'package:flutter/material.dart';
+
+import 'paint_ball_field_keys.dart';
+
+/// The words over the far row.
+///
+/// A pure function rather than logic inside a build method, because its
+/// four branches are the kind of thing a widget test can only reach by
+/// pumping four whole fields.
+///
+/// Precedence matters: the streak remark OUTRANKS the partner's name,
+/// but only while a replay is on screen. Between rounds the board goes
+/// back to saying who. A streak left up would be the same free clue as
+/// a paint trail -- a readout of the partner's habits, which is exactly
+/// what this game asks you to earn.
+String fieldRowLabelText({
+  required String? partnerName,
+  required bool isReplaying,
+  required int theirStreak,
+}) {
+  // From two upward. Every round is trivially a streak of one, and
+  // announcing that would call out a position the player only just took.
+  if (isReplaying && theirStreak > 1) return 'SAME SPOT x$theirStreak';
+  if (partnerName != null) return partnerName.toUpperCase();
+  return 'THEIR COVER';
+}
+
+/// One row's caption.
+class FieldRowLabel extends StatelessWidget {
+  const FieldRowLabel({super.key, required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        color: color.withValues(alpha: NeonTokens.structureAlphaActive),
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.6,
+      ),
+    );
+  }
+}
+
+/// The field's ground: near-black, a light well for a middle, and the
+/// centre line dividing the two halves.
+///
+/// Spec §2.1 tier 1 -- it receives light and emits none. Everything the
+/// field draws sits on top of this, which is why the well's alpha is as
+/// low as it is: a ground bright enough to notice would compete with the
+/// actors, and then nothing on the field reads as lit.
+class FieldGround extends StatelessWidget {
+  const FieldGround({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return KeyedSubtree(
+      key: PaintBallFieldKeys.ground,
+      child: LightWell(
+        child: Stack(
+          children: [
+            Positioned(
+              top: 0,
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: CustomPaint(
+                key: PaintBallFieldKeys.divider,
+                painter: FieldDividerPainter(
+                  quality: neonQualityOf(context),
+                ),
+              ),
+            ),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The centre line.
+///
+/// Public, and with public fields, so a test can assert on it without
+/// reaching through `as dynamic` -- the trap spec §3.6.1 exists to close.
+class FieldDividerPainter extends CustomPainter {
+  FieldDividerPainter({required this.quality});
+
+  final NeonQuality quality;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+
+    final y = size.height / 2;
+    final inset = size.width * 0.06;
+
+    paintGlowPath(
+      canvas,
+      Path()
+        ..moveTo(inset, y)
+        ..lineTo(size.width - inset, y),
+      const GlowStrokeSpec(
+        color: PaintBallNeonPalette.structure,
+        alpha: NeonTokens.structureAlphaRest,
+      ),
+      quality.haloPasses,
+    );
+  }
+
+  @override
+  bool shouldRepaint(FieldDividerPainter old) => old.quality != quality;
+}
+
+/// The field's own neon colours.
+///
+/// Separate from PaintBallPalette, which stays as it is: three screens
+/// outside this work read it (history, knockout, battle), so changing
+/// those values would reach past the field. These are the field's.
+class PaintBallNeonPalette {
+  const PaintBallNeonPalette._();
+
+  /// Bays and the divider. Neutral, so the two owner hues stay the only
+  /// colours that mean anything (§2.2).
+  static const structure = Color(0xFF8A8AA0);
+
+  /// The instant of impact, and nothing else on the field, ever (§2.2).
+  static const impact = Color(0xFFFFFFFF);
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `flutter test test/features/games/paint_ball_field_ground_test.dart`
+Expected: PASS, 7 tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/features/games/paint_ball/presentation/widgets/field/field_ground.dart test/features/games/paint_ball_field_ground_test.dart
+git commit -m "$(cat <<'EOF'
+feat(paintball): the field's ground, divider and row captions in neon
+
+The label logic comes out as a pure function. Its four branches -- named
+partner, async fallback, streak remark, streak suppressed between rounds
+-- are the kind of thing a widget test can only reach by pumping four
+whole fields, and the precedence between them is the part worth pinning:
+the streak outranks the name, but only while the replay is on screen.
+Left up afterwards it would be a readout of the partner's habits, the
+same free clue as a persistent paint trail.
+
+A streak of 0 or 1 is never announced. Every round is trivially a streak
+of one, and "SAME SPOT x1" would call out a position the player had only
+just taken.
+
+PaintBallNeonPalette is new rather than an edit to PaintBallPalette,
+because three screens this work does not touch read the old one.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
 ## Remaining tasks: Stages 3–7
 
-Tasks 6–14 cover the rest. Tasks 6, 7 and 8 complete Stage 2 and are written in the pass that follows Task 5; Tasks 9–14 follow the Stage 2 checkpoint. Their scope and boundaries are fixed:
+Tasks 7–14 cover the rest. Tasks 7 and 8 complete Stage 2 and are written in the pass that follows Task 6; Tasks 9–14 follow the Stage 2 checkpoint. Their scope and boundaries are fixed:
 
 | Task | Stage | Deliverable |
 |---|---|---|
