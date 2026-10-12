@@ -3226,9 +3226,624 @@ EOF
 
 ---
 
+## Task 10: The paint layer — and a geometry bug that has been shipping
+
+Splats, rendered in neon. **Fixes a pre-existing bug found while planning this
+task:** `_SplatPainter` positions paint with `size.width / kPaintBallPositions`
+slot maths, while bays and figures use the cover-centre formula. They agree only
+at the middle position.
+
+Measured drift between where paint lands and the cover it supposedly hit:
+
+| row width | pos 0 | pos 1 | pos 2 |
+|---|---|---|---|
+| 360pt | 11.5pt | 0 | 11.5pt |
+| 390pt | 14.0pt | 0 | 14.0pt |
+| 430pt | 17.3pt | 0 | 17.3pt |
+
+So on the outer two covers a hit splatters up to 17pt to one side of what it
+hit, worsening with screen width. Position 1 is exact, which is almost
+certainly why it was never noticed. This is the **same bug class** as the
+device-reported figure-centring issue — fixed for the figure then, missed for
+the paint.
+
+The fix is to call `figureCentreX` rather than keep a second, drifting copy of
+the geometry. In scope because this task rewrites the painter anyway, and
+leaving it would make the new field draw bays by one formula and paint by
+another.
+
+**Files:**
+- Create: `lib/features/games/paint_ball/presentation/widgets/field/field_paint.dart`
+- Test: `test/features/games/paint_ball_field_paint_test.dart`
+
+**Interfaces:**
+- Consumes: `figureCentreX`, `NeonQuality`, `NeonTokens`, `PaintBallFieldKeys`, `PaintSplat`, `kPaintBallPositions`, `kPaintBallCoverWidth`, `kPaintBallTargetScale`.
+- Produces:
+  - `class FieldPaint extends StatelessWidget` — `const FieldPaint({required List<PaintSplat> splats, required Color mineColor, required Color theirsColor})`. Keyed `PaintBallFieldKeys.paint`, with a **public `splats` field** (the typed replacement for the old `(painter as dynamic).splats`).
+  - `class FieldPaintPainter extends CustomPainter` — public final `splats`, `mineColor`, `theirsColor`, `quality`.
+  - `Offset splatCentre({required PaintSplat splat, required Size size, required double rowWidth})` — where one splat lands. Pure, so the geometry fix is unit-testable.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/features/games/paint_ball_field_paint_test.dart`:
+
+```dart
+import 'package:attune/core/ui/neon/neon_quality.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_figure.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_paint.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart'
+    show PaintSplat, kPaintBallCoverWidth, kPaintBallPositions;
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+/// Records draw calls so geometry is assertable without a golden.
+class _RecordingCanvas implements Canvas {
+  final paths = <Path>[];
+  final circles = <Offset>[];
+
+  @override
+  void drawPath(Path path, Paint paint) => paths.add(path);
+
+  @override
+  void drawCircle(Offset c, double radius, Paint paint) => circles.add(c);
+
+  @override
+  noSuchMethod(Invocation invocation) => null;
+}
+
+void main() {
+  const mine = Color(0xFF5EEAD4);
+  const theirs = Color(0xFFFF4D6A);
+
+  group('where paint lands', () {
+    test('a hit lands on the centre of the cover it hit', () {
+      // PRE-EXISTING BUG, fixed here. The old painter used
+      // `size.width / kPaintBallPositions` slot maths while the bays and
+      // figures use the cover-centre formula. The two agree only at the
+      // middle position; at the outer two, paint landed 11-17pt to one
+      // side of the cover it had just hit, worsening with screen width.
+      //
+      // Position 1 being exact is almost certainly why nobody caught it.
+      for (final rowWidth in [360.0, 390.0, 430.0]) {
+        final size = Size(rowWidth, 400);
+
+        for (var position = 0; position < kPaintBallPositions; position++) {
+          final expected = figureCentreX(
+            rowWidth: rowWidth,
+            coverWidth: kPaintBallCoverWidth,
+            column: position.toDouble(),
+          );
+
+          final centre = splatCentre(
+            splat: PaintSplat(
+              position: position,
+              isMine: true,
+              // A hit has no random scatter, so its centre is exactly
+              // the cover's -- which is what makes this checkable.
+              hit: true,
+              round: 1,
+            ),
+            size: size,
+            rowWidth: rowWidth,
+          );
+
+          expect(
+            centre.dx,
+            closeTo(expected, 0.001),
+            reason:
+                'at width $rowWidth a hit on cover $position must land on '
+                'that cover, not on a notional slot centre',
+          );
+        }
+      }
+    });
+
+    test('slot maths would have failed this', () {
+      // Pins the bug so a "simplification" back to width/3 breaks
+      // loudly rather than silently reintroducing the drift.
+      const rowWidth = 430.0;
+      const position = 2;
+
+      final slotCentre =
+          rowWidth / kPaintBallPositions * position +
+          rowWidth / kPaintBallPositions / 2;
+
+      final centre = splatCentre(
+        splat: const PaintSplat(
+          position: position,
+          isMine: true,
+          hit: true,
+          round: 1,
+        ),
+        size: const Size(rowWidth, 400),
+        rowWidth: rowWidth,
+      );
+
+      expect(
+        centre.dx,
+        isNot(closeTo(slotCentre, 1.0)),
+        reason: 'the two formulas genuinely disagree at this width',
+      );
+      expect(
+        (centre.dx - slotCentre).abs(),
+        greaterThan(15),
+        reason: 'and they disagree by the measured 17pt, not by a rounding',
+      );
+    });
+
+    test('a miss scatters, a hit does not', () {
+      // A miss landing exactly on the cover would read as a hit. The
+      // scatter is seeded, so it is deterministic per round+position --
+      // the same round redrawn must not move its paint.
+      Offset at({required bool hit}) => splatCentre(
+        splat: PaintSplat(
+          position: 0,
+          isMine: true,
+          hit: hit,
+          round: 4,
+        ),
+        size: const Size(390, 400),
+        rowWidth: 390,
+      );
+
+      final hitCentre = at(hit: true);
+      final missCentre = at(hit: false);
+
+      expect(
+        missCentre.dx,
+        isNot(closeTo(hitCentre.dx, 0.5)),
+        reason: 'a miss must not land on the cover',
+      );
+      expect(
+        at(hit: false).dx,
+        closeTo(missCentre.dx, 0.001),
+        reason: 'the scatter is seeded, so a redraw is stable',
+      );
+    });
+
+    test('each side paints on its own half', () {
+      // Yours near the bottom, theirs near the top -- the same
+      // never-flips rule the rows follow.
+      final mineAt = splatCentre(
+        splat: const PaintSplat(
+          position: 1,
+          isMine: true,
+          hit: true,
+          round: 1,
+        ),
+        size: const Size(390, 400),
+        rowWidth: 390,
+      );
+      final theirsAt = splatCentre(
+        splat: const PaintSplat(
+          position: 1,
+          isMine: false,
+          hit: true,
+          round: 1,
+        ),
+        size: const Size(390, 400),
+        rowWidth: 390,
+      );
+
+      expect(mineAt.dy, greaterThan(theirsAt.dy));
+    });
+
+    test('an out-of-range position stays on the field', () {
+      // Review Focus #5. PaintSplat.position is a bare int with no
+      // validation, so a stale or malformed round could carry 3 or -1.
+      // It must clamp rather than draw off-field or produce a NaN.
+      for (final position in [-1, 3, 99]) {
+        final centre = splatCentre(
+          splat: PaintSplat(
+            position: position,
+            isMine: true,
+            hit: true,
+            round: 1,
+          ),
+          size: const Size(390, 400),
+          rowWidth: 390,
+        );
+
+        expect(centre.dx.isFinite, isTrue, reason: 'position $position');
+        expect(
+          centre.dx,
+          inInclusiveRange(0, 390),
+          reason: 'position $position must stay on the field',
+        );
+      }
+    });
+  });
+
+  group('the paint layer', () {
+    test('an empty list draws nothing at all', () {
+      // Old test 22, and the reason it matters is fairness rather than
+      // tidiness: accumulated paint is a map of where your partner has
+      // already fired -- their habits readable for free, which is the
+      // clue this game asks you to earn. A board between rounds is
+      // clean, and this is the assertion that keeps it so.
+      final canvas = _RecordingCanvas();
+      FieldPaintPainter(
+        splats: const [],
+        mineColor: mine,
+        theirsColor: theirs,
+        quality: NeonQuality.glow,
+        rowWidth: 390,
+      ).paint(canvas, const Size(390, 400));
+
+      expect(canvas.paths, isEmpty);
+      expect(canvas.circles, isEmpty);
+    });
+
+    test('a non-empty list does draw — the positive control', () {
+      // Without this, the test above could pass because the painter is
+      // broken rather than because the list is empty. That exact
+      // vacuous shape has been found four times in this codebase.
+      final canvas = _RecordingCanvas();
+      FieldPaintPainter(
+        splats: const [
+          PaintSplat(position: 1, isMine: true, hit: true, round: 1),
+        ],
+        mineColor: mine,
+        theirsColor: theirs,
+        quality: NeonQuality.glow,
+        rowWidth: 390,
+      ).paint(canvas, const Size(390, 400));
+
+      expect(canvas.paths, isNotEmpty);
+    });
+
+    test('a long match draws a bounded number of splats', () {
+      // Paint from 40 rounds would bury the covers. The painter keeps
+      // only the most recent, and the cap must hold rather than growing
+      // with the match.
+      final canvas = _RecordingCanvas();
+      FieldPaintPainter(
+        splats: [
+          for (var round = 0; round < 40; round++)
+            PaintSplat(
+              position: round % kPaintBallPositions,
+              isMine: round.isEven,
+              hit: round % 3 == 0,
+              round: round,
+            ),
+        ],
+        mineColor: mine,
+        theirsColor: theirs,
+        quality: NeonQuality.glow,
+        rowWidth: 390,
+      ).paint(canvas, const Size(390, 400));
+
+      expect(canvas.paths, isNotEmpty);
+      expect(
+        canvas.paths.length,
+        lessThanOrEqualTo(kFieldPaintVisible),
+        reason: 'the cap holds however long the match runs',
+      );
+    });
+
+    test('a zero-sized field does not throw', () {
+      final canvas = _RecordingCanvas();
+      expect(
+        () => FieldPaintPainter(
+          splats: const [
+            PaintSplat(position: 0, isMine: true, hit: true, round: 1),
+          ],
+          mineColor: mine,
+          theirsColor: theirs,
+          quality: NeonQuality.glow,
+          rowWidth: 0,
+        ).paint(canvas, Size.zero),
+        returnsNormally,
+      );
+    });
+
+    testWidgets('the layer exposes its splats without a dynamic read', (
+      tester,
+    ) async {
+      // Spec §3.6.1: the old test reached through
+      // `(painter as dynamic).splats`, and worse, filtered painters by
+      // type NAME -- so after a rename the loop ran zero times and the
+      // test passed having asserted nothing.
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: FieldPaint(
+              splats: [],
+              mineColor: mine,
+              theirsColor: theirs,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Found by type rather than by key: the key sits on the inner
+      // CustomPaint, which is where a painter lookup wants it, so
+      // find.byKey would hand back the CustomPaint and not the layer.
+      final layer = tester.widget<FieldPaint>(find.byType(FieldPaint));
+
+      expect(layer.splats, isEmpty);
+
+      // And the key IS present, so the field can locate this layer.
+      expect(find.byKey(PaintBallFieldKeys.paint), findsOneWidget);
+    });
+  });
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `flutter test test/features/games/paint_ball_field_paint_test.dart`
+Expected: FAIL — `field/field_paint.dart` does not resolve.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `lib/features/games/paint_ball/presentation/widgets/field/field_paint.dart`:
+
+```dart
+import 'dart:math' as math;
+
+import 'package:attune/core/ui/neon/neon_quality.dart';
+import 'package:attune/core/ui/neon/neon_tokens.dart';
+import 'package:flutter/material.dart';
+
+import '../paint_ball_field.dart'
+    show PaintSplat, kPaintBallCoverWidth, kPaintBallPositions;
+import 'field_figure.dart' show figureCentreX;
+import 'paint_ball_field_keys.dart';
+
+/// How many splats stay on the field.
+///
+/// Paint from a whole match would bury the covers, so only the most
+/// recent survive and older ones fade.
+const int kFieldPaintVisible = 12;
+
+/// Where one splat lands.
+///
+/// Pure, because this function is a BUG FIX and the alternative way to
+/// test it is rendering a field at three widths and measuring pixels.
+///
+/// The old painter used `size.width / kPaintBallPositions` slot maths
+/// while the bays and figures use the cover-centre formula. Those agree
+/// only at the middle position; at the outer two, paint landed 11-17pt
+/// to one side of the cover it had just hit, worsening with screen
+/// width. Position 1 being exact is almost certainly why it survived.
+///
+/// Calling [figureCentreX] rather than recomputing is the point: one
+/// formula for the whole field, so paint cannot drift away from the
+/// cover it describes.
+Offset splatCentre({
+  required PaintSplat splat,
+  required Size size,
+  required double rowWidth,
+}) {
+  // PaintSplat.position is a bare int off the wire with no validation,
+  // so a stale or malformed round can carry 3 or -1. Clamping keeps a
+  // bad row on the field instead of drawing off it.
+  final position = splat.position.clamp(0, kPaintBallPositions - 1);
+
+  final centreX = figureCentreX(
+    rowWidth: rowWidth,
+    coverWidth: kPaintBallCoverWidth,
+    column: position.toDouble(),
+  );
+
+  // Yours near the bottom, theirs near the top: the same never-flips
+  // rule the rows follow, so "mine" is never something to work out.
+  final rowY = splat.isMine ? size.height * 0.80 : size.height * 0.20;
+
+  // Seeded per round and position, so redrawing a round does not move
+  // its paint. A hit has no scatter at all -- it landed where it
+  // landed, and a hit nudged off-centre would read as a near miss.
+  final rng = math.Random(splat.round * 31 + position * 7);
+  final offsetX =
+      splat.hit ? 0.0 : (rng.nextDouble() - 0.5) * kPaintBallCoverWidth * 0.8;
+  final offsetY = (rng.nextDouble() - 0.5) * 18;
+
+  return Offset(
+    (centreX + offsetX).clamp(0.0, math.max(0.0, size.width)),
+    rowY + offsetY,
+  );
+}
+
+/// The paint on the field.
+///
+/// Public [splats] so a test reads it directly rather than through
+/// `(painter as dynamic).splats` (spec §3.6.1).
+class FieldPaint extends StatelessWidget {
+  const FieldPaint({
+    super.key,
+    required this.splats,
+    required this.mineColor,
+    required this.theirsColor,
+  });
+
+  final List<PaintSplat> splats;
+  final Color mineColor;
+  final Color theirsColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return CustomPaint(
+          key: PaintBallFieldKeys.paint,
+          size: Size.infinite,
+          painter: FieldPaintPainter(
+            splats: splats,
+            mineColor: mineColor,
+            theirsColor: theirsColor,
+            quality: neonQualityOf(context),
+            rowWidth: constraints.maxWidth,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Draws the paint. Public fields throughout, for the same reason.
+class FieldPaintPainter extends CustomPainter {
+  FieldPaintPainter({
+    required this.splats,
+    required this.mineColor,
+    required this.theirsColor,
+    required this.quality,
+    required this.rowWidth,
+  });
+
+  final List<PaintSplat> splats;
+  final Color mineColor;
+  final Color theirsColor;
+  final NeonQuality quality;
+  final double rowWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (splats.isEmpty || size.isEmpty) return;
+
+    final recent =
+        splats.length <= kFieldPaintVisible
+            ? splats
+            : splats.sublist(splats.length - kFieldPaintVisible);
+
+    for (var i = 0; i < recent.length; i++) {
+      final splat = recent[i];
+      final age = recent.length == 1 ? 1.0 : i / (recent.length - 1);
+
+      final colour = splat.isMine ? mineColor : theirsColor;
+      final paint =
+          Paint()
+            ..color = colour.withValues(
+              alpha: (0.18 + 0.32 * age) * NeonTokens.actorAlpha,
+            )
+            ..style = PaintingStyle.fill;
+
+      final centre = splatCentre(
+        splat: splat,
+        size: size,
+        rowWidth: rowWidth,
+      );
+      final rng = math.Random(splat.round * 31 + splat.position * 7);
+
+      _drawSplat(canvas, centre, splat.hit ? 26.0 : 16.0, paint, rng);
+    }
+  }
+
+  /// An irregular blob rather than a circle: a perfect disc reads as a
+  /// dot, and paint does not land in circles.
+  void _drawSplat(
+    Canvas canvas,
+    Offset centre,
+    double radius,
+    Paint paint,
+    math.Random rng,
+  ) {
+    final path = Path();
+    const points = 9;
+
+    for (var i = 0; i <= points; i++) {
+      final angle = (i / points) * 2 * math.pi;
+      final wobble = radius * (0.7 + rng.nextDouble() * 0.5);
+      final point = Offset(
+        centre.dx + math.cos(angle) * wobble,
+        centre.dy + math.sin(angle) * wobble,
+      );
+      if (i == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+    path.close();
+    canvas.drawPath(path, paint);
+
+    // Flecks around the blob. The first thing to go on a cheap device:
+    // three extra circles per splat, twelve splats deep, is exactly the
+    // kind of cost §6.10's launch gate is about.
+    if (quality == NeonQuality.plain) return;
+
+    for (var i = 0; i < 3; i++) {
+      final angle = rng.nextDouble() * 2 * math.pi;
+      final distance = radius * (1.1 + rng.nextDouble() * 0.7);
+      canvas.drawCircle(
+        Offset(
+          centre.dx + math.cos(angle) * distance,
+          centre.dy + math.sin(angle) * distance,
+        ),
+        radius * 0.12,
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(FieldPaintPainter old) =>
+      old.quality != quality ||
+      old.rowWidth != rowWidth ||
+      old.mineColor != mineColor ||
+      old.theirsColor != theirsColor ||
+      old.splats.length != splats.length ||
+      List.generate(splats.length, (index) {
+        final current = splats[index];
+        final previous = old.splats[index];
+        return current.round != previous.round ||
+            current.position != previous.position ||
+            current.isMine != previous.isMine ||
+            current.hit != previous.hit;
+      }).any((changed) => changed);
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `flutter test test/features/games/paint_ball_field_paint_test.dart`
+Expected: PASS, 10 tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/features/games/paint_ball/presentation/widgets/field/field_paint.dart test/features/games/paint_ball_field_paint_test.dart
+git commit -m "$(cat <<'EOF'
+fix(paintball): paint lands on the cover it hit, not 17pt beside it
+
+Found while planning this task. _SplatPainter positioned paint with
+`size.width / kPaintBallPositions` slot maths while the bays and figures
+use the cover-centre formula, and the two agree only at the middle
+position. Measured drift on the outer covers: 11.5pt at 360, 14.0 at
+390, 17.3 at 430 -- worsening with screen width, so a hit splattered to
+one side of what it hit. Position 1 being exact is almost certainly why
+it survived; the middle cover is where you look first.
+
+Same bug class as the device-reported figure-centring issue, which was
+fixed for the figure at the time and missed for the paint. The fix is to
+call figureCentreX instead of keeping a second copy of the geometry --
+one formula for the field, so paint cannot drift from the cover it
+describes. A test pins that the two formulas disagree by more than 15pt,
+so simplifying back to slot maths fails loudly.
+
+Also clamps position: PaintSplat.position is a bare int off the wire
+with no validation, so a stale round carrying 3 or -1 drew off-field.
+Review Focus #5.
+
+The empty-list test now has a positive control beside it. On its own it
+could pass because the painter is broken rather than because the list is
+empty -- the exact vacuous shape this codebase has produced four times.
+And it is the assertion that keeps a board between rounds clean, which
+is a fairness property: accumulated paint is a map of where your partner
+has already fired.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
 ## Remaining tasks: Stages 3–7
 
-Tasks 10–14 cover the rest. Task 10 completes Stage 2 (the field composition plus the 25-test rewrite against the Task 0 map) and is written in the pass that follows Task 9; Tasks 11–14 follow the Stage 2 checkpoint. Their scope and boundaries are fixed:
+Tasks 11–14 cover the rest. Task 11 completes Stage 2 (the field composition plus the 25-test rewrite against the Task 0 map) and is written in the pass that follows Task 10; Tasks 12–14 follow the Stage 2 checkpoint. Their scope and boundaries are fixed:
 
 | Task | Stage | Deliverable |
 |---|---|---|
