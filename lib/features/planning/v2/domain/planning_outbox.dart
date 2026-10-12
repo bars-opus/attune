@@ -166,7 +166,17 @@ class PlanningOutbox {
   final Duration maxDelay;
 
   final ValueNotifier<int> pendingCount = ValueNotifier<int>(0);
+
+  /// Ops the server refused permanently since the user last dismissed the
+  /// notice. Shown, never dropped silently (spec §10, checklist 4.14).
+  final ValueNotifier<int> droppedCount = ValueNotifier<int>(0);
   Future<OutboxReplayResult>? _inFlight;
+
+  void acknowledgeDropped() => droppedCount.value = 0;
+
+  /// True when an older op for [entryId] is still queued: a newer action in
+  /// that entry must queue behind it, or it could reach the server first
+  /// and be overwritten by the replay (final review I2).
 
   Future<List<OutboxOp>> pending() async {
     final ops = [
@@ -181,6 +191,8 @@ class PlanningOutbox {
     await _store.write([for (final o in ops) o.toJson()]);
     pendingCount.value = ops.length;
   }
+
+  Future<bool> hasPendingFor(String entryId) async => (await pending()).any((o) => o.entryId == entryId);
 
   Future<void> enqueue(OutboxOp op) async {
     final ops = await pending();
@@ -221,11 +233,13 @@ class PlanningOutbox {
         }
       }
       if (!delivered) {
+        droppedCount.value += dropped.length;
         return OutboxReplayResult(sent: sent, dropped: dropped, remaining: ops.length);
       }
       ops = ops.sublist(1);
       await _save(ops);
     }
+    droppedCount.value += dropped.length;
     return OutboxReplayResult(sent: sent, dropped: dropped, remaining: 0);
   }
 }

@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:attune/features/planning/presentation/providers/planning_providers.dart' show planningChangeSignalProvider;
 import 'package:attune/features/planning/v2/data/planning_v2_error.dart';
 import 'package:attune/features/planning/v2/data/planning_v2_models.dart';
 import 'package:attune/features/planning/v2/domain/planning_outbox.dart';
@@ -142,5 +144,75 @@ void main() {
     expect(s.entries.map((e) => e.id), ['e1', 'e2']);
     expect(s.hasMore, isFalse);
     expect(gateway.callsTo('list_planning_entries').last['p_cursor_id'], 'e1');
+  });
+
+  group('outbox ordering (final review I2)', () {
+    test('offline tick, then online untick: the untick queues behind the tick and wins', () async {
+      final ctl = await ready();
+      gateway.handlers['set_planning_block_item_checked'] = (_) => throw Exception('offline');
+      final item = current().blocks.first.items.first;
+      expect(await ctl.setChecked('b1', item, true), TickOutcome.queued);
+
+      final applied = <bool>[];
+      gateway.handlers['set_planning_block_item_checked'] = (p) {
+        applied.add(p['p_checked'] as bool);
+        return fakeItemJson(id: 'i1', text: 'Tomatoes', checkedAt: (p['p_checked'] as bool) ? '2026-10-12T09:00:00Z' : null);
+      };
+      expect(await ctl.setChecked('b1', current().blocks.first.items.first, false), TickOutcome.queued,
+          reason: 'never jump ahead of an older queued op for the same entry');
+      await c.read(planningV2OutboxProvider).replay();
+      expect(applied, [true, false], reason: 'server sees the user\'s actions in the order they made them');
+      expect(store.raw, isEmpty);
+      c.invalidate(planningV2EntryProvider(args));
+      await c.read(planningV2EntryProvider(args).future);
+    });
+
+    test('offline add, then online tick of that item: tick waits for the add, no false "removed"', () async {
+      final ctl = await ready();
+      gateway.handlers['add_planning_block_item'] = (_) => throw Exception('offline');
+      expect(await ctl.addItem('b1', 'Bread'), TickOutcome.queued);
+      final bread = current().blocks.first.items.last;
+
+      final order = <String>[];
+      gateway.handlers['add_planning_block_item'] = (p) {
+        order.add('add');
+        return fakeItemJson(id: p['p_id'] as String, text: 'Bread');
+      };
+      gateway.handlers['set_planning_block_item_checked'] = (p) {
+        order.add('tick');
+        return fakeItemJson(id: p['p_id'] as String, text: 'Bread', checkedAt: '2026-10-12T09:00:00Z');
+      };
+      expect(await ctl.setChecked('b1', bread, true), TickOutcome.queued);
+      await c.read(planningV2OutboxProvider).replay();
+      expect(order, ['add', 'tick']);
+      expect(current().blocks.first.items.last.isChecked, isTrue);
+    });
+
+    test('a change signal on the HOME screen replays queued ops (sync after reconnect)', () async {
+      final signal = StreamController<void>.broadcast();
+      addTearDown(signal.close);
+      final store2 = MemoryOutboxStore()
+        ..raw = [
+          {'kind': 'check', 'op_id': 'op-1', 'relationship_id': 'r1', 'entry_id': 'e1', 'item_id': 'i1', 'checked': true}
+        ];
+      final g2 = FakePlanningGateway({
+        'get_planning_home': (_) => {'categories': []},
+        'set_planning_block_item_checked': (p) => fakeItemJson(id: 'i1', checkedAt: '2026-10-12T09:00:00Z'),
+      });
+      final c2 = ProviderContainer(overrides: [
+        ...planningV2Overrides(g2, store: store2),
+        planningChangeSignalProvider.overrideWith((ref, id) => signal.stream),
+      ]);
+      addTearDown(c2.dispose);
+      c2.listen(planningV2HomeProvider('r1'), (_, __) {});
+      await c2.read(planningV2HomeProvider('r1').future);
+      signal.add(null);
+      // Only the signal may trigger the replay: the test never calls replay().
+      for (var i = 0; i < 50 && store2.raw.isNotEmpty; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(g2.callsTo('set_planning_block_item_checked'), hasLength(1));
+      expect(store2.raw, isEmpty);
+    });
   });
 }

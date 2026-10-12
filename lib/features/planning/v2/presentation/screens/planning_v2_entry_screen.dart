@@ -233,9 +233,28 @@ class _Hero extends ConsumerWidget {
             valueListenable: outbox.pendingCount,
             builder: (_, n, __) => n == 0
                 ? const SizedBox.shrink()
+                : Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: Spacing.xs, children: [
+                    Chip(
+                      avatar: const Icon(Icons.cloud_upload_outlined, size: 18),
+                      label: Text(n == 1 ? '1 change waiting to sync' : '$n changes waiting to sync'),
+                    ),
+                    TextButton(
+                      onPressed: () => outbox.replay().then((r) {
+                        if (r.sent > 0 || r.dropped.isNotEmpty) ref.invalidate(planningV2EntryProvider(args));
+                      }),
+                      child: const Text('Retry sync'),
+                    ),
+                  ]),
+          ),
+          ValueListenableBuilder<int>(
+            valueListenable: outbox.droppedCount,
+            builder: (_, n, __) => n == 0
+                ? const SizedBox.shrink()
                 : Chip(
-                    avatar: const Icon(Icons.cloud_upload_outlined, size: 18),
-                    label: Text(n == 1 ? '1 change waiting to sync' : '$n changes waiting to sync'),
+                    avatar: Icon(Icons.error_outline_rounded, size: 18, color: scheme.error),
+                    label: Text(n == 1 ? "1 change couldn't be saved" : "$n changes couldn't be saved"),
+                    deleteButtonTooltipMessage: 'Dismiss',
+                    onDeleted: outbox.acknowledgeDropped,
                   ),
           ),
         ]),

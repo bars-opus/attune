@@ -58,7 +58,10 @@ void _refetchOnSignal(Ref ref, String relationshipId, {bool replayOutbox = false
 
 final planningV2HomeProvider =
     FutureProvider.autoDispose.family<List<PlanningCategory>, String>((ref, relationshipId) {
-  _refetchOnSignal(ref, relationshipId);
+  // Every v2 screen replays the outbox on the signal (resubscribe / resume),
+  // so ticks made offline sync on reconnect wherever the user is in
+  // Planning, not only inside an entry (final review I2).
+  _refetchOnSignal(ref, relationshipId, replayOutbox: true);
   return ref.watch(planningV2RepositoryProvider).getHome(relationshipId);
 });
 
@@ -92,7 +95,7 @@ class PlanningEntriesController
     extends AutoDisposeFamilyAsyncNotifier<PlanningEntriesState, PlanningEntriesArgs> {
   @override
   Future<PlanningEntriesState> build(PlanningEntriesArgs arg) async {
-    _refetchOnSignal(ref, arg.relationshipId);
+    _refetchOnSignal(ref, arg.relationshipId, replayOutbox: true);
     final page = await ref.read(planningV2RepositoryProvider).listEntries(arg.categoryId, group: arg.group);
     return PlanningEntriesState(entries: page.entries, cursorAt: page.nextCursorAt, cursorId: page.nextCursorId);
   }
@@ -145,8 +148,12 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
   PlanningV2Repository get _repo => ref.read(planningV2RepositoryProvider);
   PlanningOutbox get _outbox => ref.read(planningV2OutboxProvider);
 
+  bool _alive = true;
+
   @override
   Future<PlanningEntryDetail> build(PlanningEntryArgs arg) async {
+    _alive = true;
+    ref.onDispose(() => _alive = false);
     _refetchOnSignal(ref, arg.relationshipId, replayOutbox: true);
     final detail = await _repo.getEntry(arg.entryId);
     final pending = [for (final op in await _outbox.pending()) if (op.entryId == arg.entryId) op];
@@ -200,11 +207,30 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
 
   // ---- items ----
 
+  /// Queues [op] behind older queued ops and starts a replay, so the server
+  /// sees this entry's actions in the order the user made them.
+  Future<TickOutcome> _queue(OutboxOp op, void Function() revert) async {
+    try {
+      await _outbox.enqueue(op);
+    } on OutboxFullException {
+      if (state.hasValue) revert();
+      rethrow;
+    }
+    unawaited(_outbox.replay().then((r) {
+      if (_alive && (r.sent > 0 || r.dropped.isNotEmpty)) ref.invalidateSelf();
+    }));
+    return TickOutcome.queued;
+  }
+
   Future<TickOutcome> setChecked(String blockId, PlanningItem item, bool checked) async {
     final me = ref.read(planningV2CurrentUserIdProvider);
     _set(_withItem(_current, blockId,
         checked ? item.copyWith(checkedAt: DateTime.now(), checkedBy: me) : item.copyWith(clearChecked: true)));
     final opId = _uuid.v4();
+    final op = CheckItemOp(
+        opId: opId, relationshipId: arg.relationshipId, entryId: arg.entryId, itemId: item.id, checked: checked);
+    void revert() => _set(_withItem(_current, blockId, item));
+    if (await _outbox.hasPendingFor(arg.entryId)) return _queue(op, revert);
     try {
       final saved = await _repo.setItemChecked(id: item.id, checked: checked, opId: opId);
       if (state.hasValue) _set(_withItem(_current, blockId, saved));
@@ -229,6 +255,13 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
     final block = _current.blocks.firstWhere((b) => b.id == blockId);
     final afterId = block.items.isEmpty ? null : block.items.last.id;
     _set(_withBlockItems(_current, blockId, (items) => [...items, _localItem(id, text.trim(), section)]));
+    if (await _outbox.hasPendingFor(arg.entryId)) {
+      return _queue(
+        AddItemOp(opId: id, relationshipId: arg.relationshipId, entryId: arg.entryId, itemId: id,
+            blockId: blockId, text: text.trim(), section: section, afterId: afterId),
+        () => _set(_withBlockItems(_current, blockId, (items) => [for (final i in items) if (i.id != id) i])),
+      );
+    }
     try {
       final saved = await _repo.addItem(id: id, blockId: blockId, text: text.trim(), section: section, afterId: afterId);
       if (state.hasValue) _set(_withItem(_current, blockId, saved));

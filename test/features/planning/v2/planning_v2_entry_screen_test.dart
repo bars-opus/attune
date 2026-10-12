@@ -4,6 +4,7 @@ import 'package:attune/features/planning/v2/domain/planning_outbox.dart';
 import 'package:attune/features/planning/v2/presentation/screens/planning_v2_entry_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'support/fake_planning_gateway.dart';
 import 'support/planning_v2_test_app.dart';
@@ -166,5 +167,24 @@ void main() {
     await tester.pumpWidget(planningV2TestApp(_gateway(extraType: 'budget'), _screen));
     await tester.pumpAndSettle();
     expect(find.text('This block needs a newer version of Attune.'), findsOneWidget);
+  });
+
+  testWidgets('queued changes offer Retry; ops the server refuses are shown, not silently dropped (final review I2)', (tester) async {
+    final g = _gateway();
+    g.handlers['set_planning_block_item_checked'] =
+        (_) => throw const PostgrestException(message: 'planning:not_found', code: 'P0001');
+    final store = MemoryOutboxStore()
+      ..raw = [
+        {'kind': 'check', 'op_id': 'op-1', 'relationship_id': 'r1', 'entry_id': 'e1', 'item_id': 'i1', 'checked': true}
+      ];
+    await tester.pumpWidget(planningV2TestApp(g, _screen, store: store));
+    await tester.pumpAndSettle();
+    expect(find.text('1 change waiting to sync'), findsOneWidget);
+    await tester.tap(find.text('Retry sync'));
+    await tester.pumpAndSettle();
+    expect(find.text("1 change couldn't be saved"), findsOneWidget);
+    await tester.tap(find.byTooltip('Dismiss'));
+    await tester.pumpAndSettle();
+    expect(find.text("1 change couldn't be saved"), findsNothing);
   });
 }
