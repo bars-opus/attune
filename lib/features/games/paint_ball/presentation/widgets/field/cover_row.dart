@@ -123,7 +123,6 @@ class CoverRow extends StatelessWidget {
                   isOpponent: isOpponent,
                   rowWidth: constraints.maxWidth,
                   coverWidth: coverWidth,
-                  rowHeight: 92,
                   ownerColor: ownerColor,
                   isAiming: isAiming,
                   tilt: tilt,
