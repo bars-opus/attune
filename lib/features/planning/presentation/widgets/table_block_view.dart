@@ -13,6 +13,26 @@ import '../planning_ui.dart';
 
 const _maxColumns = 12;
 
+/// A key no column or row has used: rows can still hold values under a
+/// removed column's key, and a new column must not inherit them.
+String nextPlanningColumnKey(List<PlanningTableColumn> columns, List<PlanningItem> rows) {
+  var max = -1;
+  for (final k in [for (final c in columns) c.key, for (final r in rows) ...r.cells.keys]) {
+    final n = int.tryParse(k.startsWith('c') ? k.substring(1) : '');
+    if (n != null && n > max) max = n;
+  }
+  return 'c${max + 1}';
+}
+
+/// [v] as the column's type, or null when it doesn't fit (a column whose
+/// type changed while a partner still had the old value on screen).
+Object? _typed(PlanningColumnType type, Object? v) => switch (type) {
+      PlanningColumnType.money || PlanningColumnType.number => v is num ? v : null,
+      PlanningColumnType.date => v is String && DateTime.tryParse(v) != null ? v : null,
+      PlanningColumnType.check => v is bool ? v : null,
+      PlanningColumnType.text => v is String ? v : null,
+    };
+
 /// A small typed table: up to 12 columns, 50 rows. A row opens an editor
 /// with one field per column; money cells use the plan's currency.
 class TableBlockView extends ConsumerWidget {
@@ -46,7 +66,7 @@ class TableBlockView extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => _ColumnsEditor(columns: block.columns),
+      builder: (_) => _ColumnsEditor(columns: block.columns, rows: block.items),
     );
     if (columns == null || !context.mounted) return;
     try {
@@ -75,9 +95,11 @@ class TableBlockView extends ConsumerWidget {
     ));
   }
 
-  Widget _cell(BuildContext context, PlanningTableColumn col, Object? v) {
+  Widget _cell(BuildContext context, PlanningTableColumn col, Object? raw) {
     final scheme = Theme.of(context).colorScheme;
-    if (v == null) return Text('–', style: TextStyle(color: scheme.outline));
+    if (raw == null) return Text('–', style: TextStyle(color: scheme.outline));
+    final v = _typed(col.type, raw);
+    if (v == null) return Text('$raw', maxLines: 2, overflow: TextOverflow.ellipsis);
     return switch (col.type) {
       PlanningColumnType.check => Icon(
           v == true ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
@@ -174,7 +196,10 @@ class _RowEditor extends StatefulWidget {
 }
 
 class _RowEditorState extends State<_RowEditor> {
-  late final Map<String, dynamic> _values = {...widget.cells};
+  late final Map<String, dynamic> _values = {
+    for (final c in widget.columns)
+      if (_typed(c.type, widget.cells[c.key]) != null) c.key: widget.cells[c.key],
+  };
   late final Map<String, TextEditingController> _text = {
     for (final c in widget.columns)
       if (c.type == PlanningColumnType.text || c.type == PlanningColumnType.number || c.type == PlanningColumnType.money)
@@ -182,7 +207,7 @@ class _RowEditorState extends State<_RowEditor> {
   };
 
   String _initial(PlanningTableColumn c) {
-    final v = widget.cells[c.key];
+    final v = _typed(c.type, widget.cells[c.key]);
     if (v == null) return '';
     if (c.type == PlanningColumnType.money) {
       return formatPlanningMoney((v as num).toInt(), widget.currency).replaceAll(RegExp(r'[^0-9.,]'), '');
@@ -288,8 +313,9 @@ class _RowEditorState extends State<_RowEditor> {
 }
 
 class _ColumnsEditor extends StatefulWidget {
-  const _ColumnsEditor({required this.columns});
+  const _ColumnsEditor({required this.columns, required this.rows});
   final List<PlanningTableColumn> columns;
+  final List<PlanningItem> rows;
 
   @override
   State<_ColumnsEditor> createState() => _ColumnsEditorState();
@@ -308,13 +334,8 @@ class _ColumnsEditorState extends State<_ColumnsEditor> {
     super.dispose();
   }
 
-  String _nextKey() {
-    final used = {for (final c in _cols) c.$1};
-    for (var i = 0; i < 100; i++) {
-      if (!used.contains('c$i')) return 'c$i';
-    }
-    return 'c99';
-  }
+  String _nextKey() => nextPlanningColumnKey(
+      [for (final c in _cols) PlanningTableColumn(key: c.$1, label: '', type: c.$3), ...widget.columns], widget.rows);
 
   static const _typeLabels = {
     PlanningColumnType.text: 'Text',

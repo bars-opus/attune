@@ -22,8 +22,20 @@ void main() {
     expect(parsePlanningMoney('1500', 'JPY'), 1500);
   });
 
+  test('a comma decimal is a decimal, not a thousands separator (review I2)', () {
+    expect(parsePlanningMoney('12,50', 'EUR'), 1250);
+    expect(parsePlanningMoney('12,5', 'EUR'), 1250);
+    expect(parsePlanningMoney('1.234,50', 'EUR'), 123450);
+    expect(parsePlanningMoney('1,234.50', 'USD'), 123450);
+    expect(parsePlanningMoney('1,234', 'USD'), 123400, reason: 'three digits after one separator: grouping');
+    expect(parsePlanningMoney('1.234', 'EUR'), 123400);
+    expect(parsePlanningMoney('12,500', 'USD'), 1250000);
+    expect(parsePlanningMoney('1,500', 'JPY'), 1500);
+    expect(parsePlanningMoney('1\u00a0234,50', 'EUR'), 123450, reason: 'French grouping space');
+  });
+
   test('refuses what is not an amount', () {
-    for (final bad in ['', ' ', 'abc', '-5', '1.234', '1.2.3', '12.5', '1e3']) {
+    for (final bad in ['', ' ', 'abc', '-5', '1.2.3', '1,2,3', '12.5', '1e3']) {
       expect(parsePlanningMoney(bad, bad == '12.5' ? 'JPY' : 'USD'), isNull, reason: bad);
     }
     expect(parsePlanningMoney('99999999999', 'USD'), isNull, reason: 'over the server cap');

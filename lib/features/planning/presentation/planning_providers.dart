@@ -525,7 +525,7 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
       _set(before);
       rethrow;
     }
-    if (_isExpenses(blockId)) await _refreshComputed();
+    if (_isExpenses(blockId)) await _refreshComputedQuietly();
     _refreshProgress();
   }
 
@@ -536,7 +536,7 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
       list.insert(index.clamp(0, list.length), restored);
       return list;
     }));
-    if (_isExpenses(blockId)) await _refreshComputed();
+    if (_isExpenses(blockId)) await _refreshComputedQuietly();
   }
 
   // ---- blocks ----
@@ -614,26 +614,36 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
     unawaited(_refreshComputed().then((_) {}, onError: (Object _) {}));
   }
 
+  /// After a save that already succeeded: a failed re-read must not make
+  /// the save look failed (the change signal re-reads again anyway).
+  Future<void> _refreshComputedQuietly() async {
+    try {
+      await _refreshComputed();
+    } catch (_) {}
+  }
+
   bool _isExpenses(String blockId) =>
       _current.blocks.any((b) => b.id == blockId && b.type == PlanningBlockType.expenses);
 
-  /// Table rows and expense lines. Creates when [existing] is null.
+  /// Table rows, expense lines, poll options, contributions. Creates when
+  /// [existing] is null. Pass the same [id] when retrying a create so the
+  /// server's idempotent create can't save it twice.
   Future<PlanningItem> saveRichItem(String blockId,
-      {PlanningItem? existing, required Map<String, dynamic> fields}) async {
+      {PlanningItem? existing, String? id, required Map<String, dynamic> fields}) async {
     final block = _current.blocks.firstWhere((b) => b.id == blockId);
     try {
       final saved = await _repo.saveRichItem(
-        id: existing?.id ?? _uuid.v4(),
+        id: existing?.id ?? id ?? _uuid.v4(),
         blockId: blockId,
         version: existing?.version,
         fields: fields,
         afterId: existing == null && block.items.isNotEmpty ? block.items.last.id : null,
       );
-      _set(existing == null
+      _set(existing == null && !block.items.any((i) => i.id == saved.id)
           ? _withBlockItems(_current, blockId, (items) => [...items, saved])
           : _withItem(_current, blockId, saved));
       if (block.type == PlanningBlockType.expenses || block.type == PlanningBlockType.progress) {
-        await _refreshComputed();
+        await _refreshComputedQuietly();
       }
       return saved;
     } on PlanningStaleVersion catch (e) {
@@ -688,7 +698,7 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
   Future<void> lockPoll(String blockId, String optionId) async {
     final saved = await _repo.lockPoll(blockId, optionId);
     _set(_withBlock(_current, saved));
-    await _refreshComputed();
+    await _refreshComputedQuietly();
   }
 
   // ---- split ----

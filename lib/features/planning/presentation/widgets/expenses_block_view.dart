@@ -2,6 +2,7 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../data/planning_error.dart';
 import '../../data/planning_models.dart';
@@ -22,8 +23,13 @@ class ExpensesBlockView extends ConsumerWidget {
   final PlanningBlock block;
   final PlanningEntryDetail detail;
 
+  /// The sheet stays open until the save succeeds, and a new line keeps one
+  /// id for the whole sheet, so a retry after a dropped response can't
+  /// save the same money twice (checklist 2.18).
   Future<void> _edit(BuildContext context, WidgetRef ref, PlanningItem? item) async {
-    final fields = await showModalBottomSheet<Map<String, dynamic>>(
+    final ctl = ref.read(planningEntryProvider(args).notifier);
+    final messenger = ScaffoldMessenger.of(context);
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -33,19 +39,20 @@ class ExpensesBlockView extends ConsumerWidget {
         me: ref.read(planningCurrentUserIdProvider),
         defaultCurrency: detail.entry.currency,
         splitOn: detail.entry.split != null,
+        save: (fields, id) async {
+          try {
+            await ctl.saveRichItem(block.id, existing: item, id: id, fields: fields);
+            return null;
+          } on PlanningStaleVersion {
+            messenger.showSnackBar(
+                const SnackBar(content: Text('Your partner just changed this expense. Showing theirs.')));
+            return null;
+          } catch (e) {
+            return planningErrorMessage(mapPlanningError(e));
+          }
+        },
       ),
     );
-    if (fields == null || !context.mounted) return;
-    try {
-      await ref.read(planningEntryProvider(args).notifier).saveRichItem(block.id, existing: item, fields: fields);
-    } on PlanningStaleVersion {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Your partner just changed this expense. Showing theirs.')));
-      }
-    } catch (e) {
-      if (context.mounted) showPlanningError(context, e);
-    }
   }
 
   Future<void> _delete(BuildContext context, WidgetRef ref, PlanningItem item) async {
@@ -137,7 +144,8 @@ class ExpensesBlockView extends ConsumerWidget {
   }
 }
 
-/// Returns the fields for save_planning_rich_item, or null when cancelled.
+/// Saves through [save], which returns null when done (the sheet closes)
+/// or a message to show while the sheet stays open for a retry.
 class ExpenseEditor extends StatefulWidget {
   const ExpenseEditor({
     super.key,
@@ -146,7 +154,9 @@ class ExpenseEditor extends StatefulWidget {
     required this.me,
     required this.defaultCurrency,
     required this.splitOn,
+    required this.save,
   });
+  final Future<String?> Function(Map<String, dynamic> fields, String id) save;
   final PlanningItem? item;
   final List<PlanningMember> members;
   final String? me;
@@ -164,6 +174,32 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
   late String _currency = widget.item?.currency ?? widget.defaultCurrency;
   late String? _paidBy = widget.item?.paidBy ?? widget.me;
   late bool _equal = widget.item?.splitShareMinor == null;
+  late final String _id = widget.item?.id ?? const Uuid().v4();
+  bool _saving = false;
+  String? _error;
+
+  Future<void> _submit() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    final error = await widget.save(<String, dynamic>{
+      'label': _label.text.trim(),
+      'amount_minor': _amountMinor,
+      'currency': _currency,
+      'paid_by': _paidBy,
+      'split_share_minor': _shareMinor,
+    }, _id);
+    if (!mounted) return;
+    if (error == null) {
+      Navigator.pop(context);
+    } else {
+      setState(() {
+        _saving = false;
+        _error = error;
+      });
+    }
+  }
 
   String _initialAmount(int? minor) {
     if (minor == null) return '';
@@ -255,17 +291,16 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
               ),
           ],
           const SizedBox(height: Spacing.md),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: Spacing.sm),
+              child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ),
           FilledButton(
-            onPressed: _valid
-                ? () => Navigator.pop(context, <String, dynamic>{
-                      'label': _label.text.trim(),
-                      'amount_minor': _amountMinor,
-                      'currency': _currency,
-                      'paid_by': _paidBy,
-                      'split_share_minor': _shareMinor,
-                    })
-                : null,
-            child: const Text('Save'),
+            onPressed: _valid && !_saving ? _submit : null,
+            child: _saving
+                ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Save'),
           ),
         ]),
       ),

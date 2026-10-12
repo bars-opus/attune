@@ -55,6 +55,22 @@ class ProgressBlockView extends ConsumerWidget {
     }
   }
 
+  Future<void> _delete(BuildContext context, WidgetRef ref, PlanningItem item) async {
+    final ctl = ref.read(planningEntryProvider(args).notifier);
+    final index = block.items.indexOf(item);
+    try {
+      await ctl.deleteItem(block.id, item.id);
+    } catch (e) {
+      if (context.mounted) showPlanningError(context, e);
+      return;
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text('Removed'),
+      action: SnackBarAction(label: 'Undo', onPressed: () => ctl.restoreItem(block.id, item.id, index: index)),
+    ));
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
@@ -84,6 +100,30 @@ class ProgressBlockView extends ConsumerWidget {
         if (p.isComplete)
           Text('Reached 🎉', style: theme.textTheme.titleSmall?.copyWith(color: scheme.primary)),
       ]),
+      // Each contribution, newest last; swipe right to take one back.
+      if (!p.isChecklist)
+        for (final item in block.items)
+          Dismissible(
+            key: ValueKey('contribution-${item.id}'),
+            direction: DismissDirection.startToEnd, // swipe right = delete, as everywhere in Planning
+            background: Container(
+              alignment: Alignment.centerLeft,
+              padding: Spacing.horizontalMd,
+              color: scheme.errorContainer,
+              child: Icon(Icons.delete_outline_rounded, color: scheme.onErrorContainer),
+            ),
+            onDismissed: (_) => _delete(context, ref, item),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 44),
+              child: Row(children: [
+                Expanded(
+                  child: Text(item.text.isEmpty ? 'Added' : item.text,
+                      style: TextStyle(color: item.text.isEmpty ? scheme.outline : null)),
+                ),
+                Text('+${_amount(p, item.amountMinor ?? 0)}', style: theme.textTheme.bodyLarge),
+              ]),
+            ),
+          ),
       if (!p.isChecklist)
         Wrap(spacing: Spacing.sm, children: [
           TextButton.icon(
