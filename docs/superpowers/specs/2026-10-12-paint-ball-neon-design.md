@@ -299,6 +299,7 @@ directory of focused parts:
 
 ```
 paint_ball/presentation/widgets/field/
+  paint_ball_field_keys.dart — stable Keys and typed test seams (§3.6.1)
   paint_ball_field.dart   — composition and layout only (~180 lines)
   field_ground.dart       — light well, divider, row labels
   cover_bay.dart          — ONE bay, behind PaintBallCoverStyle (the §2.3 seam)
@@ -367,7 +368,7 @@ Existing behaviour is preserved; the new concerns are rendering-only.
 
 #### 3.6.1 The existing field test is a specification, not an obstacle
 
-`paint_ball_field_test.dart` holds 26 tests, several recording device-reported
+`paint_ball_field_test.dart` holds 25 tests, several recording device-reported
 regressions ("the triangle sat at the right edge of its cover", "both rows
 domed the same way"). It is the most valuable artifact in this work and its
 *behavioural* assertions are normative.
@@ -397,7 +398,7 @@ names: each field part carries a stable `Key` from a `PaintBallFieldKeys`
 constant class, and painters needing inspection expose public final fields
 instead of being read through `dynamic`. The rewritten test uses those.
 
-**Required evidence.** Before Stage 2 begins, the 26 tests are enumerated in
+**Required evidence.** Before Stage 2 begins, the 25 tests are enumerated in
 the plan with each one mapped to its replacement, so a dropped behaviour is
 visible as a gap rather than discovered later. A behavioural assertion that
 genuinely no longer applies is removed only with a written justification in
@@ -451,7 +452,7 @@ this exact drift as a known process failure.
 | The toolkit over-fits Paint Ball | Thin by construction, no speculative API. Stage 7's Sliding Scale is the real test, and it is in scope precisely for that. |
 | Frame budget fails on low-end hardware | `neon_quality` exists from Stage 1 rather than retrofitted. Shaders deferred until measured on a real device. |
 | Golden churn conceals regressions | Six goldens spanning rest/flight/hit/miss/reduce-motion/plain. |
-| **Rewriting the field test silently drops a device-reported regression** | The highest-probability real failure in this work. §3.6.1 splits behavioural from structural assertions, requires a one-to-one mapping of all 26 before Stage 2, and mandates typed `Key`-based seams so the coupling does not recur. |
+| **Rewriting the field test silently drops a device-reported regression** | The highest-probability real failure in this work. §3.6.1 splits behavioural from structural assertions, requires a one-to-one mapping of all 25 before Stage 2, and mandates typed `Key`-based seams so the coupling does not recur. |
 | Cover-as-darkness does not work visually | `PaintBallCoverStyle` seam (§2.3): swapping it is a new class, not surgery. Accepted as provisional by explicit decision. |
 | `field_replay` becomes a god-object | Contract limits it to emitting a `ReplayBeats` value object (§3.2). |
 
