@@ -152,6 +152,15 @@ BEGIN
      OR NOT EXISTS (SELECT 1 FROM public.planning_expense_events WHERE entry_id = v_entry AND action = 'split_on') THEN
     RAISE EXCEPTION 'EXPLOIT: split_on/settle not audited';
   END IF;
+  -- money entered after a settle counts, even on an older line (review I5)
+  PERFORM public.save_planning_rich_item(v_line3, v_exp, 1,
+    jsonb_build_object('label','Dinner','amount_minor',100000,'currency','IDR','paid_by',v_a), NULL);
+  v_d := public.get_planning_entry(v_entry);
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_d -> 'entry' -> 'split' -> 'balances') b
+                 WHERE b ->> 'currency' = 'IDR' AND (b ->> 'minor')::int = 5000 AND (b ->> 'owed_to')::uuid = v_a)
+     OR jsonb_array_length(v_d -> 'entry' -> 'split' -> 'balances') <> 1 THEN
+    RAISE EXCEPTION 'EXPLOIT: an edit after settling was not counted: %', v_d -> 'entry' -> 'split';
+  END IF;
   -- no partner balance at all without split
   PERFORM public.set_planning_entry_split(v_entry, false);
   IF public.get_planning_entry(v_entry) -> 'entry' -> 'split' <> 'null'::jsonb THEN
@@ -253,6 +262,20 @@ BEGIN
   END IF;
 
   -- Contract 10: strangers can do none of it.
+  -- deleting and restoring a whole plan records each expense line (review I7)
+  SELECT count(*) INTO v_n FROM public.planning_block_items i JOIN public.planning_blocks b ON b.id = i.block_id
+  WHERE b.entry_id = v_entry AND b.block_type = 'expenses' AND b.deleted_at IS NULL AND i.deleted_at IS NULL;
+  SELECT count(*) INTO v_i FROM public.planning_expense_events WHERE entry_id = v_entry AND action = 'delete';
+  PERFORM public.delete_planning_entry(v_entry);
+  IF v_n = 0 OR (SELECT count(*) FROM public.planning_expense_events WHERE entry_id = v_entry AND action = 'delete') - v_i <> v_n THEN
+    RAISE EXCEPTION 'EXPLOIT: plan delete left % expense lines unaudited', v_n;
+  END IF;
+  SELECT count(*) INTO v_i FROM public.planning_expense_events WHERE entry_id = v_entry AND action = 'restore';
+  PERFORM public.restore_planning_entry(v_entry);
+  IF (SELECT count(*) FROM public.planning_expense_events WHERE entry_id = v_entry AND action = 'restore') - v_i <> v_n THEN
+    RAISE EXCEPTION 'EXPLOIT: plan restore left expense lines unaudited';
+  END IF;
+
   PERFORM set_config('request.jwt.claims', format('{"sub":"%s"}', v_x), true);
   IF public.planning_storage_can_write(v_rel::text || '/' || v_entry::text || '/x.jpg')
      OR public.planning_storage_can_read(v_path) THEN

@@ -27,6 +27,9 @@ DECLARE
   v_cat uuid := '33000000-0000-0000-0000-00000000c001';
   v_c1 uuid := '33000000-0000-0000-0000-0000000002a1';
   v_c2 uuid := '33000000-0000-0000-0000-0000000002a2';
+  v_tbl uuid := '33000000-0000-0000-0000-00000000b008';
+  v_row uuid := '33000000-0000-0000-0000-0000000003a1';
+  v_copy2 uuid := '33000000-0000-0000-0000-00000000e005';
   v_r jsonb; v_d jsonb; v_n int; v_i int; v_t text;
 BEGIN
   INSERT INTO auth.users (id, email) VALUES (v_a,'cb_a@t.test'),(v_b,'cb_b@t.test'),(v_x,'cb_x@t.test') ON CONFLICT DO NOTHING;
@@ -181,6 +184,26 @@ BEGIN
                     WHERE b ->> 'id' = v_d -> 'payload' ->> 'date_block_id' AND b -> 'payload' ->> 'title' = 'Flight') THEN
     RAISE EXCEPTION 'EXPLOIT: the copy''s countdown points at the old plan: %', v_d -> 'payload';
   END IF;
+
+  -- Contract 10b: a copy starts a new occasion: no ticks in check columns,
+  -- no progress contributions (review I1).
+  PERFORM public.add_planning_block(v_tbl, v_goal, 'table',
+    '{"title":"Bills","columns":[{"key":"c0","label":"Bill","type":"text"},{"key":"c1","label":"Paid","type":"check"},{"key":"c2","label":"Who","type":"text"}]}',
+    NULL, NULL, NULL);
+  PERFORM public.save_planning_rich_item(v_row, v_tbl, NULL, '{"cells":{"c0":"Rent","c1":true,"c2":"Ama"}}', NULL);
+  v_r := public.duplicate_planning_entry(v_goal, v_copy2, 'House deposit 2');
+  SELECT b INTO v_d FROM jsonb_array_elements(v_r -> 'blocks') b WHERE b ->> 'block_type' = 'progress';
+  IF jsonb_array_length(v_d -> 'items') <> 0 THEN RAISE EXCEPTION 'EXPLOIT: contributions copied: %', v_d -> 'items'; END IF;
+  SELECT b INTO v_d FROM jsonb_array_elements(v_r -> 'blocks') b WHERE b ->> 'block_type' = 'table';
+  IF v_d -> 'items' -> 0 -> 'cells' ? 'c1' OR v_d -> 'items' -> 0 -> 'cells' ->> 'c0' <> 'Rent' THEN
+    RAISE EXCEPTION 'EXPLOIT: copied row cells wrong: %', v_d -> 'items' -> 0 -> 'cells';
+  END IF;
+
+  -- Contract 10c: changing a column's type or removing it clears those cells (review I3).
+  v_r := public.update_planning_block(v_tbl, 1,
+    '{"title":"Bills","columns":[{"key":"c0","label":"Bill","type":"text"},{"key":"c1","label":"Paid","type":"money"}]}', NULL, NULL);
+  SELECT cells INTO v_d FROM public.planning_block_items WHERE id = v_row;
+  IF v_d ? 'c1' OR v_d ? 'c2' OR v_d ->> 'c0' <> 'Rent' THEN RAISE EXCEPTION 'EXPLOIT: stale cells kept: %', v_d; END IF;
 
   -- Contract 11: gallery templates make a ready category.
   IF NOT (SELECT bool_and(k IN (SELECT g ->> 'key' FROM jsonb_array_elements(public.list_planning_gallery()) g))
