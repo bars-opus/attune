@@ -165,6 +165,44 @@ BEGIN
     RAISE EXCEPTION 'EXPLOIT: restore resurrected a block deleted earlier';
   END IF;
 
+  -- Contract 10b (review I1): Undo never pushes a category past 20 pins. A
+  -- restored plan whose pin no longer fits comes back UNPINNED, so it
+  -- appears in the list instead of in neither group.
+  DECLARE
+    v_cat10 uuid := '30000000-0000-0000-0000-00000000ca10';
+    v_victim uuid;
+    v_spare uuid;
+  BEGIN
+    PERFORM public.create_planning_category(v_cat10, v_rel, 'Cap', 'star', 'teal');
+    FOR v_i IN 1..21 LOOP
+      PERFORM public.create_planning_entry(gen_random_uuid(), v_cat10, 'C' || v_i, false, 'USD');
+    END LOOP;
+    PERFORM public.pin_planning_entry(id, true) FROM (
+      SELECT id FROM public.planning_entries WHERE category_id = v_cat10 AND NOT is_template ORDER BY id LIMIT 20) x;
+    SELECT id INTO v_victim FROM public.planning_entries WHERE category_id = v_cat10 AND pinned_at IS NOT NULL ORDER BY id LIMIT 1;
+    SELECT id INTO v_spare  FROM public.planning_entries WHERE category_id = v_cat10 AND NOT is_template AND pinned_at IS NULL;
+    PERFORM public.delete_planning_entry(v_victim);      -- 19 pins
+    PERFORM public.pin_planning_entry(v_spare, true);    -- 20 again
+    v_r := public.restore_planning_entry(v_victim);      -- Undo
+    IF v_r -> 'entry' ->> 'pinned_at' IS NOT NULL THEN
+      RAISE EXCEPTION 'EXPLOIT: restore kept a pin over the cap';
+    END IF;
+    SELECT count(*) INTO v_n FROM public.planning_entries
+    WHERE category_id = v_cat10 AND deleted_at IS NULL AND pinned_at IS NOT NULL;
+    IF v_n <> 20 THEN RAISE EXCEPTION 'EXPLOIT: % pins after undo', v_n; END IF;
+    v_page := public.list_planning_entries(v_cat10, 'open', NULL, NULL, 30);
+    IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_page -> 'entries') x WHERE x ->> 'id' = v_victim::text) THEN
+      RAISE EXCEPTION 'EXPLOIT: restored plan is in neither group';
+    END IF;
+    -- with room, Undo keeps the pin
+    PERFORM public.pin_planning_entry(v_spare, false);   -- 19
+    PERFORM public.pin_planning_entry(v_victim, true);   -- 20
+    PERFORM public.delete_planning_entry(v_victim);      -- 19
+    IF public.restore_planning_entry(v_victim) -> 'entry' ->> 'pinned_at' IS NULL THEN
+      RAISE EXCEPTION 'EXPLOIT: restore dropped a pin that still fits';
+    END IF;
+  END;
+
   -- Contract 11: no restore into a deleted category.
   PERFORM public.create_planning_category(v_custom, v_rel, 'Moving', 'box', 'orange');
   PERFORM public.create_planning_entry(gen_random_uuid(), v_custom, 'Boxes', false, 'USD');

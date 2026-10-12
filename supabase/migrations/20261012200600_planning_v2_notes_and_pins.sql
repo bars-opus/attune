@@ -229,7 +229,11 @@ $$;
 
 -- Undo for a swipe-delete: brings back the entry and exactly the blocks and
 -- items that delete_planning_entry removed (they share its deleted_at),
--- never ones the couple deleted earlier on their own.
+-- never ones the couple deleted earlier on their own. A pin that no longer
+-- fits under the 20-pin cap is dropped, so the plan returns to the list
+-- instead of falling outside both the pinned group and the paged list
+-- (review I1). The category row is locked FOR UPDATE, as in
+-- pin_planning_entry, so the cap is counted under the same lock.
 CREATE OR REPLACE FUNCTION public.restore_planning_entry(p_id uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
@@ -242,12 +246,17 @@ BEGIN
   FROM public.planning_entries WHERE id = p_id AND deleted_at IS NOT NULL AND NOT is_template;
   IF NOT FOUND THEN PERFORM public.planning_v2_fail('not_found'); END IF;
   v_actor := public.planning_v2_actor(v_rel);
-  PERFORM 1 FROM public.planning_categories WHERE id = v_cat_id FOR SHARE;
+  PERFORM 1 FROM public.planning_categories WHERE id = v_cat_id FOR UPDATE;
   IF NOT EXISTS (SELECT 1 FROM public.planning_categories WHERE id = v_cat_id AND deleted_at IS NULL) THEN
     PERFORM public.planning_v2_fail('not_found');
   END IF;
   SELECT * INTO v_row FROM public.planning_entries WHERE id = p_id FOR UPDATE;
   IF v_row.deleted_at IS NULL THEN PERFORM public.planning_v2_fail('not_found'); END IF;
+  IF v_row.pinned_at IS NOT NULL AND (
+       SELECT count(*) FROM public.planning_entries
+       WHERE category_id = v_cat_id AND NOT is_template AND deleted_at IS NULL AND pinned_at IS NOT NULL) >= 20 THEN
+    UPDATE public.planning_entries SET pinned_at = NULL WHERE id = p_id;
+  END IF;
 
   UPDATE public.planning_block_items SET deleted_at = NULL
   WHERE deleted_at = v_row.deleted_at
