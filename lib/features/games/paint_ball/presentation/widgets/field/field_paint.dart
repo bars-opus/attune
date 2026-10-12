@@ -101,6 +101,8 @@ class FieldPaint extends StatelessWidget {
             quality: neonQualityOf(context),
             rowWidth: constraints.maxWidth,
             coverWidth: kPaintBallCoverWidth.w,
+            hitRadius: 26.r,
+            missRadius: 16.r,
           ),
         );
       },
@@ -117,6 +119,8 @@ class FieldPaintPainter extends CustomPainter {
     required this.quality,
     required this.rowWidth,
     this.coverWidth = kPaintBallCoverWidth,
+    this.hitRadius = 26,
+    this.missRadius = 16,
   });
 
   final List<PaintSplat> splats;
@@ -124,6 +128,11 @@ class FieldPaintPainter extends CustomPainter {
   final Color theirsColor;
   final NeonQuality quality;
   final double rowWidth;
+
+  /// A splat's size. Scaled by the widget layer like [coverWidth], and
+  /// defaulted to the design values so a unit test needs no ScreenUtil.
+  final double hitRadius;
+  final double missRadius;
 
   /// Scaled by the widget layer, so the painter and [splatCentre] agree
   /// with the covers the figures stand on.
@@ -162,11 +171,18 @@ class FieldPaintPainter extends CustomPainter {
       );
       final rng = math.Random(splat.round * 31 + splat.position * 7);
 
-      // Derived from coverWidth, which the widget layer already scaled,
-      // rather than calling `.r` here: the painter must stay usable in a
-      // unit test, and ScreenUtil throws with no init in the tree.
-      final radius = coverWidth * (splat.hit ? 0.351 : 0.216);
-      _drawSplat(canvas, centre, radius, paint, rng);
+      // Taken as a parameter rather than derived from coverWidth or read
+      // via `.r`. Deriving it compounded the scale twice: at the design
+      // width the ratio gave the intended 26pt, but at a wider viewport
+      // it gave 55pt and the splat swallowed the figure and its cover
+      // whole. Caught by rendering the golden and looking at it.
+      _drawSplat(
+        canvas,
+        centre,
+        splat.hit ? hitRadius : missRadius,
+        paint,
+        rng,
+      );
     }
   }
 
@@ -222,6 +238,8 @@ class FieldPaintPainter extends CustomPainter {
       old.quality != quality ||
       old.rowWidth != rowWidth ||
       old.coverWidth != coverWidth ||
+      old.hitRadius != hitRadius ||
+      old.missRadius != missRadius ||
       old.mineColor != mineColor ||
       old.theirsColor != theirsColor ||
       old.splats.length != splats.length ||

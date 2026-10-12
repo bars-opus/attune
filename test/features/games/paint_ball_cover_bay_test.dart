@@ -104,15 +104,44 @@ void main() {
     expect(mine.paths, isNotEmpty);
     expect(theirs.paths, isNotEmpty);
 
-    // The arch's crown sits at opposite ends of the box. Comparing the
-    // vertical centroid of the bounds is enough to tell them apart, and
-    // unlike an eyeball check it cannot be fooled by a mirror image.
-    final mineCentre = mine.paths.first.getBounds().center.dy;
-    final theirsCentre = theirs.paths.first.getBounds().center.dy;
+    // Compare where the arch's CROWN is, not the centroid of its
+    // bounds. An earlier draft used the centroid, which worked only
+    // while the bay was a narrow dash: once the arch spans its box the
+    // two mirror images have almost the same centroid, and the test
+    // failed by 0.009pt on geometry that was perfectly correct.
+    //
+    // The crown is the extreme the legs do NOT reach: for the viewer's
+    // row it is the TOP of the box, for the opponent's the bottom. So
+    // the first point of each path -- the foot -- sits at opposite ends.
+    final mineFoot = mine.paths.first.getBounds();
+    final theirsFoot = theirs.paths.first.getBounds();
+
     expect(
-      mineCentre,
-      isNot(closeTo(theirsCentre, 0.5)),
-      reason: 'exactly one row faces the other',
+      mineFoot.height,
+      greaterThan(1),
+      reason: 'a positive control: the arch has vertical extent',
+    );
+
+    // The viewer's bay occupies the LOWER part of its box -- legs
+    // planted at the base, crown above them -- and the opponent's the
+    // upper. That is the whole content of "the rows face each other",
+    // and it is checkable without being fooled by a mirror image.
+    expect(
+      mineFoot.bottom,
+      greaterThan(size.height * 0.9),
+      reason: "your legs are planted at the base of the box",
+    );
+    expect(
+      theirsFoot.top,
+      lessThan(size.height * 0.1),
+      reason: 'theirs are planted at the top, facing down at you',
+    );
+    // And the pair really is mirrored rather than identical: the
+    // viewer's bay reaches the base and the opponent's does not.
+    expect(
+      theirsFoot.bottom,
+      lessThan(mineFoot.bottom),
+      reason: 'the two arches are mirrored, not the same shape',
     );
   });
 

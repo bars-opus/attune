@@ -78,15 +78,24 @@ class DarknessCoverStyle implements PaintBallCoverStyle {
 
     final isAimed = context.state == CoverBayState.aimed;
 
-    // The mouth OPENS when aimed: the legs part, so the shot has a
-    // visible path through. This is the neon equivalent of the old
-    // shield sliding aside, and it exists for the same reason -- a shot
-    // should be something you can see a path for, not an abstract
-    // selection.
-    final mouth = size.width * (isAimed ? 0.34 : 0.14);
+    // The bay spans most of its box and OPENS wider when aimed: the
+    // legs part, so the shot has a visible path through. This is the
+    // neon equivalent of the old shield sliding aside, and it exists for
+    // the same reason -- a shot should be something you can see a path
+    // for, not an abstract selection.
+    //
+    // An earlier draft made the mouth 14% of the box at rest, which drew
+    // a 10pt dash rather than a hiding place: a cover you cannot see is
+    // three invisible choices. Found by rendering the golden and looking
+    // at it.
+    final mouth = size.width * (isAimed ? 0.92 : 0.74);
     final legInset = (size.width - mouth) / 2;
 
-    final radius = legInset.clamp(1.0, size.width / 2);
+    // Half the span, not the leg inset. The arc has to REACH across the
+    // mouth; given a radius far larger than half its chord, Flutter
+    // flattens it into a near-straight line, which is why the bays drew
+    // as square brackets instead of arches.
+    final radius = (mouth / 2).clamp(1.0, size.width / 2);
     final shoulderY = context.facing ? radius : size.height - radius;
     final footY = context.facing ? size.height : 0.0;
 
