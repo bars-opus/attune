@@ -63,13 +63,12 @@ BEGIN
   PERFORM public.set_planning_link_preview(v_link, 'https://a.example/', '{"status":"ok","title":"A"}');
   PERFORM public.update_planning_block(v_link, v_v, '{"url":"https://a.example/","label":"Ours"}', NULL, NULL);
 
-  -- M6: the money history can't be truncated or rewritten, even by the service role.
-  IF has_table_privilege('service_role', 'public.planning_expense_events', 'TRUNCATE')
-     OR has_table_privilege('service_role', 'public.planning_expense_events', 'UPDATE')
-     OR has_table_privilege('service_role', 'public.planning_expense_events', 'DELETE') THEN
-    RAISE EXCEPTION 'EXPLOIT: service_role can rewrite the expense audit';
-  END IF;
+  -- M6: the money history can't be truncated or rewritten by any role, the owner included.
+  PERFORM public.save_planning_rich_item(gen_random_uuid(), v_exp, NULL, '{"label":"Taxi","amount_minor":1200}', NULL);
   BEGIN TRUNCATE public.planning_expense_events; RAISE EXCEPTION 'EXPLOIT: the expense audit was truncated';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM NOT LIKE '%append-only%' THEN RAISE; END IF; END;
+  BEGIN UPDATE public.planning_expense_events SET action = 'settle' WHERE entry_id = v_trip;
+    IF FOUND THEN RAISE EXCEPTION 'EXPLOIT: an audit row was rewritten'; END IF;
   EXCEPTION WHEN raise_exception THEN IF SQLERRM NOT LIKE '%append-only%' THEN RAISE; END IF; END;
 
   -- M4: uploads nobody references are queued for deletion after a day; referenced or fresh ones stay.

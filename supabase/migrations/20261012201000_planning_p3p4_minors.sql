@@ -266,8 +266,10 @@ BEGIN
 END $$;
 
 -- ---- M6: the money history can't be truncated or rewritten by any role ---------------
-REVOKE ALL ON public.planning_expense_events FROM service_role;
-GRANT SELECT, INSERT ON public.planning_expense_events TO service_role;
+-- Privileges stay as every public table has them (service_role_grants_test:
+-- workers must be able to read and update every table). The triggers are
+-- what make this table append-only, for every role including the owner:
+-- the row trigger refuses UPDATE and DELETE, this one refuses TRUNCATE.
 
 CREATE FUNCTION public.planning_expense_events_no_truncate()
 RETURNS trigger LANGUAGE plpgsql AS $$
