@@ -68,5 +68,30 @@ void main() {
     expect(planningSummaryLine(const PlanningSummary(kind: PlanningSummaryKind.recent, entryId: 'e',
         title: 'Saturday shop', contextDate: null)), 'Saturday shop');
   });
+
+  testWidgets('category fill is solid enough for a background-coloured icon in both themes', (tester) async {
+    double lum(Color c) => c.computeLuminance();
+    double contrast(Color a, Color b) {
+      final (hi, lo) = lum(a) > lum(b) ? (lum(a), lum(b)) : (lum(b), lum(a));
+      return (hi + 0.05) / (lo + 0.05);
+    }
+
+    for (final brightness in Brightness.values) {
+      late BuildContext ctx;
+      await tester.pumpWidget(MaterialApp(
+        theme: ThemeData(useMaterial3: true, brightness: brightness),
+        home: Builder(builder: (c) {
+          ctx = c;
+          return const SizedBox();
+        }),
+      ));
+      final icon = Theme.of(ctx).colorScheme.background; // ignore: deprecated_member_use
+      for (final token in planningColorKeys) {
+        final fill = planningCategoryFill(ctx, token);
+        expect(fill, isNot(planningTone(ctx, token).container), reason: '$token: stronger than the pale container');
+        expect(contrast(fill, icon), greaterThanOrEqualTo(3.0), reason: '$token in $brightness');
+      }
+    }
+  });
 }
 

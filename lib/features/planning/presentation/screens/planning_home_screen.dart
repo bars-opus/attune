@@ -241,13 +241,13 @@ class _CategoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tone = planningTone(context, category.color);
+    final colorScheme = Theme.of(context).colorScheme;
     final n = category.entryCount;
     return InfoRowWidget(
       padding: _rowPadding,
       icon: planningIcon(category.icon),
-      iconColor: tone.onContainer,
-      backgroundColor: tone.container,
+      iconColor: colorScheme.background, // ignore: deprecated_member_use
+      backgroundColor: planningCategoryFill(context, category.color),
       title: category.name,
       subtitle: n == 1 ? '1 plan' : '$n plans',
       showDivider: false,
@@ -347,8 +347,8 @@ class _NewCategoryChooser extends ConsumerWidget {
                 InfoRowWidget(
                   padding: _rowPadding,
                   icon: planningIcon(g.icon),
-                  iconColor: planningTone(context, g.color).onContainer,
-                  backgroundColor: planningTone(context, g.color).container,
+                  iconColor: Theme.of(context).colorScheme.background, // ignore: deprecated_member_use
+                  backgroundColor: planningCategoryFill(context, g.color),
                   title: g.name,
                   subtitle: g.description,
                   showDivider: false,

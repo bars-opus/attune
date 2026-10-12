@@ -60,6 +60,12 @@ ColorScheme _scheme(String token, Brightness brightness) => _schemes.putIfAbsent
   return (container: s.primaryContainer, onContainer: s.onPrimaryContainer);
 }
 
+/// The solid fill behind a category's icon: the colour's primary tone,
+/// strong enough (light and dark) for an icon in the theme's background
+/// colour. Used for the category rows, the gallery ideas and the colour
+/// picker, so a new category looks the way it will on the list.
+Color planningCategoryFill(BuildContext context, String token) => _scheme(token, Theme.of(context).brightness).primary;
+
 const _richTextTokens = ['yellow', 'green', 'blue', 'pink', 'purple'];
 
 /// Rich-text highlight tokens (spec §6.1). Quill resolves `background`

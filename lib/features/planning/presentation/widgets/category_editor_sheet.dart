@@ -68,6 +68,14 @@ class _CategoryEditorState extends State<_CategoryEditor> {
               excludeSemantics: true,
               child: IconButton.filledTonal(
                 isSelected: k == _icon,
+                // The chosen icon previews the category row: its colour's
+                // fill with a background-coloured icon.
+                style: k == _icon
+                    ? IconButton.styleFrom(
+                        backgroundColor: planningCategoryFill(context, _color),
+                        foregroundColor: Theme.of(context).colorScheme.background, // ignore: deprecated_member_use
+                      )
+                    : null,
                 onPressed: () => setState(() => _icon = k),
                 icon: Icon(planningIcon(k)),
               ),
@@ -92,9 +100,10 @@ class _CategoryEditorState extends State<_CategoryEditor> {
                   child: Center(
                     child: CircleAvatar(
                       radius: 18,
-                      backgroundColor: planningTone(context, c).container,
+                      backgroundColor: planningCategoryFill(context, c),
                       child: c == _color
-                          ? Icon(Icons.check_rounded, color: planningTone(context, c).onContainer)
+                          ? Icon(Icons.check_rounded,
+                              color: Theme.of(context).colorScheme.background) // ignore: deprecated_member_use
                           : null,
                     ),
                   ),
