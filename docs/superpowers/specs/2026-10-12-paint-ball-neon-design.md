@@ -67,8 +67,10 @@ Monument Valley or a premium dark dashboard, never a flat diagram.
 It shares a name with GamePigeon's Paintball and nothing else. GamePigeon's is
 an artillery game whose pleasure is aiming well. Attune's is a
 **hidden-information bluffing game**: each player picks one of three positions
-(`kPaintBallPositions = 3`) to hide behind, the other picks one to shoot at, and
-a hit means they guessed right. The board already counts repeat choices (`SAME SPOT xN`) because, as the
+(`kPaintBallPositions = 3`) to hide behind and one to shoot at, both choose
+without seeing the other, and a hit means they guessed right. A round resolves
+as a **simultaneous duel**, not alternating turns — both shots cross in the air
+during the replay (§2.6). The board already counts repeat choices (`SAME SPOT xN`) because, as the
 existing code comment states, staying put "is stubbornness, or a bluff, or a
 dare to try the same spot twice."
 
@@ -225,19 +227,35 @@ The existing four beats (emerge 0.12 / aim 0.34 / fire 0.52 / flight to 0.86)
 are well-judged and their rationale — the point is seeing the two decisions
 meet — is retained. Light is added to each, and the sequence extended to six:
 
-1. **Emerge** — their bay lights; the figure rises out of darkness.
-2. **Aim** — a thin, dim beam from shooter toward target bay. A suggestion of a
-   line, not a tracer, so the beat reads as *intent*.
-3. **Fire** — the beam snaps off; the ball leaves on a muzzle flash that briefly
-   lights the shooter's bay.
-4. **Flight** — the ball travels with a short motion trail and **casts light on
-   the ground as it passes.** This single effect is expected to carry the
-   design's credibility more than any other.
-5. **Impact** — white flash, then paint blooms outward in the shooter's hue. On
-   a hit, the target bay floods with light and the figure is revealed standing
-   in it.
-6. **Settle** — the splat dims to a wet, slightly glossy decal that persists on
-   the field for the remainder of the match.
+**A round is a simultaneous duel, not alternating turns.** Both players chose
+without seeing the other, so during a replay *both* sides emerge, aim and fire,
+and the two paintballs cross in the air. `paint_ball_field_test.dart` pins this
+("mid-replay both paintballs are in flight at once" expects two projectiles).
+Every beat below therefore happens twice over, once per side, in parallel.
+
+1. **Emerge** — both bays light; both figures rise out of darkness.
+2. **Aim** — a thin, dim beam from each shooter toward their chosen bay. A
+   suggestion of a line, not a tracer, so the beat reads as *intent*.
+3. **Fire** — the beams snap off; both balls leave on a muzzle flash that
+   briefly lights each shooter's bay.
+4. **Flight** — the balls travel with short motion trails and **cast light on
+   the ground as they pass**, crossing mid-field. This single effect is
+   expected to carry the design's credibility more than any other.
+5. **Impact** — white flash, then paint blooms outward in each shooter's hue.
+   Where a shot found its target, that bay floods with light and the figure is
+   revealed standing in it.
+6. **Settle** — the splat dims to a wet, slightly glossy decal for the rest of
+   the replay, then leaves with it.
+
+**Correction to an earlier draft of this section:** paint must *not* persist
+across rounds. `paint_ball_battle_screen.dart` passes `onlyRound: replay?.roundNumber`
+so paint belongs to the shot being watched, not to the match, and
+`paint_ball_field_test.dart` pins it ("an idle board carries no paint").
+The reason is a fairness and privacy property, not aesthetics: accumulated
+paint is a map of where your partner has already fired — their habits
+readable for free, which is the clue this game asks you to earn. A persistent
+decal would reintroduce a deliberately fixed bug. Paint arrives with the shot
+and leaves with the replay.
 
 The four existing thresholds are retained as the first four beats. Impact and
 settle occupy the tail the current implementation leaves unused: impact begins
@@ -345,10 +363,45 @@ Existing behaviour is preserved; the new concerns are rendering-only.
 - **Golden:** field at rest, mid-flight, on hit, on miss, under reduce-motion,
   and at `plain` quality. Six goldens, which is where regressions will actually
   be caught.
-- **Regression:** the existing `paint_ball_field_test.dart` must pass
-  unmodified. If the rewrite genuinely invalidates an assertion, the diff is
-  shown and justified rather than quietly edited.
 - The suite must remain green (128+ tests at time of writing).
+
+#### 3.6.1 The existing field test is a specification, not an obstacle
+
+`paint_ball_field_test.dart` holds 26 tests, several recording device-reported
+regressions ("the triangle sat at the right edge of its cover", "both rows
+domed the same way"). It is the most valuable artifact in this work and its
+*behavioural* assertions are normative.
+
+An earlier draft of this section promised the file would pass **unmodified**.
+That is not achievable and the promise is withdrawn. The tests reach into
+rendering internals by design:
+
+- They identify painters by runtime type *name* substring — `'Triangle'`,
+  `'Shield'`, `'Projectile'`, `'Splat'`.
+- They read painter fields dynamically — `(painter as dynamic).opensDown`,
+  `.splats`, `.progress`.
+
+Renaming `_TrianglePainter` to a lit mark breaks roughly a dozen assertions by
+construction, with no behaviour change.
+
+**The contract is therefore split in two, and the distinction is normative:**
+
+| Assertion kind | Treatment |
+|---|---|
+| **Behavioural** — what the field does: only your own position visible; both shots airborne mid-replay; no shot before the aim lands; rows tap to distinct actions; nothing selectable out of turn; figure centred in its cover at several widths; rows face each other; partner named; streak shown only during replay; idle board carries no paint; repositioning travels rather than teleports and steps clear of cover; reduce-motion durations are zero | **Must survive, every one.** Each is re-expressed against the new structure. None may be deleted or weakened. |
+| **Structural** — painter type-name substrings and `as dynamic` field reads | May be rewritten to match new names and types. The *assertion* is preserved; only its hook changes. |
+
+**Required mitigation.** To stop the structural coupling recurring, the new
+parts expose explicit, typed test seams rather than relying on private painter
+names: each field part carries a stable `Key` from a `PaintBallFieldKeys`
+constant class, and painters needing inspection expose public final fields
+instead of being read through `dynamic`. The rewritten test uses those.
+
+**Required evidence.** Before Stage 2 begins, the 26 tests are enumerated in
+the plan with each one mapped to its replacement, so a dropped behaviour is
+visible as a gap rather than discovered later. A behavioural assertion that
+genuinely no longer applies is removed only with a written justification in
+the commit message.
 
 ### 3.7 Sound
 
@@ -397,7 +450,8 @@ this exact drift as a known process failure.
 | Figures read as UI markers rather than characters | The design's least defensible claim from prose. External visual review at the Stage 2 and Stage 4 checkpoints, against screenshots. |
 | The toolkit over-fits Paint Ball | Thin by construction, no speculative API. Stage 7's Sliding Scale is the real test, and it is in scope precisely for that. |
 | Frame budget fails on low-end hardware | `neon_quality` exists from Stage 1 rather than retrofitted. Shaders deferred until measured on a real device. |
-| Golden churn conceals regressions | Six goldens spanning rest/flight/hit/miss/reduce-motion/plain. Existing test passes unmodified or the diff is justified. |
+| Golden churn conceals regressions | Six goldens spanning rest/flight/hit/miss/reduce-motion/plain. |
+| **Rewriting the field test silently drops a device-reported regression** | The highest-probability real failure in this work. §3.6.1 splits behavioural from structural assertions, requires a one-to-one mapping of all 26 before Stage 2, and mandates typed `Key`-based seams so the coupling does not recur. |
 | Cover-as-darkness does not work visually | `PaintBallCoverStyle` seam (§2.3): swapping it is a new class, not surgery. Accepted as provisional by explicit decision. |
 | `field_replay` becomes a god-object | Contract limits it to emitting a `ReplayBeats` value object (§3.2). |
 
@@ -423,8 +477,9 @@ The work is complete when all of the following hold:
 2. The replay is worth watching twice.
 3. `lib/core/ui/neon/` has at least one consumer besides Paint Ball
    (Sliding Scale, Stage 7).
-4. Six new goldens exist and pass; the pre-existing Paint Ball field test
-   passes unmodified or its diff is justified; the suite is green.
+4. Six new goldens exist and pass. Every **behavioural** assertion of the 26
+   existing field tests survives, mapped one-to-one per §3.6.1; structural
+   hooks may be rewritten. The suite is green.
 5. No new raster assets, no new runtime dependency, no migrations, no server
    changes.
 6. Paint Ball's five cues are regenerated and audibly better than sine tones,
