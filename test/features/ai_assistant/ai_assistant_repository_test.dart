@@ -362,7 +362,7 @@ void main() {
     test('calls create_planning_from_assist_message with p_message_id, p_edited_title, p_edited_date', () async {
       final gateway = _FakeAiAssistantGateway()
         ..nextRpcResult = [
-          {'planning_item_id': 'item-1', 'planning_event_id': null},
+          {'planning_entry_id': 'entry-1'},
         ];
       final repo = AiAssistantRepository(gateway);
 
@@ -379,10 +379,19 @@ void main() {
       expect(gateway.lastCalledParams!['p_edited_date'], '2026-10-01');
     });
 
+    test('returns the plan the conversion created (spec §16)', () async {
+      final gateway = _FakeAiAssistantGateway()
+        ..nextRpcResult = [
+          {'planning_entry_id': 'entry-7'},
+        ];
+      final result = await AiAssistantRepository(gateway).addToPlanning('msg-7');
+      expect(result.entryId, 'entry-7');
+    });
+
     test('passes null p_edited_title/p_edited_date when not overridden', () async {
       final gateway = _FakeAiAssistantGateway()
         ..nextRpcResult = [
-          {'planning_item_id': 'item-2', 'planning_event_id': null},
+          {'planning_entry_id': 'entry-2'},
         ];
       final repo = AiAssistantRepository(gateway);
 
@@ -405,34 +414,15 @@ void main() {
       expect(gateway.lastSelectedPlanningLinkMessageId, 'msg-3');
     });
 
-    test('returns the planning_item_id when a task link exists', () async {
+    test('returns the linked plan when a link exists', () async {
       final gateway = _FakeAiAssistantGateway()
-        ..nextSelectPlanningLinkResult = {
-          'planning_item_id': 'item-9',
-          'planning_event_id': null,
-        };
+        ..nextSelectPlanningLinkResult = {'planning_entry_id': 'entry-9'};
       final repo = AiAssistantRepository(gateway);
 
       final result = await repo.getPlanningLink('msg-4');
 
       expect(result, isNotNull);
-      expect(result!.planningItemId, 'item-9');
-      expect(result.planningEventId, isNull);
-    });
-
-    test('returns the planning_event_id when an event link exists', () async {
-      final gateway = _FakeAiAssistantGateway()
-        ..nextSelectPlanningLinkResult = {
-          'planning_item_id': null,
-          'planning_event_id': 'event-5',
-        };
-      final repo = AiAssistantRepository(gateway);
-
-      final result = await repo.getPlanningLink('msg-5');
-
-      expect(result, isNotNull);
-      expect(result!.planningEventId, 'event-5');
-      expect(result.planningItemId, isNull);
+      expect(result!.entryId, 'entry-9');
     });
 
     test(

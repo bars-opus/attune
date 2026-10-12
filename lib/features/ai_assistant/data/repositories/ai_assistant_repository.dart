@@ -37,15 +37,13 @@ class AiConsentStatus {
   });
 }
 
-/// The result of `create_planning_from_assist_message` (spec §5.4):
-/// exactly one of `planningItemId`/`planningEventId` is non-null,
-/// matching the RPC's own `RETURNS TABLE (planning_item_id uuid,
-/// planning_event_id uuid)` shape.
+/// The result of `create_planning_from_assist_message`: the Planning plan
+/// the suggestion became (spec §16 — a task becomes a plan with one to-do,
+/// an event a plan with a Date block). Tapping "Added to Planning" opens it.
 class AddToPlanningResult {
-  final String? planningItemId;
-  final String? planningEventId;
+  final String entryId;
 
-  const AddToPlanningResult({this.planningItemId, this.planningEventId});
+  const AddToPlanningResult({required this.entryId});
 }
 
 /// The seam `AiAssistantRepository` calls through, so tests can fake it
@@ -92,7 +90,7 @@ class SupabaseAiAssistantGateway implements AiAssistantGateway {
   Future<Map<String, dynamic>?> selectPlanningLink(String messageId) async {
     final row = await _supabase
         .from('ai_assist_planning_links')
-        .select('planning_item_id,planning_event_id')
+        .select('planning_entry_id')
         .eq('message_id', messageId)
         .maybeSingle();
     return row;
@@ -259,10 +257,7 @@ class AiAssistantRepository {
       onResult: (data) {
         final rows = data as List;
         final row = Map<String, dynamic>.from(rows.first as Map);
-        return AddToPlanningResult(
-          planningItemId: row['planning_item_id'] as String?,
-          planningEventId: row['planning_event_id'] as String?,
-        );
+        return AddToPlanningResult(entryId: row['planning_entry_id'] as String);
       },
     );
   }
@@ -282,10 +277,7 @@ class AiAssistantRepository {
     try {
       final row = await _gateway.selectPlanningLink(messageId);
       if (row == null) return null;
-      return AddToPlanningResult(
-        planningItemId: row['planning_item_id'] as String?,
-        planningEventId: row['planning_event_id'] as String?,
-      );
+      return AddToPlanningResult(entryId: row['planning_entry_id'] as String);
     } catch (_) {
       return null;
     }
