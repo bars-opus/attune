@@ -37,12 +37,12 @@ BEGIN
   FROM public.planning_blocks b JOIN public.planning_entries e ON e.id = b.entry_id
   WHERE i.block_id = b.id AND e.category_id = v_trips AND e.is_template;
   v_d := public.create_planning_entry(v_e1, v_trips, 'Bali, 10 days', true, 'IDR');
-  IF jsonb_array_length(v_d -> 'blocks') <> 4 THEN RAISE EXCEPTION 'EXPLOIT: template copy block count %', jsonb_array_length(v_d -> 'blocks'); END IF;
-  IF (v_d -> 'blocks' -> 2 ->> 'block_type') <> 'checklist'
-     OR jsonb_array_length(v_d -> 'blocks' -> 2 -> 'items') <> 3 THEN
-    RAISE EXCEPTION 'EXPLOIT: packing list not copied: %', v_d -> 'blocks' -> 2;
+  IF jsonb_array_length(v_d -> 'blocks') <> 10 THEN RAISE EXCEPTION 'EXPLOIT: template copy block count %', jsonb_array_length(v_d -> 'blocks'); END IF;
+  IF (v_d -> 'blocks' -> 8 ->> 'block_type') <> 'checklist'
+     OR jsonb_array_length(v_d -> 'blocks' -> 8 -> 'items') <> 3 THEN
+    RAISE EXCEPTION 'EXPLOIT: packing list not copied: %', v_d -> 'blocks' -> 8;
   END IF;
-  IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_d -> 'blocks' -> 2 -> 'items') i WHERE i ->> 'checked_at' IS NOT NULL) THEN
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_d -> 'blocks' -> 8 -> 'items') i WHERE i ->> 'checked_at' IS NOT NULL) THEN
     RAISE EXCEPTION 'EXPLOIT: copied items kept their ticks';
   END IF;
   IF v_d -> 'entry' ->> 'currency' <> 'IDR' OR (v_d -> 'entry' ->> 'is_template')::boolean THEN
@@ -57,7 +57,7 @@ BEGIN
   -- Contract 3: idempotent create; conflicting reuse rejected.
   v_d := public.create_planning_entry(v_e1, v_trips, 'Bali, 10 days', true, 'IDR');
   SELECT count(*) INTO v_n FROM public.planning_blocks WHERE entry_id = v_e1 AND deleted_at IS NULL;
-  IF v_n <> 4 THEN RAISE EXCEPTION 'EXPLOIT: retry re-copied blocks (%)', v_n; END IF;
+  IF v_n <> 10 THEN RAISE EXCEPTION 'EXPLOIT: retry re-copied blocks (%)', v_n; END IF;
   BEGIN PERFORM public.create_planning_entry(v_e1, v_goals, 'Other', true, 'USD');
     RAISE EXCEPTION 'EXPLOIT: id reuse accepted';
   EXCEPTION WHEN raise_exception THEN IF SQLERRM <> 'planning:invalid_input' THEN RAISE; END IF; END;
@@ -130,7 +130,7 @@ BEGIN
 
   -- Contract 9: reset restores the starter version.
   v_d := public.reset_planning_template(v_goals);
-  IF jsonb_array_length(v_d -> 'blocks') <> 3 OR v_d -> 'entry' ->> 'title' <> 'New goal' THEN
+  IF jsonb_array_length(v_d -> 'blocks') <> 4 OR v_d -> 'entry' ->> 'title' <> 'New goal' THEN
     RAISE EXCEPTION 'EXPLOIT: reset wrong: %', v_d -> 'entry';
   END IF;
   IF (SELECT seed_version FROM public.planning_entries WHERE id = v_tpl) IS NULL THEN
@@ -141,14 +141,14 @@ BEGIN
   UPDATE public.planning_block_items SET checked_at = now(), checked_by = v_a
   WHERE block_id IN (SELECT id FROM public.planning_blocks WHERE entry_id = v_e1);
   v_d := public.duplicate_planning_entry(v_e1, v_dup, 'Bali again');
-  IF jsonb_array_length(v_d -> 'blocks') <> 4 THEN RAISE EXCEPTION 'EXPLOIT: duplicate lost blocks'; END IF;
+  IF jsonb_array_length(v_d -> 'blocks') <> 10 THEN RAISE EXCEPTION 'EXPLOIT: duplicate lost blocks'; END IF;
   IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_d -> 'blocks') b, jsonb_array_elements(b -> 'items') i
              WHERE i ->> 'checked_at' IS NOT NULL) THEN
     RAISE EXCEPTION 'EXPLOIT: duplicate kept ticks';
   END IF;
   SELECT count(*) INTO v_n FROM public.planning_block_items i JOIN public.planning_blocks b ON b.id = i.block_id
   WHERE b.entry_id = v_e1 AND i.checked_at IS NOT NULL;
-  IF v_n <> 3 THEN RAISE EXCEPTION 'EXPLOIT: duplicate changed the source'; END IF;
+  IF v_n <> 5 THEN RAISE EXCEPTION 'EXPLOIT: duplicate changed the source'; END IF;  -- packing 3 + expense lines 2
   BEGIN PERFORM public.duplicate_planning_entry(v_tpl, gen_random_uuid(), 'x'); RAISE EXCEPTION 'EXPLOIT: template duplicated';
   EXCEPTION WHEN raise_exception THEN IF SQLERRM <> 'planning:invalid_input' THEN RAISE; END IF; END;
 

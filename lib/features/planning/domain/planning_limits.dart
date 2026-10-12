@@ -19,6 +19,7 @@ class PlanningLimits {
   static const itemTextChars = 500;
   static const sectionChars = 40;
   static const pinnedPerCategory = 20;
+  static const pollOptions = 20;
 
   static const Map<String, int> all = {
     'categories': categories,
@@ -37,5 +38,6 @@ class PlanningLimits {
     'item_text_chars': itemTextChars,
     'section_chars': sectionChars,
     'pinned_per_category': pinnedPerCategory,
+    'poll_options': pollOptions,
   };
 }

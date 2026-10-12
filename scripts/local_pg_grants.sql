@@ -118,3 +118,6 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 
 -- Planning P3: the expense audit and the link-preview cache are server-only.
 \i supabase/migrations/20261012200810_planning_rich_blocks_grants.sql
+
+-- Planning P4: votes, member settings and the gallery are server-only.
+\i supabase/migrations/20261012200910_planning_couple_blocks_grants.sql
