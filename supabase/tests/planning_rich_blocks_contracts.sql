@@ -178,19 +178,36 @@ BEGIN
   IF has_function_privilege('authenticated', 'public.set_planning_link_preview(uuid, text, jsonb)', 'EXECUTE') THEN
     RAISE EXCEPTION 'EXPLOIT: clients can write link previews';
   END IF;
+  IF NOT public.set_planning_link_preview(v_link, 'https://villa.example/ubud',
+    jsonb_build_object('status','ok','title','Ubud villa','description','Pool','host','villa.example',
+                       'image_path', v_rel || '/' || v_entry || '/preview-a.jpg')) THEN
+    RAISE EXCEPTION 'EXPLOIT: a current preview reported as not applied';
+  END IF;
+  -- a refreshed preview replaces the image; the old file is queued for deletion
   PERFORM public.set_planning_link_preview(v_link, 'https://villa.example/ubud',
-    '{"status":"ok","title":"Ubud villa","description":"Pool","host":"villa.example"}');
-  PERFORM public.set_planning_link_preview(v_link, 'https://other.example/',
-    '{"status":"ok","title":"WRONG"}');  -- stale: url no longer matches, ignored
-  PERFORM public.update_planning_block(v_link, 2, '{"url":"https://villa.example/ubud","label":"Our villa"}', NULL, NULL);
+    jsonb_build_object('status','ok','title','Ubud villa','description','Pool','host','villa.example',
+                       'image_path', v_rel || '/' || v_entry || '/preview-b.jpg'));
+  IF NOT EXISTS (SELECT 1 FROM public.media_deletion_queue WHERE bucket_id = 'planning-media'
+                 AND object_name = v_rel || '/' || v_entry || '/preview-a.jpg') THEN
+    RAISE EXCEPTION 'EXPLOIT: a replaced preview image was not queued for deletion';
+  END IF;
+  IF public.set_planning_link_preview(v_link, 'https://other.example/',
+    '{"status":"ok","title":"WRONG"}') THEN  -- stale: url no longer matches, ignored
+    RAISE EXCEPTION 'EXPLOIT: a stale preview reported as applied';
+  END IF;
+  PERFORM public.update_planning_block(v_link, 3, '{"url":"https://villa.example/ubud","label":"Our villa"}', NULL, NULL);
   SELECT b INTO v_r FROM jsonb_array_elements(public.get_planning_entry(v_entry) -> 'blocks') b WHERE b ->> 'id' = v_link::text;
   IF v_r -> 'payload' -> 'preview' ->> 'title' <> 'Ubud villa' OR v_r -> 'payload' ->> 'label' <> 'Our villa' THEN
     RAISE EXCEPTION 'EXPLOIT: preview lost or stale write applied: %', v_r -> 'payload';
   END IF;
   -- changing the url drops the old preview
-  PERFORM public.update_planning_block(v_link, 3, '{"url":"https://villa.example/canggu"}', NULL, NULL);
+  PERFORM public.update_planning_block(v_link, 4, '{"url":"https://villa.example/canggu"}', NULL, NULL);
   SELECT b INTO v_r FROM jsonb_array_elements(public.get_planning_entry(v_entry) -> 'blocks') b WHERE b ->> 'id' = v_link::text;
   IF v_r -> 'payload' ? 'preview' THEN RAISE EXCEPTION 'EXPLOIT: a preview survived a url change'; END IF;
+  -- preview fetches are rate limited per user: 30 a minute (spec §7.1)
+  FOR v_i IN 1..29 LOOP PERFORM public.planning_link_preview_target(v_link); END LOOP;  -- 30 with the one above
+  BEGIN PERFORM public.planning_link_preview_target(v_link); RAISE EXCEPTION 'EXPLOIT: 31st preview fetch in a minute allowed';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM <> 'planning:rate_limited' THEN RAISE; END IF; END;
 
   -- Contract 8: places validate coordinates.
   PERFORM public.add_planning_block(v_place, v_entry, 'place',

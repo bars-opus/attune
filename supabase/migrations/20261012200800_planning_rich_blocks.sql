@@ -62,6 +62,16 @@ CREATE TABLE public.planning_link_previews (
 ALTER TABLE public.planning_link_previews ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.planning_link_previews FROM PUBLIC, anon, authenticated;
 
+-- One row per preview fetch a user asks for; the last minute's rows are
+-- the rate limit (30/min/user, spec §7.1). Purged after a day.
+CREATE TABLE public.planning_link_preview_requests (
+  user_id      uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  requested_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX idx_planning_link_preview_requests ON public.planning_link_preview_requests (user_id, requested_at);
+ALTER TABLE public.planning_link_preview_requests ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.planning_link_preview_requests FROM PUBLIC, anon, authenticated;
+
 -- ---- Validation --------------------------------------------------------------
 
 CREATE FUNCTION public.planning_v2_keys_within(p jsonb, p_allowed text[])
@@ -770,33 +780,47 @@ BEGIN
   IF NOT FOUND THEN PERFORM public.planning_v2_fail('not_found'); END IF;
   PERFORM public.planning_v2_actor(v_block.relationship_id);
   IF v_block.block_type <> 'link' THEN PERFORM public.planning_v2_fail('invalid_input', '{"field":"block_type"}'); END IF;
+  -- Serialize this user's count-then-insert so parallel calls can't all pass.
+  PERFORM pg_advisory_xact_lock(hashtext('planning_link_preview:' || auth.uid()));
+  IF (SELECT count(*) FROM public.planning_link_preview_requests
+      WHERE user_id = auth.uid() AND requested_at > clock_timestamp() - interval '1 minute') >= 30 THEN
+    PERFORM public.planning_v2_fail('rate_limited', '{"retry_after":60}');
+  END IF;
+  INSERT INTO public.planning_link_preview_requests (user_id) VALUES (auth.uid());
   RETURN jsonb_build_object('block_id', v_block.id, 'url', v_block.payload ->> 'url',
     'relationship_id', v_block.relationship_id, 'entry_id', v_block.entry_id);
 END;
 $$;
 
 -- Service role only. Writes a sanitized preview if the block still points at
--- the url that was fetched (a later url edit wins).
+-- the url that was fetched (a later url edit wins) and returns whether it
+-- did, so the caller can delete an image nobody will reference. A replaced
+-- preview image is queued for deletion.
 CREATE FUNCTION public.set_planning_link_preview(p_block_id uuid, p_url text, p_preview jsonb)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-DECLARE v_block public.planning_blocks; v_clean jsonb;
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_block public.planning_blocks; v_clean jsonb; v_old text;
 BEGIN
   SELECT * INTO v_block FROM public.planning_blocks WHERE id = p_block_id AND deleted_at IS NULL FOR UPDATE;
   IF NOT FOUND OR v_block.block_type <> 'link' OR (v_block.payload ->> 'url') IS DISTINCT FROM p_url THEN
-    RETURN;
+    RETURN false;
   END IF;
   v_clean := jsonb_strip_nulls(jsonb_build_object(
     'status', CASE WHEN p_preview ->> 'status' = 'ok' THEN 'ok' ELSE 'failed' END,
     'title', left(p_preview ->> 'title', 200),
     'description', left(p_preview ->> 'description', 500),
     'host', left(p_preview ->> 'host', 255),
-    'image_path', CASE WHEN (p_preview ->> 'image_path') LIKE (v_block.relationship_id || '/' || v_block.entry_id || '/%')
+    'image_path', CASE WHEN (p_preview ->> 'image_path') ~ ('^' || v_block.relationship_id || '/' || v_block.entry_id || '/[A-Za-z0-9._-]{1,100}$')
                        THEN p_preview ->> 'image_path' END,
     'fetched_at', now()));
+  v_old := v_block.payload -> 'preview' ->> 'image_path';
+  IF v_old IS NOT NULL AND v_old IS DISTINCT FROM v_clean ->> 'image_path' THEN
+    PERFORM public.queue_media_deletion('planning-media', v_old);
+  END IF;
   UPDATE public.planning_blocks
      SET payload = payload || jsonb_build_object('preview', v_clean), version = version + 1
    WHERE id = p_block_id;
   PERFORM public.bump_planning_signal(v_block.relationship_id);
+  RETURN true;
 END;
 $$;
 REVOKE ALL ON FUNCTION public.set_planning_link_preview(uuid, text, jsonb) FROM PUBLIC, anon, authenticated;
@@ -841,6 +865,9 @@ BEGIN
       SELECT id FROM public.planning_categories WHERE deleted_at < v_cutoff LIMIT 5000);
     GET DIAGNOSTICS v_n = ROW_COUNT; v_cats := v_cats + v_n; EXIT WHEN v_n < 5000;
   END LOOP;
+  DELETE FROM public.planning_link_preview_requests WHERE requested_at < now() - interval '1 day';
+  DELETE FROM public.planning_link_previews WHERE fetched_at < now() - interval '7 days';
+
   FOR v_i IN 1..20 LOOP
     DELETE FROM public.planning_applied_ops WHERE op_id IN (
       SELECT op_id FROM public.planning_applied_ops WHERE applied_at < now() - interval '7 days' LIMIT 5000);

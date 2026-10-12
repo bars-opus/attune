@@ -5,3 +5,6 @@ verify_jwt = true
 
 [functions.accept-invite]
 verify_jwt = true
+
+[functions.planning-link-preview]
+verify_jwt = true
