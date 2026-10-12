@@ -18,7 +18,8 @@ class LinkBlockView extends ConsumerWidget {
 
   Future<void> _edit(BuildContext context, WidgetRef ref) async {
     final raw = await askPlanningText(context,
-        title: 'Edit link', label: 'Web address', initial: block.linkUrl ?? '', maxLength: 2048,
+        title: block.linkUrl == null ? 'Add link' : 'Edit link', label: 'Web address', initial: block.linkUrl ?? '',
+        maxLength: 2048,
         keyboardType: TextInputType.url);
     if (raw == null || !context.mounted) return;
     final url = normalizePlanningUrl(raw);
@@ -40,6 +41,17 @@ class LinkBlockView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    if (block.linkUrl == null) {
+      // A template's link: just its label until the couple adds the address.
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(block.linkLabel ?? 'Link', style: theme.textTheme.titleMedium),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+              icon: const Icon(Icons.add_link_rounded), label: const Text('Add link'), onPressed: () => _edit(context, ref)),
+        ),
+      ]);
+    }
     final url = block.linkUrl ?? '';
     final uri = Uri.tryParse(url);
     final preview = block.linkPreview;

@@ -13,6 +13,10 @@ const _tools = <(PlanningBlockType, IconData, String)>[
   (PlanningBlockType.place, Icons.place_outlined, 'Place'),
   (PlanningBlockType.expenses, Icons.receipt_long_outlined, 'Expenses'),
   (PlanningBlockType.budget, Icons.savings_outlined, 'Budget'),
+  (PlanningBlockType.datePoll, Icons.how_to_vote_outlined, 'Date poll'),
+  (PlanningBlockType.countdown, Icons.hourglass_bottom_rounded, 'Countdown'),
+  (PlanningBlockType.progress, Icons.trending_up_rounded, 'Progress'),
+  (PlanningBlockType.dualClock, Icons.schedule_rounded, 'Dual clock'),
 ];
 
 String planningBlockLabel(PlanningBlockType type) => switch (type) {

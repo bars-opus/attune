@@ -166,6 +166,13 @@ BEGIN
     RAISE EXCEPTION 'EXPLOIT: dual clock stored a location';
   EXCEPTION WHEN raise_exception THEN IF SQLERRM <> 'planning:invalid_input' THEN RAISE; END IF; END;
 
+  -- Contract 9b: the dual clock converts the partner's zone on the server.
+  IF public.planning_timezone_offset_minutes('Asia/Makassar') <> 480
+     OR public.planning_timezone_offset_minutes('UTC') <> 0
+     OR public.planning_timezone_offset_minutes('Mars/Olympus') IS NOT NULL THEN
+    RAISE EXCEPTION 'EXPLOIT: time zone offsets wrong';
+  END IF;
+
   -- Contract 10: "Start next one" re-points references at the copy and does not share files.
   v_r := public.duplicate_planning_entry(v_trip, v_copy, 'Bali again');
   SELECT b INTO v_d FROM jsonb_array_elements(v_r -> 'blocks') b WHERE b ->> 'block_type' = 'countdown';

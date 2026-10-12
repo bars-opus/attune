@@ -8,6 +8,7 @@
 // See NOTIFICATION_ENGINE.md for the full integration guide.
 
 import 'package:go_router/go_router.dart';
+import 'package:attune/features/planning/presentation/planning_ui.dart' show planningEntryTarget;
 import 'package:attune/app/routing/app_router.dart';
 import 'package:attune/core/notifications/config/feature/notification_config.dart';
 import 'package:attune/core/notifications/config/notification_setting_toggle.dart';
@@ -184,6 +185,15 @@ NotificationConfig buildNanoEmbryoNotificationConfig() {
           // to route more specifically with — this is the intended
           // destination, not an oversight. See design spec §5.
           GoRouter.of(context).go(RouteNames.home);
+          return;
+
+        case 'planning_entry':
+          final target = planningEntryTarget(notification.data);
+          if (target != null) {
+            GoRouter.of(context).push(RouteNames.planningEntry, extra: target);
+          } else {
+            GoRouter.of(context).go(RouteNames.home);
+          }
           return;
 
         case 'dating_mutual_match':

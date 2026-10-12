@@ -129,7 +129,7 @@ void main() {
           'target_minor': p['p_target_minor'], 'target_currency': p['p_currency'],
           'computed': {'spent_minor': 0, 'other_currencies': []},
         };
-    await ctl.setBudgetTarget(block('bud'), 250000, 'GHS');
+    await ctl.setTarget(block('bud'), 250000, 'GHS');
     expect(block('bud').targetMinor, 250000);
   });
 }

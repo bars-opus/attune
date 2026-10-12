@@ -1,3 +1,5 @@
+import 'package:attune/features/location/domain/partner_distance.dart';
+import 'package:attune/features/location/presentation/providers/presence_providers.dart';
 import 'package:attune/features/planning/data/planning_repository.dart';
 import 'package:attune/features/planning/domain/planning_outbox.dart';
 import 'package:attune/features/planning/presentation/planning_providers.dart';
@@ -21,9 +23,14 @@ List<Override> planningOverrides(
   MemoryOutboxStore? store,
   String userId = 'u-a',
   FakePlanningMediaGateway? media,
+  PartnerDistance? partner,
+  String? deviceTimezone,
 }) =>
     [
       planningRepositoryProvider.overrideWithValue(PlanningRepository(gateway)),
+      // The dual clock reads presence; Planning reports the device zone.
+      partnerDistanceProvider.overrideWith((ref, relationshipId) => Stream.value(partner)),
+      planningDeviceTimezoneProvider.overrideWith((ref) async => deviceTimezone),
       planningMediaGatewayProvider.overrideWithValue(media ?? FakePlanningMediaGateway()),
       planningChangeSignalProvider.overrideWith((ref, relationshipId) => const Stream<void>.empty()),
       planningOutboxStoreProvider.overrideWithValue(store ?? MemoryOutboxStore()),

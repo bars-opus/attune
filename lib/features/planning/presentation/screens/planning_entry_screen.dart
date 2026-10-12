@@ -15,6 +15,10 @@ import '../widgets/block_tool_tray.dart';
 import 'planning_text_editor_screen.dart';
 import '../widgets/budget_block_view.dart';
 import '../widgets/checklist_block_view.dart';
+import '../widgets/countdown_block_view.dart';
+import '../widgets/date_poll_block_view.dart';
+import '../widgets/dual_clock_block_view.dart';
+import '../widgets/progress_block_view.dart';
 import '../widgets/date_block_view.dart';
 import '../widgets/expenses_block_view.dart';
 import '../widgets/link_block_view.dart';
@@ -184,9 +188,40 @@ class _EntryBody extends ConsumerWidget {
       final place = await showPlanningPlacePicker(context);
       if (place == null || !context.mounted) return;
       payload = place.toJson();
+    } else if (type == PlanningBlockType.progress) {
+      payload = await _askProgressKind(context);
+      if (payload == null || !context.mounted) return;
     }
     await _guard(context, () => ctl.addBlock(type, payload: payload));
   }
+
+  static Future<Map<String, dynamic>?> _askProgressKind(BuildContext context) =>
+      showModalBottomSheet<Map<String, dynamic>>(
+        context: context,
+        showDragHandle: true,
+        builder: (c) => SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            ListTile(
+              leading: const Icon(Icons.savings_outlined),
+              title: const Text('Saving money'),
+              subtitle: const Text('Add amounts toward a target'),
+              onTap: () => Navigator.pop(c, {'mode': 'numeric', 'unit': 'money'}),
+            ),
+            ListTile(
+              leading: const Icon(Icons.exposure_plus_1_rounded),
+              title: const Text('Counting something'),
+              subtitle: const Text('Workouts, books, nights cooked at home'),
+              onTap: () => Navigator.pop(c, {'mode': 'numeric', 'unit': 'count'}),
+            ),
+            ListTile(
+              leading: const Icon(Icons.checklist_rounded),
+              title: const Text('Following a checklist'),
+              subtitle: const Text("Fills up as this plan's checklist is ticked"),
+              onTap: () => Navigator.pop(c, {'mode': 'checklist'}),
+            ),
+          ]),
+        ),
+      );
 
   Widget _blockBody(PlanningEntryDetail d, PlanningBlock b) => switch (b.type) {
         PlanningBlockType.text => TextBlockView(args: _args, block: b),
@@ -198,6 +233,10 @@ class _EntryBody extends ConsumerWidget {
         PlanningBlockType.place => PlaceBlockView(args: _args, block: b),
         PlanningBlockType.expenses => ExpensesBlockView(args: _args, block: b, detail: d),
         PlanningBlockType.budget => BudgetBlockView(args: _args, block: b, defaultCurrency: d.entry.currency),
+        PlanningBlockType.datePoll => DatePollBlockView(args: _args, block: b, members: d.members),
+        PlanningBlockType.countdown => CountdownBlockView(args: _args, block: b, detail: d),
+        PlanningBlockType.progress => ProgressBlockView(args: _args, block: b, defaultCurrency: d.entry.currency),
+        PlanningBlockType.dualClock => DualClockBlockView(args: _args, block: b),
         PlanningBlockType.unsupported => const Padding(
             padding: EdgeInsets.symmetric(vertical: Spacing.sm),
             child: Text('This block needs a newer version of Attune.'),
@@ -312,6 +351,10 @@ class _Hero extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final date = detail.blocks.where((b) => b.type == PlanningBlockType.date && b.dateStart != null).firstOrNull;
+    final countdown = detail.blocks
+        .where((b) => b.type == PlanningBlockType.countdown && b.countdownTarget != null)
+        .firstOrNull
+        ?.countdownTarget;
     final items = [for (final b in detail.blocks) if (b.type == PlanningBlockType.checklist) ...b.items];
     final done = items.where((i) => i.isChecked).length;
     final outbox = ref.watch(planningOutboxProvider);
@@ -333,6 +376,10 @@ class _Hero extends ConsumerWidget {
         Wrap(spacing: Spacing.sm, runSpacing: Spacing.xs, children: [
           if (date != null)
             Chip(avatar: const Icon(Icons.event_rounded, size: 18), label: Text(formatPlanningRange(date.dateStart, date.dateEnd))),
+          if (countdown != null && !countdown.isBefore(DateUtils.dateOnly(DateTime.now())))
+            Chip(
+                avatar: const Icon(Icons.hourglass_bottom_rounded, size: 18),
+                label: Text(planningCountdownLabel(countdown, DateTime.now()))),
           if (items.isNotEmpty)
             Chip(avatar: const Icon(Icons.checklist_rounded, size: 18), label: Text('$done of ${items.length} done')),
           ValueListenableBuilder<int>(

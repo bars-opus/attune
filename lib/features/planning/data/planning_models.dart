@@ -2,7 +2,10 @@
 /// the app's model style. JSON shapes: migrations 20261012200200..0400.
 library;
 
-enum PlanningBlockType { text, checklist, date, table, photo, link, place, expenses, budget, unsupported }
+enum PlanningBlockType {
+  text, checklist, date, table, photo, link, place, expenses, budget,
+  datePoll, countdown, progress, dualClock, unsupported
+}
 
 PlanningBlockType planningBlockTypeFromWire(String wire) => switch (wire) {
       'text' => PlanningBlockType.text,
@@ -14,11 +17,17 @@ PlanningBlockType planningBlockTypeFromWire(String wire) => switch (wire) {
       'place' => PlanningBlockType.place,
       'expenses' => PlanningBlockType.expenses,
       'budget' => PlanningBlockType.budget,
+      'date_poll' => PlanningBlockType.datePoll,
+      'countdown' => PlanningBlockType.countdown,
+      'progress' => PlanningBlockType.progress,
+      'dual_clock' => PlanningBlockType.dualClock,
       _ => PlanningBlockType.unsupported,
     };
 
 String planningBlockTypeToWire(PlanningBlockType type) => switch (type) {
       PlanningBlockType.unsupported => throw ArgumentError('unsupported has no wire form'),
+      PlanningBlockType.datePoll => 'date_poll',
+      PlanningBlockType.dualClock => 'dual_clock',
       _ => type.name,
     };
 
@@ -112,6 +121,67 @@ class PlanningBalance {
         minor: (j['minor'] as num).toInt(),
         owedTo: j['owed_to'] as String,
         owedBy: j['owed_by'] as String,
+      );
+}
+
+/// A Progress block's state, computed by the server: numeric (contributions
+/// toward a target, counted or in money) or following a checklist.
+class PlanningProgress {
+  const PlanningProgress({
+    required this.mode,
+    required this.unit,
+    required this.current,
+    required this.target,
+    required this.done,
+    required this.total,
+    required this.currency,
+  });
+
+  final String mode;
+  final String unit;
+  final int current;
+  final int? target;
+  final int done;
+  final int total;
+  final String? currency;
+
+  bool get isChecklist => mode == 'checklist';
+  bool get isMoney => !isChecklist && unit == 'money';
+
+  double get fraction {
+    if (isChecklist) return total == 0 ? 0 : done / total;
+    final t = target ?? 0;
+    return t <= 0 ? 0 : (current / t).clamp(0, 1).toDouble();
+  }
+
+  bool get isComplete => isChecklist ? total > 0 && done == total : (target ?? 0) > 0 && current >= target!;
+}
+
+/// A category idea from the server's gallery (spec §4.1).
+class PlanningGalleryTemplate {
+  const PlanningGalleryTemplate({
+    required this.key,
+    required this.name,
+    required this.icon,
+    required this.color,
+    required this.description,
+    required this.blockTypes,
+  });
+
+  final String key;
+  final String name;
+  final String icon;
+  final String color;
+  final String description;
+  final List<PlanningBlockType> blockTypes;
+
+  factory PlanningGalleryTemplate.fromJson(Map<String, dynamic> j) => PlanningGalleryTemplate(
+        key: j['key'] as String,
+        name: j['name'] as String,
+        icon: j['icon'] as String,
+        color: j['color'] as String,
+        description: (j['description'] as String?) ?? '',
+        blockTypes: [for (final t in (j['block_types'] as List? ?? const [])) planningBlockTypeFromWire(t as String)],
       );
 }
 
@@ -222,6 +292,7 @@ class PlanningItem {
     this.cells = const {},
     this.dateStart,
     this.dateEnd,
+    this.votes = const [],
   });
 
   final String id;
@@ -245,9 +316,10 @@ class PlanningItem {
   /// Table row cells keyed by column key.
   final Map<String, dynamic> cells;
 
-  /// Date poll option range (P4).
+  /// Date poll option range and who it works for.
   final DateTime? dateStart;
   final DateTime? dateEnd;
+  final List<String> votes;
 
   bool get isChecked => checkedAt != null;
 
@@ -268,6 +340,14 @@ class PlanningItem {
         cells: j['cells'] is Map ? Map<String, dynamic>.from(j['cells'] as Map) : const {},
         dateStart: _date(j['date_start']),
         dateEnd: _date(j['date_end']),
+        votes: [for (final v in (j['votes'] as List? ?? const [])) v as String],
+      );
+
+  PlanningItem withVotes(List<String> votes) => PlanningItem(
+        id: id, sortKey: sortKey, text: text, section: section, checkedAt: checkedAt, checkedBy: checkedBy,
+        assignedTo: assignedTo, dueDate: dueDate, version: version, amountMinor: amountMinor, currency: currency,
+        paidBy: paidBy, splitShareMinor: splitShareMinor, cells: cells, dateStart: dateStart, dateEnd: dateEnd,
+        votes: votes,
       );
 
   PlanningItem copyWith({
@@ -297,6 +377,7 @@ class PlanningItem {
         cells: cells,
         dateStart: dateStart,
         dateEnd: dateEnd,
+        votes: votes,
       );
 }
 
@@ -361,6 +442,26 @@ class PlanningBlock {
 
   PlanningBudgetComputed? get budget =>
       type == PlanningBlockType.budget ? PlanningBudgetComputed.fromJson(computed) : null;
+
+  /// The date a Countdown counts to, or null when the plan has none.
+  DateTime? get countdownTarget => _date(computed['target_date']);
+
+  PlanningProgress? get progress => type == PlanningBlockType.progress
+      ? PlanningProgress(
+          mode: (payload['mode'] as String?) ?? 'numeric',
+          unit: (payload['unit'] as String?) ?? 'count',
+          current: (computed['current'] as num?)?.toInt() ?? 0,
+          target: targetMinor,
+          done: (computed['done'] as num?)?.toInt() ?? 0,
+          total: (computed['total'] as num?)?.toInt() ?? 0,
+          currency: targetCurrency,
+        )
+      : null;
+
+  /// A locked poll's options, kept on its Date block.
+  List<Map<String, dynamic>> get pollHistory => [
+        for (final h in (payload['poll_history'] as List? ?? const [])) Map<String, dynamic>.from(h as Map)
+      ];
 
   /// Quill Delta ops for a text block; a single newline when empty.
   List<Map<String, dynamic>> get delta {

@@ -22,24 +22,44 @@ class PlaceBlockView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final place = block.place;
-    if (place == null) return const SizedBox.shrink();
+    Future<void> choose() async {
+      final picked = await showPlanningPlacePicker(context, initial: place?.name ?? '');
+      if (picked == null || !context.mounted) return;
+      try {
+        await ref.read(planningEntryProvider(args).notifier).updateBlockPayload(block, {
+          if (block.title != null) 'title': block.title,
+          ...picked.toJson(),
+        });
+      } catch (e) {
+        if (context.mounted) showPlanningError(context, e);
+      }
+    }
+
+    if (place == null) {
+      // A template's place: just its title until the couple picks one.
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(block.title ?? 'Place', style: theme.textTheme.titleMedium),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+              icon: const Icon(Icons.add_location_alt_outlined), label: const Text('Choose a place'), onPressed: choose),
+        ),
+      ]);
+    }
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Icon(Icons.place_outlined, color: theme.colorScheme.primary),
         const SizedBox(width: Spacing.sm),
-        Expanded(child: Text(place.name, style: theme.textTheme.titleMedium)),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (block.title != null) Text(block.title!, style: theme.textTheme.labelLarge),
+            Text(place.name, style: theme.textTheme.titleMedium),
+          ]),
+        ),
         IconButton(
           tooltip: 'Change place',
           icon: const Icon(Icons.edit_outlined),
-          onPressed: () async {
-            final picked = await showPlanningPlacePicker(context, initial: place.name);
-            if (picked == null || !context.mounted) return;
-            try {
-              await ref.read(planningEntryProvider(args).notifier).updateBlockPayload(block, picked.toJson());
-            } catch (e) {
-              if (context.mounted) showPlanningError(context, e);
-            }
-          },
+          onPressed: choose,
         ),
       ]),
       if (place.address != null && place.address!.isNotEmpty)

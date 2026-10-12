@@ -471,6 +471,17 @@ BEGIN
 END;
 $$;
 
+-- Minutes ahead of UTC for an IANA zone right now (null if unknown). The
+-- dual clock gets the partner's zone from presence, which already gates it
+-- on the partner sharing; this only does the arithmetic.
+CREATE FUNCTION public.planning_timezone_offset_minutes(p_timezone text)
+RETURNS int LANGUAGE sql STABLE SET search_path = public AS $$
+  SELECT (extract(epoch FROM (now() AT TIME ZONE p_timezone) - (now() AT TIME ZONE 'UTC')) / 60)::int
+  WHERE EXISTS (SELECT 1 FROM pg_timezone_names WHERE name = p_timezone);
+$$;
+REVOKE ALL ON FUNCTION public.planning_timezone_offset_minutes(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.planning_timezone_offset_minutes(text) TO authenticated;
+
 -- ---- Blocks: server-owned keys -------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION public.add_planning_block(

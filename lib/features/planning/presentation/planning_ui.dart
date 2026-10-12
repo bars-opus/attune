@@ -285,3 +285,12 @@ String planningMemberName(List<PlanningMember> members, String? id) {
   }
   return 'Someone';
 }
+
+/// Where a Planning push opens: its relationship and plan, or null if the
+/// payload is incomplete.
+({String relationshipId, String entryId})? planningEntryTarget(Map<String, dynamic>? data) {
+  final rel = data?['relationship_id'];
+  final entry = data?['entry_id'];
+  if (rel is! String || entry is! String || rel.isEmpty || entry.isEmpty) return null;
+  return (relationshipId: rel, entryId: entry);
+}

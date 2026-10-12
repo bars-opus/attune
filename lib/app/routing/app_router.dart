@@ -60,6 +60,8 @@ import 'package:attune/features/reminders/presentation/screens/family_members_sc
 import 'package:attune/features/timeline/presentation/screens/log_moment_details_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/log_moment_type_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
+import 'package:attune/features/planning/presentation/planning_ui.dart' show planningRouteName;
+import 'package:attune/features/planning/presentation/screens/planning_entry_screen.dart';
 import 'package:attune/features/planning/presentation/screens/planning_home_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_entry_screen.dart';
 import 'package:attune/features/games/thirty_six_questions/presentation/screens/thirty_six_chapter_completion_screen.dart';
@@ -236,6 +238,7 @@ class RouteNames {
   static const String pulse = '/pulse';
   static const String timeline = '/timeline';
   static const String planning = '/planning';
+  static const String planningEntry = '/planning/entry';
   static const String opinionLoader = '/opinionLoader';
   static const String addEditReminder = '/couples-calendar/add';
   static const String familyMembers = '/couples-calendar/family';
@@ -636,6 +639,19 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
             );
           }
           return PlanningHomeScreen(relationshipId: relationshipId);
+        },
+      ),
+      GoRoute(
+        // A Planning push (poll, countdown) opens its plan. Named like the
+        // in-app Planning routes so an ended relationship closes it too.
+        path: RouteNames.planningEntry,
+        name: planningRouteName,
+        builder: (context, state) {
+          final target = state.extra as ({String relationshipId, String entryId})?;
+          if (target == null) {
+            return const Scaffold(body: Center(child: Text('Planning unavailable.')));
+          }
+          return PlanningEntryScreen(relationshipId: target.relationshipId, entryId: target.entryId);
         },
       ),
       GoRoute(

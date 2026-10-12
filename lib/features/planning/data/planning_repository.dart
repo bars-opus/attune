@@ -39,6 +39,8 @@ class PlanningRepository {
     'restore_planning_entry', 'list_planning_calendar_entries', 'get_planning_summary',
     'save_planning_rich_item', 'update_planning_block_target', 'set_planning_entry_split',
     'settle_planning_split', 'add_planning_photo', 'remove_planning_photo',
+    'vote_planning_poll', 'lock_planning_poll', 'set_planning_timezone', 'list_planning_gallery',
+    'create_planning_category_from_gallery', 'planning_timezone_offset_minutes',
   };
 
   Future<Map<String, dynamic>> _call(String fn, Map<String, dynamic> params) async {
@@ -46,6 +48,16 @@ class PlanningRepository {
     try {
       final result = await _gateway.rpc(fn, params: params);
       return Map<String, dynamic>.from(result as Map);
+    } catch (e) {
+      throw mapPlanningError(e);
+    }
+  }
+
+  /// For RPCs that return a JSON array or a scalar.
+  Future<dynamic> _callValue(String fn, Map<String, dynamic> params) async {
+    assert(rpcNames.contains(fn), '$fn missing from rpcNames');
+    try {
+      return await _gateway.rpc(fn, params: params);
     } catch (e) {
       throw mapPlanningError(e);
     }
@@ -312,4 +324,36 @@ class PlanningRepository {
 
   Future<PlanningBlock> removePhoto(String blockId, String path) async =>
       PlanningBlock.fromJson(await _call('remove_planning_photo', {'p_block_id': blockId, 'p_path': path}));
+
+  // ---- date poll ----
+
+  /// "Works for me" on/off. Returns the whole poll (votes on every option).
+  Future<PlanningBlock> votePoll(String itemId, {required bool vote}) async =>
+      PlanningBlock.fromJson(await _call('vote_planning_poll', {'p_item_id': itemId, 'p_vote': vote}));
+
+  /// Only an option both partners voted for; the poll comes back as a Date block.
+  Future<PlanningBlock> lockPoll(String blockId, String itemId) async =>
+      PlanningBlock.fromJson(await _call('lock_planning_poll', {'p_block_id': blockId, 'p_item_id': itemId}));
+
+  // ---- time zones, gallery ----
+
+  Future<void> setTimezone(String relationshipId, String timezone) =>
+      _call('set_planning_timezone', {'p_relationship_id': relationshipId, 'p_timezone': timezone});
+
+  /// Minutes ahead of UTC for [timezone] right now; null if unknown.
+  Future<int?> timezoneOffsetMinutes(String timezone) async =>
+      ((await _callValue('planning_timezone_offset_minutes', {'p_timezone': timezone})) as num?)?.toInt();
+
+  Future<List<PlanningGalleryTemplate>> listGallery() async => [
+        for (final g in ((await _callValue('list_planning_gallery', const {})) as List? ?? const []))
+          PlanningGalleryTemplate.fromJson(Map<String, dynamic>.from(g as Map))
+      ];
+
+  Future<PlanningCategory> createCategoryFromGallery({
+    required String id,
+    required String relationshipId,
+    required String key,
+  }) async =>
+      PlanningCategory.fromJson(await _call('create_planning_category_from_gallery',
+          {'p_id': id, 'p_relationship_id': relationshipId, 'p_gallery_key': key}));
 }

@@ -26,7 +26,7 @@ class BudgetBlockView extends ConsumerWidget {
     );
     if (minor == null || !context.mounted) return;
     try {
-      await ref.read(planningEntryProvider(args).notifier).setBudgetTarget(block, minor, _currency);
+      await ref.read(planningEntryProvider(args).notifier).setTarget(block, minor, _currency);
     } on PlanningStaleVersion {
       if (context.mounted) {
         ScaffoldMessenger.of(context)

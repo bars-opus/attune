@@ -23,6 +23,22 @@ class PlanningHomeScreen extends ConsumerStatefulWidget {
 class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
   bool _showHidden = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _reportTimezone();
+  }
+
+  /// Countdown pushes arrive at 08:00 in this zone. Best effort: a zone the
+  /// server doesn't know (or no network) leaves the last one, else UTC.
+  Future<void> _reportTimezone() async {
+    try {
+      final tz = await ref.read(planningDeviceTimezoneProvider.future);
+      if (tz == null || !mounted) return;
+      await ref.read(planningRepositoryProvider).setTimezone(widget.relationshipId, tz);
+    } catch (_) {}
+  }
+
   void _refresh() =>
       ref.invalidate(planningHomeProvider(widget.relationshipId));
 
@@ -37,6 +53,17 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
   }
 
   Future<void> _create() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => const _NewCategoryChooser(),
+    );
+    if (choice == null || !mounted) return;
+    if (choice != _blankCategory) {
+      return _run(() => ref.read(planningRepositoryProvider).createCategoryFromGallery(
+          id: const Uuid().v4(), relationshipId: widget.relationshipId, key: choice));
+    }
     final draft = await showCategoryEditorSheet(context);
     if (draft == null || !mounted) return;
     await _run(
@@ -262,6 +289,58 @@ class _CategoryTile extends StatelessWidget {
                 ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+const _blankCategory = '';
+
+/// "+ New category": start blank, or from one of the server's gallery ideas.
+class _NewCategoryChooser extends ConsumerWidget {
+  const _NewCategoryChooser();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final gallery = ref.watch(planningGalleryProvider);
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
+        child: ListView(shrinkWrap: true, padding: const EdgeInsets.only(bottom: Spacing.md), children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Spacing.md, 0, Spacing.md, Spacing.sm),
+            child: Text('New category', style: theme.textTheme.titleLarge),
+          ),
+          ListTile(
+            leading: const CircleAvatar(child: Icon(Icons.add_rounded)),
+            title: const Text('Blank category'),
+            subtitle: const Text('Name it and build its template yourself'),
+            onTap: () => Navigator.pop(context, _blankCategory),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Spacing.md, Spacing.md, Spacing.md, Spacing.xs),
+            child: Text('Start from an idea', style: theme.textTheme.labelLarge),
+          ),
+          ...gallery.when(
+            loading: () => [const Padding(padding: Spacing.allMd, child: LinearProgressIndicator())],
+            error: (_, __) => [
+              const ListTile(title: Text("Ideas couldn't load. You can still start a blank category.")),
+            ],
+            data: (ideas) => [
+              for (final g in ideas)
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: planningTone(context, g.color).container,
+                    child: Icon(planningIcon(g.icon), color: planningTone(context, g.color).onContainer),
+                  ),
+                  title: Text(g.name),
+                  subtitle: Text(g.description),
+                  onTap: () => Navigator.pop(context, g.key),
+                ),
+            ],
+          ),
+        ]),
       ),
     );
   }

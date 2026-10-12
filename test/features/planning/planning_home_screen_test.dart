@@ -48,6 +48,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('New category'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Blank category'));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '  Moving  ');
     await tester.pump(); // enterText does not pump; Save enables on rebuild
     await tester.tap(find.bySemanticsLabel('Icon box'));
@@ -102,6 +104,8 @@ void main() {
     await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('New category'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Blank category'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '🇬🇭' * 21);
     await tester.pump();

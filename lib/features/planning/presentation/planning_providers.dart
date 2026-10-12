@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:attune/core/utils/timezone_utils.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/planning_error.dart';
@@ -111,6 +112,22 @@ final planningSignedUrlProvider = FutureProvider.autoDispose.family<String, Stri
   ref.onDispose(timer.cancel);
   return url;
 });
+
+/// The device's IANA zone, reported when Planning opens so countdown pushes
+/// arrive at 08:00 local (spec §8.2).
+final planningDeviceTimezoneProvider = FutureProvider<String?>((ref) => TimezoneUtils.getDeviceTimezone());
+
+/// Minutes ahead of UTC for a zone, refreshed hourly (DST changes).
+final planningTimezoneOffsetProvider = FutureProvider.autoDispose.family<int?, String>((ref, tz) async {
+  final offset = await ref.watch(planningRepositoryProvider).timezoneOffsetMinutes(tz);
+  final link = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 1), link.close);
+  ref.onDispose(timer.cancel);
+  return offset;
+});
+
+final planningGalleryProvider = FutureProvider.autoDispose<List<PlanningGalleryTemplate>>(
+    (ref) => ref.watch(planningRepositoryProvider).listGallery());
 
 final planningCurrentUserIdProvider =
     Provider<String?>((ref) => Supabase.instance.client.auth.currentUser?.id);
@@ -433,6 +450,7 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
     try {
       final saved = await _repo.setItemChecked(id: item.id, checked: checked, opId: opId);
       if (state.hasValue) _set(_withItem(_current, blockId, saved));
+      _refreshProgress();
       return TickOutcome.synced;
     } on PlanningNetwork {
       try {
@@ -464,6 +482,7 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
     try {
       final saved = await _repo.addItem(id: id, blockId: blockId, text: text.trim(), section: section, afterId: afterId);
       if (state.hasValue) _set(_withItem(_current, blockId, saved));
+      _refreshProgress();
       return TickOutcome.synced;
     } on PlanningNetwork {
       try {
@@ -507,6 +526,7 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
       rethrow;
     }
     if (_isExpenses(blockId)) await _refreshComputed();
+    _refreshProgress();
   }
 
   Future<void> restoreItem(String blockId, String itemId, {required int index}) async {
@@ -568,7 +588,8 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
     }
   }
 
-  Future<void> setBudgetTarget(PlanningBlock block, int? targetMinor, String? currency) async {
+  /// Budget or numeric Progress target.
+  Future<void> setTarget(PlanningBlock block, int? targetMinor, String? currency) async {
     try {
       final saved = await _repo.updateBlockTarget(
           id: block.id, version: block.version, targetMinor: targetMinor, currency: currency);
@@ -585,6 +606,12 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
     final fresh = await _repo.getEntry(arg.entryId);
     final pending = [for (final op in await _outbox.pending()) if (op.entryId == arg.entryId) op];
     if (_alive) _set(_overlay(fresh, pending));
+  }
+
+  /// Checklist ticks move checklist-mode Progress; re-read it in the background.
+  void _refreshProgress() {
+    if (!state.hasValue || !_current.blocks.any((b) => b.type == PlanningBlockType.progress)) return;
+    unawaited(_refreshComputed().then((_) {}, onError: (Object _) {}));
   }
 
   bool _isExpenses(String blockId) =>
@@ -605,7 +632,9 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
       _set(existing == null
           ? _withBlockItems(_current, blockId, (items) => [...items, saved])
           : _withItem(_current, blockId, saved));
-      if (block.type == PlanningBlockType.expenses) await _refreshComputed();
+      if (block.type == PlanningBlockType.expenses || block.type == PlanningBlockType.progress) {
+        await _refreshComputed();
+      }
       return saved;
     } on PlanningStaleVersion catch (e) {
       _set(_withItem(_current, blockId, PlanningItem.fromJson(e.current)));
@@ -631,6 +660,35 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
   Future<void> removePhoto(String blockId, String path) async {
     final saved = await _repo.removePhoto(blockId, path);
     _set(_withBlock(_current, saved));
+  }
+
+  // ---- date poll ----
+
+  /// Optimistic "works for me"; the server's poll replaces it.
+  Future<void> vote(String blockId, PlanningItem option, bool works) async {
+    final me = ref.read(planningCurrentUserIdProvider);
+    final votes = [for (final v in option.votes) if (v != me) v, if (works && me != null) me];
+    _set(_withItem(_current, blockId, option.withVotes(votes)));
+    try {
+      final saved = await _repo.votePoll(option.id, vote: works);
+      _set(_withBlock(_current, saved));
+    } on PlanningError {
+      if (state.hasValue) _set(_withItem(_current, blockId, option));
+      rethrow;
+    }
+  }
+
+  Future<void> addPollOption(String blockId, DateTime start, DateTime? end) => saveRichItem(blockId, fields: {
+        'date_start': planningYmd(start),
+        if (end != null && end != start) 'date_end': planningYmd(end),
+      });
+
+  /// The poll becomes a Date block; countdowns that follow the plan's date
+  /// change with it, so the plan is re-read.
+  Future<void> lockPoll(String blockId, String optionId) async {
+    final saved = await _repo.lockPoll(blockId, optionId);
+    _set(_withBlock(_current, saved));
+    await _refreshComputed();
   }
 
   // ---- split ----
