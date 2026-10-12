@@ -204,13 +204,13 @@ BEGIN
     '{"status":"ok","title":"WRONG"}') THEN  -- stale: url no longer matches, ignored
     RAISE EXCEPTION 'EXPLOIT: a stale preview reported as applied';
   END IF;
-  PERFORM public.update_planning_block(v_link, 3, '{"url":"https://villa.example/ubud","label":"Our villa"}', NULL, NULL);
+  PERFORM public.update_planning_block(v_link, 1, '{"url":"https://villa.example/ubud","label":"Our villa"}', NULL, NULL);
   SELECT b INTO v_r FROM jsonb_array_elements(public.get_planning_entry(v_entry) -> 'blocks') b WHERE b ->> 'id' = v_link::text;
   IF v_r -> 'payload' -> 'preview' ->> 'title' <> 'Ubud villa' OR v_r -> 'payload' ->> 'label' <> 'Our villa' THEN
     RAISE EXCEPTION 'EXPLOIT: preview lost or stale write applied: %', v_r -> 'payload';
   END IF;
   -- changing the url drops the old preview
-  PERFORM public.update_planning_block(v_link, 4, '{"url":"https://villa.example/canggu"}', NULL, NULL);
+  PERFORM public.update_planning_block(v_link, 2, '{"url":"https://villa.example/canggu"}', NULL, NULL);
   SELECT b INTO v_r FROM jsonb_array_elements(public.get_planning_entry(v_entry) -> 'blocks') b WHERE b ->> 'id' = v_link::text;
   IF v_r -> 'payload' ? 'preview' THEN RAISE EXCEPTION 'EXPLOIT: a preview survived a url change'; END IF;
   -- preview fetches are rate limited per user: 30 a minute (spec §7.1)
