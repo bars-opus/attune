@@ -22,7 +22,7 @@ export type Connector = (ip: string, port: number, tlsHost: string | null) => Pr
 
 export interface FetchOptions {
   maxBytes: number;
-  accept: "html" | "image";
+  accept: "html" | "image" | "json";
   resolver?: Resolver;
   connector?: Connector;
   totalMs?: number;
@@ -214,6 +214,18 @@ function decodeChunked(raw: Uint8Array): Uint8Array {
   return parts.reduce(concat, new Uint8Array());
 }
 
+const ACCEPT = {
+  html: "text/html,application/xhtml+xml",
+  image: "image/jpeg,image/png,image/gif,image/webp",
+  json: "application/json",
+} as const;
+
+const TYPE_OK = {
+  html: /^(text\/html|application\/xhtml\+xml)/,
+  image: /^image\/(jpeg|png|gif|webp)/,
+  json: /^(application\/(json|[\w.+-]+\+json)|text\/(json|javascript))/,
+} as const;
+
 interface RawResponse {
   status: number;
   headers: Map<string, string>;
@@ -222,8 +234,11 @@ interface RawResponse {
 
 async function exchange(conn: Conn, u: URL, opts: FetchOptions, deadline: number): Promise<RawResponse> {
   const request =
-    `GET ${u.pathname}${u.search} HTTP/1.1\r\nHost: ${u.host}\r\nUser-Agent: AttuneLinkPreview/1.0\r\n` +
-    `Accept: ${opts.accept === "html" ? "text/html,application/xhtml+xml" : "image/jpeg,image/png,image/gif,image/webp"}\r\n` +
+    // "Mozilla/5.0 (compatible; …)" is the form link previewers announce
+    // themselves in; some sites send a bare page to unrecognised agents.
+    `GET ${u.pathname}${u.search} HTTP/1.1\r\nHost: ${u.host}\r\n` +
+    `User-Agent: Mozilla/5.0 (compatible; AttuneLinkPreview/1.0)\r\n` +
+    `Accept: ${ACCEPT[opts.accept]}\r\n` +
     `Accept-Encoding: identity\r\nConnection: close\r\n\r\n`;
   await withDeadline(conn.write(new TextEncoder().encode(request)), deadline - Date.now());
 
@@ -252,9 +267,7 @@ async function exchange(conn: Conn, u: URL, opts: FetchOptions, deadline: number
   if (status !== 200) throw new PreviewError("bad_response");
 
   const type = (headers.get("content-type") ?? "").toLowerCase();
-  const typeOk = opts.accept === "html"
-    ? /^(text\/html|application\/xhtml\+xml)/.test(type)
-    : /^image\/(jpeg|png|gif|webp)/.test(type);
+  const typeOk = TYPE_OK[opts.accept].test(type);
   if (!typeOk) throw new PreviewError("wrong_type");
 
   const chunked = /chunked/i.test(headers.get("transfer-encoding") ?? "");

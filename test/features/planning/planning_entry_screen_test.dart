@@ -1,7 +1,8 @@
-import 'package:attune/core/widgets/buttons/app_fab.dart';
+import 'package:attune/features/planning/presentation/widgets/planning_ribbon.dart';
 import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/features/planning/domain/planning_outbox.dart';
 import 'package:attune/features/planning/presentation/screens/planning_entry_screen.dart';
+import 'package:attune/app/theme/design_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -20,6 +21,9 @@ FakePlanningGateway _gateway({bool template = false, String extraType = 'date'})
     });
 
 const _screen = PlanningEntryScreen(relationshipId: 'r1', entryId: 'e1');
+
+/// The page's vertical list (the ribbon and tables scroll sideways).
+final _page = find.byWidgetPredicate((w) => w is Scrollable && w.axisDirection == AxisDirection.down).first;
 
 void main() {
   testWidgets('hero shows title and facts; blocks render in order; sections grouped', (tester) async {
@@ -80,19 +84,35 @@ void main() {
     expect(find.text('Eggs'), findsOneWidget);
   });
 
-  testWidgets('swipe RIGHT deletes a block with Undo that restores it', (tester) async {
+  testWidgets('swipe RIGHT deletes a block card with Undo that restores it', (tester) async {
     final g = _gateway();
     g.handlers['delete_planning_block'] = (_) => {'deleted': true};
-    g.handlers['restore_planning_block'] = (_) => fakeBlockJson(id: 'b2', type: 'date', payload: {'title': 'Shop day'}, dateStart: '2026-10-17');
+    g.handlers['restore_planning_block'] = (_) => fakeBlockJson(id: 'b1', payload: {'title': 'Shopping list'});
     await tester.pumpWidget(planningTestApp(g, _screen));
     await tester.pumpAndSettle();
-    await tester.drag(find.byKey(const ValueKey('block-b2')), const Offset(600, 0)); // right = delete everywhere
+    // From the card's heading: its item rows have their own swipe.
+    await tester.drag(find.text('Shopping list'), const Offset(600, 0)); // right = delete everywhere
     await tester.pumpAndSettle();
-    expect(find.text('Shop day'), findsNothing);
+    expect(find.text('Shopping list'), findsNothing);
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(g.callsTo('restore_planning_block'), hasLength(1));
-    expect(find.text('Shop day'), findsOneWidget);
+    expect(find.text('Shopping list'), findsOneWidget);
+  });
+
+  testWidgets('a dated Date block sits inline: deleted from its menu, not by swiping', (tester) async {
+    final g = _gateway();
+    g.handlers['delete_planning_block'] = (_) => {'deleted': true};
+    await tester.pumpWidget(planningTestApp(g, _screen));
+    await tester.pumpAndSettle();
+    expect(find.ancestor(of: find.byKey(const ValueKey('block-b2')), matching: find.byType(Dismissible)), findsNothing);
+    await tester.scrollUntilVisible(find.byTooltip('Options for Shop day'), 100, scrollable: _page);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Options for Shop day'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(g.callsTo('delete_planning_block').single, {'p_id': 'b2'});
   });
 
   testWidgets('Move down from the block menu (non-drag reorder for accessibility)', (tester) async {
@@ -107,14 +127,14 @@ void main() {
     expect(g.callsTo('move_planning_block').single['p_after_id'], 'b2');
   });
 
-  testWidgets('tool tray adds a checklist block at the end', (tester) async {
+  testWidgets('Insert adds a checklist block at the end when no block is selected', (tester) async {
     final g = _gateway();
     g.handlers['add_planning_block'] = (p) => fakeBlockJson(id: p['p_id'] as String, payload: {}, sortKey: 'z');
     await tester.pumpWidget(planningTestApp(g, _screen));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add block'));
+    await tester.tap(find.text('Insert'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Checklist'));
+    await tester.tap(find.descendant(of: find.byType(PlanningRibbon), matching: find.text('Checklist')));
     await tester.pumpAndSettle();
     final call = g.callsTo('add_planning_block').single;
     expect(call['p_block_type'], 'checklist');
@@ -131,9 +151,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('No due date'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('OK'));
+    await tester.tapAt(const Offset(20, 20)); // close the wheel without turning it: today
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Save'));
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
     final now = DateTime.now();
     final ymd = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
@@ -150,11 +170,12 @@ void main() {
     expect(find.text('Tomatoes'), findsOneWidget);
   });
 
-  testWidgets('uses the app design system: AppFab and CardInkWell block cards', (tester) async {
+  testWidgets('uses the app design system: CardInkWell block cards, and a ribbon instead of a FAB', (tester) async {
     await tester.pumpWidget(planningTestApp(_gateway(), _screen));
     await tester.pumpAndSettle();
-    expect(find.byType(AppFab), findsOneWidget);
-    expect(find.byType(CardInkWell), findsNWidgets(2));
+    expect(find.byType(PlanningRibbon), findsOneWidget);
+    expect(find.byType(FloatingActionButton), findsNothing);
+    expect(find.byType(CardInkWell), findsOneWidget, reason: 'the checklist; a dated Date block sits inline');
   });
 
   testWidgets('templates show the template banner', (tester) async {
@@ -166,6 +187,7 @@ void main() {
   testWidgets('a block type from a newer server renders a placeholder', (tester) async {
     await tester.pumpWidget(planningTestApp(_gateway(extraType: 'hologram'), _screen));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('This block needs a newer version of Attune.'), 100, scrollable: _page);
     expect(find.text('This block needs a newer version of Attune.'), findsOneWidget);
   });
 
@@ -199,5 +221,16 @@ void main() {
     await tester.drag(find.byKey(const ValueKey('item-i1')), const Offset(600, 0));
     await tester.pumpAndSettle();
     expect(g.callsTo('delete_planning_block_item').single, {'p_id': 'i1'});
+  });
+
+  testWidgets('the checklist heading matches the Date block: small, not bold, a medium gap below', (tester) async {
+    await tester.pumpWidget(planningTestApp(_gateway(), _screen));
+    await tester.pumpAndSettle();
+    final heading = tester.widget<Text>(find.text('Shopping list'));
+    final ctx = tester.element(find.text('Shopping list'));
+    expect(heading.style?.fontSize, Theme.of(ctx).textTheme.titleSmall?.fontSize);
+    expect(heading.style?.fontWeight, FontWeight.w400);
+    final gap = tester.getTopLeft(find.text('Produce')).dy - tester.getBottomLeft(find.text('Shopping list')).dy;
+    expect(gap, greaterThanOrEqualTo(Spacing.md));
   });
 }

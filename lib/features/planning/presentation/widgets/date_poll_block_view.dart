@@ -1,4 +1,6 @@
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:gap/gap.dart';
+import 'package:attune/core/widgets/feedback/export_extensions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -40,10 +42,8 @@ class DatePollBlockView extends ConsumerWidget {
       return; // nothing was removed, so there is nothing to undo
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: const Text('Dates removed'),
-      action: SnackBarAction(label: 'Undo', onPressed: () => ctl.restoreItem(block.id, option.id, index: index)),
-    ));
+    context.showInfoSnackbar('Dates removed',
+        actionLabel: 'Undo', onAction: () => ctl.restoreItem(block.id, option.id, index: index));
   }
 
   @override
@@ -53,7 +53,7 @@ class DatePollBlockView extends ConsumerWidget {
     final me = ref.watch(planningCurrentUserIdProvider);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(block.title ?? 'Date poll', style: theme.textTheme.titleMedium),
-      const SizedBox(height: Spacing.xs),
+      const Gap(Spacing.xs),
       if (block.items.isEmpty)
         Text('Suggest a few dates and vote on what works.', style: TextStyle(color: scheme.outline)),
       for (final option in block.items)
@@ -95,7 +95,7 @@ class DatePollBlockView extends ConsumerWidget {
                       ),
                     ),
               ]),
-              const SizedBox(height: Spacing.xs),
+              const Gap(Spacing.xs),
               Wrap(spacing: Spacing.sm, crossAxisAlignment: WrapCrossAlignment.center, children: [
                 FilterChip(
                   label: const Text('Works for me'),

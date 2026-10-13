@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:gap/gap.dart';
 
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/location/presentation/providers/presence_providers.dart';
@@ -61,7 +62,7 @@ class _DualClockBlockViewState extends ConsumerState<DualClockBlockView> {
     final local = DateTime(now.year, now.month, now.day, now.hour, now.minute);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(widget.block.title ?? 'Dual clock', style: theme.textTheme.titleMedium),
-      const SizedBox(height: Spacing.sm),
+      const Gap(Spacing.sm),
       if (theirs == null)
         Text("Your partner's time shows here when they share their location.",
             style: TextStyle(color: theme.colorScheme.outline))

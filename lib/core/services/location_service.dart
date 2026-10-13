@@ -9,6 +9,16 @@ import 'package:http/http.dart' as http;
 import 'package:attune/core/config/env.dart';
 import 'package:attune/core/utils/location/location_search_mode.dart';
 
+/// Location search could not run (no API key, the key refused, quota, or
+/// no network): not the same as a search that found nothing.
+class LocationSearchUnavailable implements Exception {
+  const LocationSearchUnavailable(this.reason);
+  final String reason;
+
+  @override
+  String toString() => 'LocationSearchUnavailable($reason)';
+}
+
 class LocationService {
   String get _mapboxToken => Environment.mapboxAccessToken;
   String get _googleApiKey => Environment.googleMapsApiKey;
@@ -30,6 +40,7 @@ class LocationService {
   /// [mode] controls the Places `types` filter:
   ///  - [LocationSearchMode.city]    → (cities) for client discovery location
   ///  - [LocationSearchMode.address] → geocode (addresses + neighbourhoods like "Community 11")
+  ///  - [LocationSearchMode.place]   → no filter: venues and landmarks too
   ///
   /// [proximityLat] / [proximityLng] bias results toward a known area.
   Future<List<ParsedAddress>> getLocationSuggestions(
@@ -37,20 +48,26 @@ class LocationService {
     LocationSearchMode mode = LocationSearchMode.city,
     double? proximityLng,
     double? proximityLat,
+    bool throwOnFailure = false,
   }) async {
     if (query.length < 2) return [];
 
-    final types = mode == LocationSearchMode.address ? 'geocode' : '(cities)';
+    // A caller that can say "search isn't available" asks to be told;
+    // otherwise a failure reads as no results, as it always has.
+    List<ParsedAddress> failed(String reason) {
+      if (throwOnFailure) throw LocationSearchUnavailable(reason);
+      return [];
+    }
 
-    final params = {
-      'input': query,
-      'key': _googleApiKey,
-      'types': types,
-      'language': 'en',
-      if (proximityLat != null && proximityLng != null)
-        'location': '$proximityLat,$proximityLng',
-      if (proximityLat != null && proximityLng != null) 'radius': '50000',
-    };
+    if (_googleApiKey.isEmpty) return failed('no_api_key');
+
+    final params = autocompleteParams(
+      query,
+      key: _googleApiKey,
+      mode: mode,
+      lat: proximityLat,
+      lng: proximityLng,
+    );
 
     try {
       final url = Uri.parse(_placesAutocompleteUrl).replace(
@@ -71,7 +88,7 @@ class LocationService {
 
         if (status != 'OK' && status != 'ZERO_RESULTS') {
           if (kDebugMode) debugPrint('Places Autocomplete status: $status');
-          return [];
+          return failed(status);
         }
 
         final predictions = data['predictions'] as List? ?? [];
@@ -93,13 +110,34 @@ class LocationService {
         if (kDebugMode) {
           debugPrint('Places Autocomplete HTTP ${response.statusCode}');
         }
-        return [];
+        return failed('http_${response.statusCode}');
       }
+    } on LocationSearchUnavailable {
+      rethrow;
     } catch (e) {
       if (kDebugMode) debugPrint('Places Autocomplete error: $e');
-      return [];
+      return failed('network');
     }
   }
+
+  /// The Places Autocomplete query for [mode]. [LocationSearchMode.place]
+  /// sends no `types` filter, so establishments come back with addresses.
+  @visibleForTesting
+  static Map<String, String> autocompleteParams(
+    String query, {
+    required String key,
+    required LocationSearchMode mode,
+    double? lat,
+    double? lng,
+  }) => {
+    'input': query,
+    'key': key,
+    if (mode == LocationSearchMode.city) 'types': '(cities)',
+    if (mode == LocationSearchMode.address) 'types': 'geocode',
+    'language': 'en',
+    if (lat != null && lng != null) 'location': '$lat,$lng',
+    if (lat != null && lng != null) 'radius': '50000',
+  };
 
   /// Resolves a Google Places [placeId] to a full [ParsedAddress] with coordinates.
   /// Call this when the user taps an autocomplete suggestion.

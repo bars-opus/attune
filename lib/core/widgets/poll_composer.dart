@@ -1,7 +1,6 @@
 // lib/core/widgets/poll_composer.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/core/widgets/bottom_sheet_header.dart';
 import 'package:flutter/services.dart';
 
 /// Tappable icon button that opens [PollComposer], via

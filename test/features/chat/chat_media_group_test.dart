@@ -4,6 +4,7 @@ import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../../helpers/media_counter.dart';
 
 void main() {
   group('ChatMediaRunLayout', () {
@@ -86,12 +87,12 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('1 / 2'), findsOneWidget);
+      expect(mediaCounter('1 / 2'), findsOneWidget);
 
       await tester.drag(find.byType(PageView), const Offset(-230, 0));
       await tester.pumpAndSettle();
 
-      expect(find.text('2 / 2'), findsOneWidget);
+      expect(mediaCounter('2 / 2'), findsOneWidget);
 
       await tester.tap(find.byType(PageView));
       await tester.pump();

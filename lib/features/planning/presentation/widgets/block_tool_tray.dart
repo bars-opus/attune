@@ -1,9 +1,9 @@
-import 'package:attune/app/theme/design_tokens.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/planning_models.dart';
 
-const _tools = <(PlanningBlockType, IconData, String)>[
+/// Every block a plan can hold, in the order Insert offers them.
+const planningBlockTools = <(PlanningBlockType, IconData, String)>[
   (PlanningBlockType.text, Icons.notes_rounded, 'Text'),
   (PlanningBlockType.checklist, Icons.checklist_rounded, 'Checklist'),
   (PlanningBlockType.date, Icons.event_rounded, 'Date'),
@@ -21,45 +21,5 @@ const _tools = <(PlanningBlockType, IconData, String)>[
 
 String planningBlockLabel(PlanningBlockType type) => switch (type) {
   PlanningBlockType.unsupported => 'Block',
-  _ => _tools.firstWhere((t) => t.$1 == type).$3,
+  _ => planningBlockTools.firstWhere((t) => t.$1 == type).$3,
 };
-
-Future<PlanningBlockType?> showBlockToolTray(BuildContext context) => showModalBottomSheet<PlanningBlockType>(
-  context: context,
-  showDragHandle: true,
-  isScrollControlled: true,
-  builder:
-      (c) => SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.zero,
-          child: Padding(
-            padding: Spacing.allMd,
-            child: Wrap(
-              spacing: Spacing.md,
-              runSpacing: Spacing.md,
-              children: [
-                for (final (type, icon, label) in _tools)
-                  SizedBox(
-                    width: 96,
-                    child: InkWell(
-                      borderRadius: BorderRadiusTokens.mdAll,
-                      onTap: () => Navigator.of(c).pop(type),
-                      child: Padding(
-                        padding: Spacing.allSm,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircleAvatar(radius: 24, child: Icon(icon)),
-                            const SizedBox(height: Spacing.xs),
-                            Text(label),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-);

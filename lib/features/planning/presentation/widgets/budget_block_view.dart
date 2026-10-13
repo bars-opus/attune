@@ -1,4 +1,11 @@
+import 'package:attune/core/widgets/bottom_sheet_header.dart';
+import 'package:attune/core/widgets/charts/arc_gauge.dart';
+import 'package:attune/core/utils/bottom_sheet_utils.dart';
+import 'package:attune/app/theme/app_theme.dart';
+import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:gap/gap.dart';
+import 'package:attune/core/widgets/feedback/export_extensions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,17 +27,18 @@ class BudgetBlockView extends ConsumerWidget {
   String get _currency => block.targetCurrency ?? defaultCurrency;
 
   Future<void> _setTarget(BuildContext context, WidgetRef ref) async {
-    final minor = await showDialog<int>(
+    final minor = await BottomSheetUtils.showDocumentationBottomSheet<int>(
       context: context,
-      builder: (_) => _BudgetDialog(currency: _currency, initialMinor: block.targetMinor),
+      // Neutral, so the field stands out against it.
+      backgroundColor: Theme.of(context).colorScheme.neutral,
+      widget: _BudgetSheet(currency: _currency, initialMinor: block.targetMinor),
     );
     if (minor == null || !context.mounted) return;
     try {
       await ref.read(planningEntryProvider(args).notifier).setTarget(block, minor, _currency);
     } on PlanningStaleVersion {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Your partner just changed the budget. Showing theirs.')));
+        context.showInfoSnackbar('Your partner just changed the budget. Showing theirs.');
       }
     } catch (e) {
       if (context.mounted) showPlanningError(context, e);
@@ -47,34 +55,27 @@ class BudgetBlockView extends ConsumerWidget {
     final over = target != null && spent > target;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(block.title ?? 'Budget', style: theme.textTheme.titleMedium),
-      const SizedBox(height: Spacing.sm),
+      const Gap(Spacing.sm),
       if (target == null)
         Text('No budget set. Spent so far: ${formatPlanningMoney(spent, _currency)}',
             style: TextStyle(color: scheme.outline))
       else ...[
-        Semantics(
-          label: '${formatPlanningMoney(spent, _currency)} spent of ${formatPlanningMoney(target, _currency)}',
-          excludeSemantics: true,
-          child: ClipRRect(
-            borderRadius: BorderRadiusTokens.smAll,
-            child: LinearProgressIndicator(
-              minHeight: 8,
-              value: target == 0 ? 1 : (spent / target).clamp(0, 1).toDouble(),
-              color: over ? scheme.error : scheme.primary,
-              backgroundColor: scheme.surfaceContainerHighest,
-            ),
-          ),
-        ),
-        const SizedBox(height: Spacing.xs),
-        Row(children: [
-          Expanded(child: Text('${formatPlanningMoney(spent, _currency)} of ${formatPlanningMoney(target, _currency)}')),
-          Text(
-            over
+        // What's left of the budget, as a gauge; red once it's over.
+        Center(
+          child: ArcGauge(
+            fraction: target == 0 ? 1 : spent / target,
+            over: over,
+            headline: over
                 ? '${formatPlanningMoney(spent - target, _currency)} over budget'
                 : '${formatPlanningMoney(target - spent, _currency)} left',
-            style: theme.textTheme.titleSmall?.copyWith(color: over ? scheme.error : null),
+            caption: 'of ${formatPlanningMoney(target, _currency)}',
+            semanticLabel: 'Budget',
           ),
-        ]),
+        ),
+        Center(
+          child: Text('${formatPlanningMoney(spent, _currency)} spent',
+              style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+        ),
       ],
       if (computed.otherCurrencies.isNotEmpty)
         Padding(
@@ -97,20 +98,23 @@ class BudgetBlockView extends ConsumerWidget {
   }
 }
 
-class _BudgetDialog extends StatefulWidget {
-  const _BudgetDialog({required this.currency, required this.initialMinor});
+class _BudgetSheet extends StatefulWidget {
+  const _BudgetSheet({required this.currency, required this.initialMinor});
   final String currency;
   final int? initialMinor;
 
   @override
-  State<_BudgetDialog> createState() => _BudgetDialogState();
+  State<_BudgetSheet> createState() => _BudgetSheetState();
 }
 
-class _BudgetDialogState extends State<_BudgetDialog> {
+class _BudgetSheetState extends State<_BudgetSheet> {
   late final _c = TextEditingController(
       text: widget.initialMinor == null
           ? ''
           : formatPlanningMoney(widget.initialMinor!, widget.currency).replaceAll(RegExp(r'[^0-9.,]'), ''));
+
+  /// Set once Done is tapped with nothing usable, so the field says why.
+  bool _tried = false;
 
   @override
   void dispose() {
@@ -118,30 +122,35 @@ class _BudgetDialogState extends State<_BudgetDialog> {
     super.dispose();
   }
 
+  /// Done saves; an empty or unreadable amount keeps the sheet open.
+  void _done() {
+    final parsed = parsePlanningMoney(_c.text, widget.currency);
+    if (parsed == null) {
+      setState(() => _tried = true);
+      return;
+    }
+    popPlanningSheet(context, parsed);
+  }
+
   @override
   Widget build(BuildContext context) {
     final parsed = parsePlanningMoney(_c.text, widget.currency);
-    return AlertDialog(
-      title: const Text('Set budget'),
-      content: TextField(
+    final error = (_c.text.isNotEmpty || _tried) && parsed == null ? 'Enter an amount like 500' : null;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      BottomSheetHeader(title: 'Set budget', onPressed: _done),
+      AppTextFormField(
         controller: _c,
         autofocus: true,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textInputAction: TextInputAction.done,
         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-        decoration: InputDecoration(
-          labelText: 'Budget',
-          suffixText: widget.currency,
-          errorText: _c.text.isNotEmpty && parsed == null ? 'Enter an amount like 500' : null,
-        ),
+        label: 'Budget',
+        labelColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+        suffixText: widget.currency,
+        errorText: error,
         onChanged: (_) => setState(() {}),
+        onFieldSubmitted: (_) => _done(),
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(
-          onPressed: parsed == null ? null : () => Navigator.pop(context, parsePlanningMoney(_c.text, widget.currency)),
-          child: const Text('Save'),
-        ),
-      ],
-    );
+    ]);
   }
 }

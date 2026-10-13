@@ -175,3 +175,18 @@ Deno.test("a server that never answers times out", async () => {
     PreviewError, "timeout",
   );
 });
+
+Deno.test("JSON can be fetched (for oEmbed), and is still type-checked", async () => {
+  const net = fakeNet([ok('{"title":"x"}', "application/json; charset=utf-8")], { "a.example": ["93.184.216.34"] });
+  const res = await guardedFetch("https://a.example/oembed", { maxBytes: 1000, accept: "json", ...net });
+  assertEquals(new TextDecoder().decode(res.body), '{"title":"x"}');
+  assert(net.connects[0].request.includes("\r\nAccept: application/json\r\n"));
+  const html = fakeNet([ok("<p>")], { "a.example": ["93.184.216.34"] });
+  await assertRejects(() => guardedFetch("https://a.example/oembed", { maxBytes: 1000, accept: "json", ...html }), PreviewError, "wrong_type");
+});
+
+Deno.test("it says who it is, in the form sites expect from a link previewer", async () => {
+  const net = fakeNet([ok("<title>Hi</title>")], { "villa.example": ["93.184.216.34"] });
+  await guardedFetch("https://villa.example/", { maxBytes: 1024, accept: "html", ...net });
+  assert(net.connects[0].request.includes("\r\nUser-Agent: Mozilla/5.0 (compatible; AttuneLinkPreview/1.0)\r\n"));
+});

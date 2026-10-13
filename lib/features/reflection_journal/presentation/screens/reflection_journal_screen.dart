@@ -49,10 +49,11 @@ class _ReflectionJournalScreenState
     return Scaffold(
       backgroundColor: colorScheme.neutral,
       appBar: AppBar(
+        centerTitle: false,
         automaticallyImplyLeading: true,
         backgroundColor: Colors.transparent,
         title: Text(
-          'Reflection journal',
+          'Personal reflection journal',
           style: textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w600,
             color: colorScheme.onSurface.withOpacity(0.8),

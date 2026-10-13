@@ -14,7 +14,7 @@ void main() {
 
   test('pasted foreign attributes are stripped (Review Focus 4)', () {
     final r = sanitizeDelta([
-      {'insert': 'Pasted', 'attributes': {'font': 'serif', 'size': 'large', 'color': '#ff0000', 'bold': true}},
+      {'insert': 'Pasted', 'attributes': {'font': 'serif', 'size': '15', 'color': '#ff0000', 'bold': true}},
       {'insert': '\n', 'attributes': {'list': 'checked'}},
     ]);
     expect(r.changed, isTrue);
@@ -22,6 +22,20 @@ void main() {
       {'insert': 'Pasted', 'attributes': {'bold': true}},
       {'insert': '\n'},
     ]);
+  });
+
+  test('the three named text sizes are kept; a pasted point size is not', () {
+    final ops = [
+      {'insert': 'Big', 'attributes': {'size': 'huge'}},
+      {'insert': ' mid', 'attributes': {'size': 'large'}},
+      {'insert': ' fine', 'attributes': {'size': 'small'}},
+      {'insert': '\n'},
+    ];
+    expect(sanitizeDelta(ops).changed, isFalse);
+    expect(sanitizeDelta([
+      {'insert': 'x', 'attributes': {'size': 18.0}},
+      {'insert': '\n'},
+    ]).ops, [{'insert': 'x'}, {'insert': '\n'}]);
   });
 
   test('null-valued attributes from toggling are dropped silently', () {

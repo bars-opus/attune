@@ -53,7 +53,7 @@ wait $P1 || { echo "FAIL case 1: partner A's first open errored"; exit 1; }
 wait $P2 || { echo "FAIL case 1: partner B's first open errored"; exit 1; }
 CATS=$(psql -q -d "$DB" -t -A -c "SELECT count(*) FROM public.planning_categories WHERE relationship_id='$REL'")
 TPLS=$(psql -q -d "$DB" -t -A -c "SELECT count(*) FROM public.planning_entries WHERE relationship_id='$REL' AND is_template")
-[ "$CATS" = "7" ] && [ "$TPLS" = "7" ] || { echo "FAIL case 1: $CATS categories, $TPLS templates"; exit 1; }
+[ "$CATS" = "9" ] && [ "$TPLS" = "9" ] || { echo "FAIL case 1: $CATS categories, $TPLS templates"; exit 1; }
 
 # Setup for cases 2 and 3
 as_user "$A" "

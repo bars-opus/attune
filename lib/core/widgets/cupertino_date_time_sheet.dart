@@ -1,5 +1,6 @@
 // lib/core/widgets/cupertino_date_time_sheet.dart
 
+import 'package:attune/core/utils/bottom_sheet_utils.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -21,6 +22,10 @@ import 'package:flutter/material.dart';
 /// This is the whole picker's UI — callers don't build their own
 /// SizedBox/CupertinoDatePicker; they just await this and read the value(s)
 /// back out of their own state via [onChanged].
+///
+/// With [sheetHeight], the wheel opens in the app's standard sheet
+/// ([BottomSheetUtils], with its drag handle) at that height instead of the
+/// plain 216-high one.
 Future<void> showCupertinoDateTimeSheet({
   required BuildContext context,
   required CupertinoDatePickerMode mode,
@@ -28,7 +33,21 @@ Future<void> showCupertinoDateTimeSheet({
   required ValueChanged<DateTime> onChanged,
   DateTime? minimumDate,
   DateTime? maximumDate,
+  double? sheetHeight,
 }) {
+  if (sheetHeight != null) {
+    return BottomSheetUtils.showDocumentationBottomSheet<void>(
+      context: context,
+      maxHeight: sheetHeight,
+      widget: CupertinoDatePicker(
+        mode: mode,
+        initialDateTime: initialDateTime,
+        minimumDate: minimumDate,
+        maximumDate: maximumDate,
+        onDateTimeChanged: onChanged,
+      ),
+    );
+  }
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: Theme.of(context).colorScheme.surface,

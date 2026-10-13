@@ -1,3 +1,4 @@
+import 'package:attune/core/widgets/dismiss_keyboard_on_tap.dart';
 import 'dart:async';
 
 import 'package:attune/core/utils/exports/export_screens.dart';
@@ -110,70 +111,73 @@ class _SharePlaceSheetState extends ConsumerState<SharePlaceSheet> {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        Spacing.lg.w,
-        Spacing.md.h,
-        Spacing.lg.w,
-        MediaQuery.of(context).viewInsets.bottom + Spacing.lg.h,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const BottomSheetHeader(title: 'Share where you are'),
-          Gap(Spacing.sm.h),
-          Text(
-            'Only what you write here is shared.',
-            style: textTheme.bodySmall?.copyWith(
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.6),
-            ),
-          ),
-          Gap(Spacing.lg.h),
-          if (_loading)
-            const Center(child: CircularProgressIndicator())
-          else ...[
-            TextField(
-              controller: _labelController,
-              autofocus: true,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                labelText: 'Where are you?',
-                hintText: 'At the coffee shop',
-              ),
-              maxLength: 120,
-            ),
+    // A tap outside the fields puts the keyboard away.
+    return DismissKeyboardOnTap(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          Spacing.lg.w,
+          Spacing.md.h,
+          Spacing.lg.w,
+          MediaQuery.of(context).viewInsets.bottom + Spacing.lg.h,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const BottomSheetHeader(title: 'Share where you are'),
             Gap(Spacing.sm.h),
-            TextField(
-              controller: _noteController,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                labelText: 'Add a note (optional)',
-                hintText: 'Thinking of you',
+            Text(
+              'Only what you write here is shared.',
+              style: textTheme.bodySmall?.copyWith(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.6),
               ),
-              maxLength: 500,
-              maxLines: 2,
             ),
             Gap(Spacing.lg.h),
-            TextButton.icon(
-              onPressed: _sending ? null : _pickPhoto,
-              icon: Icon(
-                _photoPath == null
-                    ? Icons.add_photo_alternate_outlined
-                    : Icons.check_rounded,
+            if (_loading)
+              const Center(child: CircularProgressIndicator())
+            else ...[
+              TextField(
+                controller: _labelController,
+                autofocus: true,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Where are you?',
+                  hintText: 'At the coffee shop',
+                ),
+                maxLength: 120,
               ),
-              label: Text(_photoPath == null ? 'Add a photo' : 'Photo added'),
-            ),
-            Gap(Spacing.sm.h),
-            AppButton(
-              label: _sending ? 'Sharing…' : 'Share',
-              onPressed: _sending ? null : _send,
-              size: ButtonSize.medium,
-            ),
+              Gap(Spacing.sm.h),
+              TextField(
+                controller: _noteController,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Add a note (optional)',
+                  hintText: 'Thinking of you',
+                ),
+                maxLength: 500,
+                maxLines: 2,
+              ),
+              Gap(Spacing.lg.h),
+              TextButton.icon(
+                onPressed: _sending ? null : _pickPhoto,
+                icon: Icon(
+                  _photoPath == null
+                      ? Icons.add_photo_alternate_outlined
+                      : Icons.check_rounded,
+                ),
+                label: Text(_photoPath == null ? 'Add a photo' : 'Photo added'),
+              ),
+              Gap(Spacing.sm.h),
+              AppButton(
+                label: _sending ? 'Sharing…' : 'Share',
+                onPressed: _sending ? null : _send,
+                size: ButtonSize.medium,
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

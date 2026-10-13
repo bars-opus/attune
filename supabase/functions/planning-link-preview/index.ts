@@ -11,9 +11,11 @@ import { HttpError, jsonResponse, serviceRoleClient } from "../_shared/attune_au
 import { userScopedClient } from "../_shared/user_scoped_client.ts";
 import { guardedFetch, PreviewError } from "./guard.ts";
 import { imageDimensions, MAX_PREVIEW_PIXELS } from "./image_size.ts";
-import { parsePreview } from "./og.ts";
+import { mergePreviews, oembedEndpoint, parseOembed } from "./oembed.ts";
+import { type ParsedPreview, parsePreview } from "./og.ts";
 
 const HTML_MAX_BYTES = 512 * 1024;
+const OEMBED_MAX_BYTES = 64 * 1024;
 const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const IMAGE_LONG_EDGE = 1200;
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -44,15 +46,47 @@ async function sha256Hex(s: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+async function fetchOembed(endpoint: string): Promise<ParsedPreview> {
+  const res = await guardedFetch(endpoint, { maxBytes: OEMBED_MAX_BYTES, accept: "json" });
+  return parseOembed(new TextDecoder("utf-8", { fatal: false }).decode(res.body));
+}
+
+/// The site's oEmbed first where it has one we know (video and social
+/// sites hide their tags from servers), then the page's own tags, then the
+/// oEmbed link the page itself points to for anything still missing.
+async function fetchPreview(url: string): Promise<ParsedPreview> {
+  const endpoint = oembedEndpoint(url, Deno.env.get("META_OEMBED_TOKEN") || undefined);
+  let found: ParsedPreview | null = null;
+  if (endpoint) {
+    try {
+      found = await fetchOembed(endpoint);
+      if (found.title && found.imageUrl) return found;
+    } catch {
+      found = null; // fall back to the page
+    }
+  }
+  const page = await guardedFetch(url, { maxBytes: HTML_MAX_BYTES, accept: "html" });
+  let parsed = parsePreview(new TextDecoder("utf-8", { fatal: false }).decode(page.body), page.url);
+  if (found) parsed = mergePreviews(found, parsed);
+  if ((!parsed.title || !parsed.imageUrl) && parsed.oembedUrl) {
+    try {
+      parsed = mergePreviews(parsed, await fetchOembed(parsed.oembedUrl));
+    } catch {
+      // keep what the page gave
+    }
+  }
+  return parsed;
+}
+
 async function loadPreview(service: SupabaseClient, url: string): Promise<CachedPreview> {
-  const urlHash = await sha256Hex(url);
+  // v2: previews made before oEmbed (e.g. YouTube's consent page) are not reused.
+  const urlHash = await sha256Hex(`v2|${url}`);
   const { data: cached } = await service.from("planning_link_previews")
     .select("preview, fetched_at").eq("url_hash", urlHash).maybeSingle();
   if (cached && Date.now() - Date.parse(cached.fetched_at) < CACHE_TTL_MS) {
     return cached.preview as CachedPreview;
   }
-  const page = await guardedFetch(url, { maxBytes: HTML_MAX_BYTES, accept: "html" });
-  const parsed = parsePreview(new TextDecoder("utf-8", { fatal: false }).decode(page.body), page.url);
+  const parsed = await fetchPreview(url);
   const preview: CachedPreview = {
     title: parsed.title,
     description: parsed.description,

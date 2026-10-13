@@ -561,18 +561,43 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
       };
 
   /// Link and Place need their [payload] (url / name) from the caller.
-  Future<PlanningBlock> addBlock(PlanningBlockType type, {Map<String, dynamic>? payload}) async {
+  /// Adds a block after [afterId] (where the cursor is), or at the end.
+  Future<PlanningBlock> addBlock(PlanningBlockType type, {Map<String, dynamic>? payload, String? afterId}) async {
     final blocks = _current.blocks;
+    final after = afterId ?? (blocks.isEmpty ? null : blocks.last.id);
     final block = await _repo.addBlock(
       id: _uuid.v4(),
       entryId: arg.entryId,
       type: type,
       payload: payload ?? _defaultPayload(type),
-      afterId: blocks.isEmpty ? null : blocks.last.id,
+      afterId: after,
     );
-    _set(_withBlocks(_current, [..._current.blocks, block]));
+    if (_alive && state.hasValue) {
+      final list = [for (final b in _current.blocks) if (b.id != block.id) b];
+      final i = after == null ? -1 : list.indexWhere((b) => b.id == after);
+      list.insert(after == null ? 0 : (i < 0 ? list.length : i + 1), block);
+      _set(_withBlocks(_current, list));
+    }
     if (type == PlanningBlockType.link) _askForPreview(block.id);
     return block;
+  }
+
+  /// Inserting into the middle of a paragraph, as a word processor does:
+  /// the text block keeps what came before the cursor, the new block goes
+  /// next, and what came after the cursor follows in a new text block.
+  Future<PlanningBlock> insertAtCursor(
+    PlanningBlockType type, {
+    required String textBlockId,
+    required int version,
+    required List<Map<String, dynamic>> before,
+    required List<Map<String, dynamic>> after,
+    Map<String, dynamic>? payload,
+  }) async {
+    final cut = await saveText(textBlockId, version, before);
+    if (cut is! TextSaved) throw const PlanningStaleVersion({});
+    final inserted = await addBlock(type, payload: payload, afterId: textBlockId);
+    await addBlock(PlanningBlockType.text, payload: {'delta': after}, afterId: inserted.id);
+    return inserted;
   }
 
   void _askForPreview(String blockId) =>
@@ -585,7 +610,12 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
       final saved = await _repo.updateBlock(
           id: block.id, version: block.version, payload: payload, dateStart: block.dateStart, dateEnd: block.dateEnd);
       if (_alive && state.hasValue) _set(_withBlock(_current, saved));
-      if (block.type == PlanningBlockType.link && payload['url'] != block.linkUrl) _askForPreview(block.id);
+      // A new address needs a preview; so does one whose preview never came
+      // (a site that failed before can work now).
+      if (block.type == PlanningBlockType.link &&
+          (payload['url'] != block.linkUrl || !(block.linkPreview?.isOk ?? false))) {
+        _askForPreview(block.id);
+      }
     } on PlanningStaleVersion catch (e) {
       _set(_withBlock(_current, PlanningBlock.fromJson(e.current)));
       rethrow;

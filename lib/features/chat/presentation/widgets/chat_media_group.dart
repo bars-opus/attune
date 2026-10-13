@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:attune/core/ui/motion/shimmer.dart';
+import 'package:attune/core/widgets/media/stacked_media_cards.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/resolved_media_url.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -94,14 +95,8 @@ class ChatMediaGroup extends StatefulWidget {
 }
 
 class _ChatMediaGroupState extends State<ChatMediaGroup> {
-  late final PageController _pageController;
+  // Mirrors the stack's front card, for the screen-reader description.
   var _frontIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _pageController = PageController();
-  }
 
   @override
   void didUpdateWidget(covariant ChatMediaGroup oldWidget) {
@@ -111,20 +106,7 @@ class _ChatMediaGroupState extends State<ChatMediaGroup> {
     final nextIndex = widget.messages.indexWhere(
       (message) => message.clientMessageId == previousId,
     );
-    final resolvedIndex = nextIndex == -1 ? 0 : nextIndex;
-    if (resolvedIndex == _frontIndex) return;
-    _frontIndex = resolvedIndex;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _pageController.hasClients) {
-        _pageController.jumpToPage(_frontIndex);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
+    _frontIndex = nextIndex == -1 ? 0 : nextIndex;
   }
 
   @override
@@ -150,89 +132,18 @@ class _ChatMediaGroupState extends State<ChatMediaGroup> {
           children: [
             Align(
               alignment: stackAlignment,
-              child: SizedBox(
-                width: 258,
-                height: 318,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: stackAlignment,
-                  children: [
-                    for (var layer = _visibleBackLayers; layer >= 1; layer--)
-                      _BackCard(
-                        layer: layer,
-                        isMine: widget.isMine,
-                        color: widget.bubbleColor,
-                      ),
-                    PageView.builder(
-                      controller: _pageController,
-                      itemCount: widget.messages.length,
-                      physics: const PageScrollPhysics(
-                        parent: BouncingScrollPhysics(),
-                      ),
-                      onPageChanged: (index) {
-                        if (_frontIndex != index) {
-                          setState(() => _frontIndex = index);
-                        }
-                      },
-                      itemBuilder: (context, index) {
-                        final message = widget.messages[index];
-                        return AnimatedBuilder(
-                          animation: _pageController,
-                          builder: (context, child) {
-                            final page =
-                                _pageController.hasClients
-                                    ? (_pageController.page ??
-                                        _frontIndex.toDouble())
-                                    : _frontIndex.toDouble();
-                            final distance = (page - index).clamp(-1.0, 1.0);
-                            final scale = 1 - (distance.abs() * 0.035);
-                            return Transform.rotate(
-                              angle: distance * 0.018,
-                              child: Transform.scale(
-                                scale: scale,
-                                child: child,
-                              ),
-                            );
-                          },
-                          child: Align(
-                            alignment: stackAlignment,
-                            child: _FrontMediaCard(
-                              message: message,
-                              borderColor: widget.bubbleColor,
-                              onTap: () => _open(message),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    PositionedDirectional(
-                      top: 20,
-                      // Inset from the edge rather than tight to it: it
-                      // sits ON the photos, and a chip flush to the corner
-                      // reads as clipped rather than placed.
-                      end: widget.isMine ? null : 12,
-                      start: widget.isMine ? 12 : null,
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 220),
-                        switchInCurve: Curves.easeOutBack,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder:
-                            (child, animation) => FadeTransition(
-                              opacity: animation,
-                              child: ScaleTransition(
-                                scale: animation,
-                                child: child,
-                              ),
-                            ),
-                        child: _CountBadge(
-                          key: ValueKey(_frontIndex),
-                          current: _frontIndex + 1,
-                          total: widget.messages.length,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              // The app's shared stack; chat supplies what is on each card.
+              child: StackedMediaCards(
+                itemCount: widget.messages.length,
+                itemKey: (index) => widget.messages[index].clientMessageId,
+                itemBuilder:
+                    (context, index) =>
+                        _MediaCardContent(message: widget.messages[index]),
+                borderColor: widget.bubbleColor,
+                backColor: widget.bubbleColor,
+                alignEnd: widget.isMine,
+                onTap: (index) => _open(widget.messages[index]),
+                onFrontChanged: (index) => setState(() => _frontIndex = index),
               ),
             ),
           ],
@@ -240,8 +151,6 @@ class _ChatMediaGroupState extends State<ChatMediaGroup> {
       ),
     );
   }
-
-  int get _visibleBackLayers => (widget.messages.length - 1).clamp(1, 3);
 
   void _open(Message message) {
     if (message.hasImage) {
@@ -260,119 +169,51 @@ String _mediaLabel(int images, int videos) {
   return '$photoLabel · $videoLabel';
 }
 
-class _BackCard extends StatelessWidget {
-  const _BackCard({
-    required this.layer,
-    required this.isMine,
-    required this.color,
-  });
-
-  final int layer;
-  final bool isMine;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final offset = layer * 7.0;
-    return Align(
-      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Transform.translate(
-        offset: Offset(isMine ? -offset : offset, offset * 0.55),
-        child: Transform.rotate(
-          angle: (isMine ? -1 : 1) * layer * 0.018,
-          child: Container(
-            width: 238,
-            height: 300,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(
-                color: Theme.of(
-                  context,
-                ).colorScheme.outlineVariant.withValues(alpha: 0.55),
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x14000000),
-                  blurRadius: 8,
-                  offset: Offset(0, 3),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FrontMediaCard extends StatelessWidget {
-  const _FrontMediaCard({
-    required this.message,
-    required this.borderColor,
-    required this.onTap,
-  });
+/// What a chat message puts on its card: the poster, plus a play button and
+/// duration for a video, and a spinner while it is still sending.
+class _MediaCardContent extends StatelessWidget {
+  const _MediaCardContent({required this.message});
 
   final Message message;
-  final Color borderColor;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(22),
-        side: BorderSide(color: borderColor, width: 2),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Ink(
-          width: 238,
-          height: 300,
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _MediaPoster(message: message),
+        if (message.hasVideo) ...[
+          const ColoredBox(color: Color(0x16000000)),
+          Center(
+            child: Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.56),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.play_arrow_rounded,
+                color: Colors.white,
+                size: 36,
+              ),
+            ),
           ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              _MediaPoster(message: message),
-              if (message.hasVideo) ...[
-                const ColoredBox(color: Color(0x16000000)),
-                Center(
-                  child: Container(
-                    width: 54,
-                    height: 54,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.56),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 36,
-                    ),
-                  ),
-                ),
-                if ((message.mediaDurationMs ?? 0) > 0)
-                  PositionedDirectional(
-                    end: 10,
-                    bottom: 10,
-                    child: _DurationBadge(durationMs: message.mediaDurationMs!),
-                  ),
-              ],
-              if (message.isPreparing || message.isSending)
-                const ColoredBox(
-                  color: Color(0x52000000),
-                  child: Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
-                ),
-            ],
+          if ((message.mediaDurationMs ?? 0) > 0)
+            PositionedDirectional(
+              end: 10,
+              bottom: 10,
+              child: _DurationBadge(durationMs: message.mediaDurationMs!),
+            ),
+        ],
+        if (message.isPreparing || message.isSending)
+          const ColoredBox(
+            color: Color(0x52000000),
+            child: Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
           ),
-        ),
-      ),
+      ],
     );
   }
 }
@@ -432,38 +273,6 @@ class _PosterFallback extends StatelessWidget {
           Icons.photo_outlined,
           size: 36,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-}
-
-class _CountBadge extends StatelessWidget {
-  const _CountBadge({super.key, required this.current, required this.total});
-
-  final int current;
-  final int total;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.62),
-        borderRadius: BorderRadius.circular(999),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 5,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Text(
-        '$current / $total',
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: Colors.white,
-          fontWeight: FontWeight.w700,
         ),
       ),
     );

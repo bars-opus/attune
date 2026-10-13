@@ -1,4 +1,8 @@
+import 'package:attune/core/widgets/app_text_form_field.dart';
+import 'package:attune/core/widgets/bottom_sheet_header.dart';
+import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/features/planning/domain/planning_money.dart';
+import 'package:attune/features/planning/presentation/widgets/link_block_view.dart';
 import 'package:attune/features/planning/presentation/screens/planning_entry_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,20 +61,32 @@ void main() {
     expect(find.text(formatPlanningMoney(2000, 'GHS')), findsOneWidget);
     expect(find.text('Total ${formatPlanningMoney(3000, 'GHS')}'), findsOneWidget);
 
-    await tester.scrollUntilVisible(find.text('Ubud villa with pool'), 200, scrollable: _list);
-    expect(find.text('${formatPlanningMoney(500, 'GHS')} over budget'), findsOneWidget);
+    final over = find.text('${formatPlanningMoney(500, 'GHS')} over budget');
+    await tester.scrollUntilVisible(over, 200, scrollable: _list);
+    expect(over, findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Ubud villa with pool'), 100, scrollable: _list);
+    await tester.ensureVisible(find.text('Ubud villa with pool'));
+    await tester.pumpAndSettle();
     expect(find.text('Ubud villa with pool'), findsOneWidget);
     expect(find.text('villa.example'), findsOneWidget);
 
     await tester.scrollUntilVisible(find.text('Labadi Beach'), 200, scrollable: _list);
-    expect(find.text('plain.example'), findsOneWidget, reason: 'no preview: host + url still shown');
-    expect(find.text('Accra, Ghana'), findsOneWidget);
+    await tester.ensureVisible(find.text('Labadi Beach'));
+    await tester.pumpAndSettle();
+    for (final (text, why) in [('plain.example', 'no preview: host + url still shown'), ('Accra, Ghana', 'place')]) {
+      await tester.scrollUntilVisible(find.text(text), -100, scrollable: _list);
+      expect(find.text(text), findsOneWidget, reason: why);
+    }
 
     await tester.scrollUntilVisible(find.text('Sunscreen'), 200, scrollable: _list);
+    await tester.ensureVisible(find.text('Sunscreen'));
+    await tester.pumpAndSettle();
     expect(find.text('Packed'), findsOneWidget);
 
-    await tester.scrollUntilVisible(find.text('Add photo'), 200, scrollable: _list);
-    expect(find.text('Add photo'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Add photos'), 200, scrollable: _list);
+    await tester.ensureVisible(find.text('Add photos'));
+    await tester.pumpAndSettle();
+    expect(find.text('Add photos'), findsOneWidget);
   });
 
   testWidgets('adding an expense parses the amount into minor units', (tester) async {
@@ -79,12 +95,14 @@ void main() {
     await tester.pumpWidget(planningTestApp(g, _screen));
     await tester.pumpAndSettle();
 
+    await tester.scrollUntilVisible(find.text('Add expense'), 100, scrollable: _list);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Add expense'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'What for'), 'Dinner');
-    await tester.enterText(find.widgetWithText(TextField, 'Amount'), '45.50');
+    await tester.enterText(find.widgetWithText(AppTextFormField, 'What for'), 'Dinner');
+    await tester.enterText(find.widgetWithText(AppTextFormField, 'Amount'), '45.50');
     await tester.pump();
-    await tester.tap(find.text('Save'));
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
 
     final fields = g.callsTo('save_planning_rich_item').single['p_fields'] as Map;
@@ -137,15 +155,18 @@ void main() {
         id: p['p_id'] as String, type: p['p_block_type'] as String, payload: p['p_payload'] as Map<String, dynamic>);
     await tester.pumpWidget(planningTestApp(g, _screen));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add block'));
+    await tester.tap(find.text('Insert'));
     await tester.pumpAndSettle();
     for (final label in ['Table', 'Photos', 'Link', 'Place', 'Expenses', 'Budget']) {
       expect(find.text(label), findsOneWidget, reason: label);
     }
     await tester.tap(find.text('Link'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Web address'), 'villa.example/ubud');
-    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+    expect(find.byType(AlertDialog), findsNothing, reason: "the app's sheet, not a dialog");
+    expect(find.widgetWithText(BottomSheetHeader, 'Add a link'), findsOneWidget);
+    expect(find.byType(DraggableScrollableSheet), findsOneWidget, reason: 'BottomSheetUtils');
+    await tester.enterText(find.widgetWithText(AppTextFormField, 'Web address'), 'villa.example/ubud');
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
     final sent = g.callsTo('add_planning_block').single;
     expect(sent['p_block_type'], 'link');
@@ -162,14 +183,52 @@ void main() {
     await tester.pumpWidget(planningTestApp(g, _screen));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Set budget'), 200, scrollable: _list);
+    await tester.ensureVisible(find.text('Set budget'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Set budget'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Budget'), '100');
+    await tester.enterText(find.widgetWithText(AppTextFormField, 'Budget'), '100');
     await tester.pump();
-    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
     expect(g.callsTo('update_planning_block_target').single,
         {'p_id': 'bud', 'p_version': 1, 'p_target_minor': 10000, 'p_currency': 'GHS'});
     expect(find.text('${formatPlanningMoney(7000, 'GHS')} left'), findsOneWidget);
+  });
+
+  testWidgets('a link that is not a web address keeps the sheet open and says why', (tester) async {
+    final g = FakePlanningGateway({'get_planning_entry': (_) => _entry()});
+    await tester.pumpWidget(planningTestApp(g, _screen));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Insert'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Link'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(AppTextFormField, 'Web address'), 'not a link');
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(BottomSheetHeader, 'Add a link'), findsOneWidget, reason: 'still open, nothing lost');
+    expect(find.text('Enter a web address, like airbnb.com/rooms/1'), findsOneWidget);
+    expect(g.callsTo('add_planning_block'), isEmpty);
+  });
+
+  testWidgets('a link sits in the note, not in a card; Edit link is in its ⋮ menu, not an icon beside it', (tester) async {
+    final g = FakePlanningGateway({'get_planning_entry': (_) => _entry()});
+    await tester.pumpWidget(planningTestApp(g, _screen));
+    await tester.pumpAndSettle();
+    final link = find.byType(LinkBlockView).first;
+    await tester.scrollUntilVisible(find.text('Ubud villa with pool'), 100, scrollable: _list);
+    await tester.pumpAndSettle();
+    expect(find.ancestor(of: link, matching: find.byType(CardInkWell)), findsNothing);
+    expect(find.ancestor(of: link, matching: find.byType(Dismissible)), findsNothing);
+    expect(find.descendant(of: link, matching: find.byTooltip('Edit link')), findsNothing);
+
+    final block = find.byKey(const ValueKey('block-ln'));
+    await tester.tap(find.descendant(
+        of: block, matching: find.byWidgetPredicate((w) => w is PopupMenuButton && (w.tooltip ?? '').startsWith('Options for'))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit link'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(BottomSheetHeader, 'Edit link'), findsOneWidget);
   });
 }

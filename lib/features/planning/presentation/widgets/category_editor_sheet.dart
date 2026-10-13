@@ -1,4 +1,7 @@
+import 'package:attune/core/widgets/dismiss_keyboard_on_tap.dart';
+import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:gap/gap.dart';
 import 'package:attune/core/widgets/buttons/app_button.dart';
 import 'package:flutter/material.dart';
 
@@ -12,7 +15,7 @@ Future<CategoryDraft?> showCategoryEditorSheet(BuildContext context, {CategoryDr
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => _CategoryEditor(initial: initial),
+      builder: (_) => DismissKeyboardOnTap(child: _CategoryEditor(initial: initial)),
     );
 
 class _CategoryEditor extends StatefulWidget {
@@ -45,19 +48,21 @@ class _CategoryEditorState extends State<_CategoryEditor> {
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text(widget.initial == null ? 'New category' : 'Edit category',
             style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: Spacing.md),
-        TextField(
+        const Gap(Spacing.md),
+        AppTextFormField(
           controller: _name,
           autofocus: true,
+          label: 'Name',
+          hintText: 'Moving house',
+          textInputAction: TextInputAction.done,
           inputFormatters: [CodePointLengthFormatter(40)],
           buildCounter: codePointCounter(_name, 40),
           textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(labelText: 'Name', hintText: 'Moving house'),
           onChanged: (_) => setState(() {}),
         ),
-        const SizedBox(height: Spacing.sm),
+        const Gap(Spacing.sm),
         Text('Icon', style: Theme.of(context).textTheme.labelLarge),
-        const SizedBox(height: Spacing.sm),
+        const Gap(Spacing.sm),
         Wrap(spacing: Spacing.xs, runSpacing: Spacing.xs, children: [
           for (final k in planningIconKeys)
             Semantics(
@@ -81,9 +86,9 @@ class _CategoryEditorState extends State<_CategoryEditor> {
               ),
             ),
         ]),
-        const SizedBox(height: Spacing.md),
+        const Gap(Spacing.md),
         Text('Colour', style: Theme.of(context).textTheme.labelLarge),
-        const SizedBox(height: Spacing.sm),
+        const Gap(Spacing.sm),
         Wrap(spacing: Spacing.sm, runSpacing: Spacing.sm, children: [
           for (final c in planningColorKeys)
             Semantics(
@@ -111,7 +116,7 @@ class _CategoryEditorState extends State<_CategoryEditor> {
               ),
             ),
         ]),
-        const SizedBox(height: Spacing.lg),
+        const Gap(Spacing.lg),
         AppButton(
           label: 'Save',
           isDisabled: !valid,

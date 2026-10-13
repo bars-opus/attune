@@ -20,6 +20,8 @@ class SanitizedDelta {
 bool _allowed(String key, Object? value) => switch (key) {
       'bold' || 'italic' || 'underline' || 'strike' || 'blockquote' => value == true,
       'background' || 'color' => planningPaletteTokens.contains(value),
+      // Named sizes only (Normal is no attribute): the same on every phone.
+      'size' => value == 'small' || value == 'large' || value == 'huge',
       'header' => value == 1 || value == 2 || value == 3,
       'align' => value == 'center' || value == 'right' || value == 'justify',
       'list' => value == 'bullet' || value == 'ordered',

@@ -1,6 +1,9 @@
 import 'dart:typed_data';
+import 'package:gap/gap.dart';
+import 'package:attune/core/widgets/feedback/export_extensions.dart';
 
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/widgets/media/stacked_media_cards.dart';
 import 'package:attune/features/chat/domain/services/chat_image_preparer.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -13,22 +16,42 @@ import '../planning_ui.dart';
 
 const _maxPhotos = 10;
 
-/// Picks a photo and re-encodes it to a JPEG with EXIF and GPS removed;
-/// null when the person cancels. A provider so tests can stand in for the
-/// camera and gallery.
-final planningPhotoPickerProvider = Provider<Future<Uint8List?> Function(ImageSource)>((ref) => (source) async {
-      final picked = await ImagePicker().pickImage(source: source);
-      if (picked == null) return null;
-      final prepared = await const ChatImagePreparer().prepare(picked.path);
-      return prepared.file.readAsBytes();
+/// Photos ready to upload, and how many of those picked couldn't be used.
+typedef PlanningPickedPhotos = ({List<Uint8List> photos, int rejected});
+
+/// Picks up to [limit] photos (several from the library, one from the
+/// camera) and re-encodes each to a JPEG with EXIF and GPS removed. Empty
+/// when the person cancels.
+typedef PlanningPhotoPicker = Future<PlanningPickedPhotos> Function(ImageSource source, int limit);
+
+/// A provider so tests can stand in for the camera and gallery.
+final planningPhotoPickerProvider = Provider<PlanningPhotoPicker>((ref) => (source, limit) async {
+      final picker = ImagePicker();
+      // The library's multi-pick needs room for at least two.
+      final files = source == ImageSource.gallery && limit > 1
+          ? await picker.pickMultiImage(limit: limit)
+          : [if (await picker.pickImage(source: source) case final one?) one];
+      final photos = <Uint8List>[];
+      var rejected = 0;
+      for (final f in files.take(limit)) {
+        try {
+          photos.add(await (await const ChatImagePreparer().prepare(f.path)).file.readAsBytes());
+        } on ChatImageRejected {
+          rejected++;
+        }
+      }
+      return (photos: photos, rejected: rejected);
     });
 
 /// Up to 10 photos, private to the couple. Each is re-encoded to JPEG on
 /// the device (EXIF and GPS stripped) before it is uploaded.
 class PhotoBlockView extends ConsumerStatefulWidget {
-  const PhotoBlockView({super.key, required this.args, required this.block});
+  const PhotoBlockView({super.key, required this.args, required this.block, this.menu});
   final PlanningEntryArgs args;
   final PlanningBlock block;
+
+  /// The block's options menu, at the end of the heading row.
+  final Widget? menu;
 
   @override
   ConsumerState<PhotoBlockView> createState() => _PhotoBlockViewState();
@@ -36,6 +59,9 @@ class PhotoBlockView extends ConsumerStatefulWidget {
 
 class _PhotoBlockViewState extends ConsumerState<PhotoBlockView> {
   bool _busy = false;
+
+  /// While several upload: (which one, of how many).
+  (int, int)? _progress;
 
   Future<void> _add() async {
     // Taken up front: the picker and re-encode can outlast this screen.
@@ -60,20 +86,29 @@ class _PhotoBlockViewState extends ConsumerState<PhotoBlockView> {
       ),
     );
     if (source == null || !mounted) return;
+    final room = _maxPhotos - widget.block.photoPaths.length;
     setState(() => _busy = true);
     try {
-      final bytes = await pick(source);
-      if (bytes == null) return;
-      await ctl.addPhoto(widget.block.id, bytes);
-    } on ChatImageRejected {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text("That photo couldn't be used. Try a JPEG or PNG.")));
+      final picked = await pick(source, room);
+      // One after another, in the order picked, so they stack in that order.
+      for (var i = 0; i < picked.photos.length; i++) {
+        if (mounted && picked.photos.length > 1) setState(() => _progress = (i + 1, picked.photos.length));
+        await ctl.addPhoto(widget.block.id, picked.photos[i]);
+      }
+      if (picked.rejected > 0 && mounted) {
+        context.showWarningSnackbar(picked.rejected == 1
+            ? "A photo couldn't be used. Try JPEG or PNG."
+            : "${picked.rejected} photos couldn't be used. Try JPEG or PNG.");
       }
     } catch (e) {
       if (mounted) showPlanningError(context, e);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _progress = null;
+        });
+      }
     }
   }
 
@@ -84,32 +119,46 @@ class _PhotoBlockViewState extends ConsumerState<PhotoBlockView> {
   @override
   Widget build(BuildContext context) {
     final paths = widget.block.photoPaths;
+    final scheme = Theme.of(context).colorScheme;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(widget.block.title ?? 'Photos', style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: Spacing.sm),
+      Row(children: [
+        Expanded(child: Text(widget.block.title ?? 'Photos', style: Theme.of(context).textTheme.titleMedium)),
+        if (widget.menu != null) widget.menu!,
+      ]),
+      const Gap(Spacing.sm),
       if (paths.isNotEmpty)
-        GridView.count(
-          crossAxisCount: 3,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: Spacing.xs,
-          crossAxisSpacing: Spacing.xs,
-          children: [
-            for (var i = 0; i < paths.length; i++)
-              Semantics(
-                button: true,
-                label: 'Photo ${i + 1} of ${paths.length}',
-                child: InkWell(onTap: () => _open(i), child: PlanningStoredImage(path: paths[i])),
-              ),
-          ],
+        // The app's stacked-photos look, the same as a chat album.
+        Semantics(
+          label: '${paths.length} ${paths.length == 1 ? 'photo' : 'photos'}. '
+              '${paths.length > 1 ? 'Swipe to browse. ' : ''}Double tap to open.',
+          child: StackedMediaCards(
+            itemCount: paths.length,
+            itemKey: (i) => paths[i],
+            itemBuilder: (_, i) => PlanningStoredImage(path: paths[i]),
+            borderColor: scheme.surfaceContainerHighest,
+            backColor: scheme.surfaceContainerHighest,
+            // The other photos peek out beneath the front one.
+            peekBehind: true,
+            onTap: _open,
+          ),
         ),
-      if (_busy) const Padding(padding: EdgeInsets.only(top: Spacing.sm), child: LinearProgressIndicator()),
+      if (_busy)
+        Padding(
+          padding: const EdgeInsets.only(top: Spacing.sm),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (_progress case (final n, final of)) ...[
+              Text('Adding $n of $of', style: Theme.of(context).textTheme.bodySmall),
+              const Gap(Spacing.xs),
+            ],
+            LinearProgressIndicator(value: _progress == null ? null : _progress!.$1 / _progress!.$2),
+          ]),
+        ),
       if (paths.length < _maxPhotos)
         Align(
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
             icon: const Icon(Icons.add_a_photo_outlined),
-            label: const Text('Add photo'),
+            label: const Text('Add photos'),
             onPressed: _busy ? null : _add,
           ),
         ),

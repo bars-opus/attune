@@ -6,4 +6,8 @@ enum LocationSearchMode {
   /// Search for full street addresses — used when a shop or freelancer sets their location.
   /// Mapbox types: address
   address,
+
+  /// Any place: venues, landmarks, beaches and restaurants as well as
+  /// addresses and cities. Used for the places couples add to a plan.
+  place,
 }

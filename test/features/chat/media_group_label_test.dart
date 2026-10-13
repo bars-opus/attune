@@ -44,7 +44,16 @@ void main() {
   test('the remaining chips keep one fill and stay circular', () {
     // The counter and a video's duration draw on the same photos. Their
     // shared fill is what makes them read as one system.
-    for (final widget in ['_CountBadge', '_DurationBadge']) {
+    // The counter now lives in the app's shared stack (Planning photos use
+    // it too); the duration badge stays with chat's video cards.
+    final shared =
+        File(
+          'lib/core/widgets/media/stacked_media_cards.dart',
+        ).readAsStringSync();
+    for (final (widget, source) in [
+      ('_CountBadge', shared),
+      ('_DurationBadge', source),
+    ]) {
       final start = source.indexOf('class $widget');
       expect(start, greaterThan(-1), reason: '$widget is missing');
 

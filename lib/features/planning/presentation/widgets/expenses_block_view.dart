@@ -1,11 +1,21 @@
+import 'package:attune/core/widgets/bottom_sheet_header.dart';
+import 'package:attune/core/utils/bottom_sheet_utils.dart';
+import 'package:attune/app/theme/app_theme.dart';
+import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:gap/gap.dart';
+import 'package:attune/core/widgets/feedback/export_extensions.dart';
+import 'package:attune/core/ui/motion/animated_keyed_column.dart';
+import 'package:attune/core/widgets/charts/rose_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../data/planning_error.dart';
 import '../../data/planning_models.dart';
+import '../../domain/expense_view.dart';
 import '../../domain/code_point_limit.dart';
 import '../../domain/planning_money.dart';
 import '../planning_providers.dart';
@@ -17,6 +27,20 @@ const planningCommonCurrencies = ['GHS', 'NGN', 'KES', 'ZAR', 'USD', 'EUR', 'GBP
 
 /// Expense lines: what for, how much, who paid. Totals per currency; with
 /// split on, each line can carry the other partner's share.
+/// How this device shows each Expenses block (sort and partner filter),
+/// kept while the app is open. Set from the block's ⋮ menu.
+final planningExpenseViewProvider =
+    StateProvider.family<PlanningExpenseView, String>((ref, blockId) => const PlanningExpenseView());
+
+/// Minor units in one whole unit of [currency] (100 for GHS, 1 for JPY).
+int _wholeUnit(String currency) {
+  var n = 1;
+  for (var d = planningCurrencyDigits(currency); d > 0; d--) {
+    n *= 10;
+  }
+  return n;
+}
+
 class ExpensesBlockView extends ConsumerWidget {
   const ExpensesBlockView({super.key, required this.args, required this.block, required this.detail});
   final PlanningEntryArgs args;
@@ -28,12 +52,11 @@ class ExpensesBlockView extends ConsumerWidget {
   /// save the same money twice (checklist 2.18).
   Future<void> _edit(BuildContext context, WidgetRef ref, PlanningItem? item) async {
     final ctl = ref.read(planningEntryProvider(args).notifier);
-    final messenger = ScaffoldMessenger.of(context);
-    await showModalBottomSheet<void>(
+    await BottomSheetUtils.showDocumentationBottomSheet<void>(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => ExpenseEditor(
+      // Neutral, so the fields stand out against it.
+      backgroundColor: Theme.of(context).colorScheme.neutral,
+      widget: ExpenseEditor(
         item: item,
         members: detail.members,
         me: ref.read(planningCurrentUserIdProvider),
@@ -44,8 +67,7 @@ class ExpensesBlockView extends ConsumerWidget {
             await ctl.saveRichItem(block.id, existing: item, id: id, fields: fields);
             return null;
           } on PlanningStaleVersion {
-            messenger.showSnackBar(
-                const SnackBar(content: Text('Your partner just changed this expense. Showing theirs.')));
+            context.showInfoSnackbar('Your partner just changed this expense. Showing theirs.');
             return null;
           } catch (e) {
             return planningErrorMessage(mapPlanningError(e));
@@ -53,6 +75,16 @@ class ExpensesBlockView extends ConsumerWidget {
         },
       ),
     );
+  }
+
+  /// Paid lines stay in the list, struck through, and count toward what's
+  /// paid rather than what's left. Shared: the partner sees it too.
+  Future<void> _togglePaid(BuildContext context, WidgetRef ref, PlanningItem item) async {
+    try {
+      await ref.read(planningEntryProvider(args).notifier).setChecked(block.id, item, !item.isChecked);
+    } catch (e) {
+      if (context.mounted) showPlanningError(context, e);
+    }
   }
 
   Future<void> _delete(BuildContext context, WidgetRef ref, PlanningItem item) async {
@@ -65,45 +97,132 @@ class ExpensesBlockView extends ConsumerWidget {
       return;
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('Removed ${item.text}'),
-      action: SnackBarAction(label: 'Undo', onPressed: () => ctl.restoreItem(block.id, item.id, index: index)),
-    ));
+    context.showInfoSnackbar('Removed ${item.text}',
+        actionLabel: 'Undo', onAction: () => ctl.restoreItem(block.id, item.id, index: index));
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final totals = <String, int>{};
-    for (final i in block.items) {
-      if (i.amountMinor != null && i.currency != null) totals[i.currency!] = (totals[i.currency!] ?? 0) + i.amountMinor!;
-    }
+    final view = ref.watch(planningExpenseViewProvider(block.id));
+    final rows = planningExpenseRows(block.items, view);
+    final totals = planningExpenseTotals(rows);
+    // What's left of the plan's budget, for the chart's last slice.
+    final budget = detail.blocks
+        .where((b) => b.type == PlanningBlockType.budget && b.targetMinor != null)
+        .firstOrNull;
+    final chart = planningExpenseChart(
+      rows,
+      budgetLeft: budget == null
+          ? null
+          : (
+              minor: budget.targetMinor! - (budget.budget?.spentMinor ?? 0),
+              currency: budget.targetCurrency ?? detail.entry.currency,
+            ),
+    );
+    String money(int Function(({int total, int paid}) t) pick) =>
+        totals.entries.map((e) => formatPlanningMoney(pick(e.value), e.key)).join(' · ');
+    final anyPaid = totals.values.any((t) => t.paid > 0);
+    final allPaid = totals.isNotEmpty && totals.values.every((t) => t.paid == t.total);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(block.title ?? 'Expenses', style: theme.textTheme.titleMedium),
-      const SizedBox(height: Spacing.xs),
-      if (block.items.isEmpty)
+      const Gap(Spacing.xs),
+      if (chart != null) ...[
+        // What the money went on at a glance, one solid colour per wedge:
+        // paid, not yet paid, and what's left of the budget. Follows the sort
+        // and filter.
+        Center(
+          child: LayoutBuilder(
+            builder: (context, c) => RoseChart(
+              size: c.maxWidth.clamp(0, 300).toDouble(),
+              semanticLabel: 'Spending by expense in ${chart.currency}',
+              slices: [
+                for (final s in chart.slices)
+                  RoseSlice(
+                    label: s.label,
+                    value: s.value,
+                    valueLabel: formatPlanningMoneyCompact((s.value * _wholeUnit(chart.currency)).round(), chart.currency),
+                    color: switch (s.kind) {
+                      PlanningChartSlice.paid => scheme.primary,
+                      PlanningChartSlice.unpaid => scheme.primary.withValues(alpha: 0.18),
+                      PlanningChartSlice.left => scheme.outlineVariant, // visible on the card
+                    },
+                    textColor: switch (s.kind) {
+                      PlanningChartSlice.paid => scheme.onPrimary,
+                      PlanningChartSlice.unpaid => scheme.primary,
+                      PlanningChartSlice.left => scheme.onSurface,
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const Gap(Spacing.sm),
+        Wrap(alignment: WrapAlignment.center, spacing: Spacing.md, runSpacing: Spacing.xs, children: [
+          _LegendDot(color: scheme.primary, label: 'Paid'),
+          _LegendDot(color: scheme.primary.withValues(alpha: 0.18), label: 'Not yet paid'),
+          if (chart.slices.any((s) => s.kind == PlanningChartSlice.left))
+            _LegendDot(color: scheme.outlineVariant, label: 'Left in budget'),
+        ]),
+        if (chart.otherCurrencies)
+          Center(
+            child: Text('In ${chart.currency}; other currencies aren\'t shown',
+                style: theme.textTheme.bodySmall?.copyWith(color: scheme.outline)),
+          ),
+        const Gap(Spacing.sm),
+      ],
+      if (rows.isEmpty)
         Padding(
           padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
-          child: Text('Nothing spent yet.', style: TextStyle(color: scheme.outline)),
+          child: Text(
+            block.items.isEmpty ? 'Nothing spent yet.' : 'Nothing paid by ${planningMemberName(detail.members, view.paidBy)} yet.',
+            style: TextStyle(color: scheme.outline),
+          ),
         ),
-      for (final item in block.items)
-        Dismissible(
+      // Lines grow in, fade out and glide to their new place when added,
+      // removed, put back, sorted or filtered.
+      AnimatedKeyedColumn(children: [
+        for (final item in rows)
+          Dismissible(
           key: ValueKey('expense-${item.id}'),
-          direction: DismissDirection.startToEnd, // swipe right = delete, as everywhere in Planning
+          // Swipe right = delete, as everywhere in Planning; swipe left = paid / unpaid.
           background: Container(
             alignment: Alignment.centerLeft,
             padding: Spacing.horizontalMd,
             color: scheme.errorContainer,
             child: Icon(Icons.delete_outline_rounded, color: scheme.onErrorContainer),
           ),
+          secondaryBackground: Container(
+            alignment: Alignment.centerRight,
+            padding: Spacing.horizontalMd,
+            color: item.isChecked ? scheme.surfaceContainerHighest : scheme.primaryContainer,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(item.isChecked ? 'Mark as unpaid' : 'Mark as paid',
+                  style: TextStyle(color: item.isChecked ? scheme.onSurfaceVariant : scheme.onPrimaryContainer)),
+              const Gap(Spacing.sm),
+              Icon(item.isChecked ? Icons.undo_rounded : Icons.check_circle_outline_rounded,
+                  color: item.isChecked ? scheme.onSurfaceVariant : scheme.onPrimaryContainer),
+            ]),
+          ),
           // The delete takes the row away itself (and puts it back if it fails),
           // so the swipe never leaves a dismissed widget in the tree.
-          confirmDismiss: (_) async {
-            await _delete(context, ref, item);
+          confirmDismiss: (direction) async {
+            if (direction == DismissDirection.endToStart) {
+              await _togglePaid(context, ref, item);
+            } else {
+              await _delete(context, ref, item);
+            }
             return false;
           },
-          child: InkWell(
+          child: Semantics(
+            // The swipes, for people who can't swipe.
+            customSemanticsActions: {
+              CustomSemanticsAction(label: item.isChecked ? 'Mark as unpaid' : 'Mark as paid'): () =>
+                  _togglePaid(context, ref, item),
+              const CustomSemanticsAction(label: 'Delete'): () => _delete(context, ref, item),
+            },
+            child: InkWell(
             onTap: () => _edit(context, ref, item),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: Spacing.sm),
@@ -112,30 +231,46 @@ class ExpensesBlockView extends ConsumerWidget {
                   label: 'Paid by ${planningMemberName(detail.members, item.paidBy)}',
                   excludeSemantics: true,
                   child: CircleAvatar(
-                    radius: 14,
-                    backgroundColor: scheme.secondaryContainer,
-                    child: Text(
-                      detail.member(item.paidBy)?.initial ?? '?',
-                      style: TextStyle(fontSize: 12, color: scheme.onSecondaryContainer),
+                      radius: 14,
+                      // Light primary until paid, then primary: the chart's colours.
+                      backgroundColor: item.isChecked ? scheme.primary : scheme.primary.withValues(alpha: 0.18),
+                      child: Text(
+                        detail.member(item.paidBy)?.initial ?? '?',
+                        style: TextStyle(fontSize: 12, color: item.isChecked ? scheme.onPrimary : scheme.primary),
+                      ),
                     ),
-                  ),
                 ),
-                const SizedBox(width: Spacing.smMd),
+                const Gap(Spacing.smMd),
                 Expanded(child: Text(item.text, maxLines: 2, overflow: TextOverflow.ellipsis)),
-                const SizedBox(width: Spacing.sm),
+                const Gap(Spacing.sm),
                 if (item.amountMinor != null && item.currency != null)
                   Text(formatPlanningMoney(item.amountMinor!, item.currency!),
-                      style: theme.textTheme.bodyLarge?.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                        // A paid amount is struck through and no longer counts toward what's left.
+                        decoration: item.isChecked ? TextDecoration.lineThrough : null,
+                        color: item.isChecked ? scheme.outline : null,
+                      )),
               ]),
             ),
           ),
+          ),
         ),
+      ]),
       if (totals.isNotEmpty) ...[
         const Divider(height: Spacing.md),
-        Text(
-          'Total ${totals.entries.map((e) => formatPlanningMoney(e.value, e.key)).join(' · ')}',
-          style: theme.textTheme.titleSmall,
-        ),
+        // Filtered to one partner, the totals are just theirs, and say so.
+        if (view.paidBy != null)
+          Text('Paid by ${planningMemberName(detail.members, view.paidBy)}',
+              style: theme.textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant)),
+        if (allPaid)
+          Text('All paid · ${money((t) => t.total)}', style: theme.textTheme.titleSmall)
+        else if (anyPaid) ...[
+          Text('Left to pay ${money((t) => t.total - t.paid)}', style: theme.textTheme.titleSmall),
+          Text('${money((t) => t.paid)} paid of ${money((t) => t.total)}',
+              style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+        ] else
+          Text('Total ${money((t) => t.total)}', style: theme.textTheme.titleSmall),
       ],
       Align(
         alignment: Alignment.centerLeft,
@@ -183,7 +318,15 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
   bool _saving = false;
   String? _error;
 
+  /// Set once Done is tapped with something missing, so its field says what.
+  bool _tried = false;
+
   Future<void> _submit() async {
+    if (_saving) return; // Done again while the first save is in flight
+    if (!_valid) {
+      setState(() => _tried = true);
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -197,7 +340,7 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
     }, _id);
     if (!mounted) return;
     if (error == null) {
-      Navigator.pop(context);
+      popPlanningSheet(context);
     } else {
       setState(() {
         _saving = false;
@@ -232,83 +375,111 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final labelColor = scheme.onSurface.withValues(alpha: 0.6);
     final currencies = {widget.defaultCurrency, _currency, ...planningCommonCurrencies}.toList();
-    final amountError = _amount.text.isNotEmpty && _amountMinor == null ? 'Enter an amount like 12.50' : null;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(Spacing.md, 0, Spacing.md, MediaQuery.viewInsetsOf(context).bottom + Spacing.md),
-      child: SingleChildScrollView(
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text(widget.item == null ? 'Add expense' : 'Edit expense', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: Spacing.md),
-          TextField(
-            controller: _label,
-            autofocus: widget.item == null,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(labelText: 'What for'),
-            inputFormatters: [CodePointLengthFormatter(120)],
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: Spacing.smMd),
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(
-              child: TextField(
-                controller: _amount,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-                decoration: InputDecoration(labelText: 'Amount', errorText: amountError),
-                onChanged: (_) => setState(() {}),
+    final labelError = _tried && _label.text.trim().isEmpty ? 'Say what it was for' : null;
+    final amountError = _amount.text.isNotEmpty && _amountMinor == null
+        ? 'Enter an amount like 12.50'
+        : (_tried && _amount.text.trim().isEmpty ? 'Enter an amount' : null);
+    final shareError = !_equal && _tried && (_shareMinor == null || (_amountMinor != null && _shareMinor! > _amountMinor!))
+        ? 'Enter their share, up to the amount'
+        : null;
+    // Compact fields, with room for an error line only while there is one.
+    double? height(String? error) => error == null ? FormTokens.compactFieldHeight : null;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      // Done saves; something missing keeps the sheet open and its field says what.
+      BottomSheetHeader(title: widget.item == null ? 'Add expense' : 'Edit expense', onPressed: _submit),
+      if (_saving) const LinearProgressIndicator(),
+      Flexible(
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            AppTextFormField(
+              controller: _label,
+              autofocus: widget.item == null,
+              textCapitalization: TextCapitalization.sentences,
+              label: 'What for',
+              labelColor: labelColor,
+              height: height(labelError),
+              errorText: labelError,
+              inputFormatters: [CodePointLengthFormatter(120)],
+              onChanged: (_) => setState(() {}),
+            ),
+            const Gap(Spacing.sm),
+            AppTextFormField(
+              controller: _amount,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+              label: 'Amount',
+              labelColor: labelColor,
+              // The suffix holds the box at 48, so the currency sits centred in it.
+              height: amountError == null ? kMinInteractiveDimension : null,
+              errorText: amountError,
+              onChanged: (_) => setState(() {}),
+              suffixIcon: Padding(
+                padding: const EdgeInsets.only(right: Spacing.sm),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _currency,
+                    items: [for (final c in currencies) DropdownMenuItem(value: c, child: Text(c))],
+                    onChanged: (c) => setState(() => _currency = c ?? _currency),
+                  ),
+                ),
               ),
             ),
-            const SizedBox(width: Spacing.smMd),
-            DropdownButton<String>(
-              value: _currency,
-              items: [for (final c in currencies) DropdownMenuItem(value: c, child: Text(c))],
-              onChanged: (c) => setState(() => _currency = c ?? _currency),
-            ),
+            const Gap(Spacing.md),
+            Text('Paid by', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: labelColor)),
+            const Gap(Spacing.xs),
+            Wrap(spacing: Spacing.sm, children: [
+              for (final m in widget.members)
+                ChoiceChip(
+                  label: Text(m.id == widget.me ? 'Me' : (m.displayName.isEmpty ? 'Partner' : m.displayName)),
+                  selected: _paidBy == m.id,
+                  onSelected: (_) => setState(() => _paidBy = m.id),
+                ),
+            ]),
+            if (widget.splitOn) ...[
+              const Gap(Spacing.xs),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Split equally'),
+                value: _equal,
+                onChanged: (v) => setState(() => _equal = v),
+              ),
+              if (!_equal)
+                AppTextFormField(
+                  controller: _share,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  textInputAction: TextInputAction.done,
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+                  label: "The other person's share",
+                  labelColor: labelColor,
+                  helperText: shareError == null ? 'What the one who did not pay owes' : null,
+                  errorText: shareError,
+                  onChanged: (_) => setState(() {}),
+                ),
+            ],
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: Spacing.sm),
+                child: Text(_error!, style: TextStyle(color: scheme.error)),
+              ),
           ]),
-          const SizedBox(height: Spacing.md),
-          Text('Paid by', style: Theme.of(context).textTheme.labelLarge),
-          const SizedBox(height: Spacing.xs),
-          Wrap(spacing: Spacing.sm, children: [
-            for (final m in widget.members)
-              ChoiceChip(
-                label: Text(m.id == widget.me ? 'Me' : (m.displayName.isEmpty ? 'Partner' : m.displayName)),
-                selected: _paidBy == m.id,
-                onSelected: (_) => setState(() => _paidBy = m.id),
-              ),
-          ]),
-          if (widget.splitOn) ...[
-            const SizedBox(height: Spacing.sm),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Split equally'),
-              value: _equal,
-              onChanged: (v) => setState(() => _equal = v),
-            ),
-            if (!_equal)
-              TextField(
-                controller: _share,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-                decoration: const InputDecoration(
-                    labelText: "The other person's share", helperText: 'What the one who did not pay owes'),
-                onChanged: (_) => setState(() {}),
-              ),
-          ],
-          const SizedBox(height: Spacing.md),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: Spacing.sm),
-              child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            ),
-          FilledButton(
-            onPressed: _valid && !_saving ? _submit : null,
-            child: _saving
-                ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Save'),
-          ),
-        ]),
+        ),
       ),
-    );
+    ]);
   }
+}
+
+class _LegendDot extends StatelessWidget {
+  const _LegendDot({required this.color, required this.label});
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const Gap(Spacing.xs),
+        Text(label, style: Theme.of(context).textTheme.labelSmall),
+      ]);
 }

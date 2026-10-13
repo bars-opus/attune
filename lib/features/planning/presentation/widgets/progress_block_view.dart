@@ -1,4 +1,7 @@
+import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:gap/gap.dart';
+import 'package:attune/core/widgets/feedback/export_extensions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -47,8 +50,7 @@ class ProgressBlockView extends ConsumerWidget {
       await ref.read(planningEntryProvider(args).notifier).setTarget(block, fields['amount_minor'] as int, currency);
     } on PlanningStaleVersion {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Your partner just changed the target. Showing theirs.')));
+        context.showInfoSnackbar('Your partner just changed the target. Showing theirs.');
       }
     } catch (e) {
       if (context.mounted) showPlanningError(context, e);
@@ -65,10 +67,8 @@ class ProgressBlockView extends ConsumerWidget {
       return;
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: const Text('Removed'),
-      action: SnackBarAction(label: 'Undo', onPressed: () => ctl.restoreItem(block.id, item.id, index: index)),
-    ));
+    context.showInfoSnackbar('Removed',
+        actionLabel: 'Undo', onAction: () => ctl.restoreItem(block.id, item.id, index: index));
   }
 
   @override
@@ -81,7 +81,7 @@ class ProgressBlockView extends ConsumerWidget {
         : (p.target == null ? '${_amount(p, p.current)} so far' : '${_amount(p, p.current)} of ${_amount(p, p.target!)}');
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(block.title ?? 'Progress', style: theme.textTheme.titleMedium),
-      const SizedBox(height: Spacing.sm),
+      const Gap(Spacing.sm),
       Semantics(
         label: '$summary, ${(p.fraction * 100).round()} percent',
         excludeSemantics: true,
@@ -90,11 +90,12 @@ class ProgressBlockView extends ConsumerWidget {
           child: LinearProgressIndicator(
             minHeight: 10,
             value: p.fraction,
-            backgroundColor: scheme.surfaceContainerHighest,
+            // What's left, in a light shade of the bar, not the card's colour.
+            backgroundColor: scheme.primary.withValues(alpha: 0.18),
           ),
         ),
       ),
-      const SizedBox(height: Spacing.xs),
+      const Gap(Spacing.xs),
       Row(children: [
         Expanded(child: Text(summary)),
         if (p.isComplete)
@@ -183,18 +184,20 @@ class _AmountDialogState extends State<_AmountDialog> {
     return AlertDialog(
       title: Text(widget.title),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
-        TextField(
+        AppTextFormField(
           controller: _amount,
           autofocus: true,
           keyboardType: TextInputType.numberWithOptions(decimal: widget.currency != null),
           inputFormatters: [FilteringTextInputFormatter.allow(RegExp(widget.currency != null ? r'[0-9.,]' : r'[0-9]'))],
-          decoration: InputDecoration(labelText: widget.label, suffixText: widget.currency),
+          label: widget.label,
+          suffixText: widget.currency,
           onChanged: (_) => setState(() {}),
         ),
         if (widget.withNote)
-          TextField(
+          AppTextFormField(
             controller: _note,
-            decoration: const InputDecoration(labelText: 'Note (optional)'),
+            label: 'Note (optional)',
+            textInputAction: TextInputAction.done,
             inputFormatters: [CodePointLengthFormatter(120)],
           ),
       ]),

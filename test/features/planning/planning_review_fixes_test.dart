@@ -1,3 +1,4 @@
+import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'package:attune/features/planning/data/planning_error.dart';
 import 'package:attune/features/planning/domain/planning_money.dart';
 import 'package:attune/features/planning/domain/planning_outbox.dart';
@@ -104,19 +105,19 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Add expense'));
       await tester.pumpAndSettle();
-      await tester.enterText(find.widgetWithText(TextField, 'What for'), 'Taxi');
-      await tester.enterText(find.widgetWithText(TextField, 'Amount'), '12');
+      await tester.enterText(find.widgetWithText(AppTextFormField, 'What for'), 'Taxi');
+      await tester.enterText(find.widgetWithText(AppTextFormField, 'Amount'), '12');
       await tester.pump();
-      await tester.tap(find.text('Save'));
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
-      expect(find.widgetWithText(TextField, 'What for'), findsOneWidget, reason: 'the sheet stays open with what was typed');
+      expect(find.widgetWithText(AppTextFormField, 'What for'), findsOneWidget, reason: 'the sheet stays open with what was typed');
       expect(find.text('Taxi'), findsWidgets);
-      await tester.tap(find.text('Save'));
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
       final ids = [for (final c in g.callsTo('save_planning_rich_item')) c['p_id']];
       expect(ids, hasLength(2));
       expect(ids[0], ids[1]);
-      expect(find.widgetWithText(TextField, 'What for'), findsNothing, reason: 'closed once saved');
+      expect(find.widgetWithText(AppTextFormField, 'What for'), findsNothing, reason: 'closed once saved');
     });
   });
 

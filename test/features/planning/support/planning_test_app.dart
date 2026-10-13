@@ -1,5 +1,6 @@
 import 'package:attune/features/location/domain/partner_distance.dart';
 import 'package:attune/features/location/presentation/providers/presence_providers.dart';
+import 'package:attune/app/app.dart' show appLocalizationsDelegates;
 import 'package:attune/features/planning/data/planning_repository.dart';
 import 'package:attune/features/planning/domain/planning_outbox.dart';
 import 'package:attune/features/planning/presentation/planning_providers.dart';
@@ -54,6 +55,7 @@ Widget planningTestApp(
       // The app's shared widgets (ErrorStateWidget, CardInkWell, AppButton...)
       // size with flutter_screenutil, exactly as in the app.
       child: withScreenUtil(MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates, // exactly the app's
         theme: ThemeData(useMaterial3: true),
         darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
         themeMode: themeMode,

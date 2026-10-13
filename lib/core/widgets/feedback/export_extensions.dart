@@ -22,9 +22,10 @@ extension LocalizedSnackbar on BuildContext {
     Snackbar.warning(this, message);
   }
 
-  void showInfoSnackbar(String message) {
+  /// [actionLabel]/[onAction] add a button, e.g. Undo after a delete.
+  void showInfoSnackbar(String message, {String? actionLabel, VoidCallback? onAction}) {
     if (!mounted) return;
-    Snackbar.info(this, message);
+    Snackbar.info(this, message, actionLabel: actionLabel, onAction: onAction);
   }
 
   void showLoadingSnackbar(String message) {

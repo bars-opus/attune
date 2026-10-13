@@ -1,12 +1,14 @@
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/app_tabs.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
 import 'package:attune/home/widgets/tabs_with_content.dart';
 import 'package:flutter/material.dart';
+import 'package:attune/app/documentations/user_manual/data/reflection_journal_docs.dart';
+import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
-
 import '../../data/planning_models.dart';
 import '../planning_providers.dart';
 import '../planning_ui.dart';
@@ -36,7 +38,9 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
     try {
       final tz = await ref.read(planningDeviceTimezoneProvider.future);
       if (tz == null || !mounted) return;
-      await ref.read(planningRepositoryProvider).setTimezone(widget.relationshipId, tz);
+      await ref
+          .read(planningRepositoryProvider)
+          .setTimezone(widget.relationshipId, tz);
     } catch (_) {}
   }
 
@@ -62,8 +66,15 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
     );
     if (choice == null || !mounted) return;
     if (choice != _blankCategory) {
-      return _run(() => ref.read(planningRepositoryProvider).createCategoryFromGallery(
-          id: const Uuid().v4(), relationshipId: widget.relationshipId, key: choice));
+      return _run(
+        () => ref
+            .read(planningRepositoryProvider)
+            .createCategoryFromGallery(
+              id: const Uuid().v4(),
+              relationshipId: widget.relationshipId,
+              key: choice,
+            ),
+      );
     }
     final draft = await showCategoryEditorSheet(context);
     if (draft == null || !mounted) return;
@@ -105,8 +116,39 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
     // Two tabs, as Planning always had: the categories, and the shared
     // calendar (the same TimelineScreen Pulse shows). TimelineScreen's own
     // app bar is off because this screen's bar already sits above the tabs.
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final docs = ReflectionJournalDocs();
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Planning')),
+      appBar: AppBar(
+        centerTitle: false,
+        backgroundColor: Colors.transparent,
+        title: Text(
+          'Couples Journal',
+          style: textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface.withOpacity(0.8),
+          ),
+        ),
+
+        actions: [
+          AppIconButton(
+            icon: Icons.notes_rounded,
+            tooltip: 'Tags',
+            onPressed: () {
+              BottomSheetUtils.showDocumentationBottomSheet(
+                context: context,
+                showButtons: false,
+                widget: DocumentationTabView(
+                  module: docs,
+                  showDocumentationFirst: true,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       body: TabsWithContent(
         tabs: [
           AppTabItem(
@@ -119,6 +161,11 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
             icon: Icons.calendar_month_rounded,
             content: TimelineScreen(showAppBar: true, showOwnAppBar: false),
           ),
+          const AppTabItem(
+            label: 'Map',
+            icon: Icons.map_outlined,
+            content: TimelineScreen(showAppBar: true, showOwnAppBar: false),
+          ),
         ],
         initialIndex: 0,
         scrollable: false,
@@ -128,6 +175,7 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
   }
 
   Widget _categories(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final async = ref.watch(planningHomeProvider(widget.relationshipId));
     return async.when(
       skipLoadingOnReload: true,
@@ -149,7 +197,10 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
               ),
           child: ReorderableListView.builder(
             buildDefaultDragHandles: false,
-            padding: const EdgeInsets.symmetric(vertical: Spacing.sm),
+            padding: const EdgeInsets.symmetric(
+              vertical: Spacing.sm,
+              horizontal: Spacing.md,
+            ),
             itemCount: visible.length,
             onReorder:
                 (from, to) => _move(visible, from, to > from ? to - 1 : to),
@@ -201,6 +252,7 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
                             ),
                       ),
                 ],
+                Gap(Spacing.lg),
                 InfoRowWidget(
                   padding: _rowPadding,
                   icon: Icons.add_rounded,
@@ -210,7 +262,18 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
                   disableTrailing: true,
                   onTap: _create,
                 ),
-                const SizedBox(height: Spacing.xl),
+                const Gap(Spacing.xl),
+                SemanticContainerWidget(
+                  content:
+                      'Unlike your personal refelction jounral, this journal is shared between both couples, either can add contents, modify, and delete. Both couples can see and modify this journal.',
+                  icon: Icons.info,
+                  title: '',
+                  backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
+                  borderColor: colorScheme.primary,
+                  iconColor: colorScheme.primary,
+                  textTheme: Theme.of(context).textTheme,
+                ),
+                const Gap(Spacing.xl),
               ],
             ),
           ),
@@ -242,59 +305,65 @@ class _CategoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+
     final n = category.entryCount;
-    return InfoRowWidget(
-      padding: _rowPadding,
-      icon: planningIcon(category.icon),
-      iconColor: colorScheme.background, // ignore: deprecated_member_use
-      backgroundColor: planningCategoryFill(context, category.color),
-      title: category.name,
-      subtitle: n == 1 ? '1 plan' : '$n plans',
-      showDivider: false,
-      onTap: onOpen,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (category.hasNew) const PlanningNewDot(),
-          PopupMenuButton<_CategoryAction>(
-            tooltip: 'More for ${category.name}',
-            onSelected:
-                (a) => switch (a) {
-                  _CategoryAction.open => onOpen(),
-                  _CategoryAction.up => onMoveUp?.call(),
-                  _CategoryAction.down => onMoveDown?.call(),
-                  _CategoryAction.hide => onHide?.call(),
-                  _CategoryAction.unhide => onUnhide?.call(),
-                },
-            itemBuilder:
-                (_) => [
-                  const PopupMenuItem(
-                    value: _CategoryAction.open,
-                    child: Text('Open'),
-                  ),
-                  if (onMoveUp != null)
+    return CardInkWell(
+      padding: const EdgeInsets.all(Spacing.sm),
+      margin: EdgeInsets.only(bottom: .5.h),
+      elevation: ElevationTokens.xs,
+      child: InfoRowWidget(
+        padding: _rowPadding,
+        icon: planningIcon(category.icon),
+        iconColor: colorScheme.background,
+        backgroundColor: planningCategoryFill(context, category.color),
+        title: category.name,
+        subtitle: n == 1 ? '1 plan' : '$n plans',
+        showDivider: false,
+        onTap: onOpen,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (category.hasNew) const PlanningNewDot(),
+            PopupMenuButton<_CategoryAction>(
+              tooltip: 'More for ${category.name}',
+              onSelected:
+                  (a) => switch (a) {
+                    _CategoryAction.open => onOpen(),
+                    _CategoryAction.up => onMoveUp?.call(),
+                    _CategoryAction.down => onMoveDown?.call(),
+                    _CategoryAction.hide => onHide?.call(),
+                    _CategoryAction.unhide => onUnhide?.call(),
+                  },
+              itemBuilder:
+                  (_) => [
                     const PopupMenuItem(
-                      value: _CategoryAction.up,
-                      child: Text('Move up'),
+                      value: _CategoryAction.open,
+                      child: Text('Open'),
                     ),
-                  if (onMoveDown != null)
-                    const PopupMenuItem(
-                      value: _CategoryAction.down,
-                      child: Text('Move down'),
-                    ),
-                  if (onHide != null)
-                    const PopupMenuItem(
-                      value: _CategoryAction.hide,
-                      child: Text('Hide'),
-                    ),
-                  if (onUnhide != null)
-                    const PopupMenuItem(
-                      value: _CategoryAction.unhide,
-                      child: Text('Show again'),
-                    ),
-                ],
-          ),
-        ],
+                    if (onMoveUp != null)
+                      const PopupMenuItem(
+                        value: _CategoryAction.up,
+                        child: Text('Move up'),
+                      ),
+                    if (onMoveDown != null)
+                      const PopupMenuItem(
+                        value: _CategoryAction.down,
+                        child: Text('Move down'),
+                      ),
+                    if (onHide != null)
+                      const PopupMenuItem(
+                        value: _CategoryAction.hide,
+                        child: Text('Hide'),
+                      ),
+                    if (onUnhide != null)
+                      const PopupMenuItem(
+                        value: _CategoryAction.unhide,
+                        child: Text('Show again'),
+                      ),
+                  ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -303,7 +372,10 @@ class _CategoryTile extends StatelessWidget {
 const _blankCategory = '';
 
 /// Category rows are the app's InfoRowWidget; this is their list inset.
-const _rowPadding = EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.sm);
+const _rowPadding = EdgeInsets.symmetric(
+  horizontal: Spacing.md,
+  vertical: Spacing.sm,
+);
 
 /// "+ New category": start blank, or from one of the server's gallery ideas.
 class _NewCategoryChooser extends ConsumerWidget {
@@ -315,49 +387,81 @@ class _NewCategoryChooser extends ConsumerWidget {
     final theme = Theme.of(context);
     return SafeArea(
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
-        child: ListView(shrinkWrap: true, padding: const EdgeInsets.only(bottom: Spacing.md), children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(Spacing.md, 0, Spacing.md, Spacing.sm),
-            child: Text('New category', style: theme.textTheme.titleLarge),
-          ),
-          InfoRowWidget(
-            padding: _rowPadding,
-            icon: Icons.add_rounded,
-            title: 'Blank category',
-            subtitle: 'Name it and build its template yourself',
-            showDivider: false,
-            showTrailingArrow: true,
-            onTap: () => Navigator.pop(context, _blankCategory),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(Spacing.md, Spacing.md, Spacing.md, Spacing.xs),
-            child: Text('Start from an idea', style: theme.textTheme.labelLarge),
-          ),
-          ...gallery.when(
-            loading: () => [const Padding(padding: Spacing.allMd, child: LinearProgressIndicator())],
-            error: (_, __) => [
-              const Padding(
-                padding: _rowPadding,
-                child: Text("Ideas couldn't load. You can still start a blank category."),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.8,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.only(bottom: Spacing.md),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Spacing.md,
+                0,
+                Spacing.md,
+                Spacing.sm,
               ),
-            ],
-            data: (ideas) => [
-              for (final g in ideas)
-                InfoRowWidget(
-                  padding: _rowPadding,
-                  icon: planningIcon(g.icon),
-                  iconColor: Theme.of(context).colorScheme.background, // ignore: deprecated_member_use
-                  backgroundColor: planningCategoryFill(context, g.color),
-                  title: g.name,
-                  subtitle: g.description,
-                  showDivider: false,
-                  showTrailingArrow: true,
-                  onTap: () => Navigator.pop(context, g.key),
-                ),
-            ],
-          ),
-        ]),
+              child: Text('New category', style: theme.textTheme.titleLarge),
+            ),
+            InfoRowWidget(
+              padding: _rowPadding,
+              icon: Icons.add_rounded,
+              title: 'Blank category',
+              subtitle: 'Name it and build its template yourself',
+              showDivider: false,
+              showTrailingArrow: true,
+              onTap: () => Navigator.pop(context, _blankCategory),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Spacing.md,
+                Spacing.md,
+                Spacing.md,
+                Spacing.xs,
+              ),
+              child: Text(
+                'Start from an idea',
+                style: theme.textTheme.labelLarge,
+              ),
+            ),
+            ...gallery.when(
+              loading:
+                  () => [
+                    const Padding(
+                      padding: Spacing.allMd,
+                      child: LinearProgressIndicator(),
+                    ),
+                  ],
+              error:
+                  (_, __) => [
+                    const Padding(
+                      padding: _rowPadding,
+                      child: Text(
+                        "Ideas couldn't load. You can still start a blank category.",
+                      ),
+                    ),
+                  ],
+              data:
+                  (ideas) => [
+                    for (final g in ideas)
+                      InfoRowWidget(
+                        padding: _rowPadding,
+                        icon: planningIcon(g.icon),
+                        iconColor:
+                            Theme.of(context)
+                                .colorScheme
+                                .background, // ignore: deprecated_member_use
+                        backgroundColor: planningCategoryFill(context, g.color),
+                        title: g.name,
+                        subtitle: g.description,
+                        showDivider: false,
+                        showTrailingArrow: true,
+                        onTap: () => Navigator.pop(context, g.key),
+                      ),
+                  ],
+            ),
+          ],
+        ),
       ),
     );
   }

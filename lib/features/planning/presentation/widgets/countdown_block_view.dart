@@ -1,4 +1,5 @@
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:gap/gap.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -61,7 +62,7 @@ class CountdownBlockView extends ConsumerWidget {
     final dates = [for (final b in detail.blocks) if (b.type == PlanningBlockType.date && b.dateStart != null) b];
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(block.title ?? 'Countdown', style: theme.textTheme.titleMedium),
-      const SizedBox(height: Spacing.xs),
+      const Gap(Spacing.xs),
       if (target == null) ...[
         Text('Pick a date', style: theme.textTheme.headlineSmall?.copyWith(color: scheme.outline)),
         Text('Add a date to this plan and the countdown starts.', style: TextStyle(color: scheme.outline)),

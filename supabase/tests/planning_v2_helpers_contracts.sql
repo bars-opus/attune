@@ -123,6 +123,15 @@ BEGIN
     END;
   END LOOP;
 
+  -- Contract 8b: text sizes are the three named sizes, never a point size.
+  PERFORM public.planning_validate_delta('[{"insert":"Big","attributes":{"size":"huge"}},{"insert":"small","attributes":{"size":"small"}},{"insert":" mid","attributes":{"size":"large"}},{"insert":"\n"}]'::jsonb);
+  BEGIN
+    PERFORM public.planning_validate_delta('[{"insert":"x","attributes":{"size":"15"}},{"insert":"\n"}]'::jsonb);
+    RAISE EXCEPTION 'EXPLOIT: a point size accepted';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'planning:invalid_input' THEN RAISE; END IF;
+  END;
+
   -- Contract 9: plain length limit counts characters (emoji = 1 char each).
   v_plain := public.planning_validate_delta(jsonb_build_array(
     jsonb_build_object('insert', repeat('😀', 10000) || E'\n')));

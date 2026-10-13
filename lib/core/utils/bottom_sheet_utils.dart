@@ -1,3 +1,4 @@
+import 'package:attune/core/widgets/dismiss_keyboard_on_tap.dart';
 import 'package:attune/app/documentations/legal_documentation/models/documentation_item.dart';
 import 'package:attune/app/documentations/legal_documentation/widgets/legal_documentation_modal_sheet.dart';
 import 'package:attune/app/theme/design_tokens.dart';
@@ -88,16 +89,19 @@ class BottomSheetUtils {
                               contentPadding,
                               contentPadding,
                             ),
-                            child:
-                                widget ??
-                                LegalDocumentationModalSheet(
-                                  document: document!,
-                                  onAgree: onAgree,
-                                  onDecline: onDecline,
-                                  agreeButtonText: agreeButtonText,
-                                  declineButtonText: declineButtonText,
-                                  showButtons: showButtons,
-                                ),
+                            // A tap outside any field puts the keyboard away.
+                            child: DismissKeyboardOnTap(
+                              child:
+                                  widget ??
+                                  LegalDocumentationModalSheet(
+                                    document: document!,
+                                    onAgree: onAgree,
+                                    onDecline: onDecline,
+                                    agreeButtonText: agreeButtonText,
+                                    declineButtonText: declineButtonText,
+                                    showButtons: showButtons,
+                                  ),
+                            ),
                           ),
                         ),
                       ),

@@ -91,7 +91,8 @@ void main() {
     expect(block('ph').photoPaths, [path]);
   });
 
-  test('a link asks for its preview when added and when its url changes, not otherwise', () async {
+  test('a link asks for its preview when added, when its url changes, and when its preview never came; not otherwise',
+      () async {
     final ctl = await ready();
     gateway.handlers['add_planning_block'] = (p) =>
         fakeBlockJson(id: p['p_id'] as String, type: 'link', sortKey: 'z', payload: p['p_payload'] as Map<String, dynamic>);
@@ -100,10 +101,18 @@ void main() {
 
     gateway.handlers['update_planning_block'] = (p) => fakeBlockJson(
         id: p['p_id'] as String, type: 'link', sortKey: 'm', payload: p['p_payload'] as Map<String, dynamic>, version: 2);
+    // 'ln' has no preview yet (say YouTube's failed): saving it again retries.
     await ctl.updateBlockPayload(block('ln'), {'url': 'https://a.example/', 'label': 'Same url'});
-    expect(media.previewRequests, [added.id]);
-    await ctl.updateBlockPayload(block('ln'), {'url': 'https://c.example/'});
     expect(media.previewRequests, [added.id, 'ln']);
+
+    final previewed = PlanningBlock.fromJson(fakeBlockJson(id: 'ln', type: 'link', sortKey: 'm', version: 2, payload: {
+      'url': 'https://a.example/',
+      'preview': {'status': 'ok', 'host': 'a.example', 'title': 'A'},
+    }));
+    await ctl.updateBlockPayload(previewed, {'url': 'https://a.example/', 'label': 'Renamed'});
+    expect(media.previewRequests, [added.id, 'ln'], reason: 'same url, preview fine: nothing to fetch');
+    await ctl.updateBlockPayload(previewed, {'url': 'https://c.example/'});
+    expect(media.previewRequests, [added.id, 'ln', 'ln']);
   });
 
   test('turning split on and settling replace the entry', () async {

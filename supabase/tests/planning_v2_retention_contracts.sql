@@ -45,7 +45,7 @@ BEGIN
 
   -- Contract 3: live data and starters untouched.
   SELECT count(*) INTO v_n FROM public.planning_categories WHERE relationship_id = v_rel;
-  IF v_n <> 7 THEN RAISE EXCEPTION 'EXPLOIT: purge touched categories'; END IF;
+  IF v_n <> 9 THEN RAISE EXCEPTION 'EXPLOIT: purge touched categories'; END IF;
 
   -- Contract 4: the job is scheduled and the function is not client-callable.
   IF NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'planning_v2_purge') THEN

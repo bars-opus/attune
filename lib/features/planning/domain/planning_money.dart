@@ -59,3 +59,12 @@ int? parsePlanningMoney(String input, String currency) {
   final minor = int.parse(whole + fraction.padRight(digits, '0'));
   return minor > planningMaxMinor ? null : minor;
 }
+
+/// A short amount for tight spaces like chart wedges: "GHS200", "GHS2.5K".
+String formatPlanningMoneyCompact(int minor, String currency) {
+  var divisor = 1;
+  for (var i = planningCurrencyDigits(currency); i > 0; i--) {
+    divisor *= 10;
+  }
+  return NumberFormat.compactSimpleCurrency(name: currency).format(minor / divisor);
+}

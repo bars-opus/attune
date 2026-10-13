@@ -40,11 +40,11 @@ BEGIN
   v_home := public.get_planning_home(v_rel);
   IF (SELECT array_agg(c ->> 'seed_key' ORDER BY ord)
         FROM jsonb_array_elements(v_home -> 'categories') WITH ORDINALITY t(c, ord))
-     IS DISTINCT FROM ARRAY['notes','goals','trips','date_nights','home_bills','groceries'] THEN
+     IS DISTINCT FROM ARRAY['notes','goals','trips','date_nights','home_bills','groceries','wishlist','diet'] THEN
     RAISE EXCEPTION 'EXPLOIT: Notes not first: %', v_home;
   END IF;
   SELECT count(*) INTO v_n FROM public.planning_categories WHERE relationship_id = v_rel;
-  IF v_n <> 7 THEN RAISE EXCEPTION 'EXPLOIT: expected 7 starters, got %', v_n; END IF;
+  IF v_n <> 9 THEN RAISE EXCEPTION 'EXPLOIT: expected 9 starters, got %', v_n; END IF;
 
   -- Contract 2: the Notes template is one empty text block (a blank sheet).
   SELECT id INTO v_notes FROM public.planning_categories WHERE relationship_id = v_rel AND seed_key = 'notes';

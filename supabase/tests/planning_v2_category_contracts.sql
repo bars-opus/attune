@@ -30,11 +30,11 @@ BEGIN
   v_home := public.get_planning_home(v_rel);
   IF (SELECT array_agg(c ->> 'seed_key' ORDER BY ord)
         FROM jsonb_array_elements(v_home -> 'categories') WITH ORDINALITY t(c, ord))
-     IS DISTINCT FROM ARRAY['notes','goals','trips','date_nights','home_bills','groceries'] THEN
+     IS DISTINCT FROM ARRAY['notes','goals','trips','date_nights','home_bills','groceries','wishlist','diet'] THEN
     RAISE EXCEPTION 'EXPLOIT: starters wrong: %', v_home;
   END IF;
   SELECT count(*) INTO v_n FROM public.planning_categories WHERE relationship_id = v_rel;
-  IF v_n <> 7 THEN RAISE EXCEPTION 'EXPLOIT: expected 7 seeded categories, got %', v_n; END IF;
+  IF v_n <> 9 THEN RAISE EXCEPTION 'EXPLOIT: expected 9 seeded categories, got %', v_n; END IF;
 
   -- Contract 2: every starter has exactly one template with blocks.
   SELECT count(*) INTO v_n FROM public.planning_categories c
@@ -54,9 +54,9 @@ BEGIN
   PERFORM set_config('request.jwt.claims', format('{"sub":"%s"}', v_b), true);
   PERFORM public.get_planning_home(v_rel);
   SELECT count(*) INTO v_n FROM public.planning_categories WHERE relationship_id = v_rel;
-  IF v_n <> 7 THEN RAISE EXCEPTION 'EXPLOIT: re-read reseeded (% categories)', v_n; END IF;
+  IF v_n <> 9 THEN RAISE EXCEPTION 'EXPLOIT: re-read reseeded (% categories)', v_n; END IF;
   SELECT count(*) INTO v_n FROM public.planning_entries WHERE relationship_id = v_rel AND is_template;
-  IF v_n <> 7 THEN RAISE EXCEPTION 'EXPLOIT: re-read duplicated templates (%)', v_n; END IF;
+  IF v_n <> 9 THEN RAISE EXCEPTION 'EXPLOIT: re-read duplicated templates (%)', v_n; END IF;
 
   -- Contract 4: a stranger gets not_found, never a seed.
   PERFORM set_config('request.jwt.claims', format('{"sub":"%s"}', v_x), true);
@@ -118,7 +118,7 @@ BEGIN
   EXCEPTION WHEN raise_exception THEN IF SQLERRM <> 'planning:not_found' THEN RAISE; END IF; END;
 
   -- Contract 10: limit of 50 live categories.
-  FOR v_i IN 1..43 LOOP  -- 7 starters + 43 = the 50-category limit
+  FOR v_i IN 1..41 LOOP  -- 9 starters + 41 = the 50-category limit
     PERFORM public.create_planning_category(gen_random_uuid(), v_rel, 'C' || v_i, 'star', 'teal');
   END LOOP;
   BEGIN PERFORM public.create_planning_category(gen_random_uuid(), v_rel, 'C51', 'star', 'teal');

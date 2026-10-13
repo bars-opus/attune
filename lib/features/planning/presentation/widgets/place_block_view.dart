@@ -1,4 +1,7 @@
+import 'package:attune/core/widgets/dismiss_keyboard_on_tap.dart';
+import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'dart:async';
+import 'package:gap/gap.dart';
 
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/providers/location_provider.dart';
@@ -49,7 +52,7 @@ class PlaceBlockView extends ConsumerWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Icon(Icons.place_outlined, color: theme.colorScheme.primary),
-        const SizedBox(width: Spacing.sm),
+        const Gap(Spacing.sm),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             if (block.title != null) Text(block.title!, style: theme.textTheme.labelLarge),
@@ -87,7 +90,7 @@ Future<PlanningPlace?> showPlanningPlacePicker(BuildContext context, {String ini
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => _PlacePicker(initial: initial),
+      builder: (_) => DismissKeyboardOnTap(child: _PlacePicker(initial: initial)),
     );
 
 class _PlacePicker extends ConsumerStatefulWidget {
@@ -126,7 +129,7 @@ class _PlacePickerState extends ConsumerState<_PlacePicker> {
     try {
       final r = await ref
           .read(locationServiceProvider)
-          .getLocationSuggestions(q, mode: LocationSearchMode.address)
+          .getLocationSuggestions(q, mode: LocationSearchMode.place, throwOnFailure: true)
           .timeout(const Duration(seconds: 5));
       if (mounted && _query.text.trim() == q) {
         setState(() {
@@ -173,10 +176,12 @@ class _PlacePickerState extends ConsumerState<_PlacePicker> {
     return Padding(
       padding: EdgeInsets.fromLTRB(Spacing.md, 0, Spacing.md, MediaQuery.viewInsetsOf(context).bottom + Spacing.md),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        TextField(
+        AppTextFormField(
           controller: _query,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Search for a place', prefixIcon: Icon(Icons.search_rounded)),
+          label: 'Search for a place',
+          prefixIcon: Icons.search_rounded,
+          textInputAction: TextInputAction.search,
           inputFormatters: [CodePointLengthFormatter(120)],
           onChanged: _onChanged,
         ),

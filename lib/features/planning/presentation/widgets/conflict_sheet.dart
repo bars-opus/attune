@@ -1,4 +1,5 @@
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:gap/gap.dart';
 import 'package:attune/core/widgets/buttons/app_button.dart';
 import 'package:flutter/material.dart';
 
@@ -15,9 +16,9 @@ Future<ConflictChoice?> showConflictSheet(BuildContext context, {required String
           padding: Spacing.pagePadding,
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Text('Your partner just changed this', style: Theme.of(c).textTheme.titleLarge),
-            const SizedBox(height: Spacing.sm),
+            const Gap(Spacing.sm),
             Text('Their version:', style: Theme.of(c).textTheme.labelLarge),
-            const SizedBox(height: Spacing.xs),
+            const Gap(Spacing.xs),
             Container(
               padding: Spacing.allSm,
               decoration: BoxDecoration(
@@ -26,15 +27,15 @@ Future<ConflictChoice?> showConflictSheet(BuildContext context, {required String
               ),
               child: Text(theirs.isEmpty ? '(empty)' : theirs, maxLines: 8, overflow: TextOverflow.ellipsis),
             ),
-            const SizedBox(height: Spacing.lg),
+            const Gap(Spacing.lg),
             AppButton(label: 'Keep mine', onPressed: () => Navigator.pop(c, ConflictChoice.keepMine)),
-            const SizedBox(height: Spacing.sm),
+            const Gap(Spacing.sm),
             AppButton(
               label: 'Use theirs',
               variant: ButtonVariant.outline,
               onPressed: () => Navigator.pop(c, ConflictChoice.useTheirs),
             ),
-            const SizedBox(height: Spacing.sm),
+            const Gap(Spacing.sm),
             AppButton(
               label: 'Copy mine, then use theirs',
               variant: ButtonVariant.text,

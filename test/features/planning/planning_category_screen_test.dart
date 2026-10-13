@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:attune/features/planning/data/planning_models.dart';
 import 'package:attune/features/planning/presentation/screens/planning_category_screen.dart';
 import 'package:attune/features/planning/presentation/screens/planning_entry_screen.dart';
-import 'package:attune/features/planning/presentation/screens/planning_text_editor_screen.dart';
+import 'package:attune/features/planning/presentation/widgets/inline_text_block.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -32,9 +33,11 @@ void main() {
     await tester.pumpWidget(planningTestApp(g, PlanningCategoryScreen(relationshipId: 'r1', category: _cat())));
     await tester.pumpAndSettle();
     expect(find.text('Trip 1'), findsOneWidget);
-    expect(find.text('Mar 3, 2026 · 2 of 5 done'), findsOneWidget);
+    expect(find.textContaining('Mar 3, 2026  2 of 5 done'), findsOneWidget);
     expect(g.callsTo('mark_planning_category_seen'), hasLength(1));
-    expect(find.text('Trip 9'), findsNothing, reason: 'closed entries load only when expanded');
+    expect(find.text('Trip 9'), findsNothing, reason: 'closed entries load only when opened from the menu');
+    await tester.tap(find.byTooltip('Category options'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Done & archived'));
     await tester.pumpAndSettle();
     expect(find.text('Trip 9'), findsOneWidget);
@@ -52,7 +55,7 @@ void main() {
     g.handlers['create_planning_entry'] = (p) => fakeEntryDetailJson(id: p['p_id'] as String, title: 'Bali');
     await tester.pumpWidget(planningTestApp(g, PlanningCategoryScreen(relationshipId: 'r1', category: _cat())));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('New plan'));
+    await tester.tap(find.byTooltip('New plan'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'Bali');
     await tester.pump(); // enterText does not pump; Create enables on rebuild
@@ -70,7 +73,7 @@ void main() {
     g.handlers['create_planning_entry'] = (p) => fakeEntryDetailJson(id: p['p_id'] as String);
     await tester.pumpWidget(planningTestApp(g, PlanningCategoryScreen(relationshipId: 'r1', category: _cat())));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('New plan'));
+    await tester.tap(find.byTooltip('New plan'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'Weekend');
     await tester.pump();
@@ -191,13 +194,15 @@ void main() {
       g.handlers['get_planning_entry'] = (p) => g.handlers['create_planning_entry']!(p);
       await tester.pumpWidget(planningTestApp(g, PlanningCategoryScreen(relationshipId: 'r1', category: notes())));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('New note'));
+      await tester.tap(find.byTooltip('New note'));
       await tester.pumpAndSettle();
       expect(find.text('Use template'), findsNothing);
       final call = g.callsTo('create_planning_entry').single;
       expect(call['p_title'], 'New note');
       expect(call['p_use_template'], isTrue, reason: 'the Notes template is the blank sheet');
-      expect(find.byType(PlanningTextEditorScreen), findsOneWidget);
+      expect(find.byType(InlineTextBlock), findsOneWidget);
+      expect(tester.widget<QuillEditor>(find.byType(QuillEditor)).focusNode.hasFocus, isTrue,
+          reason: 'the note opens ready to type');
     });
 
     FakePlanningGateway noteGateway() {
@@ -217,9 +222,9 @@ void main() {
       final g = noteGateway();
       await tester.pumpWidget(planningTestApp(g, PlanningCategoryScreen(relationshipId: 'r1', category: notes())));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('New note'));
+      await tester.tap(find.byTooltip('New note'));
       await tester.pumpAndSettle();
-      expect(find.byType(PlanningTextEditorScreen), findsOneWidget);
+      expect(find.byType(InlineTextBlock), findsOneWidget);
       await tester.pageBack();
       await tester.pumpAndSettle();
       final created = g.callsTo('create_planning_entry').single['p_id'];
@@ -237,9 +242,9 @@ void main() {
       };
       await tester.pumpWidget(planningTestApp(g, PlanningCategoryScreen(relationshipId: 'r1', category: notes())));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('New note'));
+      await tester.tap(find.byTooltip('New note'));
       await tester.pump(const Duration(milliseconds: 100));
-      await tester.tap(find.text('New note'));
+      await tester.tap(find.byTooltip('New note'));
       await tester.pump(const Duration(milliseconds: 100));
       slow.complete();
       await tester.pumpAndSettle();

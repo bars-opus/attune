@@ -12,6 +12,12 @@ const Curve kSettleCurve = Curves.easeOutBack;
 const Duration kMakeRoomDuration = Duration(milliseconds: 320);
 const Curve kMakeRoomCurve = Curves.easeOutCubic;
 
+/// A list item moving to its new place when the list is re-sorted, filtered
+/// or put back. Emphasized decelerate: it sets off promptly and glides into
+/// place, so the eye can follow each item to where it landed.
+const Duration kReorderDuration = Duration(milliseconds: 320);
+const Curve kReorderCurve = Cubic(0.05, 0.7, 0.1, 1.0);
+
 /// A payload travelling from its source control to the surface that receives
 /// it (for example composer -> message bubble or reaction menu -> bubble).
 /// Long enough for the eye to follow the path, but still below the point at

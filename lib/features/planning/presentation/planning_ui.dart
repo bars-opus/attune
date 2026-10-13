@@ -1,9 +1,18 @@
+import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'package:attune/app/theme/app_colors.dart';
+import 'package:gap/gap.dart';
+import 'package:attune/core/widgets/feedback/export_extensions.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/feedback/confirmation_dialog.dart';
 import 'package:attune/core/widgets/feedback/empty_state.dart';
 import 'package:attune/core/widgets/feedback/error_state.dart';
+import 'package:attune/app/theme/app_theme.dart';
+import 'package:attune/core/utils/bottom_sheet_utils.dart';
+import 'package:attune/core/widgets/bottom_sheet_header.dart';
+import 'package:attune/core/widgets/cupertino_date_time_sheet.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
@@ -60,11 +69,31 @@ ColorScheme _scheme(String token, Brightness brightness) => _schemes.putIfAbsent
   return (container: s.primaryContainer, onContainer: s.onPrimaryContainer);
 }
 
-/// The solid fill behind a category's icon: the colour's primary tone,
-/// strong enough (light and dark) for an icon in the theme's background
-/// colour. Used for the category rows, the gallery ideas and the colour
-/// picker, so a new category looks the way it will on the list.
-Color planningCategoryFill(BuildContext context, String token) => _scheme(token, Theme.of(context).brightness).primary;
+/// The solid fill behind a category's icon, under an icon in the theme's
+/// background colour. Used for the category rows, the gallery ideas and
+/// the colour picker, so a new category looks the way it will on the list.
+///
+/// Dark mode: the colour's primary tone. Light mode: the app colour itself
+/// (bright), deepened toward the primary tone only as far as the white
+/// icon needs to stay readable (3:1) — so orange and amber deepen a
+/// little, the rest stay as they are.
+Color planningCategoryFill(BuildContext context, String token) {
+  final theme = Theme.of(context);
+  final deep = _scheme(token, theme.brightness).primary;
+  if (theme.brightness == Brightness.dark) return deep;
+  final icon = theme.colorScheme.background; // ignore: deprecated_member_use
+  final seed = _seeds[token] ?? LightColors.grey;
+  for (var t = 0.0; t <= 1.0; t += 0.05) {
+    final c = Color.lerp(seed, deep, t)!;
+    if (_contrast(c, icon) >= 3.0) return c;
+  }
+  return deep;
+}
+
+double _contrast(Color a, Color b) {
+  final la = a.computeLuminance(), lb = b.computeLuminance();
+  return (la > lb ? la + 0.05 : lb + 0.05) / (la > lb ? lb + 0.05 : la + 0.05);
+}
 
 const _richTextTokens = ['yellow', 'green', 'blue', 'pink', 'purple'];
 
@@ -89,7 +118,7 @@ Route<T> planningRoute<T>(Widget page) =>
 
 void showPlanningError(BuildContext context, Object error) {
   final e = mapPlanningError(error);
-  ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(planningErrorMessage(e))));
+  context.showErrorSnackbar(planningErrorMessage(e));
   if (e is PlanningUnauthorized) {
     Navigator.of(context).popUntil((r) => r.settings.name != planningRouteName);
   }
@@ -204,52 +233,62 @@ class PlanningNewDot extends StatelessWidget {
       );
 }
 
-/// One labelled field in a dialog. Null when cancelled; blank counts as
-/// cancelled unless [allowEmpty].
+/// Asks for one line of text in the app's sheet ([BottomSheetUtils], with
+/// its header). Done saves; with a [validator], an entry it refuses keeps the
+/// sheet open with the reason under the field. Null when dismissed, or when
+/// left empty unless [allowEmpty].
 Future<String?> askPlanningText(
   BuildContext context, {
   required String title,
   required String label,
   String initial = '',
   int maxLength = 80,
-  String action = 'Save',
   TextInputType? keyboardType,
   String? hint,
   bool allowEmpty = false,
+  String? Function(String value)? validator,
 }) =>
-    showDialog<String>(
+    BottomSheetUtils.showDocumentationBottomSheet<String>(
       context: context,
-      builder: (_) => _PlanningTextDialog(
-          title: title, label: label, initial: initial, maxLength: maxLength, action: action,
-          keyboardType: keyboardType, hint: hint),
+      backgroundColor: Theme.of(context).colorScheme.neutral,
+      widget: _PlanningTextSheet(
+        title: title,
+        label: label,
+        initial: initial,
+        maxLength: maxLength,
+        keyboardType: keyboardType,
+        hint: hint,
+        validator: validator,
+      ),
     ).then((v) => v == null || (v.isEmpty && !allowEmpty) ? null : v);
 
-/// Owns its controller, so it lives exactly as long as the dialog's route
+/// Owns its controller, so it lives exactly as long as the sheet's route
 /// (including the closing animation).
-class _PlanningTextDialog extends StatefulWidget {
-  const _PlanningTextDialog({
+class _PlanningTextSheet extends StatefulWidget {
+  const _PlanningTextSheet({
     required this.title,
     required this.label,
     required this.initial,
     required this.maxLength,
-    required this.action,
     required this.keyboardType,
     required this.hint,
+    required this.validator,
   });
   final String title;
   final String label;
   final String initial;
   final int maxLength;
-  final String action;
   final TextInputType? keyboardType;
   final String? hint;
+  final String? Function(String value)? validator;
 
   @override
-  State<_PlanningTextDialog> createState() => _PlanningTextDialogState();
+  State<_PlanningTextSheet> createState() => _PlanningTextSheetState();
 }
 
-class _PlanningTextDialogState extends State<_PlanningTextDialog> {
+class _PlanningTextSheetState extends State<_PlanningTextSheet> {
   late final _c = TextEditingController(text: widget.initial);
+  String? _error;
 
   @override
   void dispose() {
@@ -257,23 +296,52 @@ class _PlanningTextDialogState extends State<_PlanningTextDialog> {
     super.dispose();
   }
 
+  void _done() {
+    final value = _c.text.trim();
+    final error = value.isEmpty ? null : widget.validator?.call(value);
+    if (error != null) {
+      setState(() => _error = error);
+      return;
+    }
+    popPlanningSheet(context, value);
+  }
+
   @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: Text(widget.title),
-        content: TextField(
-          controller: _c,
-          autofocus: true,
-          keyboardType: widget.keyboardType,
-          decoration: InputDecoration(labelText: widget.label, hintText: widget.hint),
-          inputFormatters: [CodePointLengthFormatter(widget.maxLength)],
-          onSubmitted: (v) => Navigator.pop(context, v.trim()),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, _c.text.trim()), child: Text(widget.action)),
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          BottomSheetHeader(title: widget.title, onPressed: _done),
+          AppTextFormField(
+            controller: _c,
+            autofocus: true,
+            keyboardType: widget.keyboardType ?? TextInputType.text,
+            label: widget.label,
+            labelColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+            hintText: widget.hint,
+            errorText: _error,
+            textInputAction: TextInputAction.done,
+            inputFormatters: [CodePointLengthFormatter(widget.maxLength)],
+            onChanged: (_) {
+              if (_error != null) setState(() => _error = null);
+            },
+            onFieldSubmitted: (_) => _done(),
+          ),
         ],
       );
 }
+
+/// Closes the sheet [context] is in, with [result], once. Done can fire
+/// twice (a double tap, or the keyboard's Done and the header's together);
+/// popping again would close the note underneath instead.
+void popPlanningSheet<T>(BuildContext context, [T? result]) {
+  final route = ModalRoute.of(context);
+  if (route == null || !route.isCurrent) return;
+  Navigator.of(context).pop<T>(result);
+}
+
+/// Why [value] is not a web address Planning can link to; null when it is.
+String? planningUrlError(String value) =>
+    normalizePlanningUrl(value) == null ? 'Enter a web address, like airbnb.com/rooms/1' : null;
 
 /// "villa.example/ubud" -> "https://villa.example/ubud". Null unless the
 /// result is an http(s) address with a dotted host (the server re-checks).
@@ -313,7 +381,7 @@ class PlanningUnavailableScreen extends StatelessWidget {
         body: Center(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Text('Planning unavailable.'),
-            const SizedBox(height: Spacing.sm),
+            const Gap(Spacing.sm),
             TextButton(
               onPressed: () async {
                 if (!await Navigator.of(context).maybePop() && context.mounted) GoRouter.maybeOf(context)?.go('/home');
@@ -323,4 +391,106 @@ class PlanningUnavailableScreen extends StatelessWidget {
           ]),
         ),
       );
+}
+
+/// Apple Notes-style groups by last activity: Today, Yesterday, Previous 7
+/// Days, Previous 30 Days, then month names this year, then years. Groups
+/// come out newest first; plans keep their order within a group.
+List<({String title, List<PlanningEntrySummary> entries})> planningDateSections(
+    List<PlanningEntrySummary> entries, DateTime now) {
+  final today = DateUtils.dateOnly(now);
+  String bucket(DateTime at) {
+    final day = DateUtils.dateOnly(at.toLocal());
+    final days = today.difference(day).inDays;
+    if (days <= 0) return 'Today';
+    if (days == 1) return 'Yesterday';
+    if (days <= 7) return 'Previous 7 Days';
+    if (days <= 30) return 'Previous 30 Days';
+    if (day.year == today.year) return DateFormat.MMMM().format(day);
+    return '${day.year}';
+  }
+
+  final groups = <String, List<PlanningEntrySummary>>{};
+  final newest = <String, DateTime>{};
+  for (final e in entries) {
+    final key = bucket(e.lastActivityAt);
+    (groups[key] ??= []).add(e);
+    final at = e.lastActivityAt;
+    if (newest[key] == null || at.isAfter(newest[key]!)) newest[key] = at;
+  }
+  final keys = groups.keys.toList()..sort((a, b) => newest[b]!.compareTo(newest[a]!));
+  return [for (final k in keys) (title: k, entries: groups[k]!)];
+}
+
+/// The date on a plan row: the time today, "Yesterday", the weekday this
+/// week, else the short date.
+String planningRowDate(DateTime at, DateTime now) {
+  final local = at.toLocal();
+  final days = DateUtils.dateOnly(now).difference(DateUtils.dateOnly(local)).inDays;
+  if (days <= 0) return DateFormat.jm().format(local);
+  if (days == 1) return 'Yesterday';
+  if (days <= 7) return DateFormat.EEEE().format(local);
+  return DateFormat.yMd().format(local);
+}
+
+String planningCategoryHeroTag(String categoryId) => 'planning-category-title-$categoryId';
+
+/// A category's name in an app bar. The category list and the plans in it
+/// both show it, in this one style, so it flies between them (a Hero)
+/// instead of jumping when a plan opens or closes.
+class PlanningCategoryTitle extends StatelessWidget {
+  const PlanningCategoryTitle({super.key, required this.categoryId, required this.name});
+  final String categoryId;
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Hero(
+      tag: planningCategoryHeroTag(categoryId),
+      // Material keeps the text styled while it flies (no underline flash).
+      child: Material(
+        type: MaterialType.transparency,
+        child: Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.8),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Planning's single-date picker: the app's Cupertino wheel, in the app sheet.
+///
+/// Resolves to the date the wheel shows when the sheet closes ([initial], or
+/// today, if it was never turned), so closing it is choosing. [onChanged]
+/// sees every turn, for a row that updates live behind the sheet.
+Future<DateTime> pickPlanningDate(
+  BuildContext context, {
+  DateTime? initial,
+  ValueChanged<DateTime>? onChanged,
+}) async {
+  final now = DateTime.now();
+  var shown = DateUtils.dateOnly(initial ?? now);
+  final min = DateTime(now.year - 5);
+  final max = DateTime(now.year + 10, 12, 31);
+  await showCupertinoDateTimeSheet(
+    context: context,
+    mode: CupertinoDatePickerMode.date,
+    initialDateTime: shown,
+    // A saved date outside the usual window still opens on itself.
+    minimumDate: shown.isBefore(min) ? shown : min,
+    maximumDate: shown.isAfter(max) ? shown : max,
+    sheetHeight: 350.h,
+    onChanged: (d) {
+      shown = DateUtils.dateOnly(d);
+      onChanged?.call(shown);
+    },
+  );
+  return shown;
 }

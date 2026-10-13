@@ -1,3 +1,4 @@
+import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'package:attune/features/location/domain/partner_distance.dart';
 import 'package:attune/features/planning/data/planning_models.dart' show planningYmd;
 import 'package:attune/features/planning/domain/planning_money.dart';
@@ -71,9 +72,13 @@ void main() {
     await tester.pumpWidget(_app(g, _screen));
     await tester.pumpAndSettle();
     expect(find.text('12 days'), findsWidgets, reason: 'the block, and the plan\'s key facts');
-    expect(find.text('Tomorrow'), findsOneWidget);
-    expect(find.text('Today'), findsOneWidget);
+    for (final label in ['Tomorrow', 'Today']) {
+      await tester.scrollUntilVisible(find.text(label), 200, scrollable: _list);
+      expect(find.text(label), findsOneWidget);
+    }
     await tester.scrollUntilVisible(find.text('Pick a date'), 200, scrollable: _list);
+    await tester.ensureVisible(find.text('Pick a date'));
+    await tester.pumpAndSettle();
     expect(find.text('Pick a date'), findsOneWidget);
   });
 
@@ -94,7 +99,7 @@ void main() {
     expect(find.text('1 of 2 done'), findsWidgets);
     await tester.tap(find.text('Add to it'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Amount'), '25.50');
+    await tester.enterText(find.widgetWithText(AppTextFormField, 'Amount'), '25.50');
     await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Add'));
     await tester.pumpAndSettle();
@@ -139,18 +144,18 @@ void main() {
     expect(find.text('Choose a place'), findsOneWidget);
     await tester.tap(find.text('Add link'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Web address'), 'airbnb.com/rooms/1');
-    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.enterText(find.widgetWithText(AppTextFormField, 'Web address'), 'airbnb.com/rooms/1');
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
     expect(g.callsTo('update_planning_block').single['p_payload'],
         {'url': 'https://airbnb.com/rooms/1', 'label': 'Places to stay'});
   });
 
-  testWidgets('the tool tray offers all 13 blocks', (tester) async {
+  testWidgets('Insert offers all 13 blocks', (tester) async {
     final g = FakePlanningGateway({'get_planning_entry': (_) => fakeEntryDetailJson()});
     await tester.pumpWidget(_app(g, _screen));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add block'));
+    await tester.tap(find.text('Insert'));
     await tester.pumpAndSettle();
     for (final label in ['Date poll', 'Countdown', 'Progress', 'Dual clock']) {
       expect(find.text(label), findsOneWidget, reason: label);

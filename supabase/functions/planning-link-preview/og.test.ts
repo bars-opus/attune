@@ -42,3 +42,16 @@ Deno.test("only http(s) images are kept; bad entities do not throw", () => {
   assertEquals(p.imageUrl, null);
   assertEquals(p.title, "&#99999999; &bogus; ok");
 });
+
+Deno.test("a page's own oEmbed link is found, made absolute, and only if http(s)", () => {
+  const p = parsePreview(
+    `<link rel="alternate" type="application/json+oembed" href="/oembed.json?url=https%3A%2F%2Fpin.example%2Fpin%2F1" title="x">`,
+    "https://pin.example/pin/1/",
+  );
+  assertEquals(p.oembedUrl, "https://pin.example/oembed.json?url=https%3A%2F%2Fpin.example%2Fpin%2F1");
+  assertEquals(
+    parsePreview(`<link type="application/json+oembed" rel="alternate" href="javascript:x">`, "https://a.example/").oembedUrl,
+    null,
+  );
+  assertEquals(parsePreview(`<link rel="stylesheet" href="/a.css">`, "https://a.example/").oembedUrl, null);
+});

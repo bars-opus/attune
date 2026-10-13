@@ -74,3 +74,4 @@ export 'package:attune/core/utils/animations/shake_transition.dart';
 export 'package:attune/core/utils/location/widgets/highlight_container.dart';
 export 'package:attune/core/utils/animations/animated_scale_fade.dart';
 export 'package:attune/core/utils/animations/slide_fade_in.dart';
+export 'package:attune/core/widgets/bottom_sheet_header.dart';

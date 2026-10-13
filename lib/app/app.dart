@@ -8,7 +8,16 @@ import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_quill/flutter_quill.dart' show FlutterQuillLocalizations;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+/// The app's translations, plus the rich-text editor's (Planning). Quill's
+/// own dialogs and menus (link, copy/paste) open in overlays outside any
+/// local wrapper, so its translations must be registered app-wide.
+const appLocalizationsDelegates = [
+  ...AppLocalizations.localizationsDelegates,
+  FlutterQuillLocalizations.delegate,
+];
 
 class App extends ConsumerStatefulWidget {
   const App({super.key});
@@ -51,7 +60,7 @@ class _AppState extends ConsumerState<App> {
           darkTheme: AppTheme.darkTheme,
           themeMode: themeMode,
           locale: locale,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          localizationsDelegates: appLocalizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
           builder: (context, child) {

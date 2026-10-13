@@ -1,11 +1,14 @@
 // Extracts a link preview's text from untrusted HTML: og:title (<= 200
-// code points), og:description (<= 500) and og:image. Output is plain
-// text -- markup removed, entities decoded, control characters stripped.
+// code points), og:description (<= 500), og:image, and the page's own
+// oEmbed link if it has one. Output is plain text -- markup removed,
+// entities decoded, control characters stripped.
 
 export interface ParsedPreview {
   title: string | null;
   description: string | null;
   imageUrl: string | null;
+  /// The page's <link rel="alternate" type="application/json+oembed">.
+  oembedUrl: string | null;
 }
 
 const NAMED: Record<string, string> = {
@@ -14,7 +17,7 @@ const NAMED: Record<string, string> = {
   copy: "©", reg: "®", trade: "™",
 };
 
-function decodeEntities(s: string): string {
+export function decodeEntities(s: string): string {
   return s.replace(/&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z]{2,8});/gi, (whole, body: string) => {
     if (body[0] === "#") {
       const cp = body[1] === "x" || body[1] === "X" ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
@@ -25,7 +28,7 @@ function decodeEntities(s: string): string {
   });
 }
 
-function clean(raw: string | undefined, max: number): string | null {
+export function clean(raw: string | undefined, max: number): string | null {
   if (!raw) return null;
   const text = decodeEntities(raw.replace(/<[^>]*>/g, ""))
     .replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/g, " ")
@@ -56,14 +59,15 @@ export function parsePreview(html: string, pageUrl: string): ParsedPreview {
   }
   const titleTag = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1];
 
-  let imageUrl: string | null = null;
-  const rawImage = meta.get("og:image") ?? meta.get("og:image:url") ?? meta.get("twitter:image");
-  if (rawImage) {
-    try {
-      const u = new URL(decodeEntities(rawImage.trim()), pageUrl);
-      if ((u.protocol === "http:" || u.protocol === "https:") && u.href.length <= 2048) imageUrl = u.href;
-    } catch {
-      imageUrl = null;
+  const imageUrl = httpUrl(meta.get("og:image") ?? meta.get("og:image:url") ?? meta.get("twitter:image"), pageUrl);
+
+  let oembedUrl: string | null = null;
+  for (const m of html.matchAll(/<link\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi)) {
+    const a = attributes(m[0]);
+    if ((a.get("type") ?? "").toLowerCase() === "application/json+oembed" &&
+        (a.get("rel") ?? "").toLowerCase().split(/\s+/).includes("alternate")) {
+      oembedUrl = httpUrl(a.get("href"), pageUrl);
+      break;
     }
   }
 
@@ -71,5 +75,17 @@ export function parsePreview(html: string, pageUrl: string): ParsedPreview {
     title: clean(meta.get("og:title") ?? meta.get("twitter:title") ?? titleTag, 200),
     description: clean(meta.get("og:description") ?? meta.get("twitter:description") ?? meta.get("description"), 500),
     imageUrl,
+    oembedUrl,
   };
+}
+
+/// [raw] resolved against [base], if it is an http(s) URL of sane length.
+export function httpUrl(raw: string | undefined, base?: string): string | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(decodeEntities(raw.trim()), base);
+    return (u.protocol === "http:" || u.protocol === "https:") && u.href.length <= 2048 ? u.href : null;
+  } catch {
+    return null;
+  }
 }

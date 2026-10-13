@@ -44,13 +44,13 @@ void main() {
   });
 
   testWidgets('M8: a photo picked as the plan closes still attaches, without an error', (tester) async {
-    final picked = Completer<Uint8List?>();
+    final picked = Completer<PlanningPickedPhotos>();
     final g = FakePlanningGateway({
       'get_planning_entry': (_) => fakeEntryDetailJson(blocks: [fakeBlockJson(id: 'ph', type: 'photo', payload: {'paths': []})]),
       'add_planning_photo': (p) => fakeBlockJson(id: 'ph', type: 'photo', payload: {'paths': [p['p_path']]}, version: 2),
     });
     await tester.pumpWidget(ProviderScope(
-      overrides: [...planningOverrides(g), planningPhotoPickerProvider.overrideWithValue((_) => picked.future)],
+      overrides: [...planningOverrides(g), planningPhotoPickerProvider.overrideWithValue((_, __) => picked.future)],
       child: withScreenUtil(MaterialApp(
         home: Builder(
           builder: (context) => TextButton(
@@ -62,13 +62,13 @@ void main() {
     ));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add photo'));
+    await tester.tap(find.text('Add photos'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Choose from library'));
     await tester.pump(const Duration(milliseconds: 500)); // the busy bar animates while preparing
     await tester.pageBack(); // leave the plan while the photo is being prepared
     await tester.pump(const Duration(seconds: 1));
-    picked.complete(Uint8List.fromList([0xff, 0xd8, 0xff]));
+    picked.complete((photos: [Uint8List.fromList([0xff, 0xd8, 0xff])], rejected: 0));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(g.callsTo('add_planning_photo'), hasLength(1));

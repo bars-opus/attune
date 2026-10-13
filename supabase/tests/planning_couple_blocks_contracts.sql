@@ -207,8 +207,20 @@ BEGIN
 
   -- Contract 11: gallery templates make a ready category.
   IF NOT (SELECT bool_and(k IN (SELECT g ->> 'key' FROM jsonb_array_elements(public.list_planning_gallery()) g))
-          FROM unnest(ARRAY['next_visit','diet','wishlist','moving_house','wedding','baby']) k) THEN
+          FROM unnest(ARRAY['next_visit','moving_house','wedding','baby']) k) THEN
     RAISE EXCEPTION 'EXPLOIT: gallery incomplete: %', public.list_planning_gallery();
+  END IF;
+  -- Wishlist and Diet are starters now, so the gallery no longer offers them.
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(public.list_planning_gallery()) g WHERE g ->> 'key' IN ('wishlist','diet')) THEN
+    RAISE EXCEPTION 'EXPLOIT: a starter is still offered in the gallery';
+  END IF;
+  SELECT array_to_string(array_agg(b.block_type ORDER BY b.sort_key), ',') INTO v_t
+  FROM public.planning_blocks b JOIN public.planning_entries e ON e.id = b.entry_id
+  JOIN public.planning_categories c ON c.id = e.category_id
+  WHERE c.relationship_id = v_rel AND c.seed_key = 'diet' AND e.is_template AND b.deleted_at IS NULL;
+  IF v_t IS DISTINCT FROM 'table,checklist,progress' THEN RAISE EXCEPTION 'EXPLOIT: diet starter is %', v_t; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.planning_categories WHERE relationship_id = v_rel AND seed_key = 'wishlist' AND name = 'Wishlist') THEN
+    RAISE EXCEPTION 'EXPLOIT: wishlist starter missing';
   END IF;
   v_r := public.create_planning_category_from_gallery(v_cat, v_rel, 'next_visit');
   v_r := public.create_planning_category_from_gallery(v_cat, v_rel, 'next_visit');  -- retry: idempotent

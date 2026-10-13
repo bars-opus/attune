@@ -264,6 +264,26 @@ class AppTextFormField extends StatefulWidget {
   /// obvious next action (e.g. "what should we call you?").
   final bool autofocus;
 
+  /// How the keyboard capitalizes typed text. Defaults to none.
+  final TextCapitalization textCapitalization;
+
+  /// Text shown after the input, such as a currency code.
+  final String? suffixText;
+
+  /// A hint shown under the field while there is no error.
+  final String? helperText;
+
+  /// Builds a custom counter under the field, for limits [maxLength] can't
+  /// express (such as counting code points rather than UTF-16 units).
+  final InputCounterWidgetBuilder? buildCounter;
+
+  /// Space around the label above the field, such as an indent to line it
+  /// up with the text inside the box. None by default.
+  final EdgeInsetsGeometry? labelPadding;
+
+  /// The label's colour. Defaults to the theme's onSurface.
+  final Color? labelColor;
+
   /// Creates a comprehensive text form field with extensive customization.
   ///
   /// [label] is required. All other parameters have sensible defaults following
@@ -304,6 +324,12 @@ class AppTextFormField extends StatefulWidget {
     this.onDebouncedChanged,
     this.debounceDuration = const Duration(milliseconds: 500),
     this.autofocus = false,
+    this.textCapitalization = TextCapitalization.none,
+    this.suffixText,
+    this.helperText,
+    this.buildCounter,
+    this.labelPadding,
+    this.labelColor,
   });
 
   @override
@@ -450,14 +476,17 @@ class _AppTextFormFieldState extends State<AppTextFormField> {
           // fields like ChatTextField) — skip reserving a blank Text row
           // and its Gap for those, rather than showing invisible spacing.
           if (widget.label.isNotEmpty) ...[
-            Text(
-              widget.label,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w500,
-                color: colorScheme.onSurface,
-                fontSize:
-                    widget.labelFontSize ??
-                    (widget.isSmall ? 12.safeSp : 14.safeSp),
+            Padding(
+              padding: widget.labelPadding ?? EdgeInsets.zero,
+              child: Text(
+                widget.label,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
+                  color: widget.labelColor ?? colorScheme.onSurface,
+                  fontSize:
+                      widget.labelFontSize ??
+                      (widget.isSmall ? 12.safeSp : 14.safeSp),
+                ),
               ),
             ),
             Gap(Spacing.xs.safeH),
@@ -485,6 +514,8 @@ class _AppTextFormFieldState extends State<AppTextFormField> {
       controller: _controller,
       focusNode: _effectiveFocusNode,
       autofocus: widget.autofocus,
+      textCapitalization: widget.textCapitalization,
+      buildCounter: widget.buildCounter,
       keyboardType: widget.keyboardType,
       textInputAction: widget.textInputAction,
       obscureText: widget.obscureText,
@@ -521,6 +552,9 @@ class _AppTextFormFieldState extends State<AppTextFormField> {
                 )
                 : null,
         suffixIcon: widget.suffixIcon,
+        suffixText: widget.suffixText,
+        helperText: widget.helperText,
+        helperStyle: theme.textTheme.bodySmall?.copyWith(fontSize: 12.safeSp),
         filled: true,
         fillColor:
             widget.fillColor ??
