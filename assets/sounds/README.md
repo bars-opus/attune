@@ -30,6 +30,19 @@ cultural/clinical sound review as the chat clips.
 | `game_knockout.wav` | Paint Ball final life |
 | `game_penalty_reveal.wav` | losing partner sees their prompt |
 
+**Wiring note (2026-10-14).** `game_hit`, `game_miss` and `game_knockout` were
+generated and mapped here but played by no code at all, so the game's loudest
+moment was silent. They are now played from
+`paint_ball_provider.dart` via `paintBallRoundCue`, which also decides the
+precedence: a knockout outranks the hit that caused it, and an opening shot
+plays the miss cue because it resolves nothing.
+
+The synthesis itself is better than earlier notes implied -- the generator
+produces frequency-swept chirps, damped noise bursts, layered partials and
+attack/release envelopes, not sine tones. **The cultural/clinical review gate
+below still applies**: these are restrained placeholders, and nothing here
+claims they have been reviewed.
+
 ## Streak sounds
 
 Generated with `dart run tool/generate_streak_sounds.dart`. Capture gestures
