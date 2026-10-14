@@ -1,3 +1,5 @@
+import 'package:attune/core/widgets/card_inkwell.dart';
+import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/timeline/presentation/widgets/upcoming_reminders_section.dart';
 import 'package:flutter/material.dart';
@@ -38,16 +40,19 @@ void main() {
       expect(result, DateTime(2026, 9, 15));
     });
 
-    test('yearly reminder not yet passed this year returns this year\'s date', () {
-      final reminder = _reminder(
-        id: 'r2',
-        title: 'Anniversary',
-        remindAt: DateTime(2020, 12, 25),
-        recurrence: 'yearly',
-      );
-      final result = nextOccurrence(reminder, now: DateTime(2026, 8, 28));
-      expect(result, DateTime(2026, 12, 25));
-    });
+    test(
+      'yearly reminder not yet passed this year returns this year\'s date',
+      () {
+        final reminder = _reminder(
+          id: 'r2',
+          title: 'Anniversary',
+          remindAt: DateTime(2020, 12, 25),
+          recurrence: 'yearly',
+        );
+        final result = nextOccurrence(reminder, now: DateTime(2026, 8, 28));
+        expect(result, DateTime(2026, 12, 25));
+      },
+    );
 
     test('yearly reminder already passed this year rolls to next year', () {
       final reminder = _reminder(
@@ -79,19 +84,16 @@ void main() {
       },
     );
 
-    test(
-      'a Feb 29 yearly reminder fires on Feb 29 in a leap year',
-      () {
-        final reminder = _reminder(
-          id: 'r5',
-          title: 'Leap day anniversary',
-          remindAt: DateTime(2024, 2, 29),
-          recurrence: 'yearly',
-        );
-        final result = nextOccurrence(reminder, now: DateTime(2028, 1, 1));
-        expect(result, DateTime(2028, 2, 29)); // 2028 is a leap year
-      },
-    );
+    test('a Feb 29 yearly reminder fires on Feb 29 in a leap year', () {
+      final reminder = _reminder(
+        id: 'r5',
+        title: 'Leap day anniversary',
+        remindAt: DateTime(2024, 2, 29),
+        recurrence: 'yearly',
+      );
+      final result = nextOccurrence(reminder, now: DateTime(2028, 1, 1));
+      expect(result, DateTime(2028, 2, 29)); // 2028 is a leap year
+    });
   });
 
   group('upcomingReminders', () {
@@ -116,18 +118,21 @@ void main() {
       expect(result.map((r) => r.id), ['r1']);
     });
 
-    test('keeps a yearly reminder whose remindAt year is in the past, using rolled-forward date', () {
-      final reminders = [
-        _reminder(
-          id: 'r1',
-          title: 'Anniversary',
-          remindAt: DateTime(2020, 10, 25),
-          recurrence: 'yearly',
-        ),
-      ];
-      final result = upcomingReminders(reminders, now: DateTime(2026, 8, 28));
-      expect(result.map((r) => r.id), ['r1']);
-    });
+    test(
+      'keeps a yearly reminder whose remindAt year is in the past, using rolled-forward date',
+      () {
+        final reminders = [
+          _reminder(
+            id: 'r1',
+            title: 'Anniversary',
+            remindAt: DateTime(2020, 10, 25),
+            recurrence: 'yearly',
+          ),
+        ];
+        final result = upcomingReminders(reminders, now: DateTime(2026, 8, 28));
+        expect(result.map((r) => r.id), ['r1']);
+      },
+    );
 
     test('empty input yields empty output', () {
       expect(upcomingReminders(const [], now: DateTime(2026, 8, 28)), isEmpty);
@@ -205,9 +210,51 @@ void main() {
       expect(find.text('Today'), findsOneWidget);
     });
 
-    testWidgets('renders nothing when reminders list is empty', (
-      tester,
-    ) async {
+    testWidgets(
+      'lays out like Planning: an Upcoming title over one card holding the rows',
+      (tester) async {
+        final now = DateTime.now();
+        await pump(
+          tester,
+          UpcomingRemindersSection(
+            reminders: [
+              _reminder(id: 'r1', title: 'First', remindAt: now),
+              _reminder(
+                id: 'r2',
+                title: 'Second',
+                remindAt: now.add(const Duration(days: 3)),
+              ),
+            ],
+            onReminderTap: null,
+          ),
+        );
+
+        expect(find.text('Upcoming'), findsOneWidget);
+        final card = find.byType(CardInkWell);
+        expect(card, findsOneWidget, reason: 'one card for the whole list');
+        expect(
+          tester.getTopLeft(find.text('Upcoming')).dy,
+          lessThan(tester.getTopLeft(card).dy),
+        );
+        final rows =
+            tester
+                .widgetList<InfoRowWidget>(
+                  find.descendant(
+                    of: card,
+                    matching: find.byType(InfoRowWidget),
+                  ),
+                )
+                .toList();
+        expect(rows.map((r) => r.title), ['First', 'Second']);
+        expect(
+          rows.map((r) => r.showDivider),
+          [true, false],
+          reason: 'a divider between rows, none under the last',
+        );
+      },
+    );
+
+    testWidgets('renders nothing when reminders list is empty', (tester) async {
       await pump(
         tester,
         const UpcomingRemindersSection(reminders: [], onReminderTap: null),
@@ -265,26 +312,25 @@ void main() {
       expect(soonerCenter.dy, lessThan(laterCenter.dy));
     });
 
-    testWidgets(
-      'renders nothing when the only reminder is a past one-off',
-      (tester) async {
-        final pastReminder = _reminder(
-          id: 'r1',
-          title: 'Past one-off',
-          remindAt: DateTime.now().subtract(const Duration(days: 42)),
-        );
-        await pump(
-          tester,
-          UpcomingRemindersSection(
-            reminders: [pastReminder],
-            onReminderTap: null,
-          ),
-        );
+    testWidgets('renders nothing when the only reminder is a past one-off', (
+      tester,
+    ) async {
+      final pastReminder = _reminder(
+        id: 'r1',
+        title: 'Past one-off',
+        remindAt: DateTime.now().subtract(const Duration(days: 42)),
+      );
+      await pump(
+        tester,
+        UpcomingRemindersSection(
+          reminders: [pastReminder],
+          onReminderTap: null,
+        ),
+      );
 
-        expect(find.text('Past one-off'), findsNothing);
-        expect(find.byType(ListView), findsNothing);
-      },
-    );
+      expect(find.text('Past one-off'), findsNothing);
+      expect(find.byType(ListView), findsNothing);
+    });
 
     testWidgets(
       'excludes a past one-off reminder while still showing a future one',

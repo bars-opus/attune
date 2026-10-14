@@ -104,38 +104,69 @@ class UpcomingRemindersSection extends StatelessWidget {
     final sorted = [...filtered]
       ..sort((a, b) => nextOccurrence(a).compareTo(nextOccurrence(b)));
 
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: sorted.length,
-      itemBuilder: (context, index) {
-        final reminder = sorted[index];
-        return CardInkWell(
-          margin: EdgeInsets.only(bottom: Spacing.sm.h),
-
-          child: InfoRowWidget(
-            iconColor: colorScheme.onBackground.withOpacity(.3),
-            subtitle: _countdownLabel(nextOccurrence(reminder)),
-            title: reminder.title,
-            icon:
-                reminder.isRecurring
-                    ? FontAwesomeIcons.repeat
-                    : Icons.event_outlined,
-            iconSize: 20.h,
-            onTap:
-                onReminderTap == null ? null : () => onReminderTap!(reminder),
-
-            showAvatar: false,
-            showDivider: false,
-            showTrailingArrow: false,
-            trailing: Icon(
-              color: colorScheme.primary,
-              FontAwesomeIcons.birthdayCake,
-              size: 25.h,
+    final theme = Theme.of(context);
+    // Laid out like Planning's lists: a section title, then one card
+    // holding the rows, divided between rows but not under the last.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            Spacing.lg,
+            Spacing.md,
+            Spacing.lg,
+            0,
+          ),
+          child: Text(
+            'Upcoming',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface.withValues(alpha: 0.8),
             ),
           ),
-        );
-      },
+        ),
+        Padding(
+          padding: Spacing.allMd,
+          child: CardInkWell(
+            margin: EdgeInsets.zero,
+            child: Column(
+              children: [
+                for (var i = 0; i < sorted.length; i++)
+                  _row(context, sorted[i], last: i == sorted.length - 1),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _row(
+    BuildContext context,
+    ReminderModel reminder, {
+    required bool last,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return InfoRowWidget(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Spacing.md,
+        vertical: Spacing.xs,
+      ),
+      iconColor: colorScheme.onBackground.withOpacity(.3),
+      subtitle: _countdownLabel(nextOccurrence(reminder)),
+      title: reminder.title,
+      icon:
+          reminder.isRecurring ? FontAwesomeIcons.repeat : Icons.event_outlined,
+      iconSize: 20.h,
+      onTap: onReminderTap == null ? null : () => onReminderTap!(reminder),
+      showAvatar: false,
+      showDivider: !last,
+      showTrailingArrow: false,
+      trailing: Icon(
+        color: colorScheme.primary,
+        FontAwesomeIcons.birthdayCake,
+        size: 25.h,
+      ),
     );
   }
 }

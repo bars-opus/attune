@@ -139,7 +139,7 @@ void main() {
     expect(find.widgetWithText(BottomSheetHeader, 'Row 2'), findsOneWidget);
     final scheme = Theme.of(tester.element(find.byType(BottomSheet))).colorScheme;
     expect(tester.widget<BottomSheet>(find.byType(BottomSheet)).backgroundColor, scheme.neutral);
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Add row'));
@@ -161,17 +161,18 @@ void main() {
             ]),
       });
 
-  testWidgets('row editor: Done in the header saves the row; there is no Save button', (tester) async {
+  testWidgets('row editor: Save in the header saves the row; no separate button', (tester) async {
     final g = priced();
     g.handlers['save_planning_rich_item'] = (p) => {...fakeItemJson(id: 'r1'), 'cells': (p['p_fields'] as Map)['cells']};
     await tester.pumpWidget(planningTestApp(g, _screen));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Mon'));
     await tester.pumpAndSettle();
-    expect(find.descendant(of: find.byType(BottomSheet), matching: find.text('Save')), findsNothing);
+    expect(find.descendant(of: find.byType(BottomSheet), matching: find.text('Save')), findsOneWidget,
+        reason: "only the header's Save; no separate button");
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Day'), 'Wed');
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Cost'), '12.50');
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsNothing);
     final cells = (g.callsTo('save_planning_rich_item').single['p_fields'] as Map)['cells'] as Map;
@@ -187,13 +188,13 @@ void main() {
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Cost'), '1.2.3');
     await tester.pump();
     expect(find.text('Enter an amount like 500'), findsOneWidget);
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsOneWidget, reason: 'nothing lost');
     expect(g.callsTo('save_planning_rich_item'), isEmpty);
   });
 
-  testWidgets('columns sheet: an untitled header whose Done saves; no Save button', (tester) async {
+  testWidgets('columns sheet: an untitled header whose Save saves; no separate button', (tester) async {
     final g = _gateway();
     g.handlers['update_planning_block'] = (p) => fakeBlockJson(id: 't', type: 'table', payload: p['p_payload'] as Map<String, dynamic>, version: 2);
     await tester.pumpWidget(planningTestApp(g, _screen));
@@ -202,9 +203,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.widget<BottomSheetHeader>(find.byType(BottomSheetHeader)).title, isEmpty,
         reason: 'the fields are already labelled Column 1, Column 2…');
-    expect(find.descendant(of: find.byType(BottomSheet), matching: find.text('Save')), findsNothing);
+    expect(find.descendant(of: find.byType(BottomSheet), matching: find.text('Save')), findsOneWidget,
+        reason: "only the header's Save; no separate button");
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Column 1'), 'Weekday');
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsNothing);
     final cols = (g.callsTo('update_planning_block').single['p_payload'] as Map)['columns'] as List;
@@ -218,7 +220,7 @@ void main() {
     await tester.tap(find.byTooltip('Edit columns'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Column 1'), '  ');
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsOneWidget);
     expect(find.text('Name this column'), findsOneWidget);
@@ -255,7 +257,7 @@ void main() {
     await tester.tap(find.text('Mon'));
     await tester.pumpAndSettle();
     expect(indent('Day'), Spacing.lg);
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Edit columns'));
@@ -275,7 +277,7 @@ void main() {
     await tester.tap(find.text('Mon'));
     await tester.pumpAndSettle();
     expect(colour('Day'), soft);
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Edit columns'));
     await tester.pumpAndSettle();

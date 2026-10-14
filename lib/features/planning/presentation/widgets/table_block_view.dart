@@ -464,6 +464,7 @@ class _RowEditorState extends State<_RowEditor> {
           // Stays put while the fields scroll. Done saves; an unreadable entry
           // keeps the sheet open and its field says why.
           BottomSheetHeader(
+            actionLabel: 'Save',
             title: widget.title,
             onPressed: () {
               final collected = _collect();
@@ -631,7 +632,7 @@ class _ColumnsEditorState extends State<_ColumnsEditor> {
         children: [
           // Stays put while the columns scroll. Done saves.
           // No title: each field is already labelled Column 1, Column 2…
-          BottomSheetHeader(title: '', onPressed: _done),
+          BottomSheetHeader(title: '', actionLabel: 'Save', onPressed: _done),
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(

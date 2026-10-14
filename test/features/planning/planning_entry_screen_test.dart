@@ -153,7 +153,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tapAt(const Offset(20, 20)); // close the wheel without turning it: today
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     final now = DateTime.now();
     final ymd = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';

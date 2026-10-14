@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_planning_gateway.dart';
 import 'support/planning_test_app.dart';
+import '../../helpers/info_row_value.dart';
 
 const _screen = PlanningEntryScreen(relationshipId: 'r1', entryId: 'e1');
 
@@ -95,10 +96,10 @@ void main() {
     await choose(tester, 'Paid by Ama');
     expect(shown(tester), ['Hotel', 'Dinner']);
     expect(find.text('Paid by Ama'), findsWidgets, reason: 'the totals say whose they are');
-    expect(find.text('Total ${formatPlanningMoney(28000, 'GHS')}'), findsOneWidget, reason: "the total is just Ama's");
+    expect(infoRowValue(tester, 'Total'), formatPlanningMoney(28000, 'GHS'), reason: "the total is just Ama's");
     await choose(tester, 'Paid by anyone');
     expect(shown(tester), ['Hotel', 'Dinner', 'Taxi']);
-    expect(find.textContaining('Total '), findsOneWidget);
+    expect(infoRowValue(tester, 'Total'), isNotNull);
   });
 
   testWidgets('sorting glides the lines to their new places rather than jumping', (tester) async {

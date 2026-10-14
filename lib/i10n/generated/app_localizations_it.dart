@@ -660,40 +660,28 @@ class AppLocalizationsIt extends AppLocalizations {
   String get loadingDefaultMessage => 'Caricamento...';
 
   @override
-  String emptyStateNoDataTitle(String dataType) {
-    return 'Nessun $dataType ancora';
-  }
+  String get emptyStateNoDataTitle => 'Ancora niente qui';
 
   @override
-  String emptyStateNoDataSubtitle(String dataType) {
-    return 'Quando $dataType sarà disponibile, appariranno qui.';
-  }
+  String get emptyStateNoDataSubtitle => 'Quando ci sarà qualcosa da mostrare, apparirà qui.';
 
   @override
-  String get emptyStateNoResultsTitle => 'Nessun risultato trovato';
+  String get emptyStateNoResultsTitle => 'Nessuna corrispondenza';
 
   @override
-  String emptyStateNoResultsSubtitle(String dataType) {
-    return 'Prova ad aggiustare la tua ricerca o filtri per trovare $dataType.';
-  }
+  String get emptyStateNoResultsSubtitle => 'Prova con un\'altra parola o un altro filtro.';
 
   @override
-  String get emptyStateNoInternetTitle => 'Nessuna connessione internet';
+  String get emptyStateNoInternetTitle => 'Sei offline';
 
   @override
   String get emptyStateNoInternetSubtitle => 'Controlla la tua connessione e riprova.';
 
   @override
-  String get emptyStateNoFavoritesTitle => 'Nessun preferito ancora';
+  String get emptyStateNoMessagesTitle => 'Ancora nessun messaggio';
 
   @override
-  String get emptyStateNoFavoritesSubtitle => 'Inizia ad aggiungere elementi alla tua lista dei preferiti.';
-
-  @override
-  String get emptyStateNoMessagesTitle => 'Nessun messaggio';
-
-  @override
-  String get emptyStateNoMessagesSubtitle => 'Avvia una conversazione per vedere i messaggi qui.';
+  String get emptyStateNoMessagesSubtitle => 'Saluta per iniziare la vostra conversazione.';
 
   @override
   String get emptyStateRefresh => 'Aggiorna';
@@ -705,10 +693,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get emptyStateRetry => 'Riprova';
 
   @override
-  String get emptyStateExplore => 'Esplora';
-
-  @override
-  String get emptyStateStartChat => 'Avvia chat';
+  String get emptyStateStartChat => 'Saluta';
 
   @override
   String get errorNetworkTitle => 'Errore di connessione';
@@ -772,48 +757,6 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get errorContactSupport => 'Contatta supporto';
-
-  @override
-  String get dataTypeUsers => 'utenti';
-
-  @override
-  String get dataTypeUser => 'utente';
-
-  @override
-  String get dataTypeProducts => 'prodotti';
-
-  @override
-  String get dataTypeProduct => 'prodotto';
-
-  @override
-  String get dataTypeOrders => 'ordini';
-
-  @override
-  String get dataTypeOrder => 'ordine';
-
-  @override
-  String get dataTypeMessages => 'messaggi';
-
-  @override
-  String get dataTypeMessage => 'messaggio';
-
-  @override
-  String get dataTypeFavorites => 'preferiti';
-
-  @override
-  String get dataTypeFavorite => 'preferito';
-
-  @override
-  String get dataTypeData => 'dati';
-
-  @override
-  String get dataTypeContent => 'contenuto';
-
-  @override
-  String get dataTypeItems => 'elementi';
-
-  @override
-  String get dataTypeItem => 'elemento';
 
   @override
   String get eulaTitle => 'Contratto di Licenza per l\'Utente Finale';

@@ -1,14 +1,21 @@
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 
+/// The kinds of empty screen Attune shows. Each has its own icon and
+/// wording (translated); [custom] takes the caller's.
 enum EmptyStateType {
+  /// A list or screen with nothing in it yet.
   noData,
+
+  /// A search or filter that matched nothing.
   noResults,
+
+  /// No connection.
   noInternet,
-  noFavorites,
+
+  /// A conversation with no messages yet.
   noMessages,
-  noShops,
-  noWorker,
+
+  /// The caller's own icon and wording.
   custom,
 }
 
@@ -58,7 +65,8 @@ class EmptyStateWidget extends StatelessWidget {
           if (customIllustration != null) ...[
             customIllustration!,
             Gap(compact ? Spacing.lg.h : Spacing.xxl.h),
-          ] else if (config.$1 != null) ...[
+          ] else if ((icon ?? config.$1) != null) ...[
+            // A caller's icon shows for any type, custom included.
             Icon(
               icon ?? config.$1,
               size: compact ? 30.r : 50.r,
@@ -127,56 +135,33 @@ class EmptyStateWidget extends StatelessWidget {
       case EmptyStateType.noData:
         return (
           Icons.inbox_outlined,
-          loc?.emptyStateNoDataTitle(loc.dataTypeData) ?? 'No data yet',
-          loc?.emptyStateNoDataSubtitle(loc.dataTypeData) ??
-              'When data becomes available, it will appear here.',
+          loc?.emptyStateNoDataTitle ?? 'Nothing here yet',
+          loc?.emptyStateNoDataSubtitle ??
+              "When there's something to show, it'll appear here.",
           loc?.emptyStateRefresh ?? 'Refresh',
         );
       case EmptyStateType.noResults:
         return (
           Icons.search_off_outlined,
-          loc?.emptyStateNoResultsTitle ?? 'No results found',
-          loc?.emptyStateNoResultsSubtitle(loc.dataTypeItems) ??
-              'Try adjusting your search or filters to find items.',
+          loc?.emptyStateNoResultsTitle ?? 'No matches',
+          loc?.emptyStateNoResultsSubtitle ?? 'Try a different word or filter.',
           loc?.emptyStateClearFilters ?? 'Clear filters',
         );
       case EmptyStateType.noInternet:
         return (
           Icons.wifi_off_outlined,
-          loc?.emptyStateNoInternetTitle ?? 'No internet connection',
+          loc?.emptyStateNoInternetTitle ?? "You're offline",
           loc?.emptyStateNoInternetSubtitle ??
               'Check your connection and try again.',
           loc?.emptyStateRetry ?? 'Try again',
         );
-      case EmptyStateType.noFavorites:
-        return (
-          Icons.favorite_border_outlined,
-          loc?.emptyStateNoFavoritesTitle ?? 'No favorites yet',
-          loc?.emptyStateNoFavoritesSubtitle ??
-              'Start adding items to your favorites list.',
-          loc?.emptyStateExplore ?? 'Explore',
-        );
       case EmptyStateType.noMessages:
         return (
           Icons.forum_outlined,
-          loc?.emptyStateNoMessagesTitle ?? 'No messages',
+          loc?.emptyStateNoMessagesTitle ?? 'No messages yet',
           loc?.emptyStateNoMessagesSubtitle ??
-              'Start a conversation to see messages here.',
-          loc?.emptyStateStartChat ?? 'Start chat',
-        );
-      case EmptyStateType.noShops:
-        return (
-          Icons.storefront_rounded,
-          'No shops found',
-          'Try expanding your search or change location.',
-          null,
-        );
-      case EmptyStateType.noWorker:
-        return (
-          FontAwesomeIcons.hands,
-          'No worker selection needed',
-          'Continue to Time Selection.',
-          null,
+              'Say hello to start your conversation.',
+          loc?.emptyStateStartChat ?? 'Say hello',
         );
       case EmptyStateType.custom:
         return (null, null, null, null);

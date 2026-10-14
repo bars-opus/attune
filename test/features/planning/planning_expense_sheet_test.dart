@@ -36,7 +36,7 @@ void main() {
 
     await tester.enterText(find.widgetWithText(AppTextFormField, 'What for'), 'Taxi');
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Amount'), '12.50');
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheetHeader), findsNothing, reason: 'closed once saved');
     expect(g.callsTo('save_planning_rich_item').single['p_fields']['amount_minor'], 1250);
@@ -45,7 +45,7 @@ void main() {
   testWidgets('Done with something missing keeps the sheet and says what', (tester) async {
     final g = _gateway();
     await _open(tester, g);
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheetHeader), findsOneWidget, reason: 'still open');
     expect(find.text('Say what it was for'), findsOneWidget);
@@ -73,5 +73,24 @@ void main() {
       final text = find.descendant(of: find.widgetWithText(AppTextFormField, label), matching: find.text(label));
       expect(tester.widget<Text>(text).style?.color, soft, reason: label);
     }
+  });
+
+  testWidgets('Paid by is a segmented choice, like the checklist and new-plan sheets', (tester) async {
+    final g = _gateway();
+    await _open(tester, g);
+    expect(find.byType(ChoiceChip), findsNothing);
+    final picker = find.byType(SegmentedButton<String>);
+    expect(picker, findsOneWidget);
+    expect(find.descendant(of: picker, matching: find.text('Me')), findsOneWidget);
+    expect(find.descendant(of: picker, matching: find.text('Kofi')), findsOneWidget);
+    expect(tester.widget<SegmentedButton<String>>(picker).selected, {'u-a'}, reason: 'me by default');
+
+    await tester.tap(find.descendant(of: picker, matching: find.text('Kofi')));
+    await tester.pump();
+    await tester.enterText(find.widgetWithText(AppTextFormField, 'What for'), 'Taxi');
+    await tester.enterText(find.widgetWithText(AppTextFormField, 'Amount'), '12.50');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(g.callsTo('save_planning_rich_item').single['p_fields']['paid_by'], 'u-b');
   });
 }

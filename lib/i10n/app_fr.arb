@@ -394,54 +394,24 @@
 
   "loadingDefaultMessage": "Chargement...",
   
-  "emptyStateNoDataTitle": "Aucun(e) {dataType} pour le moment",
-  "@emptyStateNoDataTitle": {
-    "description": "Titre affiché lorsqu'aucune donnée d'un type spécifique n'est disponible",
-    "placeholders": {
-      "dataType": {
-        "type": "String",
-        "example": "utilisateurs"
-      }
-    }
-  },
+  "emptyStateNoDataTitle": "Rien ici pour le moment",
   
-  "emptyStateNoDataSubtitle": "Lorsque {dataType} sera disponible, ils/elles apparaîtront ici.",
-  "@emptyStateNoDataSubtitle": {
-    "description": "Sous-titre expliquant quand les données apparaîtront",
-    "placeholders": {
-      "dataType": {
-        "type": "String", 
-        "example": "utilisateurs"
-      }
-    }
-  },
+  "emptyStateNoDataSubtitle": "Dès qu'il y aura quelque chose à afficher, cela apparaîtra ici.",
   
-  "emptyStateNoResultsTitle": "Aucun résultat trouvé",
-  "emptyStateNoResultsSubtitle": "Essayez d'ajuster votre recherche ou vos filtres pour trouver {dataType}.",
-  "@emptyStateNoResultsSubtitle": {
-    "description": "Indice pour trouver un type de donnée spécifique",
-    "placeholders": {
-      "dataType": {
-        "type": "String",
-        "example": "produits"
-      }
-    }
-  },
+  "emptyStateNoResultsTitle": "Aucune correspondance",
+  "emptyStateNoResultsSubtitle": "Essayez un autre mot ou un autre filtre.",
   
-  "emptyStateNoInternetTitle": "Pas de connexion internet",
+  "emptyStateNoInternetTitle": "Vous êtes hors ligne",
   "emptyStateNoInternetSubtitle": "Vérifiez votre connexion et réessayez.",
   
-  "emptyStateNoFavoritesTitle": "Aucun favori pour le moment",
-  "emptyStateNoFavoritesSubtitle": "Commencez à ajouter des éléments à votre liste de favoris.",
   
-  "emptyStateNoMessagesTitle": "Aucun message",
-  "emptyStateNoMessagesSubtitle": "Démarrez une conversation pour voir des messages ici.",
+  "emptyStateNoMessagesTitle": "Pas encore de messages",
+  "emptyStateNoMessagesSubtitle": "Dites bonjour pour commencer votre conversation.",
   
   "emptyStateRefresh": "Actualiser",
   "emptyStateClearFilters": "Effacer les filtres",
   "emptyStateRetry": "Réessayer",
-  "emptyStateExplore": "Explorer",
-  "emptyStateStartChat": "Démarrer le chat",
+  "emptyStateStartChat": "Dire bonjour",
   
 
   
@@ -500,20 +470,6 @@
   
 
   
-  "dataTypeUsers": "utilisateurs",
-  "dataTypeUser": "utilisateur",
-  "dataTypeProducts": "produits",
-  "dataTypeProduct": "produit",
-  "dataTypeOrders": "commandes",
-  "dataTypeOrder": "commande",
-  "dataTypeMessages": "messages",
-  "dataTypeMessage": "message",
-  "dataTypeFavorites": "favoris",
-  "dataTypeFavorite": "favori",
-  "dataTypeData": "données",
-  "dataTypeContent": "contenu",
-  "dataTypeItems": "éléments",
-  "dataTypeItem": "élément",
 
 
 

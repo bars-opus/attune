@@ -108,11 +108,11 @@ void main() {
       await tester.enterText(find.widgetWithText(AppTextFormField, 'What for'), 'Taxi');
       await tester.enterText(find.widgetWithText(AppTextFormField, 'Amount'), '12');
       await tester.pump();
-      await tester.tap(find.text('Done'));
+      await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(AppTextFormField, 'What for'), findsOneWidget, reason: 'the sheet stays open with what was typed');
       expect(find.text('Taxi'), findsWidgets);
-      await tester.tap(find.text('Done'));
+      await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       final ids = [for (final c in g.callsTo('save_planning_rich_item')) c['p_id']];
       expect(ids, hasLength(2));

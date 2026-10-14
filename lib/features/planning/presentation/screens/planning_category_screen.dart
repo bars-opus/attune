@@ -1,11 +1,12 @@
-import 'package:attune/core/widgets/dismiss_keyboard_on_tap.dart';
+import 'package:attune/core/widgets/bottom_sheet_header.dart';
+import 'package:attune/core/utils/bottom_sheet_utils.dart';
+import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'dart:async';
 import 'package:gap/gap.dart';
 import 'package:attune/core/widgets/feedback/export_extensions.dart';
 
 import 'package:attune/app/theme/design_tokens.dart';
-import 'package:attune/core/widgets/buttons/app_button.dart';
 import 'package:attune/core/widgets/buttons/app_fab.dart';
 import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
@@ -21,6 +22,7 @@ import '../../domain/code_point_limit.dart';
 import '../planning_providers.dart';
 import '../planning_ui.dart';
 import '../widgets/category_editor_sheet.dart';
+import '../widgets/planning_skeletons.dart';
 import 'planning_entry_screen.dart';
 
 /// ISO 4217 code for the device locale; USD when the locale has none.
@@ -116,11 +118,11 @@ class _PlanningCategoryScreenState
 
   Future<void> _newEntry() async {
     final draft =
-        await showModalBottomSheet<({String title, bool useTemplate})>(
+        await BottomSheetUtils.showDocumentationBottomSheet<({String title, bool useTemplate})>(
           context: context,
-          isScrollControlled: true,
-          showDragHandle: true,
-          builder: (_) => const DismissKeyboardOnTap(child: _NewEntrySheet()),
+          // Neutral, so the title field stands out against it.
+          backgroundColor: Theme.of(context).colorScheme.neutral,
+          widget: const _NewEntrySheet(),
         );
     if (draft == null || !mounted) return;
     try {
@@ -274,7 +276,10 @@ class _PlanningCategoryScreenState
       ),
       body: open.when(
         skipLoadingOnReload: true,
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading:
+            () => PlanningEntriesSkeleton(
+              label: _isNotes ? 'Loading notes' : 'Loading plans',
+            ),
         error:
             (e, _) => PlanningErrorState(
               error: e,
@@ -299,12 +304,22 @@ class _PlanningCategoryScreenState
                   padding: const EdgeInsets.only(bottom: Spacing.xxl * 2),
                   children: [
                     if (s.entries.isEmpty && s.pinned.isEmpty)
-                      PlanningEmptyState(
-                        icon: planningIcon(_category.icon),
-                        message:
-                            _isNotes ? 'No notes yet' : 'No plans here yet',
-                        actionLabel: _isNotes ? 'Write one' : 'Start one',
-                        onAction: _isNotes ? _newNote : _newEntry,
+                      // The app's empty state, centred in the screen.
+                      SizedBox(
+                        height: MediaQuery.sizeOf(context).height * 0.6,
+                        child: Center(
+                          child: PlanningEmptyState(
+                            icon: planningIcon(_category.icon),
+                            message:
+                                _isNotes ? 'No notes yet' : 'No plans here yet',
+                            detail:
+                                _isNotes
+                                    ? "Write something down; you'll both see it."
+                                    : "Start a plan and you'll both see it here.",
+                            actionLabel: _isNotes ? 'Write one' : 'Start one',
+                            onAction: _isNotes ? _newNote : _newEntry,
+                          ),
+                        ),
                       ),
                     ..._entryTiles(s, _open, _openEntry),
                     if (s.loadingMore)
@@ -345,7 +360,7 @@ class _ClosedEntriesScreen extends ConsumerWidget {
         .watch(planningEntriesProvider(args))
         .when(
           skipLoadingOnReload: true,
-          loading: () => const Center(child: CircularProgressIndicator()),
+          loading: () => const PlanningEntriesSkeleton(),
           error:
               (e, _) => PlanningErrorState(
                 error: e,
@@ -626,62 +641,60 @@ class _NewEntrySheetState extends State<_NewEntrySheet> {
   final _title = TextEditingController();
   bool _useTemplate = true;
 
+  /// Set once Save is tapped with no title, so the field says so.
+  bool _tried = false;
+
   @override
   void dispose() {
     _title.dispose();
     super.dispose();
   }
 
+  /// Save creates the plan; with no title the sheet stays open and says so.
+  void _save() {
+    final title = _title.text.trim();
+    if (title.isEmpty) {
+      setState(() => _tried = true);
+      return;
+    }
+    popPlanningSheet(context, (title: title, useTemplate: _useTemplate));
+  }
+
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.only(
-      left: Spacing.lg,
-      right: Spacing.lg,
-      bottom: MediaQuery.viewInsetsOf(context).bottom + Spacing.lg,
-    ),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('New plan', style: Theme.of(context).textTheme.titleLarge),
-        const Gap(Spacing.md),
-        AppTextFormField(
-          controller: _title,
-          autofocus: true,
-          label: 'Title',
-          textInputAction: TextInputAction.done,
-          inputFormatters: [CodePointLengthFormatter(120)],
-          buildCounter: codePointCounter(_title, 120),
-          textCapitalization: TextCapitalization.sentences,
-          onChanged: (_) => setState(() {}),
-        ),
-        const Gap(Spacing.sm),
-        SegmentedButton<bool>(
-          segments: const [
-            ButtonSegment(
-              value: true,
-              label: Text('Use template'),
-              icon: Icon(Icons.auto_awesome_rounded),
-            ),
-            ButtonSegment(
-              value: false,
-              label: Text('Start blank'),
-              icon: Icon(Icons.note_add_outlined),
-            ),
-          ],
-          selected: {_useTemplate},
-          onSelectionChanged: (s) => setState(() => _useTemplate = s.first),
-        ),
-        const Gap(Spacing.lg),
-        AppButton(
-          label: 'Create',
-          isDisabled: _title.text.trim().isEmpty,
-          onPressed:
-              () => Navigator.of(
-                context,
-              ).pop((title: _title.text.trim(), useTemplate: _useTemplate)),
-        ),
-      ],
-    ),
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      BottomSheetHeader(title: 'New plan', actionLabel: 'Save', onPressed: _save),
+      AppTextFormField(
+        controller: _title,
+        autofocus: true,
+        label: 'Title',
+        labelColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+        errorText: _tried && _title.text.trim().isEmpty ? 'Give it a title' : null,
+        textInputAction: TextInputAction.done,
+        inputFormatters: [CodePointLengthFormatter(120)],
+        buildCounter: codePointCounter(_title, 120),
+        textCapitalization: TextCapitalization.sentences,
+        onChanged: (_) => setState(() {}),
+        onFieldSubmitted: (_) => _save(),
+      ),
+      const Gap(Spacing.sm),
+      SegmentedButton<bool>(
+        segments: const [
+          ButtonSegment(
+            value: true,
+            label: Text('Use template'),
+            icon: Icon(Icons.auto_awesome_rounded),
+          ),
+          ButtonSegment(
+            value: false,
+            label: Text('Start blank'),
+            icon: Icon(Icons.note_add_outlined),
+          ),
+        ],
+        selected: {_useTemplate},
+        onSelectionChanged: (s) => setState(() => _useTemplate = s.first),
+      ),
+    ],
   );
 }

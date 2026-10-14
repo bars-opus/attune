@@ -39,7 +39,7 @@ void main() {
     expect(sheet.color, Theme.of(tester.element(find.byType(BottomSheetHeader))).colorScheme.neutral);
 
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Budget'), '250');
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheetHeader), findsNothing, reason: 'closed once saved');
     expect(g.callsTo('update_planning_block_target').single['p_target_minor'], 25000);
@@ -51,12 +51,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Set budget'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheetHeader), findsOneWidget);
     expect(find.text('Enter an amount like 500'), findsOneWidget);
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Budget'), '1.2.3');
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheetHeader), findsOneWidget);
     expect(g.callsTo('update_planning_block_target'), isEmpty);

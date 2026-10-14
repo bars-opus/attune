@@ -660,40 +660,28 @@ class AppLocalizationsEn extends AppLocalizations {
   String get loadingDefaultMessage => 'Loading...';
 
   @override
-  String emptyStateNoDataTitle(String dataType) {
-    return 'No $dataType yet';
-  }
+  String get emptyStateNoDataTitle => 'Nothing here yet';
 
   @override
-  String emptyStateNoDataSubtitle(String dataType) {
-    return 'When $dataType becomes available, they will appear here.';
-  }
+  String get emptyStateNoDataSubtitle => 'When there\'s something to show, it\'ll appear here.';
 
   @override
-  String get emptyStateNoResultsTitle => 'No results found';
+  String get emptyStateNoResultsTitle => 'No matches';
 
   @override
-  String emptyStateNoResultsSubtitle(String dataType) {
-    return 'Try adjusting your search or filters to find $dataType.';
-  }
+  String get emptyStateNoResultsSubtitle => 'Try a different word or filter.';
 
   @override
-  String get emptyStateNoInternetTitle => 'No internet connection';
+  String get emptyStateNoInternetTitle => 'You\'re offline';
 
   @override
   String get emptyStateNoInternetSubtitle => 'Check your connection and try again.';
 
   @override
-  String get emptyStateNoFavoritesTitle => 'No favorites yet';
+  String get emptyStateNoMessagesTitle => 'No messages yet';
 
   @override
-  String get emptyStateNoFavoritesSubtitle => 'Start adding items to your favorites list.';
-
-  @override
-  String get emptyStateNoMessagesTitle => 'No messages';
-
-  @override
-  String get emptyStateNoMessagesSubtitle => 'Start a conversation to see messages here.';
+  String get emptyStateNoMessagesSubtitle => 'Say hello to start your conversation.';
 
   @override
   String get emptyStateRefresh => 'Refresh';
@@ -705,10 +693,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get emptyStateRetry => 'Try again';
 
   @override
-  String get emptyStateExplore => 'Explore';
-
-  @override
-  String get emptyStateStartChat => 'Start chat';
+  String get emptyStateStartChat => 'Say hello';
 
   @override
   String get errorNetworkTitle => 'Connection Error';
@@ -772,48 +757,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errorContactSupport => 'Contact support';
-
-  @override
-  String get dataTypeUsers => 'users';
-
-  @override
-  String get dataTypeUser => 'user';
-
-  @override
-  String get dataTypeProducts => 'products';
-
-  @override
-  String get dataTypeProduct => 'product';
-
-  @override
-  String get dataTypeOrders => 'orders';
-
-  @override
-  String get dataTypeOrder => 'order';
-
-  @override
-  String get dataTypeMessages => 'messages';
-
-  @override
-  String get dataTypeMessage => 'message';
-
-  @override
-  String get dataTypeFavorites => 'favorites';
-
-  @override
-  String get dataTypeFavorite => 'favorite';
-
-  @override
-  String get dataTypeData => 'data';
-
-  @override
-  String get dataTypeContent => 'content';
-
-  @override
-  String get dataTypeItems => 'items';
-
-  @override
-  String get dataTypeItem => 'item';
 
   @override
   String get eulaTitle => 'End User License Agreement';

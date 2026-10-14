@@ -205,6 +205,10 @@ class InfoRowWidget extends StatelessWidget {
   final Color? titleFontColor;
   final Color? subTitleFontColor;
 
+  /// Wraps the title text without restyling it, e.g. in a [Hero] so the
+  /// title can fly to the next screen.
+  final Widget Function(Widget title)? titleBuilder;
+
   // NEW: Add support for toggle items
 
   /// Whether this row represents a toggle/setting control.
@@ -288,6 +292,7 @@ class InfoRowWidget extends StatelessWidget {
     this.pinAvatar = true,
     this.padAvatarTop = false,
     this.bottomWidget,
+    this.titleBuilder,
   }) : assert(
          // Either icon, imageUrl or leadingWidget must be provided for
          // visual identity.
@@ -366,7 +371,7 @@ class InfoRowWidget extends StatelessWidget {
                       Gap(Spacing.xs.h),
                       // Primary title with line limiting
                       if (title.isNotEmpty)
-                        Text(
+                        (titleBuilder ?? (t) => t)(Text(
                           title,
                           style:
                               titleStyle ??
@@ -377,7 +382,7 @@ class InfoRowWidget extends StatelessWidget {
                               ),
                           maxLines: titleMaxLines ?? 2,
                           overflow: TextOverflow.ellipsis,
-                        ),
+                        )),
                       // Small gap between title and subtitle
                       if (subtitle.isNotEmpty)
                         if (title.isNotEmpty) Gap(Spacing.xs.h),

@@ -395,54 +395,24 @@
    "loadingDefaultMessage": "Carregando...",
 
   
-  "emptyStateNoDataTitle": "Nenhum(a) {dataType} ainda",
-  "@emptyStateNoDataTitle": {
-    "description": "Título exibido quando nenhum dado de um tipo específico está disponível",
-    "placeholders": {
-      "dataType": {
-        "type": "String",
-        "example": "usuários"
-      }
-    }
-  },
+  "emptyStateNoDataTitle": "Nada aqui ainda",
   
-  "emptyStateNoDataSubtitle": "Quando {dataType} estiver disponível, aparecerão aqui.",
-  "@emptyStateNoDataSubtitle": {
-    "description": "Subtítulo explicando quando os dados aparecerão",
-    "placeholders": {
-      "dataType": {
-        "type": "String", 
-        "example": "usuários"
-      }
-    }
-  },
+  "emptyStateNoDataSubtitle": "Quando houver algo para mostrar, aparecerá aqui.",
   
-  "emptyStateNoResultsTitle": "Nenhum resultado encontrado",
-  "emptyStateNoResultsSubtitle": "Tente ajustar sua pesquisa ou filtros para encontrar {dataType}.",
-  "@emptyStateNoResultsSubtitle": {
-    "description": "Dica para encontrar um tipo de dado específico",
-    "placeholders": {
-      "dataType": {
-        "type": "String",
-        "example": "produtos"
-      }
-    }
-  },
+  "emptyStateNoResultsTitle": "Nenhuma correspondência",
+  "emptyStateNoResultsSubtitle": "Tente outra palavra ou outro filtro.",
   
-  "emptyStateNoInternetTitle": "Sem conexão com a internet",
+  "emptyStateNoInternetTitle": "Você está offline",
   "emptyStateNoInternetSubtitle": "Verifique sua conexão e tente novamente.",
   
-  "emptyStateNoFavoritesTitle": "Nenhum favorito ainda",
-  "emptyStateNoFavoritesSubtitle": "Comece adicionando itens à sua lista de favoritos.",
   
-  "emptyStateNoMessagesTitle": "Nenhuma mensagem",
-  "emptyStateNoMessagesSubtitle": "Inicie uma conversa para ver mensagens aqui.",
+  "emptyStateNoMessagesTitle": "Ainda não há mensagens",
+  "emptyStateNoMessagesSubtitle": "Diga olá para começar a conversa de vocês.",
   
   "emptyStateRefresh": "Atualizar",
   "emptyStateClearFilters": "Limpar filtros",
   "emptyStateRetry": "Tentar novamente",
-  "emptyStateExplore": "Explorar",
-  "emptyStateStartChat": "Iniciar chat",
+  "emptyStateStartChat": "Dizer olá",
   
 
 
@@ -502,20 +472,6 @@
   
 
   
-  "dataTypeUsers": "usuários",
-  "dataTypeUser": "usuário",
-  "dataTypeProducts": "produtos",
-  "dataTypeProduct": "produto",
-  "dataTypeOrders": "pedidos",
-  "dataTypeOrder": "pedido",
-  "dataTypeMessages": "mensagens",
-  "dataTypeMessage": "mensagem",
-  "dataTypeFavorites": "favoritos",
-  "dataTypeFavorite": "favorito",
-  "dataTypeData": "dados",
-  "dataTypeContent": "conteúdo",
-  "dataTypeItems": "itens",
-  "dataTypeItem": "item",
 
 
 

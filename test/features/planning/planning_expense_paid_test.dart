@@ -1,4 +1,4 @@
-import 'package:attune/app/theme/app_theme.dart';
+import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/features/planning/data/planning_models.dart';
 import 'package:attune/features/planning/domain/expense_view.dart';
 import 'package:attune/features/planning/domain/planning_money.dart';
@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_planning_gateway.dart';
 import 'support/planning_test_app.dart';
+import '../../helpers/info_row_value.dart';
 
 const _screen = PlanningEntryScreen(relationshipId: 'r1', entryId: 'e1');
 
@@ -60,7 +61,7 @@ void main() {
       (tester) async {
     await tester.pumpWidget(planningTestApp(gateway(), _screen));
     await tester.pumpAndSettle();
-    expect(find.text('Total ${_m(21500)}'), findsOneWidget);
+    expect(infoRowValue(tester, 'Total'), _m(21500));
     expect(amount(tester, 20000).style?.decoration, isNot(TextDecoration.lineThrough));
 
     await tester.ensureVisible(find.text('Hotel'));
@@ -75,8 +76,9 @@ void main() {
     final avatar = tester.widget<CircleAvatar>(
         find.descendant(of: find.ancestor(of: find.text('Hotel'), matching: find.byType(Row)).first, matching: find.byType(CircleAvatar)));
     expect(avatar.backgroundColor, scheme.primary, reason: 'primary once paid');
-    expect(find.text('Left to pay ${_m(1500)}'), findsOneWidget);
-    expect(find.text('${_m(20000)} paid of ${_m(21500)}'), findsOneWidget);
+    expect(infoRowValue(tester, 'Left to pay'), _m(1500));
+    expect(infoRowValue(tester, 'Paid'), _m(20000));
+    expect(infoRowValue(tester, 'Total'), _m(21500));
     expect(find.text('Hotel'), findsOneWidget, reason: 'stays in the list; swipe left does not delete');
   });
 
@@ -97,7 +99,7 @@ void main() {
     await tester.drag(find.text('Hotel'), const Offset(-500, 0));
     await tester.pumpAndSettle();
     expect(calls.single['p_checked'], isFalse);
-    expect(find.text('Total ${_m(21500)}'), findsOneWidget);
+    expect(infoRowValue(tester, 'Total'), _m(21500));
   });
 
   testWidgets('with everything paid the total says so', (tester) async {
@@ -108,7 +110,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.drag(find.text('Taxi'), const Offset(-500, 0));
     await tester.pumpAndSettle();
-    expect(find.text('All paid · ${_m(21500)}'), findsOneWidget);
+    expect(infoRowValue(tester, 'Total'), _m(21500));
+    expect(infoRowSubtitle(tester, 'Total'), 'All paid');
   });
 
   testWidgets('screen readers get the swipe actions too: Mark as paid and Delete', (tester) async {
@@ -122,5 +125,23 @@ void main() {
     ];
     expect(labels, containsAll(['Mark as paid', 'Delete']));
     semantics.dispose();
+  });
+
+  testWidgets('in the totals, only the amounts are coloured: paid primary, left to pay red, total as it was',
+      (tester) async {
+    await tester.pumpWidget(planningTestApp(gateway(hotelPaid: true), _screen));
+    await tester.pumpAndSettle();
+    final scheme = Theme.of(tester.element(find.text('Hotel').first)).colorScheme;
+    InfoRowWidget row(String title) =>
+        tester.widgetList<InfoRowWidget>(find.byType(InfoRowWidget)).where((r) => r.title == title).single;
+    Color? amount(String title) => (row(title).trailing! as Text).style?.color;
+    expect(amount('Paid'), scheme.primary);
+    expect(amount('Left to pay'), scheme.error);
+    expect(amount('Total'), Theme.of(tester.element(find.text('Hotel').first)).textTheme.bodyLarge?.color,
+        reason: 'the usual text colour, as before');
+    for (final t in ['Paid', 'Left to pay', 'Total']) {
+      expect(row(t).titleFontColor, isNull, reason: '$t: the title keeps its colour');
+      expect(row(t).iconColor, isNull, reason: '$t: the icon keeps its colour');
+    }
   });
 }

@@ -395,54 +395,24 @@
   "loadingDefaultMessage": "Laden...",
 
   
-  "emptyStateNoDataTitle": "Noch keine {dataType}",
-  "@emptyStateNoDataTitle": {
-    "description": "Titel angezeigt, wenn keine Daten eines bestimmten Typs verfügbar sind",
-    "placeholders": {
-      "dataType": {
-        "type": "String",
-        "example": "Benutzer"
-      }
-    }
-  },
+  "emptyStateNoDataTitle": "Noch nichts hier",
   
-  "emptyStateNoDataSubtitle": "Wenn {dataType} verfügbar werden, erscheinen sie hier.",
-  "@emptyStateNoDataSubtitle": {
-    "description": "Untertitel erklärt, wann Daten erscheinen",
-    "placeholders": {
-      "dataType": {
-        "type": "String", 
-        "example": "Benutzer"
-      }
-    }
-  },
+  "emptyStateNoDataSubtitle": "Sobald es etwas zu zeigen gibt, erscheint es hier.",
   
-  "emptyStateNoResultsTitle": "Keine Ergebnisse gefunden",
-  "emptyStateNoResultsSubtitle": "Versuchen Sie, Ihre Suche oder Filter anzupassen, um {dataType} zu finden.",
-  "@emptyStateNoResultsSubtitle": {
-    "description": "Hinweis zum Finden eines bestimmten Datentyps",
-    "placeholders": {
-      "dataType": {
-        "type": "String",
-        "example": "Produkte"
-      }
-    }
-  },
+  "emptyStateNoResultsTitle": "Keine Treffer",
+  "emptyStateNoResultsSubtitle": "Versuchen Sie ein anderes Wort oder einen anderen Filter.",
   
-  "emptyStateNoInternetTitle": "Keine Internetverbindung",
+  "emptyStateNoInternetTitle": "Sie sind offline",
   "emptyStateNoInternetSubtitle": "Überprüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
   
-  "emptyStateNoFavoritesTitle": "Noch keine Favoriten",
-  "emptyStateNoFavoritesSubtitle": "Beginnen Sie mit dem Hinzufügen von Elementen zu Ihrer Favoritenliste.",
   
-  "emptyStateNoMessagesTitle": "Keine Nachrichten",
-  "emptyStateNoMessagesSubtitle": "Starten Sie eine Unterhaltung, um hier Nachrichten zu sehen.",
+  "emptyStateNoMessagesTitle": "Noch keine Nachrichten",
+  "emptyStateNoMessagesSubtitle": "Sagen Sie Hallo, um Ihr Gespräch zu beginnen.",
   
   "emptyStateRefresh": "Aktualisieren",
   "emptyStateClearFilters": "Filter löschen",
   "emptyStateRetry": "Erneut versuchen",
-  "emptyStateExplore": "Entdecken",
-  "emptyStateStartChat": "Chat starten",
+  "emptyStateStartChat": "Hallo sagen",
   
 
   
@@ -501,20 +471,6 @@
   
 
   
-  "dataTypeUsers": "Benutzer",
-  "dataTypeUser": "Benutzer",
-  "dataTypeProducts": "Produkte",
-  "dataTypeProduct": "Produkt",
-  "dataTypeOrders": "Bestellungen",
-  "dataTypeOrder": "Bestellung",
-  "dataTypeMessages": "Nachrichten",
-  "dataTypeMessage": "Nachricht",
-  "dataTypeFavorites": "Favoriten",
-  "dataTypeFavorite": "Favorit",
-  "dataTypeData": "Daten",
-  "dataTypeContent": "Inhalt",
-  "dataTypeItems": "Elemente",
-  "dataTypeItem": "Element",
 
 
 

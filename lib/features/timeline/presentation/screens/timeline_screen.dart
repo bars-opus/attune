@@ -222,25 +222,9 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                       if (upcomingReminders(reminders).isEmpty) {
                         return const SizedBox.shrink();
                       }
-                      return Padding(
-                        padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Gap(Spacing.md.h),
-                            Text(
-                              'Upcoming',
-                              style: Theme.of(context).textTheme.titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                            Gap(Spacing.sm.h),
-                            UpcomingRemindersSection(
-                              reminders: reminders,
-                              onReminderTap: (reminder) {},
-                            ),
-                            // const Divider(height: 32),
-                          ],
-                        ),
+                      return UpcomingRemindersSection(
+                        reminders: reminders,
+                        onReminderTap: (reminder) {},
                       );
                     },
                     loading: () => const SizedBox.shrink(),

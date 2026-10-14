@@ -343,7 +343,7 @@ class _ItemEditorState extends State<_ItemEditor> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // No title; Done saves. Stays put while the fields scroll.
-            BottomSheetHeader(title: '', onPressed: _done),
+            BottomSheetHeader(title: '', actionLabel: 'Save', onPressed: _done),
             Flexible(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(

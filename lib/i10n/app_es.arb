@@ -392,54 +392,24 @@
 
   "loadingDefaultMessage": "Cargando...",
 
-  "emptyStateNoDataTitle": "No hay {dataType} aún",
-  "@emptyStateNoDataTitle": {
-    "description": "Título mostrado cuando no hay datos de un tipo específico disponible",
-    "placeholders": {
-      "dataType": {
-        "type": "String",
-        "example": "usuarios"
-      }
-    }
-  },
+  "emptyStateNoDataTitle": "Aún no hay nada aquí",
   
-  "emptyStateNoDataSubtitle": "Cuando {dataType} esté disponible, aparecerán aquí.",
-  "@emptyStateNoDataSubtitle": {
-    "description": "Subtítulo que explica cuándo aparecerán los datos",
-    "placeholders": {
-      "dataType": {
-        "type": "String", 
-        "example": "usuarios"
-      }
-    }
-  },
+  "emptyStateNoDataSubtitle": "Cuando haya algo que mostrar, aparecerá aquí.",
   
-  "emptyStateNoResultsTitle": "No se encontraron resultados",
-  "emptyStateNoResultsSubtitle": "Intenta ajustar tu búsqueda o filtros para encontrar {dataType}.",
-  "@emptyStateNoResultsSubtitle": {
-    "description": "Sugerencia para encontrar un tipo de dato específico",
-    "placeholders": {
-      "dataType": {
-        "type": "String",
-        "example": "productos"
-      }
-    }
-  },
+  "emptyStateNoResultsTitle": "Sin coincidencias",
+  "emptyStateNoResultsSubtitle": "Prueba con otra palabra u otro filtro.",
   
-  "emptyStateNoInternetTitle": "Sin conexión a internet",
+  "emptyStateNoInternetTitle": "Estás sin conexión",
   "emptyStateNoInternetSubtitle": "Verifica tu conexión e intenta de nuevo.",
   
-  "emptyStateNoFavoritesTitle": "No hay favoritos aún",
-  "emptyStateNoFavoritesSubtitle": "Comienza agregando elementos a tu lista de favoritos.",
   
-  "emptyStateNoMessagesTitle": "No hay mensajes",
-  "emptyStateNoMessagesSubtitle": "Inicia una conversación para ver mensajes aquí.",
+  "emptyStateNoMessagesTitle": "Aún no hay mensajes",
+  "emptyStateNoMessagesSubtitle": "Saluda para empezar vuestra conversación.",
   
   "emptyStateRefresh": "Actualizar",
   "emptyStateClearFilters": "Limpiar filtros",
   "emptyStateRetry": "Reintentar",
-  "emptyStateExplore": "Explorar",
-  "emptyStateStartChat": "Iniciar chat",
+  "emptyStateStartChat": "Saludar",
   
   
   "errorNetworkTitle": "Error de conexión",
@@ -496,20 +466,6 @@
   "errorContactSupport": "Contactar soporte",
   
 
-  "dataTypeUsers": "usuarios",
-  "dataTypeUser": "usuario",
-  "dataTypeProducts": "productos",
-  "dataTypeProduct": "producto",
-  "dataTypeOrders": "pedidos",
-  "dataTypeOrder": "pedido",
-  "dataTypeMessages": "mensajes",
-  "dataTypeMessage": "mensaje",
-  "dataTypeFavorites": "favoritos",
-  "dataTypeFavorite": "favorito",
-  "dataTypeData": "datos",
-  "dataTypeContent": "contenido",
-  "dataTypeItems": "elementos",
-  "dataTypeItem": "elemento",
 
 
 

@@ -396,54 +396,24 @@
 
 
   
-  "emptyStateNoDataTitle": "Nessun {dataType} ancora",
-  "@emptyStateNoDataTitle": {
-    "description": "Titolo mostrato quando non sono disponibili dati di un tipo specifico",
-    "placeholders": {
-      "dataType": {
-        "type": "String",
-        "example": "utenti"
-      }
-    }
-  },
+  "emptyStateNoDataTitle": "Ancora niente qui",
   
-  "emptyStateNoDataSubtitle": "Quando {dataType} sarà disponibile, appariranno qui.",
-  "@emptyStateNoDataSubtitle": {
-    "description": "Sottotitolo che spiega quando appariranno i dati",
-    "placeholders": {
-      "dataType": {
-        "type": "String", 
-        "example": "utenti"
-      }
-    }
-  },
+  "emptyStateNoDataSubtitle": "Quando ci sarà qualcosa da mostrare, apparirà qui.",
   
-  "emptyStateNoResultsTitle": "Nessun risultato trovato",
-  "emptyStateNoResultsSubtitle": "Prova ad aggiustare la tua ricerca o filtri per trovare {dataType}.",
-  "@emptyStateNoResultsSubtitle": {
-    "description": "Suggerimento per trovare un tipo di dato specifico",
-    "placeholders": {
-      "dataType": {
-        "type": "String",
-        "example": "prodotti"
-      }
-    }
-  },
+  "emptyStateNoResultsTitle": "Nessuna corrispondenza",
+  "emptyStateNoResultsSubtitle": "Prova con un'altra parola o un altro filtro.",
   
-  "emptyStateNoInternetTitle": "Nessuna connessione internet",
+  "emptyStateNoInternetTitle": "Sei offline",
   "emptyStateNoInternetSubtitle": "Controlla la tua connessione e riprova.",
   
-  "emptyStateNoFavoritesTitle": "Nessun preferito ancora",
-  "emptyStateNoFavoritesSubtitle": "Inizia ad aggiungere elementi alla tua lista dei preferiti.",
   
-  "emptyStateNoMessagesTitle": "Nessun messaggio",
-  "emptyStateNoMessagesSubtitle": "Avvia una conversazione per vedere i messaggi qui.",
+  "emptyStateNoMessagesTitle": "Ancora nessun messaggio",
+  "emptyStateNoMessagesSubtitle": "Saluta per iniziare la vostra conversazione.",
   
   "emptyStateRefresh": "Aggiorna",
   "emptyStateClearFilters": "Cancella filtri",
   "emptyStateRetry": "Riprova",
-  "emptyStateExplore": "Esplora",
-  "emptyStateStartChat": "Avvia chat",
+  "emptyStateStartChat": "Saluta",
   
 
   
@@ -502,20 +472,6 @@
   
 
   
-  "dataTypeUsers": "utenti",
-  "dataTypeUser": "utente",
-  "dataTypeProducts": "prodotti",
-  "dataTypeProduct": "prodotto",
-  "dataTypeOrders": "ordini",
-  "dataTypeOrder": "ordine",
-  "dataTypeMessages": "messaggi",
-  "dataTypeMessage": "messaggio",
-  "dataTypeFavorites": "preferiti",
-  "dataTypeFavorite": "preferito",
-  "dataTypeData": "dati",
-  "dataTypeContent": "contenuto",
-  "dataTypeItems": "elementi",
-  "dataTypeItem": "elemento",
 
 
 

@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'package:attune/features/planning/presentation/screens/planning_entry_screen.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_planning_gateway.dart';
@@ -24,7 +23,12 @@ void main() {
       'lib/core/utils/bottom_sheet_utils.dart',
     ];
     for (final f in files) {
-      expect(File(f).readAsStringSync().contains('DismissKeyboardOnTap('), isTrue, reason: f);
+      final source = File(f).readAsStringSync();
+      expect(
+        source.contains('DismissKeyboardOnTap(') || source.contains('BottomSheetUtils.showDocumentationBottomSheet'),
+        isTrue,
+        reason: f,
+      );
     }
   });
 

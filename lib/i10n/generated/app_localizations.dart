@@ -1108,7 +1108,7 @@ abstract class AppLocalizations {
   /// No description provided for @mutedItemSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Anonymous forum accounts you've muted'**
+  /// **'Anonymous forum accounts you\'ve muted'**
   String get mutedItemSubtitle;
 
   /// No description provided for @qrCodeItemTitle.
@@ -1345,34 +1345,34 @@ abstract class AppLocalizations {
   /// **'Loading...'**
   String get loadingDefaultMessage;
 
-  /// Title shown when no data of a specific type is available
+  /// No description provided for @emptyStateNoDataTitle.
   ///
   /// In en, this message translates to:
-  /// **'No {dataType} yet'**
-  String emptyStateNoDataTitle(String dataType);
+  /// **'Nothing here yet'**
+  String get emptyStateNoDataTitle;
 
-  /// Subtitle explaining when data will appear
+  /// No description provided for @emptyStateNoDataSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'When {dataType} becomes available, they will appear here.'**
-  String emptyStateNoDataSubtitle(String dataType);
+  /// **'When there\'s something to show, it\'ll appear here.'**
+  String get emptyStateNoDataSubtitle;
 
   /// No description provided for @emptyStateNoResultsTitle.
   ///
   /// In en, this message translates to:
-  /// **'No results found'**
+  /// **'No matches'**
   String get emptyStateNoResultsTitle;
 
-  /// Hint for finding specific data type
+  /// No description provided for @emptyStateNoResultsSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Try adjusting your search or filters to find {dataType}.'**
-  String emptyStateNoResultsSubtitle(String dataType);
+  /// **'Try a different word or filter.'**
+  String get emptyStateNoResultsSubtitle;
 
   /// No description provided for @emptyStateNoInternetTitle.
   ///
   /// In en, this message translates to:
-  /// **'No internet connection'**
+  /// **'You\'re offline'**
   String get emptyStateNoInternetTitle;
 
   /// No description provided for @emptyStateNoInternetSubtitle.
@@ -1381,28 +1381,16 @@ abstract class AppLocalizations {
   /// **'Check your connection and try again.'**
   String get emptyStateNoInternetSubtitle;
 
-  /// No description provided for @emptyStateNoFavoritesTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'No favorites yet'**
-  String get emptyStateNoFavoritesTitle;
-
-  /// No description provided for @emptyStateNoFavoritesSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Start adding items to your favorites list.'**
-  String get emptyStateNoFavoritesSubtitle;
-
   /// No description provided for @emptyStateNoMessagesTitle.
   ///
   /// In en, this message translates to:
-  /// **'No messages'**
+  /// **'No messages yet'**
   String get emptyStateNoMessagesTitle;
 
   /// No description provided for @emptyStateNoMessagesSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Start a conversation to see messages here.'**
+  /// **'Say hello to start your conversation.'**
   String get emptyStateNoMessagesSubtitle;
 
   /// No description provided for @emptyStateRefresh.
@@ -1423,16 +1411,10 @@ abstract class AppLocalizations {
   /// **'Try again'**
   String get emptyStateRetry;
 
-  /// No description provided for @emptyStateExplore.
-  ///
-  /// In en, this message translates to:
-  /// **'Explore'**
-  String get emptyStateExplore;
-
   /// No description provided for @emptyStateStartChat.
   ///
   /// In en, this message translates to:
-  /// **'Start chat'**
+  /// **'Say hello'**
   String get emptyStateStartChat;
 
   /// No description provided for @errorNetworkTitle.
@@ -1548,90 +1530,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Contact support'**
   String get errorContactSupport;
-
-  /// No description provided for @dataTypeUsers.
-  ///
-  /// In en, this message translates to:
-  /// **'users'**
-  String get dataTypeUsers;
-
-  /// No description provided for @dataTypeUser.
-  ///
-  /// In en, this message translates to:
-  /// **'user'**
-  String get dataTypeUser;
-
-  /// No description provided for @dataTypeProducts.
-  ///
-  /// In en, this message translates to:
-  /// **'products'**
-  String get dataTypeProducts;
-
-  /// No description provided for @dataTypeProduct.
-  ///
-  /// In en, this message translates to:
-  /// **'product'**
-  String get dataTypeProduct;
-
-  /// No description provided for @dataTypeOrders.
-  ///
-  /// In en, this message translates to:
-  /// **'orders'**
-  String get dataTypeOrders;
-
-  /// No description provided for @dataTypeOrder.
-  ///
-  /// In en, this message translates to:
-  /// **'order'**
-  String get dataTypeOrder;
-
-  /// No description provided for @dataTypeMessages.
-  ///
-  /// In en, this message translates to:
-  /// **'messages'**
-  String get dataTypeMessages;
-
-  /// No description provided for @dataTypeMessage.
-  ///
-  /// In en, this message translates to:
-  /// **'message'**
-  String get dataTypeMessage;
-
-  /// No description provided for @dataTypeFavorites.
-  ///
-  /// In en, this message translates to:
-  /// **'favorites'**
-  String get dataTypeFavorites;
-
-  /// No description provided for @dataTypeFavorite.
-  ///
-  /// In en, this message translates to:
-  /// **'favorite'**
-  String get dataTypeFavorite;
-
-  /// No description provided for @dataTypeData.
-  ///
-  /// In en, this message translates to:
-  /// **'data'**
-  String get dataTypeData;
-
-  /// No description provided for @dataTypeContent.
-  ///
-  /// In en, this message translates to:
-  /// **'content'**
-  String get dataTypeContent;
-
-  /// No description provided for @dataTypeItems.
-  ///
-  /// In en, this message translates to:
-  /// **'items'**
-  String get dataTypeItems;
-
-  /// No description provided for @dataTypeItem.
-  ///
-  /// In en, this message translates to:
-  /// **'item'**
-  String get dataTypeItem;
 
   /// No description provided for @eulaTitle.
   ///

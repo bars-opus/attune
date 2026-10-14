@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_planning_gateway.dart';
 import 'support/planning_test_app.dart';
+import '../../helpers/info_row_value.dart';
 
 const _screen = PlanningEntryScreen(relationshipId: 'r1', entryId: 'e1');
 
@@ -59,7 +60,7 @@ void main() {
 
     expect(find.text('Hotel'), findsOneWidget);
     expect(find.text(formatPlanningMoney(2000, 'GHS')), findsOneWidget);
-    expect(find.text('Total ${formatPlanningMoney(3000, 'GHS')}'), findsOneWidget);
+    expect(infoRowValue(tester, 'Total'), formatPlanningMoney(3000, 'GHS'));
 
     final over = find.text('${formatPlanningMoney(500, 'GHS')} over budget');
     await tester.scrollUntilVisible(over, 200, scrollable: _list);
@@ -102,7 +103,7 @@ void main() {
     await tester.enterText(find.widgetWithText(AppTextFormField, 'What for'), 'Dinner');
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Amount'), '45.50');
     await tester.pump();
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
     final fields = g.callsTo('save_planning_rich_item').single['p_fields'] as Map;
@@ -166,7 +167,7 @@ void main() {
     expect(find.widgetWithText(BottomSheetHeader, 'Add a link'), findsOneWidget);
     expect(find.byType(DraggableScrollableSheet), findsOneWidget, reason: 'BottomSheetUtils');
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Web address'), 'villa.example/ubud');
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     final sent = g.callsTo('add_planning_block').single;
     expect(sent['p_block_type'], 'link');
@@ -189,7 +190,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Budget'), '100');
     await tester.pump();
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(g.callsTo('update_planning_block_target').single,
         {'p_id': 'bud', 'p_version': 1, 'p_target_minor': 10000, 'p_currency': 'GHS'});
@@ -205,7 +206,7 @@ void main() {
     await tester.tap(find.text('Link'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Web address'), 'not a link');
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.widgetWithText(BottomSheetHeader, 'Add a link'), findsOneWidget, reason: 'still open, nothing lost');
     expect(find.text('Enter a web address, like airbnb.com/rooms/1'), findsOneWidget);

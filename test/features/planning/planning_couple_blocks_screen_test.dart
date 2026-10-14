@@ -145,7 +145,7 @@ void main() {
     await tester.tap(find.text('Add link'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Web address'), 'airbnb.com/rooms/1');
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(g.callsTo('update_planning_block').single['p_payload'],
         {'url': 'https://airbnb.com/rooms/1', 'label': 'Places to stay'});

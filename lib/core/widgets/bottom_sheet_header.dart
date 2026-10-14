@@ -6,9 +6,18 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 class BottomSheetHeader extends StatelessWidget {
   final String title;
 
-  /// What Done does. Without it, Done closes the sheet.
+  /// What the button does. Without it, the button closes the sheet.
   final VoidCallback? onPressed;
-  const BottomSheetHeader({super.key, required this.title, this.onPressed});
+
+  /// The button's word: "Done" by default. A sheet whose button saves what
+  /// was entered says "Save", so people know to tap it.
+  final String actionLabel;
+  const BottomSheetHeader({
+    super.key,
+    required this.title,
+    this.onPressed,
+    this.actionLabel = 'Done',
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +36,7 @@ class BottomSheetHeader extends StatelessWidget {
             ),
           ),
 
-          AppTextButton(onPressed: onPressed),
+          AppTextButton(text: actionLabel, onPressed: onPressed),
         ],
       ),
     );

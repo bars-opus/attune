@@ -13,6 +13,7 @@ import '../../data/planning_models.dart';
 import '../planning_providers.dart';
 import '../planning_ui.dart';
 import '../widgets/category_editor_sheet.dart';
+import '../widgets/planning_skeletons.dart';
 import 'planning_category_screen.dart';
 
 class PlanningHomeScreen extends ConsumerStatefulWidget {
@@ -179,7 +180,7 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
     final async = ref.watch(planningHomeProvider(widget.relationshipId));
     return async.when(
       skipLoadingOnReload: true,
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const PlanningCategoriesSkeleton(),
       error: (e, _) => PlanningErrorState(error: e, onRetry: _refresh),
       data: (cats) {
         final visible = [
@@ -317,6 +318,11 @@ class _CategoryTile extends StatelessWidget {
         iconColor: colorScheme.background,
         backgroundColor: planningCategoryFill(context, category.color),
         title: category.name,
+        titleBuilder:
+            (title) => PlanningCategoryHero(
+              categoryId: category.id,
+              title: title as Text,
+            ),
         subtitle: n == 1 ? '1 plan' : '$n plans',
         showDivider: false,
         onTap: onOpen,

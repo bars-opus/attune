@@ -35,7 +35,7 @@ void main() {
     await tester.tap(find.text('Link'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Web address'), 'youtu.be/wmZtslmSqfk');
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(g.callsTo('add_planning_block'), hasLength(1));
     expect(find.byType(PlanningEntryScreen), findsOneWidget, reason: 'the note must stay open');
@@ -70,9 +70,9 @@ void main() {
 
   testWidgets('Done tapped twice closes the sheet once; the note stays open', (tester) async {
     final g = await openLinkSheet(tester);
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pump(const Duration(milliseconds: 30));
-    await tester.tap(find.text('Done'), warnIfMissed: false);
+    await tester.tap(find.text('Save'), warnIfMissed: false);
     await tester.pumpAndSettle();
     expect(find.byType(PlanningEntryScreen), findsOneWidget);
     expect(g.callsTo('add_planning_block'), hasLength(1));
@@ -82,7 +82,7 @@ void main() {
     final g = await openLinkSheet(tester);
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pump(const Duration(milliseconds: 30));
-    await tester.tap(find.text('Done'), warnIfMissed: false);
+    await tester.tap(find.text('Save'), warnIfMissed: false);
     await tester.pumpAndSettle();
     expect(find.byType(PlanningEntryScreen), findsOneWidget);
     expect(g.callsTo('add_planning_block'), hasLength(1));
@@ -93,7 +93,7 @@ void main() {
     final g = await openLinkSheet(tester);
     tester.view.viewInsets = const FakeViewPadding(bottom: 900); // keyboard up
     await tester.pump();
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pump(const Duration(milliseconds: 40));
     tester.view.resetViewInsets(); // keyboard goes down mid-animation
     await tester.pumpAndSettle();
@@ -104,7 +104,7 @@ void main() {
   testWidgets('Done firing twice in one frame (double tap, or keyboard + header) still closes only the sheet',
       (tester) async {
     final g = await openLinkSheet(tester);
-    final done = tester.widget<TextButton>(find.widgetWithText(TextButton, 'Done'));
+    final done = tester.widget<TextButton>(find.widgetWithText(TextButton, 'Save'));
     done.onPressed!();
     done.onPressed!();
     await tester.pumpAndSettle();

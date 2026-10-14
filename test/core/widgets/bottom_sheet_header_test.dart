@@ -32,4 +32,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Poll'), findsNothing);
   });
+
+  testWidgets("a sheet that saves can say so: the button's word is up to the caller, Done by default", (tester) async {
+    var saved = 0;
+    await tester.pumpWidget(_app(Scaffold(
+      body: Column(children: [
+        BottomSheetHeader(title: 'Row 1', actionLabel: 'Save', onPressed: () => saved++),
+        const BottomSheetHeader(title: 'Poll'),
+      ]),
+    )));
+    expect(find.text('Save'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget, reason: 'the default is unchanged');
+    await tester.tap(find.text('Save'));
+    expect(saved, 1);
+  });
 }

@@ -23,18 +23,53 @@ import '../domain/code_point_limit.dart';
 /// Must equal `planning_v2_icons()` / `planning_v2_colors()` in migration
 /// 20261012200100 (a test parses the SQL and compares).
 const List<String> planningIconKeys = [
-  'flag', 'plane', 'heart', 'home', 'cart', 'sun', 'star', 'gift', 'book',
-  'dumbbell', 'utensils', 'baby', 'ring', 'box', 'music', 'paw', 'note',
+  'flag',
+  'plane',
+  'heart',
+  'home',
+  'cart',
+  'sun',
+  'star',
+  'gift',
+  'book',
+  'dumbbell',
+  'utensils',
+  'baby',
+  'ring',
+  'box',
+  'music',
+  'paw',
+  'note',
 ];
-const List<String> planningColorKeys = ['rose', 'amber', 'teal', 'indigo', 'green', 'slate', 'violet', 'orange'];
+const List<String> planningColorKeys = [
+  'rose',
+  'amber',
+  'teal',
+  'indigo',
+  'green',
+  'slate',
+  'violet',
+  'orange',
+];
 
 const Map<String, IconData> _icons = {
-  'flag': Icons.flag_rounded, 'plane': Icons.flight_rounded, 'heart': Icons.favorite_rounded,
-  'home': Icons.home_rounded, 'cart': Icons.shopping_cart_rounded, 'sun': Icons.wb_sunny_rounded,
-  'star': Icons.star_rounded, 'gift': Icons.card_giftcard_rounded, 'book': Icons.menu_book_rounded,
-  'dumbbell': Icons.fitness_center_rounded, 'utensils': Icons.restaurant_rounded,
-  'baby': Icons.child_friendly_rounded, 'ring': Icons.diamond_rounded, 'box': Icons.inventory_2_rounded,
-  'music': Icons.music_note_rounded, 'paw': Icons.pets_rounded, 'note': Icons.sticky_note_2_rounded,
+  'flag': Icons.flag_rounded,
+  'plane': Icons.flight_rounded,
+  'heart': Icons.favorite_rounded,
+  'home': Icons.home_rounded,
+  'cart': Icons.shopping_cart_rounded,
+  'sun': Icons.wb_sunny_rounded,
+  'star': Icons.star_rounded,
+  'gift': Icons.card_giftcard_rounded,
+  'book': Icons.menu_book_rounded,
+  'dumbbell': Icons.fitness_center_rounded,
+  'utensils': Icons.restaurant_rounded,
+  'baby': Icons.child_friendly_rounded,
+  'ring': Icons.diamond_rounded,
+  'box': Icons.inventory_2_rounded,
+  'music': Icons.music_note_rounded,
+  'paw': Icons.pets_rounded,
+  'note': Icons.sticky_note_2_rounded,
 };
 
 IconData planningIcon(String key) => _icons[key] ?? Icons.folder_rounded;
@@ -59,12 +94,20 @@ const Map<String, Color> _seeds = {
 
 final Map<(String, Brightness), ColorScheme> _schemes = {};
 
-ColorScheme _scheme(String token, Brightness brightness) => _schemes.putIfAbsent(
-    (token, brightness),
-    () => ColorScheme.fromSeed(seedColor: _seeds[token] ?? LightColors.grey, brightness: brightness));
+ColorScheme _scheme(String token, Brightness brightness) =>
+    _schemes.putIfAbsent(
+      (token, brightness),
+      () => ColorScheme.fromSeed(
+        seedColor: _seeds[token] ?? LightColors.grey,
+        brightness: brightness,
+      ),
+    );
 
 /// Tonal container + on-container pair for a category colour token.
-({Color container, Color onContainer}) planningTone(BuildContext context, String token) {
+({Color container, Color onContainer}) planningTone(
+  BuildContext context,
+  String token,
+) {
   final s = _scheme(token, Theme.of(context).brightness);
   return (container: s.primaryContainer, onContainer: s.onPrimaryContainer);
 }
@@ -99,8 +142,9 @@ const _richTextTokens = ['yellow', 'green', 'blue', 'pink', 'purple'];
 
 /// Rich-text highlight tokens (spec §6.1). Quill resolves `background`
 /// through DefaultStyles.palette first, so tokens never become hex.
-Map<String, Color> planningHighlightPalette(Brightness b) =>
-    {for (final t in _richTextTokens) t: _scheme(t, b).primaryContainer};
+Map<String, Color> planningHighlightPalette(Brightness b) => {
+  for (final t in _richTextTokens) t: _scheme(t, b).primaryContainer,
+};
 
 /// Text-colour tokens: the scheme's primary tone, readable in both themes.
 Color planningTextTone(String token, Brightness b) => _scheme(token, b).primary;
@@ -113,8 +157,10 @@ const planningNewNoteTitle = 'New note';
 
 /// Every Planning screen is pushed with this name so an `inactive` failure
 /// can pop the whole Planning stack in one call (spec §9: fail closed and leave).
-Route<T> planningRoute<T>(Widget page) =>
-    MaterialPageRoute<T>(builder: (_) => page, settings: const RouteSettings(name: planningRouteName));
+Route<T> planningRoute<T>(Widget page) => MaterialPageRoute<T>(
+  builder: (_) => page,
+  settings: const RouteSettings(name: planningRouteName),
+);
 
 void showPlanningError(BuildContext context, Object error) {
   final e = mapPlanningError(error);
@@ -137,45 +183,71 @@ Future<bool> planningConfirm(
   var confirmed = false;
   await showDialog<void>(
     context: context,
-    builder: (_) => ConfirmationDialog(
-      type: destructive ? ConfirmationType.destructive : ConfirmationType.info,
-      title: title,
-      message: message,
-      confirmText: confirmText,
-      onConfirm: () => confirmed = true,
-    ),
+    builder:
+        (_) => ConfirmationDialog(
+          type:
+              destructive
+                  ? ConfirmationType.destructive
+                  : ConfirmationType.info,
+          title: title,
+          message: message,
+          confirmText: confirmText,
+          onConfirm: () => confirmed = true,
+        ),
   );
   return confirmed;
 }
 
 /// A "used/max" counter in code points, for fields limited by
 /// [CodePointLengthFormatter] (Flutter's built-in counter counts graphemes).
-InputCounterWidgetBuilder codePointCounter(TextEditingController controller, int max) =>
-    (context, {required currentLength, required isFocused, maxLength}) =>
-        Text('${codePointLength(controller.text)}/$max', style: Theme.of(context).textTheme.bodySmall);
+InputCounterWidgetBuilder codePointCounter(
+  TextEditingController controller,
+  int max,
+) =>
+    (context, {required currentLength, required isFocused, maxLength}) => Text(
+      '${codePointLength(controller.text)}/$max',
+      style: Theme.of(context).textTheme.bodySmall,
+    );
 
 /// The single Planning line on the Conversations card.
 String planningSummaryLine(PlanningSummary? summary) => switch (summary) {
-      null => 'Start planning together',
-      PlanningSummary(kind: PlanningSummaryKind.overdue, :final title, :final contextDate) =>
-        contextDate == null ? '$title was due' : '$title was due ${DateFormat.MMMd().format(contextDate)}',
-      PlanningSummary(kind: PlanningSummaryKind.upcoming, :final title, :final contextDate) =>
-        contextDate == null ? title : '$title · ${DateFormat.MMMd().format(contextDate)}',
-      PlanningSummary(:final title) => title,
-    };
+  null => 'Start planning together',
+  PlanningSummary(
+    kind: PlanningSummaryKind.overdue,
+    :final title,
+    :final contextDate,
+  ) =>
+    contextDate == null
+        ? '$title was due'
+        : '$title was due ${DateFormat.MMMd().format(contextDate)}',
+  PlanningSummary(
+    kind: PlanningSummaryKind.upcoming,
+    :final title,
+    :final contextDate,
+  ) =>
+    contextDate == null
+        ? title
+        : '$title · ${DateFormat.MMMd().format(contextDate)}',
+  PlanningSummary(:final title) => title,
+};
 
 String formatPlanningRange(DateTime? start, DateTime? end) {
   if (start == null) return 'Pick a date';
   final full = DateFormat.yMMMd();
   if (end == null || end == start) return full.format(start);
-  if (start.year == end.year) return '${DateFormat.MMMd().format(start)} – ${DateFormat.MMMd().format(end)}, ${end.year}';
+  if (start.year == end.year)
+    return '${DateFormat.MMMd().format(start)} – ${DateFormat.MMMd().format(end)}, ${end.year}';
   return '${full.format(start)} – ${full.format(end)}';
 }
 
 /// The app's ErrorStateWidget with Planning's actionable copy (checklist
 /// 5.1). An ended relationship offers Close, never Retry (spec §9).
 class PlanningErrorState extends StatelessWidget {
-  const PlanningErrorState({super.key, required this.error, required this.onRetry});
+  const PlanningErrorState({
+    super.key,
+    required this.error,
+    required this.onRetry,
+  });
   final Object error;
   final VoidCallback onRetry;
 
@@ -193,7 +265,8 @@ class PlanningErrorState extends StatelessWidget {
         title: closed ? 'Planning is closed' : 'Could not load this',
         subtitle: planningErrorMessage(e),
         primaryActionLabel: closed ? 'Close' : 'Retry',
-        onPrimaryAction: closed ? () => Navigator.of(context).maybePop() : onRetry,
+        onPrimaryAction:
+            closed ? () => Navigator.of(context).maybePop() : onRetry,
       ),
     );
   }
@@ -201,20 +274,32 @@ class PlanningErrorState extends StatelessWidget {
 
 /// The app's EmptyStateWidget for Planning's empty lists.
 class PlanningEmptyState extends StatelessWidget {
-  const PlanningEmptyState({super.key, required this.icon, required this.message, this.actionLabel, this.onAction});
+  const PlanningEmptyState({
+    super.key,
+    required this.icon,
+    required this.message,
+    this.detail,
+    this.actionLabel,
+    this.onAction,
+  });
   final IconData icon;
   final String message;
+
+  /// A line under the message.
+  final String? detail;
   final String? actionLabel;
   final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) => EmptyStateWidget(
-        type: EmptyStateType.custom,
-        icon: icon,
-        title: message,
-        actionLabel: actionLabel,
-        onAction: onAction,
-      );
+    type: EmptyStateType.custom,
+    icon: icon,
+    title: message,
+    subtitle: detail,
+    actionLabel: actionLabel,
+    onAction: onAction,
+    compact: false,
+  );
 }
 
 /// Not colour-only (spec §5): carries its own semantics node.
@@ -223,14 +308,17 @@ class PlanningNewDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-        container: true,
-        label: 'New from your partner',
-        child: Container(
-          width: Spacing.sm + Spacing.xs / 2,
-          height: Spacing.sm + Spacing.xs / 2,
-          decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, shape: BoxShape.circle),
-        ),
-      );
+    container: true,
+    label: 'New from your partner',
+    child: Container(
+      width: Spacing.sm + Spacing.xs / 2,
+      height: Spacing.sm + Spacing.xs / 2,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary,
+        shape: BoxShape.circle,
+      ),
+    ),
+  );
 }
 
 /// Asks for one line of text in the app's sheet ([BottomSheetUtils], with
@@ -247,20 +335,19 @@ Future<String?> askPlanningText(
   String? hint,
   bool allowEmpty = false,
   String? Function(String value)? validator,
-}) =>
-    BottomSheetUtils.showDocumentationBottomSheet<String>(
-      context: context,
-      backgroundColor: Theme.of(context).colorScheme.neutral,
-      widget: _PlanningTextSheet(
-        title: title,
-        label: label,
-        initial: initial,
-        maxLength: maxLength,
-        keyboardType: keyboardType,
-        hint: hint,
-        validator: validator,
-      ),
-    ).then((v) => v == null || (v.isEmpty && !allowEmpty) ? null : v);
+}) => BottomSheetUtils.showDocumentationBottomSheet<String>(
+  context: context,
+  backgroundColor: Theme.of(context).colorScheme.neutral,
+  widget: _PlanningTextSheet(
+    title: title,
+    label: label,
+    initial: initial,
+    maxLength: maxLength,
+    keyboardType: keyboardType,
+    hint: hint,
+    validator: validator,
+  ),
+).then((v) => v == null || (v.isEmpty && !allowEmpty) ? null : v);
 
 /// Owns its controller, so it lives exactly as long as the sheet's route
 /// (including the closing animation).
@@ -308,26 +395,32 @@ class _PlanningTextSheetState extends State<_PlanningTextSheet> {
 
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          BottomSheetHeader(title: widget.title, onPressed: _done),
-          AppTextFormField(
-            controller: _c,
-            autofocus: true,
-            keyboardType: widget.keyboardType ?? TextInputType.text,
-            label: widget.label,
-            labelColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-            hintText: widget.hint,
-            errorText: _error,
-            textInputAction: TextInputAction.done,
-            inputFormatters: [CodePointLengthFormatter(widget.maxLength)],
-            onChanged: (_) {
-              if (_error != null) setState(() => _error = null);
-            },
-            onFieldSubmitted: (_) => _done(),
-          ),
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      BottomSheetHeader(
+        title: widget.title,
+        actionLabel: 'Save',
+        onPressed: _done,
+      ),
+      AppTextFormField(
+        controller: _c,
+        autofocus: true,
+        keyboardType: widget.keyboardType ?? TextInputType.text,
+        label: widget.label,
+        labelColor: Theme.of(
+          context,
+        ).colorScheme.onSurface.withValues(alpha: 0.6),
+        hintText: widget.hint,
+        errorText: _error,
+        textInputAction: TextInputAction.done,
+        inputFormatters: [CodePointLengthFormatter(widget.maxLength)],
+        onChanged: (_) {
+          if (_error != null) setState(() => _error = null);
+        },
+        onFieldSubmitted: (_) => _done(),
+      ),
+    ],
+  );
 }
 
 /// Closes the sheet [context] is in, with [result], once. Done can fire
@@ -341,16 +434,22 @@ void popPlanningSheet<T>(BuildContext context, [T? result]) {
 
 /// Why [value] is not a web address Planning can link to; null when it is.
 String? planningUrlError(String value) =>
-    normalizePlanningUrl(value) == null ? 'Enter a web address, like airbnb.com/rooms/1' : null;
+    normalizePlanningUrl(value) == null
+        ? 'Enter a web address, like airbnb.com/rooms/1'
+        : null;
 
 /// "villa.example/ubud" -> "https://villa.example/ubud". Null unless the
 /// result is an http(s) address with a dotted host (the server re-checks).
 String? normalizePlanningUrl(String input) {
   final t = input.trim();
   if (t.isEmpty || t.length > 2048 || t.contains(RegExp(r'\s'))) return null;
-  final withScheme = RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*:').hasMatch(t) ? t : 'https://$t';
+  final withScheme =
+      RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*:').hasMatch(t) ? t : 'https://$t';
   final u = Uri.tryParse(withScheme);
-  if (u == null || (u.scheme != 'http' && u.scheme != 'https') || !u.host.contains('.')) return null;
+  if (u == null ||
+      (u.scheme != 'http' && u.scheme != 'https') ||
+      !u.host.contains('.'))
+    return null;
   return withScheme;
 }
 
@@ -363,10 +462,13 @@ String planningMemberName(List<PlanningMember> members, String? id) {
 
 /// Where a Planning push opens: its relationship and plan, or null if the
 /// payload is incomplete.
-({String relationshipId, String entryId})? planningEntryTarget(Map<String, dynamic>? data) {
+({String relationshipId, String entryId})? planningEntryTarget(
+  Map<String, dynamic>? data,
+) {
   final rel = data?['relationship_id'];
   final entry = data?['entry_id'];
-  if (rel is! String || entry is! String || rel.isEmpty || entry.isEmpty) return null;
+  if (rel is! String || entry is! String || rel.isEmpty || entry.isEmpty)
+    return null;
   return (relationshipId: rel, entryId: entry);
 }
 
@@ -377,27 +479,33 @@ class PlanningUnavailableScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Planning')),
-        body: Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text('Planning unavailable.'),
-            const Gap(Spacing.sm),
-            TextButton(
-              onPressed: () async {
-                if (!await Navigator.of(context).maybePop() && context.mounted) GoRouter.maybeOf(context)?.go('/home');
-              },
-              child: const Text('Go back'),
-            ),
-          ]),
-        ),
-      );
+    appBar: AppBar(title: const Text('Planning')),
+    body: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Planning unavailable.'),
+          const Gap(Spacing.sm),
+          TextButton(
+            onPressed: () async {
+              if (!await Navigator.of(context).maybePop() && context.mounted)
+                GoRouter.maybeOf(context)?.go('/home');
+            },
+            child: const Text('Go back'),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 /// Apple Notes-style groups by last activity: Today, Yesterday, Previous 7
 /// Days, Previous 30 Days, then month names this year, then years. Groups
 /// come out newest first; plans keep their order within a group.
 List<({String title, List<PlanningEntrySummary> entries})> planningDateSections(
-    List<PlanningEntrySummary> entries, DateTime now) {
+  List<PlanningEntrySummary> entries,
+  DateTime now,
+) {
   final today = DateUtils.dateOnly(now);
   String bucket(DateTime at) {
     final day = DateUtils.dateOnly(at.toLocal());
@@ -418,7 +526,8 @@ List<({String title, List<PlanningEntrySummary> entries})> planningDateSections(
     final at = e.lastActivityAt;
     if (newest[key] == null || at.isAfter(newest[key]!)) newest[key] = at;
   }
-  final keys = groups.keys.toList()..sort((a, b) => newest[b]!.compareTo(newest[a]!));
+  final keys =
+      groups.keys.toList()..sort((a, b) => newest[b]!.compareTo(newest[a]!));
   return [for (final k in keys) (title: k, entries: groups[k]!)];
 }
 
@@ -426,39 +535,103 @@ List<({String title, List<PlanningEntrySummary> entries})> planningDateSections(
 /// week, else the short date.
 String planningRowDate(DateTime at, DateTime now) {
   final local = at.toLocal();
-  final days = DateUtils.dateOnly(now).difference(DateUtils.dateOnly(local)).inDays;
+  final days =
+      DateUtils.dateOnly(now).difference(DateUtils.dateOnly(local)).inDays;
   if (days <= 0) return DateFormat.jm().format(local);
   if (days == 1) return 'Yesterday';
   if (days <= 7) return DateFormat.EEEE().format(local);
   return DateFormat.yMd().format(local);
 }
 
-String planningCategoryHeroTag(String categoryId) => 'planning-category-title-$categoryId';
+String planningCategoryHeroTag(String categoryId) =>
+    'planning-category-title-$categoryId';
 
-/// A category's name in an app bar. The category list and the plans in it
-/// both show it, in this one style, so it flies between them (a Hero)
-/// instead of jumping when a plan opens or closes.
+/// A category's name as a [Hero]: the Planning list row, the category's app
+/// bar and its plans' app bars all show it, so it flies between them. The
+/// [title] is a [Text]; when the two ends differ in size or weight, the
+/// flying name eases from one style to the other instead of jumping.
+class PlanningCategoryHero extends StatelessWidget {
+  const PlanningCategoryHero({
+    super.key,
+    required this.categoryId,
+    required this.title,
+  });
+  final String categoryId;
+  final Text title;
+
+  @override
+  Widget build(BuildContext context) => Hero(
+    tag: planningCategoryHeroTag(categoryId),
+    flightShuttleBuilder: _flight,
+    // Material keeps the text styled while it flies (no underline flash).
+    child: Material(type: MaterialType.transparency, child: title),
+  );
+
+  static Text? _textOf(BuildContext heroContext) {
+    final child = (heroContext.widget as Hero).child;
+    final inner = child is Material ? child.child : child;
+    return inner is Text ? inner : null;
+  }
+
+  static Widget _flight(
+    BuildContext flightContext,
+    Animation<double> animation,
+    HeroFlightDirection direction,
+    BuildContext fromHeroContext,
+    BuildContext toHeroContext,
+  ) {
+    final push = direction == HeroFlightDirection.push;
+    // 0 is the lower screen (where the name starts on a push), 1 the upper.
+    final lower = _textOf(push ? fromHeroContext : toHeroContext);
+    final upper = _textOf(push ? toHeroContext : fromHeroContext);
+    if (lower == null || upper == null)
+      return (toHeroContext.widget as Hero).child;
+    final base = DefaultTextStyle.of(toHeroContext).style;
+    final from = base.merge(lower.style);
+    final to = base.merge(upper.style);
+    return Material(
+      type: MaterialType.transparency,
+      child: AnimatedBuilder(
+        animation: animation,
+        builder:
+            (_, __) => FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                upper.data ?? '',
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle.lerp(from, to, animation.value),
+              ),
+            ),
+      ),
+    );
+  }
+}
+
+/// A category's name in an app bar, in the one style the category screen
+/// and its plans share.
 class PlanningCategoryTitle extends StatelessWidget {
-  const PlanningCategoryTitle({super.key, required this.categoryId, required this.name});
+  const PlanningCategoryTitle({
+    super.key,
+    required this.categoryId,
+    required this.name,
+  });
   final String categoryId;
   final String name;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Hero(
-      tag: planningCategoryHeroTag(categoryId),
-      // Material keeps the text styled while it flies (no underline flash).
-      child: Material(
-        type: MaterialType.transparency,
-        child: Text(
-          name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.8),
-          ),
+    return PlanningCategoryHero(
+      categoryId: categoryId,
+      title: Text(
+        name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.8),
         ),
       ),
     );

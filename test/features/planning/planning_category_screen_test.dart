@@ -1,3 +1,7 @@
+import 'package:attune/core/widgets/feedback/empty_state.dart';
+import 'package:attune/core/widgets/circular_documentation_container.dart';
+import 'package:attune/core/widgets/bottom_sheet_header.dart';
+import 'package:attune/app/theme/app_theme.dart';
 import 'dart:async';
 
 import 'package:attune/features/planning/data/planning_models.dart';
@@ -59,7 +63,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'Bali');
     await tester.pump(); // enterText does not pump; Create enables on rebuild
-    await tester.tap(find.text('Create'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     final call = g.callsTo('create_planning_entry').single;
     expect(call['p_title'], 'Bali');
@@ -78,9 +82,40 @@ void main() {
     await tester.enterText(find.byType(TextField), 'Weekend');
     await tester.pump();
     await tester.tap(find.text('Start blank'));
-    await tester.tap(find.text('Create'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(g.callsTo('create_planning_entry').single['p_use_template'], isFalse);
+  });
+
+  testWidgets("the new-plan sheet is the app's sheet: New plan header, Save, neutral background", (tester) async {
+    final g = _gateway();
+    await tester.pumpWidget(planningTestApp(g, PlanningCategoryScreen(relationshipId: 'r1', category: _cat())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('New plan'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(BottomSheetHeader, 'New plan'), findsOneWidget);
+    expect(find.byType(DraggableScrollableSheet), findsOneWidget, reason: 'BottomSheetUtils');
+    final sheet = tester.widget<CircularDocumentationContainer>(find.byType(CircularDocumentationContainer));
+    expect(sheet.color, Theme.of(tester.element(find.byType(BottomSheetHeader))).colorScheme.neutral);
+    expect(find.text('Create'), findsNothing, reason: 'the header saves');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.text('Give it a title'), findsOneWidget, reason: 'an empty title keeps the sheet open');
+    expect(g.callsTo('create_planning_entry'), isEmpty);
+  });
+
+  testWidgets("an empty category shows the app's empty state: its icon, a title, a line, and Start one", (tester) async {
+    await tester.pumpWidget(planningTestApp(_gateway(open: []), PlanningCategoryScreen(relationshipId: 'r1', category: _cat())));
+    await tester.pumpAndSettle();
+    final empty = find.byType(EmptyStateWidget);
+    expect(empty, findsOneWidget);
+    expect(find.descendant(of: empty, matching: find.byType(Icon)), findsWidgets, reason: "the category's icon shows");
+    expect(find.text('No plans here yet'), findsOneWidget);
+    expect(find.text("Start a plan and you'll both see it here."), findsOneWidget);
+    expect(find.text('Start one'), findsOneWidget);
+    expect(tester.widget<EmptyStateWidget>(empty).compact, isFalse, reason: 'the full-size empty state');
+    final screen = tester.getSize(find.byType(Scaffold).first).height;
+    expect(tester.getCenter(find.text('No plans here yet')).dy, greaterThan(screen * 0.25), reason: 'centred, not a line at the top');
   });
 
   testWidgets('starters cannot be deleted, only reset', (tester) async {

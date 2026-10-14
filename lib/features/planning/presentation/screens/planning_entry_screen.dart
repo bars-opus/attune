@@ -491,7 +491,7 @@ class _EntryBody extends ConsumerWidget {
                             ),
                           );
                         }
-                        return ReorderableDelayedDragStartListener(
+                        return _DragWhenItFits(
                           key: ValueKey('block-${b.id}'),
                           index: i,
                           child: _motion(
@@ -787,4 +787,41 @@ class _TitleFieldState extends ConsumerState<_TitleField> {
       onSubmitted: (_) => _focus.unfocus(),
     ),
   );
+}
+
+/// Long-press drag-to-reorder for a block, offered only while the block fits
+/// on screen. A block taller than the list (an Expenses block with its
+/// chart, a long checklist) can't be dragged without the list's auto-scroll
+/// failing, so it is moved with Move up / Move down in its menu instead.
+class _DragWhenItFits extends StatefulWidget {
+  const _DragWhenItFits({super.key, required this.index, required this.child});
+  final int index;
+  final Widget child;
+
+  @override
+  State<_DragWhenItFits> createState() => _DragWhenItFitsState();
+}
+
+class _DragWhenItFitsState extends State<_DragWhenItFits> {
+  final _measured = GlobalKey();
+  bool _fits = true;
+
+  void _check() {
+    if (!mounted) return;
+    final box = _measured.currentContext?.findRenderObject();
+    final viewport = Scrollable.maybeOf(context)?.position;
+    if (box is! RenderBox || !box.hasSize || viewport == null || !viewport.hasViewportDimension) return;
+    final fits = box.size.height < viewport.viewportDimension;
+    if (fits != _fits) setState(() => _fits = fits);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _check());
+    return ReorderableDelayedDragStartListener(
+      index: widget.index,
+      enabled: _fits,
+      child: KeyedSubtree(key: _measured, child: widget.child),
+    );
+  }
 }

@@ -1,4 +1,7 @@
-import 'package:attune/core/widgets/charts/rose_chart.dart';
+import 'package:attune/core/widgets/app_divider.dart';
+import 'package:attune/core/widgets/charts/app_pie_chart.dart';
+import 'package:attune/core/widgets/info_row_widget.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:attune/features/planning/data/planning_models.dart';
 import 'package:attune/features/planning/domain/expense_view.dart';
 import 'package:attune/features/planning/domain/planning_money.dart';
@@ -92,17 +95,21 @@ void main() {
         }),
         _screen));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.byType(RoseChart), 100,
+    await tester.scrollUntilVisible(find.byType(AppPieChart), 100,
         scrollable: find.byWidgetPredicate((w) => w is Scrollable && w.axisDirection == AxisDirection.down).first);
-    final scheme = Theme.of(tester.element(find.byType(RoseChart))).colorScheme;
-    final chart = tester.widget<RoseChart>(find.byType(RoseChart));
+    final scheme = Theme.of(tester.element(find.byType(AppPieChart))).colorScheme;
+    final chart = tester.widget<AppPieChart>(find.byType(AppPieChart));
     expect([for (final s in chart.slices) s.label], ['Hotel', 'Taxi', 'Left in budget']);
     expect(chart.slices[0].color, scheme.primary.withValues(alpha: 0.18), reason: 'not yet paid');
     expect(chart.slices[1].color, scheme.primary, reason: 'paid');
     expect(chart.slices[2].color, scheme.outlineVariant, reason: "what's left of the budget");
     expect(chart.slices[2].valueLabel, formatPlanningMoneyCompact(8500, 'GHS'));
+    final sections = tester.widget<PieChart>(find.byType(PieChart)).data.sections;
+    final whole = sections.fold<double>(0, (sum, s) => sum + s.value);
+    expect(sections[0].value / whole, moreOrLessEquals(20000 / 30000), reason: 'Hotel is two-thirds of the budget');
+    expect(sections[2].value / whole, moreOrLessEquals(8500 / 30000), reason: "what's left is its share of the budget");
     for (final l in ['Paid', 'Not yet paid', 'Left in budget']) {
-      expect(find.text(l), findsOneWidget, reason: 'legend: $l');
+      expect(find.descendant(of: find.byType(Wrap), matching: find.text(l)), findsOneWidget, reason: 'legend: $l');
     }
   });
 
@@ -128,11 +135,131 @@ void main() {
         }),
         _screen));
     await tester.pumpAndSettle();
-    expect(find.byType(RoseChart), findsNothing);
+    expect(find.byType(AppPieChart), findsNothing);
   });
 
   test('compact amounts for the wedges', () {
     expect(formatPlanningMoneyCompact(20000, 'GHS'), contains('200'));
     expect(formatPlanningMoneyCompact(250000, 'GHS'), contains('2.5K'));
+  });
+
+  testWidgets('dividers separate the chart key from the expenses, and the totals from Add expense', (tester) async {
+    await tester.pumpWidget(planningTestApp(
+        FakePlanningGateway({
+          'get_planning_entry': (_) => fakeEntryDetailJson(blocks: [
+                fakeBlockJson(id: 'x', type: 'expenses', items: [_expense('1', 'Hotel', 20000), _expense('2', 'Taxi', 1500)]),
+              ]),
+        }),
+        _screen));
+    await tester.pumpAndSettle();
+    double y(Finder f) => tester.getTopLeft(f).dy;
+    // The block's own dividers, not the ones between expense lines, by
+    // their rendered positions (both are the same const widget).
+    final ys = [
+      for (final e in find.byType(AppDivider).evaluate())
+        if (find
+            .ancestor(
+                of: find.byElementPredicate((x) => x == e),
+                matching: find.byWidgetPredicate((w) => '${w.key}'.contains('expense-line-')))
+            .evaluate()
+            .isEmpty)
+          (e.renderObject! as RenderBox).localToGlobal(Offset.zero).dy,
+    ]..sort();
+    // Under the chart key, under the Items/Prices header, above the totals,
+    // above the Total row, and between the totals and Add expense.
+    expect(ys, hasLength(5));
+    expect(ys[0], greaterThan(y(find.text('Not yet paid'))), reason: 'below the chart key');
+    expect(ys[0], lessThan(y(find.text('Items'))), reason: 'above the header');
+    expect(ys[1], greaterThan(y(find.text('Items'))), reason: 'under the header');
+    expect(ys[1], lessThan(y(find.text('Hotel').last)), reason: 'above the expenses');
+    expect(ys[2], lessThan(y(find.text('Total'))), reason: 'above the totals');
+    expect(ys[3], lessThan(y(find.text('Total'))), reason: 'above the Total row');
+    expect(ys[4], greaterThan(y(find.text('Total'))), reason: 'below the total');
+    expect(ys[4], lessThan(y(find.text('Add expense'))), reason: 'above Add expense');
+  });
+
+  testWidgets('with nothing spent, no stray dividers', (tester) async {
+    await tester.pumpWidget(planningTestApp(
+        FakePlanningGateway({
+          'get_planning_entry': (_) => fakeEntryDetailJson(blocks: [fakeBlockJson(id: 'x', type: 'expenses')]),
+        }),
+        _screen));
+    await tester.pumpAndSettle();
+    expect(find.byType(AppDivider), findsNothing);
+  });
+
+  FakePlanningGateway three() => FakePlanningGateway({
+        'get_planning_entry': (_) => fakeEntryDetailJson(blocks: [
+              fakeBlockJson(id: 'x', type: 'expenses', items: [
+                _expense('1', 'Hotel', 20000),
+                _expense('2', 'Taxi', 1500),
+                _expense('3', 'Food', 8000),
+              ]),
+            ]),
+      });
+
+  testWidgets("each expense is the app's InfoRowWidget without its own divider; an AppDivider sits between them",
+      (tester) async {
+    await tester.pumpWidget(planningTestApp(three(), _screen));
+    await tester.pumpAndSettle();
+    // The expense lines' rows (the totals below are InfoRowWidgets too).
+    final rows = tester
+        .widgetList<InfoRowWidget>(find.descendant(
+            of: find.byWidgetPredicate((w) => '${w.key}'.contains('expense-line-')), matching: find.byType(InfoRowWidget)))
+        .toList();
+    expect([for (final r in rows) r.title], ['Hotel', 'Taxi', 'Food']);
+    expect([for (final r in rows) r.showDivider], [false, false, false]);
+    expect(rows.first.trailing, isA<Text>(), reason: 'the amount sits at the end of the row');
+    double y(String t) => tester.getTopLeft(find.text(t).last).dy;
+    final between = [
+      for (final e in find.byType(AppDivider).evaluate())
+        (e.renderObject! as RenderBox).localToGlobal(Offset.zero).dy,
+    ].where((d) => d > y('Hotel') && d < y('Food')).toList();
+    expect(between, hasLength(2), reason: 'one under Hotel, one under Taxi, none after Food');
+    expect(between.first, lessThan(y('Taxi')));
+  });
+
+  testWidgets('a header names the columns: Items over the names, Prices over the amounts', (tester) async {
+    await tester.pumpWidget(planningTestApp(three(), _screen));
+    await tester.pumpAndSettle();
+    final item = tester.getRect(find.text('Items'));
+    final price = tester.getRect(find.text('Prices'));
+    expect(item.bottom, lessThanOrEqualTo(tester.getTopLeft(find.text('Hotel').last).dy), reason: 'above the rows');
+    expect(item.left, moreOrLessEquals(tester.getTopLeft(find.text('Hotel').last).dx, epsilon: 1), reason: 'over the names');
+    expect(price.right,
+        moreOrLessEquals(tester.getTopRight(find.text(formatPlanningMoney(20000, 'GHS'))).dx, epsilon: 1),
+        reason: 'over the amounts');
+  });
+
+  testWidgets('no header while nothing is spent', (tester) async {
+    await tester.pumpWidget(planningTestApp(
+        FakePlanningGateway({'get_planning_entry': (_) => fakeEntryDetailJson(blocks: [fakeBlockJson(id: 'x', type: 'expenses')])}),
+        _screen));
+    await tester.pumpAndSettle();
+    expect(find.text('Items'), findsNothing);
+    expect(find.text('Prices'), findsNothing);
+  });
+
+  testWidgets("the chart's key is centred under it", (tester) async {
+    await tester.pumpWidget(planningTestApp(three(), _screen));
+    await tester.pumpAndSettle();
+    final legend = find.ancestor(of: find.text('Not yet paid'), matching: find.byType(Wrap)).first;
+    final key = tester.getRect(legend);
+    final chart = tester.getRect(find.byType(AppPieChart));
+    final first = tester.getRect(find.descendant(of: legend, matching: find.text('Paid')));
+    final last = tester.getRect(find.descendant(of: legend, matching: find.text('Not yet paid')));
+    final keyMiddle = (first.left - 18 + last.right) / 2; // from the first dot to the last label
+    expect(keyMiddle, moreOrLessEquals(chart.center.dx, epsilon: 2), reason: 'centred under the chart');
+    expect(key.width, greaterThan(last.right - first.left + 20), reason: 'the key spans the block, not just its items');
+  });
+
+  testWidgets('expense names are normal weight; the total amount is bold', (tester) async {
+    await tester.pumpWidget(planningTestApp(three(), _screen));
+    await tester.pumpAndSettle();
+    final rows = tester.widgetList<InfoRowWidget>(find.byType(InfoRowWidget)).toList();
+    final hotel = rows.firstWhere((r) => r.title == 'Hotel');
+    expect(hotel.titleStyle?.fontWeight, FontWeight.normal);
+    final total = rows.firstWhere((r) => r.title == 'Total');
+    expect((total.trailing! as Text).style?.fontWeight, FontWeight.bold);
   });
 }

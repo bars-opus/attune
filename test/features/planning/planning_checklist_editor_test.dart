@@ -25,7 +25,7 @@ Future<void> _open(WidgetTester tester, FakePlanningGateway g) async {
 }
 
 void main() {
-  testWidgets('the item sheet: untitled header, neutral background, Done saves, no Save button', (tester) async {
+  testWidgets('the item sheet: untitled header, neutral background, Save saves, no separate button', (tester) async {
     final g = _gateway();
     g.handlers['update_planning_block_item'] =
         (p) => fakeItemJson(id: 'i1', text: p['p_text'] as String, version: 2);
@@ -33,9 +33,10 @@ void main() {
     expect(tester.widget<BottomSheetHeader>(find.byType(BottomSheetHeader)).title, isEmpty);
     final scheme = Theme.of(tester.element(find.byType(BottomSheet))).colorScheme;
     expect(tester.widget<BottomSheet>(find.byType(BottomSheet)).backgroundColor, scheme.neutral);
-    expect(find.descendant(of: find.byType(BottomSheet), matching: find.text('Save')), findsNothing);
+    expect(find.descendant(of: find.byType(BottomSheet), matching: find.text('Save')), findsOneWidget,
+        reason: "only the header's Save; no separate button");
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Item'), 'Cherry tomatoes');
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsNothing);
     expect(g.callsTo('update_planning_block_item').single['p_text'], 'Cherry tomatoes');
@@ -45,7 +46,7 @@ void main() {
     final g = _gateway();
     await _open(tester, g);
     await tester.enterText(find.widgetWithText(AppTextFormField, 'Item'), '   ');
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsOneWidget);
     expect(find.text('Type the item'), findsOneWidget);

@@ -388,54 +388,24 @@
 
   "loadingDefaultMessage": "Loading...",
 
-  "emptyStateNoDataTitle": "No {dataType} yet",
-  "@emptyStateNoDataTitle": {
-    "description": "Title shown when no data of a specific type is available",
-    "placeholders": {
-      "dataType": {
-        "type": "String",
-        "example": "users"
-      }
-    }
-  },
+  "emptyStateNoDataTitle": "Nothing here yet",
   
-  "emptyStateNoDataSubtitle": "When {dataType} becomes available, they will appear here.",
-  "@emptyStateNoDataSubtitle": {
-    "description": "Subtitle explaining when data will appear",
-    "placeholders": {
-      "dataType": {
-        "type": "String", 
-        "example": "users"
-      }
-    }
-  },
+  "emptyStateNoDataSubtitle": "When there's something to show, it'll appear here.",
   
-  "emptyStateNoResultsTitle": "No results found",
-  "emptyStateNoResultsSubtitle": "Try adjusting your search or filters to find {dataType}.",
-  "@emptyStateNoResultsSubtitle": {
-    "description": "Hint for finding specific data type",
-    "placeholders": {
-      "dataType": {
-        "type": "String",
-        "example": "products"
-      }
-    }
-  },
+  "emptyStateNoResultsTitle": "No matches",
+  "emptyStateNoResultsSubtitle": "Try a different word or filter.",
   
-  "emptyStateNoInternetTitle": "No internet connection",
+  "emptyStateNoInternetTitle": "You're offline",
   "emptyStateNoInternetSubtitle": "Check your connection and try again.",
   
-  "emptyStateNoFavoritesTitle": "No favorites yet",
-  "emptyStateNoFavoritesSubtitle": "Start adding items to your favorites list.",
   
-  "emptyStateNoMessagesTitle": "No messages",
-  "emptyStateNoMessagesSubtitle": "Start a conversation to see messages here.",
+  "emptyStateNoMessagesTitle": "No messages yet",
+  "emptyStateNoMessagesSubtitle": "Say hello to start your conversation.",
   
   "emptyStateRefresh": "Refresh",
   "emptyStateClearFilters": "Clear filters",
   "emptyStateRetry": "Try again",
-  "emptyStateExplore": "Explore",
-  "emptyStateStartChat": "Start chat",
+  "emptyStateStartChat": "Say hello",
   
   
   "errorNetworkTitle": "Connection Error",
@@ -492,20 +462,6 @@
   "errorContactSupport": "Contact support",
   
   
-  "dataTypeUsers": "users",
-  "dataTypeUser": "user",
-  "dataTypeProducts": "products",
-  "dataTypeProduct": "product",
-  "dataTypeOrders": "orders",
-  "dataTypeOrder": "order",
-  "dataTypeMessages": "messages",
-  "dataTypeMessage": "message",
-  "dataTypeFavorites": "favorites",
-  "dataTypeFavorite": "favorite",
-  "dataTypeData": "data",
-  "dataTypeContent": "content",
-  "dataTypeItems": "items",
-  "dataTypeItem": "item",
 
 
 
