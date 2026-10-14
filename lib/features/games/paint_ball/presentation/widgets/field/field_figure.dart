@@ -174,7 +174,7 @@ class _FieldFigureState extends State<FieldFigure>
               coverWidth: widget.coverWidth,
               column: column,
             ) -
-            8.w;
+            12.w;
 
         // Both rows shelter under their own dome and the domes face each
         // other, so "tucked in" is measured from opposite edges. A
@@ -207,7 +207,7 @@ class _FieldFigureState extends State<FieldFigure>
                 curve: Curves.easeOut,
                 turns: widget.isAiming ? widget.tilt : 0,
                 child: CustomPaint(
-                  size: Size(16.w, 20.h),
+                  size: Size(24.w, 36.h),
                   painter: FieldFigurePainter(
                     color: widget.ownerColor,
                     pointsUp: !widget.isOpponent,
@@ -244,31 +244,75 @@ class FieldFigurePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
 
-    final path = Path();
-    if (pointsUp) {
-      path
-        ..moveTo(size.width / 2, 0)
-        ..lineTo(size.width, size.height)
-        ..lineTo(0, size.height);
-    } else {
-      path
-        ..moveTo(size.width / 2, size.height)
-        ..lineTo(size.width, 0)
-        ..lineTo(0, 0);
-    }
-    path.close();
+    // A head and a body, not a triangle.
+    //
+    // The first golden showed the triangle for what it was: a legible UI
+    // marker and not a person. Spec §5 had already flagged that as this
+    // design's least defensible claim, and §2.1 leaves nothing to lean
+    // on -- no illustration, no texture -- so the silhouette has to do
+    // the whole job of saying "someone is here" at twenty logical pixels.
+    //
+    // Two shapes are enough at this size, and only two survive the aim
+    // tilt: a circle reads as a head from any angle, and a rounded
+    // shoulder line reads as a torso. Limbs at 20px become noise.
+    //
+    // [pointsUp] puts the head at the top for the viewer's own row and
+    // at the bottom for the opponent's, so the two rows face each other
+    // the way their cover does.
+    // Proportions chosen by measurement, not by eye. The first attempt
+    // gave the head 45% of the total height and a torso wider than it
+    // was tall, which draws a mushroom however the curve is tuned. A
+    // head near 22% over an upright torso is the smallest arrangement
+    // that still reads as a person at this size.
+    final headRadius = size.height * 0.11;
+    final headCentre = Offset(
+      size.width / 2,
+      pointsUp ? headRadius : size.height - headRadius,
+    );
+
+    // The torso rises from the head toward the far edge: a dome whose
+    // flat side is the figure's base. Drawn as one path so the glow
+    // outlines the whole silhouette rather than each piece.
+    final neck = size.height * 0.04;
+    final shoulderTop =
+        pointsUp ? headCentre.dy + headRadius + neck : headCentre.dy - headRadius - neck;
+    final baseY = pointsUp ? size.height : 0.0;
+    final halfWidth = size.width * 0.40;
+
+    // Shoulders slope IN toward the neck rather than bulging out: the
+    // earlier control point pushed the curve away from the head, which
+    // is what fused head and torso into one blob.
+    final shoulderHalf = halfWidth * 0.62;
+    final body =
+        Path()
+          ..moveTo(size.width / 2 - halfWidth, baseY)
+          ..lineTo(size.width / 2 - shoulderHalf, shoulderTop)
+          ..quadraticBezierTo(
+            size.width / 2,
+            shoulderTop + (pointsUp ? -neck : neck),
+            size.width / 2 + shoulderHalf,
+            shoulderTop,
+          )
+          ..lineTo(size.width / 2 + halfWidth, baseY)
+          ..close();
+
+    final head = Path()..addOval(
+      Rect.fromCircle(center: headCentre, radius: headRadius),
+    );
+
+    final silhouette = Path.combine(PathOperation.union, body, head);
 
     // Filled, then outlined in its own glow: an actor is the brightest
     // thing on the field (§2.1 tier 3), and a stroke-only mark at this
     // size reads as structure rather than as a person.
     canvas.drawPath(
-      path,
+      silhouette,
       Paint()..color = color.withValues(alpha: NeonTokens.actorAlpha),
     );
 
     paintGlowPath(
       canvas,
-      path,
+      silhouette,
       GlowStrokeSpec(color: color, alpha: NeonTokens.actorAlpha),
       quality.haloPasses,
     );
