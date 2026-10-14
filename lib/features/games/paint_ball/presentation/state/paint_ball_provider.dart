@@ -382,6 +382,16 @@ class PaintBallSessionNotifier extends StateNotifier<PaintBallUiState> {
               ? result.closer!
               : result.opener!;
 
+      // The round's own cue. Task 14 gave the impact a bloom; this is
+      // what it sounds like. `mine.outcome` because the cue describes
+      // what THIS player's shot did -- the result they are waiting on.
+      _sound.play(
+        paintBallRoundCue(
+          outcome: mine.outcome,
+          knockout: result.knockout,
+        ),
+      );
+
       final replay = PaintBallReplay(
         roundNumber: result.roundNumber,
         mine: mine,

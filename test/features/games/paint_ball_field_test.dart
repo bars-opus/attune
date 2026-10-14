@@ -1,3 +1,8 @@
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/cover_bay.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/cover_row.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_figure.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_paint.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_lives_display.dart';
 import 'package:flutter/material.dart';
@@ -20,20 +25,18 @@ Widget _wrapReduced(Widget child) => ScreenUtilInit(
       ),
 );
 
-/// Counts the player triangles on the field.
+/// Counts the player figures on the field.
 ///
-/// A triangle exists only where a player's position is known -- your own
-/// always, theirs only after a round resolves. Counting the painters
-/// directly is the strictest form of that rule: it cannot be satisfied by
-/// a hidden-but-present widget.
-int _visibleTriangles(WidgetTester tester) {
-  return tester
-      .widgetList<CustomPaint>(find.byType(CustomPaint))
-      .where(
-        (widget) => widget.painter.runtimeType.toString().contains('Triangle'),
-      )
-      .length;
-}
+/// A figure exists only where a player's position is known -- your own
+/// always, theirs only after a round resolves.
+///
+/// Counts FieldFigure widgets rather than filtering painters by runtime
+/// type NAME, which is what this helper used to do. That filter broke on
+/// any rename with no behaviour change, and worse: a filter matching
+/// nothing returns an empty list, so `expect(count, 0)` passed forever
+/// while checking nothing. Two tests in this file were in that state.
+int _visibleFigures(WidgetTester tester) =>
+    tester.widgetList<FieldFigure>(find.byType(FieldFigure)).length;
 
 const _names = ['Left', 'Middle', 'Right'];
 
@@ -146,14 +149,12 @@ void main() {
     await tester.pump();
     expect(fired, 0, reason: 'a cover tap must never fire');
 
-    // The occupied triangle on your own row is the fire control.
+    // The occupied figure on your own row is the fire control. Found by
+    // its key rather than by `.first` descendant CustomPaint of the
+    // cover, which depended on paint order and would silently tap the
+    // wrong thing if the bay gained a layer.
     await tester.tap(
-      find
-          .descendant(
-            of: find.bySemanticsLabel('Middle cover'),
-            matching: find.byType(CustomPaint),
-          )
-          .first,
+      find.byKey(PaintBallFieldKeys.figure(1, isOpponent: false)),
       warnIfMissed: false,
     );
     await tester.pump();
@@ -203,7 +204,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      _visibleTriangles(tester),
+      _visibleFigures(tester),
       1,
       reason: 'only the viewer\'s own position may be shown',
     );
@@ -224,7 +225,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      _visibleTriangles(tester),
+      _visibleFigures(tester),
       2,
       reason: 'after the reveal both positions are on the field',
     );
@@ -311,20 +312,44 @@ void main() {
     );
     await tester.pump();
 
-    for (final widget in tester.widgetList<AnimatedAlign>(
-      find.byType(AnimatedAlign),
-    )) {
-      expect(widget.duration, Duration.zero);
+    // This test used to loop over AnimatedAlign, AnimatedSlide and
+    // AnimatedOpacity asserting each had a zero duration. The rebuilt
+    // field contains NONE of those three widget types, so all three
+    // loops iterated nothing and the test asserted nothing at all --
+    // while its name promised the strongest accessibility guarantee in
+    // the file. Caught in review by grepping the field for the types the
+    // test was looking for.
+    //
+    // It now asserts the two things reduce motion actually has to do
+    // here, each with a positive control so neither can go quiet again.
+
+    // 1. The rows receive the OS setting rather than a default. The
+    //    components take a plain bool, so the field is the only place it
+    //    can enter; if it defaulted to false everything below is off.
+    final rows = tester.widgetList<CoverRow>(find.byType(CoverRow));
+    expect(rows, hasLength(2), reason: 'a positive control');
+    for (final row in rows) {
+      expect(
+        row.reduceMotion,
+        isTrue,
+        reason: 'the field must read disableAnimations, not assume false',
+      );
     }
-    for (final widget in tester.widgetList<AnimatedSlide>(
-      find.byType(AnimatedSlide),
-    )) {
-      expect(widget.duration, Duration.zero);
-    }
-    for (final widget in tester.widgetList<AnimatedOpacity>(
-      find.byType(AnimatedOpacity),
-    )) {
-      expect(widget.duration, Duration.zero);
+
+    // 2. The one animated widget the field still has is instant.
+    final rotations = tester.widgetList<AnimatedRotation>(
+      find.byType(AnimatedRotation),
+    );
+    expect(
+      rotations,
+      isNotEmpty,
+      reason:
+          'a positive control: if the figure ever stops using '
+          'AnimatedRotation this loop would silently assert nothing, '
+          'which is exactly how this test broke before',
+    );
+    for (final rotation in rotations) {
+      expect(rotation.duration, Duration.zero);
     }
   });
 
@@ -378,7 +403,7 @@ void main() {
     await tester.pump();
 
     expect(
-      _visibleTriangles(tester),
+      _visibleFigures(tester),
       2,
       reason: 'both players are on the field during a replay',
     );
@@ -407,19 +432,17 @@ void main() {
     );
     await tester.pump();
 
-    final projectiles =
-        tester
-            .widgetList<CustomPaint>(find.byType(CustomPaint))
-            .where(
-              (widget) =>
-                  widget.painter.runtimeType.toString().contains('Projectile'),
-            )
-            .length;
-
+    // Keyed per side, so this asserts WHOSE shots are airborne rather
+    // than just how many painters happen to exist.
     expect(
-      projectiles,
-      2,
-      reason: 'a replay puts both shots in the air together',
+      find.byKey(PaintBallFieldKeys.projectile(isMine: true)),
+      findsOneWidget,
+      reason: 'your shot is in the air',
+    );
+    expect(
+      find.byKey(PaintBallFieldKeys.projectile(isMine: false)),
+      findsOneWidget,
+      reason: 'and so is theirs -- a replay puts both up together',
     );
   });
 
@@ -443,16 +466,20 @@ void main() {
     );
     await tester.pump();
 
-    final projectiles =
-        tester
-            .widgetList<CustomPaint>(find.byType(CustomPaint))
-            .where(
-              (widget) =>
-                  widget.painter.runtimeType.toString().contains('Projectile'),
-            )
-            .length;
-
-    expect(projectiles, 0, reason: 'no shot before the aim has landed');
+    // ⚠️ This assertion is a NEGATIVE, so it needs a positive control or
+    // it passes forever on a lookup that finds nothing. The control is
+    // the sibling test above, which proves both keys DO resolve
+    // mid-replay; here the same keys must be absent.
+    expect(
+      find.byKey(PaintBallFieldKeys.projectile(isMine: true)),
+      findsNothing,
+      reason: 'no shot before the aim has landed',
+    );
+    expect(
+      find.byKey(PaintBallFieldKeys.projectile(isMine: false)),
+      findsNothing,
+      reason: 'neither side fires early',
+    );
   });
 
   testWidgets('repositioning travels rather than teleporting', (tester) async {
@@ -475,23 +502,17 @@ void main() {
     await tester.pumpWidget(field(0));
     await tester.pumpAndSettle();
 
-    Offset trianglePosition() {
-      final finder = find.byWidgetPredicate(
-        (widget) =>
-            widget is CustomPaint &&
-            widget.painter.runtimeType.toString().contains('Triangle'),
-      );
-      return tester.getCenter(finder.first);
-    }
+    Offset figurePosition() =>
+        tester.getCenter(find.byType(FieldFigure));
 
-    final start = trianglePosition();
+    final start = figurePosition();
 
     await tester.pumpWidget(field(2));
     await tester.pump(const Duration(milliseconds: 310));
-    final middle = trianglePosition();
+    final middle = figurePosition();
 
     await tester.pumpAndSettle();
-    final end = trianglePosition();
+    final end = figurePosition();
 
     // It is genuinely between the two covers partway through, not already
     // arrived and not still waiting.
@@ -508,7 +529,7 @@ void main() {
 
     // And exactly one triangle exists throughout: it is the same body
     // moving, never a second one fading in.
-    expect(_visibleTriangles(tester), 1);
+    expect(_visibleFigures(tester), 1);
   });
 
   testWidgets('a travelling player steps clear of cover', (tester) async {
@@ -526,22 +547,16 @@ void main() {
       ),
     );
 
-    Offset trianglePosition() {
-      final finder = find.byWidgetPredicate(
-        (widget) =>
-            widget is CustomPaint &&
-            widget.painter.runtimeType.toString().contains('Triangle'),
-      );
-      return tester.getCenter(finder.first);
-    }
+    Offset figurePosition() =>
+        tester.getCenter(find.byType(FieldFigure));
 
     await tester.pumpWidget(field(0));
     await tester.pumpAndSettle();
-    final atRest = trianglePosition();
+    final atRest = figurePosition();
 
     await tester.pumpWidget(field(2));
     await tester.pump(const Duration(milliseconds: 310));
-    final crossing = trianglePosition();
+    final crossing = figurePosition();
 
     // Your row is at the bottom, so stepping out of cover moves UP the
     // screen -- a smaller dy.
@@ -586,10 +601,8 @@ void main() {
         await tester.pumpAndSettle();
 
         final triangle = tester.getRect(
-          find.byWidgetPredicate(
-            (widget) =>
-                widget is CustomPaint &&
-                widget.painter.runtimeType.toString().contains('Triangle'),
+          find.byKey(
+            PaintBallFieldKeys.figure(position, isOpponent: false),
           ),
         );
         final cover = tester.getRect(
@@ -613,9 +626,19 @@ void main() {
     // opponent's cover looked like it was sheltering someone standing
     // off the top of the board rather than facing you across the line.
     //
-    // Yours opens downward (legs planted below the dome); theirs opens
-    // upward. Checked through the painter's own flag rather than by
-    // eye, since the two are mirror images and easy to confuse.
+    // Yours faces the line with its legs planted below the dome; theirs
+    // is mirrored. Checked through the painter's own public flag rather
+    // than by eye, since the two are mirror images and easy to confuse.
+    //
+    // `CoverBayPainter.facing` replaces the old `_ShieldPainter.opensDown`
+    // and is its INVERSE: the old call site was `opensDown: isOpponent`,
+    // the new one is `facing: !isOpponent`. The drawn geometry is
+    // unchanged -- old `opensDown == false` and new `facing == true` both
+    // put the shoulder at `radius` and the foot at the full height -- so
+    // the field is not visually flipped by the rename.
+    //
+    // Read as a typed field rather than through `as dynamic`, so a rename
+    // is now a compile error instead of a silently empty filter.
     await tester.pumpWidget(
       _wrap(
         PaintBallField(
@@ -631,34 +654,62 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final shields =
+    final bays =
         tester
             .widgetList<CustomPaint>(find.byType(CustomPaint))
             .map((widget) => widget.painter)
-            .where(
-              (painter) => painter.runtimeType.toString().contains('Shield'),
-            )
+            .whereType<CoverBayPainter>()
             .toList();
 
-    expect(shields, hasLength(kPaintBallPositions * 2));
-
-    final opensDown =
-        shields.map((painter) => '$painter'.contains('opensDown')).toList();
+    // A positive control before the count below: a `whereType` that
+    // matched nothing would make "three of each" trivially wrong rather
+    // than trivially right, but saying so explicitly is what keeps this
+    // test honest if the bays are ever restructured.
+    expect(
+      bays,
+      hasLength(kPaintBallPositions * 2),
+      reason: 'six bays: three a side',
+    );
 
     // Three of each: one row mirrored against the other. If every cover
     // faced the same way this would be six or zero.
-    final downward =
-        shields.where((painter) {
-          final field = (painter as dynamic).opensDown as bool;
-          return field;
-        }).length;
-
     expect(
-      downward,
+      bays.where((painter) => painter.facing).length,
       kPaintBallPositions,
       reason: 'exactly one row of cover faces the other',
     );
-    expect(opensDown, isNotEmpty);
+
+    // And specifically WHICH row. The count above passes even if the two
+    // rows swapped, which is precisely the bug reported from the device
+    // -- so the count alone does not guard it.
+    for (var position = 0; position < kPaintBallPositions; position++) {
+      expect(
+        (tester
+                    .widget<CustomPaint>(
+                      find.byKey(
+                        PaintBallFieldKeys.bay(position, isOpponent: false),
+                      ),
+                    )
+                    .painter!
+                as CoverBayPainter)
+            .facing,
+        isTrue,
+        reason: 'your own cover $position faces the line',
+      );
+      expect(
+        (tester
+                    .widget<CustomPaint>(
+                      find.byKey(
+                        PaintBallFieldKeys.bay(position, isOpponent: true),
+                      ),
+                    )
+                    .painter!
+                as CoverBayPainter)
+            .facing,
+        isFalse,
+        reason: 'and theirs is mirrored against it',
+      );
+    }
   });
 
   testWidgets('the far row is named for the partner', (tester) async {
@@ -724,24 +775,23 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final splatPainters =
-        tester
-            .widgetList<CustomPaint>(find.byType(CustomPaint))
-            .where(
-              (widget) =>
-                  widget.painter.runtimeType.toString().contains('Splat'),
-            )
-            .map((widget) => widget.painter)
-            .toList();
+    // Read from the layer's typed field rather than by filtering
+    // painters on a type NAME and reaching through `as dynamic`.
+    //
+    // That old form was the most dangerous test in this file. A name
+    // filter that matches nothing yields an empty list, so the loop ran
+    // zero times and the test passed having asserted NOTHING -- and what
+    // it is meant to guard is a fairness property, not a cosmetic one:
+    // accumulated paint is a map of where your partner has already
+    // fired, their habits readable for free, which is exactly the clue
+    // this game asks you to earn.
+    final layer = tester.widget<FieldPaint>(find.byType(FieldPaint));
 
-    // The painter may exist; what matters is that it has nothing to draw.
-    for (final painter in splatPainters) {
-      expect(
-        (painter as dynamic).splats as List,
-        isEmpty,
-        reason: 'a board between rounds shows no past shots',
-      );
-    }
+    expect(
+      layer.splats,
+      isEmpty,
+      reason: 'a board between rounds shows no past shots',
+    );
   });
 
   testWidgets('a partner who stays put is called out', (tester) async {
@@ -823,24 +873,18 @@ void main() {
       );
       await tester.pump();
 
-      final painters =
-          tester
-              .widgetList<CustomPaint>(find.byType(CustomPaint))
-              .map((widget) => widget.painter)
-              .where(
-                (painter) =>
-                    painter.runtimeType.toString().contains('Projectile'),
-              )
-              .toList();
+      final shot = find.byKey(PaintBallFieldKeys.projectile(isMine: true));
 
       expect(
-        painters,
-        isNotEmpty,
+        shot,
+        findsOneWidget,
         reason: 'paint is in the air at progress $progress',
       );
-      for (final painter in painters) {
-        positions.add((painter as dynamic).progress as double);
-      }
+
+      positions.add(
+        (tester.widget<CustomPaint>(shot).painter! as ProjectilePainter)
+            .progress,
+      );
     }
 
     expect(

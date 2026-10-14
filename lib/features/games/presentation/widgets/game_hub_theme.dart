@@ -1,3 +1,5 @@
+import 'package:attune/core/ui/neon/attune_neon_quality.dart';
+import 'package:attune/core/ui/neon/neon_quality.dart';
 import 'package:flutter/material.dart';
 
 /// The games hub is dark, whatever the app theme is doing.
@@ -31,7 +33,9 @@ class GameHubTheme {
   /// Wraps a subtree so Material widgets inside pick up dark defaults
   /// rather than inheriting the app's light theme and rendering black
   /// text on a black sheet.
-  static Widget wrap({required Widget child}) => Theme(
+  static Widget wrap({required Widget child}) => NeonQualityScope(
+    quality: AttuneNeonQuality.forDevice,
+    child: Theme(
     data: ThemeData(
       brightness: Brightness.dark,
       scaffoldBackgroundColor: surface,
@@ -44,9 +48,10 @@ class GameHubTheme {
       ),
       dividerColor: hairline,
     ),
-    child: DefaultTextStyle.merge(
-      style: const TextStyle(color: primaryText),
-      child: ColoredBox(color: surface, child: child),
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(color: primaryText),
+        child: ColoredBox(color: surface, child: child),
+      ),
     ),
   );
 }

@@ -1,13 +1,60 @@
 # ATTUNE — GAMES MODULE SPECIFICATION (UPGRADED v2.0)
 
 **Version:** 2.0 (upgraded with algorithm quality checklist compliance)  
+**Reconciliation:** 2026-10-14 — see "What actually shipped" immediately below  
 **Created:** June 2026  
 **Last updated:** June 2026  
 **Status:** Ready for implementation – algorithm quality verified  
-**Phase:** Games Module — v1 (3 games)  
+**Phase:** Games Module — v1 (3 games), superseded; see the reconciliation note below  
 **Builder:** DeepSeek  
 **Reviewer:** Claude (this session)  
 **Related documents:** `ATTUNE_MASTER_SPEC.md`, `ATTUNE_SOUL.md`, `ATTUNE_PRINCIPLES_CHECKLIST.md`, `../algorithms/algorithm_quality_review_checklist.md`
+
+---
+
+## WHAT ACTUALLY SHIPPED (reconciliation, 2026-10-14)
+
+`ATTUNE_THESIS.md` §6.11 names this document's drift as a known process
+failure and makes the reconciliation sweep law. This is that sweep.
+
+**This spec describes three games. Ten shipped.** Read §§1–13 below as the
+v1 contract for This or That, Truth or Dare and 36 Questions — the shared
+architecture in §5 (session lifecycle, idempotency, authorisation, rate
+limits, observability) still governs all ten and is still accurate. What is
+stale is the game list and the roadmap.
+
+| Game | Status | Note |
+|---|---|---|
+| This or That | shipped | Specced here in full (§6) |
+| Truth or Dare | shipped | §7 |
+| 36 Questions | shipped | §8; built as a three-chapter *journey*, see `CONTEXT.md` |
+| Mirror | **shipped** | §13 lists it as deferred. It is not. |
+| Sliding Scale | **shipped** | §13 lists it as deferred. It is not. |
+| Scenario | **shipped** | Not mentioned anywhere in this document |
+| Love Map | **shipped** | Not mentioned anywhere in this document |
+| Paint Ball | **shipped** | Not mentioned; Arcade tier, no disclosure |
+| Snakes and Ladders | **shipped** | Not mentioned; Arcade tier |
+| Word Hunt | **shipped** | Not mentioned; Arcade tier |
+| Dots and Boxes | prototype | Pass-and-play, quarantined in the catalogue |
+| Constellation | prototype | Pass-and-play, quarantined in the catalogue |
+| Never Have I Ever | listed, unbuilt | Shows as "coming soon"; no route |
+
+**The Arcade tier is not described here at all.** Paint Ball, Snakes and
+Ladders and Word Hunt ask nothing of the player and produce no disclosure
+data. They exist for the slot after a hard conversation, which is a
+different product job from the disclosure games this spec was written for.
+
+**Also superseded:** §6.2's screen designs for This or That, and any
+description of the Paint Ball field, predate the neon-dark rebuild. The
+current visual contract is
+[`docs/superpowers/specs/2026-10-12-paint-ball-neon-design.md`](../../docs/superpowers/specs/2026-10-12-paint-ball-neon-design.md),
+which governs Paint Ball's field and the shared `lib/core/ui/neon/`
+toolkit now consumed by Sliding Scale as well.
+
+**What is NOT stale:** §5 in its entirety, §9's question-bank sizing, §10's
+base schema, and §12's algorithm-quality compliance. The security
+hardening those sections describe was audited and fixed in commit
+`b595a6b5`; see `docs/reviews/GAMES_LAUNCH_REVIEW.md`.
 
 ---
 
@@ -377,7 +424,8 @@ This spec now satisfies all **P0-U** and **P1** checks from the algorithm qualit
 
 All previous open questions resolved. The following are **deferred to post‑MVP**:
 
-- Additional games (Mirror, Sliding Scale, etc.)
+- ~~Additional games (Mirror, Sliding Scale, etc.)~~ — **shipped**; see the
+  reconciliation note at the top of this document
 - Full round list on end screen (v1 uses summary only)
 - Session pause/resume for 36 Questions (current behaviour accepted)
 

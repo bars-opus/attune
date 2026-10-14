@@ -1,3 +1,4 @@
+import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:flutter/foundation.dart';
 // lib/features/games/paint_ball/models/paint_ball_models.dart
 
@@ -75,6 +76,33 @@ enum PaintBallShotOutcome {
   };
 
   String get wireValue => name;
+}
+
+/// The cue a resolved round plays.
+///
+/// A pure function rather than branching inside the provider, because
+/// the precedence is the interesting part and a provider test would need
+/// a whole mocked service to reach it.
+///
+/// This exists because `gameHit`, `gameMiss` and `gameKnockout` were
+/// declared, mapped to files and generated -- and never played by
+/// anything. The loudest moment in the game happened in silence.
+AppSound paintBallRoundCue({
+  required PaintBallShotOutcome outcome,
+  required bool knockout,
+}) {
+  // A knockout outranks the hit that caused it. Every knockout IS a hit,
+  // so without this the bigger moment would be announced by the smaller
+  // cue -- and it is reachable on a miss too, via a double knockout.
+  if (knockout) return AppSound.gameKnockout;
+
+  return switch (outcome) {
+    PaintBallShotOutcome.hit => AppSound.gameHit,
+    // An opener resolves nothing -- the partner has not chosen yet -- so
+    // it must not promise a result that has not happened.
+    PaintBallShotOutcome.opening || PaintBallShotOutcome.miss =>
+      AppSound.gameMiss,
+  };
 }
 
 // ============================================================
@@ -447,6 +475,11 @@ class PaintBallHalf {
   final String shotResult;
 
   bool get isHit => shotResult == 'hit';
+
+  /// The typed outcome, as PaintBallRound and the session half already
+  /// expose. Added so a caller reasoning about what a shot DID does not
+  /// have to compare wire strings by hand.
+  PaintBallShotOutcome get outcome => PaintBallShotOutcome.fromWire(shotResult);
 
   factory PaintBallHalf.fromJson(Map<String, dynamic> json) {
     final data = _json(json);
