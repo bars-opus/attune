@@ -1,4 +1,6 @@
+import 'package:attune/features/games/presentation/widgets/game_palette.dart';
 import 'package:attune/features/games/session_games/data/models/session_game_question.dart';
+import 'package:attune/features/games/sliding_scale/presentation/widgets/sliding_scale_track.dart';
 import 'package:flutter/material.dart';
 
 /// Rates one statement on the 1-10 scale (§8.4).
@@ -28,6 +30,8 @@ class _SlidingScaleQuestionScreenState
 
   @override
   Widget build(BuildContext context) {
+    final palette = GamePalette.of('sliding_scale');
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -39,13 +43,40 @@ class _SlidingScaleQuestionScreenState
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 32),
-          Slider(
-            value: _value,
-            min: 1,
-            max: 10,
-            divisions: 9, // nine intervals across ten positions
-            label: _value.round().toString(),
-            onChanged: (v) => setState(() => _value = v),
+
+          // The spectrum, drawn. This game's whole subject is a gradient
+          // and it shipped as a default slider on a default background;
+          // its palette entry has been teal-into-blue all along, unused.
+          //
+          // The Slider stays as the INPUT: it is the accessible, tested,
+          // platform-correct control, and its divisions are what keep the
+          // answer inside the 1-10 the server accepts. What changes is
+          // that the value is now shown rather than only held.
+          SlidingScaleTrack(
+            fraction: slidingScaleFraction(_value),
+            lowColor: palette.start,
+            highColor: palette.end,
+          ),
+          SliderTheme(
+            // The track is drawn above; the slider is the hit target.
+            // Transparent rather than removed, because replacing it with
+            // a GestureDetector would mean reimplementing keyboard
+            // traversal, screen-reader semantics and drag handling that
+            // Slider already gets right.
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: Colors.transparent,
+              inactiveTrackColor: Colors.transparent,
+              thumbColor: palette.end,
+              overlayColor: palette.end.withValues(alpha: 0.12),
+            ),
+            child: Slider(
+              value: _value,
+              min: 1,
+              max: 10,
+              divisions: 9, // nine intervals across ten positions
+              label: _value.round().toString(),
+              onChanged: (v) => setState(() => _value = v),
+            ),
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
