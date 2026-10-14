@@ -2,11 +2,10 @@
 
 import 'package:attune/core/utils/exports/export_screens.dart';
 
-enum AddChoice { moment, reminder }
+enum AddChoice { event, moment, reminder }
 
-/// The Timeline FAB's entry point — replaces what used to be two separate
-/// FABs (Timeline's "log a moment", Calendar's "add reminder") with one
-/// FAB and a choice between the two existing, unmodified flows.
+/// The Timeline and Together FAB's entry point: one FAB, three flows —
+/// plan an event, log a moment, add a reminder.
 class AddMomentOrReminderSheet {
   static Future<AddChoice?> show(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -21,6 +20,21 @@ class AddMomentOrReminderSheet {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Gap(Spacing.md),
+                InfoRowWidget(
+                  title: 'Plan something together',
+                  subtitle: 'A date, a trip, anything with a time',
+                  icon: Icons.event_rounded,
+                  showAvatar: false,
+                  showDivider: false,
+                  showTrailingArrow: false,
+                  trailing: Icon(
+                    Icons.add,
+                    size: 25.h,
+                    color: colorScheme.onBackground.withOpacity(.5),
+                  ),
+                  onTap: () => Navigator.of(context).pop(AddChoice.event),
+                ),
+                AppDivider(),
                 InfoRowWidget(
                   title: 'Log a moment',
                   subtitle: 'A milestone, conflict, highlight...',

@@ -11,10 +11,14 @@ import 'package:attune/features/planning/presentation/planning_providers.dart'
     as planning_providers;
 import 'package:attune/features/planning/presentation/planning_ui.dart'
     show planningSummaryLine;
-import 'package:attune/features/reminders/data/models/reminder_model.dart';
-import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/stories/presentation/screens/story_camera_screen.dart';
+import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart'
+    as timeline_providers;
+import 'package:attune/features/together/domain/together_agenda.dart';
+import 'package:attune/features/together/domain/together_item.dart';
+import 'package:attune/features/together/presentation/together_providers.dart';
+import 'package:intl/intl.dart';
 import 'package:attune/features/stories/presentation/screens/story_reel_screen.dart';
 import 'package:attune/features/stories/presentation/widgets/story_rings_row.dart';
 import 'package:flutter/material.dart';
@@ -181,7 +185,7 @@ class ConversationsScreen extends ConsumerWidget {
                           Gap(Spacing.sm.h),
                           AppDivider(),
                           Gap(Spacing.sm.h),
-                          const _NextCalendarEventRow(),
+                          const _TogetherRow(),
                           // Ambient relationship context, beside the next
                           // event rather than in a panel of its own:
                           // "how far apart are we" belongs with "dinner
@@ -389,7 +393,7 @@ class _LatestReflectionRow extends ConsumerWidget {
 /// to-do, else the next date or to-do, else the latest plan (ranked
 /// server-side by get_planning_summary, spec §16, so this widget does no
 /// ranking of its own). Same "one line, tap through to the full list" shape as
-/// _LatestReflectionRow/_NextCalendarEventRow.
+/// _LatestReflectionRow/_TogetherRow.
 class _PlanningSummaryRow extends ConsumerWidget {
   const _PlanningSummaryRow();
 
@@ -428,9 +432,6 @@ class _PlanningSummaryRow extends ConsumerWidget {
   }
 }
 
-/// Next upcoming reminder, if any — same source CouplesCalendarScreen
-/// itself reads (remindersListProvider), same "Today"/"Tomorrow"/"In N
-/// days" countdown language.
 /// Wraps PartnerDistanceRow with the couple this screen is showing.
 ///
 /// Resolves the relationship from the conversation list rather than
@@ -454,64 +455,50 @@ class _PartnerDistanceRow extends ConsumerWidget {
   }
 }
 
-class _NextCalendarEventRow extends ConsumerWidget {
-  const _NextCalendarEventRow();
-
-  DateTime _nextOccurrence(ReminderModel reminder) {
-    if (!reminder.isRecurring) return reminder.remindAt;
-    final now = DateTime.now();
-    var next = DateTime(
-      now.year,
-      reminder.remindAt.month,
-      reminder.remindAt.day,
-    );
-    if (next.isBefore(DateTime(now.year, now.month, now.day))) {
-      next = DateTime(
-        now.year + 1,
-        reminder.remindAt.month,
-        reminder.remindAt.day,
-      );
-    }
-    return next;
-  }
-
-  String _countdownLabel(DateTime occurrence) {
-    final today = DateTime.now();
-    final days =
-        DateTime(
-          occurrence.year,
-          occurrence.month,
-          occurrence.day,
-        ).difference(DateTime(today.year, today.month, today.day)).inDays;
-    if (days == 0) return 'Today';
-    if (days == 1) return 'Tomorrow';
-    return 'In $days days';
-  }
+/// The next thing on Together, with a way in.
+class _TogetherRow extends ConsumerWidget {
+  const _TogetherRow();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
-    final remindersAsync = ref.watch(remindersListProvider);
-
-    final reminders = remindersAsync.valueOrNull ?? const [];
-    ReminderModel? next;
-    DateTime? nextOccurrence;
-    for (final reminder in reminders) {
-      final occurrence = _nextOccurrence(reminder);
-      if (nextOccurrence == null || occurrence.isBefore(nextOccurrence)) {
-        next = reminder;
-        nextOccurrence = occurrence;
-      }
+    final relationshipId =
+        ref.watch(timeline_providers.currentRelationshipIdProvider).valueOrNull;
+    final now = DateTime.now();
+    final range = togetherUpcomingRange(now);
+    final items =
+        relationshipId == null
+            ? const <TogetherItem>[]
+            : ref
+                    .watch(
+                      togetherRangeProvider((
+                        relationshipId: relationshipId,
+                        start: range.start,
+                        end: range.end,
+                      )),
+                    )
+                    .valueOrNull ??
+                const <TogetherItem>[];
+    final next = nextTogetherItem(items, now);
+    String title = 'Nothing planned yet';
+    if (next != null) {
+      final days =
+          next.day.difference(DateTime(now.year, now.month, now.day)).inDays;
+      final when =
+          days == 0
+              ? 'today'
+              : days == 1
+              ? 'tomorrow'
+              : 'in $days days';
+      final s = next.startsAt;
+      title =
+          s == null || next.allDay
+              ? '${next.title} $when'
+              : '${next.title} $when, ${DateFormat.jm().format(s)}';
     }
-
-    final title =
-        next == null
-            ? 'No upcoming events'
-            : '${next.title} ${_countdownLabel(nextOccurrence!).toLowerCase()}';
-
     return InfoRowWidget(
       title: title,
-      subtitle: 'Calendar',
+      subtitle: 'Together',
       iconColor: colorScheme.onSurfaceVariant.withOpacity(.4),
       icon: Icons.calendar_month,
       subTitleMaxLines: 1,
@@ -520,7 +507,7 @@ class _NextCalendarEventRow extends ConsumerWidget {
       showAvatar: false,
       disableTrailing: false,
       showTrailingArrow: true,
-      onTap: () => context.pushNamed('timeline'),
+      onTap: () => context.pushNamed('together'),
     );
   }
 }

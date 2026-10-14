@@ -1,7 +1,7 @@
 import 'package:attune/core/widgets/feedback/error_state.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/features/planning/presentation/screens/planning_home_screen.dart';
-import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
+import 'package:attune/features/together/presentation/screens/together_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -126,13 +126,14 @@ void main() {
     expect(find.text('40/40'), findsOneWidget);
   });
 
-  testWidgets('Planning keeps its Calendar tab, which shows the shared calendar', (tester) async {
+  testWidgets('Planning keeps its Calendar tab, which is the Together hub', (tester) async {
     await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1')));
     await tester.pumpAndSettle();
     expect(find.text('Goals'), findsOneWidget, reason: 'the Planning tab shows the categories first');
     await tester.tap(find.text('Calendar'));
     await tester.pumpAndSettle();
-    expect(find.byType(TimelineScreen), findsOneWidget);
+    expect(find.byType(TogetherScreen), findsOneWidget);
+    expect(find.text('Map'), findsNothing, reason: 'the duplicate Map tab is gone');
   });
 }
 

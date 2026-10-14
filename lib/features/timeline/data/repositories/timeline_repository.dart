@@ -2,16 +2,15 @@
 
 import 'dart:async';
 
-import 'package:attune/core/notifications/services/attune_notification_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/timeline_event_model.dart';
 
 class TimelineRepository {
   final SupabaseClient _supabase;
-  final AttuneNotificationService _notificationService;
 
-  TimelineRepository(this._supabase)
-    : _notificationService = AttuneNotificationService();
+  /// Partner pushes for new moments are sent by the database
+  /// (trigger notify_partner_moment_logged), not from here.
+  TimelineRepository(this._supabase);
 
   /// Create a new timeline event
   Future<TimelineEventModel> createEvent({
@@ -22,6 +21,7 @@ class TimelineRepository {
     required DateTime occurredAt,
     String? note,
     int? moodScore,
+    String visibility = 'shared',
   }) async {
     final response =
         await _supabase
@@ -34,21 +34,12 @@ class TimelineRepository {
               'note': note,
               'mood_score': moodScore,
               'occurred_at': occurredAt.toIso8601String().split('T')[0],
+              'visibility': visibility,
             })
             .select()
             .single();
 
     final event = TimelineEventModel.fromJson(response);
-
-    // Send notification to partner (skip for conflicts - per spec Section 10)
-    if (eventType != 'conflict') {
-      await _notifyPartner(
-        relationshipId: relationshipId,
-        loggedBy: loggedBy,
-        eventType: eventType,
-        title: title,
-      );
-    }
 
     return event;
   }
@@ -61,8 +52,10 @@ class TimelineRepository {
     String? note,
     int? moodScore,
     DateTime? occurredAt,
+    String? visibility,
   }) async {
     final Map<String, dynamic> updates = {};
+    if (visibility != null) updates['visibility'] = visibility;
     if (eventType != null) updates['event_type'] = eventType;
     if (title != null) updates['title'] = title;
     if (note != null) updates['note'] = note;
@@ -81,12 +74,13 @@ class TimelineRepository {
     return TimelineEventModel.fromJson(response);
   }
 
-  /// Soft delete a timeline event
+  /// Soft delete (logger only), through the RPC so it does not depend on
+  /// PostgREST's return mode (the read policy hides deleted rows).
   Future<void> deleteEvent(String eventId) async {
-    await _supabase
-        .from('timeline_events')
-        .update({'deleted_at': DateTime.now().toIso8601String()})
-        .eq('id', eventId);
+    await _supabase.rpc(
+      'soft_delete_timeline_event',
+      params: {'p_event_id': eventId},
+    );
   }
 
   /// Get timeline events for a relationship within a date range
@@ -120,58 +114,5 @@ class TimelineRepository {
       startDate: startDate,
       endDate: endDate,
     );
-  }
-
-  /// Send notification to partner when a moment is logged
-  Future<void> _notifyPartner({
-    required String relationshipId,
-    required String loggedBy,
-    required String eventType,
-    required String title,
-  }) async {
-    try {
-      // Get relationship members
-      final relationshipRes =
-          await _supabase
-              .from('relationships')
-              .select('user_a, user_b')
-              .eq('id', relationshipId)
-              .single();
-
-      final partnerId =
-          loggedBy == relationshipRes['user_a']
-              ? relationshipRes['user_b']
-              : relationshipRes['user_a'];
-
-      if (partnerId == null) return;
-
-      // Get logged by user's name
-      final profileRes =
-          await _supabase
-              .from('profiles')
-              .select('display_name')
-              .eq('id', loggedBy)
-              .single();
-
-      final partnerName =
-          profileRes['display_name'] as String? ?? 'Your partner';
-
-      await _notificationService.notifyPartnerMomentLogged(
-        partnerId: partnerId,
-        partnerName: partnerName,
-        eventType: eventType,
-        title: title,
-      );
-    } catch (e) {
-      print('Error sending partner notification: $e');
-    }
-  }
-
-  /// Subscribe to real-time updates for timeline events
-  Stream<List<TimelineEventModel>> subscribeToEvents(String relationshipId) {
-    // The repository currently serves pull-based reads only. Realtime can be
-    // reintroduced once the timeline event stream is wired to the current
-    // Supabase channel API.
-    return Stream<List<TimelineEventModel>>.value(const []);
   }
 }

@@ -59,7 +59,7 @@ import 'package:attune/features/reminders/presentation/screens/add_edit_reminder
 import 'package:attune/features/reminders/presentation/screens/family_members_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/log_moment_details_screen.dart';
 import 'package:attune/features/timeline/presentation/screens/log_moment_type_screen.dart';
-import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
+import 'package:attune/features/together/presentation/screens/together_screen.dart';
 import 'package:attune/features/planning/presentation/planning_ui.dart' show PlanningUnavailableScreen, planningRouteName;
 import 'package:attune/features/planning/presentation/screens/planning_entry_screen.dart';
 import 'package:attune/features/planning/presentation/screens/planning_home_screen.dart';
@@ -237,6 +237,7 @@ class RouteNames {
   static const String journalEntryDetail = '/journalEntryDetail';
   static const String pulse = '/pulse';
   static const String timeline = '/timeline';
+  static const String together = '/together';
   static const String planning = '/planning';
   static const String planningEntry = '/planning/entry';
   static const String opinionLoader = '/opinionLoader';
@@ -626,7 +627,13 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.timeline,
         name: 'timeline',
-        builder: (context, state) => const TimelineScreen(showAppBar: true),
+        // An alias for old links and notifications (Together plan 1b R7).
+        builder: (context, state) => const TogetherScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.together,
+        name: 'together',
+        builder: (context, state) => const TogetherScreen(),
       ),
       GoRoute(
         path: RouteNames.planning,
@@ -1398,6 +1405,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
           return ChatScreen(
             conversation: conversation,
             initialJumpToMessageId: state.uri.queryParameters['jumpTo'],
+            initialDraft: state.uri.queryParameters['draft'],
           );
         },
       ),

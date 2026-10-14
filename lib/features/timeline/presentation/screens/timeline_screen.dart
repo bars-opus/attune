@@ -4,6 +4,8 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/planning/data/planning_models.dart';
 import 'package:attune/features/planning/presentation/planning_providers.dart'
     as planning_providers;
+import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
+    as quiz_providers;
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart'
     as reminders_providers;
@@ -16,6 +18,9 @@ import 'package:attune/features/timeline/presentation/widgets/moments_list.dart'
 import 'package:attune/features/timeline/presentation/widgets/planning_day_section.dart';
 import 'package:attune/features/timeline/presentation/widgets/calendar_day_sheet.dart';
 import 'package:attune/features/timeline/presentation/widgets/upcoming_reminders_section.dart';
+import 'package:attune/features/together/domain/together_item.dart';
+import 'package:attune/features/together/presentation/together_providers.dart';
+import 'package:attune/features/together/presentation/widgets/couple_event_sheet.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class TimelineScreen extends ConsumerStatefulWidget {
@@ -43,7 +48,7 @@ class TimelineScreen extends ConsumerStatefulWidget {
 
 class _TimelineScreenState extends ConsumerState<TimelineScreen>
     with AutomaticKeepAliveClientMixin {
-  DateTime _focusedMonth = DateTime.now();
+  DateTime _focusedMonth = timelineMonthKey(DateTime.now());
   DateTime? _selectedDate;
   final ScrollController _scrollController = ScrollController();
 
@@ -60,14 +65,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
     _selectedDate = DateTime.now();
   }
 
-  void _scrollToDate(DateTime date) {
-    // Find the index of the first event on or after this date
-    // For now, we'll just refresh the list
-    setState(() {
-      _selectedDate = date;
-    });
-    // In a full implementation, you would scroll the list to the event
-  }
+  void _selectDate(DateTime date) => setState(() => _selectedDate = date);
 
   /// Tapping a date opens that day in a sheet: its stories as a
   /// tappable row, plus the moments and scheduled items on it.
@@ -90,30 +88,25 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
 
   Map<DateTime, List<ReminderModel>> _remindersByDate(
     List<ReminderModel> reminders,
-  ) {
-    final Map<DateTime, List<ReminderModel>> grouped = {};
-    for (final reminder in upcomingReminders(reminders)) {
-      final occurrence = nextOccurrence(reminder);
-      if (occurrence.month != _focusedMonth.month ||
-          occurrence.year != _focusedMonth.year) {
-        continue;
-      }
-      final date = DateTime(occurrence.year, occurrence.month, occurrence.day);
-      grouped.putIfAbsent(date, () => []).add(reminder);
-    }
-    return grouped;
-  }
+  ) => remindersByDateInMonth(reminders, _focusedMonth);
 
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
-  Map<DateTime, List<PlanningCalendarEntry>> _planningEntriesByDate(
+  /// Planning dates and to-dos plus this month's Together events, by day:
+  /// the calendar's "scheduled" rings and the day sheet's Scheduled list.
+  Map<DateTime, List<Object>> _scheduledByDate(
     List<PlanningCalendarEntry> entries,
+    List<TogetherItem> together,
   ) {
-    final Map<DateTime, List<PlanningCalendarEntry>> grouped = {};
+    final Map<DateTime, List<Object>> grouped = {};
     for (final entry in entries) {
       final date = DateTime(entry.date.year, entry.date.month, entry.date.day);
       grouped.putIfAbsent(date, () => []).add(entry);
+    }
+    for (final item in together) {
+      if (item.kind != TogetherItemKind.event) continue;
+      grouped.putIfAbsent(item.day, () => []).add(item);
     }
     return grouped;
   }
@@ -123,6 +116,8 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
     super.build(context); // AutomaticKeepAliveClientMixin requirement
     final eventsAsync = ref.watch(timelineEventsProvider(_focusedMonth));
     final currentUserId = ref.watch(currentUserIdProvider);
+    final partnerName =
+        ref.watch(quiz_providers.partnerNameProvider).valueOrNull ?? 'Partner';
     final relationshipIdAsync = ref.watch(currentRelationshipIdProvider);
     final remindersAsync = ref.watch(reminders_providers.remindersListProvider);
     // Range is exactly the focused month's first-to-last day — the ONLY
@@ -142,11 +137,28 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
               )),
             );
 
+    // This month's Together events, for the calendar and its day sheet.
+    final togetherEventsAsync =
+        relationshipIdAsync.valueOrNull == null
+            ? const AsyncValue<List<TogetherItem>>.data([])
+            : ref.watch(
+              togetherRangeProvider((
+                relationshipId: relationshipIdAsync.valueOrNull!,
+                start: DateTime(_focusedMonth.year, _focusedMonth.month, 1),
+                end: DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0),
+              )),
+            );
+    final togetherEvents =
+        togetherEventsAsync.valueOrNull ?? const <TogetherItem>[];
+
     return relationshipIdAsync.when(
       data: (relationshipId) {
         if (relationshipId == null) {
           return const Center(child: Text('No active relationship found'));
         }
+
+        // Live: a partner's new moment or reminder refetches this screen.
+        ref.watch(timelineAutoRefreshProvider(relationshipId));
 
         return Scaffold(
           appBar:
@@ -169,6 +181,12 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
               if (!mounted || choice == null) return;
 
               switch (choice) {
+                case AddChoice.event:
+                  if (!context.mounted) return;
+                  await showCoupleEventSheet(
+                    context,
+                    relationshipId: relationshipId,
+                  );
                 case AddChoice.moment:
                   if (!context.mounted) return;
                   final refreshNeeded = await context.pushNamed(
@@ -179,11 +197,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                   }
                 case AddChoice.reminder:
                   if (!context.mounted) return;
-                  await BottomSheetUtils.showDocumentationBottomSheet(
-                    context: context,
-                    backgroundColor: Theme.of(context).colorScheme.neutral,
-                    widget: const AddEditReminderScreen(),
-                  );
+                  await showReminderSheet(context);
                   if (mounted) {
                     ref.invalidate(reminders_providers.remindersListProvider);
                   }
@@ -193,7 +207,12 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
 
           body: RefreshIndicator(
             onRefresh: () async {
-              ref.invalidate(timelineEventsProvider(_focusedMonth));
+              ref.invalidate(timelineEventsProvider);
+              ref.invalidate(reminders_providers.remindersListProvider);
+              ref.invalidate(togetherRangeProvider);
+              ref.invalidate(
+                planning_providers.planningCalendarEntriesProvider,
+              );
             },
             child: CustomScrollView(
               // Standalone (showAppBar: true, own route/Scaffold) keeps its
@@ -224,7 +243,14 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                       }
                       return UpcomingRemindersSection(
                         reminders: reminders,
-                        onReminderTap: (reminder) {},
+                        onReminderTap: (reminder) async {
+                          await showReminderSheet(context, reminder: reminder);
+                          if (mounted) {
+                            ref.invalidate(
+                              reminders_providers.remindersListProvider,
+                            );
+                          }
+                        },
                       );
                     },
                     loading: () => const SizedBox.shrink(),
@@ -259,12 +285,13 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                           remindersByDate: _remindersByDate(
                             remindersAsync.valueOrNull ?? const [],
                           ),
-                          planningEntriesByDate: _planningEntriesByDate(
+                          planningEntriesByDate: _scheduledByDate(
                             planningEntriesAsync.valueOrNull ?? const [],
+                            togetherEvents,
                           ),
                           selectedDate: _selectedDate,
                           onDaySelected: (date) {
-                            _scrollToDate(date);
+                            _selectDate(date);
                             _openDaySheet(
                               date: date,
                               events: eventsByDate[date] ?? const [],
@@ -274,9 +301,10 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                                   )[date] ??
                                   const [],
                               planningEntries:
-                                  _planningEntriesByDate(
+                                  _scheduledByDate(
                                     planningEntriesAsync.valueOrNull ??
                                         const [],
+                                    togetherEvents,
                                   )[date] ??
                                   const [],
                               relationshipId: relationshipId,
@@ -284,9 +312,11 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                           },
                           onMonthChanged: (month) {
                             setState(() {
-                              _focusedMonth = month;
+                              _focusedMonth = timelineMonthKey(month);
                             });
-                            ref.invalidate(timelineEventsProvider(month));
+                            ref.invalidate(
+                              timelineEventsProvider(timelineMonthKey(month)),
+                            );
                           },
                         ),
                       );
@@ -300,18 +330,21 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                             remindersByDate: _remindersByDate(
                               remindersAsync.valueOrNull ?? const [],
                             ),
-                            planningEntriesByDate: _planningEntriesByDate(
+                            planningEntriesByDate: _scheduledByDate(
                               planningEntriesAsync.valueOrNull ?? const [],
+                              togetherEvents,
                             ),
                             selectedDate: _selectedDate,
                             onDaySelected: (date) {
-                              _scrollToDate(date);
+                              _selectDate(date);
                             },
                             onMonthChanged: (month) {
                               setState(() {
-                                _focusedMonth = month;
+                                _focusedMonth = timelineMonthKey(month);
                               });
-                              ref.invalidate(timelineEventsProvider(month));
+                              ref.invalidate(
+                                timelineEventsProvider(timelineMonthKey(month)),
+                              );
                             },
                             eventsByDate: {},
                           ),
@@ -376,6 +409,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                             events: const [],
                             currentUserId: currentUserId ?? '',
                             currentMonth: _focusedMonth,
+                            partnerName: partnerName,
                             onDateSelected: (date) {},
                           ),
                         );
@@ -385,7 +419,8 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                           events: visibleEvents,
                           currentUserId: currentUserId ?? '',
                           currentMonth: _focusedMonth,
-                          onDateSelected: _scrollToDate,
+                          partnerName: partnerName,
+                          onDateSelected: _selectDate,
                         ),
                       );
                     },

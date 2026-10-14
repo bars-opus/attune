@@ -66,6 +66,7 @@ class ChatScreen extends ConsumerStatefulWidget {
     super.key,
     required this.conversation,
     this.initialJumpToMessageId,
+    this.initialDraft,
   });
 
   final Conversation conversation;
@@ -76,6 +77,10 @@ class ChatScreen extends ConsumerStatefulWidget {
   /// message isn't in the initially-loaded page. Null means no jump, the
   /// normal "open at the latest message" behavior.
   final String? initialJumpToMessageId;
+
+  /// Text to start the composer with (e.g. Together's "How did it go?"),
+  /// used instead of a saved draft. Null or empty: the saved draft as usual.
+  final String? initialDraft;
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -218,7 +223,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final draft = await ref
         .read(chatCacheServiceProvider)
         .readDraft(user.id, widget.conversation.relationshipId);
-    if (!mounted || draft.isEmpty) return;
+    if (!mounted) return;
+    final given = widget.initialDraft;
+    if (given != null && given.isNotEmpty) {
+      // Keep whatever was already written and add the given text below it.
+      // Set without the draft listener: nothing is saved (and no typing
+      // indicator is sent) until the user actually edits.
+      final text = draft.isEmpty ? given : '$draft\n$given';
+      _controller.removeListener(_onDraftChanged);
+      _controller.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+      _controller.addListener(_onDraftChanged);
+      return;
+    }
+    if (draft.isEmpty) return;
     _controller.value = TextEditingValue(
       text: draft,
       selection: TextSelection.collapsed(offset: draft.length),

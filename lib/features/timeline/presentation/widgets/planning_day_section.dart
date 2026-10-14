@@ -10,7 +10,11 @@ import '../../../planning/presentation/screens/planning_entry_screen.dart';
 /// loggedBy/eventType/moodScore/occurredAt values). Sits BESIDE the
 /// existing moments/reminders rendering for that day. A tap opens the plan.
 class PlanningDaySection extends StatelessWidget {
-  const PlanningDaySection({super.key, required this.relationshipId, required this.entries});
+  const PlanningDaySection({
+    super.key,
+    required this.relationshipId,
+    required this.entries,
+  });
   final String relationshipId;
   final List<PlanningCalendarEntry> entries;
 
@@ -26,18 +30,31 @@ class PlanningDaySection extends StatelessWidget {
           ListTile(
             dense: true,
             leading: Icon(
-              entry.kind == PlanningCalendarKind.date ? Icons.event_outlined : Icons.check_box_outlined,
+              entry.kind == PlanningCalendarKind.date
+                  ? Icons.event_outlined
+                  : Icons.check_box_outlined,
               color: colorScheme.onSurfaceVariant,
             ),
             title: Text(
               entry.title,
-              style: entry.isComplete
-                  ? TextStyle(decoration: TextDecoration.lineThrough, color: colorScheme.onSurfaceVariant)
-                  : null,
+              style:
+                  entry.isComplete
+                      ? TextStyle(
+                        decoration: TextDecoration.lineThrough,
+                        color: colorScheme.onSurfaceVariant,
+                      )
+                      : null,
             ),
             trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => Navigator.of(context).push(planningRoute(
-                PlanningEntryScreen(relationshipId: relationshipId, entryId: entry.entryId))),
+            onTap:
+                () => Navigator.of(context).push(
+                  planningRoute(
+                    PlanningEntryScreen(
+                      relationshipId: relationshipId,
+                      entryId: entry.entryId,
+                    ),
+                  ),
+                ),
           ),
       ],
     );

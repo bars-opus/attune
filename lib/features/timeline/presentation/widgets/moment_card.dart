@@ -13,11 +13,15 @@ class MomentCard extends ConsumerStatefulWidget {
   final String currentUserId;
   final DateTime currentMonth;
 
+  /// Shown as "Logged by: …" on the partner's moments.
+  final String partnerName;
+
   const MomentCard({
     super.key,
     required this.event,
     required this.currentUserId,
     required this.currentMonth,
+    this.partnerName = 'Partner',
   });
 
   @override
@@ -41,6 +45,7 @@ class _MomentCardState extends ConsumerState<MomentCard> {
               'note': widget.event.note,
               'occurred_at': widget.event.occurredAt,
               'mood_score': widget.event.moodScore,
+              'visibility': widget.event.visibility,
             },
           ),
         )
@@ -106,8 +111,7 @@ class _MomentCardState extends ConsumerState<MomentCard> {
     final formattedDate = DateFormat(
       'MMM d, yyyy',
     ).format(widget.event.occurredAt);
-    final loggedByName =
-        _isOwnEvent ? 'You' : 'Partner'; // In real app, fetch partner's name
+    final loggedByName = _isOwnEvent ? 'You' : widget.partnerName;
 
     return Container(
       margin: EdgeInsets.only(bottom: Spacing.md.h),
@@ -140,10 +144,15 @@ class _MomentCardState extends ConsumerState<MomentCard> {
                 ),
               ),
               const Spacer(),
-              Text(
-                formattedDate,
-                style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withOpacity(0.5),
+              // Shrinks before the row overflows on narrow phones.
+              Flexible(
+                child: Text(
+                  formattedDate,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface.withOpacity(0.5),
+                  ),
                 ),
               ),
               if (_isOwnEvent && !_isDeleting)
@@ -170,6 +179,26 @@ class _MomentCardState extends ConsumerState<MomentCard> {
                 ),
             ],
           ),
+          if (widget.event.isPrivate && _isOwnEvent)
+            Padding(
+              padding: EdgeInsets.only(top: Spacing.xs.h),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    size: 14,
+                    color: colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                  Gap(Spacing.xs.w),
+                  Text(
+                    'Only you can see this',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurface.withOpacity(0.6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Gap(Spacing.sm.h),
           // Title
           Text(

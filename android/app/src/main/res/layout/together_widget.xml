@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/together_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="@android:drawable/screen_background_light">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/together_widget_heading"
+        android:textSize="12sp"
+        android:textColor="#757575" />
+
+    <TextView
+        android:id="@+id/together_widget_empty"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/together_widget_empty"
+        android:textSize="14sp"
+        android:textColor="#757575" />
+
+    <TextView android:id="@+id/line1_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="4dp" android:maxLines="1" android:ellipsize="end"
+        android:textSize="14sp" android:textStyle="bold" android:textColor="#212121" android:visibility="gone" />
+    <TextView android:id="@+id/line1_label" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:maxLines="1" android:ellipsize="end" android:textSize="12sp" android:textColor="#757575" android:visibility="gone" />
+    <TextView android:id="@+id/line2_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="6dp" android:maxLines="1" android:ellipsize="end"
+        android:textSize="14sp" android:textStyle="bold" android:textColor="#212121" android:visibility="gone" />
+    <TextView android:id="@+id/line2_label" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:maxLines="1" android:ellipsize="end" android:textSize="12sp" android:textColor="#757575" android:visibility="gone" />
+</LinearLayout>

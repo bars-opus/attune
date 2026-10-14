@@ -81,6 +81,8 @@ import UIKit
       }
     }
 
+    TogetherLiveActivityChannel.register(with: controller.binaryMessenger)
+
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 

@@ -8,6 +8,8 @@ import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
 import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart'
     as timeline_providers;
+import 'package:attune/features/together/data/together_repository.dart';
+import 'package:attune/features/together/presentation/together_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -42,6 +44,15 @@ List<Override> planningOverrides(
       timeline_providers.currentRelationshipIdProvider.overrideWith((ref) async => 'r1'),
       timeline_providers.timelineEventsProvider.overrideWith((ref, month) async => []),
       remindersListProvider.overrideWith(_FakeRemindersListNotifier.new),
+      // The Calendar tab is now the Together screen (Together plan 1b R1).
+      togetherRepositoryProvider.overrideWithValue(
+        TogetherRepository(_EmptyTogetherGateway()),
+      ),
+      timeline_providers.togetherChangeSignalProvider.overrideWith(
+        (ref, relationshipId) => const Stream<void>.empty(),
+      ),
+      togetherMeProvider.overrideWithValue(userId),
+      togetherPartnerIdProvider.overrideWith((ref) async => null),
     ];
 
 Widget planningTestApp(
@@ -62,3 +73,10 @@ Widget planningTestApp(
         home: home,
       )),
     );
+
+/// Together with nothing on it.
+class _EmptyTogetherGateway implements TogetherRpcGateway {
+  @override
+  Future<dynamic> rpc(String function, {Map<String, dynamic>? params}) async =>
+      const [];
+}

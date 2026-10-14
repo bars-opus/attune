@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="together_widget_heading">Next</string>
+    <string name="together_widget_empty">Nothing to show</string>
+    <string name="together_widget_description">Your next plans. Turn it on in the app first.</string>
+</resources>

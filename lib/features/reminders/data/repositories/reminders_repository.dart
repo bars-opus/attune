@@ -28,44 +28,49 @@ class RemindersRepository {
     required String recurrence,
     String? familyMemberId,
   }) async {
-    final response = await _supabase
-        .from('reminders')
-        .insert({
-          'relationship_id': relationshipId,
-          'created_by': createdBy,
-          'reminder_type': reminderType,
-          'title': title,
-          'note': note,
-          'remind_at': remindAt.toIso8601String(),
-          'recurrence': recurrence,
-          'family_member_id': familyMemberId,
-        })
-        .select()
-        .single();
+    final response =
+        await _supabase
+            .from('reminders')
+            .insert({
+              'relationship_id': relationshipId,
+              'created_by': createdBy,
+              'reminder_type': reminderType,
+              'title': title,
+              'note': note,
+              'remind_at': reminderDateString(remindAt),
+              'recurrence': recurrence,
+              'family_member_id': familyMemberId,
+            })
+            .select()
+            .single();
     return ReminderModel.fromJson(response);
   }
 
   Future<ReminderModel> updateReminder({
     required String id,
+    String? reminderType,
     String? title,
     String? note,
+    bool clearNote = false,
     DateTime? remindAt,
     String? recurrence,
     String? familyMemberId,
   }) async {
     final updates = <String, dynamic>{};
+    if (reminderType != null) updates['reminder_type'] = reminderType;
     if (title != null) updates['title'] = title;
-    if (note != null) updates['note'] = note;
-    if (remindAt != null) updates['remind_at'] = remindAt.toIso8601String();
+    if (note != null || clearNote) updates['note'] = note;
+    if (remindAt != null) updates['remind_at'] = reminderDateString(remindAt);
     if (recurrence != null) updates['recurrence'] = recurrence;
     if (familyMemberId != null) updates['family_member_id'] = familyMemberId;
 
-    final response = await _supabase
-        .from('reminders')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
+    final response =
+        await _supabase
+            .from('reminders')
+            .update(updates)
+            .eq('id', id)
+            .select()
+            .single();
     return ReminderModel.fromJson(response);
   }
 
@@ -73,14 +78,18 @@ class RemindersRepository {
     await _supabase.from('reminders').delete().eq('id', id);
   }
 
-  Future<List<FamilyMemberModel>> listFamilyMembers(String relationshipId) async {
+  Future<List<FamilyMemberModel>> listFamilyMembers(
+    String relationshipId,
+  ) async {
     final response = await _supabase
         .from('couple_family_members')
         .select()
         .eq('relationship_id', relationshipId)
         .order('name');
     return (response as List)
-        .map((row) => FamilyMemberModel.fromJson(Map<String, dynamic>.from(row)))
+        .map(
+          (row) => FamilyMemberModel.fromJson(Map<String, dynamic>.from(row)),
+        )
         .toList(growable: false);
   }
 
@@ -94,9 +103,8 @@ class RemindersRepository {
       params: {
         'p_id': id,
         'p_name': name,
-        'p_birthday': birthday != null
-            ? birthday.toIso8601String().split('T')[0]
-            : null,
+        'p_birthday':
+            birthday != null ? birthday.toIso8601String().split('T')[0] : null,
       },
     );
     return response as String;

@@ -11,6 +11,7 @@ class MomentsList extends StatelessWidget {
   final String currentUserId;
   final DateTime currentMonth;
   final Function(DateTime) onDateSelected;
+  final String partnerName;
 
   const MomentsList({
     super.key,
@@ -18,6 +19,7 @@ class MomentsList extends StatelessWidget {
     required this.currentUserId,
     required this.currentMonth,
     required this.onDateSelected,
+    this.partnerName = 'Partner',
   });
 
   @override
@@ -80,6 +82,7 @@ class MomentsList extends StatelessWidget {
                   event: event,
                   currentUserId: currentUserId,
                   currentMonth: currentMonth,
+                  partnerName: partnerName,
                 ),
               ),
             ),
@@ -88,6 +91,4 @@ class MomentsList extends StatelessWidget {
       },
     );
   }
-
-
 }

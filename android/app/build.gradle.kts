@@ -7,8 +7,11 @@ plugins {
 
 android {
     namespace = "com.barsopus.attune"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // device_calendar_plus and image_cropper compile against API 36; the
+    // target SDK (runtime behaviour) is unchanged.
+    compileSdk = 36
+    // The plugins' native code was built with NDK 27 (backward compatible).
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -24,7 +27,9 @@ android {
         applicationId = "com.barsopus.attune"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // device_calendar_plus (Together free time) needs API 24; record_android
+        // already required 23.
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

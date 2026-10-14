@@ -175,17 +175,18 @@ class CalendarDayIndicators extends ConsumerWidget {
 
     final monthStart = DateTime(date.year, date.month, 1);
     final monthEnd = DateTime(date.year, date.month + 1, 0);
-    final counts = ref
-        .watch(
-          storyDayCountsProvider(
-            StoryDayRangeKey(
-              relationshipId: id,
-              startOn: monthStart,
-              endOn: monthEnd,
-            ),
-          ),
-        )
-        .valueOrNull;
+    final counts =
+        ref
+            .watch(
+              storyDayCountsProvider(
+                StoryDayRangeKey(
+                  relationshipId: id,
+                  startOn: monthStart,
+                  endOn: monthEnd,
+                ),
+              ),
+            )
+            .valueOrNull;
     if (counts == null) return const [];
 
     return counts
@@ -213,9 +214,10 @@ class _StoryAvatar extends ConsumerWidget {
     final key = thumbnailKey;
     // Only mint a signed URL when there is actually a key to sign —
     // mirrors _PartnerRing's own scoping in story_rings_row.dart.
-    final url = (key == null || key.isEmpty)
-        ? null
-        : ref.watch(storyMediaSignedUrlProvider(key)).valueOrNull;
+    final url =
+        (key == null || key.isEmpty)
+            ? null
+            : ref.watch(storyMediaSignedUrlProvider(key)).valueOrNull;
 
     return Container(
       width: kCalendarStoryAvatarDiameter,
@@ -225,16 +227,21 @@ class _StoryAvatar extends ConsumerWidget {
         border: Border.all(color: colorScheme.primary, width: 1.2),
       ),
       child: ClipOval(
-        child: (url == null || url.isEmpty)
-            ? ColoredBox(color: colorScheme.surfaceContainerHighest)
-            : CachedNetworkImage(
-                imageUrl: url,
-                fit: BoxFit.cover,
-                placeholder: (_, __) =>
-                    ColoredBox(color: colorScheme.surfaceContainerHighest),
-                errorWidget: (_, __, ___) =>
-                    ColoredBox(color: colorScheme.surfaceContainerHighest),
-              ),
+        child:
+            (url == null || url.isEmpty)
+                ? ColoredBox(color: colorScheme.surfaceContainerHighest)
+                : CachedNetworkImage(
+                  imageUrl: url,
+                  fit: BoxFit.cover,
+                  placeholder:
+                      (_, __) => ColoredBox(
+                        color: colorScheme.surfaceContainerHighest,
+                      ),
+                  errorWidget:
+                      (_, __, ___) => ColoredBox(
+                        color: colorScheme.surfaceContainerHighest,
+                      ),
+                ),
       ),
     );
   }

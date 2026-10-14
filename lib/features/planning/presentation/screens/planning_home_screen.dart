@@ -2,7 +2,7 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/app_tabs.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
-import 'package:attune/features/timeline/presentation/screens/timeline_screen.dart';
+import 'package:attune/features/together/presentation/screens/together_screen.dart';
 import 'package:attune/home/widgets/tabs_with_content.dart';
 import 'package:flutter/material.dart';
 import 'package:attune/app/documentations/user_manual/data/reflection_journal_docs.dart';
@@ -114,9 +114,8 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Two tabs, as Planning always had: the categories, and the shared
-    // calendar (the same TimelineScreen Pulse shows). TimelineScreen's own
-    // app bar is off because this screen's bar already sits above the tabs.
+    // Two tabs: the categories, and the couple's Together hub (embedded, so
+    // it has no app bar of its own under this screen's).
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final docs = ReflectionJournalDocs();
@@ -158,15 +157,11 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
             content: _categories(context),
           ),
           const AppTabItem(
-            label: 'Calendar',
-            icon: Icons.calendar_month_rounded,
-            content: TimelineScreen(showAppBar: true, showOwnAppBar: false),
-          ),
-          const AppTabItem(
-            label: 'Map',
-            icon: Icons.map_outlined,
-            content: TimelineScreen(showAppBar: true, showOwnAppBar: false),
-          ),
+          label: 'Calendar',
+          icon: Icons.calendar_month_rounded,
+          // The couple's Together hub (Together plan 1b R1).
+          content: TogetherScreen(embedded: true),
+        ),
         ],
         initialIndex: 0,
         scrollable: false,

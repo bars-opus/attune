@@ -136,6 +136,17 @@ NotificationConfig buildNanoEmbryoNotificationConfig() {
           GoRouter.of(context).go(RouteNames.timeline);
           return;
 
+        case 'together_event':
+        case 'together_proposal':
+        case 'together_proposal_reply':
+        case 'together_handoff':
+        case 'together_handoff_reply':
+        case 'together_daily':
+        case 'together_ritual':
+        case 'together_ritual_reply':
+          GoRouter.of(context).go(RouteNames.together);
+          return;
+
         case 'thirty_six_question_invite':
           final sessionId = notification.data?['session_id'] as String?;
           final chapter = notification.data?['chapter'] as int?;

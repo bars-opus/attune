@@ -8,7 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 
-
 class LogMomentDetailsScreen extends ConsumerStatefulWidget {
   final String eventType;
   final String? editEventId;
@@ -43,6 +42,9 @@ class _LogMomentDetailsScreenState
   int? _moodScore;
   bool _isSubmitting = false;
 
+  /// A conflict kept off the partner's timeline (Together Phase 4 R7).
+  bool _private = false;
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +53,7 @@ class _LogMomentDetailsScreenState
       _noteController.text = widget.initialData!['note'] ?? '';
       _selectedDate = widget.initialData!['occurred_at'] ?? DateTime.now();
       _moodScore = widget.initialData!['mood_score'];
+      _private = widget.initialData!['visibility'] == 'private';
     }
   }
 
@@ -98,6 +101,10 @@ class _LogMomentDetailsScreenState
   bool get _isValid =>
       _titleController.text.trim().isNotEmpty && !_isSubmitting;
 
+  /// Only conflicts carry a visibility choice; others stay as they are.
+  String? get _visibility =>
+      widget.eventType == 'conflict' ? (_private ? 'private' : 'shared') : null;
+
   Future<void> _saveMoment() async {
     if (!_isValid) return;
 
@@ -117,6 +124,7 @@ class _LogMomentDetailsScreenState
                     : _noteController.text.trim(),
             moodScore: _moodScore,
             occurredAt: _selectedDate,
+            visibility: _visibility,
           )).future,
         );
       } else {
@@ -131,6 +139,7 @@ class _LogMomentDetailsScreenState
                     ? null
                     : _noteController.text.trim(),
             moodScore: _moodScore,
+            visibility: _visibility ?? 'shared',
           )).future,
         );
 
@@ -258,7 +267,7 @@ class _LogMomentDetailsScreenState
               // happens to fire first.
               onChanged: (_) => setState(() {}),
 
-                  label: '',
+              label: '',
             ),
             Gap(Spacing.lg.h),
 
@@ -358,9 +367,24 @@ class _LogMomentDetailsScreenState
               //       required isFocused,
               //       maxLength,
               //     }) => null,
-                   label: '',
+              label: '',
             ),
             Gap(Spacing.xl.h),
+
+            if (widget.eventType == 'conflict') ...[
+              InfoRowWidget(
+                title: 'Just for me',
+                subtitle:
+                    "Kept off your partner's timeline. It still helps you look back.",
+                icon: Icons.lock_outline_rounded,
+                showAvatar: false,
+                showDivider: false,
+                isToggleItem: true,
+                toggleValue: _private,
+                onToggleChanged: (v) => setState(() => _private = v),
+              ),
+              Gap(Spacing.lg.h),
+            ],
 
             // Save button
             AppButton(

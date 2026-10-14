@@ -53,6 +53,31 @@ List<ReminderModel> upcomingReminders(
   }).toList();
 }
 
+/// Every reminder that falls in [month], keyed by its calendar date: a
+/// yearly one in any year (Feb 29 → Feb 28 in non-leap years), a one-off
+/// only in its own month. Unlike [upcomingReminders] there is no 3-month
+/// horizon: the calendar shows whatever month the couple is looking at.
+Map<DateTime, List<ReminderModel>> remindersByDateInMonth(
+  List<ReminderModel> reminders,
+  DateTime month,
+) {
+  final grouped = <DateTime, List<ReminderModel>>{};
+  for (final reminder in reminders) {
+    final at = reminder.remindAt;
+    final DateTime date;
+    if (reminder.isRecurring) {
+      if (at.month != month.month) continue;
+      final day = at.day.clamp(1, _lastDayOfMonth(month.year, month.month));
+      date = DateTime(month.year, month.month, day);
+    } else {
+      if (at.year != month.year || at.month != month.month) continue;
+      date = DateTime(at.year, at.month, at.day);
+    }
+    grouped.putIfAbsent(date, () => []).add(reminder);
+  }
+  return grouped;
+}
+
 String _countdownLabel(DateTime occurrence, {DateTime? now}) {
   final today = now ?? DateTime.now();
   final days =

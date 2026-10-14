@@ -15,6 +15,14 @@ class TimelineEventModel {
   final DateTime? updatedAt;
   final DateTime? deletedAt;
 
+  /// `shared` (both partners) or `private` (a conflict kept for its logger).
+  final String visibility;
+
+  /// The Together event this moment remembers, if any.
+  final String? coupleEventId;
+
+  bool get isPrivate => visibility == 'private';
+
   TimelineEventModel({
     required this.id,
     required this.relationshipId,
@@ -27,6 +35,8 @@ class TimelineEventModel {
     required this.createdAt,
     this.updatedAt,
     this.deletedAt,
+    this.visibility = 'shared',
+    this.coupleEventId,
   });
 
   factory TimelineEventModel.fromJson(Map<String, dynamic> json) {
@@ -48,6 +58,8 @@ class TimelineEventModel {
           json['deleted_at'] != null
               ? DateTime.parse(json['deleted_at'])
               : null,
+      visibility: json['visibility'] as String? ?? 'shared',
+      coupleEventId: json['couple_event_id'] as String?,
     );
   }
 
@@ -64,6 +76,8 @@ class TimelineEventModel {
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
       'deleted_at': deletedAt?.toIso8601String(),
+      'visibility': visibility,
+      'couple_event_id': coupleEventId,
     };
   }
 

@@ -47,4 +47,44 @@ void main() {
     expect(reminder.familyMemberId, 'fam-1');
     expect(reminder.note, 'Loves dinosaurs');
   });
+
+  Map<String, dynamic> json(String remindAt) => {
+    'id': 'rem-9',
+    'relationship_id': 'rel-1',
+    'created_by': 'user-1',
+    'reminder_type': 'birthday',
+    'title': 'Ama',
+    'note': null,
+    'remind_at': remindAt,
+    'recurrence': 'yearly',
+    'sent': false,
+    'family_member_id': null,
+    'linked_timeline_event_id': null,
+    'created_at': '2026-08-02T10:00:00Z',
+    'updated_at': '2026-08-02T10:00:00Z',
+  };
+
+  test(
+    'remindAt is the picked calendar date, whatever offset the server sent',
+    () {
+      expect(
+        ReminderModel.fromJson(json('2026-10-20T00:00:00+00:00')).remindAt,
+        DateTime(2026, 10, 20),
+      );
+      expect(
+        ReminderModel.fromJson(json('2026-10-20')).remindAt,
+        DateTime(2026, 10, 20),
+      );
+    },
+  );
+
+  test('toJson writes a plain date, and the cache round-trips it', () {
+    final r = ReminderModel.fromJson(json('2026-02-28T00:00:00Z'));
+    expect(r.toJson()['remind_at'], '2026-02-28');
+    expect(ReminderModel.fromJson(r.toJson()).remindAt, DateTime(2026, 2, 28));
+  });
+
+  test('reminderDateString pads month and day', () {
+    expect(reminderDateString(DateTime(2027, 3, 4, 23, 59)), '2027-03-04');
+  });
 }

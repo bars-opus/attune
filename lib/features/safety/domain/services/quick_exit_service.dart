@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'package:attune/features/together/data/together_device_surfaces.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +19,10 @@ class QuickExitService {
   static Future<void> execute(BuildContext context) async {
     unawaited(_markSafetyUnlockRequired());
     _showNeutralCover(context);
+    // The home-screen card and the lock-screen plan show plans: empty them
+    // too. Fire-and-forget, after the cover is up, so nothing delays or
+    // reveals activation.
+    unawaited(clearTogetherDeviceSurfaces());
 
     Future.delayed(const Duration(milliseconds: 300), () {
       _exitApp();

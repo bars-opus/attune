@@ -6,8 +6,6 @@ import 'package:attune/features/timeline/presentation/widgets/calendar_day_indic
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-
-
 class CalendarStrip extends StatelessWidget {
   final DateTime focusedMonth;
   final Map<DateTime, List<TimelineEventModel>> eventsByDate;
@@ -49,14 +47,20 @@ class CalendarStrip extends StatelessWidget {
       children: [
         // Month header with navigation arrows
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: Spacing.md.w, vertical: Spacing.sm.h),
+          padding: EdgeInsets.symmetric(
+            horizontal: Spacing.md.w,
+            vertical: Spacing.sm.h,
+          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
                 icon: const Icon(Icons.chevron_left),
                 onPressed: () {
-                  final prevMonth = DateTime(focusedMonth.year, focusedMonth.month - 1);
+                  final prevMonth = DateTime(
+                    focusedMonth.year,
+                    focusedMonth.month - 1,
+                  );
                   onMonthChanged(prevMonth);
                 },
               ),
@@ -69,7 +73,10 @@ class CalendarStrip extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.chevron_right),
                 onPressed: () {
-                  final nextMonth = DateTime(focusedMonth.year, focusedMonth.month + 1);
+                  final nextMonth = DateTime(
+                    focusedMonth.year,
+                    focusedMonth.month + 1,
+                  );
                   onMonthChanged(nextMonth);
                 },
               ),
@@ -81,18 +88,19 @@ class CalendarStrip extends StatelessWidget {
           padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day) {
-              return SizedBox(
-                width: 40,
-                child: Text(
-                  day,
-                  textAlign: TextAlign.center,
-                  style: textTheme.labelSmall?.copyWith(
-                    color: colorScheme.onSurface.withOpacity(0.6),
-                  ),
-                ),
-              );
-            }).toList(),
+            children:
+                ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day) {
+                  return SizedBox(
+                    width: 40,
+                    child: Text(
+                      day,
+                      textAlign: TextAlign.center,
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                    ),
+                  );
+                }).toList(),
           ),
         ),
         Gap(Spacing.sm.h),
@@ -112,14 +120,19 @@ class CalendarStrip extends StatelessWidget {
             itemBuilder: (context, index) {
               final dayNumber = index - offsetDays + 1;
               final isValidDay = dayNumber >= 1 && dayNumber <= daysInMonth;
-              
+
               if (!isValidDay) {
                 return const SizedBox.shrink();
               }
-              
-              final date = DateTime(focusedMonth.year, focusedMonth.month, dayNumber);
+
+              final date = DateTime(
+                focusedMonth.year,
+                focusedMonth.month,
+                dayNumber,
+              );
               final isToday = _isSameDay(date, DateTime.now());
-              final isSelected = selectedDate != null && _isSameDay(date, selectedDate!);
+              final isSelected =
+                  selectedDate != null && _isSameDay(date, selectedDate!);
               final eventsOnDate = eventsByDate[date] ?? [];
               final remindersOnDate = remindersByDate[date] ?? [];
               final planningOnDate = planningEntriesByDate[date] ?? [];
@@ -140,17 +153,19 @@ class CalendarStrip extends StatelessWidget {
                 child: Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: isSelected
-                        ? colorScheme.primary.withOpacity(0.1)
-                        : isToday
+                    color:
+                        isSelected
+                            ? colorScheme.primary.withOpacity(0.1)
+                            : isToday
                             ? colorScheme.primary.withOpacity(0.05)
                             : Colors.transparent,
-                    border: isToday
-                        ? Border.all(
-                            color: colorScheme.primary,
-                            width: BorderWidthTokens.hairline,
-                          )
-                        : null,
+                    border:
+                        isToday
+                            ? Border.all(
+                              color: colorScheme.primary,
+                              width: BorderWidthTokens.hairline,
+                            )
+                            : null,
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -158,10 +173,12 @@ class CalendarStrip extends StatelessWidget {
                       Text(
                         '$dayNumber',
                         style: TextStyle(
-                          fontWeight: isToday ? FontWeight.w600 : FontWeight.normal,
-                          color: isSelected
-                              ? colorScheme.primary
-                              : isToday
+                          fontWeight:
+                              isToday ? FontWeight.w600 : FontWeight.normal,
+                          color:
+                              isSelected
+                                  ? colorScheme.primary
+                                  : isToday
                                   ? colorScheme.primary
                                   : colorScheme.onSurface,
                         ),

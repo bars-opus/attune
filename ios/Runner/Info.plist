@@ -57,6 +57,14 @@
 					<string>attune</string>
 				</array>
 			</dict>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>ShareMedia-$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+				</array>
+			</dict>
 		</array>
 		<!-- Permission usage descriptions.
 
@@ -81,5 +89,17 @@
 		<string>Attune saves photos and videos you choose to keep back to your photo library.</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>Attune uses your location so you and your partner can optionally share where you are with each other.</string>
+		<key>NSSupportsLiveActivities</key>
+		<true/>
+		<key>NSCalendarsUsageDescription</key>
+		<string>Attune adds a Together event to your calendar when you ask; with Free time together on, reads only when you're busy (never titles) to find time you're both free; and with Copy our plans on, keeps a calendar called Plans with the plans you're in.</string>
+		<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+		<string>Attune adds a Together event to your calendar when you tap Add to my calendar.</string>
+		<key>NSContactsUsageDescription</key>
+		<string>Your calendar's location search may use your contacts when you add a Together event from Attune.</string>
+		<key>NSCalendarsFullAccessUsageDescription</key>
+		<string>With Free time together on, Attune reads only when you're busy in your calendar (never titles, places or people) to show when you're both free. With Copy our plans on, it keeps a calendar called Plans with the plans you're in.</string>
+		<key>AppGroupId</key>
+		<string>group.com.barsopus.attune</string>
 	</dict>
 </plist>

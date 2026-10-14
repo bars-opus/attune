@@ -29,12 +29,13 @@ final currentRelationshipIdProvider = FutureProvider<String?>((ref) async {
   final userId = supabase.auth.currentUser?.id;
   if (userId == null) return null;
 
-  final response = await supabase
-      .from('relationships')
-      .select('id')
-      .or('user_a.eq.$userId,user_b.eq.$userId')
-      .eq('status', 'active')
-      .maybeSingle();
+  final response =
+      await supabase
+          .from('relationships')
+          .select('id')
+          .or('user_a.eq.$userId,user_b.eq.$userId')
+          .eq('status', 'active')
+          .maybeSingle();
   return response?['id'] as String?;
 });
 
@@ -95,10 +96,14 @@ class RemindersListNotifier extends AsyncNotifier<List<ReminderModel>> {
   }
 }
 
-final familyMembersListProvider = FutureProvider<List<FamilyMemberModel>>((ref) async {
+final familyMembersListProvider = FutureProvider<List<FamilyMemberModel>>((
+  ref,
+) async {
   final relationshipId = await ref.read(currentRelationshipIdProvider.future);
   if (relationshipId == null) return const [];
-  return ref.read(remindersRepositoryProvider).listFamilyMembers(relationshipId);
+  return ref
+      .read(remindersRepositoryProvider)
+      .listFamilyMembers(relationshipId);
 });
 
 final createReminderProvider = FutureProvider.family<
@@ -118,7 +123,9 @@ final createReminderProvider = FutureProvider.family<
   if (relationshipId == null) {
     throw StateError('No active relationship');
   }
-  final reminder = await ref.read(remindersRepositoryProvider).createReminder(
+  final reminder = await ref
+      .read(remindersRepositoryProvider)
+      .createReminder(
         relationshipId: relationshipId,
         createdBy: userId,
         reminderType: params.reminderType,
@@ -132,7 +139,36 @@ final createReminderProvider = FutureProvider.family<
   return reminder;
 });
 
-final deleteReminderProvider = FutureProvider.family<void, String>((ref, id) async {
+final updateReminderProvider = FutureProvider.family<
+  ReminderModel,
+  ({
+    String id,
+    String reminderType,
+    String title,
+    String? note,
+    DateTime remindAt,
+    String recurrence,
+  })
+>((ref, params) async {
+  final reminder = await ref
+      .read(remindersRepositoryProvider)
+      .updateReminder(
+        id: params.id,
+        reminderType: params.reminderType,
+        title: params.title,
+        note: params.note,
+        clearNote: params.note == null,
+        remindAt: params.remindAt,
+        recurrence: params.recurrence,
+      );
+  ref.invalidate(remindersListProvider);
+  return reminder;
+});
+
+final deleteReminderProvider = FutureProvider.family<void, String>((
+  ref,
+  id,
+) async {
   await ref.read(remindersRepositoryProvider).deleteReminder(id);
   ref.invalidate(remindersListProvider);
 });
@@ -141,7 +177,9 @@ final upsertFamilyMemberProvider = FutureProvider.family<
   String,
   ({String? id, String name, DateTime? birthday})
 >((ref, params) async {
-  final memberId = await ref.read(remindersRepositoryProvider).upsertFamilyMember(
+  final memberId = await ref
+      .read(remindersRepositoryProvider)
+      .upsertFamilyMember(
         id: params.id,
         name: params.name,
         birthday: params.birthday,
@@ -151,7 +189,10 @@ final upsertFamilyMemberProvider = FutureProvider.family<
   return memberId;
 });
 
-final deleteFamilyMemberProvider = FutureProvider.family<void, String>((ref, id) async {
+final deleteFamilyMemberProvider = FutureProvider.family<void, String>((
+  ref,
+  id,
+) async {
   await ref.read(remindersRepositoryProvider).deleteFamilyMember(id);
   ref.invalidate(familyMembersListProvider);
   ref.invalidate(remindersListProvider);
@@ -159,12 +200,16 @@ final deleteFamilyMemberProvider = FutureProvider.family<void, String>((ref, id)
 
 final timelineAnniversariesThisMonthProvider =
     FutureProvider<List<TimelineEventModel>>((ref) async {
-  final relationshipId = await ref.read(currentRelationshipIdProvider.future);
-  if (relationshipId == null) return const [];
-  final supabase = ref.read(supabaseClientProvider);
-  final events = await TimelineRepository(supabase).getEventsForMonth(
-    relationshipId: relationshipId,
-    month: DateTime.now(),
-  );
-  return events.where((e) => e.eventType == 'anniversary').toList(growable: false);
-});
+      final relationshipId = await ref.read(
+        currentRelationshipIdProvider.future,
+      );
+      if (relationshipId == null) return const [];
+      final supabase = ref.read(supabaseClientProvider);
+      final events = await TimelineRepository(supabase).getEventsForMonth(
+        relationshipId: relationshipId,
+        month: DateTime.now(),
+      );
+      return events
+          .where((e) => e.eventType == 'anniversary')
+          .toList(growable: false);
+    });

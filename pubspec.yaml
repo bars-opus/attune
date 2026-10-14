@@ -61,34 +61,32 @@ dependencies:
   # just calls DateTime.now().
   clock: ^1.1.2
   image_picker: ^1.0.4
-  file_picker: ^6.1.1
+  file_picker: ^11.0.3
   mime: ^1.0.4
   supabase_flutter: ^2.1.0
   google_sign_in: ^7.0.0
-  sign_in_with_apple: ^5.0.0
+  sign_in_with_apple: ^7.0.1
   sentry_flutter: ^8.3.0
   path: ^1.9.0
   glass_kit: ^4.0.2
-  image_cropper: ^4.0.0
+  image_cropper: ^12.2.1
   flutter_image_compress: ^2.1.0
   path_provider: ^2.1.1
-  geolocator: ^11.0.0  
+  geolocator: ^14.0.2  
   geocoding: ^4.0.0
-  flutter_native_timezone: ^2.0.0
   table_calendar: ^3.0.9
   flutter_secure_storage: ^9.0.0
   sqlite3: ^2.4.6
   sqlite3_flutter_libs: ^0.5.24
   drift: ^2.20.0
   reorderables: ^0.6.0
-  uuid: ^3.0.7
+  uuid: ^4.5.1
   mapbox_maps_flutter: ^2.1.0
   permission_handler: ^11.0.0
   geojson: ^1.0.0
   connectivity_plus: ^4.0.2
   flutter_svg: ^2.0.9
   flutter_animate: ^4.5.0
-  vibration: ^1.8.4
   audioplayers: ^6.1.0
   record: ^6.0.0
   video_player: ^2.9.0
@@ -97,7 +95,7 @@ dependencies:
   camera: ^0.11.0
   vector_graphics: ^1.1.10
   vector_graphics_compiler: ^1.1.10
-  http: ^0.13.6
+  http: ^1.2.0
   crypto: ^3.0.3
   pointycastle: ^3.9.1
   image: ^4.3.0
@@ -124,6 +122,11 @@ dependencies:
   animated_emoji: ^3.1.0
   visibility_detector: ^0.4.0+2
   youtube_player_iframe: ^5.2.2
+  add_2_calendar: ^3.0.1
+  device_calendar_plus: ^0.8.1
+  flutter_timezone: ^4.1.1
+  home_widget: ^0.9.2
+  receive_sharing_intent: ^1.8.1
 
 dependency_overrides:
   web:

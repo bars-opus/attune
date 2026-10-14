@@ -107,6 +107,8 @@ async function _computePulseScore(
     .from('timeline_events')
     .select('*')
     .eq('relationship_id', relationshipId)
+    // A private conflict never feeds the couple's shared score (Phase 4 R1).
+    .eq('visibility', 'shared')
     .gte('occurred_at', thirtyDaysAgo.toISOString().split('T')[0])
     .is('deleted_at', null)
 

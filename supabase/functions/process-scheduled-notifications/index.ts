@@ -98,6 +98,8 @@ function privacySafeData(metadata: Record<string, unknown>) {
     "match_id",
     // Planning deep link (poll and countdown pushes open the plan).
     "entry_id",
+    // Together event alarm deep link (Together spec §6.1).
+    "event_id",
   ];
   return Object.fromEntries(
     allowed.filter((key) => metadata[key] != null).map((key) => [key, metadata[key]]),

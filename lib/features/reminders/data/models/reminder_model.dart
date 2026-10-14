@@ -1,8 +1,24 @@
+/// A reminder's date as the plain calendar date the user picked
+/// (`YYYY-MM-DD`). Reminders are all-day: sending a time of day lets the
+/// date drift across midnight in time zones away from UTC.
+String reminderDateString(DateTime d) =>
+    '${d.year.toString().padLeft(4, '0')}-'
+    '${d.month.toString().padLeft(2, '0')}-'
+    '${d.day.toString().padLeft(2, '0')}';
+
+/// The calendar date in [raw]: a UTC timestamp's own date parts (the
+/// server stores midnight UTC), or a plain date. Never shifted to local.
+DateTime _reminderDate(String raw) {
+  final parsed = DateTime.parse(raw);
+  return DateTime(parsed.year, parsed.month, parsed.day);
+}
+
 class ReminderModel {
   final String id;
   final String relationshipId;
   final String createdBy;
-  final String reminderType; // anniversary | birthday | checkin | ai_generated
+  final String
+  reminderType; // anniversary | birthday | checkin | ai_generated | custom
   final String title;
   final String? note;
   final DateTime remindAt;
@@ -37,7 +53,7 @@ class ReminderModel {
       reminderType: json['reminder_type'] as String,
       title: json['title'] as String,
       note: json['note'] as String?,
-      remindAt: DateTime.parse(json['remind_at'] as String),
+      remindAt: _reminderDate(json['remind_at'] as String),
       recurrence: json['recurrence'] as String,
       sent: json['sent'] as bool,
       familyMemberId: json['family_member_id'] as String?,
@@ -55,7 +71,7 @@ class ReminderModel {
       'reminder_type': reminderType,
       'title': title,
       'note': note,
-      'remind_at': remindAt.toIso8601String(),
+      'remind_at': reminderDateString(remindAt),
       'recurrence': recurrence,
       'sent': sent,
       'family_member_id': familyMemberId,

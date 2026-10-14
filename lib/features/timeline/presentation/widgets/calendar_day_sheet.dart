@@ -18,6 +18,10 @@ import 'package:attune/features/planning/data/planning_models.dart';
 import 'package:attune/features/planning/presentation/planning_ui.dart';
 import 'package:attune/features/planning/presentation/screens/planning_entry_screen.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
+import 'package:attune/features/reminders/presentation/screens/add_edit_reminder_screen.dart';
+import 'package:attune/features/together/domain/together_item.dart';
+import 'package:attune/features/together/presentation/together_providers.dart';
+import 'package:attune/features/together/presentation/widgets/couple_event_sheet.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
 import 'package:attune/features/stories/presentation/screens/story_reel_screen.dart';
@@ -72,6 +76,11 @@ class CalendarDaySheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
+    // Only a day with Together events needs to know who is looking.
+    final me =
+        planningEntries.any((e) => e is TogetherItem)
+            ? ref.watch(togetherMeProvider)
+            : null;
 
     return SafeArea(
       child: ConstrainedBox(
@@ -104,16 +113,19 @@ class CalendarDaySheet extends ConsumerWidget {
                 Text('Scheduled', style: textTheme.labelLarge),
                 const SizedBox(height: 8),
                 for (final entry in [...reminders, ...planningEntries])
-                  _ScheduledTile(entry: entry, relationshipId: relationshipId),
+                  _ScheduledTile(
+                    entry: entry,
+                    relationshipId: relationshipId,
+                    me: me,
+                  ),
               ],
               if (events.isEmpty &&
                   reminders.isEmpty &&
-                  planningEntries.isEmpty &&
-                  relationshipId == null)
+                  planningEntries.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 24),
                   child: Text(
-                    'Nothing on this day yet.',
+                    'No moments or plans on this day.',
                     style: textTheme.bodyMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -330,12 +342,19 @@ class _EventTile extends StatelessWidget {
 }
 
 class _ScheduledTile extends StatelessWidget {
-  const _ScheduledTile({required this.entry, required this.relationshipId});
+  const _ScheduledTile({
+    required this.entry,
+    required this.relationshipId,
+    this.me,
+  });
 
   final Object entry;
   final String? relationshipId;
 
-  /// A Planning row opens its plan; reminders keep their existing behaviour.
+  /// The viewer, so a partner's busy block stays closed.
+  final String? me;
+
+  /// A Planning row opens its plan; a reminder or Together event opens its editor.
   VoidCallback? _onTap(BuildContext context) => switch (entry) {
     PlanningCalendarEntry(:final entryId) when relationshipId != null => () {
       final navigator = Navigator.of(context);
@@ -349,11 +368,27 @@ class _ScheduledTile extends StatelessWidget {
         ),
       );
     },
+    TogetherItem item
+        when relationshipId != null &&
+            item.kind == TogetherItemKind.event &&
+            !item.isMaskedFor(me) =>
+      () {
+        final navigator = Navigator.of(context);
+        final host = navigator.context;
+        navigator.pop(); // close the day sheet first
+        showCoupleEventSheet(host, relationshipId: relationshipId!, item: item);
+      },
+    ReminderModel reminder => () {
+      final navigator = Navigator.of(context);
+      final host = navigator.context;
+      navigator.pop(); // close the day sheet first
+      showReminderSheet(host, reminder: reminder);
+    },
     _ => null,
   };
 
-  /// The two concrete types that reach here — a reminder and a Planning
-  /// calendar entry — both carry a real `String title`. They arrive as
+  /// The concrete types that reach here — a reminder, a Planning calendar
+  /// entry and a Together event — all carry a real `String title`. They arrive as
   /// `Object` only because `CalendarStrip` already groups them as
   /// `List<dynamic>` upstream; matched on type rather than read
   /// through `dynamic` so a third type added later fails visibly here
@@ -361,6 +396,7 @@ class _ScheduledTile extends StatelessWidget {
   String get _title => switch (entry) {
     ReminderModel(:final title) => title,
     PlanningCalendarEntry(:final title) => title,
+    TogetherItem(:final title) => title,
     _ => 'Scheduled item',
   };
 

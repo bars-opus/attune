@@ -1,7 +1,9 @@
 package com.barsopus.attune
 
+import android.content.Intent
 import android.database.ContentObserver
 import android.net.Uri
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
@@ -45,6 +47,18 @@ class MainActivity : FlutterActivity() {
     // below is constructed with Handler(Looper.getMainLooper()) — always
     // runs on the main thread. No additional synchronization is needed.
     private var lastScreenshotDetectedAtMillis: Long = 0L
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // A share (Together Phase 8b) is handled once. When Android brings
+        // Attune back after reclaiming it, or it's reopened from Recents, the
+        // original share intent would otherwise be delivered again.
+        val restored = savedInstanceState != null ||
+            (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (restored && intent.action == Intent.ACTION_SEND) {
+            intent = Intent(Intent.ACTION_MAIN)
+        }
+        super.onCreate(savedInstanceState)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

@@ -1,6 +1,7 @@
 // lib/features/relationships/presentation/widgets/end_relationship_action.dart
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/relationships/data/relationship_lifecycle_service.dart';
+import 'package:attune/features/together/data/together_device_surfaces.dart';
 
 /// Shared end-relationship confirmation + action flow, mirroring
 /// LogoutAction (lib/features/auth/presentation/widgets/logout_action.dart)
@@ -27,6 +28,9 @@ class EndRelationshipAction {
             await RelationshipLifecycleService().endRelationship(
               relationshipId: relationshipId,
             );
+            // The couple's plans leave this phone's home screen, lock
+            // screen and calendar (Together Phase 8). Never throws.
+            await clearTogetherDeviceSurfaces();
             // Force HomeScreen's existing _syncRelationshipMode to run
             // immediately rather than waiting for the next
             // background->resume cycle — the ending user (unlike their

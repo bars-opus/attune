@@ -52,10 +52,11 @@ class StoryDayRow extends ConsumerWidget {
   void _openDay(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => StoryReelScreen.forDay(
-          relationshipId: relationshipId,
-          occurredOn: occurredOn,
-        ),
+        builder:
+            (_) => StoryReelScreen.forDay(
+              relationshipId: relationshipId,
+              occurredOn: occurredOn,
+            ),
       ),
     );
   }
@@ -102,9 +103,7 @@ class StoryDayRow extends ConsumerWidget {
                   Icon(
                     Icons.chevron_right,
                     size: 20,
-                    color: colorScheme.onSurfaceVariant.withValues(
-                      alpha: 0.6,
-                    ),
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                   ),
                 ],
               ),
@@ -159,12 +158,13 @@ class StoryDayCountRow extends ConsumerWidget {
     // `dayItemCount` is the whole day's total and is identical across
     // them — read it from the first match rather than summing
     // `itemCount` (which is now per-author) over the rows.
-    final match = counts.where((c) {
-      final d = c.occurredOn;
-      return d.year == occurredOn.year &&
-          d.month == occurredOn.month &&
-          d.day == occurredOn.day;
-    }).toList();
+    final match =
+        counts.where((c) {
+          final d = c.occurredOn;
+          return d.year == occurredOn.year &&
+              d.month == occurredOn.month &&
+              d.day == occurredOn.day;
+        }).toList();
     if (match.isEmpty || match.first.dayItemCount <= 0) {
       return const SizedBox.shrink();
     }

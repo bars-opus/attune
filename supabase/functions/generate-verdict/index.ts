@@ -293,6 +293,8 @@ async function buildVerdictContext(supabase: any, job: any) {
     .from("timeline_events")
     .select("id, event_type, occurred_at, mood_score")
     .eq("relationship_id", job.relationship_id)
+    .eq("visibility", "shared")
+    .is("deleted_at", null)
     .gte("occurred_at", job.period_start)
     .lt("occurred_at", job.period_end)
     .order("occurred_at", { ascending: false })

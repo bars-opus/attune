@@ -1,5 +1,6 @@
 // lib/features/reminders/presentation/screens/add_edit_reminder_screen.dart
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
 import 'package:attune/features/timeline/data/repositories/timeline_repository.dart';
 import 'package:flutter/cupertino.dart';
@@ -8,8 +9,29 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// Opens the reminder sheet: empty to add one, or with [reminder] to
+/// edit or delete it.
+Future<void> showReminderSheet(
+  BuildContext context, {
+  ReminderModel? reminder,
+}) async {
+  // The sheet closes with its confirmation; it is shown here, on the
+  // screen behind, because the sheet's own messenger closes with it.
+  final message = await BottomSheetUtils.showDocumentationBottomSheet<String>(
+    context: context,
+    backgroundColor: Theme.of(context).colorScheme.neutral,
+    widget: AddEditReminderScreen(reminder: reminder),
+  );
+  if (message != null && context.mounted) {
+    context.showSuccessSnackbar(message);
+  }
+}
+
 class AddEditReminderScreen extends ConsumerStatefulWidget {
-  const AddEditReminderScreen({super.key});
+  const AddEditReminderScreen({super.key, this.reminder});
+
+  /// The reminder being edited; null when adding one.
+  final ReminderModel? reminder;
 
   @override
   ConsumerState<AddEditReminderScreen> createState() =>
@@ -32,9 +54,24 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
 
   bool get _canSave => _titleController.text.trim().isNotEmpty && _dateSelected;
 
+  /// The types the picker offers; any other stored type shows as Other.
+  static const _pickerTypes = {'anniversary', 'birthday', 'custom'};
+
+  bool get _isEditing => widget.reminder != null;
+
   @override
   void initState() {
     super.initState();
+    final r = widget.reminder;
+    if (r != null) {
+      _titleController.text = r.title;
+      _noteController.text = r.note ?? '';
+      _reminderType =
+          _pickerTypes.contains(r.reminderType) ? r.reminderType : 'custom';
+      _remindAt = r.remindAt;
+      _isYearly = r.recurrence == 'yearly';
+      _dateSelected = true;
+    }
     // Rebuilds the Save button's visibility as the user types — a plain
     // TextEditingController read doesn't trigger a rebuild on its own.
     _titleController.addListener(_handleTitleChanged);
@@ -72,6 +109,24 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
     }
     setState(() => _isSaving = true);
     try {
+      if (_isEditing) {
+        await ref.read(
+          updateReminderProvider((
+            id: widget.reminder!.id,
+            reminderType: _reminderType,
+            title: _titleController.text.trim(),
+            note:
+                _noteController.text.trim().isEmpty
+                    ? null
+                    : _noteController.text.trim(),
+            remindAt: _remindAt,
+            recurrence: _isYearly ? 'yearly' : 'none',
+          )).future,
+        );
+        if (!mounted) return;
+        Navigator.of(context).pop('Saved.');
+        return;
+      }
       final reminder = await ref.read(
         createReminderProvider((
           reminderType: _reminderType,
@@ -87,13 +142,42 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
       );
       await _offerTimelineLink(reminder.id);
       if (!mounted) return;
-      context.showSuccessSnackbar('Added to your calendar.');
-      context.pop();
+      Navigator.of(context).pop('Added to your calendar.');
     } catch (_) {
       if (!mounted) return;
       context.showErrorSnackbar('Could not save that. Please try again.');
     } finally {
       if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (c) => AlertDialog(
+            title: const Text('Delete this reminder?'),
+            content: const Text('It will be removed for both of you.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(c).pop(false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(c).pop(true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref.read(deleteReminderProvider(widget.reminder!.id).future);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (!mounted) return;
+      context.showErrorSnackbar('Could not delete that. Please try again.');
     }
   }
 
@@ -159,7 +243,7 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
               children: [
                 Expanded(
                   child: InfoRowWidget(
-                    title: 'Add to calendar',
+                    title: _isEditing ? 'Edit reminder' : 'Add to calendar',
                     subtitle: '',
                     iconColor: colorScheme.onBackground,
                     icon: Icons.close,
@@ -207,6 +291,24 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
               maxLength: 300,
             ),
             Gap(Spacing.md),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
+              child: SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: 'anniversary',
+                    label: Text('Anniversary'),
+                  ),
+                  ButtonSegment(value: 'birthday', label: Text('Birthday')),
+                  ButtonSegment(value: 'custom', label: Text('Other')),
+                ],
+                selected: {_reminderType},
+                onSelectionChanged:
+                    (s) => setState(() => _reminderType = s.first),
+              ),
+            ),
+            Gap(Spacing.md),
             AppDivider(),
             InfoRowWidget(
               key: const Key('healingSelfReportDateRow'),
@@ -232,6 +334,19 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
               onToggleChanged: (value) => setState(() => _isYearly = value),
             ),
             AppDivider(),
+            if (_isEditing) ...[
+              InfoRowWidget(
+                title: 'Delete reminder',
+                subtitle: '',
+                icon: Icons.delete_outline_rounded,
+                iconColor: colorScheme.error,
+                showAvatar: false,
+                showDivider: false,
+                disableTrailing: true,
+                onTap: _delete,
+              ),
+              AppDivider(),
+            ],
 
             //  AppButton(
             //         elevation: 0,

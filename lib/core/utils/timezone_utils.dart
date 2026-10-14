@@ -1,7 +1,7 @@
 // lib/core/utils/timezone_utils.dart
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_native_timezone/flutter_native_timezone.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:intl/intl.dart';
 
 class TimezoneUtils {
@@ -17,7 +17,7 @@ class TimezoneUtils {
             ? DateTime.now().timeZoneName
             : 'UTC';
       } else {
-        _cachedTimezone = await FlutterNativeTimezone.getLocalTimezone();
+        _cachedTimezone = await FlutterTimezone.getLocalTimezone();
       }
       return _cachedTimezone!;
     } catch (e) {

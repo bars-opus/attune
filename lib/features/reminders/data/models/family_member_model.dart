@@ -22,9 +22,10 @@ class FamilyMemberModel {
       id: json['id'] as String,
       relationshipId: json['relationship_id'] as String,
       name: json['name'] as String,
-      birthday: json['birthday'] != null
-          ? DateTime.parse(json['birthday'] as String)
-          : null,
+      birthday:
+          json['birthday'] != null
+              ? DateTime.parse(json['birthday'] as String)
+              : null,
       createdBy: json['created_by'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),

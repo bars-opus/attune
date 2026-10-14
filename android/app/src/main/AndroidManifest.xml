@@ -47,12 +47,32 @@
          Android 13 (API 33) onward. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
+    <!-- Together free time: busy times only, never titles (device_calendar_plus).
+         The plugin's read access requires WRITE_CALENDAR declared too; Attune
+         never writes through it ("Add to my calendar" opens the system editor). -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <application
         android:label="attune"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules">
+        <!-- Share text or a link into Together (Phase 8b): "Add to plans".
+             An invisible step that hands the share to Attune's own task, so a
+             second Attune never opens inside the sharing app. -->
+        <activity
+            android:name=".ShareTrampolineActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter android:label="Add to plans">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -105,6 +125,15 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Together "Next" card (Phase 8a). -->
+        <receiver android:name=".TogetherWidgetProvider" android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/together_widget_info" />
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -115,6 +144,11 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Add to my calendar (add_2_calendar): the system "new event" editor. -->
+        <intent>
+            <action android:name="android.intent.action.INSERT" />
+            <data android:mimeType="vnd.android.cursor.item/event" />
         </intent>
     </queries>
 </manifest>

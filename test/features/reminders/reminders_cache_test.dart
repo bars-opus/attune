@@ -51,7 +51,8 @@ void main() {
       expect(restored.reminderType, original.reminderType);
       expect(restored.title, original.title);
       expect(restored.note, original.note);
-      expect(restored.remindAt, original.remindAt);
+      // Reminders are all-day: the cache keeps the calendar date.
+      expect(restored.remindAt, DateTime(2026, 9, 12));
       expect(restored.recurrence, original.recurrence);
       expect(restored.sent, original.sent);
       expect(restored.linkedTimelineEventId, original.linkedTimelineEventId);

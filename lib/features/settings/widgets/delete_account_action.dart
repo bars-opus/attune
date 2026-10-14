@@ -1,4 +1,5 @@
 // lib/features/settings/widgets/delete_account_action.dart
+import 'package:attune/features/together/data/together_device_surfaces.dart';
 import 'package:attune/core/providers/routing_providers.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
@@ -48,6 +49,9 @@ class DeleteAccountAction {
             // holding an encrypted chat cache and user-scoped preferences
             // for an account that is gone.
             await ref.read(authOperationsProvider).signOut();
+            // Together's card, lock-screen plan and calendar copy go too —
+            // before clearUserData(), which wipes the copy's calendar id.
+            await clearTogetherDeviceSurfaces();
             await ref.read(preferencesServiceProvider).clearUserData();
             ref.read(routingNotifierProvider).clearUser();
 
