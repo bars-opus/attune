@@ -63,8 +63,8 @@ Today's Timeline is a month calendar, a moments log and an "Upcoming" reminders 
 | D6 | AI suggests; the affected person confirms. No relationship interpretation; care-loop wording is fixed templates, never AI-written | ATTUNE_SOUL; permanent constraint 8 |
 | D7 | Ownership: one owner avatar per item; unowned items are visible to both; giving an item to the partner is a proposal; **no tallies, ever** | Makes invisible work visible without a scoreboard |
 | D8 | Rituals are flexible (the app proposes a slot each week and both confirm). Skipping has no consequence. **No counters of any kind** | PULSE.md and SOUL forbid streaks; research on streak guilt |
-| D9 | Push budget: at most one *scheduled* Together push per user per day. When a care card, digest and reminder fall on the same local day, they merge into that one push. The only other pushes are partner-initiated: a proposal sent to you, a reply to your proposal, and a new anniversary or milestone moment. Everything else appears in the app in real time | Notification-fatigue research; REMINDERS.md "never a barrage" |
-| D10 | A private conflict moment still feeds its logger's own Pulse, but never reaches the partner, their feed or their verdict evidence | Pulse is self-facing; constraint 2 |
+| D9 | Push budget: at most one *scheduled* Together push per user per day. When a care card, digest and reminder fall on the same local day, they merge into that one push. The only other pushes are partner-initiated: a proposal sent to you, a reply to your proposal, and a new anniversary or milestone moment. Everything else appears in the app in real time. User-set event alarms (`together_event`) are requested by the user and sit outside this budget. The morning summary (08:00 local; Sundays the week ahead) is the one scheduled push; care cards are in-app and appear as a line in that summary | Notification-fatigue research; REMINDERS.md "never a barrage" |
+| D10 | A private conflict moment still feeds its logger's own Pulse, but never reaches the partner, their feed or their verdict evidence. *Amended by §8.7 R1: a private conflict stays out of the shared Pulse.* | Pulse is self-facing; constraint 2 |
 | D11 | The existing `timeline_events`, Planning v2 and Stories stay where they are. Together reads them through one read function. New concepts get a new `couple_events` table | `timeline_events` feeds compute-pulse and generate-verdict; moving it is pure regression risk |
 | D12 | Old `reminders` rows keep working through the read function; a one-time backfill moves them into `couple_events` one release after the new path is live | Rollout with no regressions |
 | D13 | Native extensions (home-screen widgets, Live Activity, share-sheet capture) are a later milestone (Phase 8) | Prove the in-app core first |
@@ -329,29 +329,139 @@ Each phase is shipped on its own and gets its own plan, executed test-first on m
 | 8 | Native (later milestone) | `home_widget`, `live_activities`, share-sheet capture, optional mirror into an on-device calendar | — | High |
 
 ### 8.1 Phase 0 scope (no new product surface)
-1. **Moments appear without a manual refresh:**
-   - the month provider is keyed to the first of the month in both `timeline_providers.dart` and `timeline_screen.dart`;
-   - the log-moment flow returns its result to the Timeline;
-   - the reminder → moment flow also refreshes.
-2. **Realtime:** subscribe to `timeline_events` and `reminders`, replacing the empty `subscribeToEvents`.
+1. **Moments appear without a manual refresh:** the month provider is keyed to the first of the month everywhere (`timelineMonthKey`), so creating or editing a moment refreshes the month on screen.
+2. **Realtime:** a `together_change_signals` table, bumped by triggers on `timeline_events`, `reminders` and `couple_family_members`, drives a refetch for both partners; it replaces the empty `subscribeToEvents`. Phase 1 reuses it.
 3. **Partner push for non-conflict moments:**
    - a DB trigger inserts into `scheduled_notifications`, with a `source_key` for idempotency;
-   - remove the client stub that only logs (`notifyPartnerMomentLogged`).
-4. **`reminders.remind_on date`:**
-   - backfilled from `remind_at`;
-   - the client writes the calendar date;
-   - `generate_reminder_notifications` switches to it.
-   This fixes the day shift caused by `reminders_repository.dart:39`.
+   - the client stub that only logged is removed.
+4. **Reminder dates:** sent and read as plain calendar dates (`YYYY-MM-DD`). No schema change (plan ruling R1).
 5. **Reminder editing:**
-   - an edit/delete sheet, opened by `onReminderTap` in `timeline_screen.dart` and by the day-sheet reminder rows;
-   - a type picker, with `custom` added to the CHECK constraint;
-   - only anniversary and milestone types prompt "Add to Timeline?".
+   - an edit/delete sheet (`showReminderSheet`), opened by Upcoming rows and by day-sheet reminder rows;
+   - a type picker (Anniversary / Birthday / Other), with `custom` added to the CHECK constraint;
+   - only anniversaries prompt "Add to Timeline?".
 6. **Calendar dots:** reminder dots for the whole focused month, not just the 3-month window.
 7. **Moment cards** show the partner's real name.
-8. **Day sheet:** the "Nothing on this day yet." gating is fixed.
-9. **`_scrollToDate`** actually scrolls.
-10. **Deleted moments:** the verdict eligibility SQL (`20260703183000_verdict_system_v1_1.sql`) and `generate-verdict` exclude `deleted_at` rows.
-11. **Soft delete under RLS:** verify that a soft delete passes the read policy, and fix it if not.
+8. **Day sheet:** says "No moments or plans on this day." whenever it has none.
+9. **`_scrollToDate`** is renamed `_selectDate`; tapping a date opens the day sheet (plan ruling R2).
+10. **Deleted moments:** the verdict eligibility SQL and `generate-verdict` exclude `deleted_at` rows.
+11. **Soft delete** goes through the `soft_delete_timeline_event` RPC (plan ruling R4).
+
+### 8.2 Phase 1a rulings (plan `2026-10-14-together-phase1a-events-data.md`)
+- R1: `couple_events` has no direct read grant; all reads go through `list_together_items`, which masks busy-only titles.
+- R2: `couple_event_options` and the proposal RPCs move to Phase 2; the proposal columns already exist.
+- R3: RRULE subset is FREQ, INTERVAL and weekly BYDAY; the end is `recurrence_until`; repeating events last one day.
+- R4: Monthly and yearly repeats on a missing day land on the month's last day.
+- R5: Family birthdays come through their reminders rows.
+- R6: User-set event alarms are outside D9's budget.
+- R7: Owner is yourself or the existing owner until Phase 2's hand-off proposals.
+- R8: `TogetherItem` is one class with a kind enum.
+- R9: A private event's only participant is its creator.
+
+### 8.3 Phase 1b rulings (plan `2026-10-14-together-phase1b-hub-screen.md`)
+- R1: Planning's Calendar tab embeds the Together screen; the duplicate Map tab is gone.
+- R2: The Conversations card keeps its Planning row; the Calendar row becomes the Together row.
+- R3: Month view is the existing TimelineScreen, now showing Together events.
+- R4: "Coming up" is rows with "In N days", not countdown cards.
+- R5: "Needs you", "Rituals" and "On this day" wait for Phases 2–4.
+- R6: PostHog moves to its own plan (needs the project key and host).
+- R7: `/together` is canonical; `/timeline` is an alias that opens it.
+
+### 8.4 Phase 2a rulings (plan `2026-10-14-together-phase2a-proposals.md`)
+- R1: A proposal carries one to three options; one option is an invitation.
+- R2: Proposals don't repeat.
+- R3: Expired proposals are hidden from both and can't be decided (`together:expired`); no cron.
+- R4: "Unowned" means Planning to-dos with no assignee, not done, due within 7 days.
+- R5: A date poll needs me when it has options and I've voted on none.
+- R6: Declines send one gentle push back to the asker.
+- R7: "Today" for unowned to-dos uses the caller's Planning zone, else UTC.
+
+### 8.5 Phase 2b rulings (plan `2026-10-14-together-phase2b-care-digest.md`)
+- R1: The summary goes at 08:00 local every day; on Sundays it is the week ahead (replaces the Sunday-evening plan, which broke the budget).
+- R2: Care cards are in-app; their push is the morning summary's big-day line.
+- R3: Reminder pushes stay on their own pipeline; the budget covers Together's own scheduled push (`together_daily`).
+- R4: The summary window is 08:00–10:00 local.
+- R5: A big day is `kind = 'big_day'` on a shared event just for its creator.
+- R6: Care windows: from 18:00 the evening before until the start; from the end (start + 1h, or 18:00 all-day) for 24 hours.
+
+### 8.6 Phase 3 rulings (plan `2026-10-14-together-phase3-rituals.md`)
+- R1: A ritual is agreed once; its weeks then appear by themselves (no weekly confirm or push). Either partner can skip, move, pause or end.
+- R2: Cadence is weekly or every other week, on a fixed weekday and time.
+- R3: The slot is the ritual's own day and time; fitting free time waits for Phase 6.
+- R4: Occurrences are kept 14 days ahead; daily cron plus immediately on accept or change.
+- R5: Moving one week keeps it a ritual occurrence.
+- R6: Templates are client constants; the server stores the template id as a label.
+
+### 8.7 Phase 4 rulings (plan `2026-10-14-together-phase4-story.md`)
+- R1: Private conflicts stay out of Pulse and the verdict entirely. Pulse is one score per couple that both read, so a private conflict feeding it would leak (amends D10).
+- R2: A memory is a line of text; photos come later.
+- R3: A memory links to its event from the moment (`timeline_events.couple_event_id`), so each partner can add their own.
+- R4: One in-app prompt at a time, for a confirmed, shared, non-recurring event of both partners that ended in the last 3 days. "Not now" hides it for good.
+- R5: Memory moments are highlights, dated to the event's own day.
+- R6: On this day covers earlier years on the same date (Feb 29 shows on Feb 28 in common years), no conflicts, up to 5.
+- R7: Only conflicts can be private; the default is shared.
+- R8: The archive pages 30 at a time by date and id.
+- R9: A ritual's sheet lists its memories, newest 20, without a count.
+
+### 8.8 Phase 5 rulings (plan `2026-10-14-together-phase5-export.md`)
+- R1: The feed lists each occurrence over a rolling window (30 days back, 180 ahead) in UTC; no RRULE or VTIMEZONE. This keeps §5.5's promise that the app and the feed agree (supersedes "passes RRULEs through" in §6.4).
+- R2: The feed has confirmed events, reminders and birthdays, and Planning dates; not moments, proposals or Planning to-dos. Reminders and Planning dates don't block time.
+- R3: One live link per person; a new link revokes the old. Only the hash is stored, so a link is shown once.
+- R4: The feed follows your current couple; ending it (any path) revokes both partners' links.
+- R5: One identical 404 for anything the feed can't serve; server errors are 503.
+- R6: "Add to my calendar" is on Together events; a weekday pattern exports that one time; a partner's busy block can't be exported.
+- R7: Tokens are 244 random bits, stored as SHA-256. The link itself still appears in edge-function request logs (a calendar URL can't carry a header); accepted, since logs are project-private and a new link revokes the old.
+
+### 8.9 Phase 6 rulings (plan `2026-10-14-together-phase6-overlay.md`)
+- R1: The finder runs on the server, so a partner's busy times never reach the other phone below the strips level (supersedes "a pure Dart function" in §6.4).
+- R2: Waking hours are 08:00–22:00 in each partner's own zone; windows are 30-minute slots, at least 60 minutes long.
+- R3: Busy means uploaded busy times plus every confirmed timed Together event the viewer can see (their own private ones included). Of all-day events only trips count.
+- R4: The phone skips all-day, "free" and cancelled entries, rounds outward to 30 minutes and uploads 14 days ahead: on turning it on, and once per visit. Uploads don't ping the partner.
+- R5: Levels are off, free windows, and strips (also show my busy times). Default off. Nobody is told the other's level.
+- R6: Today shows today's free windows (with the partner's clock when it differs) and, at the strips level, when the partner is busy; "Free together" lists the coming week's windows. A window opens a suggestion for that time. Month hatching and ritual fitting come later.
+- R7: Android's minimum becomes API 24 (device_calendar_plus).
+
+### 8.10 Phase 7 rulings (plan `2026-10-14-together-phase7-ai.md`)
+- R1: One `ai-together` function does capture and date ideas (structured output); ideas don't go through AI sessions, which return free text and need the partner's approval first. Nearby stays in AI sessions.
+- R2: Same safeguards as the AI assistant: flag `ai_together_enabled` (default off), both partners' AI consent, the shared daily AI budget, the provider-start claim, and the wording filters. The app hides both features unless available.
+- R3: The AI saves nothing: it fills the form or offers ideas; the person saves through the usual create and suggest steps.
+- R4: Capture fills a new event's title, day and time, both-of-us or just-me, place and note; with no time given it's all-day.
+- R5: Ideas are three generic things to do for the window's day, time and length; no named places. Picking one suggests it for that time.
+- R6: The model sees only the typed note, today's date and time, and the partner's first name (capture), or the window (ideas).
+
+### 8.11 Phase 8a rulings — home-screen widget (plan `2026-10-14-together-phase8a-widget.md`)
+- Owner decisions: the widget comes first among the native pieces; it is off by default and discreet.
+- R1: A "Next" card: up to two current lines — plans I'm in and today's free windows ("Free") — titles as written, no names added, no app wording; tapping opens the app under its usual cover.
+- R2: The on/off setting lives on the phone (it's about that home screen).
+- R3: The app formats the labels; the widgets only compare times.
+- R4: It refreshes when Together loads; lines drop off when they end. Quick exit, sign-out and "off" empty it at once.
+- R5: `flutter_native_timezone` replaced by `flutter_timezone` 4.x (5.x needs a newer Kotlin plugin). Android builds remain blocked by `file_picker` 6.x (removed v1 embedding) until a toolchain refresh.
+- R6: iOS App Group `group.com.barsopus.attune` for the app and the widget.
+
+### 8.12 Phase 8b rulings — share-sheet capture (plan `2026-10-14-together-phase8b-share.md`)
+- R1: Text and links only; no images or files.
+- R2: Clipped to 300 characters; with AI it waits in "Describe it" (no AI call until tapped); without AI the first line is the title and the rest the note.
+- R3: One pending share, newest wins, opened once when Together is reachable; dropped after 10 minutes.
+- R4: The share-sheet entry reads "Add to plans".
+- R5: The iOS extension shares the widget's App Group and carries the app's version.
+- R6: A share only brings Together forward for a signed-in, paired person, and never over quick exit's neutral screen; otherwise it waits (R3's 10 minutes) and they keep their place.
+- R7: A handled share leaves nothing on disk: the iOS extension's App Group copy is removed once taken, and again on quick exit and sign-out.
+- R8: Android: "Add to plans" is an invisible step that hands the share to Attune's own task (no second Attune inside the sharing app); MainActivity stays singleTop. A share is never delivered twice after Android restores the app.
+
+### 8.13 Phase 8c rulings — lock-screen plan (plan `2026-10-14-together-phase8c-live.md`)
+- R1: iOS only (Live Activities); Android gets no ongoing notification (quiet by default).
+- R2: One confirmed, timed, shared plan we're both in, from 4 hours before it starts until it ends; the earliest wins (one under way beats a later one). The title as written, the times and a countdown; no names, app name, notes or places. Never private or busy-only.
+- R3: The app starts, updates and ends it when Together loads (no background start without a push server); a plan that's over is also taken off whenever the app comes forward, from anywhere; iOS ends it within 8 hours regardless. Once the plan has started, only its times show — never the title.
+- R4: Opt-in on this phone, off by default; shown only where the phone supports it and Live Activities are allowed.
+- R5: Quick exit, sign-out and "off" end it at once; one function clears every Together surface on the phone.
+- R6: Our own channel instead of a package; ActivityKit is weak-linked, so the app stays iOS 14+.
+
+### 8.14 Phase 8d rulings — calendar copy (plan `2026-10-14-together-phase8d-mirror.md`)
+- R1: A one-way copy into a calendar of its own called "Plans" (no app or partner name). Android: the phone's own account. iOS: the default account — iCloud where it's on (a calendar saved "On My iPhone" can be hidden then), so the setting says it may show on the person's other devices. All-day ends are written the way each platform stores them (Android: the midnight after).
+- R2: Confirmed shared plans I'm in, the next 60 days, each repeat its own entry: title, times or days, place. Never notes, names, private or busy-only items, suggestions, reminders, moments or Planning items.
+- R3: Entries are matched by title, times (all-day: first and last day) and place; a changed plan is replaced; entries before today stay until it's turned off. Edits made in the phone calendar are overwritten.
+- R4: Refreshed each time Together opens and straight away when turned on.
+- R5: "Off", quick exit, sign-out, account deletion and ending the relationship delete the whole calendar (before stored settings are wiped); opening Together with no relationship clears every Together surface on the phone.
+- R6: The busy overlay never reads the copy.
 
 ---
 
